@@ -1,0 +1,47 @@
+databaseChangeLog:
+  # 为字典表和字典项表添加内置标识和锁定字段
+  - changeSet:
+      id: add-dict-type-builtin-fields
+      author: tiny
+      comment: 为 dict_type 表添加 is_builtin 和 builtin_locked 字段
+      changes:
+        - sql:
+            dbms: mysql
+            sql: |
+              ALTER TABLE dict_type
+                ADD COLUMN is_builtin TINYINT NOT NULL DEFAULT 0 COMMENT '是否平台内置（1=内置）' AFTER tenant_id,
+                ADD COLUMN builtin_locked TINYINT NOT NULL DEFAULT 0 COMMENT '是否锁定（1=锁定不可删除/不可改关键字段）' AFTER is_builtin;
+        - sql:
+            dbms: mysql
+            sql: |
+              -- 将初始化脚本创建的字典标记为内置并锁定
+              UPDATE dict_type 
+              SET is_builtin = 1, builtin_locked = 1 
+              WHERE tenant_id = 0 
+                AND dict_code IN (
+                  'ENABLE_STATUS', 'YES_NO', 'BOOLEAN_FLAG', 'DELETE_FLAG', 'DATA_STATUS',
+                  'AUDIT_STATUS', 'USER_STATUS', 'ACCOUNT_STATUS', 'USER_TYPE', 'ROLE_TYPE',
+                  'RESOURCE_TYPE', 'PERMISSION_TYPE', 'AUTH_MODE', 'OPERATION_RESULT', 'ERROR_LEVEL',
+                  'FILE_TYPE', 'FILE_STATUS', 'EXPORT_STATUS', 'IMPORT_STATUS', 'TASK_STATUS',
+                  'PROCESS_STATUS', 'SOURCE_TYPE', 'CHANNEL_TYPE', 'TIME_UNIT', 'DATE_TYPE'
+                );
+
+  - changeSet:
+      id: add-dict-item-builtin-field
+      author: tiny
+      comment: 为 dict_item 表添加 is_builtin 字段（注意：enabled 字段已存在，不需要重复添加）
+      changes:
+        - sql:
+            dbms: mysql
+            sql: |
+              ALTER TABLE dict_item
+                ADD COLUMN is_builtin TINYINT NOT NULL DEFAULT 0 COMMENT '是否平台内置（1=内置）' AFTER tenant_id;
+        - sql:
+            dbms: mysql
+            sql: |
+              -- 将初始化脚本创建的字典项标记为内置
+              UPDATE dict_item di
+              INNER JOIN dict_type dt ON di.dict_type_id = dt.id
+              SET di.is_builtin = 1
+              WHERE dt.is_builtin = 1;
+
