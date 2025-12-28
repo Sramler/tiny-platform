@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS `resource` (
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     `enabled` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否启用',
+    UNIQUE KEY `uk_resource_name` (`name`) COMMENT '资源名称唯一约束，防止重复插入',
     KEY `idx_resource_parent_id` (`parent_id`),
     KEY `idx_resource_type` (`type`),
     KEY `idx_resource_sort` (`sort`),
@@ -230,12 +231,34 @@ CREATE TABLE IF NOT EXISTS `demo_export_usage` (
     `is_billable` BOOLEAN NOT NULL DEFAULT TRUE COMMENT '是否计费',
     `status` VARCHAR(20) NOT NULL DEFAULT 'UNBILLED' COMMENT '状态：UNBILLED/BILLED/ADJUSTED',
     `metadata` JSON DEFAULT NULL COMMENT '扩展信息（JSON）',
+    `description` TEXT COMMENT '描述信息（TextArea 多行文本）',
+    `priority` VARCHAR(20) DEFAULT 'MEDIUM' COMMENT '优先级（Radio 单选）：LOW/MEDIUM/HIGH/URGENT',
+    `tags` JSON COMMENT '标签（Checkbox 多选，JSON 数组）',
+    `usage_time` TIME COMMENT '使用时间（TimePicker 时间选择）',
+    `quality_score` TINYINT DEFAULT 0 COMMENT '质量评分（Rate 评分，0-5）',
+    `discount_percentage` DECIMAL(5,2) DEFAULT 0 COMMENT '折扣百分比（Slider 滑块，0-100）',
+    `category_path` VARCHAR(200) COMMENT '分类路径（Cascader 级联选择，如：/云服务/存储/对象存储）',
+    `department_id` BIGINT COMMENT '部门ID（TreeSelect 树形选择）',
+    `customer_name` VARCHAR(128) COMMENT '客户名称（AutoComplete 自动完成）',
+    `theme_color` VARCHAR(7) DEFAULT '#1890ff' COMMENT '主题颜色（ColorPicker 颜色选择器，HEX格式）',
+    `api_key` VARCHAR(128) COMMENT 'API密钥（Input.Password 密码输入）',
+    `search_keyword` VARCHAR(128) COMMENT '搜索关键词（Input.Search 搜索输入）',
+    `start_date` DATE COMMENT '开始日期（RangePicker 日期范围开始）',
+    `end_date` DATE COMMENT '结束日期（RangePicker 日期范围结束）',
+    `selected_features` JSON COMMENT '选中的功能（Select multiple 多选下拉，JSON 数组）',
+    `min_value` DECIMAL(18,4) COMMENT '最小值（数字范围输入）',
+    `max_value` DECIMAL(18,4) COMMENT '最大值（数字范围输入）',
+    `start_time` TIME COMMENT '开始时间（时间范围开始）',
+    `end_time` TIME COMMENT '结束时间（时间范围结束）',
+    `payment_method` VARCHAR(32) COMMENT '支付方式（Radio.Group 单选组）：ALIPAY/WECHAT/CREDIT_CARD/BANK_TRANSFER',
+    `notes` TEXT COMMENT '备注（TextArea 文本域）',
+    `attachment_info` JSON COMMENT '附件信息（Upload 文件上传，JSON 格式存储文件信息）',
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     PRIMARY KEY (`id`),
     KEY `idx_demo_usage_tenant_date` (`tenant_code`, `usage_date`),
     KEY `idx_demo_usage_product` (`product_code`),
     KEY `idx_demo_usage_status` (`status`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='导出教学示例表：用量/账单型数据';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='导出教学示例表：用量/账单型数据（扩展版，覆盖所有表单组件类型）';
 
 -- 生成 demo_export_usage 测试数据的存储过程
 -- 注意：

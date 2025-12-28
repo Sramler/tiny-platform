@@ -581,7 +581,9 @@ function handleBatchDelete() {
             loadData()
           })
           .catch((error: any) => {
-            message.error('批量删除失败: ' + (error.message || '未知错误'))
+            // 优先使用 Problem 格式的 detail，否则使用 error.message
+            const errorMessage = (error as any)?.errorInfo?.message || error?.message || '未知错误'
+            message.error('批量删除失败: ' + errorMessage)
             return Promise.reject(error)
           })
       }

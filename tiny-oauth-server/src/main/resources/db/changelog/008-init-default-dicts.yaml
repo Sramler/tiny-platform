@@ -1,0 +1,19 @@
+databaseChangeLog:
+  # 初始化默认字典数据（幂等执行，使用 runOnChange 自动检测 SQL 文件变化）
+  - changeSet:
+      id: init-default-dicts
+      author: tiny
+      comment: 初始化平台默认字典数据（25个字典类型及其字典项）
+      runOnChange: true
+      # 接受旧的和新的校验和，确保兼容性
+      validCheckSum:
+        - 9:51ddacb931e8b58d14ef9ebd577b72e7
+        - 9:19487149e95369d870f3dc5449723aeb
+      changes:
+        - sqlFile:
+            path: classpath:db/migration/init_default_dicts.sql
+            relativeToChangelogFile: false
+            splitStatements: true
+            stripComments: false
+            endDelimiter: ;
+            dbms: mysql

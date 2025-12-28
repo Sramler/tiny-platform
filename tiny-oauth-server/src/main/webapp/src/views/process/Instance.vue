@@ -713,7 +713,9 @@ function handleBatchDelete() {
                 selectedRowKeys.value = []
                 loadData()
             }).catch((error: unknown) => {
-                const errorMessage = error instanceof Error ? error.message : '未知错误'
+                // 优先使用 Problem 格式的 detail，否则使用 error.message
+                const errorMessage = (error as any)?.errorInfo?.message || 
+                                   (error instanceof Error ? error.message : '未知错误')
                 message.error('批量删除失败: ' + errorMessage)
                 return Promise.reject(error)
             })

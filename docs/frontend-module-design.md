@@ -1598,28 +1598,34 @@ export const WorkflowPlugin: PluginMeta = {
 > - **平台核心模块**：所有租户必须拥有，不可卸载（如用户管理、基础配置）
 > - **业务插件**：租户可选安装（如高级报表、工作流引擎、数据分析）
 
-**理想结构（最小可运行示例）**：
+**理想结构（最小可运行示例，优化版）**：
 
 ```
 tiny-platform/
 ├── backend/
 │   └── server/
 │       ├── src/main/java/com/tiny/platform
-│       │   ├── tenant/                 # 租户上下文
-│       │   ├── plugin/                 # 插件安装判断
-│       │   ├── feature/                # Feature Toggle
-│       │   ├── security/              # 权限拦截
+│       │   ├── infrastructure/        # 基础设施层（系统运行必需，不可抽离）
+│       │   │   ├── exception/         # 异常处理
+│       │   │   ├── auth/              # 认证授权基础设施
+│       │   │   │   ├── user/          # 用户管理（核心基础设施）
+│       │   │   │   ├── role/          # 角色管理（核心基础设施）
+│       │   │   │   └── resource/      # 资源管理（权限控制核心）
+│       │   │   ├── menu/              # 菜单基础设施
+│       │   │   ├── plugin/            # 插件管理基础设施
+│       │   │   ├── feature/           # Feature Toggle 基础设施
+│       │   │   ├── security/         # 安全拦截
+│       │   │   └── config/           # 配置
 │       │   │
-│       │   ├── core/                   # 平台核心模块（所有租户必须）
-│       │   │   ├── user/               # 用户管理（核心）
-│       │   │   ├── role/               # 角色管理（核心）
-│       │   │   ├── permission/         # 权限管理（核心）
-│       │   │   └── dict/               # 数据字典（核心，基础能力）
+│       │   ├── core/                  # 核心业务层（平台核心能力，可抽离但重要）
+│       │   │   ├── tenant/            # 租户管理
+│       │   │   ├── dict/              # 数据字典（平台核心能力）
+│       │   │   ├── oauth/             # OAuth2 核心
+│       │   │   └── workflow/         # 工作流核心
 │       │   │
-│       │   └── plugin/                 # 业务插件（租户可选）
-│       │       ├── workflow/           # 工作流插件（可选）
-│       │       ├── report/            # 报表插件（可选）
-│       │       └── analytics/         # 数据分析插件（可选）
+│       │   └── business/              # 业务模块层（可抽离为独立模块）
+│       │       ├── export/            # 导出插件
+│       │       └── scheduling/        # 调度插件
 │       └── pom.xml
 │
 ├── frontend/
@@ -1655,19 +1661,32 @@ tiny-platform/
 
 **关键设计说明**：
 
-1. **平台核心模块 vs 业务插件**
+1. **基础设施 vs 核心业务 vs 业务插件**
 
-   - **核心模块**：`core-user`、`core-dict` 等，所有租户默认拥有，不可卸载
-   - **业务插件**：`plugin-workflow`、`plugin-report` 等，租户可选安装
+   - **基础设施（infrastructure）**：系统运行必需，不可抽离
+     - `infrastructure.auth.*`：认证授权核心（User、Role、Resource）
+     - `infrastructure.menu`：菜单核心
+     - `infrastructure.plugin`：插件管理基础设施
+     - `infrastructure.feature`：Feature Toggle 基础设施
+   - **核心业务（core）**：平台核心能力，可抽离但重要
+     - `core.dict`：数据字典（平台核心能力）
+     - `core.tenant`：租户管理
+     - `core.oauth`：OAuth2 核心
+     - `core.workflow`：工作流核心
+   - **业务插件（business）**：可抽离为独立模块
+     - `business.export`：导出插件
+     - `business.scheduling`：调度插件
 
 2. **模块声明差异**
 
-   - **核心模块**：`ModuleMeta` 中**不声明 `plugin` 字段**，路由守卫跳过插件检查
+   - **基础设施模块**：`ModuleMeta` 中**不声明 `plugin` 字段**，路由守卫跳过插件检查
+   - **核心业务模块**：`ModuleMeta` 中**不声明 `plugin` 字段**，路由守卫跳过插件检查
    - **业务插件**：`ModuleMeta` 中**必须声明 `plugin` 字段**，路由守卫进行插件检查
 
 3. **后端目录结构**
-   - `core/` 目录：平台核心模块，所有租户必须拥有
-   - `plugin/` 目录：业务插件，租户可选安装
+   - `infrastructure/` 目录：基础设施层，系统运行必需
+   - `core/` 目录：核心业务层，平台核心能力
+   - `business/` 目录：业务模块层，可抽离的插件
 
 **结构合理性分析**：
 
@@ -1700,11 +1719,15 @@ tiny-platform/
 
 **核心设计改进**：
 
-1. ✅ **dict 不应作为插件**：数据字典是平台基础能力，所有租户都需要，应作为核心模块
-2. ✅ **user 必须作为核心模块**：用户管理是平台核心能力，不可卸载
-3. ✅ **区分核心与插件**：核心模块（`core-*`）默认拥有，业务插件（`plugin-*`）可选安装
+1. ✅ **增加基础设施层**：明确区分基础设施（`infrastructure/`）和核心业务（`core/`）
+2. ✅ **user/role/resource 是基础设施**：认证授权是系统运行必需，应放在 `infrastructure.auth.*`
+3. ✅ **dict 是核心业务能力**：数据字典是平台核心能力，放在 `core.dict`，但仍然是可抽离的
+4. ✅ **区分基础设施、核心业务、业务插件**：
+   - 基础设施（`infrastructure.*`）：系统运行必需，不可卸载
+   - 核心业务（`core.*`）：平台核心能力，可抽离但重要
+   - 业务插件（`business.*`）：可抽离为独立模块
 
-**推荐的渐进式演进结构**（基于现有项目）：
+**推荐的渐进式演进结构**（基于现有项目，优化版）：
 
 ```
 tiny-platform/
@@ -1714,10 +1737,25 @@ tiny-platform/
 │
 ├── backend/                          # 后端模块（Maven）
 │   ├── tiny-oauth-server/           # OAuth Server（保持现有）
-│   │   ├── src/main/java/.../tenant/
-│   │   ├── src/main/java/.../plugin/
-│   │   ├── src/main/java/.../feature/
-│   │   └── src/main/java/.../security/
+│   │   └── src/main/java/com/tiny/platform/
+│   │       ├── infrastructure/      # 基础设施层
+│   │       │   ├── exception/       # 异常处理
+│   │       │   ├── auth/          # 认证授权（User, Role, Resource）
+│   │       │   ├── menu/          # 菜单
+│   │       │   ├── plugin/        # 插件管理（NEW）
+│   │       │   ├── feature/       # Feature Toggle（NEW）
+│   │       │   ├── security/      # 安全拦截
+│   │       │   └── config/        # 配置
+│   │       ├── core/               # 核心业务层
+│   │       │   ├── tenant/        # 租户管理
+│   │       │   ├── dict/          # 数据字典（平台核心能力）
+│   │       │   ├── oauth/         # OAuth2 核心
+│   │       │   └── workflow/      # 工作流核心
+│   │       ├── business/          # 业务模块层
+│   │       │   ├── export/        # 导出插件
+│   │       │   └── scheduling/    # 调度插件
+│   │       └── application/       # 应用层
+│   │           └── controller/    # 控制器
 │   ├── tiny-core-dict-web/         # 字典后端模块（保持现有）
 │   └── ...
 │
@@ -1746,16 +1784,18 @@ tiny-platform/
 
 **关键改进点**：
 
-1. ✅ **保持现有 Maven 结构**：不强制要求 `backend/server` 单模块，保持 `tiny-oauth-server`、`tiny-core-dict-web` 等多模块结构
-2. ✅ **统一前端命名**：使用 `tiny-core-ui`、`tiny-core-dict-ui` 等，与文档其他部分一致
-3. ✅ **前后端分离但统一管理**：`backend/` 和 `frontend/` 目录分离，但都在同一个 Monorepo 中
-4. ✅ **构建系统共存**：根目录同时有 `pom.xml` 和 `package.json`，这是合理的
+1. ✅ **增加基础设施层**：明确区分 `infrastructure/`（基础设施）、`core/`（核心业务）、`business/`（业务插件）
+2. ✅ **保持现有 Maven 结构**：不强制要求 `backend/server` 单模块，保持 `tiny-oauth-server`、`tiny-core-dict-web` 等多模块结构
+3. ✅ **统一前端命名**：使用 `tiny-core-ui`、`tiny-core-dict-ui` 等，与文档其他部分一致
+4. ✅ **前后端分离但统一管理**：`backend/` 和 `frontend/` 目录分离，但都在同一个 Monorepo 中
+5. ✅ **构建系统共存**：根目录同时有 `pom.xml` 和 `package.json`，这是合理的
 
 **结论**：
 
-- ✅ **理想结构是合理的**，但需要与现有项目结构对齐
+- ✅ **理想结构已优化**：增加基础设施层，明确区分基础设施、核心业务、业务插件
 - ✅ **推荐使用渐进式演进结构**，保持现有 Maven 多模块结构，前端部分按理想结构组织
 - ✅ **命名规范统一**：前端模块使用 `tiny-core-*` 前缀，与现有命名保持一致
+- ✅ **结构更清晰**：基础设施（不可抽离）、核心业务（可抽离但重要）、业务插件（可抽离）三层结构清晰
 
 #### 4.6.5 前端插件装配与运行机制
 

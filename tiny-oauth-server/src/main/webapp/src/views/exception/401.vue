@@ -16,6 +16,29 @@
           <a-alert :message="`${countdown} 秒后自动跳转到登录页面`" type="info" show-icon :closable="false"
             style="margin-bottom: 24px;" />
         </div>
+        
+        <!-- 错误详情信息 -->
+        <div v-if="errorInfo.from || errorInfo.path || errorInfo.message || errorInfo.traceId" class="error-details">
+          <a-divider>错误详情</a-divider>
+          <a-descriptions :column="1" bordered size="small">
+            <a-descriptions-item v-if="errorInfo.from" label="来源页面">
+              <a-typography-text copyable>{{ errorInfo.from }}</a-typography-text>
+            </a-descriptions-item>
+            <a-descriptions-item v-if="errorInfo.path" label="访问路径">
+              <a-typography-text copyable>{{ errorInfo.path }}</a-typography-text>
+            </a-descriptions-item>
+            <a-descriptions-item v-if="errorInfo.message" label="错误信息">
+              <a-typography-text type="danger" copyable>{{ errorInfo.message }}</a-typography-text>
+            </a-descriptions-item>
+            <a-descriptions-item v-if="errorInfo.traceId" label="追踪ID">
+              <a-typography-text copyable code>{{ errorInfo.traceId }}</a-typography-text>
+              <a-tooltip title="用于追踪本次请求的日志，便于排查问题">
+                <InfoCircleOutlined style="margin-left: 8px; color: #1890ff; cursor: help;" />
+              </a-tooltip>
+            </a-descriptions-item>
+          </a-descriptions>
+        </div>
+        
         <div class="error-actions">
           <a-button type="primary" size="large" @click="goLogin">
             <template #icon>
@@ -36,11 +59,23 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { LockOutlined, LoginOutlined, HomeOutlined } from '@ant-design/icons-vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+import { LockOutlined, LoginOutlined, HomeOutlined, InfoCircleOutlined } from '@ant-design/icons-vue'
 
 const router = useRouter()
+const route = useRoute()
+
+// 从路由参数中获取错误信息
+const errorInfo = computed(() => {
+  const query = route.query
+  return {
+    from: (query.from as string) || document.referrer || null,
+    path: (query.path as string) || route.path || null,
+    message: (query.message as string) || null,
+    traceId: (query.traceId as string) || null,
+  }
+})
 
 // 倒计时相关
 const countdown = ref(5) // 5秒倒计时

@@ -8,22 +8,12 @@
   <packaging>pom</packaging>
   <name>tiny-platform</name>
   <description>Tiny Platform - Multi-module platform with applications and infrastructure</description>
-  <modules>
+    <modules>
     <module>tiny-web</module>
     <module>tiny-oauth-server</module>
     <module>tiny-oauth-client</module>
     <module>tiny-oauth-resource</module>
-    <module>tiny-idempotent-starter</module>
-    <module>tiny-idempotent-platform</module>
-    <module>tiny-common-exception</module>
     <!-- Dictionary modules -->
-    <module>tiny-core</module>
-    <module>tiny-core-dict-starter</module>
-    <module>tiny-core-dict-repository-jpa</module>
-    <module>tiny-core-dict-cache-memory</module>
-    <module>tiny-core-dict-cache-redis</module>
-    <module>tiny-core-dict-web</module>
-    <module>tiny-core-governance</module>
   </modules>
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -59,13 +49,6 @@
         <groupId>org.zalando</groupId>
         <artifactId>problem-spring-web-starter</artifactId>
         <version>0.29.1</version>
-      </dependency>
-
-      <!-- tiny-common-exception 版本管理 -->
-      <dependency>
-        <groupId>com.tiny</groupId>
-        <artifactId>tiny-common-exception</artifactId>
-        <version>1.0.0-SNAPSHOT</version>
       </dependency>
 
       <!-- Dictionary modules 版本管理 -->
@@ -104,6 +87,13 @@
         <artifactId>tiny-core-governance</artifactId>
         <version>1.0.0-SNAPSHOT</version>
       </dependency>
+      <!-- OAuth Server 版本管理 -->
+      <dependency>
+        <groupId>com.tiny</groupId>
+        <artifactId>tiny-oauth-server</artifactId>
+        <version>0.0.1-SNAPSHOT</version>
+      </dependency>
+      <!-- Common Exception 已合并到 tiny-oauth-server 内部，不再需要独立模块 -->
     </dependencies>
   </dependencyManagement>
 

@@ -1,0 +1,26 @@
+databaseChangeLog:
+  - changeSet:
+      id: cleanup-duplicate-resources
+      author: tiny
+      comment: 清理 resource 表中的重复数据（保留 ID 最小的记录，删除其他重复记录）
+      preConditions:
+        - onFail: CONTINUE
+        - sqlCheck:
+            expectedResult: 0
+            sql: |
+              SELECT COUNT(*) FROM (
+                SELECT name, COUNT(*) as cnt
+                FROM resource
+                GROUP BY name
+                HAVING cnt > 1
+              ) AS duplicates
+      changes:
+        - sql:
+            sql: |
+              -- 删除重复的 resource 记录，只保留 ID 最小的
+              DELETE r1 FROM resource r1
+              INNER JOIN resource r2
+              WHERE r1.name = r2.name
+                AND r1.id > r2.id;
+            comment: 删除重复记录，保留每个 name 的最小 ID 记录
+

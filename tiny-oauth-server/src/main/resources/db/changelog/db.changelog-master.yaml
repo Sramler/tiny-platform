@@ -14,10 +14,37 @@ databaseChangeLog:
       file: 004-fix-resource-url-format.yaml
       relativeToChangelogFile: true
 
-  # 存储过程创建
+  # 清理重复数据（在添加唯一约束之前）
+  - include:
+      file: 006-cleanup-duplicate-resources.yaml
+      relativeToChangelogFile: true
+
+  # 添加 resource 表唯一约束
+  - include:
+      file: 005-add-resource-unique-constraint.yaml
+      relativeToChangelogFile: true
+
+  # 扩展 demo_export_usage 表字段
+  - include:
+      file: 007-extend-demo-export-usage-fields.yaml
+      relativeToChangelogFile: true
+
+  # 为字典表添加内置标识和锁定字段（必须在字典初始化之前执行）
+  - include:
+      file: 009-add-dict-builtin-fields.yaml
+      relativeToChangelogFile: true
+
+  # 初始化默认字典数据（幂等执行，不会重复加载）
+  - include:
+      file: 008-init-default-dicts.yaml
+      relativeToChangelogFile: true
+
+  # 存储过程创建（使用 runOnChange 自动检测 SQL 文件变化并重新执行）
   - changeSet:
       id: create-demo-export-usage-procedure
       author: tiny
+      runOnChange: true
+      comment: 创建/更新 demo_export_usage 测试数据生成存储过程
       changes:
         - sql:
             dbms: mysql

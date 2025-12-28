@@ -10,6 +10,7 @@ import BasicLayout from '@/layouts/BasicLayout.vue'
 import { useAuth, initPromise } from '@/auth/auth' // 确保路径正确
 import DefaultView from '@/views/default.vue'
 import Error401 from '@/views/exception/401.vue' // 引入 401 页面
+import Error400 from '@/views/exception/400.vue' // 引入 400 页面
 import Error403 from '@/views/exception/403.vue' // 引入 403 页面
 import Error404 from '@/views/exception/404.vue' // 引入 404 页面
 import Error500 from '@/views/exception/500.vue' // 引入 500 页面
@@ -40,10 +41,12 @@ function generateMenuRoutes(menuList: MenuItem[]) {
       item.url &&
       [
         '/exception/401',
+        '/exception/400',
         '/exception/403',
         '/exception/404',
         '/exception/500',
         '/401',
+        '/400',
         '/403',
         '/404',
         '/500',
@@ -97,12 +100,36 @@ const routes = [
     meta: { title: '二步验证', requiresAuth: false },
   },
   { path: '/callback', name: 'OidcCallback', component: OidcCallback },
-  // 401 页面保持独立（登录状态失效，不需要布局）
+  // 错误页面保持独立（不需要主布局，全屏显示）
   {
     path: '/exception/401',
     name: 'Error401',
     component: Error401,
     meta: { title: '401', requiresAuth: false },
+  },
+  {
+    path: '/exception/400',
+    name: 'Error400',
+    component: Error400,
+    meta: { title: '400', requiresAuth: false }, // 允许未登录用户看到 400 错误
+  },
+  {
+    path: '/exception/403',
+    name: 'Error403',
+    component: Error403,
+    meta: { title: '403', requiresAuth: false }, // 允许未登录用户看到 403 错误
+  },
+  {
+    path: '/exception/404',
+    name: 'Error404',
+    component: Error404,
+    meta: { title: '404', requiresAuth: false }, // 允许未登录用户看到 404 错误
+  },
+  {
+    path: '/exception/500',
+    name: 'Error500',
+    component: Error500,
+    meta: { title: '500', requiresAuth: false }, // 允许未登录用户看到 500 错误
   },
   // 主框架路由，所有需要布局的页面作为子路由
   {
@@ -115,25 +142,6 @@ const routes = [
         name: 'Home',
         component: HomeView,
         meta: { requiresAuth: true, title: '工作台' },
-      },
-      // 错误页面作为主框架的子路由（使用布局）
-      {
-        path: 'exception/403',
-        name: 'Error403',
-        component: Error403,
-        meta: { title: '403', requiresAuth: true },
-      },
-      {
-        path: 'exception/404',
-        name: 'Error404',
-        component: Error404,
-        meta: { title: '404', requiresAuth: true },
-      },
-      {
-        path: 'exception/500',
-        name: 'Error500',
-        component: Error500,
-        meta: { title: '500', requiresAuth: true },
       },
       // {
       //   path: 'about',
@@ -268,8 +276,9 @@ async function ensureMenuRoutesLoaded(): Promise<boolean> {
 const authContext = useAuth()
 
 const authGuard: NavigationGuard = async (to, _from, next) => {
-  if (to.path === '/exception/401') {
-    logger.log('访问 401 页面，直接放行')
+  // 错误页面直接放行，不需要认证检查
+  if (to.path.startsWith('/exception/')) {
+    logger.log('访问错误页面，直接放行:', to.path)
     next()
     return
   }
@@ -320,7 +329,13 @@ const authGuard: NavigationGuard = async (to, _from, next) => {
   }
 }
 
-const dynamicRoutesGuard: NavigationGuard = async (to, _from, next) => {
+const dynamicRoutesGuard: NavigationGuard = async (to, from, next) => {
+  // 错误页面不需要动态路由检查
+  if (to.path.startsWith('/exception/')) {
+    next()
+    return
+  }
+  
   if (!authContext.isAuthenticated.value || to.meta.requiresAuth === false) {
     next()
     return
@@ -344,6 +359,25 @@ const dynamicRoutesGuard: NavigationGuard = async (to, _from, next) => {
         path: to.fullPath,
         query: to.query,
         hash: to.hash,
+        replace: true,
+      })
+      return
+    }
+    
+    // 如果最终还是没有匹配到路由，跳转到 404 页面并传递错误信息
+    if (to.path !== '/exception/404') {
+      logger.warn('[Router] 路由未找到，跳转到 404 页面:', to.fullPath)
+      // 获取当前 traceId
+      const { getCurrentTraceId } = await import('@/utils/traceId')
+      const traceId = getCurrentTraceId()
+      next({
+        path: '/exception/404',
+        query: {
+          from: from.fullPath || from.path || document.referrer || undefined,
+          path: to.fullPath || to.path,
+          message: `路由未找到: ${to.fullPath}`,
+          traceId: traceId || undefined,
+        },
         replace: true,
       })
       return

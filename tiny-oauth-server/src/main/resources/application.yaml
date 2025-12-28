@@ -2,6 +2,30 @@ DEBUGworkflow:
   engine: camunda # 或 flowable, activiti
 server:
   port: 9000
+  error:
+    # 禁用 Spring Boot 默认的错误页面，使用 problem-spring-web 的 Problem 格式
+    whitelabel:
+      enabled: false
+    # 是否包含异常堆栈信息（开发环境显示，生产环境隐藏）
+    include-stacktrace: on-param
+    # 是否包含异常消息
+    include-message: always
+    # 是否包含异常详情
+    include-binding-errors: always
+spring:
+  problem:
+    # Problem 类型基础 URI（RFC 7807）
+    # 注意：建议在不同环境的配置文件中覆盖此值：
+    #   - 开发环境：http://localhost:9000/problems
+    #   - 生产环境：https://your-domain.com/problems
+    type: "https://example.org/problems"
+  mvc:
+    # 当找不到处理器时抛出异常，而不是返回 404 页面
+    throw-exception-if-no-handler-found: true
+  web:
+    resources:
+      # 禁用静态资源映射，避免与 API 路由冲突
+      add-mappings: false
   servlet:
     session:
       cookie:
@@ -9,7 +33,6 @@ server:
         http-only: true # HttpOnly：防止 XSS 攻击，JavaScript 无法访问 Cookie
         secure: false # Secure：开发环境使用 HTTP，设为 false；生产环境在 application-prod.yaml 中设为 true
         same-site: Lax # SameSite：Lax 允许从外部链接跳转时携带 Cookie，Strict 更严格但可能影响用户体验
-spring:
   application:
     name: oauth-server
   # JMX 配置：禁用 JMX 以避免 RMI 连接时的 InstanceNotFoundException
@@ -86,10 +109,12 @@ spring:
 
     hibernate:
       ddl-auto: update # JPA 自动建表策略，update为自动更新表结构,生产环境建议改为 none
-    show-sql: true # 是否显示SQL语句，开发时建议开启
+    show-sql: false # 是否显示SQL语句，开发时建议开启
     properties:
       hibernate:
-        format_sql: true
+        show_sql: false
+        format_sql: false
+        use_sql_comments: false
         jdbc:
           time_zone: Asia/Shanghai
           batch_size: 50

@@ -243,15 +243,16 @@
     </div>
     <!-- 抽屉表单，编辑/新建角色 -->
     <a-drawer
+      v-if="drawerVisible"
       v-model:open="drawerVisible"
       :title="drawerMode === 'create' ? '新建角色' : '编辑角色'"
       width="50%"
       :get-container="false"
       :style="{ position: 'absolute' }"
+      :destroy-on-close="true"
       @close="handleDrawerClose"
     >
       <RoleForm
-        v-if="drawerVisible"
         :mode="drawerMode"
         :role-data="currentRole"
         @submit="handleFormSubmit"
@@ -506,7 +507,9 @@ function handleBatchDelete() {
           loadData()
         })
         .catch((error: any) => {
-          message.error('批量删除失败: ' + (error.message || '未知错误'))
+          // 优先使用 Problem 格式的 detail，否则使用 error.message
+            const errorMessage = (error as any)?.errorInfo?.message || error?.message || '未知错误'
+            message.error('批量删除失败: ' + errorMessage)
           return Promise.reject(error);
         })
     }

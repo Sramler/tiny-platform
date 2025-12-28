@@ -1,153 +1,187 @@
 <template>
-  <a-modal
-    v-model:open="visible"
-    :title="dictItem ? '编辑字典项' : '新建字典项'"
-    :width="600"
-    @ok="handleSubmit"
-    @cancel="handleCancel"
+  <a-form
+    ref="formRef"
+    :model="formData"
+    :rules="rules"
+    :label-col="{ span: 6 }"
+    :wrapper-col="{ span: 18 }"
   >
-    <a-form :model="form" :label-col="{ span: 6 }" :wrapper-col="{ span: 18 }">
-      <a-form-item
-        v-if="!dictItem"
-        label="字典编码"
-        name="dictCode"
-        :rules="[{ required: true, message: '请输入字典编码' }]"
+    <a-form-item label="字典类型" name="dictTypeId">
+      <a-select
+        v-model:value="formData.dictTypeId"
+        placeholder="请选择字典类型"
+        :disabled="!!formData.id || !!dictTypeId"
+        style="width: 100%"
       >
-        <a-input v-model:value="form.dictCode" :value="dictCode" disabled />
-      </a-form-item>
+        <a-select-option v-for="type in dictTypeOptions" :key="type.id" :value="type.id">
+          {{ type.dictName }} ({{ type.dictCode }})
+        </a-select-option>
+      </a-select>
+    </a-form-item>
 
-      <a-form-item
-        v-if="!dictItem"
-        label="字典值"
-        name="value"
-        :rules="[
-          { required: true, message: '请输入字典值' },
-          { pattern: /^[A-Z0-9_]{1,64}$/, message: '字典值必须符合规范：大写字母、数字、下划线，1-64字符' },
-        ]"
-      >
-        <a-input v-model:value="form.value" placeholder="如：MALE, FEMALE, PENDING" />
-      </a-form-item>
+    <a-form-item label="字典值" name="value">
+      <a-input
+        v-model:value="formData.value"
+        placeholder="请输入字典值，如：MALE, FEMALE, PENDING, PAID"
+        :disabled="!!formData.id"
+        maxlength="64"
+        show-count
+      />
+    </a-form-item>
 
-      <a-form-item
-        v-else
-        label="字典值"
-      >
-        <a-input :value="dictItem.value" disabled />
-      </a-form-item>
+    <a-form-item label="字典标签" name="label">
+      <a-input
+        v-model:value="formData.label"
+        placeholder="请输入字典标签，如：男, 女, 待支付, 已支付"
+        maxlength="128"
+        show-count
+      />
+    </a-form-item>
 
-      <a-form-item
-        label="字典标签"
-        name="label"
-        :rules="[
-          { required: true, message: '请输入字典标签' },
-          { max: 128, message: '字典标签长度不能超过128字符' },
-        ]"
-      >
-        <a-input v-model:value="form.label" placeholder="如：男, 女, 待支付" />
-      </a-form-item>
+    <a-form-item label="字典项描述" name="description">
+      <a-textarea
+        v-model:value="formData.description"
+        placeholder="请输入字典项描述"
+        :rows="3"
+        maxlength="255"
+        show-count
+      />
+    </a-form-item>
 
-      <a-form-item label="描述" name="description">
-        <a-textarea
-          v-model:value="form.description"
-          placeholder="请输入字典项描述"
-          :rows="3"
-        />
-      </a-form-item>
+    <a-form-item label="租户ID" name="tenantId">
+      <a-input-number
+        v-model:value="formData.tenantId"
+        :min="0"
+        placeholder="0表示平台字典项，>0表示租户自定义字典项"
+        style="width: 100%"
+      />
+    </a-form-item>
 
-      <a-form-item label="排序" name="sortOrder">
-        <a-input-number v-model:value="form.sortOrder" :min="0" placeholder="排序顺序" />
-      </a-form-item>
+    <a-form-item label="排序顺序" name="sortOrder">
+      <a-input-number
+        v-model:value="formData.sortOrder"
+        :min="0"
+        :max="9999"
+        placeholder="数字越小越靠前"
+        style="width: 100%"
+      />
+    </a-form-item>
 
-      <a-form-item label="启用状态" name="enabled">
-        <a-switch v-model:checked="form.enabled" />
-      </a-form-item>
-    </a-form>
-  </a-modal>
+    <a-form-item label="是否启用" name="enabled">
+      <a-switch v-model:checked="formData.enabled" />
+    </a-form-item>
+  </a-form>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
-import { message } from 'ant-design-vue';
-import type { DictItemDTO, DictItemCreateDTO, DictItemUpdateDTO } from '@/api/dict';
-import { useDict } from '@/composables/useDict';
+import { ref, reactive, watch, onMounted } from 'vue'
+import type { FormInstance } from 'ant-design-vue'
+import type { DictItem, DictItemCreateUpdateDto, DictTypeItem } from '@/api/dict'
+import { getDictTypesByTenant } from '@/api/dict'
 
 const props = defineProps<{
-  open: boolean;
-  dictItem?: DictItemDTO | null;
-  dictCode?: string;
-}>();
+  formData?: DictItem | null
+  dictTypeId?: number
+}>()
 
-const emit = defineEmits<{
-  (e: 'update:open', value: boolean): void;
-  (e: 'success'): void;
-}>();
+const formRef = ref<FormInstance>()
 
-const visible = ref(false);
-const form = ref<DictItemCreateDTO | DictItemUpdateDTO>({
-  dictCode: '',
+const formData = reactive<DictItemCreateUpdateDto>({
+  dictTypeId: 0,
   value: '',
   label: '',
   description: '',
+  tenantId: 0,
   sortOrder: 0,
   enabled: true,
-});
+})
 
-// 假设从某个地方获取租户ID
-const tenantId = 1; // TODO: 从用户上下文获取
-const { createItem, updateItem } = useDict(tenantId);
+const dictTypeOptions = ref<DictTypeItem[]>([])
 
-watch(
-  () => props.open,
-  (val) => {
-    visible.value = val;
-    if (val) {
-      if (props.dictItem) {
-        // 编辑模式
-        form.value = {
-          label: props.dictItem.label,
-          description: props.dictItem.description || '',
-          sortOrder: props.dictItem.sortOrder || 0,
-          enabled: props.dictItem.enabled,
-        } as DictItemUpdateDTO;
-      } else {
-        // 新建模式
-        form.value = {
-          dictCode: props.dictCode || '',
-          value: '',
-          label: '',
-          description: '',
-          sortOrder: 0,
-          enabled: true,
-        };
-      }
-    }
-  }
-);
+const rules = {
+  dictTypeId: [
+    { required: true, message: '请选择字典类型', trigger: 'change' },
+  ],
+  value: [
+    { required: true, message: '请输入字典值', trigger: 'blur' },
+  ],
+  label: [
+    { required: true, message: '请输入字典标签', trigger: 'blur' },
+  ],
+  sortOrder: [
+    { type: 'number', min: 0, max: 9999, message: '排序顺序必须在0-9999之间', trigger: 'blur' },
+  ],
+}
 
-watch(visible, (val) => {
-  emit('update:open', val);
-});
-
-const handleSubmit = async () => {
+// 加载字典类型选项
+async function loadDictTypeOptions() {
   try {
-    if (props.dictItem) {
-      // 更新
-      await updateItem(props.dictItem.id!, form.value as DictItemUpdateDTO);
-      message.success('更新成功');
-    } else {
-      // 创建
-      await createItem(form.value as DictItemCreateDTO);
-      message.success('创建成功');
-    }
-    emit('success');
-    visible.value = false;
-  } catch (error: any) {
-    message.error(error.message || '操作失败');
+    const result = await getDictTypesByTenant(0)
+    dictTypeOptions.value = result
+  } catch (error) {
+    console.error('加载字典类型选项失败:', error)
   }
-};
+}
 
-const handleCancel = () => {
-  visible.value = false;
-};
+// 监听 props 变化，更新表单数据
+watch(
+  () => props.formData,
+  (newVal) => {
+    if (newVal) {
+      Object.assign(formData, {
+        id: newVal.id,
+        dictTypeId: newVal.dictTypeId || props.dictTypeId || 0,
+        value: newVal.value || '',
+        label: newVal.label || '',
+        description: newVal.description || '',
+        tenantId: newVal.tenantId ?? 0,
+        sortOrder: newVal.sortOrder ?? 0,
+        enabled: newVal.enabled ?? true,
+      })
+    } else {
+      Object.assign(formData, {
+        id: undefined,
+        dictTypeId: props.dictTypeId || 0,
+        value: '',
+        label: '',
+        description: '',
+        tenantId: 0,
+        sortOrder: 0,
+        enabled: true,
+      })
+    }
+  },
+  { immediate: true, deep: true }
+)
+
+// 监听 dictTypeId 变化
+watch(
+  () => props.dictTypeId,
+  (newVal) => {
+    if (newVal && !formData.id) {
+      formData.dictTypeId = newVal
+    }
+  },
+  { immediate: true }
+)
+
+// 验证表单
+async function validate() {
+  await formRef.value?.validate()
+}
+
+// 获取表单数据
+function getFormData(): DictItemCreateUpdateDto {
+  return { ...formData }
+}
+
+onMounted(() => {
+  loadDictTypeOptions()
+})
+
+defineExpose({
+  validate,
+  getFormData,
+})
 </script>
 

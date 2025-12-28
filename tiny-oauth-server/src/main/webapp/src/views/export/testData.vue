@@ -23,112 +23,202 @@
         </a-form>
       </div>
 
-      <div class="toolbar-container">
-        <div class="table-title">
-          导出测试数据（demo_export_usage）
-        </div>
-        <div class="table-actions">
-          <a-button type="link" @click="openCreateDrawer" class="toolbar-btn">
-            <template #icon>
-              <PlusOutlined />
-            </template>
-            新建
-          </a-button>
-          <a-button type="primary" @click="openGenerateDrawer" class="toolbar-btn">
-            生成测试数据
-          </a-button>
-          <a-button danger @click="handleClearDemo" class="toolbar-btn">
-            清空测试数据
-          </a-button>
-          <a-tooltip title="刷新">
-            <span class="action-icon" @click="throttledRefresh">
-              <ReloadOutlined :spin="refreshing" />
-            </span>
-          </a-tooltip>
-          <a-tooltip :title="showSortTooltip ? '关闭排序提示' : '开启排序提示'">
-            <PoweroffOutlined :class="['action-icon', { active: showSortTooltip }]"
-              @click="showSortTooltip = !showSortTooltip" />
-          </a-tooltip>
-          <a-tooltip :title="zebraStripeEnabled ? '关闭斑马纹' : '开启斑马纹'">
-            <div class="zebra-stripe-switch">
-              <a-switch v-model:checked="zebraStripeEnabled" size="small" />
-            </div>
-          </a-tooltip>
-          <a-tooltip :title="cellCopyEnabled ? '关闭单元格复制' : '开启单元格复制'">
-            <CopyOutlined :class="['action-icon', { active: cellCopyEnabled }]"
-              @click="cellCopyEnabled = !cellCopyEnabled" />
-          </a-tooltip>
-          <a-dropdown placement="bottomRight" trigger="click">
-            <a-tooltip title="表格密度">
-              <ColumnHeightOutlined class="action-icon" />
-            </a-tooltip>
-            <template #overlay>
-              <a-menu @click="handleDensityMenuClick" :selected-keys="[tableSize]">
-                <a-menu-item key="default">
-                  <span>默认</span>
-                </a-menu-item>
-                <a-menu-item key="middle">
-                  <span>中等</span>
-                </a-menu-item>
-                <a-menu-item key="small">
-                  <span>紧凑</span>
-                </a-menu-item>
-              </a-menu>
-            </template>
-          </a-dropdown>
-          <a-popover placement="bottomRight" trigger="click" :destroyTooltipOnHide="false">
-            <template #content>
-              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-                <div style="display: flex; align-items: center;">
-                  <a-checkbox :checked="showColumnKeys.length === allColumns.length"
-                    :indeterminate="showColumnKeys.length > 0 && showColumnKeys.length < allColumns.length"
-                    @change="onCheckAllChange" />
-                  <span style="font-weight: bold; margin-left: 8px;">列展示/排序</span>
-                </div>
-                <span style="font-weight: bold; color: #1677ff; cursor: pointer;" @click="resetColumnOrder">
-                  重置
-                </span>
-              </div>
-              <VueDraggable v-model="draggableColumns"
-                :item-key="(item: any) => item?.dataIndex || `col_${Math.random()}`" handle=".drag-handle"
-                @end="onDragEnd" class="draggable-columns" ghost-class="sortable-ghost" chosen-class="sortable-chosen"
-                tag="div">
-                <template #item="{ element: col }">
-                  <div class="draggable-column-item">
-                    <HolderOutlined class="drag-handle" />
-                    <a-checkbox :checked="showColumnKeys.includes(col.dataIndex)"
-                      @change="(e: any) => onCheckboxChange(col.dataIndex, e.target.checked)">
-                      {{ col.title }}
-                    </a-checkbox>
-                  </div>
-                </template>
-              </VueDraggable>
-            </template>
-            <a-tooltip title="列设置">
-              <SettingOutlined class="action-icon" />
-            </a-tooltip>
-          </a-popover>
-        </div>
-      </div>
-
       <div class="table-container" ref="tableContentRef">
+        <!-- 工具栏固定在顶部，不随表格滚动 -->
+        <div class="toolbar-container">
+          <div class="table-title">
+            导出测试数据（demo_export_usage）
+          </div>
+          <div class="table-actions">
+            <a-button type="link" @click="openCreateDrawer" class="toolbar-btn">
+              <template #icon>
+                <PlusOutlined />
+              </template>
+              新建
+            </a-button>
+            <a-button type="primary" @click="openGenerateDrawer" class="toolbar-btn">
+              生成测试数据
+            </a-button>
+            <a-button danger @click="handleClearDemo" class="toolbar-btn">
+              清空测试数据
+            </a-button>
+            <a-tooltip title="刷新">
+              <span class="action-icon" @click="throttledRefresh">
+                <ReloadOutlined :spin="refreshing" />
+              </span>
+            </a-tooltip>
+            <a-tooltip :title="showSortTooltip ? '关闭排序提示' : '开启排序提示'">
+              <PoweroffOutlined :class="['action-icon', { active: showSortTooltip }]"
+                @click="showSortTooltip = !showSortTooltip" />
+            </a-tooltip>
+            <a-tooltip :title="zebraStripeEnabled ? '关闭斑马纹' : '开启斑马纹'">
+              <div class="zebra-stripe-switch">
+                <a-switch v-model:checked="zebraStripeEnabled" size="small" />
+              </div>
+            </a-tooltip>
+            <a-tooltip :title="cellCopyEnabled ? '关闭单元格复制' : '开启单元格复制'">
+              <CopyOutlined :class="['action-icon', { active: cellCopyEnabled }]"
+                @click="cellCopyEnabled = !cellCopyEnabled" />
+            </a-tooltip>
+            <a-dropdown placement="bottomRight" trigger="click">
+              <a-tooltip title="表格密度">
+                <ColumnHeightOutlined class="action-icon" />
+              </a-tooltip>
+              <template #overlay>
+                <a-menu @click="handleDensityMenuClick" :selected-keys="[tableSize]">
+                  <a-menu-item key="default">
+                    <span>标准</span>
+                  </a-menu-item>
+                  <a-menu-item key="middle">
+                    <span>中等</span>
+                  </a-menu-item>
+                  <a-menu-item key="small">
+                    <span>紧凑</span>
+                  </a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
+            <a-popover placement="bottomRight" trigger="click" :destroyTooltipOnHide="false">
+              <template #content>
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                  <div style="display: flex; align-items: center;">
+                    <a-checkbox
+                      :checked="showColumnKeys && showColumnKeys.length > 0 && allColumns && allColumns.length > 0 && showColumnKeys.length === allColumns.length"
+                      :indeterminate="showColumnKeys && showColumnKeys.length > 0 && allColumns && allColumns.length > 0 && showColumnKeys.length < allColumns.length"
+                      @change="onCheckAllChange" />
+                    <span style="font-weight: bold; margin-left: 8px;">列展示/排序</span>
+                  </div>
+                  <span style="font-weight: bold; color: #1677ff; cursor: pointer;" @click="resetColumnOrder">
+                    重置
+                  </span>
+                </div>
+                <VueDraggable v-if="draggableColumns && Array.isArray(draggableColumns) && draggableColumns.length > 0"
+                  v-model="draggableColumns" :item-key="(item: any) => item?.dataIndex || `col_${Math.random()}`"
+                  handle=".drag-handle" @end="onDragEnd" class="draggable-columns" ghost-class="sortable-ghost"
+                  chosen-class="sortable-chosen" tag="div">
+                  <template #item="{ element: col }">
+                    <div v-if="col && col.dataIndex" class="draggable-column-item">
+                      <HolderOutlined class="drag-handle" />
+                      <a-checkbox
+                        :checked="showColumnKeys && Array.isArray(showColumnKeys) && showColumnKeys.includes(col.dataIndex)"
+                        @change="(e: any) => {
+                          if (e && e.target && col && col.dataIndex) {
+                            onCheckboxChange(col.dataIndex, e.target.checked)
+                          }
+                        }">
+                        {{ col.title }}
+                      </a-checkbox>
+                    </div>
+                  </template>
+                </VueDraggable>
+                <div v-else style="padding: 16px; text-align: center; color: #999;">
+                  暂无列数据
+                </div>
+              </template>
+              <a-tooltip title="列设置">
+                <SettingOutlined class="action-icon" />
+              </a-tooltip>
+            </a-popover>
+          </div>
+        </div>
+
         <div class="table-scroll-container">
           <a-table :columns="columns" :data-source="tableData" :pagination="false"
             :row-key="(record: any) => String(record.id)" bordered :loading="loading"
-            :scroll="{ x: 1500, y: tableBodyHeight }" :locale="tableLocale" :show-sorter-tooltip="showSortTooltip"
-            :row-class-name="getRowClassName" :size="tableSize === 'default' ? undefined : tableSize">
+            :scroll="{ x: tableScrollX, y: tableBodyHeight }" :locale="tableLocale"
+            :show-sorter-tooltip="showSortTooltip" :row-class-name="getRowClassName"
+            :size="tableSize === 'default' ? undefined : tableSize">
             <template #bodyCell="{ column, record }">
-              <template v-if="column.dataIndex === 'status'">
+              <template v-if="column && column.dataIndex === 'status'">
                 <a-tag :color="statusColorMap[record.status] || 'default'">
                   {{ record.status }}
                 </a-tag>
               </template>
-              <template v-else-if="column.dataIndex === 'billable'">
+              <template v-else-if="column && column.dataIndex === 'billable'">
                 <a-tag :color="record.billable ? 'green' : 'red'">
                   {{ record.billable ? '是' : '否' }}
                 </a-tag>
               </template>
-              <template v-else-if="column.dataIndex === 'action'">
+              <template v-else-if="column && column.dataIndex === 'priority'">
+                <a-tag :color="getPriorityColor(record.priority)">
+                  {{ getPriorityText(record.priority) }}
+                </a-tag>
+              </template>
+              <template v-else-if="column && column.dataIndex === 'tags'">
+                <a-space v-if="record.tags && Array.isArray(record.tags) && record.tags.length > 0" size="small">
+                  <a-tag v-for="(tag, idx) in record.tags" :key="idx" color="blue">{{ tag }}</a-tag>
+                </a-space>
+                <span v-else-if="record.tags && typeof record.tags === 'string'">
+                  <a-space size="small">
+                    <a-tag v-for="(tag, idx) in JSON.parse(record.tags)" :key="idx" color="blue">{{ tag }}</a-tag>
+                  </a-space>
+                </span>
+                <span v-else>-</span>
+              </template>
+              <template v-else-if="column && column.dataIndex === 'qualityScore'">
+                <div class="quality-score-cell">
+                  <a-rate :value="record.qualityScore || 0" disabled :count="5" />
+                </div>
+              </template>
+              <template v-else-if="column && column.dataIndex === 'discountPercentage'">
+                <span>{{ record.discountPercentage ?? 0 }}%</span>
+              </template>
+              <template v-else-if="column && column.dataIndex === 'categoryPath'">
+                {{ formatCategoryPath(record.categoryPath) }}
+              </template>
+              <template v-else-if="column && column.dataIndex === 'themeColor'">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <div
+                    :style="{ width: '20px', height: '20px', backgroundColor: record.themeColor || '#1890ff', border: '1px solid #d9d9d9', borderRadius: '4px' }">
+                  </div>
+                  <span>{{ record.themeColor || '-' }}</span>
+                </div>
+              </template>
+              <template v-else-if="column && column.dataIndex === 'apiKey'">
+                <span v-if="record.apiKey">{{ record.apiKey.substring(0, 8) }}***</span>
+                <span v-else>-</span>
+              </template>
+              <template v-else-if="column && column.dataIndex === 'selectedFeatures'">
+                <a-space
+                  v-if="record.selectedFeatures && Array.isArray(record.selectedFeatures) && record.selectedFeatures.length > 0"
+                  size="small">
+                  <a-tag v-for="(feature, idx) in record.selectedFeatures" :key="idx" color="green">{{ feature
+                  }}</a-tag>
+                </a-space>
+                <span v-else-if="record.selectedFeatures && typeof record.selectedFeatures === 'string'">
+                  <a-space size="small">
+                    <a-tag v-for="(feature, idx) in JSON.parse(record.selectedFeatures)" :key="idx" color="green">{{
+                      feature }}</a-tag>
+                  </a-space>
+                </span>
+                <span v-else>-</span>
+              </template>
+              <template v-else-if="column && column.dataIndex === 'paymentMethod'">
+                <a-tag :color="getPaymentMethodColor(record.paymentMethod)">
+                  {{ getPaymentMethodText(record.paymentMethod) }}
+                </a-tag>
+              </template>
+              <template v-else-if="column && column.dataIndex === 'attachmentInfo'">
+                <span
+                  v-if="record.attachmentInfo && Array.isArray(record.attachmentInfo) && record.attachmentInfo.length > 0">
+                  {{ record.attachmentInfo.length }} 个文件
+                </span>
+                <span v-else-if="record.attachmentInfo && typeof record.attachmentInfo === 'string'">
+                  {{ JSON.parse(record.attachmentInfo).length }} 个文件
+                </span>
+                <span v-else>-</span>
+              </template>
+              <template v-else-if="column && (column.dataIndex === 'description' || column.dataIndex === 'notes')">
+                <a-tooltip v-if="record[column.dataIndex]">
+                  <template #title>{{ record[column.dataIndex] }}</template>
+                  <span
+                    style="display: block; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                    {{ record[column.dataIndex] }}
+                  </span>
+                </a-tooltip>
+                <span v-else>-</span>
+              </template>
+              <template v-else-if="column && column.dataIndex === 'action'">
                 <div class="action-buttons">
                   <a-button type="link" size="small" @click.stop="openEditDrawer(record)" class="action-btn">
                     <template #icon>
@@ -142,6 +232,12 @@
                     </template>
                     删除
                   </a-button>
+                  <a-button type="link" size="small" @click.stop="throttledView(record)" class="action-btn">
+                    <template #icon>
+                      <EyeOutlined />
+                    </template>
+                    查看
+                  </a-button>
                 </div>
               </template>
               <template v-else>
@@ -152,7 +248,7 @@
                   <CopyOutlined class="cell-copy-icon"
                     @click.stop="handleCellCopy(record[column.dataIndex as string], (column.title as string) || '')" />
                 </template>
-                <span v-else-if="column.dataIndex">{{ record[column.dataIndex as string] }}</span>
+                <span v-else-if="column && column.dataIndex">{{ record[column.dataIndex as string] }}</span>
                 <span v-else>-</span>
               </template>
             </template>
@@ -183,60 +279,195 @@
       </div>
     </div>
 
-    <a-drawer v-model:open="drawerVisible" :title="drawerMode === 'create' ? '新建测试数据' : '编辑测试数据'" width="50%"
+    <a-drawer v-model:open="drawerVisible"
+      :title="drawerMode === 'create' ? '新建测试数据' : drawerMode === 'edit' ? '编辑测试数据' : '查看测试数据'" width="50%"
       :get-container="false" :style="{ position: 'absolute' }" @close="handleDrawerClose">
       <a-form :model="formState" layout="vertical">
         <a-form-item label="租户编码">
-          <a-input v-model:value="formState.tenantCode" />
+          <a-input v-model:value="formState.tenantCode" :disabled="drawerMode === 'view'" />
         </a-form-item>
         <a-form-item label="用量日期">
-          <a-date-picker v-model:value="formState.usageDate" style="width: 100%" />
+          <a-date-picker v-model:value="formState.usageDate" style="width: 100%" :disabled="drawerMode === 'view'" />
         </a-form-item>
         <a-form-item label="产品编码">
-          <a-input v-model:value="formState.productCode" />
+          <a-input v-model:value="formState.productCode" :disabled="drawerMode === 'view'" />
         </a-form-item>
         <a-form-item label="产品名称">
-          <a-input v-model:value="formState.productName" />
+          <a-input v-model:value="formState.productName" :disabled="drawerMode === 'view'" />
         </a-form-item>
         <a-form-item label="套餐档位">
-          <a-input v-model:value="formState.planTier" />
+          <a-input v-model:value="formState.planTier" :disabled="drawerMode === 'view'" />
         </a-form-item>
         <a-form-item label="区域">
-          <a-input v-model:value="formState.region" />
+          <a-input v-model:value="formState.region" :disabled="drawerMode === 'view'" />
         </a-form-item>
         <a-form-item label="用量数量">
-          <a-input-number v-model:value="formState.usageQty" :min="0" style="width: 100%" />
+          <a-input-number v-model:value="formState.usageQty" :min="0" style="width: 100%"
+            :disabled="drawerMode === 'view'" />
         </a-form-item>
         <a-form-item label="单位">
-          <a-input v-model:value="formState.unit" />
+          <a-input v-model:value="formState.unit" :disabled="drawerMode === 'view'" />
         </a-form-item>
         <a-form-item label="单价">
-          <a-input-number v-model:value="formState.unitPrice" :min="0" style="width: 100%" />
+          <a-input-number v-model:value="formState.unitPrice" :min="0" style="width: 100%"
+            :disabled="drawerMode === 'view'" />
         </a-form-item>
         <a-form-item label="金额">
-          <a-input-number v-model:value="formState.amount" :min="0" style="width: 100%" />
+          <a-input-number v-model:value="formState.amount" :min="0" style="width: 100%"
+            :disabled="drawerMode === 'view'" />
         </a-form-item>
         <a-form-item label="币种">
-          <a-input v-model:value="formState.currency" />
+          <a-input v-model:value="formState.currency" :disabled="drawerMode === 'view'" />
         </a-form-item>
         <a-form-item label="税率">
-          <a-input-number v-model:value="formState.taxRate" :min="0" :max="1" :step="0.0001" style="width: 100%" />
+          <a-input-number v-model:value="formState.taxRate" :min="0" :max="1" :step="0.0001" style="width: 100%"
+            :disabled="drawerMode === 'view'" />
         </a-form-item>
         <a-form-item label="是否计费">
-          <a-switch v-model:checked="formState.billable" />
+          <a-switch v-model:checked="formState.billable" :disabled="drawerMode === 'view'" />
         </a-form-item>
         <a-form-item label="状态">
-          <a-select v-model:value="formState.status">
+          <a-select v-model:value="formState.status" :disabled="drawerMode === 'view'">
             <a-select-option value="UNBILLED">UNBILLED</a-select-option>
             <a-select-option value="BILLED">BILLED</a-select-option>
             <a-select-option value="ADJUSTED">ADJUSTED</a-select-option>
           </a-select>
         </a-form-item>
+
+        <a-divider>扩展字段（表单组件示例）</a-divider>
+
+        <a-form-item label="描述信息（TextArea）">
+          <a-textarea v-model:value="formState.description" :rows="3" :disabled="drawerMode === 'view'"
+            placeholder="请输入描述信息" />
+        </a-form-item>
+
+        <a-form-item label="优先级（Radio）">
+          <a-radio-group v-model:value="formState.priority" :disabled="drawerMode === 'view'">
+            <a-radio value="LOW">低</a-radio>
+            <a-radio value="MEDIUM">中</a-radio>
+            <a-radio value="HIGH">高</a-radio>
+            <a-radio value="URGENT">紧急</a-radio>
+          </a-radio-group>
+        </a-form-item>
+
+        <a-form-item label="标签（Checkbox）">
+          <a-checkbox-group v-model:value="formState.tags" :disabled="drawerMode === 'view'">
+            <a-checkbox value="重要">重要</a-checkbox>
+            <a-checkbox value="VIP">VIP</a-checkbox>
+            <a-checkbox value="测试">测试</a-checkbox>
+            <a-checkbox value="生产">生产</a-checkbox>
+          </a-checkbox-group>
+        </a-form-item>
+
+        <a-form-item label="使用时间（TimePicker）">
+          <a-time-picker v-model:value="formState.usageTime" style="width: 100%" :disabled="drawerMode === 'view'"
+            format="HH:mm:ss" />
+        </a-form-item>
+
+        <a-form-item label="质量评分（Rate）">
+          <a-rate v-model:value="formState.qualityScore" :disabled="drawerMode === 'view'" />
+        </a-form-item>
+
+        <a-form-item label="折扣百分比（Slider）">
+          <a-slider v-model:value="formState.discountPercentage" :min="0" :max="100"
+            :disabled="drawerMode === 'view'" />
+          <span style="margin-left: 8px">{{ formState.discountPercentage }}%</span>
+        </a-form-item>
+
+        <a-form-item label="分类路径（Cascader）">
+          <a-cascader v-model:value="formState.categoryPath" :options="cascaderOptions"
+            :disabled="drawerMode === 'view'" placeholder="请选择分类路径" style="width: 100%" />
+        </a-form-item>
+
+        <a-form-item label="部门（TreeSelect）">
+          <a-tree-select v-model:value="formState.departmentId" :tree-data="departmentTreeData"
+            :disabled="drawerMode === 'view'" placeholder="请选择部门" allow-clear style="width: 100%" />
+        </a-form-item>
+
+        <a-form-item label="客户名称（AutoComplete）">
+          <a-auto-complete v-model:value="formState.customerName" :options="customerOptions"
+            :disabled="drawerMode === 'view'" placeholder="请输入客户名称" style="width: 100%" />
+        </a-form-item>
+
+        <a-form-item label="主题颜色（ColorPicker）">
+          <a-input v-model:value="formState.themeColor" :disabled="drawerMode === 'view'" placeholder="#1890ff">
+            <template #prefix>
+              <div
+                :style="{ width: '20px', height: '20px', backgroundColor: formState.themeColor, border: '1px solid #d9d9d9', borderRadius: '4px' }">
+              </div>
+            </template>
+          </a-input>
+        </a-form-item>
+
+        <a-form-item label="API密钥（Input.Password）">
+          <a-input-password v-model:value="formState.apiKey" :disabled="drawerMode === 'view'" placeholder="请输入API密钥" />
+        </a-form-item>
+
+        <a-form-item label="搜索关键词（Input.Search）">
+          <a-input-search v-model:value="formState.searchKeyword" :disabled="drawerMode === 'view'"
+            placeholder="请输入搜索关键词" @search="handleSearchKeyword" />
+        </a-form-item>
+
+        <a-form-item label="日期范围（RangePicker）">
+          <a-range-picker v-model:value="formState.dateRange" style="width: 100%" :disabled="drawerMode === 'view'" />
+        </a-form-item>
+
+        <a-form-item label="选中功能（Select Multiple）">
+          <a-select v-model:value="formState.selectedFeatures" mode="multiple" :disabled="drawerMode === 'view'"
+            placeholder="请选择功能" style="width: 100%">
+            <a-select-option value="feature1">功能1</a-select-option>
+            <a-select-option value="feature2">功能2</a-select-option>
+            <a-select-option value="feature3">功能3</a-select-option>
+            <a-select-option value="feature4">功能4</a-select-option>
+          </a-select>
+        </a-form-item>
+
+        <a-form-item label="数值范围">
+          <a-space>
+            <a-input-number v-model:value="formState.minValue" :min="0" placeholder="最小值"
+              :disabled="drawerMode === 'view'" />
+            <span>~</span>
+            <a-input-number v-model:value="formState.maxValue" :min="0" placeholder="最大值"
+              :disabled="drawerMode === 'view'" />
+          </a-space>
+        </a-form-item>
+
+        <a-form-item label="时间范围">
+          <a-range-picker v-model:value="formState.timeRange" picker="time" style="width: 100%"
+            :disabled="drawerMode === 'view'" />
+        </a-form-item>
+
+        <a-form-item label="支付方式（Radio.Group）">
+          <a-radio-group v-model:value="formState.paymentMethod" :disabled="drawerMode === 'view'">
+            <a-radio value="ALIPAY">支付宝</a-radio>
+            <a-radio value="WECHAT">微信支付</a-radio>
+            <a-radio value="CREDIT_CARD">信用卡</a-radio>
+            <a-radio value="BANK_TRANSFER">银行转账</a-radio>
+          </a-radio-group>
+        </a-form-item>
+
+        <a-form-item label="备注（TextArea）">
+          <a-textarea v-model:value="formState.notes" :rows="4" :disabled="drawerMode === 'view'"
+            placeholder="请输入备注信息" />
+        </a-form-item>
+
+        <a-form-item label="附件（Upload）">
+          <a-upload v-model:file-list="formState.attachmentInfo" :disabled="drawerMode === 'view'"
+            :before-upload="beforeUpload" @remove="handleRemoveFile">
+            <a-button>
+              <template #icon>
+                <UploadOutlined />
+              </template>
+              上传文件
+            </a-button>
+          </a-upload>
+        </a-form-item>
       </a-form>
       <template #footer>
         <div style="text-align: right;">
-          <a-button style="margin-right: 8px" @click="handleDrawerClose">取消</a-button>
-          <a-button type="primary" @click="handleSubmit">保存</a-button>
+          <a-button style="margin-right: 8px" @click="handleDrawerClose">{{ drawerMode === 'view' ? '关闭' : '取消'
+          }}</a-button>
+          <a-button v-if="drawerMode !== 'view'" type="primary" @click="handleSubmit">保存</a-button>
         </div>
       </template>
     </a-drawer>
@@ -289,7 +520,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, PoweroffOutlined, SettingOutlined, HolderOutlined, DownloadOutlined, DownOutlined, ColumnHeightOutlined, CopyOutlined } from '@ant-design/icons-vue'
+import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, PoweroffOutlined, SettingOutlined, HolderOutlined, DownloadOutlined, DownOutlined, ColumnHeightOutlined, CopyOutlined, EyeOutlined, UploadOutlined } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
 import dayjs, { Dayjs } from 'dayjs'
 import VueDraggable from 'vuedraggable'
@@ -322,6 +553,27 @@ interface DemoUsageFormState {
   taxRate: number | null
   billable: boolean
   status: string
+  // 新增字段
+  description?: string
+  priority?: string
+  tags?: string[]
+  usageTime?: Dayjs | null
+  qualityScore?: number
+  discountPercentage?: number
+  categoryPath?: string[]
+  departmentId?: number
+  customerName?: string
+  themeColor?: string
+  apiKey?: string
+  searchKeyword?: string
+  dateRange?: [Dayjs | null, Dayjs | null]
+  selectedFeatures?: string[]
+  minValue?: number | null
+  maxValue?: number | null
+  timeRange?: [Dayjs | null, Dayjs | null]
+  paymentMethod?: string
+  notes?: string
+  attachmentInfo?: any[]
 }
 
 const statusColorMap: Record<string, string> = {
@@ -342,7 +594,7 @@ const refreshing = ref(false)
 const showSortTooltip = ref(true)
 const zebraStripeEnabled = ref(true) // 斑马纹开关，默认开启
 const cellCopyEnabled = ref(false) // 单元格复制开关，默认关闭
-const tableSize = ref<'default' | 'small' | 'middle' | 'large'>('default') // 表格密度，default 对应 undefined（组件默认值），middle 对应 'middle'
+const tableSize = ref<'default' | 'small' | 'middle' | 'large'>('middle') // 表格密度，default 对应 undefined（组件默认值），middle 对应 'middle'，默认使用中等密度
 const exporting = ref(false)
 const exportingAsync = ref(false)
 
@@ -378,18 +630,70 @@ const INITIAL_COLUMNS = [
   { title: '币种', dataIndex: 'currency', width: 80 },
   { title: '是否计费', dataIndex: 'billable', width: 100 },
   { title: '状态', dataIndex: 'status', width: 120 },
+  // 新增字段列（默认隐藏，可通过列设置显示）
+  { title: '描述', dataIndex: 'description', width: 200 },
+  { title: '优先级', dataIndex: 'priority', width: 100 },
+  { title: '标签', dataIndex: 'tags', width: 150 },
+  { title: '使用时间', dataIndex: 'usageTime', width: 100 },
+  { title: '质量评分', dataIndex: 'qualityScore', width: 120 },
+  { title: '折扣百分比', dataIndex: 'discountPercentage', width: 120 },
+  { title: '分类路径', dataIndex: 'categoryPath', width: 200 },
+  { title: '部门ID', dataIndex: 'departmentId', width: 100 },
+  { title: '客户名称', dataIndex: 'customerName', width: 150 },
+  { title: '主题颜色', dataIndex: 'themeColor', width: 100 },
+  { title: 'API密钥', dataIndex: 'apiKey', width: 150 },
+  { title: '搜索关键词', dataIndex: 'searchKeyword', width: 150 },
+  { title: '开始日期', dataIndex: 'startDate', width: 120 },
+  { title: '结束日期', dataIndex: 'endDate', width: 120 },
+  { title: '选中功能', dataIndex: 'selectedFeatures', width: 150 },
+  { title: '最小值', dataIndex: 'minValue', width: 100 },
+  { title: '最大值', dataIndex: 'maxValue', width: 100 },
+  { title: '开始时间', dataIndex: 'startTime', width: 100 },
+  { title: '结束时间', dataIndex: 'endTime', width: 100 },
+  { title: '支付方式', dataIndex: 'paymentMethod', width: 120 },
+  { title: '备注', dataIndex: 'notes', width: 200 },
+  { title: '附件信息', dataIndex: 'attachmentInfo', width: 150 },
   { title: '操作', dataIndex: 'action', width: 160, fixed: 'right' },
+]
+
+// 默认显示的列（基础字段 + 部分重要新字段）
+const DEFAULT_VISIBLE_COLUMNS = [
+  'id', 'tenantCode', 'usageDate', 'productCode', 'productName',
+  'usageQty', 'unit', 'amount', 'currency', 'billable', 'status',
+  'priority', 'qualityScore', 'customerName', 'action'
 ]
 
 const allColumns = ref([...INITIAL_COLUMNS])
 const draggableColumns = ref([...INITIAL_COLUMNS])
-const showColumnKeys = ref(INITIAL_COLUMNS.map((c) => c.dataIndex))
+const showColumnKeys = ref(DEFAULT_VISIBLE_COLUMNS.filter((key): key is string => typeof key === 'string'))
 
 const columns = computed(() => {
+  // 安全检查：确保 allColumns.value 和 showColumnKeys.value 存在
+  if (!allColumns.value || !Array.isArray(allColumns.value) || !showColumnKeys.value || !Array.isArray(showColumnKeys.value)) {
+    return []
+  }
+  // 过滤掉无效的列，并确保列在 showColumnKeys 中
   const filtered = allColumns.value.filter(
-    (col) => col && col.dataIndex && showColumnKeys.value.includes(col.dataIndex),
+    (col) => col && col.dataIndex && typeof col.dataIndex === 'string' && showColumnKeys.value.includes(col.dataIndex),
   )
-  return filtered
+  // 确保返回的列都有有效的 dataIndex
+  return filtered.filter((col) => col && col.dataIndex)
+})
+
+// 计算表格横向滚动宽度（所有可见列宽度总和，包含固定列）
+const tableScrollX = computed(() => {
+  // 安全检查：确保 columns.value 存在且为数组
+  if (!columns.value || !Array.isArray(columns.value) || columns.value.length === 0) {
+    return 1500 // 返回默认最小宽度
+  }
+  const totalWidth = columns.value.reduce((sum, col) => {
+    if (!col) return sum
+    return sum + (col.width || 100) // 如果没有设置宽度，默认 100
+  }, 0)
+  // 当显示所有列时，总宽度约为 4480px（11个基础列 + 20个新字段列 + 1个操作列）
+  // 确保 scroll.x 大于等于所有列的总宽度，才能正确触发横向滚动
+  // 添加 100px 缓冲，确保滚动条正常显示
+  return totalWidth + 100
 })
 
 const tableLocale = computed(() => {
@@ -464,7 +768,7 @@ function handlePageSizeChange(_current: number, size: number) {
 }
 
 const drawerVisible = ref(false)
-const drawerMode = ref<'create' | 'edit'>('create')
+const drawerMode = ref<'create' | 'edit' | 'view'>('create')
 const formState = ref<DemoUsageFormState>({
   tenantCode: '',
   usageDate: null,
@@ -480,7 +784,158 @@ const formState = ref<DemoUsageFormState>({
   taxRate: null,
   billable: true,
   status: 'UNBILLED',
+  description: '',
+  priority: 'MEDIUM',
+  tags: [],
+  usageTime: null,
+  qualityScore: 0,
+  discountPercentage: 0,
+  categoryPath: [],
+  departmentId: undefined,
+  customerName: '',
+  themeColor: '#1890ff',
+  apiKey: '',
+  searchKeyword: '',
+  dateRange: [null, null],
+  selectedFeatures: [],
+  minValue: null,
+  maxValue: null,
+  timeRange: [null, null],
+  paymentMethod: 'ALIPAY',
+  notes: '',
+  attachmentInfo: [],
 })
+
+// Cascader 选项数据
+const cascaderOptions = [
+  {
+    value: 'cloud',
+    label: '云服务',
+    children: [
+      {
+        value: 'storage',
+        label: '存储',
+        children: [
+          { value: 'oss', label: '对象存储' },
+          { value: 'nas', label: '文件存储' },
+        ],
+      },
+      {
+        value: 'compute',
+        label: '计算',
+        children: [
+          { value: 'ecs', label: '云服务器' },
+          { value: 'container', label: '容器服务' },
+        ],
+      },
+    ],
+  },
+  {
+    value: 'network',
+    label: '网络',
+    children: [
+      { value: 'cdn', label: 'CDN' },
+      { value: 'vpc', label: 'VPC' },
+    ],
+  },
+]
+
+// 部门树形数据
+const departmentTreeData = [
+  {
+    title: '技术部',
+    value: 1,
+    children: [
+      { title: '前端组', value: 11 },
+      { title: '后端组', value: 12 },
+      { title: '测试组', value: 13 },
+    ],
+  },
+  {
+    title: '产品部',
+    value: 2,
+    children: [
+      { title: '产品组', value: 21 },
+      { title: '设计组', value: 22 },
+    ],
+  },
+  {
+    title: '运营部',
+    value: 3,
+  },
+]
+
+// 客户自动完成选项
+const customerOptions = ref([
+  { value: '阿里巴巴' },
+  { value: '腾讯' },
+  { value: '百度' },
+  { value: '字节跳动' },
+  { value: '美团' },
+])
+
+// 文件上传处理
+function beforeUpload(file: any) {
+  const isLt10M = file.size / 1024 / 1024 < 10
+  if (!isLt10M) {
+    message.error('文件大小不能超过 10MB!')
+    return false
+  }
+  return false // 阻止自动上传，手动处理
+}
+
+function handleRemoveFile(file: any) {
+  const index = formState.value.attachmentInfo?.findIndex((item: any) => item.uid === file.uid)
+  if (index !== undefined && index > -1) {
+    formState.value.attachmentInfo?.splice(index, 1)
+  }
+}
+
+function handleSearchKeyword(value: string) {
+  console.log('搜索关键词:', value)
+}
+
+// 优先级颜色和文本映射
+function getPriorityColor(priority?: string): string {
+  const colorMap: Record<string, string> = {
+    LOW: 'default',
+    MEDIUM: 'blue',
+    HIGH: 'orange',
+    URGENT: 'red',
+  }
+  return colorMap[priority || 'MEDIUM'] || 'default'
+}
+
+function getPriorityText(priority?: string): string {
+  const textMap: Record<string, string> = {
+    LOW: '低',
+    MEDIUM: '中',
+    HIGH: '高',
+    URGENT: '紧急',
+  }
+  return textMap[priority || 'MEDIUM'] || priority || '中'
+}
+
+// 支付方式颜色和文本映射
+function getPaymentMethodColor(method?: string): string {
+  const colorMap: Record<string, string> = {
+    ALIPAY: 'blue',
+    WECHAT: 'green',
+    CREDIT_CARD: 'purple',
+    BANK_TRANSFER: 'orange',
+  }
+  return colorMap[method || 'ALIPAY'] || 'default'
+}
+
+function getPaymentMethodText(method?: string): string {
+  const textMap: Record<string, string> = {
+    ALIPAY: '支付宝',
+    WECHAT: '微信支付',
+    CREDIT_CARD: '信用卡',
+    BANK_TRANSFER: '银行转账',
+  }
+  return textMap[method || 'ALIPAY'] || method || '支付宝'
+}
 
 const generateDrawerVisible = ref(false)
 const generating = ref(false)
@@ -508,6 +963,26 @@ function openCreateDrawer() {
     taxRate: null,
     billable: true,
     status: 'UNBILLED',
+    description: '',
+    priority: 'MEDIUM',
+    tags: [],
+    usageTime: null,
+    qualityScore: 0,
+    discountPercentage: 0,
+    categoryPath: [],
+    departmentId: undefined,
+    customerName: '',
+    themeColor: '#1890ff',
+    apiKey: '',
+    searchKeyword: '',
+    dateRange: [null, null],
+    selectedFeatures: [],
+    minValue: null,
+    maxValue: null,
+    timeRange: [null, null],
+    paymentMethod: 'ALIPAY',
+    notes: '',
+    attachmentInfo: [],
   }
   drawerVisible.value = true
 }
@@ -516,23 +991,87 @@ function openEditDrawer(record: any) {
   drawerMode.value = 'edit'
   formState.value = {
     id: record.id,
-    tenantCode: record.tenantCode,
+    tenantCode: record.tenantCode || '',
     usageDate: record.usageDate ? dayjs(record.usageDate) : null,
-    productCode: record.productCode,
-    productName: record.productName,
-    planTier: record.planTier,
-    region: record.region,
+    productCode: record.productCode || '',
+    productName: record.productName || '',
+    planTier: record.planTier || 'standard',
+    region: record.region || '',
     usageQty: record.usageQty,
-    unit: record.unit,
+    unit: record.unit || '',
     unitPrice: record.unitPrice,
     amount: record.amount,
-    currency: record.currency,
+    currency: record.currency || 'CNY',
     taxRate: record.taxRate,
-    billable: record.billable,
-    status: record.status,
+    billable: record.billable ?? true,
+    status: record.status || 'UNBILLED',
+    description: record.description || '',
+    priority: record.priority || 'MEDIUM',
+    tags: Array.isArray(record.tags) ? record.tags : (record.tags ? JSON.parse(record.tags) : []),
+    usageTime: record.usageTime ? dayjs(record.usageTime, 'HH:mm:ss') : null,
+    qualityScore: record.qualityScore ?? 0,
+    discountPercentage: record.discountPercentage ?? 0,
+    categoryPath: parseCategoryPath(record.categoryPath),
+    departmentId: record.departmentId,
+    customerName: record.customerName || '',
+    themeColor: record.themeColor || '#1890ff',
+    apiKey: record.apiKey || '',
+    searchKeyword: record.searchKeyword || '',
+    dateRange: record.startDate && record.endDate ? [dayjs(record.startDate), dayjs(record.endDate)] : [null, null],
+    selectedFeatures: record.selectedFeatures ? (Array.isArray(record.selectedFeatures) ? record.selectedFeatures : JSON.parse(record.selectedFeatures)) : [],
+    minValue: record.minValue,
+    maxValue: record.maxValue,
+    timeRange: record.startTime && record.endTime ? [dayjs(record.startTime, 'HH:mm:ss'), dayjs(record.endTime, 'HH:mm:ss')] : [null, null],
+    paymentMethod: record.paymentMethod || 'ALIPAY',
+    notes: record.notes || '',
+    attachmentInfo: record.attachmentInfo ? (Array.isArray(record.attachmentInfo) ? record.attachmentInfo : JSON.parse(record.attachmentInfo)) : [],
   }
   drawerVisible.value = true
 }
+
+function handleView(record: any) {
+  drawerMode.value = 'view'
+  formState.value = {
+    id: record.id,
+    tenantCode: record.tenantCode || '',
+    usageDate: record.usageDate ? dayjs(record.usageDate) : null,
+    productCode: record.productCode || '',
+    productName: record.productName || '',
+    planTier: record.planTier || 'standard',
+    region: record.region || '',
+    usageQty: record.usageQty,
+    unit: record.unit || '',
+    unitPrice: record.unitPrice,
+    amount: record.amount,
+    currency: record.currency || 'CNY',
+    taxRate: record.taxRate,
+    billable: record.billable ?? true,
+    status: record.status || 'UNBILLED',
+    description: record.description || '',
+    priority: record.priority || 'MEDIUM',
+    tags: Array.isArray(record.tags) ? record.tags : (record.tags ? JSON.parse(record.tags) : []),
+    usageTime: record.usageTime ? dayjs(record.usageTime, 'HH:mm:ss') : null,
+    qualityScore: record.qualityScore ?? 0,
+    discountPercentage: record.discountPercentage ?? 0,
+    categoryPath: parseCategoryPath(record.categoryPath),
+    departmentId: record.departmentId,
+    customerName: record.customerName || '',
+    themeColor: record.themeColor || '#1890ff',
+    apiKey: record.apiKey || '',
+    searchKeyword: record.searchKeyword || '',
+    dateRange: record.startDate && record.endDate ? [dayjs(record.startDate), dayjs(record.endDate)] : [null, null],
+    selectedFeatures: record.selectedFeatures ? (Array.isArray(record.selectedFeatures) ? record.selectedFeatures : JSON.parse(record.selectedFeatures)) : [],
+    minValue: record.minValue,
+    maxValue: record.maxValue,
+    timeRange: record.startTime && record.endTime ? [dayjs(record.startTime, 'HH:mm:ss'), dayjs(record.endTime, 'HH:mm:ss')] : [null, null],
+    paymentMethod: record.paymentMethod || 'ALIPAY',
+    notes: record.notes || '',
+    attachmentInfo: record.attachmentInfo ? (Array.isArray(record.attachmentInfo) ? record.attachmentInfo : JSON.parse(record.attachmentInfo)) : [],
+  }
+  drawerVisible.value = true
+}
+
+const throttledView = useThrottle(handleView, 500)
 
 function handleDrawerClose() {
   drawerVisible.value = false
@@ -554,6 +1093,29 @@ async function handleSubmit() {
     taxRate: formState.value.taxRate,
     billable: formState.value.billable,
     status: formState.value.status,
+    // 新增字段
+    description: formState.value.description,
+    priority: formState.value.priority,
+    tags: formState.value.tags ? JSON.stringify(formState.value.tags) : null,
+    usageTime: formState.value.usageTime ? formState.value.usageTime.format('HH:mm:ss') : null,
+    qualityScore: formState.value.qualityScore,
+    discountPercentage: formState.value.discountPercentage,
+    categoryPath: formState.value.categoryPath ? JSON.stringify(formState.value.categoryPath) : null,
+    departmentId: formState.value.departmentId,
+    customerName: formState.value.customerName,
+    themeColor: formState.value.themeColor,
+    apiKey: formState.value.apiKey,
+    searchKeyword: formState.value.searchKeyword,
+    startDate: formState.value.dateRange?.[0] ? formState.value.dateRange[0].format('YYYY-MM-DD') : null,
+    endDate: formState.value.dateRange?.[1] ? formState.value.dateRange[1].format('YYYY-MM-DD') : null,
+    selectedFeatures: formState.value.selectedFeatures ? JSON.stringify(formState.value.selectedFeatures) : null,
+    minValue: formState.value.minValue,
+    maxValue: formState.value.maxValue,
+    startTime: formState.value.timeRange?.[0] ? formState.value.timeRange[0].format('HH:mm:ss') : null,
+    endTime: formState.value.timeRange?.[1] ? formState.value.timeRange[1].format('HH:mm:ss') : null,
+    paymentMethod: formState.value.paymentMethod,
+    notes: formState.value.notes,
+    attachmentInfo: formState.value.attachmentInfo ? JSON.stringify(formState.value.attachmentInfo) : null,
   }
   try {
     if (drawerMode.value === 'create') {
@@ -636,6 +1198,56 @@ async function handleGenerateSubmit() {
   }
 }
 
+// 格式化分类路径显示
+function formatCategoryPath(categoryPath: any): string {
+  if (!categoryPath) {
+    return '-'
+  }
+  if (Array.isArray(categoryPath)) {
+    return categoryPath.join(' / ')
+  }
+  if (typeof categoryPath === 'string') {
+    // 检查是否是 JSON 格式
+    if (categoryPath.startsWith('[') || categoryPath.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(categoryPath)
+        return Array.isArray(parsed) ? parsed.join(' / ') : String(parsed)
+      } catch {
+        // JSON 解析失败，返回原字符串
+        return categoryPath
+      }
+    }
+    // 普通字符串，直接返回
+    return categoryPath
+  }
+  return '-'
+}
+
+// 解析分类路径为数组（用于表单）
+function parseCategoryPath(categoryPath: any): string[] {
+  if (!categoryPath) {
+    return []
+  }
+  if (Array.isArray(categoryPath)) {
+    return categoryPath
+  }
+  if (typeof categoryPath === 'string') {
+    // 检查是否是 JSON 格式
+    if (categoryPath.startsWith('[') || categoryPath.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(categoryPath)
+        return Array.isArray(parsed) ? parsed : []
+      } catch {
+        // JSON 解析失败，尝试按 '/' 分割
+        return categoryPath.includes('/') ? categoryPath.split('/') : []
+      }
+    }
+    // 普通字符串，按 '/' 分割
+    return categoryPath.includes('/') ? categoryPath.split('/') : [categoryPath]
+  }
+  return []
+}
+
 async function handleClearDemo() {
   Modal.confirm({
     title: '清空测试数据',
@@ -657,22 +1269,56 @@ async function handleClearDemo() {
 }
 
 function onCheckAllChange(e: any) {
-  if (e.target.checked) {
-    showColumnKeys.value = INITIAL_COLUMNS.map((col) => col.dataIndex)
-  } else {
-    showColumnKeys.value = []
+  // 安全检查：确保 allColumns 存在且为数组
+  if (!allColumns.value || !Array.isArray(allColumns.value)) {
+    return
+  }
+  // 设置同步标志，防止触发 watch 监听器
+  isSyncingColumns.value = true
+  try {
+    if (e.target.checked) {
+      // 使用 allColumns.value 而不是 INITIAL_COLUMNS，确保与当前列状态一致
+      // 过滤掉无效的列（null、undefined 或没有 dataIndex）
+      showColumnKeys.value = allColumns.value
+        .filter((col) => col && col.dataIndex && typeof col.dataIndex === 'string')
+        .map((col) => col.dataIndex as string)
+    } else {
+      showColumnKeys.value = []
+    }
+  } finally {
+    // 使用 nextTick 确保所有更新完成后再重置标志
+    nextTick(() => {
+      isSyncingColumns.value = false
+    })
   }
 }
 
 function onCheckboxChange(dataIndex: string, checked: boolean) {
-  if (!dataIndex) return
-  if (checked) {
-    if (!showColumnKeys.value.includes(dataIndex)) {
-      showColumnKeys.value.push(dataIndex)
-    }
-  } else {
-    showColumnKeys.value = showColumnKeys.value.filter((key) => key !== dataIndex)
+  // 安全检查：确保 dataIndex 存在，且 showColumnKeys 和 allColumns 都已初始化
+  if (!dataIndex || !showColumnKeys.value || !Array.isArray(showColumnKeys.value)) {
+    return
   }
+  if (!allColumns.value || !Array.isArray(allColumns.value)) {
+    return
+  }
+
+  // 确保 dataIndex 在 allColumns 中存在
+  const columnExists = allColumns.value.some((col) => col?.dataIndex === dataIndex)
+  if (!columnExists) {
+    console.warn(`列 ${dataIndex} 不存在于 allColumns 中`)
+    return
+  }
+
+  // 使用 nextTick 确保响应式更新顺序正确
+  nextTick(() => {
+    if (checked) {
+      if (!showColumnKeys.value.includes(dataIndex)) {
+        showColumnKeys.value.push(dataIndex)
+      }
+    } else {
+      showColumnKeys.value = showColumnKeys.value.filter((key) => key !== dataIndex)
+    }
+  })
 }
 
 function resetColumnOrder() {
@@ -682,7 +1328,7 @@ function resetColumnOrder() {
     try {
       allColumns.value = [...INITIAL_COLUMNS]
       draggableColumns.value = [...INITIAL_COLUMNS]
-      showColumnKeys.value = INITIAL_COLUMNS.map((col) => col.dataIndex).filter((key): key is string => typeof key === 'string')
+      showColumnKeys.value = [...DEFAULT_VISIBLE_COLUMNS.filter((key): key is string => typeof key === 'string')]
     } finally {
       // 使用 nextTick 确保所有更新完成后再重置标志
       nextTick(() => {
@@ -701,11 +1347,20 @@ function onDragEnd(event: any) {
   // 设置同步标志，防止触发 watch 监听器
   isSyncingColumns.value = true
   try {
-    allColumns.value = draggableColumns.value.filter((col) => col && typeof col.dataIndex === 'string')
-    // showColumnKeys 只保留 allColumns 里存在的 dataIndex
-    showColumnKeys.value = showColumnKeys.value.filter((key) =>
-      allColumns.value.some((col) => col.dataIndex === key),
-    )
+    // 直接更新 allColumns，这会触发 watch(allColumns)，但由于 isSyncingColumns 标志，不会形成循环
+    const newAllColumns = draggableColumns.value.filter((col) => col && typeof col.dataIndex === 'string')
+
+    // 使用深度比较，避免不必要的更新
+    const currentKeys = allColumns.value.map((col) => col?.dataIndex).join(',')
+    const newKeys = newAllColumns.map((col) => col?.dataIndex).join(',')
+
+    if (currentKeys !== newKeys) {
+      allColumns.value = newAllColumns
+      // showColumnKeys 只保留 allColumns 里存在的 dataIndex
+      showColumnKeys.value = showColumnKeys.value.filter((key) =>
+        allColumns.value.some((col) => col.dataIndex === key),
+      )
+    }
   } finally {
     // 使用 nextTick 确保所有更新完成后再重置标志
     nextTick(() => {
@@ -717,39 +1372,35 @@ function onDragEnd(event: any) {
 // 防止循环更新的标志
 const isSyncingColumns = ref(false)
 
-// 监听 allColumns 变化，同步到 draggableColumns
+// 监听 allColumns 变化，同步到 draggableColumns（仅在非拖拽场景下）
+// 注意：拖拽时 VueDraggable 会直接更新 draggableColumns，不需要通过 watch 同步
 watch(
   allColumns,
   (val) => {
     if (isSyncingColumns.value) return
     isSyncingColumns.value = true
     try {
-      draggableColumns.value = val.filter((col) => col && typeof col.dataIndex === 'string')
+      // 只在 allColumns 变化时同步到 draggableColumns，避免拖拽时的循环更新
+      const newDraggableColumns = val.filter((col) => col && typeof col.dataIndex === 'string')
+      // 使用深度比较，避免不必要的更新
+      const currentKeys = draggableColumns.value.map((col) => col?.dataIndex).join(',')
+      const newKeys = newDraggableColumns.map((col) => col?.dataIndex).join(',')
+      if (currentKeys !== newKeys) {
+        draggableColumns.value = newDraggableColumns
+      }
     } finally {
-      isSyncingColumns.value = false
+      // 使用 nextTick 确保更新完成后再重置标志
+      nextTick(() => {
+        isSyncingColumns.value = false
+      })
     }
   },
   { deep: true },
 )
 
-// 监听 draggableColumns 变化，同步到 allColumns
-watch(
-  draggableColumns,
-  (val) => {
-    if (isSyncingColumns.value) return
-    isSyncingColumns.value = true
-    try {
-      allColumns.value = val.filter((col) => col && typeof col.dataIndex === 'string')
-      // showColumnKeys 只保留 allColumns 里存在的 dataIndex
-      showColumnKeys.value = showColumnKeys.value.filter((key) =>
-        allColumns.value.some((col) => col.dataIndex === key),
-      )
-    } finally {
-      isSyncingColumns.value = false
-    }
-  },
-  { deep: true },
-)
+// 移除 draggableColumns 的 watch 监听器
+// 原因：VueDraggable 的 v-model 会直接更新 draggableColumns
+// 拖拽时通过 onDragEnd 手动同步到 allColumns，避免循环更新
 
 const tableContentRef = ref<HTMLElement | null>(null)
 const paginationRef = ref<HTMLElement | null>(null)
@@ -775,15 +1426,133 @@ function updateTableBodyHeight() {
   })
 }
 
+
+// 存储滚动检测的定时器和观察器
+let scrollCheckTimer: number | null = null
+let resizeHandler: (() => void) | null = null
+let mutationObserver: MutationObserver | null = null
+
+/**
+ * 检测并更新复制按钮的显示状态
+ * 核心逻辑：检测单元格是否被固定列遮盖，如果被遮盖则隐藏复制按钮
+ */
+function updateCopyIconVisibility() {
+  if (!cellCopyEnabled.value || !tableContentRef.value) {
+    return
+  }
+
+  nextTick(() => {
+    // 为所有普通列的复制按钮添加/移除隐藏类
+    const cells = tableContentRef.value?.querySelectorAll('.ant-table-tbody > tr > td:not(.ant-table-cell-fix-right)') || []
+    const fixedRightColumn = tableContentRef.value?.querySelector('.ant-table-fixed-right') as HTMLElement
+
+    if (!fixedRightColumn) {
+      // 如果没有固定列，显示所有复制按钮
+      cells.forEach((cell) => {
+        const copyIcon = cell.querySelector('.cell-copy-icon') as HTMLElement
+        if (copyIcon) {
+          copyIcon.classList.remove('cell-copy-icon-hidden')
+        }
+      })
+      return
+    }
+
+    const fixedColumnRect = fixedRightColumn.getBoundingClientRect()
+    const fixedColumnLeft = fixedColumnRect.left
+
+    // 优化：只检测可见的单元格
+    const visibleCells = Array.from(cells).filter(cell => {
+      const rect = cell.getBoundingClientRect()
+      return rect.width > 0 && rect.height > 0
+    })
+
+    visibleCells.forEach((cell) => {
+      const cellRect = cell.getBoundingClientRect()
+      const cellRight = cellRect.right
+      const copyIcon = cell.querySelector('.cell-copy-icon') as HTMLElement
+
+      if (copyIcon) {
+        // 关键修复：如果单元格的右边缘接近或超过固定列左边缘，隐藏复制按钮
+        // 容差值：复制按钮宽度 16px + padding 4px + 安全边距 10px = 30px
+        // 使用 >= 判断，确保复制按钮完全不会显示在固定列区域内
+        if (cellRight >= fixedColumnLeft - 30) {
+          copyIcon.classList.add('cell-copy-icon-hidden')
+        } else {
+          copyIcon.classList.remove('cell-copy-icon-hidden')
+        }
+      }
+    })
+  })
+}
+
 onMounted(() => {
   loadData()
   updateTableBodyHeight()
   window.addEventListener('resize', updateTableBodyHeight)
+
+  // 监听表格滚动，动态更新复制按钮显示状态
+  if (tableContentRef.value) {
+    const tableBody = tableContentRef.value.querySelector('.ant-table-body') as HTMLElement
+    if (tableBody) {
+      const handleScroll = () => {
+        // 使用防抖，避免频繁计算
+        if (scrollCheckTimer) {
+          clearTimeout(scrollCheckTimer)
+        }
+        scrollCheckTimer = window.setTimeout(() => {
+          updateCopyIconVisibility()
+        }, 50)
+      }
+
+      tableBody.addEventListener('scroll', handleScroll, { passive: true })
+
+      // 初始检测 - 延迟执行，确保表格完全渲染
+      setTimeout(() => {
+        updateCopyIconVisibility()
+      }, 200)
+
+      // 监听窗口大小变化
+      resizeHandler = () => {
+        setTimeout(() => {
+          updateCopyIconVisibility()
+        }, 100)
+      }
+      window.addEventListener('resize', resizeHandler)
+
+      // 使用 MutationObserver 监听 DOM 变化，确保在表格更新后重新检测
+      mutationObserver = new MutationObserver(() => {
+        if (cellCopyEnabled.value) {
+          setTimeout(() => {
+            updateCopyIconVisibility()
+          }, 100)
+        }
+      })
+
+      if (tableBody) {
+        mutationObserver.observe(tableBody, {
+          childList: true,
+          subtree: true,
+        })
+      }
+    }
+  }
 })
 
 onBeforeUnmount(() => {
   // 清理事件监听器，防止内存泄漏
   window.removeEventListener('resize', updateTableBodyHeight)
+  if (resizeHandler) {
+    window.removeEventListener('resize', resizeHandler)
+    resizeHandler = null
+  }
+  if (scrollCheckTimer) {
+    clearTimeout(scrollCheckTimer)
+    scrollCheckTimer = null
+  }
+  if (mutationObserver) {
+    mutationObserver.disconnect()
+    mutationObserver = null
+  }
 })
 
 watch(
@@ -792,6 +1561,32 @@ watch(
     updateTableBodyHeight()
   },
 )
+
+// 监听复制功能开关，更新复制按钮显示状态
+watch(
+  () => cellCopyEnabled.value,
+  () => {
+    if (cellCopyEnabled.value) {
+      setTimeout(() => {
+        updateCopyIconVisibility()
+      }, 100)
+    }
+  },
+)
+
+// 监听列变化，更新复制按钮显示状态
+watch(
+  () => columns.value,
+  () => {
+    if (cellCopyEnabled.value) {
+      setTimeout(() => {
+        updateCopyIconVisibility()
+      }, 100)
+    }
+  },
+  { deep: true }
+)
+
 
 // 获取行类名，用于斑马纹和悬停效果
 function getRowClassName(_record: any, index: number) {
@@ -874,10 +1669,10 @@ function fallbackCopyTextToClipboard(text: string, columnTitle: string) {
   }
 }
 
-// 构建导出请求的列定义（排除操作列）
+// 构建导出请求的列定义（排除操作列，只导出当前显示的列）
 const getExportColumns = () => {
-  return INITIAL_COLUMNS
-    .filter(col => col.dataIndex !== 'action')
+  return allColumns.value
+    .filter(col => col.dataIndex !== 'action' && showColumnKeys.value.includes(col.dataIndex))
     .map(col => ({
       title: col.title,
       field: col.dataIndex as string,
@@ -1009,12 +1804,17 @@ async function handleExportAsync() {
   background: transparent;
 }
 
+/* 表格标题工具栏容器 - 固定在顶部，不随表格滚动 */
 .toolbar-container {
   display: flex;
   align-items: center;
   justify-content: space-between;
   border-bottom: 1px solid #f0f0f0;
   padding: 8px 24px;
+  flex-shrink: 0;
+  /* 防止工具栏被压缩 */
+  background-color: #fff;
+  /* 确保背景色，避免滚动时内容透过 */
 }
 
 .table-container {
@@ -1031,12 +1831,25 @@ async function handleExportAsync() {
 }
 
 .table-scroll-container {
-  /* 不要设置 flex: 1; */
   min-height: 0;
-  /* 可选，防止撑开 */
   overflow: auto;
-  width: 100%;
-  max-width: 100%;
+  /* 隐藏自身滚动条（含横向），但保留滚动能力，统一与 ExportTask.vue 体验 */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.table-scroll-container::-webkit-scrollbar {
+  display: none;
+}
+
+/* 数据为空时，AntD 会通过 ant-table-content/placeholder 渲染，占用的仍是内容区域滚动条，继续隐藏 */
+:deep(.ant-table-content) {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+:deep(.ant-table-content::-webkit-scrollbar) {
+  display: none;
 }
 
 .pagination-container {
@@ -1107,17 +1920,36 @@ async function handleExportAsync() {
   text-overflow: ellipsis;
 }
 
+/* 质量评分列特殊处理，允许 Rate 组件正常显示 */
+:deep(.ant-table-cell .quality-score-cell) {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  overflow: visible;
+  white-space: normal;
+}
+
+:deep(.ant-table-cell .quality-score-cell .ant-rate) {
+  font-size: 14px;
+  line-height: 1;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+:deep(.ant-table-cell .quality-score-cell .ant-rate-star) {
+  margin-right: 4px;
+  font-size: 14px;
+}
+
 /* 隐藏表格内容区的滚动条，但保留滚动功能 */
 :deep(.ant-table-body) {
   scrollbar-width: none;
-  /* Firefox */
   -ms-overflow-style: none;
-  /* IE 10+ */
 }
 
 :deep(.ant-table-body::-webkit-scrollbar) {
   display: none;
-  /* Chrome/Safari/Edge */
 }
 
 /* 现代化表格样式：斑马纹和行悬停效果 */
@@ -1290,7 +2122,8 @@ async function handleExportAsync() {
   font-size: 12px;
   color: #8c8c8c;
   transition: opacity 0.2s ease, color 0.2s ease, transform 0.2s ease;
-  z-index: 10;
+  z-index: 1;
+  /* 降低 z-index 到 1，确保固定列（z-index: 10）始终在最上层 */
   background-color: rgba(255, 255, 255, 0.9);
   padding: 2px;
   border-radius: 2px;
@@ -1320,9 +2153,63 @@ async function handleExportAsync() {
 }
 
 /* 确保复制图标在单元格内正确显示，图标浮动不影响内容布局 */
-:deep(.ant-table-tbody > tr > td) {
+/* 关键修复：使用 overflow: hidden 防止复制按钮显示在单元格外部 */
+/* 当单元格被固定列遮盖时，复制按钮也会被裁剪，不会显示在固定列区域内 */
+:deep(.ant-table-tbody > tr > td:not(.ant-table-cell-fix-right):not(.ant-table-cell-fix-left)) {
   position: relative;
+  /* 使用 overflow: hidden 防止复制按钮显示在单元格外部 */
+  overflow: hidden;
+}
+
+/* 固定列不需要 overflow: hidden，保持正常显示 */
+:deep(.ant-table-fixed-right .ant-table-tbody > tr > td),
+:deep(.ant-table-fixed-left .ant-table-tbody > tr > td) {
   overflow: visible;
+}
+
+/* 确保文本内容可以正常显示省略号 */
+:deep(.ant-table-tbody > tr > td .cell-text) {
+  /* 文本内容需要 overflow: hidden 来显示省略号 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 关键修复：确保复制按钮不会显示在固定列区域内 */
+/* 通过 overflow: hidden 在单元格级别裁剪，复制按钮如果超出单元格边界会被隐藏 */
+:deep(.ant-table-tbody > tr > td:not(.ant-table-cell-fix-right):not(.ant-table-cell-fix-left) .cell-copy-icon) {
+  /* 按钮位置在单元格内，如果单元格被固定列遮盖，按钮也会被裁剪 */
+  right: 4px;
+  /* 确保按钮在单元格内，不会超出边界 */
+  /* 使用 clip-path 作为额外保护，确保按钮不会显示在固定列区域 */
+  clip-path: inset(0);
+}
+
+/* 隐藏被固定列遮盖的复制按钮 */
+.cell-copy-icon-hidden {
+  display: none !important;
+}
+
+/* 确保固定列始终在最上层，遮盖普通列的复制按钮 */
+:deep(.ant-table-fixed-right),
+:deep(.ant-table-fixed-left) {
+  z-index: 100 !important;
+  /* 提高 z-index 到 100，确保固定列始终在最上层，完全遮盖普通列的内容 */
+  position: relative;
+}
+
+/* 固定列内的单元格也应该有较高的 z-index */
+:deep(.ant-table-fixed-right .ant-table-tbody > tr > td),
+:deep(.ant-table-fixed-left .ant-table-tbody > tr > td) {
+  position: relative;
+  z-index: 100;
+}
+
+/* 确保固定列的表头也在最上层 */
+:deep(.ant-table-fixed-right .ant-table-thead > tr > th),
+:deep(.ant-table-fixed-left .ant-table-thead > tr > th) {
+  z-index: 100;
+  position: relative;
 }
 
 /* 确保开启复制功能时，单元格和表格整体布局不受影响 */
@@ -1333,9 +2220,9 @@ async function handleExportAsync() {
   max-width: 100%;
 }
 
-/* 确保表格整体宽度不受复制功能影响 */
+/* 确保表格整体宽度不受复制功能影响，使用固定布局避免表头和数据错位 */
 :deep(.ant-table) {
-  table-layout: auto;
+  table-layout: fixed;
   width: 100%;
   max-width: 100%;
 }

@@ -4,6 +4,19 @@
 # 在开发环境中，前端运行在 Vite dev server (http://localhost:5173)
 # 后端通过重定向将请求转发到前端开发服务器
 
+server:
+  error:
+    # 开发环境：始终显示异常堆栈信息，便于调试
+    include-stacktrace: always
+    include-message: always
+    include-binding-errors: always
+
+spring:
+  problem:
+    # Problem 类型基础 URI（开发环境使用 localhost）
+    # 与 server.port 保持一致，便于本地开发调试
+    type: "http://localhost:9000/problems"
+
 frontend:
   # 登录页面 - 重定向到 Vite dev server
   login-url: redirect:http://localhost:5173/login
@@ -22,7 +35,7 @@ logging:
     discard-threshold: 0 # 不丢弃日志：开发环境需要完整日志
   # 日志级别：开发环境可以更详细
   level:
-    root: DEBUG
+    root: INFO
     # 关闭或压低 RMI/JMX 相关日志
     sun.rmi.transport.tcp: WARN
     sun.rmi.loader: WARN
@@ -44,10 +57,11 @@ logging:
     org.camunda.bpm.engine.impl.db.sql: DEBUG
     org.camunda.bpm.engine.impl.persistence.entity: DEBUG
     org.camunda.bpm.engine.impl.persistence: DEBUG
-    com.zaxxer.hikari: DEBUG
-    org.hibernate.SQL: DEBUG # SQL 日志 DEBUG，便于查看完整 SQL
-    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
-    org.hibernate.orm.jdbc.bind: TRACE # 参数绑定 TRACE
+    com.zaxxer.hikari: INFO
+    org.hibernate.SQL: INFO # SQL 日志 DEBUG，便于查看完整 SQL
+    org.hibernate.type.descriptor.sql.BasicBinder: INFO
+    org.hibernate.orm.jdbc.bind: INFO # 参数绑定 TRACE
+    org.camunda: INFO
 
 # HTTP 请求日志配置（开发环境：记录更多信息，便于调试）
 http:

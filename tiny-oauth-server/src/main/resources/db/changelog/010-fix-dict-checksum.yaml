@@ -1,0 +1,16 @@
+databaseChangeLog:
+  # 修复字典初始化脚本的校验和问题
+  - changeSet:
+      id: fix-dict-checksum
+      author: tiny
+      comment: 清除旧的字典初始化校验和记录，修复校验和验证失败问题
+      changes:
+        - sql:
+            dbms: mysql
+            sql: |
+              -- 删除旧的校验和记录
+              DELETE FROM databasechangelog 
+              WHERE id = 'init-default-dicts' 
+                AND author = 'tiny' 
+                AND md5sum = '9:51ddacb931e8b58d14ef9ebd577b72e7';
+
