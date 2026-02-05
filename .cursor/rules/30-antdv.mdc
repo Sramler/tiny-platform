@@ -1,0 +1,81 @@
+---
+description: Ant Design Vue 4.x 规范
+globs:
+  - "**/*.vue"
+  - "src/components/**"
+---
+
+# 30 Ant Design Vue 规范
+
+## 适用范围
+
+- 适用于：前端 UI（`**/*.vue`、`src/components/**`）
+
+## 禁止（Must Not）
+
+- ❌ 继续使用过时写法（如 `.sync`）导致风格混乱。
+
+## 必须（Must）
+
+- ✅ 版本：Ant Design Vue 4.x；样式使用 `ant-design-vue/dist/reset.css`。
+- ✅ 表单：统一 v-model 使用方式；校验规则集中管理。
+- ✅ 表格：选中行用 `v-model:selectedRowKeys`；大数据考虑 scroll/virtual。
+
+## 应该（Should）
+
+- ⚠️ 二次封装组件：props/emits 必须有 TS 类型；透传 attrs；事件统一命名。
+
+## 可以（May）
+
+- 💡 主题使用集中变量管理（CSS variables / less 等）。
+
+## 例外与裁决
+
+- 第三方组件：直接使用 Ant Design Vue 组件时遵循其 API 规范。
+- 自定义组件：二次封装组件必须符合本规范（props/emits 类型、事件命名）。
+- 冲突时：平台特定规则（90+）优先于本规范。
+
+## 示例
+
+### ✅ 正例
+
+```vue
+<script setup lang="ts">
+import { ref } from 'vue'
+import { Table } from 'ant-design-vue'
+
+interface User {
+  id: number
+  name: string
+}
+
+const selectedRowKeys = ref<number[]>([])
+
+const handleSelectionChange = (keys: number[]) => {
+  selectedRowKeys.value = keys
+}
+</script>
+
+<template>
+  <a-table
+    :data-source="users"
+    v-model:selectedRowKeys="selectedRowKeys"
+    @selection-change="handleSelectionChange"
+  >
+    <!-- 表格列定义 -->
+  </a-table>
+</template>
+```
+
+### ❌ 反例
+
+```vue
+<!-- 错误：使用过时写法、缺少类型定义 -->
+<script setup>
+const selectedKeys = ref([]) // ❌ 缺少类型
+
+// ❌ 使用过时的 .sync 修饰符
+<a-table :selectedRowKeys.sync="selectedKeys" />
+</script>
+```
+

@@ -1,0 +1,85 @@
+---
+description: 数据库/SQL 规范
+globs:
+  - "**/*.sql"
+  - "**/schema.sql"
+  - "**/changelog/**"
+---
+
+# 70 数据库/SQL 规范
+
+## 适用范围
+
+- 适用于：`**/*.sql`、`**/schema.sql`、`**/changelog/**`、数据库相关 Java 代码
+- 不适用于：第三方库表（如 Quartz QRTZ_*、Camunda act_*）
+
+## 禁止（Must Not）
+
+- ❌ 表名使用复数（应使用单数：user, role, resource）。
+- ❌ 字段名使用驼峰命名（应使用下划线：user_id, create_time）。
+- ❌ 时间字段混用 DATETIME 和 TIMESTAMP（统一使用 DATETIME）。
+- ❌ 创建表时不指定 ENGINE 和 CHARSET（必须 ENGINE=InnoDB CHARSET=utf8mb4）。
+- ❌ 外键字段没有索引（影响查询性能）。
+- ❌ 表名和字段名不使用反引号包裹（避免关键字冲突）。
+
+## 必须（Must）
+
+- ✅ 表命名：单数形式（user/resource/role），使用反引号包裹。
+- ✅ 字段命名：下划线命名（user_id, create_time, update_time）。
+- ✅ 字符集：统一使用 `utf8mb4`，排序规则 `utf8mb4_general_ci`。
+- ✅ 存储引擎：统一使用 `InnoDB`。
+- ✅ 时间字段：统一使用 `DATETIME`，默认值 `CURRENT_TIMESTAMP`，更新时自动更新。
+- ✅ 主键：统一使用 `BIGINT AUTO_INCREMENT`，字段名 `id`。
+- ✅ 注释：表必须有 `COMMENT`，字段必须有 `COMMENT`（中文说明）。
+- ✅ 索引：外键字段必须创建索引；常用查询字段（status, created_at 等）必须创建索引。
+- ✅ 外键约束策略：**不设置数据库外键约束**，由应用层代码控制关联更新和删除（提高性能、便于分库分表）。
+
+## 应该（Should）
+
+- ⚠️ 唯一性约束：业务唯一性使用 `UNIQUE KEY`，命名 `uk_表名_字段名`。
+- ⚠️ 索引命名：单列索引 `idx_表名_字段名`，联合索引 `idx_表名_字段1_字段2`。
+- ⚠️ 状态字段：使用 `VARCHAR(32)`，在应用层使用枚举类控制，考虑 MySQL 8.0+ 的 CHECK 约束。
+- ⚠️ 软删除：如需软删除，添加 `deleted_at DATETIME NULL` 字段，并创建索引。
+- ⚠️ 多租户：所有业务表必须包含 `tenant_id BIGINT` 字段，并创建索引。
+
+## 可以（May）
+
+- 💡 时间字段：创建时间 `create_time`，更新时间 `update_time`（不使用 created_at/updated_at）。
+- 💡 扩展字段：预留 `extra JSON` 字段用于存储扩展配置。
+- 💡 版本字段：乐观锁使用 `version INT DEFAULT 0`。
+
+## 例外与裁决
+
+- 第三方库表（Quartz、Camunda）遵循其官方规范，不受本规范约束。
+- 历史遗留表：如已存在复数表名或不符合规范的字段，需通过 Liquibase changelog 逐步迁移。
+- 冲突时：平台特定规则（90+）优先于本规范。
+
+## 示例
+
+### ✅ 正例
+
+```sql
+CREATE TABLE `user` (
+  `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '用户ID',
+  `username` VARCHAR(50) NOT NULL UNIQUE COMMENT '用户名',
+  `tenant_id` BIGINT NOT NULL COMMENT '租户ID',
+  `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  KEY `idx_user_tenant_id` (`tenant_id`),
+  UNIQUE KEY `uk_user_username_tenant` (`username`, `tenant_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='用户表';
+```
+
+### ❌ 反例
+
+```sql
+-- 错误：表名复数、无反引号、无 ENGINE/CHARSET、外键字段无索引
+CREATE TABLE users (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  username VARCHAR(50),
+  tenantId BIGINT,
+  createdAt DATETIME,
+  FOREIGN KEY (tenantId) REFERENCES tenant(id)
+);
+```
+

@@ -1,0 +1,97 @@
+---
+description: 异常处理规范
+globs:
+  - "**/exception/**"
+  - "**/*Exception*.java"
+  - "**/handler/**"
+---
+
+# 75 异常处理规范
+
+## 适用范围
+
+- 适用于：`**/exception/**`、`**/*Exception*.java`、`**/handler/**`、异常处理相关代码
+
+## 禁止（Must Not）
+
+- ❌ Controller 层捕获业务异常并手动返回错误响应（应抛出异常，由 GlobalExceptionHandler 统一处理）。
+- ❌ Service 层返回 `Map.of("success", false, "error", "...")`（应抛出异常）。
+- ❌ 异常信息中包含敏感数据（密码、密钥、完整 SQL、完整堆栈）。
+- ❌ 吞掉异常不记录日志（必须记录异常日志）。
+
+## 必须（Must）
+
+- ✅ 异常分类：`BusinessException`（业务异常）、`ValidationException`（参数校验异常）、`SystemException`（系统异常）。
+- ✅ 统一异常响应：使用 `ErrorResponse` 格式（code, message, detail, status, path, timestamp）。
+- ✅ 异常处理层次：Controller 不捕获业务异常，Service 抛出异常，`GlobalExceptionHandler` 统一处理。
+- ✅ 异常信息脱敏：日志和响应中不包含敏感数据（密码、密钥、完整 SQL）。
+- ✅ 异常码规范：使用 `ResponseCode` 枚举，不硬编码错误码。
+
+## 应该（Should）
+
+- ⚠️ 异常日志：记录异常级别（ERROR/WARN）、异常信息、上下文（用户ID、请求路径、参数摘要）。
+- ⚠️ 参数校验：使用 `@Valid` 和 Bean Validation，校验失败抛出 `MethodArgumentNotValidException`。
+- ⚠️ 异常链：保留原始异常（`cause`），便于排查问题。
+- ⚠️ 异常转换：第三方异常（如数据库异常）转换为业务异常，避免泄漏技术细节。
+
+## 可以（May）
+
+- 💡 异常监控：集成异常监控系统（如 Sentry），自动上报异常。
+- 💡 异常重试：可重试异常（如网络超时）支持自动重试机制。
+
+## 例外与裁决
+
+- OAuth2 异常：由 `OAuth2ExceptionHandler` 处理，遵循 OAuth2 规范。
+- 框架异常：Spring Security、Spring Data 等框架异常由框架处理。
+- 冲突时：安全规范（40-security）优先于本规范。
+
+## 示例
+
+### ✅ 正例
+
+```java
+// Service 层抛出异常
+@Service
+public class UserService {
+    public UserDTO getById(Long id) {
+        User user = userRepository.findById(id)
+            .orElseThrow(() -> new BusinessException(ResponseCode.USER_NOT_FOUND, "用户不存在: " + id));
+        return convertToDTO(user);
+    }
+}
+
+// GlobalExceptionHandler 统一处理
+@RestControllerAdvice
+public class GlobalExceptionHandler extends BaseExceptionHandler {
+    @ExceptionHandler(BusinessException.class)
+    public ResponseEntity<ErrorResponse> handleBusinessException(BusinessException e) {
+        ErrorResponse response = ErrorResponse.builder()
+            .code(e.getCode())
+            .message(e.getMessage())
+            .detail(e.getDetail())
+            .status(e.getStatus().value())
+            .path(getRequestPath())
+            .timestamp(Instant.now())
+            .build();
+        return ResponseEntity.status(e.getStatus()).body(response);
+    }
+}
+```
+
+### ❌ 反例
+
+```java
+// 错误：Controller 手动返回错误、Service 返回 Map
+@RestController
+public class UserController {
+    @GetMapping("/{id}")
+    public Map<String, Object> getUser(@PathVariable Long id) {
+        Map<String, Object> result = userService.getUser(id);
+        if (!(Boolean) result.get("success")) {
+            return Map.of("success", false, "error", result.get("error"));
+        }
+        return result;
+    }
+}
+```
+

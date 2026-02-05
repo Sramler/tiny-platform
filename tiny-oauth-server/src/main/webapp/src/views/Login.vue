@@ -93,6 +93,8 @@ onMounted(() => {
   min-height: 100vh;
   padding: 20px;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  /* 固定为亮色主题，避免系统暗黑模式自动反色导致输入文字过浅 */
+  color-scheme: light;
 }
 
 .login-container {
@@ -139,6 +141,15 @@ onMounted(() => {
   border-radius: 6px;
   font-size: 14px;
   transition: border-color 0.3s;
+  /* 确保在深色模式下文字和背景对比足够清晰 */
+  color: #222;
+  background-color: #fff;
+  caret-color: #222;
+}
+
+.form-group input::placeholder {
+  color: #999;
+  opacity: 1;
 }
 
 .form-group input:focus {

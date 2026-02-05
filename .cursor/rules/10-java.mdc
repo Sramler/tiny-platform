@@ -1,0 +1,89 @@
+---
+description: Java 编码规范
+globs:
+  - "**/*.java"
+---
+
+# 10 Java 编码规范
+
+## 适用范围
+
+- 适用于：`**/*.java`
+
+## 禁止（Must Not）
+
+- ❌ 用 `catch (Exception e)` 吞异常；不得无脑返回默认值掩盖错误。
+- ❌ 复制粘贴形成重复逻辑扩散。
+
+## 必须（Must）
+
+- ✅ 命名：类 PascalCase；方法/变量 camelCase；常量全大写下划线；包名全小写。
+- ✅ 格式：4 空格缩进；单行建议 ≤ 120 字符；运算符两侧有空格；方法间空一行。
+- ✅ 注释：类/公共方法用 Javadoc；复杂逻辑必须说明原因与边界。
+
+## 应该（Should）
+
+- ⚠️ 资源用 try-with-resources。
+- ⚠️ 异常信息要可定位（包含关键信息但不泄漏敏感数据）。
+
+## 可以（May）
+
+- 💡 复杂模块先写接口与测试再实现。
+
+## 例外与裁决
+
+- 第三方库代码：遵循第三方库的编码规范（如 Spring、Hibernate）。
+- 遗留代码：遗留代码逐步重构，新代码必须符合规范。
+- 冲突时：平台特定规则（90+）优先于本规范。
+
+## 示例
+
+### ✅ 正例
+
+```java
+/**
+ * 用户服务接口
+ * 
+ * @author Tiny Platform
+ * @since 1.0.0
+ */
+public class UserService {
+    private static final int MAX_RETRY_COUNT = 3;
+    
+    /**
+     * 根据ID获取用户
+     * 
+     * @param id 用户ID
+     * @return 用户对象
+     * @throws UserNotFoundException 用户不存在时抛出
+     */
+    public User getUserById(Long id) {
+        // 实现逻辑
+    }
+    
+    public void processFile(String path) {
+        try (BufferedReader reader = Files.newBufferedReader(Paths.get(path))) {
+            // 使用 try-with-resources
+        } catch (IOException e) {
+            log.error("Failed to read file: {}", path, e);
+            throw new BusinessException("文件读取失败", e);
+        }
+    }
+}
+```
+
+### ❌ 反例
+
+```java
+// 错误：吞掉异常、无注释、命名不规范
+public class userService {
+    public user get(Long id) {
+        try {
+            return repo.findById(id);
+        } catch (Exception e) {
+            return null; // ❌ 吞掉异常
+        }
+    }
+}
+```
+

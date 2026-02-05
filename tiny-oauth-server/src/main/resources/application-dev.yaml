@@ -12,11 +12,6 @@ server:
     include-binding-errors: always
 
 spring:
-  problem:
-    # Problem 类型基础 URI（开发环境使用 localhost）
-    # 与 server.port 保持一致，便于本地开发调试
-    type: "http://localhost:9000/problems"
-
 frontend:
   # 登录页面 - 重定向到 Vite dev server
   login-url: redirect:http://localhost:5173/login

@@ -2,37 +2,14 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
-<!--    <parent>-->
-<!--        <groupId>org.springframework.boot</groupId>-->
-<!--        <artifactId>spring-boot-starter-parent</artifactId>-->
-<!--        <version>3.5.0</version>-->
-<!--        <relativePath/> &lt;!&ndash; lookup parent from repository &ndash;&gt;-->
-<!--    </parent>-->
     <parent>
         <groupId>com.tiny</groupId>
         <artifactId>tiny-platform</artifactId>
         <version>1.0.0</version>
     </parent>
     <artifactId>tiny-oauth-server</artifactId>
-    <version>0.0.1-SNAPSHOT</version>
     <name>tiny-oauth-server</name>
     <description>tiny-oauth-server</description>
-    <url/>
-    <licenses>
-        <license/>
-    </licenses>
-    <developers>
-        <developer/>
-    </developers>
-    <scm>
-        <connection/>
-        <developerConnection/>
-        <tag/>
-        <url/>
-    </scm>
-    <properties>
-        <java.version>17</java.version>
-    </properties>
     <dependencies>
         <!-- Database migration tool: Liquibase -->
         <dependency>
@@ -78,14 +55,6 @@
             <artifactId>spring-boot-starter-jdbc</artifactId>
         </dependency>
 
-        <!-- problem-spring-web 异常处理（RFC 7807 Problem 格式） -->
-        <dependency>
-            <groupId>org.zalando</groupId>
-            <artifactId>problem-spring-web-starter</artifactId>
-        </dependency>
-
-        <!-- 幂等性功能已合并到 tiny-oauth-server 内部，不再需要外部依赖 -->
-        
         <!-- Redis 支持（用于幂等性 Redis 存储实现，可选） -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -97,19 +66,11 @@
             <groupId>com.mysql</groupId>
             <artifactId>mysql-connector-j</artifactId>
             <scope>runtime</scope>
-            <version>9.5.0</version>
         </dependency>
-
-<!--        <dependency>-->
-<!--            <groupId>org.camunda.bpm</groupId>-->
-<!--            <artifactId>camunda-engine</artifactId>-->
-<!--            <scope>provided</scope>-->
-<!--        </dependency>-->
 
         <dependency>
             <groupId>jakarta.servlet</groupId>
             <artifactId>jakarta.servlet-api</artifactId>
-            <version>6.1.0</version> <!-- 或者更新的版本 -->
             <scope>provided</scope>
         </dependency>
 
@@ -141,36 +102,22 @@
             <artifactId>camunda-bpmn-model</artifactId>
         </dependency>
 
-        <!-- 添加spring security cas支持 -->
-<!--        <dependency>-->
-<!--            <groupId>org.springframework.security</groupId>-->
-<!--            <artifactId>spring-security-cas</artifactId>-->
-<!--        </dependency>-->
-
-
         <!-- JUnit 5 + 注解支持 -->
         <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-junit-jupiter</artifactId>
-            <version>4.11.0</version>
             <scope>test</scope>
         </dependency>
-        <dependency>
-            <groupId>org.mockito</groupId>
-            <artifactId>mockito-core</artifactId>
-            <version>4.11.0</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
+        <!-- mockito-core 已包含在 spring-boot-starter-test 中，无需显式添加 -->
+        <!-- 如果需要 mock final 类或静态方法，可以添加 mockito-inline -->
+        <!-- <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-inline</artifactId>
-            <version>4.11.0</version>
             <scope>test</scope>
-        </dependency>
+        </dependency> -->
         <dependency>
             <groupId>org.assertj</groupId>
             <artifactId>assertj-core</artifactId>
-            <version>3.26.3</version>
             <scope>test</scope>
         </dependency>
 
@@ -196,47 +143,34 @@
         <dependency>
             <groupId>commons-codec</groupId>
             <artifactId>commons-codec</artifactId>
-            <version>1.15</version>
         </dependency>
         <dependency>
             <groupId>com.eatthepath</groupId>
             <artifactId>java-otp</artifactId>
-            <version>0.4.0</version>
         </dependency>
         <dependency>
             <groupId>com.google.zxing</groupId>
             <artifactId>core</artifactId>
-            <version>3.5.2</version>
         </dependency>
         <dependency>
             <groupId>com.google.zxing</groupId>
             <artifactId>javase</artifactId>
-            <version>3.5.2</version>
         </dependency>
-        <!-- Apache Fesod (incubating) for high-performance spreadsheet processing -->
+        <!-- Apache Fesod (Incubating) for high-performance spreadsheet processing
+             版本显式指定为 2.0.0-incubating，避免 BOM 解析异常导致缺少 version 报错；
+             同时排除 fesod-shaded 以绕过其父 POM fesod-parent:${revision} 的解析问题。 -->
         <dependency>
             <groupId>org.apache.fesod</groupId>
             <artifactId>fesod-sheet</artifactId>
-            <version>2.0.0</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.apache.fesod</groupId>
+                    <artifactId>fesod-shaded</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
     </dependencies>
-    <repositories>
-        <repository>
-            <id>central</id>
-            <url>https://repo.maven.apache.org/maven2/</url>
-        </repository>
-    </repositories>
-    <dependencyManagement>
-        <dependencies>
-            <dependency>
-                <groupId>org.camunda.bpm</groupId>
-                <artifactId>camunda-bom</artifactId>
-                <version>7.24.0</version>
-                <scope>import</scope>
-                <type>pom</type>
-            </dependency>
-        </dependencies>
-    </dependencyManagement>
+    <!-- Camunda BOM 已在父 pom 的 dependencyManagement 中管理 -->
 
     <build>
         <plugins>
@@ -247,17 +181,10 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.11.0</version>
-                <configuration>
-                    <parameters>true</parameters>
-                    <source>17</source>
-                    <target>17</target>
-                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
-                <version>0.8.12</version>
                 <executions>
                     <execution>
                         <id>prepare-agent</id>
@@ -285,7 +212,6 @@
                     <plugin>
                         <groupId>org.jacoco</groupId>
                         <artifactId>jacoco-maven-plugin</artifactId>
-                        <version>0.8.12</version>
                         <executions>
                             <execution>
                                 <id>check</id>

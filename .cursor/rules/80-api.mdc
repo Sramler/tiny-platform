@@ -1,0 +1,108 @@
+---
+description: REST API 设计规范
+globs:
+  - "**/controller/**"
+  - "**/*Controller.java"
+---
+
+# 80 REST API 设计规范
+
+## 适用范围
+
+- 适用于：`**/controller/**`、`**/*Controller.java`、Controller 相关代码
+- 不适用于：OAuth2 标准端点（由框架自动处理）
+
+## 禁止（Must Not）
+
+- ❌ Controller 中手动返回错误格式（应抛出异常，由 GlobalExceptionHandler 统一处理）。
+- ❌ 使用 `Map.of("success", false, "error", "...")` 等临时格式。
+- ❌ 路径使用动词（应使用资源名词：`/scheduling/task-type` 而非 `/scheduling/getTaskType`）。
+- ❌ 混用不同的响应格式（必须统一使用 GlobalResponse 或 ErrorResponse）。
+- ❌ 返回纯文本错误信息（应返回结构化错误响应）。
+- ❌ 路径使用 `/api/` 前缀（项目不使用此前缀）。
+
+## 必须（Must）
+
+- ✅ RESTful 路径：资源名词（`/scheduling`、`/process`、`/user`），HTTP 方法表示操作（GET/POST/PUT/DELETE）。
+- ✅ 统一响应格式：成功使用 `GlobalResponse<T>`，失败使用 `ErrorResponse`（code, message, detail, status, path, timestamp）。
+- ✅ HTTP 状态码：200（成功）、400（参数错误）、401（未授权）、403（无权限）、404（不存在）、500（服务器错误）。
+- ✅ 参数命名：请求/响应参数使用 camelCase（Java 标准）。
+- ✅ 异常处理：Service 层抛出异常，Controller 不捕获，由 `GlobalExceptionHandler` 统一处理。
+- ✅ 错误码：使用 `ResponseCode` 枚举，不硬编码错误码。
+
+## 应该（Should）
+
+- ⚠️ 分页参数：统一使用 `page`（页码，从 1 开始）和 `size`（每页数量），返回 `Page<T>` 或 `PageResponse<T>`。
+- ⚠️ 查询参数：列表查询支持 `sort`（排序字段）、`order`（asc/desc）、`keyword`（关键词搜索）。
+- ⚠️ 响应头：跨域、缓存控制等通过 `ResponseEntity` 的 `HttpHeaders` 设置。
+- ⚠️ 文档：使用 Swagger/OpenAPI 注解（`@ApiOperation`、`@ApiParam`）标注接口。
+
+## 可以（May）
+
+- 💡 批量操作：支持批量创建/更新/删除，路径 `/scheduling/task/batch`，请求体为数组。
+- 💡 条件查询：复杂查询使用 POST `/scheduling/task/query`，请求体包含查询条件。
+- 💡 导出功能：导出接口使用 GET `/export/task`，返回文件流。
+
+## 例外与裁决
+
+- OAuth2 标准端点（`/oauth2/authorize`、`/oauth2/token`）遵循 OAuth2 规范，不受本规范约束。
+- 文件上传/下载：可使用 `MultipartFile` 和 `ResponseEntity<Resource>`。
+- 冲突时：平台特定规则（90+）优先于本规范。
+
+## 示例
+
+### ✅ 正例
+
+```java
+@RestController
+@RequestMapping("/scheduling")
+public class SchedulingController {
+    
+    @GetMapping("/task-type/{id}")
+    public ResponseEntity<GlobalResponse<TaskTypeDTO>> getTaskType(@PathVariable Long id) {
+        TaskTypeDTO taskType = schedulingService.getTaskTypeById(id);
+        return ResponseUtil.ok(taskType);
+    }
+    
+    @PostMapping("/task-type")
+    public ResponseEntity<GlobalResponse<TaskTypeDTO>> createTaskType(
+            @Valid @RequestBody CreateTaskTypeRequest request) {
+        TaskTypeDTO taskType = schedulingService.createTaskType(request);
+        return ResponseUtil.ok(taskType);
+    }
+    
+    // Service 层抛出异常，由 GlobalExceptionHandler 处理
+    @DeleteMapping("/task-type/{id}")
+    public ResponseEntity<GlobalResponse<Void>> deleteTaskType(@PathVariable Long id) {
+        schedulingService.deleteTaskType(id); // 内部抛出 BusinessException
+        return ResponseUtil.ok(null);
+    }
+    
+    @GetMapping("/task-type/list")
+    public ResponseEntity<GlobalResponse<PageResponse<TaskTypeDTO>>> listTaskTypes(
+            @PageableDefault(size = 20, sort = "id", direction = Sort.Direction.DESC) Pageable pageable) {
+        PageResponse<TaskTypeDTO> result = schedulingService.listTaskTypes(pageable);
+        return ResponseUtil.ok(result);
+    }
+}
+```
+
+### ❌ 反例
+
+```java
+// 错误：手动返回错误格式、路径使用动词、使用 /api/ 前缀、混用响应格式
+@RestController
+@RequestMapping("/api/scheduling") // ❌ 不应使用 /api/ 前缀
+public class SchedulingController {
+    
+    @GetMapping("/getTaskType/{id}") // ❌ 路径使用动词
+    public Map<String, Object> getTaskType(@PathVariable Long id) {
+        TaskType taskType = schedulingService.getTaskTypeById(id);
+        if (taskType == null) {
+            return Map.of("success", false, "error", "任务类型不存在"); // ❌ 手动返回错误格式
+        }
+        return Map.of("success", true, "data", taskType); // ❌ 混用响应格式
+    }
+}
+```
+

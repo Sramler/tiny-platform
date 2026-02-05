@@ -1,0 +1,105 @@
+---
+description: 测试规范（测试文件触发）
+globs:
+  - "**/*Test.java"
+  - "**/*Tests.java"
+  - "**/*.spec.ts"
+  - "**/*.test.ts"
+  - "**/*.spec.tsx"
+  - "**/*.test.tsx"
+---
+
+# 50 测试规范
+
+## 适用范围
+
+- 适用于：`**/*Test.java`、`**/*Tests.java`、`**/*.spec.ts`、`**/*.test.ts`、测试相关文件
+
+## 禁止（Must Not）
+
+- ❌ 只有"跑通"没有断言的测试。
+- ❌ 测试依赖外部服务（数据库、网络、文件系统）而不使用 mock。
+- ❌ 测试用例之间相互依赖（测试执行顺序影响结果）。
+
+## 必须（Must）
+
+- ✅ 修复 bug / 新增逻辑必须提供：测试或明确验证步骤。
+- ✅ 测试命名清晰，能表达场景与预期（格式：`方法名_场景_预期结果`）。
+- ✅ 测试断言：使用 `Assertions` 或 `assertThat`，明确断言预期结果。
+- ✅ 测试隔离：每个测试用例独立，不依赖其他测试的执行结果。
+
+## 应该（Should）
+
+- ⚠️ 外部依赖用 mock：数据库使用 `@MockBean` 或内存数据库（H2），外部服务使用 Mockito。
+- ⚠️ 关键分支与异常路径要覆盖：正常流程、边界条件、异常情况都要有测试用例。
+- ⚠️ 测试数据准备：使用 `@Sql` 或 `@TestData` 准备测试数据，测试后清理。
+- ⚠️ 集成测试：关键业务流程使用 `@SpringBootTest` 编写集成测试。
+- ⚠️ 测试覆盖率：关键业务逻辑（Service、Controller）覆盖率 ≥ 80%。
+
+## 可以（May）
+
+- 💡 性能测试：关键接口编写性能测试（响应时间、并发能力）。
+- 💡 契约测试：API 接口使用契约测试（如 Pact）确保接口兼容性。
+
+## 例外与裁决
+
+- 集成测试：集成测试可依赖真实数据库，但必须使用独立的测试数据库。
+- 性能测试：性能测试可依赖外部服务，但必须明确标注且不影响 CI 流程。
+- 冲突时：平台特定规则（90+）优先于本规范。
+
+## 示例
+
+### ✅ 正例
+
+```java
+@SpringBootTest
+class UserServiceTest {
+    @MockBean
+    private UserRepository userRepository;
+    
+    @Test
+    void getUserById_whenUserExists_returnsUser() {
+        // Given
+        Long userId = 1L;
+        User user = new User(userId, "test");
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        
+        // When
+        User result = userService.getUserById(userId);
+        
+        // Then
+        assertThat(result).isNotNull();
+        assertThat(result.getId()).isEqualTo(userId);
+        assertThat(result.getUsername()).isEqualTo("test");
+    }
+    
+    @Test
+    void getUserById_whenUserNotExists_throwsException() {
+        // Given
+        Long userId = 999L;
+        when(userRepository.findById(userId)).thenReturn(Optional.empty());
+        
+        // When & Then
+        assertThatThrownBy(() -> userService.getUserById(userId))
+            .isInstanceOf(UserNotFoundException.class);
+    }
+}
+```
+
+### ❌ 反例
+
+```java
+// 错误：没有断言、依赖外部服务、测试之间相互依赖
+@Test
+void testGetUser() {
+    User user = userService.getUserById(1L); // ❌ 没有断言
+    // ❌ 依赖真实数据库，可能因为数据不存在而失败
+}
+
+@Test
+void testUpdateUser() {
+    // ❌ 依赖上一个测试创建的数据
+    userService.updateUser(existingUser);
+}
+```
+

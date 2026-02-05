@@ -4,22 +4,19 @@ import com.tiny.platform.infrastructure.core.exception.base.BaseExceptionHandler
 import com.tiny.platform.infrastructure.core.exception.code.ErrorCode;
 // TODO: 当 idempotent-starter 依赖可用时，取消注释以下 import 和方法
 // import com.tiny.idempotent.exception.IdempotentException;
+import jakarta.annotation.Nonnull;
+import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.NativeWebRequest;
-import org.zalando.problem.Problem;
-import org.zalando.problem.Status;
-
-import jakarta.annotation.Nonnull;
-import java.net.URI;
 
 /**
  * OAuth Server 异常处理器
  * 
- * <p>继承 {@link BaseExceptionHandler}，使用 RFC 7807 Problem 格式处理异常</p>
+     * <p>继承 {@link BaseExceptionHandler}，使用 Spring Boot 3 {@link ProblemDetail} 格式处理异常</p>
  * 
  * <p><strong>职责：</strong>只处理 OAuth Server 项目特定的异常，通用异常由 {@link BaseExceptionHandler} 处理</p>
  * 
@@ -35,6 +32,7 @@ import java.net.URI;
  *   <li>{@link BusinessException} - 业务异常</li>
  *   <li>{@link RuntimeException} - 运行时异常</li>
  *   <li>{@link Exception} - 通用异常</li>
+ *   <li>{@link AuthenticationException} - 认证异常（由 BaseExceptionHandler 统一处理）</li>
  * </ul>
  * 
  * <p>所有异常都会返回统一的 Problem 格式（RFC 7807）：</p>
@@ -75,7 +73,7 @@ public class OAuthServerExceptionHandler extends BaseExceptionHandler {
      * @return 错误响应
      */
     @ExceptionHandler(OAuth2AuthorizationException.class)
-    public ResponseEntity<Problem> handleOAuth2AuthorizationException(
+    public ResponseEntity<ProblemDetail> handleOAuth2AuthorizationException(
             @Nonnull OAuth2AuthorizationException ex, @Nonnull NativeWebRequest request) {
         
         OAuth2Error error = ex.getError();
@@ -86,24 +84,17 @@ public class OAuthServerExceptionHandler extends BaseExceptionHandler {
                  errorCode, description, error.getUri(), ex);
         
         String detail = String.format("OAuth2 Error [%s]: %s", errorCode, description);
-        
-        var builder = Problem.builder()
-            .withType(getProblemType("oauth2-error"))
-            .withTitle(ErrorCode.UNAUTHORIZED.getMessage())
-            .withStatus(Status.valueOf(ErrorCode.UNAUTHORIZED.getStatusValue()))
-            .withDetail(detail)
-            .with("code", ErrorCode.UNAUTHORIZED.getCode())
-            .with("oauth2ErrorCode", errorCode)
-            .with("oauth2ErrorUri", error.getUri() != null ? error.getUri().toString() : null);
-        
-        // 添加 instance 字段（RFC 7807）
-        URI instanceUri = getInstanceUri(request);
-        if (instanceUri != null) {
-            builder.withInstance(instanceUri);
-        }
-        
-        Problem problem = builder.build();
-        return create(ex, problem, request);
+
+        ProblemDetail body = buildProblemDetail(
+                ErrorCode.UNAUTHORIZED,
+                detail,
+                request
+        );
+        // 附加 OAuth2 特定信息
+        body.setProperty("oauth2ErrorCode", errorCode);
+        body.setProperty("oauth2ErrorUri", error.getUri() != null ? error.getUri().toString() : null);
+
+        return ResponseEntity.of(body).build();
     }
 
     /**
@@ -131,4 +122,3 @@ public class OAuthServerExceptionHandler extends BaseExceptionHandler {
     }
     */
 }
-

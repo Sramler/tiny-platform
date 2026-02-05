@@ -1,0 +1,71 @@
+---
+description: Git 规范（协作约束，始终应用）
+alwaysApply: true
+---
+
+# 60 Git 规范
+
+## 适用范围
+
+- 适用于：全仓库协作
+
+## 禁止（Must Not）
+
+- ❌ 提交无意义信息（如 “update”、“fix”）。
+- ❌ 提交大体积构建产物（除非项目明确要求）。
+
+## 必须（Must）
+
+- ✅ 提交信息包含：做了什么 + 为什么 + 怎么验证。
+- ✅ 主分支受保护；重要变更走 PR 并通过 validate。
+
+## 应该（Should）
+
+- ⚠️ 版本遵循 SemVer；破坏性变更写清迁移说明。
+
+## 例外与裁决
+
+- 紧急修复：紧急安全漏洞修复可使用简化提交信息，但必须包含安全相关关键词。
+- 实验性分支：实验性分支可使用临时提交信息，但合并前必须整理提交历史。
+- 冲突时：平台特定规则（90+）优先于本规范。
+
+## 示例
+
+### ✅ 正例
+
+```bash
+# 提交信息格式：做了什么 + 为什么 + 怎么验证
+git commit -m "feat(user): 添加用户头像上传功能
+
+- 实现头像上传接口（POST /api/users/{id}/avatar）
+- 支持图片格式：jpg, png, webp
+- 图片大小限制：5MB
+
+原因：用户需要自定义头像，提升用户体验
+
+验证：
+- 单元测试：UserControllerTest.testUploadAvatar
+- 集成测试：手动上传图片验证
+- 性能测试：并发上传 100 张图片"
+
+# 修复 bug
+git commit -m "fix(auth): 修复 Token 过期时间计算错误
+
+问题：Token 过期时间计算错误，导致提前过期
+原因：时区转换问题
+修复：使用 UTC 时间统一计算
+
+验证：
+- 单元测试：TokenServiceTest.testTokenExpiration
+- 手动验证：Token 在预期时间过期"
+```
+
+### ❌ 反例
+
+```bash
+# 错误：无意义信息、缺少原因和验证方式
+git commit -m "update" # ❌ 无意义
+git commit -m "fix bug" # ❌ 缺少详细信息
+git commit -m "feat: 添加功能" # ❌ 缺少为什么和怎么验证
+```
+

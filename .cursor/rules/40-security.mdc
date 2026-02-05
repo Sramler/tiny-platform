@@ -1,0 +1,73 @@
+---
+description: 安全规范（全局红线，始终应用）
+alwaysApply: true
+---
+
+# 40 安全规范（全局红线）
+
+## 适用范围
+
+- 适用于：全仓库
+
+## 禁止（Must Not）
+
+- ❌ 任何形式泄漏敏感信息：密码、密钥、Token/JWT、私钥、连接串。
+- ❌ 生产环境关闭鉴权、放宽权限、硬编码后门。
+
+## 必须（Must）
+
+- ✅ 涉及鉴权/权限/多租户的变更必须说明：影响面、回滚方案、最小化改动。
+- ✅ 输出日志必须脱敏（按项目安全策略）。
+
+## 应该（Should）
+
+- ⚠️ 依赖更新与高危漏洞需及时处理并记录。
+
+## 可以（May）
+
+- 💡 重要安全决策写入文档（ADR/README/注释均可）。
+
+## 例外与裁决
+
+- 开发环境：开发环境可适当放宽（如关闭 HTTPS），但必须明确标注且不能提交到生产配置。
+- 测试数据：测试数据可使用弱密码，但必须使用独立的测试数据库。
+- 冲突时：安全规范优先级最高，任何规则冲突时安全规范优先。
+
+## 示例
+
+### ✅ 正例
+
+```java
+// 日志脱敏
+log.info("User login: userId={}, username={}", userId, maskUsername(username));
+
+// 密码验证（不记录密码）
+if (passwordEncoder.matches(rawPassword, encodedPassword)) {
+    // 登录成功
+}
+
+// 敏感信息不输出到响应
+public UserDTO toDTO(User user) {
+    return UserDTO.builder()
+        .id(user.getId())
+        .username(user.getUsername())
+        // ❌ 不包含 password 字段
+        .build();
+}
+```
+
+### ❌ 反例
+
+```java
+// 错误：日志中泄漏密码、响应中包含敏感信息
+log.info("User login: username={}, password={}", username, password); // ❌ 泄漏密码
+
+public UserDTO toDTO(User user) {
+    return UserDTO.builder()
+        .id(user.getId())
+        .username(user.getUsername())
+        .password(user.getPassword()) // ❌ 响应中包含密码
+        .build();
+}
+```
+

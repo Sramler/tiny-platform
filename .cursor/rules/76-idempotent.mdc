@@ -1,0 +1,72 @@
+---
+description: 幂等性规范
+globs:
+  - "**/idempotent/**"
+  - "**/*Idempotent*.java"
+---
+
+# 76 幂等性规范
+
+## 适用范围
+
+- 适用于：`**/idempotent/**`、`**/*Idempotent*.java`、幂等性相关代码
+
+## 禁止（Must Not）
+
+- ❌ 幂等性 Key 设计过于简单（如仅使用用户ID，导致不同请求冲突）。
+- ❌ 幂等性验证失败后直接返回错误（应返回首次请求的结果）。
+- ❌ 幂等性 Key 包含敏感信息（应使用哈希或脱敏处理）。
+
+## 必须（Must）
+
+- ✅ 幂等性实现：使用 `tiny-idempotent-platform` 模块提供的幂等性能力。
+- ✅ 幂等性 Key 设计：业务维度（如用户ID）+ 唯一标识（如订单号、请求ID）+ 操作类型（如 create/update）。
+- ✅ 幂等性过期时间：根据业务场景设置合理过期时间（如订单创建 30 分钟，支付 5 分钟）。
+- ✅ 幂等性异常处理：抛出 `IdempotentException`，由 `GlobalExceptionHandler` 统一处理。
+- ✅ 幂等性结果存储：首次请求结果必须存储，后续相同 Key 的请求返回存储的结果。
+
+## 应该（Should）
+
+- ⚠️ 幂等性验证时机：在业务逻辑执行前验证，避免重复执行。
+- ⚠️ 幂等性 Key 生成：客户端生成唯一请求ID（UUID），服务端验证。
+- ⚠️ 幂等性测试：关键业务接口（如支付、订单创建）必须编写幂等性测试用例。
+
+## 可以（May）
+
+- 💡 幂等性方式：Token 方式（客户端获取 Token，提交时携带）、唯一键方式（数据库唯一约束）、状态机方式（状态转换幂等）。
+
+## 例外与裁决
+
+- 查询接口：GET 请求天然幂等，无需额外处理。
+- 删除接口：DELETE 请求通常幂等（删除不存在的资源返回 404）。
+- 冲突时：业务规范优先于本规范。
+
+## 示例
+
+### ✅ 正例
+
+```java
+// 幂等性 Key：业务维度 + 唯一标识 + 操作类型
+@Idempotent(key = "order:create:#{#request.userId}:#{#request.orderNo}")
+@PostMapping("/orders")
+public ResponseEntity<GlobalResponse<OrderDTO>> createOrder(@RequestBody CreateOrderRequest request) {
+    OrderDTO order = orderService.create(request);
+    return ResponseUtil.ok(order);
+}
+
+// 幂等性 Key 生成规则
+// order:create:123:ORD-20240101-001
+// 格式：业务类型:操作类型:业务维度:唯一标识
+```
+
+### ❌ 反例
+
+```java
+// 错误：Key 设计过于简单，不同请求可能冲突
+@Idempotent(key = "#{#request.userId}") // ❌ 仅使用用户ID
+@PostMapping("/orders")
+public ResponseEntity<GlobalResponse<OrderDTO>> createOrder(@RequestBody CreateOrderRequest request) {
+    // ...
+}
+```
+

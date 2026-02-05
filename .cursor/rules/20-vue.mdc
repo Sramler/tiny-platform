@@ -1,0 +1,101 @@
+---
+description: Vue 3 / TS 编码规范
+globs:
+  - "**/*.vue"
+  - "**/*.ts"
+  - "**/*.tsx"
+---
+
+# 20 Vue 3 编码规范
+
+## 适用范围
+
+- 适用于：`**/*.vue`、`**/*.ts`、`**/*.tsx`
+
+## 禁止（Must Not）
+
+- ❌ 模板中堆叠复杂业务逻辑（应下沉到 composables/services）。
+- ❌ 混用 Options API 与 Composition API（默认 Composition API）。
+
+## 必须（Must）
+
+- ✅ `<script setup lang="ts">` 优先；TypeScript 优先。
+- ✅ 组件命名 PascalCase；基础组件 Base 前缀；单例组件 The 前缀。
+- ✅ 响应式：`ref/reactive`；派生 `computed`；副作用 `watch`。
+
+## 应该（Should）
+
+- ⚠️ 模板：组件 kebab-case；绑定 `:`；事件 `@`；slot `#`。
+- ⚠️ 性能：合理使用 `v-if/v-show`；大模块异步加载；避免不必要的 watch。
+
+## 可以（May）
+
+- 💡 Pinia 按业务域拆 store，actions 处理异步。
+
+## 例外与裁决
+
+- 第三方组件库：遵循组件库的 API 规范（如 Ant Design Vue）。
+- 遗留代码：逐步迁移到 Composition API，新代码必须使用 Composition API。
+- 冲突时：平台特定规则（90+）优先于本规范。
+
+## 示例
+
+### ✅ 正例
+
+```vue
+<script setup lang="ts">
+import { ref, computed } from 'vue'
+import { useUserStore } from '@/stores/user'
+
+// 响应式数据
+const count = ref(0)
+const userStore = useUserStore()
+
+// 计算属性
+const doubleCount = computed(() => count.value * 2)
+
+// 方法
+const increment = () => {
+  count.value++
+}
+</script>
+
+<template>
+  <div>
+    <p>{{ doubleCount }}</p>
+    <button @click="increment">增加</button>
+  </div>
+</template>
+```
+
+### ❌ 反例
+
+```vue
+<!-- 错误：混用 Options API 和 Composition API，模板中堆叠逻辑 -->
+<script>
+export default {
+  data() {
+    return { count: 0 }
+  },
+  computed: {
+    doubleCount() {
+      return this.count * 2
+    }
+  },
+  methods: {
+    increment() {
+      this.count++
+    }
+  }
+}
+</script>
+
+<template>
+  <div>
+    <!-- ❌ 模板中堆叠复杂逻辑 -->
+    <p>{{ count * 2 + userStore.user.id }}</p>
+    <button @click="count++">增加</button>
+  </div>
+</template>
+```
+

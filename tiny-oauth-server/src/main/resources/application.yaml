@@ -13,15 +13,6 @@ server:
     # 是否包含异常详情
     include-binding-errors: always
 spring:
-  problem:
-    # Problem 类型基础 URI（RFC 7807）
-    # 注意：建议在不同环境的配置文件中覆盖此值：
-    #   - 开发环境：http://localhost:9000/problems
-    #   - 生产环境：https://your-domain.com/problems
-    type: "https://example.org/problems"
-  mvc:
-    # 当找不到处理器时抛出异常，而不是返回 404 页面
-    throw-exception-if-no-handler-found: true
   web:
     resources:
       # 禁用静态资源映射，避免与 API 路由冲突
@@ -130,7 +121,6 @@ spring:
     change-log: classpath:db/changelog/db.changelog-master.yaml
   profiles:
     active: dev
-
   # Jackson 配置
   #jackson:
   #  serialization:

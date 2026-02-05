@@ -88,6 +88,8 @@ const handleSubmit = () => {
   align-items: center;
   padding: 20px;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  /* 固定为亮色主题，避免系统暗黑模式自动反色导致输入文字过浅 */
+  color-scheme: light;
 }
 
 .card {
@@ -143,9 +145,21 @@ const handleSubmit = () => {
   transition: border-color 0.3s;
 }
 
+/* 确保在深色模式下文字和背景对比足够清晰 */
+.form-group input {
+  color: #222;
+  background-color: #fff;
+  caret-color: #222;
+}
+
 .form-group input:focus {
   outline: none;
   border-color: #667eea;
+}
+
+.form-group input::placeholder {
+  color: #999;
+  opacity: 1;
 }
 
 .btn {
