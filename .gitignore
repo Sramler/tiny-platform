@@ -10,6 +10,9 @@ logs/
 *.tmp
 *.swp
 
+# Java 编译产物
+*.class
+
 # IDEA 工具相关
 .idea/
 *.iml

@@ -1,0 +1,11 @@
+# local extensions
+src/rules.local/
+
+# adapter workspace / intermediates
+targets/
+
+# caches (optional)
+cache/
+
+# OS
+.DS_Store

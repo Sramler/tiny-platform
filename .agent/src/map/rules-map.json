@@ -1,0 +1,124 @@
+{
+    "rules": {
+      "00-base.rules.md": {
+        "cursor": {
+          "id": "00-core",
+          "frontmatter": { "description": "全局基础规范（始终应用）", "alwaysApply": true }
+        }
+      },
+      "40-security.rules.md": {
+        "cursor": {
+          "id": "40-security",
+          "frontmatter": { "description": "安全规范（全局红线，始终应用）", "alwaysApply": true }
+        }
+      },
+      "60-git.rules.md": {
+        "cursor": {
+          "id": "60-git",
+          "frontmatter": { "description": "Git 规范（协作约束，始终应用）", "alwaysApply": true }
+        }
+      },
+      "10-java.rules.md": {
+        "cursor": {
+          "id": "10-java",
+          "frontmatter": { "description": "Java 编码规范", "globs": ["**/*.java"] }
+        }
+      },
+      "20-vue.rules.md": {
+        "cursor": {
+          "id": "20-vue",
+          "frontmatter": { "description": "Vue 3 / TS 编码规范", "globs": ["**/*.vue", "**/*.ts", "**/*.tsx"] }
+        }
+      },
+      "30-antdv.rules.md": {
+        "cursor": {
+          "id": "30-antdv",
+          "frontmatter": { "description": "Ant Design Vue 4.x 规范", "globs": ["**/*.vue", "src/components/**"] }
+        }
+      },
+      "50-testing.rules.md": {
+        "cursor": {
+          "id": "50-testing",
+          "frontmatter": {
+            "description": "测试规范（测试文件触发）",
+            "globs": [
+              "**/*Test.java",
+              "**/*Tests.java",
+              "**/*.spec.ts",
+              "**/*.test.ts",
+              "**/*.spec.tsx",
+              "**/*.test.tsx"
+            ]
+          }
+        }
+      },
+      "70-database.rules.md": {
+        "cursor": {
+          "id": "70-database",
+          "frontmatter": {
+            "description": "数据库/SQL 规范",
+            "globs": ["**/*.sql", "**/schema.sql", "**/changelog/**"]
+          }
+        }
+      },
+      "75-exception.rules.md": {
+        "cursor": {
+          "id": "75-exception",
+          "frontmatter": {
+            "description": "异常处理规范",
+            "globs": ["**/exception/**", "**/*Exception*.java", "**/handler/**"]
+          }
+        }
+      },
+      "76-idempotent.rules.md": {
+        "cursor": {
+          "id": "76-idempotent",
+          "frontmatter": {
+            "description": "幂等性规范",
+            "globs": ["**/idempotent/**", "**/*Idempotent*.java"]
+          }
+        }
+      },
+      "80-api.rules.md": {
+        "cursor": {
+          "id": "80-api",
+          "frontmatter": {
+            "description": "REST API 设计规范",
+            "globs": ["**/controller/**", "**/*Controller.java"]
+          }
+        }
+      },
+      "90-tiny-platform.rules.md": {
+        "cursor": {
+          "id": "90-tiny-platform",
+          "frontmatter": { "description": "tiny-platform 平台特定规则（始终应用）", "alwaysApply": true }
+        }
+      },
+      "91-tiny-platform-auth.rules.md": {
+        "cursor": {
+          "id": "91-tiny-platform-auth",
+          "frontmatter": {
+            "description": "tiny-platform 认证授权规范（平台特定）",
+            "globs": ["**/oauth2/**", "**/auth/**", "**/security/**"]
+          }
+        }
+      }
+    },
+    "cursor": {
+      "order": [
+        "00-base.rules.md",
+        "40-security.rules.md",
+        "60-git.rules.md",
+        "10-java.rules.md",
+        "20-vue.rules.md",
+        "30-antdv.rules.md",
+        "50-testing.rules.md",
+        "70-database.rules.md",
+        "75-exception.rules.md",
+        "76-idempotent.rules.md",
+        "80-api.rules.md",
+        "90-tiny-platform.rules.md",
+        "91-tiny-platform-auth.rules.md"
+      ]
+    }
+  }
