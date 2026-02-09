@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-resource-api-uri-method-check
+      author: tiny
+      comment: resource 表增加类型级约束，接口类型(type=3)必须填写 uri 与 method，与服务层校验一致
+      changes:
+        - sql:
+            dbms: mysql
+            sql: ALTER TABLE resource ADD CONSTRAINT chk_resource_api_uri_method CHECK (type <> 3 OR (uri <> '' AND method <> ''));

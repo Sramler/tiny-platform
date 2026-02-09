@@ -1,0 +1,21 @@
+# CI 环境配置（仅用于 GitHub Actions 等 CI 中的调度示例数据验证）
+# 使用方式: spring.profiles.active=ci
+# 依赖：CI 中已启动 MySQL 服务，并设置 MYSQL_ROOT_PASSWORD、可选 MYSQL_PORT
+spring:
+  datasource:
+    url: >-
+      jdbc:mysql://127.0.0.1:${MYSQL_PORT:-3306}/tiny_web
+      ?useSSL=false
+      &allowPublicKeyRetrieval=true
+      &useUnicode=true
+      &characterEncoding=UTF-8
+      &serverTimezone=Asia/Shanghai
+      &sessionVariables=transaction_isolation='READ-COMMITTED'
+      &rewriteBatchedStatements=true
+    username: root
+    password: ${MYSQL_ROOT_PASSWORD:}
+  jpa:
+    hibernate:
+      ddl-auto: none
+  liquibase:
+    enabled: true

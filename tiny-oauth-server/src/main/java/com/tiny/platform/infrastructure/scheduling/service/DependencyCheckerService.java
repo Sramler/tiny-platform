@@ -9,17 +9,21 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
  * 依赖检查服务
- * 负责检查任务实例的依赖关系是否满足
+ * 负责检查任务实例的依赖关系是否满足，以及是否因上游失败/取消而不可达（用于 DAG 运行状态收敛）。
  */
 @Service
 public class DependencyCheckerService {
 
     private static final Logger logger = LoggerFactory.getLogger(DependencyCheckerService.class);
+
+    /** 上游处于这些状态时，下游 PENDING 视为不可达，应标为 SKIPPED */
+    private static final Set<String> UPSTREAM_TERMINAL_FAIL_OR_SKIP = Set.of("FAILED", "CANCELLED", "SKIPPED");
 
     private final SchedulingTaskInstanceRepository taskInstanceRepository;
     private final SchedulingDagEdgeRepository dagEdgeRepository;
@@ -49,39 +53,17 @@ public class DependencyCheckerService {
                 .collect(Collectors.toList());
 
         if (upstreamNodeCodes.isEmpty()) {
-            // 没有上游依赖，可以直接执行
             return true;
         }
 
-        // 2. 检查所有上游任务是否已完成
-        List<SchedulingTaskInstance> upstreamInstances = taskInstanceRepository
-                .findByDagRunId(instance.getDagRunId())
-                .stream()
-                .filter(upstream -> upstreamNodeCodes.contains(upstream.getNodeCode()))
-                .collect(Collectors.toList());
-
-        if (upstreamInstances.size() < upstreamNodeCodes.size()) {
-            logger.debug("任务实例 {} 的上游任务未全部创建, 需要: {}, 实际: {}", 
-                    instance.getId(), upstreamNodeCodes.size(), upstreamInstances.size());
-            return false;
-        }
-
-        // 3. 检查所有上游任务是否都成功完成
-        Set<String> completedUpstreamNodes = upstreamInstances.stream()
-                .filter(upstream -> "SUCCESS".equals(upstream.getStatus()))
-                .map(SchedulingTaskInstance::getNodeCode)
-                .collect(Collectors.toSet());
-
-        boolean allCompleted = completedUpstreamNodes.size() == upstreamNodeCodes.size();
-        
+        // 一次 SQL：统计上游节点中有 SUCCESS 实例的不同节点数，等于上游数即依赖全部满足
+        long successCount = taskInstanceRepository.countDistinctNodeCodesByDagRunIdAndNodeCodeInAndStatus(
+                instance.getDagRunId(), upstreamNodeCodes, "SUCCESS");
+        boolean allCompleted = successCount == upstreamNodeCodes.size();
         if (!allCompleted) {
-            Set<String> missingNodes = upstreamNodeCodes.stream()
-                    .filter(nodeCode -> !completedUpstreamNodes.contains(nodeCode))
-                    .collect(Collectors.toSet());
-            logger.debug("任务实例 {} 的上游任务未全部完成, 未完成节点: {}", 
-                    instance.getId(), missingNodes);
+            logger.debug("任务实例 {} 的上游任务未全部完成, 需要: {}, 已成功: {}",
+                    instance.getId(), upstreamNodeCodes.size(), successCount);
         }
-
         return allCompleted;
     }
 
@@ -93,6 +75,43 @@ public class DependencyCheckerService {
                 .findByDagVersionIdAndFromNodeCode(dagVersionId, fromNodeCode)
                 .stream()
                 .anyMatch(edge -> edge.getToNodeCode().equals(toNodeCode));
+    }
+
+    /**
+     * 判断当前实例是否因上游已失败/取消/跳过而不可达。
+     * 用于 DAG 运行状态收敛：将此类 PENDING 实例标为 SKIPPED。
+     * 按「每节点最新实例」判断：同一 (dagRunId, nodeCode) 可能有多条（如重试新建），只认 id 最大的那条；
+     * 仅当该最新实例为 FAILED/CANCELLED/SKIPPED 时才视为该上游终态失败，避免与节点重试冲突。
+     *
+     * @param instance        当前任务实例（通常为 PENDING）
+     * @param instancesInRun  同一次 DAG Run 下的全部任务实例（需包含上游实例）
+     * @return 若任一上游节点的最新实例状态为 FAILED/CANCELLED/SKIPPED 则 true，否则 false；无上游依赖返回 false
+     */
+    public boolean hasAnyUpstreamInTerminalFailOrSkipped(
+            SchedulingTaskInstance instance,
+            List<SchedulingTaskInstance> instancesInRun) {
+        if (instance.getDagVersionId() == null || instance.getNodeCode() == null) {
+            return false;
+        }
+        List<String> upstreamNodeCodes = dagEdgeRepository
+                .findByDagVersionIdAndToNodeCode(instance.getDagVersionId(), instance.getNodeCode())
+                .stream()
+                .map(edge -> edge.getFromNodeCode())
+                .collect(Collectors.toList());
+        if (upstreamNodeCodes.isEmpty()) {
+            return false;
+        }
+        Set<String> upstreamNodeSet = Set.copyOf(upstreamNodeCodes);
+        // 按 nodeCode 分组，每组只保留 id 最大的实例（同一节点重试会新建实例，最新一条代表该节点当前状态）
+        Map<String, SchedulingTaskInstance> latestByNode = instancesInRun.stream()
+                .filter(up -> up.getNodeCode() != null && upstreamNodeSet.contains(up.getNodeCode()))
+                .collect(Collectors.toMap(SchedulingTaskInstance::getNodeCode, u -> u, (a, b) -> {
+                    if (a.getId() == null) return b;
+                    if (b.getId() == null) return a;
+                    return a.getId() < b.getId() ? b : a;
+                }));
+        return latestByNode.values().stream()
+                .anyMatch(up -> up.getStatus() != null && UPSTREAM_TERMINAL_FAIL_OR_SKIP.contains(up.getStatus()));
     }
 }
 

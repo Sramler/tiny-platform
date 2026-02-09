@@ -9,6 +9,41 @@ databaseChangeLog:
       file: 003-insert-initial-data.yaml
       relativeToChangelogFile: true
 
+  # 调度中心示例数据（幂等；003 已执行过的库可由此补数据）
+  - include:
+      file: 011-insert-scheduling-demo.yaml
+      relativeToChangelogFile: true
+
+  # scheduling_dag 增加 cron_expression 列（Cron 持久化与重启恢复）
+  - include:
+      file: 012-add-dag-cron-expression.yaml
+      relativeToChangelogFile: true
+
+  # scheduling_task_instance 增加 concurrency_key 与索引（KEYED 并发策略）
+  - include:
+      file: 013-add-task-instance-concurrency-key.yaml
+      relativeToChangelogFile: true
+
+  # 回填 concurrency_key 历史数据（KEYED 兼容）
+  - include:
+      file: 014-backfill-task-instance-concurrency-key.yaml
+      relativeToChangelogFile: true
+
+  # scheduling_task_instance 增加 error_message（失败/超时原因，与 result 分离）
+  - include:
+      file: 015-add-task-instance-error-message.yaml
+      relativeToChangelogFile: true
+
+  # resource.enabled 默认值对齐实体（DEFAULT 1，与 Resource.enabled=true 一致）
+  - include:
+      file: 016-align-resource-enabled-default.yaml
+      relativeToChangelogFile: true
+
+  # resource 类型级约束：接口类型(type=3)必须填写 uri 与 method
+  - include:
+      file: 017-add-resource-api-uri-method-check.yaml
+      relativeToChangelogFile: true
+
   # 数据修复：修复资源 URL 格式
   - include:
       file: 004-fix-resource-url-format.yaml

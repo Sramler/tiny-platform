@@ -8,6 +8,8 @@
       <template #extra>
         <a-space>
           <a-button @click="handleTrigger" :loading="triggering" :disabled="!dagInfo.enabled">触发执行</a-button>
+          <a-button @click="handleStop" :loading="stopping" :disabled="!dagInfo.enabled">停止</a-button>
+          <a-button @click="handleRetry" :loading="retrying" :disabled="!dagInfo.enabled">重试</a-button>
           <a-button v-if="dagInfo.enabled" @click="handlePause">暂停</a-button>
           <a-button v-else @click="handleResume">恢复</a-button>
           <a-button @click="handleEdit">编辑</a-button>
@@ -29,6 +31,13 @@
               </a-tag>
             </a-descriptions-item>
             <a-descriptions-item label="描述" :span="2">{{ dagInfo.description || '-' }}</a-descriptions-item>
+            <a-descriptions-item label="Cron 表达式">{{ dagInfo.cronExpression || '-' }}</a-descriptions-item>
+            <a-descriptions-item label="Cron 时区">{{ dagInfo.cronTimezone || '系统默认' }}</a-descriptions-item>
+            <a-descriptions-item label="Cron 调度">
+              <a-tag :color="dagInfo.cronEnabled ? 'green' : 'red'">
+                {{ dagInfo.cronEnabled ? '启用' : '禁用' }}
+              </a-tag>
+            </a-descriptions-item>
             <a-descriptions-item label="当前版本ID">{{ dagInfo.currentVersionId || '-' }}</a-descriptions-item>
             <a-descriptions-item label="创建时间">{{ dagInfo.createdAt }}</a-descriptions-item>
           </a-descriptions>
@@ -185,6 +194,36 @@
         <a-form-item label="描述">
           <a-textarea v-model:value="dagFormData.description" :rows="3" placeholder="请输入描述" />
         </a-form-item>
+        <a-form-item label="Cron 表达式">
+          <a-input-group compact>
+            <a-input
+              v-model:value="dagFormData.cronExpression"
+              placeholder="可选，如 0 0 2 * * ? 表示每日 2 点"
+              allow-clear
+              style="width: calc(100% - 64px)"
+            />
+            <a-button type="default" @click="openCronDesigner">设计</a-button>
+          </a-input-group>
+        </a-form-item>
+        <a-form-item label="Cron 时区">
+          <a-select
+            v-model:value="dagFormData.cronTimezone"
+            placeholder="可选，默认使用系统时区"
+            allow-clear
+            show-search
+            :filter-option="filterTimezoneOption"
+          >
+            <a-select-option value="Asia/Shanghai">Asia/Shanghai (中国标准时间)</a-select-option>
+            <a-select-option value="UTC">UTC (协调世界时)</a-select-option>
+            <a-select-option value="America/New_York">America/New_York (美国东部时间)</a-select-option>
+            <a-select-option value="Europe/London">Europe/London (英国时间)</a-select-option>
+            <a-select-option value="Asia/Tokyo">Asia/Tokyo (日本标准时间)</a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item label="启用 Cron 调度">
+          <a-switch v-model:checked="dagFormData.cronEnabled" />
+          <span class="ml-2" style="color: #999; font-size: 12px">与 DAG 启用状态独立控制</span>
+        </a-form-item>
         <a-form-item label="是否启用">
           <a-switch v-model:checked="dagFormData.enabled" />
         </a-form-item>
@@ -286,11 +325,23 @@
         </a-form-item>
       </a-form>
     </a-modal>
+
+    <!-- Cron 表达式设计器弹窗 -->
+    <a-modal
+      v-model:open="cronDesignerVisible"
+      title="Cron 表达式设计"
+      :width="480"
+      @ok="applyCronExpression"
+      @cancel="cronDesignerVisible = false"
+    >
+      <CronDesigner v-model="cronDesignerValue" />
+    </a-modal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed } from 'vue'
+import CronDesigner from '@/components/scheduling/CronDesigner.vue'
 import { message } from 'ant-design-vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
 import { useRouter, useRoute } from 'vue-router'
@@ -298,6 +349,8 @@ import {
   getDag,
   updateDag,
   triggerDag,
+  stopDag,
+  retryDag,
   pauseDag,
   resumeDag,
   listDagVersions,
@@ -318,9 +371,12 @@ import {
 const router = useRouter()
 const route = useRoute()
 
-const dagId = computed(() => Number(route.query.id))
+// 支持 query.id 或 query.dagId（与 DAG 列表跳转及菜单链接保持一致）
+const dagId = computed(() => Number(route.query.id) || Number(route.query.dagId))
 const activeTab = ref('info')
 const triggering = ref(false)
+const stopping = ref(false)
+const retrying = ref(false)
 const dagInfo = ref<any>({})
 const dagFormVisible = ref(false)
 const dagFormData = reactive({
@@ -328,8 +384,22 @@ const dagFormData = reactive({
   code: '',
   name: '',
   description: '',
+  cronExpression: '' as string,
+  cronTimezone: undefined as string | undefined,
+  cronEnabled: true,
   enabled: true,
 })
+
+const cronDesignerVisible = ref(false)
+const cronDesignerValue = ref('')
+function openCronDesigner() {
+  cronDesignerValue.value = dagFormData.cronExpression || ''
+  cronDesignerVisible.value = true
+}
+function applyCronExpression() {
+  dagFormData.cronExpression = cronDesignerValue.value.trim()
+  cronDesignerVisible.value = false
+}
 
 // 版本相关
 const versions = ref<any[]>([])
@@ -477,12 +547,19 @@ const handleBack = () => {
   router.back()
 }
 
+const filterTimezoneOption = (input: string, option: any) => {
+  return option.children[0].children.toLowerCase().includes(input.toLowerCase())
+}
+
 const handleEdit = () => {
   Object.assign(dagFormData, {
     id: dagInfo.value.id,
     code: dagInfo.value.code || '',
     name: dagInfo.value.name,
     description: dagInfo.value.description || '',
+    cronExpression: dagInfo.value.cronExpression ?? '',
+    cronTimezone: dagInfo.value.cronTimezone || undefined,
+    cronEnabled: dagInfo.value.cronEnabled !== undefined ? dagInfo.value.cronEnabled : true,
     enabled: dagInfo.value.enabled !== undefined ? dagInfo.value.enabled : true,
   })
   dagFormVisible.value = true
@@ -533,6 +610,32 @@ const handleResume = async () => {
     loadDag()
   } catch (error: any) {
     message.error(error.message || '恢复失败')
+  }
+}
+
+const handleStop = async () => {
+  stopping.value = true
+  try {
+    await stopDag(dagId.value)
+    message.success('已停止')
+    loadDag()
+  } catch (error: any) {
+    message.error(error.message || '停止失败')
+  } finally {
+    stopping.value = false
+  }
+}
+
+const handleRetry = async () => {
+  retrying.value = true
+  try {
+    await retryDag(dagId.value)
+    message.success('已提交重试')
+    loadDag()
+  } catch (error: any) {
+    message.error(error.message || '重试失败')
+  } finally {
+    retrying.value = false
   }
 }
 
@@ -757,7 +860,15 @@ const handleDeleteEdge = async (edgeId: number) => {
   }
 }
 
+const DAG_LIST_PATH = '/scheduling/dag'
+
 onMounted(() => {
+  const id = dagId.value
+  if (!id || Number.isNaN(id)) {
+    message.warning('请先选择 DAG：从 DAG 列表中点击「详情」进入，或使用链接带参数 ?id=xxx 或 ?dagId=xxx')
+    router.replace(DAG_LIST_PATH)
+    return
+  }
   loadDag()
   loadVersions()
   loadTasks()

@@ -3,6 +3,8 @@ databaseChangeLog:
       id: insert-initial-data
       author: tiny
       comment: 插入初始数据（用户、角色、资源等）
+      validCheckSum:
+        - "9:3858b543acbb596c89b5a54c015c7504"
       changes:
         - sqlFile:
             path: classpath:data.sql

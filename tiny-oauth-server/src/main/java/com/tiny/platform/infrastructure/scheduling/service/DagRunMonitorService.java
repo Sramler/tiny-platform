@@ -15,10 +15,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 
 /**
  * DAG 运行监控服务
- * 负责监控 DAG 运行状态并更新最终状态
+ * 负责监控 DAG 运行状态并更新最终状态，包括：不可达 PENDING→SKIPPED 收敛、Run 终态判定。
  */
 @Service
 public class DagRunMonitorService {
@@ -28,15 +29,21 @@ public class DagRunMonitorService {
     private static final int DAG_RUN_PAGE_SIZE = 100;
     private static final int MAX_DAG_RUNS_PER_CYCLE = 300;
 
+    /** Run 已终态时不再更新，避免覆盖 CANCELLED 等 */
+    private static final Set<String> RUN_TERMINAL_STATUSES = Set.of("SUCCESS", "FAILED", "PARTIAL_FAILED", "CANCELLED");
+
     private final SchedulingDagRunRepository dagRunRepository;
     private final SchedulingTaskInstanceRepository taskInstanceRepository;
+    private final DependencyCheckerService dependencyChecker;
 
     @Autowired
     public DagRunMonitorService(
             SchedulingDagRunRepository dagRunRepository,
-            SchedulingTaskInstanceRepository taskInstanceRepository) {
+            SchedulingTaskInstanceRepository taskInstanceRepository,
+            DependencyCheckerService dependencyChecker) {
         this.dagRunRepository = dagRunRepository;
         this.taskInstanceRepository = taskInstanceRepository;
+        this.dependencyChecker = dependencyChecker;
     }
 
     /**
@@ -70,58 +77,85 @@ public class DagRunMonitorService {
 
     /**
      * 更新 DAG 运行状态
+     * 包含：不可达 PENDING→SKIPPED 收敛、按实例状态统计、Run 终态判定（不覆盖 CANCELLED）。
      */
     @Transactional
     public void updateDagRunStatus(SchedulingDagRun run) {
-        // 获取该运行的所有任务实例
-        List<SchedulingTaskInstance> instances = taskInstanceRepository.findByDagRunId(run.getId());
+        if (run.getStatus() != null && RUN_TERMINAL_STATUSES.contains(run.getStatus())) {
+            return;
+        }
 
+        List<SchedulingTaskInstance> instances = taskInstanceRepository.findByDagRunId(run.getId());
         if (instances.isEmpty()) {
             logger.warn("DAG Run {} 没有任务实例", run.getId());
             return;
         }
 
-        // 统计任务状态
-        long total = instances.size();
-        long success = instances.stream().filter(i -> "SUCCESS".equals(i.getStatus())).count();
-        long failed = instances.stream().filter(i -> "FAILED".equals(i.getStatus())).count();
-        long running = instances.stream().filter(i -> "RUNNING".equals(i.getStatus()) || "RESERVED".equals(i.getStatus())).count();
-        long pending = instances.stream().filter(i -> "PENDING".equals(i.getStatus())).count();
-
-        // 判断 DAG 运行状态
-        String newStatus;
-        if (failed > 0) {
-            // 有任务失败
-            if (running == 0 && pending == 0) {
-                // 所有任务都已完成（部分失败）
-                newStatus = "PARTIAL_FAILED";
-            } else {
-                // 还有任务在运行或等待
-                newStatus = "RUNNING";
-            }
-        } else if (success == total) {
-            // 所有任务都成功
-            newStatus = "SUCCESS";
-        } else if (running > 0 || pending > 0) {
-            // 还有任务在运行或等待
-            newStatus = "RUNNING";
-        } else {
-            // 其他情况，保持运行中
-            newStatus = "RUNNING";
+        // 仅当 Run 已无 RUNNING/RESERVED（无活跃执行）时才做 PENDING→SKIPPED 收敛，避免过早 SKIP 后用户重试上游时下游无法恢复
+        long runningCount = instances.stream()
+                .filter(i -> "RUNNING".equals(i.getStatus()) || "RESERVED".equals(i.getStatus()))
+                .count();
+        if (runningCount == 0) {
+            boolean changed;
+            do {
+                changed = false;
+                for (SchedulingTaskInstance inst : instances) {
+                    if (!"PENDING".equals(inst.getStatus())) {
+                        continue;
+                    }
+                    if (dependencyChecker.hasAnyUpstreamInTerminalFailOrSkipped(inst, instances)) {
+                        inst.setStatus("SKIPPED");
+                        taskInstanceRepository.save(inst);
+                        changed = true;
+                    }
+                }
+                if (changed) {
+                    instances = taskInstanceRepository.findByDagRunId(run.getId());
+                }
+            } while (changed);
         }
 
-        // 如果状态发生变化，更新
+        // 统计任务状态（含 SKIPPED、CANCELLED、PAUSED）
+        long total = instances.size();
+        long success = countStatus(instances, "SUCCESS");
+        long failed = countStatus(instances, "FAILED");
+        long running = instances.stream()
+                .filter(i -> "RUNNING".equals(i.getStatus()) || "RESERVED".equals(i.getStatus()))
+                .count();
+        long pending = countStatus(instances, "PENDING");
+        long skipped = countStatus(instances, "SKIPPED");
+        long cancelled = countStatus(instances, "CANCELLED");
+        long paused = countStatus(instances, "PAUSED");
+
+        // 终态判定：无 RUNNING/PENDING 时再判终态
+        String newStatus;
+        if (running > 0 || pending > 0) {
+            newStatus = "RUNNING";
+        } else if (success == total) {
+            newStatus = "SUCCESS";
+        } else if (failed > 0) {
+            newStatus = success > 0 ? "PARTIAL_FAILED" : "FAILED";
+        } else if (cancelled == total) {
+            newStatus = "CANCELLED";
+        } else {
+            // 其余为 SUCCESS/SKIPPED/PAUSED 等，无失败则视为成功
+            newStatus = "SUCCESS";
+        }
+
         String previousStatus = run.getStatus();
         if (!newStatus.equals(previousStatus)) {
             run.setStatus(newStatus);
-            if ("SUCCESS".equals(newStatus) || "FAILED".equals(newStatus) || "PARTIAL_FAILED".equals(newStatus)) {
+            if (RUN_TERMINAL_STATUSES.contains(newStatus)) {
                 run.setEndTime(LocalDateTime.now());
             }
             dagRunRepository.save(run);
-
-            logger.info("DAG Run {} 状态更新: {} -> {}, 成功: {}/{}, 失败: {}", 
-                    run.getId(), previousStatus, newStatus, success, total, failed);
+            logger.info("DAG Run {} 状态更新: {} -> {}, 成功: {}, 失败: {}, 跳过: {}, 取消: {}, 暂停: {}",
+                    run.getId(), previousStatus, newStatus, success, failed, skipped, cancelled, paused);
         }
+    }
+
+    private static long countStatus(List<SchedulingTaskInstance> instances, String status) {
+        return instances.stream().filter(i -> status.equals(i.getStatus())).count();
     }
 }
 

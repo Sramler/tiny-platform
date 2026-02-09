@@ -81,16 +81,58 @@
         <a-form-item label="描述">
           <a-textarea v-model:value="formData.description" :rows="3" placeholder="请输入描述" />
         </a-form-item>
+        <a-form-item label="Cron 表达式">
+          <a-input-group compact>
+            <a-input
+              v-model:value="formData.cronExpression"
+              placeholder="可选，如 0 0 2 * * ? 表示每日 2 点"
+              allow-clear
+              style="width: calc(100% - 64px)"
+            />
+            <a-button type="default" @click="openCronDesigner">设计</a-button>
+          </a-input-group>
+        </a-form-item>
+        <a-form-item label="Cron 时区">
+          <a-select
+            v-model:value="formData.cronTimezone"
+            placeholder="可选，默认使用系统时区"
+            allow-clear
+            show-search
+            :filter-option="filterTimezoneOption"
+          >
+            <a-select-option value="Asia/Shanghai">Asia/Shanghai (中国标准时间)</a-select-option>
+            <a-select-option value="UTC">UTC (协调世界时)</a-select-option>
+            <a-select-option value="America/New_York">America/New_York (美国东部时间)</a-select-option>
+            <a-select-option value="Europe/London">Europe/London (英国时间)</a-select-option>
+            <a-select-option value="Asia/Tokyo">Asia/Tokyo (日本标准时间)</a-select-option>
+          </a-select>
+        </a-form-item>
+        <a-form-item label="启用 Cron 调度">
+          <a-switch v-model:checked="formData.cronEnabled" />
+          <span class="ml-2" style="color: #999; font-size: 12px">与 DAG 启用状态独立控制</span>
+        </a-form-item>
         <a-form-item label="是否启用">
           <a-switch v-model:checked="formData.enabled" />
         </a-form-item>
       </a-form>
+    </a-modal>
+
+    <!-- Cron 表达式设计器弹窗 -->
+    <a-modal
+      v-model:open="cronDesignerVisible"
+      title="Cron 表达式设计"
+      :width="480"
+      @ok="applyCronExpression"
+      @cancel="cronDesignerVisible = false"
+    >
+      <CronDesigner v-model="cronDesignerValue" />
     </a-modal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
+import CronDesigner from '@/components/scheduling/CronDesigner.vue'
 import { message } from 'ant-design-vue'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import { useRouter } from 'vue-router'
@@ -116,6 +158,9 @@ const formData = reactive({
   code: '',
   name: '',
   description: '',
+  cronExpression: '' as string,
+  cronTimezone: undefined as string | undefined,
+  cronEnabled: true,
   enabled: true,
   createdBy: '',
 })
@@ -127,6 +172,17 @@ const pagination = reactive({
   showSizeChanger: true,
   showTotal: (total: number) => `共 ${total} 条`,
 })
+
+const cronDesignerVisible = ref(false)
+const cronDesignerValue = ref('')
+function openCronDesigner() {
+  cronDesignerValue.value = formData.cronExpression || ''
+  cronDesignerVisible.value = true
+}
+function applyCronExpression() {
+  formData.cronExpression = cronDesignerValue.value.trim()
+  cronDesignerVisible.value = false
+}
 
 const columns = [
   { title: 'ID', dataIndex: 'id', key: 'id', width: 80 },
@@ -185,6 +241,10 @@ const onSelectChange = (keys: number[]) => {
   selectedRowKeys.value = keys
 }
 
+const filterTimezoneOption = (input: string, option: any) => {
+  return option.children[0].children.toLowerCase().includes(input.toLowerCase())
+}
+
 const handleCreate = () => {
   formTitle.value = '新建 DAG'
   Object.assign(formData, {
@@ -193,6 +253,9 @@ const handleCreate = () => {
     code: '',
     name: '',
     description: '',
+    cronExpression: '',
+    cronTimezone: undefined,
+    cronEnabled: true,
     enabled: true,
     createdBy: '',
   })
@@ -207,6 +270,9 @@ const handleEdit = (record: any) => {
     code: record.code || '',
     name: record.name,
     description: record.description || '',
+    cronExpression: record.cronExpression ?? '',
+    cronTimezone: record.cronTimezone || undefined,
+    cronEnabled: record.cronEnabled !== undefined ? record.cronEnabled : true,
     enabled: record.enabled !== undefined ? record.enabled : true,
     createdBy: record.createdBy || '',
   })

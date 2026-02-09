@@ -180,6 +180,19 @@ const routes = [
         component: Debug,
         meta: { requiresAuth: true, title: 'OIDC 调试工具' },
       },
+      // 调度 DAG 详情/历史（子页无菜单项，需静态注册避免 404）
+      {
+        path: 'scheduling/dag/detail',
+        name: 'DagDetail',
+        component: () => import('@/views/scheduling/DagDetail.vue'),
+        meta: { requiresAuth: true, title: 'DAG 详情' },
+      },
+      {
+        path: 'scheduling/dag/history',
+        name: 'DagHistory',
+        component: () => import('@/views/scheduling/DagHistory.vue'),
+        meta: { requiresAuth: true, title: 'DAG 运行历史' },
+      },
       // 菜单路由将在动态加载时添加，这里先留空
     ],
   },

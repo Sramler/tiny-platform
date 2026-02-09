@@ -96,10 +96,13 @@ service.interceptors.response.use(
     // 对响应错误做点什么
     console.error('响应错误:', error)
 
-    // 获取当前路径和来源信息
+    // 获取当前路径和来源信息（若当前已在异常页则不传 from，避免 400/403/404 之间链式传递）
     const currentPath = router.currentRoute.value.path
-    const fromPath = currentPath !== '/login' && currentPath !== '/callback' ? currentPath : null
-    const referer = document.referrer || fromPath || null
+    const currentFullPath = router.currentRoute.value.fullPath
+    const isExceptionPath = currentPath.startsWith('/exception/')
+    // 使用 fullPath 保留 query（如 ?id=1），保证返回时编辑页能正确打开；优先用当前页（发生错误的页面）作为 from
+    const fromPath = currentPath !== '/login' && currentPath !== '/callback' ? currentFullPath : null
+    const referer = isExceptionPath ? null : (fromPath || document.referrer || null)
 
     // 构建错误信息查询参数
     const buildErrorQuery = (path: string, message?: string) => {

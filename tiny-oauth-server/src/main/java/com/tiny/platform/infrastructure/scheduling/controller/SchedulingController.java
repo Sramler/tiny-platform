@@ -12,15 +12,20 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 企业级 DAG 调度控制器
+ * 企业级 DAG 调度控制器。
+ * 同时支持 /scheduling 与 /api/scheduling，以兼容前端 baseURL 带或不带 /api 的情况。
  */
 @RestController
-@RequestMapping("/scheduling")
+@RequestMapping(value = {"/scheduling"})
 public class SchedulingController {
 
     private final SchedulingService schedulingService;
@@ -68,6 +73,14 @@ public class SchedulingController {
         return schedulingService.getTaskType(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    /**
+     * 获取已注册执行器标识列表，供任务类型表单下拉选择。
+     */
+    @GetMapping("/executors")
+    public ResponseEntity<List<String>> listExecutors() {
+        return ResponseEntity.ok(schedulingService.listExecutors());
     }
 
     /**
@@ -348,6 +361,14 @@ public class SchedulingController {
         return ResponseEntity.ok(schedulingService.getDagEdges(dagId, versionId));
     }
 
+    /**
+     * DAG 运行统计（Run 级别）：total/success/failed/avgDurationMs/p95DurationMs/p99DurationMs
+     */
+    @GetMapping("/dag/{dagId}/stats")
+    public ResponseEntity<SchedulingDagStatsDto> getDagStats(@PathVariable Long dagId) {
+        return ResponseEntity.ok(schedulingService.getDagStats(dagId));
+    }
+
     // ==================== DAG 调度触发/控制 ====================
 
     /**
@@ -445,13 +466,39 @@ public class SchedulingController {
     // ==================== 运行历史 ====================
 
     /**
-     * 查询 DAG 所有运行历史
+     * 查询 DAG 运行历史，支持按状态、触发类型、运行编号、开始时间范围筛选。
      */
     @GetMapping("/dag/{dagId}/runs")
     public ResponseEntity<PageResponse<SchedulingDagRun>> getDagRuns(
             @PathVariable Long dagId,
-            @PageableDefault(size = 10, sort = "id", direction = Sort.Direction.DESC) Pageable pageable) {
-        return ResponseEntity.ok(new PageResponse<>(schedulingService.getDagRuns(dagId, pageable)));
+            @PageableDefault(size = 10, sort = "id", direction = Sort.Direction.DESC) Pageable pageable,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String triggerType,
+            @RequestParam(required = false) String runNo,
+            @RequestParam(required = false) String startTimeFrom,
+            @RequestParam(required = false) String startTimeTo) {
+        LocalDateTime from = parseDateToStartOfDay(startTimeFrom);
+        LocalDateTime to = parseDateToEndOfDay(startTimeTo);
+        return ResponseEntity.ok(new PageResponse<>(schedulingService.getDagRuns(
+                dagId, pageable, status, triggerType, runNo, from, to)));
+    }
+
+    private static LocalDateTime parseDateToStartOfDay(String dateStr) {
+        if (dateStr == null || dateStr.isBlank()) return null;
+        try {
+            return LocalDate.parse(dateStr.trim(), DateTimeFormatter.ISO_LOCAL_DATE).atStartOfDay();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static LocalDateTime parseDateToEndOfDay(String dateStr) {
+        if (dateStr == null || dateStr.isBlank()) return null;
+        try {
+            return LocalDate.parse(dateStr.trim(), DateTimeFormatter.ISO_LOCAL_DATE).atTime(23, 59, 59, 999_999_999);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /**
@@ -540,7 +587,7 @@ public class SchedulingController {
     @GetMapping("/quartz/cluster-status")
     public ResponseEntity<Map<String, Object>> getQuartzClusterStatus() {
         QuartzSchedulerService.ClusterStatusInfo status = quartzSchedulerService.getClusterStatus();
-        
+
         Map<String, Object> result = new HashMap<>();
         result.put("schedulerName", status.getSchedulerName());
         result.put("schedulerInstanceId", status.getSchedulerInstanceId());
@@ -551,7 +598,7 @@ public class SchedulingController {
         result.put("schedulerStarted", status.getSchedulerStarted());
         result.put("clusterMode", status.isClustered() ? "集群模式" : "单机模式");
         result.put("status", status.isStarted() ? (status.isInStandbyMode() ? "待机" : "运行中") : "已停止");
-        
+
         return ResponseEntity.ok(result);
     }
 }

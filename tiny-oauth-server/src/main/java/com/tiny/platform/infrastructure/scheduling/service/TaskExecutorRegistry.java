@@ -5,6 +5,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -27,6 +29,15 @@ public class TaskExecutorRegistry {
             executorsByClass.put(executor.getClass().getName(), executor);
             logger.info("注册任务执行器: name={}, class={}", name, executor.getClass().getName());
         });
+    }
+
+    /**
+     * 返回当前已注册的执行器标识列表（bean 名称，排序），供前端下拉选择。
+     */
+    public List<String> getExecutorIdentifiers() {
+        List<String> names = new ArrayList<>(executorsByName.keySet());
+        names.sort(String::compareTo);
+        return names;
     }
 
     public Optional<TaskExecutorService.TaskExecutor> find(String identifier) {

@@ -75,14 +75,19 @@ VALUES
 
 -- 插入角色资源关联数据（使用 INSERT IGNORE 避免重复插入）
 INSERT IGNORE INTO `role_resource` (`role_id`, `resource_id`) VALUES
--- ADMIN角色拥有所有资源
+-- ADMIN角色拥有所有资源（含调度中心）
 (1, 1), -- ADMIN -> system
 (1, 2), -- ADMIN -> user
 (1, 3), -- ADMIN -> role
 (1, 4), -- ADMIN -> menu
 (1, 5), -- ADMIN -> resource
 -- USER角色只有用户管理
-(2, 2); -- USER -> user 
+(2, 2); -- USER -> user
+
+-- ADMIN 拥有调度中心及子菜单（按 name 关联，避免硬编码 ID）
+INSERT IGNORE INTO `role_resource` (`role_id`, `resource_id`)
+SELECT 1, r.id FROM `resource` r WHERE r.name IN ('scheduling', 'schedulingDag', 'schedulingTask', 'schedulingTaskType', 'schedulingDagHistory', 'schedulingAudit')
+  AND NOT EXISTS (SELECT 1 FROM `role_resource` rr WHERE rr.role_id = 1 AND rr.resource_id = r.id); 
 
 -- 插入用户认证方法数据
 -- 为每个用户添加 LOCAL + PASSWORD 认证方法（使用 INSERT IGNORE 避免重复插入）
@@ -125,3 +130,68 @@ VALUES
 ('tenant-beta', CURDATE() - INTERVAL 1 DAY, 'api', 'API 调用', 'standard', 'ap-southeast-1', 150000, 'req', 0.0008, 120.0000, 'CNY', 0.0000, TRUE, 'UNBILLED', JSON_OBJECT('endpoint','/v1/search'), NOW() - INTERVAL 1 DAY),
 ('tenant-beta', CURDATE() - INTERVAL 7 DAY, 'mq', '消息队列', 'basic', 'ap-southeast-1', 52000, 'msg', 0.0005, 26.0000, 'CNY', 0.0000, FALSE, 'ADJUSTED', JSON_OBJECT('note','free tier promo'), NOW() - INTERVAL 7 DAY),
 ('tenant-gamma', CURDATE(), 'db', '托管数据库', 'enterprise', 'us-west-1', 36.5000, 'hours', 2.8000, 102.2000, 'USD', 0.0725, TRUE, 'UNBILLED', JSON_OBJECT('engine','postgres','version','14'), NOW());
+
+-- ========================================================================
+-- 调度中心示例数据（DAG 管理 → 任务类型 → 任务 → 计划/版本/节点 → 运行历史）
+-- 用于前端：任务类型 / 任务管理 / DAG 管理 / 运行历史 页面可正常查看与流转
+-- 使用 INSERT IGNORE 避免重复插入；依赖顺序：task_type → task → dag → dag_version → dag_task → dag_edge → dag_run → task_instance → task_history
+-- 重要：node_a、node_b 在下方 dag_task 中定义；若未执行本段，节点不存在，触发 DAG 会失败。
+-- ========================================================================
+
+-- 1) 任务类型（示例：Shell 执行器）
+INSERT IGNORE INTO `scheduling_task_type`
+(`id`, `tenant_id`, `code`, `name`, `description`, `executor`, `default_timeout_sec`, `default_max_retry`, `enabled`, `created_at`, `updated_at`)
+VALUES
+(1, 1, 'DEMO_SHELL', '示例Shell任务', '用于示例的 Shell 执行器，便于 DAG 计划与运行历史验证', 'shellExecutor', 300, 2, 1, NOW(), NOW());
+
+-- 2) 任务定义（两个任务：准备 → 执行）
+INSERT IGNORE INTO `scheduling_task`
+(`id`, `tenant_id`, `type_id`, `code`, `name`, `description`, `enabled`, `created_at`, `updated_at`)
+VALUES
+(1, 1, 1, 'demo_task_a', '示例任务A-准备', '示例流程第一步：准备', 1, NOW(), NOW()),
+(2, 1, 1, 'demo_task_b', '示例任务B-执行', '示例流程第二步：执行', 1, NOW(), NOW());
+
+-- 3) DAG 主表（示例计划）
+INSERT IGNORE INTO `scheduling_dag`
+(`id`, `tenant_id`, `code`, `name`, `description`, `enabled`, `created_at`, `updated_at`)
+VALUES
+(1, 1, 'demo_dag', '示例DAG计划', 'DAG 管理 → 任务类型 → 任务 → 运行历史 示例流转，用于前端验证', 1, NOW(), NOW());
+
+-- 4) DAG 版本（v1，ACTIVE）
+INSERT IGNORE INTO `scheduling_dag_version`
+(`id`, `dag_id`, `version_no`, `status`, `created_at`)
+VALUES
+(1, 1, 1, 'ACTIVE', NOW());
+
+-- 5) DAG 节点（node_a → node_b）
+INSERT IGNORE INTO `scheduling_dag_task`
+(`id`, `dag_version_id`, `node_code`, `task_id`, `name`, `created_at`)
+VALUES
+(1, 1, 'node_a', 1, '准备节点', NOW()),
+(2, 1, 'node_b', 2, '执行节点', NOW());
+
+-- 6) DAG 边（node_a → node_b）
+INSERT IGNORE INTO `scheduling_dag_edge`
+(`id`, `dag_version_id`, `from_node_code`, `to_node_code`, `created_at`)
+VALUES
+(1, 1, 'node_a', 'node_b', NOW());
+
+-- 7) DAG 运行实例（一条已成功结束的运行记录，供运行历史页查看）
+INSERT IGNORE INTO `scheduling_dag_run`
+(`id`, `dag_id`, `dag_version_id`, `run_no`, `tenant_id`, `trigger_type`, `triggered_by`, `status`, `start_time`, `end_time`, `created_at`)
+VALUES
+(1, 1, 1, 'RUN-DEMO-001', 1, 'MANUAL', 'admin', 'SUCCESS', NOW() - INTERVAL 1 HOUR, NOW() - INTERVAL 1 HOUR + INTERVAL 5 MINUTE, NOW() - INTERVAL 1 HOUR);
+
+-- 8) 任务实例（该次运行的两个节点执行记录）
+INSERT IGNORE INTO `scheduling_task_instance`
+(`id`, `dag_run_id`, `dag_id`, `dag_version_id`, `node_code`, `task_id`, `tenant_id`, `attempt_no`, `status`, `scheduled_at`, `params`, `result`, `created_at`, `updated_at`)
+VALUES
+(1, 1, 1, 1, 'node_a', 1, 1, 1, 'SUCCESS', NOW() - INTERVAL 1 HOUR, NULL, '{"ok":true}', NOW() - INTERVAL 1 HOUR, NOW()),
+(2, 1, 1, 1, 'node_b', 2, 1, 1, 'SUCCESS', NOW() - INTERVAL 1 HOUR + INTERVAL 2 MINUTE, NULL, '{"ok":true}', NOW() - INTERVAL 1 HOUR, NOW());
+
+-- 9) 任务执行历史（与实例对应，便于节点记录/日志查看）
+INSERT IGNORE INTO `scheduling_task_history`
+(`id`, `task_instance_id`, `dag_run_id`, `dag_id`, `node_code`, `task_id`, `attempt_no`, `status`, `start_time`, `end_time`, `duration_ms`, `created_at`)
+VALUES
+(1, 1, 1, 1, 'node_a', 1, 1, 'SUCCESS', NOW() - INTERVAL 1 HOUR, NOW() - INTERVAL 1 HOUR + INTERVAL 1 MINUTE, 60000, NOW()),
+(2, 2, 1, 1, 'node_b', 2, 1, 'SUCCESS', NOW() - INTERVAL 1 HOUR + INTERVAL 2 MINUTE, NOW() - INTERVAL 1 HOUR + INTERVAL 5 MINUTE, 180000, NOW());

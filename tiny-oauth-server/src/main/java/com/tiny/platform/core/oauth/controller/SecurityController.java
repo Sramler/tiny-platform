@@ -2,6 +2,7 @@ package com.tiny.platform.core.oauth.controller;
 
 import com.tiny.platform.core.oauth.config.CustomWebAuthenticationDetailsSource;
 import com.tiny.platform.core.oauth.config.FrontendProperties;
+import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
@@ -118,7 +119,7 @@ public class SecurityController {
         if ("LOCAL".equals(provider) && "PASSWORD".equals(type)) {
             // 检查用户是否有本地密码记录
             boolean hasLocalPassword = authenticationMethodRepository
-                    .existsByUserIdAndAuthenticationProviderAndAuthenticationType(user.getId(), "LOCAL", "PASSWORD");
+                    .existsByUserIdAndTenantIdAndAuthenticationProviderAndAuthenticationType(user.getId(), TenantContext.getTenantId(), "LOCAL", "PASSWORD");
             if (hasLocalPassword) {
                 // 推荐提供密码，但不强制（为了兼容性）
                 plainPassword = req.get("password");
@@ -295,6 +296,10 @@ public class SecurityController {
         if (authentication == null) {
             return null;
         }
+        Long tenantId = TenantContext.getTenantId();
+        if (tenantId == null) {
+            return null;
+        }
 
         // 支持部分认证 Token（MultiFactorAuthenticationToken with completedFactors）
         // 即使 authenticated=false，只要有已完成因子，也应该允许获取用户信息
@@ -302,14 +307,14 @@ public class SecurityController {
             // 如果是多因素认证 Token，即使 authenticated=false，只要有已完成因子，也允许访问
             if (!mfaToken.getCompletedFactors().isEmpty() || mfaToken.isAuthenticated()) {
                 String username = mfaToken.getUsername();
-                return userRepository.findUserByUsername(username).orElse(null);
+                return userRepository.findUserByUsernameAndTenantId(username, tenantId).orElse(null);
             }
         }
 
         // 完全认证的 Token
         if (authentication.isAuthenticated()) {
             String username = authentication.getName();
-            return userRepository.findUserByUsername(username).orElse(null);
+            return userRepository.findUserByUsernameAndTenantId(username, tenantId).orElse(null);
         }
 
         return null;

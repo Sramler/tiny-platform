@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - changeSet:
+      id: align-resource-enabled-default
+      author: tiny
+      comment: resource.enabled 默认值改为 1，与实体 Resource.enabled=true 一致，避免绕过应用写入时默认 0 导致启用状态异常
+      changes:
+        - sql:
+            dbms: mysql
+            sql: ALTER TABLE resource MODIFY COLUMN enabled TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否启用（与实体默认 true 一致）'

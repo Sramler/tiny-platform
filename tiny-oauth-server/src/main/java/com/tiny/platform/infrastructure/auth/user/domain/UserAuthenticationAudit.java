@@ -25,6 +25,9 @@ public class UserAuthenticationAudit implements Serializable {
     @Column(name = "user_id")
     private Long userId;
 
+    @Column(name = "tenant_id", nullable = false)
+    private Long tenantId;
+
     @Column(name = "username", nullable = false, length = 50)
     private String username;
 
@@ -88,6 +91,14 @@ public class UserAuthenticationAudit implements Serializable {
 
     public void setUserId(Long userId) {
         this.userId = userId;
+    }
+
+    public Long getTenantId() {
+        return tenantId;
+    }
+
+    public void setTenantId(Long tenantId) {
+        this.tenantId = tenantId;
     }
 
     public String getUsername() {

@@ -1,0 +1,74 @@
+# 调度中心示例数据自动化验证
+# 流程：启动 MySQL → 构建应用 → 启动应用（执行 Liquibase + data.sql）→ 运行验证脚本
+name: Verify scheduling demo data
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  verify-scheduling-demo:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: ci
+          MYSQL_DATABASE: tiny_web
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h localhost -u root -pci"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      MYSQL_ROOT_PASSWORD: ci
+      MYSQL_PORT: 3306
+      SCHEDULING_VERIFY_DB_HOST: 127.0.0.1
+      SCHEDULING_VERIFY_DB_PORT: 3306
+      SCHEDULING_VERIFY_DB_USER: root
+      SCHEDULING_VERIFY_DB_PASSWORD: ci
+      SCHEDULING_VERIFY_DB_NAME: tiny_web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: 21
+          distribution: temurin
+          cache: maven
+
+      - name: Build (skip tests)
+        run: mvn -q -DskipTests package -pl tiny-oauth-server -am
+        working-directory: ${{ github.workspace }}
+
+      - name: Install MySQL client
+        run: sudo apt-get update && sudo apt-get install -y default-mysql-client
+
+      - name: Run app and verify scheduling demo data
+        run: |
+          set -e
+          JAR=$(ls tiny-oauth-server/target/tiny-oauth-server-*.jar | head -1)
+          java -Dspring.profiles.active=ci -jar "$JAR" &
+          APP_PID=$!
+          trap "kill $APP_PID 2>/dev/null || true" EXIT
+          for i in $(seq 1 60); do
+            if curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:9000/actuator/health 2>/dev/null | grep -q 200; then
+              echo "App ready."
+              break
+            fi
+            if ! kill -0 $APP_PID 2>/dev/null; then
+              echo "App process exited early."
+              exit 1
+            fi
+            sleep 2
+          done
+          ./tiny-oauth-server/scripts/verify-scheduling-demo.sh
+        working-directory: ${{ github.workspace }}

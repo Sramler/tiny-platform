@@ -6,6 +6,7 @@ import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.tiny.platform.infrastructure.core.util.PemUtils;
 import com.tiny.platform.core.oauth.security.MfaAuthorizationEndpointFilter;
+import com.tiny.platform.core.oauth.tenant.TenantContextFilter;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -53,7 +54,8 @@ public class AuthorizationServerConfig {
     @Bean
     @Order(1)
     public SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http,
-                                                                     MfaAuthorizationEndpointFilter mfaAuthorizationEndpointFilter)
+                                                                     MfaAuthorizationEndpointFilter mfaAuthorizationEndpointFilter,
+                                                                     TenantContextFilter tenantContextFilter)
             throws Exception {
         OAuth2AuthorizationServerConfiguration.applyDefaultSecurity(http);
         http.getConfigurer(OAuth2AuthorizationServerConfigurer.class)
@@ -64,6 +66,8 @@ public class AuthorizationServerConfig {
                 // 通过 URL 匹配仅拦截 /oauth2/authorize，避免与其他端点冲突。
                 // 这里选择挂在 AnonymousAuthenticationFilter 之前，这是常用且稳定的锚点。
                 .addFilterBefore(mfaAuthorizationEndpointFilter,
+                        org.springframework.security.web.authentication.AnonymousAuthenticationFilter.class)
+                .addFilterBefore(tenantContextFilter,
                         org.springframework.security.web.authentication.AnonymousAuthenticationFilter.class)
                 //将需要认证的请求，重定向到login页面行登录认证。
                 // 注意：只对 HTML 请求重定向到登录页，API 请求（如 /oauth2/token）返回 JSON 错误

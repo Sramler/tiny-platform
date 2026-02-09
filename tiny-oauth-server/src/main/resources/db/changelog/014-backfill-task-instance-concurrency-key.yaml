@@ -1,0 +1,18 @@
+databaseChangeLog:
+  - changeSet:
+      id: backfill-scheduling-task-instance-concurrency-key
+      author: tiny
+      comment: 回填 scheduling_task_instance.concurrency_key（KEYED 历史数据兼容），parallel_group 优先否则 node_code 否则 TASK-<task_id>，截断 128
+      changes:
+        - sql:
+            dbms: mysql
+            sql: |
+              UPDATE scheduling_task_instance ti
+              LEFT JOIN scheduling_dag_task t ON t.dag_version_id = ti.dag_version_id AND t.node_code = ti.node_code
+              SET ti.concurrency_key = LEFT(
+                COALESCE(
+                  NULLIF(TRIM(t.parallel_group), ''),
+                  ti.node_code,
+                  CONCAT('TASK-', ti.task_id)
+                ), 128)
+              WHERE ti.concurrency_key IS NULL OR ti.concurrency_key = ''

@@ -38,7 +38,7 @@
             </template>
             返回首页
           </a-button>
-          <a-button v-if="errorInfo.from" size="large" @click="goBack">
+          <a-button size="large" @click="goBack">
             <template #icon>
               <ArrowLeftOutlined />
             </template>
@@ -77,10 +77,28 @@ const goHome = () => {
 }
 
 const goBack = () => {
-  if (errorInfo.value.from) {
-    window.location.href = errorInfo.value.from
-  } else {
+  const from = errorInfo.value.from
+  /** 是否为异常页 URL（避免在 400/401/403/404/500 之间循环返回） */
+  const isExceptionPageUrl = (url: string) =>
+    !url || /\/exception\/(400|401|403|404|500)(\?|$|\/)/.test(url) || url.includes('/exception/')
+  const isInternalPath = (p: string) => typeof p === 'string' && p.startsWith('/') && !p.startsWith('http')
+
+  if (from && !isExceptionPageUrl(from)) {
+    if (isInternalPath(from)) {
+      router.push(from).catch(() => router.push('/'))
+      return
+    }
+    try {
+      window.location.href = from
+      return
+    } catch {
+      // 跨域或无效 URL 时 fallback
+    }
+  }
+  if (window.history.length > 1) {
     router.go(-1)
+  } else {
+    router.push('/')
   }
 }
 </script>

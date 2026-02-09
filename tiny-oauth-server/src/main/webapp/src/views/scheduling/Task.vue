@@ -50,6 +50,9 @@
         row-key="id"
       >
         <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'typeId'">
+            {{ taskTypeName(record.typeId) }}
+          </template>
           <template v-if="column.key === 'enabled'">
             <a-tag :color="record.enabled ? 'green' : 'red'">
               {{ record.enabled ? '启用' : '禁用' }}
@@ -79,11 +82,11 @@
       @ok="handleSubmit"
       @cancel="handleCancel"
     >
-      <a-form :model="formData" :label-col="{ span: 6 }" :wrapper-col="{ span: 18 }">
+      <a-form ref="formRef" :model="formData" :label-col="{ span: 6 }" :wrapper-col="{ span: 18 }">
         <a-form-item label="编码">
           <a-input v-model:value="formData.code" placeholder="请输入编码（可选）" />
         </a-form-item>
-        <a-form-item label="名称">
+        <a-form-item label="名称" name="name" :rules="[{ required: true, message: '请输入任务名称' }]">
           <a-input v-model:value="formData.name" placeholder="请输入名称" />
         </a-form-item>
         <a-form-item label="任务类型" required>
@@ -96,8 +99,8 @@
         <a-form-item label="描述">
           <a-textarea v-model:value="formData.description" :rows="3" placeholder="请输入描述" />
         </a-form-item>
-        <a-form-item label="参数">
-          <a-textarea v-model:value="formData.params" :rows="4" placeholder="请输入JSON格式的参数" />
+        <a-form-item label="参数" name="params" :rules="paramsRules">
+          <a-textarea v-model:value="formData.params" :rows="4" placeholder="请输入JSON格式的参数（将按所选任务类型的 Schema 校验）" />
         </a-form-item>
         <a-form-item label="超时(秒)">
           <a-input-number v-model:value="formData.timeoutSec" :min="0" style="width: 100%" />
@@ -105,8 +108,8 @@
         <a-form-item label="最大重试">
           <a-input-number v-model:value="formData.maxRetry" :min="0" style="width: 100%" />
         </a-form-item>
-        <a-form-item label="重试策略">
-          <a-textarea v-model:value="formData.retryPolicy" :rows="2" placeholder="请输入JSON格式的重试策略" />
+        <a-form-item label="重试策略" extra="当前仅支持 JSON 格式：{\"delaySec\": 60}，表示失败后延迟秒数再重试；不填或格式无效时默认 60 秒。">
+          <a-textarea v-model:value="formData.retryPolicy" :rows="2" placeholder='例如：{"delaySec":60}' />
         </a-form-item>
         <a-form-item label="并发策略">
           <a-select v-model:value="formData.concurrencyPolicy">
@@ -132,7 +135,7 @@
         <a-descriptions-item label="ID">{{ currentRecord.id }}</a-descriptions-item>
         <a-descriptions-item label="编码">{{ currentRecord.code || '-' }}</a-descriptions-item>
         <a-descriptions-item label="名称">{{ currentRecord.name }}</a-descriptions-item>
-        <a-descriptions-item label="任务类型ID">{{ currentRecord.typeId }}</a-descriptions-item>
+        <a-descriptions-item label="任务类型">{{ taskTypeName(currentRecord.typeId) }}</a-descriptions-item>
         <a-descriptions-item label="描述" :span="2">{{ currentRecord.description || '-' }}</a-descriptions-item>
         <a-descriptions-item label="超时(秒)">{{ currentRecord.timeoutSec || '-' }}</a-descriptions-item>
         <a-descriptions-item label="最大重试">{{ currentRecord.maxRetry || 0 }}</a-descriptions-item>
@@ -157,6 +160,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
+import Ajv from 'ajv'
 import { taskList, createTask, updateTask, deleteTask, getTask, taskTypeList } from '@/api/scheduling'
 import { throttle } from '@/utils/debounce'
 
@@ -169,6 +173,7 @@ const selectedRowKeys = ref<number[]>([])
 const dataSource = ref<any[]>([])
 const taskTypes = ref<any[]>([])
 const currentRecord = ref<any>(null)
+const formRef = ref<any>(null)
 
 const query = reactive({
   code: '',
@@ -204,7 +209,7 @@ const columns = [
   { title: 'ID', dataIndex: 'id', key: 'id', width: 80 },
   { title: '编码', dataIndex: 'code', key: 'code', width: 150 },
   { title: '名称', dataIndex: 'name', key: 'name' },
-  { title: '任务类型ID', dataIndex: 'typeId', key: 'typeId', width: 120 },
+  { title: '任务类型', dataIndex: 'typeId', key: 'typeId', width: 140 },
   { title: '超时(秒)', dataIndex: 'timeoutSec', key: 'timeoutSec', width: 100 },
   { title: '最大重试', dataIndex: 'maxRetry', key: 'maxRetry', width: 100 },
   { title: '并发策略', key: 'concurrencyPolicy', width: 120 },
@@ -221,6 +226,41 @@ const formatJson = (str: string | null | undefined) => {
     return str
   }
 }
+
+/** 根据 typeId 从已加载的 taskTypes 中取名称，用于列表/详情展示 */
+const taskTypeName = (typeId: number | null | undefined): string => {
+  if (typeId == null) return '-'
+  const t = taskTypes.value.find((x: { id: number }) => x.id === typeId)
+  return t?.name ?? String(typeId)
+}
+
+/** 参数按所选任务类型的 paramSchema 做 JSON Schema 校验 */
+const validateParamsBySchema = (_rule: unknown, value: string) => {
+  const v = value == null ? '' : String(value).trim()
+  if (v === '') return Promise.resolve()
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(v)
+  } catch {
+    return Promise.reject(new Error('请输入合法的 JSON'))
+  }
+  const typeId = formData.typeId
+  const type = taskTypes.value.find((t: { id: number }) => t.id === typeId) as { paramSchema?: string; param_schema?: string } | undefined
+  const schemaRaw = type?.paramSchema ?? type?.param_schema
+  if (schemaRaw == null || String(schemaRaw).trim() === '') return Promise.resolve()
+  let schema: object
+  try {
+    schema = typeof schemaRaw === 'object' ? schemaRaw : JSON.parse(schemaRaw)
+  } catch {
+    return Promise.resolve()
+  }
+  const ajv = new Ajv()
+  const valid = ajv.validate(schema, parsed)
+  if (!valid) return Promise.reject(new Error(ajv.errorsText() ?? '参数不符合任务类型的 Schema'))
+  return Promise.resolve()
+}
+
+const paramsRules = [{ validator: validateParamsBySchema }]
 
 const loadTaskTypes = async () => {
   try {
@@ -334,6 +374,11 @@ const handleView = async (record: any) => {
 }
 
 const handleSubmit = async () => {
+  try {
+    await formRef.value?.validate()
+  } catch {
+    return
+  }
   if (!formData.typeId) {
     message.error('请选择任务类型')
     return
@@ -367,8 +412,8 @@ const handleDelete = async (id: number) => {
   }
 }
 
-onMounted(() => {
-  loadTaskTypes()
+onMounted(async () => {
+  await loadTaskTypes()
   loadData()
 })
 </script>

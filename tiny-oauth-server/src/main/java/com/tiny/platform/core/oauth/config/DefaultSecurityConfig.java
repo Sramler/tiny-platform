@@ -14,6 +14,7 @@ import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.WebAuthenticationDetails;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -23,6 +24,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationSessionManager;
 import com.tiny.platform.core.oauth.service.SecurityService;
+import com.tiny.platform.core.oauth.tenant.TenantContextFilter;
 
 @Configuration
 @Order(2)
@@ -44,7 +46,8 @@ public class DefaultSecurityConfig {
     public SecurityFilterChain defaultSecurityFilterChain(HttpSecurity http,
                                                           AuthenticationProvider authenticationProvider,
                                                           CustomLoginSuccessHandler customLoginSuccessHandler,
-                                                          CustomLoginFailureHandler customLoginFailureHandler)
+                                                          CustomLoginFailureHandler customLoginFailureHandler,
+                                                          TenantContextFilter tenantContextFilter)
             throws Exception {
         http
                 .authorizeHttpRequests(authorize -> authorize
@@ -60,6 +63,7 @@ public class DefaultSecurityConfig {
                         .requestMatchers("/sys/users/**").permitAll()
                         .anyRequest().authenticated()
                 )
+                .addFilterBefore(tenantContextFilter, UsernamePasswordAuthenticationFilter.class)
                 .formLogin(formLogin -> formLogin
                         .loginPage("/login")
                         .loginProcessingUrl("/login")
@@ -98,6 +102,11 @@ public class DefaultSecurityConfig {
     @Bean
     public SecurityContextRepository securityContextRepository() {
         return new HttpSessionSecurityContextRepository();
+    }
+
+    @Bean
+    public TenantContextFilter tenantContextFilter() {
+        return new TenantContextFilter();
     }
 
     @Bean

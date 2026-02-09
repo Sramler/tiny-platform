@@ -6,6 +6,7 @@ import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationSessionManager;
 import com.tiny.platform.core.oauth.service.AuthenticationAuditService;
 import com.tiny.platform.core.oauth.service.SecurityService;
+import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.core.util.IpUtils;
 import com.tiny.platform.infrastructure.core.util.DeviceUtils;
 import jakarta.servlet.RequestDispatcher;
@@ -64,7 +65,8 @@ public class CustomLoginSuccessHandler implements AuthenticationSuccessHandler {
      */
     public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response, Authentication authentication) throws IOException, ServletException {
         String username = authentication.getName();
-        User user = userRepository.findUserByUsername(username).orElse(null);
+        Long tenantId = TenantContext.getTenantId();
+        User user = tenantId != null ? userRepository.findUserByUsernameAndTenantId(username, tenantId).orElse(null) : null;
         if (user == null) {
             response.sendRedirect("/");
             return;

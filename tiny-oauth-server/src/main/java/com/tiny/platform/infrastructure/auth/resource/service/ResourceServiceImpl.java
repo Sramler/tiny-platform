@@ -97,6 +97,8 @@ public class ResourceServiceImpl implements ResourceService {
 
     @Override
     public Resource createFromDto(ResourceCreateUpdateDto resourceDto) {
+        validateResourceByType(resourceDto);
+
         // 检查名称是否已存在
         if (resourceRepository.findByName(resourceDto.getName()).isPresent()) {
             throw new BusinessException(
@@ -158,6 +160,8 @@ public class ResourceServiceImpl implements ResourceService {
 
     @Override
     public Resource updateFromDto(ResourceCreateUpdateDto resourceDto) {
+        validateResourceByType(resourceDto);
+
         Resource existingResource = resourceRepository.findById(resourceDto.getId())
                 .orElseThrow(() -> new BusinessException(
                     ErrorCode.NOT_FOUND,
@@ -225,6 +229,40 @@ public class ResourceServiceImpl implements ResourceService {
         existingResource.setParentId(resourceDto.getParentId());
         
         return resourceRepository.save(existingResource);
+    }
+
+    /**
+     * 按资源类型校验必填字段：
+     * <ul>
+     *   <li>接口(API)：必须填写 uri、method</li>
+     *   <li>菜单/目录(MENU/DIRECTORY)：必须填写 url、component</li>
+     *   <li>按钮(BUTTON)：无额外必填</li>
+     * </ul>
+     * 与 DB 层 CHECK 约束一致，避免绕过应用写入导致数据无效。
+     */
+    private void validateResourceByType(ResourceCreateUpdateDto dto) {
+        ResourceType type = ResourceType.fromCode(dto.getType());
+        switch (type) {
+            case API -> {
+                if (!StringUtils.hasText(dto.getUri())) {
+                    throw new BusinessException(ErrorCode.VALIDATION_ERROR, "接口类型资源必须填写 API 路径(uri)");
+                }
+                if (!StringUtils.hasText(dto.getMethod())) {
+                    throw new BusinessException(ErrorCode.VALIDATION_ERROR, "接口类型资源必须填写 HTTP 方法(method)");
+                }
+            }
+            case MENU, DIRECTORY -> {
+                if (!StringUtils.hasText(dto.getUrl())) {
+                    throw new BusinessException(ErrorCode.VALIDATION_ERROR,
+                            "菜单/目录类型资源必须填写前端路由路径(url)");
+                }
+                if (!StringUtils.hasText(dto.getComponent())) {
+                    throw new BusinessException(ErrorCode.VALIDATION_ERROR,
+                            "菜单/目录类型资源必须填写组件路径(component)");
+                }
+            }
+            default -> { /* BUTTON 等无额外必填 */ }
+        }
     }
 
     @Override

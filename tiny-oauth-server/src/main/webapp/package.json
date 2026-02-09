@@ -23,6 +23,7 @@
     "format": "prettier --write src/"
   },
   "dependencies": {
+    "ajv": "^8.17.1",
     "@ant-design/icons-vue": "^7.0.1",
     "@bpmn-io/properties-panel": "^3.34.0",
     "ant-design-vue": "^4.2.6",

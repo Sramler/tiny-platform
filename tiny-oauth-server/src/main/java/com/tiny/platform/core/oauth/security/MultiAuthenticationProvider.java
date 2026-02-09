@@ -6,6 +6,7 @@ import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationMetho
 import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.core.oauth.service.SecurityService;
+import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.core.util.IpUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -98,12 +99,17 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
             throw new BadCredentialsException("用户名不能为空");
         }
 
+        Long tenantId = TenantContext.getTenantId();
+        if (tenantId == null) {
+            throw new BadCredentialsException("缺少租户信息");
+        }
+
         // 先查用户（单次）
-        User user = userRepository.findUserByUsername(username)
+        User user = userRepository.findUserByUsernameAndTenantId(username, tenantId)
                 .orElseThrow(() -> new BadCredentialsException("用户不存在"));
 
         // 读取所有已启用的方法（只查询一次）
-        List<UserAuthenticationMethod> enabledMethods = authenticationMethodRepository.findEnabledMethodsByUserId(user.getId());
+        List<UserAuthenticationMethod> enabledMethods = authenticationMethodRepository.findEnabledMethodsByUserId(user.getId(), tenantId);
         if (enabledMethods == null) {
             enabledMethods = Collections.emptyList();
         }

@@ -28,9 +28,12 @@ public class QuartzSchedulerService {
 
     /**
      * 创建或更新 DAG 的 Quartz Job（用于定时调度）
+     * @param dag DAG 对象
+     * @param cronExpression Cron 表达式
+     * @param cronTimezone 时区（可选，为空则使用系统默认时区）
      */
     @Transactional
-    public void createOrUpdateDagJob(SchedulingDag dag, String cronExpression) throws SchedulerException {
+    public void createOrUpdateDagJob(SchedulingDag dag, String cronExpression, String cronTimezone) throws SchedulerException {
         if (cronExpression == null || cronExpression.trim().isEmpty()) {
             logger.debug("DAG {} 没有配置 cron 表达式，跳过创建 Job", dag.getId());
             return;
@@ -54,15 +57,34 @@ public class QuartzSchedulerService {
                 .storeDurably(true)
                 .build();
 
-        // 创建 Cron Trigger
+        // 创建 Cron Trigger（支持时区）
+        CronScheduleBuilder scheduleBuilder = CronScheduleBuilder.cronSchedule(cronExpression);
+        if (cronTimezone != null && !cronTimezone.trim().isEmpty()) {
+            try {
+                scheduleBuilder.inTimeZone(java.util.TimeZone.getTimeZone(cronTimezone.trim()));
+            } catch (Exception e) {
+                logger.warn("时区无效，使用系统默认时区, dagId: {}, timezone: {}, error: {}", 
+                        dag.getId(), cronTimezone, e.getMessage());
+            }
+        }
+        
         CronTrigger trigger = TriggerBuilder.newTrigger()
                 .withIdentity(triggerKeyObj)
                 .forJob(jobDetail)
-                .withSchedule(CronScheduleBuilder.cronSchedule(cronExpression))
+                .withSchedule(scheduleBuilder)
                 .build();
 
         scheduler.scheduleJob(jobDetail, trigger);
-        logger.info("创建/更新 DAG 定时调度 Job, dagId: {}, jobKey: {}, cron: {}", dag.getId(), jobKey, cronExpression);
+        logger.info("创建/更新 DAG 定时调度 Job, dagId: {}, jobKey: {}, cron: {}, timezone: {}", 
+                dag.getId(), jobKey, cronExpression, cronTimezone != null ? cronTimezone : "系统默认");
+    }
+
+    /**
+     * 创建或更新 DAG 的 Quartz Job（兼容旧调用，使用系统默认时区）
+     */
+    @Transactional
+    public void createOrUpdateDagJob(SchedulingDag dag, String cronExpression) throws SchedulerException {
+        createOrUpdateDagJob(dag, cronExpression, null);
     }
 
     /**

@@ -27,6 +27,9 @@ public class SchedulingTaskInstance implements Serializable {
     @Column(name = "node_code", length = 128)
     private String nodeCode;
 
+    @Column(name = "concurrency_key", length = 128)
+    private String concurrencyKey;
+
     @Column(name = "task_id", nullable = false)
     private Long taskId;
 
@@ -37,7 +40,7 @@ public class SchedulingTaskInstance implements Serializable {
     private Integer attemptNo = 1;
 
     @Column(length = 32)
-    private String status = "PENDING"; // PENDING/RESERVED/RUNNING/SUCCESS/FAILED/SKIPPED/PAUSED
+    private String status = "PENDING"; // PENDING/RESERVED/RUNNING/SUCCESS/FAILED/SKIPPED/PAUSED/CANCELLED
 
     @Column(name = "scheduled_at")
     private LocalDateTime scheduledAt;
@@ -56,6 +59,10 @@ public class SchedulingTaskInstance implements Serializable {
 
     @Column(columnDefinition = "JSON")
     private String result;
+
+    /** 最近一次失败原因（如 TIMEOUT:...），仅失败/超时写入；与 result 分离，避免误伤正常返回值 */
+    @Column(name = "error_message", length = 512)
+    private String errorMessage;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -113,6 +120,14 @@ public class SchedulingTaskInstance implements Serializable {
 
     public void setNodeCode(String nodeCode) {
         this.nodeCode = nodeCode;
+    }
+
+    public String getConcurrencyKey() {
+        return concurrencyKey;
+    }
+
+    public void setConcurrencyKey(String concurrencyKey) {
+        this.concurrencyKey = concurrencyKey;
     }
 
     public Long getTaskId() {
@@ -193,6 +208,14 @@ public class SchedulingTaskInstance implements Serializable {
 
     public void setResult(String result) {
         this.result = result;
+    }
+
+    public String getErrorMessage() {
+        return errorMessage;
+    }
+
+    public void setErrorMessage(String errorMessage) {
+        this.errorMessage = errorMessage;
     }
 
     public LocalDateTime getCreatedAt() {

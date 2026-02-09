@@ -99,18 +99,27 @@ public class TaskExecutorService {
     }
 
     /**
-     * 获取执行器 Bean，优先从注册表中查找，支持名称或类名。
+     * 获取执行器 Bean：注册表（名称/类名） → Bean 名称 → 类名加载。
      */
     private Optional<TaskExecutor> getExecutor(String identifier) {
         if (identifier == null || identifier.isBlank()) {
             return Optional.empty();
         }
-        // 优先从注册表获取
+        // 1. 优先从注册表获取（含 Bean 名与类名）
         Optional<TaskExecutor> registered = taskExecutorRegistry.find(identifier);
         if (registered.isPresent()) {
             return registered;
         }
-        // 回退到按类名加载
+        // 2. 若标识符像 Bean 名（无包名），先按 Bean 名查找，避免误用 Class.forName 导致 ClassNotFoundException
+        if (!identifier.contains(".")) {
+            try {
+                TaskExecutor byName = applicationContext.getBean(identifier, TaskExecutor.class);
+                return Optional.of(byName);
+            } catch (Exception ignored) {
+                // 非 Bean 名，继续按类名加载
+            }
+        }
+        // 3. 回退到按类名加载
         try {
             Class<?> clazz = ClassUtils.forName(identifier, this.getClass().getClassLoader());
             if (TaskExecutor.class.isAssignableFrom(clazz)) {
@@ -121,6 +130,8 @@ public class TaskExecutorService {
                 return Optional.ofNullable(executor);
             }
             logger.warn("执行器 {} 不是 TaskExecutor 类型", identifier);
+        } catch (ClassNotFoundException e) {
+            logger.error("获取执行器失败: {}（未找到 Bean 或类）", identifier, e);
         } catch (Exception e) {
             logger.error("获取执行器失败: {}", identifier, e);
         }

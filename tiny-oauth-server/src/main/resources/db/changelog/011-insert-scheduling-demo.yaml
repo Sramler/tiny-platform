@@ -1,0 +1,15 @@
+databaseChangeLog:
+  - changeSet:
+      id: insert-scheduling-demo
+      author: tiny
+      comment: 插入调度中心示例数据（003 已执行过的库补数据；新库由 003 data.sql 覆盖，此处 INSERT IGNORE 幂等）
+      validCheckSum:
+        - "9:27638e4f9f89d2ec1d21050d34b73d8a"
+      changes:
+        - sqlFile:
+            path: scheduling-demo-data.sql
+            relativeToChangelogFile: true
+            splitStatements: true
+            stripComments: false
+            endDelimiter: ;
+            dbms: mysql

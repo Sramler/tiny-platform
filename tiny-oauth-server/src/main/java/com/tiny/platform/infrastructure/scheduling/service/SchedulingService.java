@@ -10,7 +10,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
-import org.springframework.scheduling.support.CronExpression;
+import org.quartz.CronExpression;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,6 +38,7 @@ public class SchedulingService {
     private final SchedulingTaskHistoryRepository taskHistoryRepository;
     private final SchedulingAuditRepository auditRepository;
     private final QuartzSchedulerService quartzSchedulerService;
+    private final TaskExecutorRegistry taskExecutorRegistry;
     private final ObjectMapper objectMapper;
 
     public SchedulingService(
@@ -52,6 +53,7 @@ public class SchedulingService {
             SchedulingTaskHistoryRepository taskHistoryRepository,
             SchedulingAuditRepository auditRepository,
             QuartzSchedulerService quartzSchedulerService,
+            TaskExecutorRegistry taskExecutorRegistry,
             ObjectMapper objectMapper) {
         this.taskTypeRepository = taskTypeRepository;
         this.taskRepository = taskRepository;
@@ -64,7 +66,22 @@ public class SchedulingService {
         this.taskHistoryRepository = taskHistoryRepository;
         this.auditRepository = auditRepository;
         this.quartzSchedulerService = quartzSchedulerService;
+        this.taskExecutorRegistry = taskExecutorRegistry;
         this.objectMapper = objectMapper;
+    }
+
+    /**
+     * 返回当前已注册的执行器标识列表，供前端下拉选择（避免手工输入拼写错误）。
+     */
+    public List<String> listExecutors() {
+        return taskExecutorRegistry.getExecutorIdentifiers();
+    }
+
+    /**
+     * MySQL JSON 列不接受空字符串，只接受合法 JSON 或 NULL。将空/空白字符串规范为 null，避免 Data truncation: Invalid JSON text.
+     */
+    private static String normalizeJsonColumn(String value) {
+        return (value == null || value.isBlank()) ? null : value;
     }
 
     // ==================== TaskType 相关 ====================
@@ -81,7 +98,7 @@ public class SchedulingService {
         taskType.setName(dto.getName());
         taskType.setDescription(dto.getDescription());
         taskType.setExecutor(dto.getExecutor());
-        taskType.setParamSchema(dto.getParamSchema());
+        taskType.setParamSchema(normalizeJsonColumn(dto.getParamSchema()));
         taskType.setDefaultTimeoutSec(dto.getDefaultTimeoutSec() != null ? dto.getDefaultTimeoutSec() : 0);
         taskType.setDefaultMaxRetry(dto.getDefaultMaxRetry() != null ? dto.getDefaultMaxRetry() : 0);
         taskType.setEnabled(dto.getEnabled() != null ? dto.getEnabled() : true);
@@ -94,9 +111,13 @@ public class SchedulingService {
     @Transactional
     public SchedulingTaskType updateTaskType(Long id, SchedulingTaskTypeCreateUpdateDto dto) {
         SchedulingTaskType taskType = taskTypeRepository.findById(id)
-                .orElseThrow(() -> SchedulingExceptions.notFound("任务类型不存在: %s", id));
+                .orElseThrow(() -> {
+                    logger.warn("任务类型更新失败: id={}, 原因=任务类型不存在", id);
+                    return SchedulingExceptions.notFound("任务类型不存在: %s", id);
+                });
         if (dto.getCode() != null && !dto.getCode().equals(taskType.getCode())) {
             if (taskTypeRepository.findByTenantIdAndCode(taskType.getTenantId(), dto.getCode()).isPresent()) {
+                logger.warn("任务类型更新失败: id={}, 原因=任务类型编码已存在, code={}", id, dto.getCode());
                 throw SchedulingExceptions.conflict("任务类型编码已存在: %s", dto.getCode());
             }
             taskType.setCode(dto.getCode());
@@ -104,7 +125,7 @@ public class SchedulingService {
         if (dto.getName() != null) taskType.setName(dto.getName());
         if (dto.getDescription() != null) taskType.setDescription(dto.getDescription());
         if (dto.getExecutor() != null) taskType.setExecutor(dto.getExecutor());
-        if (dto.getParamSchema() != null) taskType.setParamSchema(dto.getParamSchema());
+        if (dto.getParamSchema() != null) taskType.setParamSchema(normalizeJsonColumn(dto.getParamSchema()));
         if (dto.getDefaultTimeoutSec() != null) taskType.setDefaultTimeoutSec(dto.getDefaultTimeoutSec());
         if (dto.getDefaultMaxRetry() != null) taskType.setDefaultMaxRetry(dto.getDefaultMaxRetry());
         if (dto.getEnabled() != null) taskType.setEnabled(dto.getEnabled());
@@ -121,7 +142,8 @@ public class SchedulingService {
         long count = taskRepository.count((root, query, cb) -> 
                 cb.equal(root.get("typeId"), id));
         if (count > 0) {
-            throw SchedulingExceptions.operationNotAllowed("该任务类型正在被使用，无法删除");
+            throw SchedulingExceptions.operationNotAllowed(
+                    "该任务类型正在被使用（被 %d 个任务使用），无法删除。请先解除任务关联后再删除。", count);
         }
         taskTypeRepository.delete(taskType);
         recordAudit("task_type", id, "DELETE", Map.of("id", id, "code", taskType.getCode()), taskType.getTenantId());
@@ -143,7 +165,7 @@ public class SchedulingService {
             if (name != null && !name.isEmpty()) {
                 predicates.add(cb.like(cb.lower(root.get("name")), "%" + name.toLowerCase() + "%"));
             }
-            return cb.and(predicates.toArray(new Predicate[0]));
+            return predicates.isEmpty() ? cb.conjunction() : cb.and(predicates.toArray(new Predicate[0]));
         };
         return taskTypeRepository.findAll(spec, pageable);
     }
@@ -153,21 +175,32 @@ public class SchedulingService {
     @Transactional
     public SchedulingTask createTask(SchedulingTaskCreateUpdateDto dto) {
         Long tenantId = dto.getTenantId();
+        if (dto.getTypeId() == null) {
+            throw SchedulingExceptions.validation("任务类型(typeId)不能为空");
+        }
+        if (dto.getName() == null || dto.getName().isBlank()) {
+            throw SchedulingExceptions.validation("任务名称不能为空");
+        }
+        SchedulingTaskType taskType = taskTypeRepository.findById(dto.getTypeId())
+                .orElseThrow(() -> SchedulingExceptions.notFound("任务类型不存在: %s", dto.getTypeId()));
+        if (!taskType.getTenantId().equals(tenantId)) {
+            throw SchedulingExceptions.validation("任务类型不属于当前租户");
+        }
         if (dto.getCode() != null && !dto.getCode().isEmpty()) {
             if (taskRepository.findByTenantIdAndCode(tenantId, dto.getCode()).isPresent()) {
-            throw SchedulingExceptions.conflict("任务编码已存在: %s", dto.getCode());
+                throw SchedulingExceptions.conflict("任务编码已存在: %s", dto.getCode());
             }
         }
         SchedulingTask task = new SchedulingTask();
         task.setTenantId(tenantId);
         task.setTypeId(dto.getTypeId());
         task.setCode(dto.getCode());
-        task.setName(dto.getName() != null ? dto.getName() : "");
+        task.setName(dto.getName().trim());
         task.setDescription(dto.getDescription());
-        task.setParams(dto.getParams());
+        task.setParams(normalizeJsonColumn(dto.getParams()));
         task.setTimeoutSec(dto.getTimeoutSec());
         task.setMaxRetry(dto.getMaxRetry() != null ? dto.getMaxRetry() : 0);
-        task.setRetryPolicy(dto.getRetryPolicy());
+        task.setRetryPolicy(normalizeJsonColumn(dto.getRetryPolicy()));
         task.setConcurrencyPolicy(dto.getConcurrencyPolicy() != null ? dto.getConcurrencyPolicy() : "PARALLEL");
         task.setEnabled(dto.getEnabled() != null ? dto.getEnabled() : true);
         task.setCreatedBy(dto.getCreatedBy());
@@ -186,12 +219,25 @@ public class SchedulingService {
             }
             task.setCode(dto.getCode());
         }
-        if (dto.getName() != null) task.setName(dto.getName());
+        if (dto.getName() != null) {
+            if (dto.getName().isBlank()) {
+                throw SchedulingExceptions.validation("任务名称不能为空");
+            }
+            task.setName(dto.getName().trim());
+        }
         if (dto.getDescription() != null) task.setDescription(dto.getDescription());
-        if (dto.getParams() != null) task.setParams(dto.getParams());
+        if (dto.getTypeId() != null) {
+            SchedulingTaskType taskType = taskTypeRepository.findById(dto.getTypeId())
+                    .orElseThrow(() -> SchedulingExceptions.notFound("任务类型不存在: %s", dto.getTypeId()));
+            if (!taskType.getTenantId().equals(task.getTenantId())) {
+                throw SchedulingExceptions.validation("任务类型不属于当前租户");
+            }
+            task.setTypeId(dto.getTypeId());
+        }
+        if (dto.getParams() != null) task.setParams(normalizeJsonColumn(dto.getParams()));
         if (dto.getTimeoutSec() != null) task.setTimeoutSec(dto.getTimeoutSec());
         if (dto.getMaxRetry() != null) task.setMaxRetry(dto.getMaxRetry());
-        if (dto.getRetryPolicy() != null) task.setRetryPolicy(dto.getRetryPolicy());
+        if (dto.getRetryPolicy() != null) task.setRetryPolicy(normalizeJsonColumn(dto.getRetryPolicy()));
         if (dto.getConcurrencyPolicy() != null) task.setConcurrencyPolicy(dto.getConcurrencyPolicy());
         if (dto.getEnabled() != null) task.setEnabled(dto.getEnabled());
         SchedulingTask saved = taskRepository.save(task);
@@ -231,7 +277,7 @@ public class SchedulingService {
             if (name != null && !name.isEmpty()) {
                 predicates.add(cb.like(cb.lower(root.get("name")), "%" + name.toLowerCase() + "%"));
             }
-            return cb.and(predicates.toArray(new Predicate[0]));
+            return predicates.isEmpty() ? cb.conjunction() : cb.and(predicates.toArray(new Predicate[0]));
         };
         return taskRepository.findAll(spec, pageable);
     }
@@ -262,7 +308,9 @@ public class SchedulingService {
                 throw SchedulingExceptions.conflict("DAG编码已存在: %s", dto.getCode());
             }
         }
-        validateCronExpression(dto.getCronExpression());
+        if (Boolean.TRUE.equals(dto.getCronEnabled()) && dto.getCronExpression() != null && !dto.getCronExpression().trim().isEmpty()) {
+            validateCronExpression(dto.getCronExpression());
+        }
         SchedulingDag dag = new SchedulingDag();
         dag.setTenantId(tenantId);
         dag.setCode(dto.getCode());
@@ -270,16 +318,15 @@ public class SchedulingService {
         dag.setDescription(dto.getDescription());
         dag.setEnabled(dto.getEnabled() != null ? dto.getEnabled() : true);
         dag.setCreatedBy(dto.getCreatedBy());
+        String cron = (dto.getCronExpression() != null && !dto.getCronExpression().trim().isEmpty())
+                ? dto.getCronExpression().trim() : null;
+        dag.setCronExpression(cron);
+        dag.setCronTimezone(dto.getCronTimezone());
+        dag.setCronEnabled(dto.getCronEnabled() != null ? dto.getCronEnabled() : true);
         dag = dagRepository.save(dag);
-        
-        // 如果有 Cron 表达式，创建定时调度的 Quartz Job
-        if (dto.getCronExpression() != null && !dto.getCronExpression().trim().isEmpty()) {
-            try {
-                quartzSchedulerService.createOrUpdateDagJob(dag, dto.getCronExpression());
-            } catch (Exception e) {
-                throw SchedulingExceptions.systemError("创建定时调度失败: %s", e, e.getMessage());
-            }
-        }
+
+        // 从数据库读取 cron 配置创建 Quartz Job（以 DB 为准）
+        syncDagCronToQuartz(dag);
         
         recordAudit("dag", dag.getId(), "CREATE", dag, dag.getTenantId());
         return dag;
@@ -298,23 +345,23 @@ public class SchedulingService {
         if (dto.getName() != null) dag.setName(dto.getName());
         if (dto.getDescription() != null) dag.setDescription(dto.getDescription());
         if (dto.getEnabled() != null) dag.setEnabled(dto.getEnabled());
-        dag = dagRepository.save(dag);
-        
-        validateCronExpression(dto.getCronExpression());
-        // 更新 Cron 表达式（如果有）
         if (dto.getCronExpression() != null) {
-            try {
-                if (dto.getCronExpression().trim().isEmpty()) {
-                    // 如果 Cron 表达式为空，删除定时调度
-                    quartzSchedulerService.deleteDagJob(id);
-                } else {
-                    // 更新或创建定时调度
-                    quartzSchedulerService.createOrUpdateDagJob(dag, dto.getCronExpression());
-                }
-            } catch (Exception e) {
-                throw SchedulingExceptions.systemError("更新定时调度失败: %s", e, e.getMessage());
-            }
+            String c = dto.getCronExpression().trim();
+            dag.setCronExpression(c.isEmpty() ? null : c);
         }
+        if (dto.getCronTimezone() != null) {
+            dag.setCronTimezone(dto.getCronTimezone().trim().isEmpty() ? null : dto.getCronTimezone().trim());
+        }
+        if (dto.getCronEnabled() != null) {
+            dag.setCronEnabled(dto.getCronEnabled());
+        }
+        dag = dagRepository.save(dag);
+
+        if (Boolean.TRUE.equals(dag.getCronEnabled()) && dag.getCronExpression() != null && !dag.getCronExpression().trim().isEmpty()) {
+            validateCronExpression(dag.getCronExpression());
+        }
+        // 从数据库读取 cron 配置同步到 Quartz（以 DB 为准）；DAG 禁用时删除 Job
+        syncDagCronToQuartz(dag);
         
         recordAudit("dag", dag.getId(), "UPDATE", dag, dag.getTenantId());
         return dag;
@@ -325,12 +372,11 @@ public class SchedulingService {
         SchedulingDag dag = dagRepository.findById(id)
                 .orElseThrow(() -> SchedulingExceptions.notFound("DAG不存在: %s", id));
         
-        // 删除 Quartz Job
+        // 删除 Quartz Job（失败仅记录日志，不阻止删除）
         try {
             quartzSchedulerService.deleteDagJob(id);
         } catch (Exception e) {
-            // 记录日志但不阻止删除
-            System.err.println("删除 DAG Quartz Job 失败: " + e.getMessage());
+            logger.warn("删除 DAG Quartz Job 失败, dagId: {}, message: {}", id, e.getMessage());
         }
         
         // 删除版本、节点、边、运行记录等
@@ -360,7 +406,7 @@ public class SchedulingService {
             if (name != null && !name.isEmpty()) {
                 predicates.add(cb.like(cb.lower(root.get("name")), "%" + name.toLowerCase() + "%"));
             }
-            return cb.and(predicates.toArray(new Predicate[0]));
+            return predicates.isEmpty() ? cb.conjunction() : cb.and(predicates.toArray(new Predicate[0]));
         };
         return dagRepository.findAll(spec, pageable);
     }
@@ -377,7 +423,7 @@ public class SchedulingService {
         version.setDagId(dagId);
         version.setVersionNo(nextVersion);
         version.setStatus(dto.getStatus() != null ? dto.getStatus() : "DRAFT");
-        version.setDefinition(dto.getDefinition());
+        version.setDefinition(normalizeJsonColumn(dto.getDefinition()));
         version.setCreatedBy(dto.getCreatedBy());
         SchedulingDagVersion saved = dagVersionRepository.save(version);
         recordAudit("dag_version", saved.getId(), "CREATE", saved, saved.getDagId() != null ? dagRepository.findById(saved.getDagId()).map(SchedulingDag::getTenantId).orElse(null) : null);
@@ -405,7 +451,7 @@ public class SchedulingService {
                 version.setActivatedAt(LocalDateTime.now());
             }
         }
-        if (dto.getDefinition() != null) version.setDefinition(dto.getDefinition());
+        if (dto.getDefinition() != null) version.setDefinition(normalizeJsonColumn(dto.getDefinition()));
         SchedulingDagVersion saved = dagVersionRepository.save(version);
         Long tenantId = dagRepository.findById(saved.getDagId()).map(SchedulingDag::getTenantId).orElse(null);
         recordAudit("dag_version", saved.getId(), "UPDATE", saved, tenantId);
@@ -435,11 +481,11 @@ public class SchedulingService {
         node.setNodeCode(dto.getNodeCode());
         node.setTaskId(dto.getTaskId());
         node.setName(dto.getName());
-        node.setOverrideParams(dto.getOverrideParams());
+        node.setOverrideParams(normalizeJsonColumn(dto.getOverrideParams()));
         node.setTimeoutSec(dto.getTimeoutSec());
         node.setMaxRetry(dto.getMaxRetry());
         node.setParallelGroup(dto.getParallelGroup());
-        node.setMeta(dto.getMeta());
+        node.setMeta(normalizeJsonColumn(dto.getMeta()));
         SchedulingDagTask saved = dagTaskRepository.save(node);
         SchedulingDag dag = dagRepository.findById(dagId).orElse(null);
         recordAudit("dag_node", saved.getId(), "CREATE", saved, dag != null ? dag.getTenantId() : null);
@@ -461,11 +507,11 @@ public class SchedulingService {
         }
         if (dto.getTaskId() != null) node.setTaskId(dto.getTaskId());
         if (dto.getName() != null) node.setName(dto.getName());
-        if (dto.getOverrideParams() != null) node.setOverrideParams(dto.getOverrideParams());
+        if (dto.getOverrideParams() != null) node.setOverrideParams(normalizeJsonColumn(dto.getOverrideParams()));
         if (dto.getTimeoutSec() != null) node.setTimeoutSec(dto.getTimeoutSec());
         if (dto.getMaxRetry() != null) node.setMaxRetry(dto.getMaxRetry());
         if (dto.getParallelGroup() != null) node.setParallelGroup(dto.getParallelGroup());
-        if (dto.getMeta() != null) node.setMeta(dto.getMeta());
+        if (dto.getMeta() != null) node.setMeta(normalizeJsonColumn(dto.getMeta()));
         SchedulingDagTask saved = dagTaskRepository.save(node);
         SchedulingDag dag = dagRepository.findById(dagId).orElse(null);
         recordAudit("dag_node", saved.getId(), "UPDATE", saved, dag != null ? dag.getTenantId() : null);
@@ -541,6 +587,10 @@ public class SchedulingService {
         if (!existing.isEmpty()) {
             throw SchedulingExceptions.conflict("依赖关系已存在");
         }
+        // 环检测：加入 (from, to) 后若存在从 to 到 from 的路径则形成环
+        if (wouldCreateCycle(versionId, dto.getFromNodeCode(), dto.getToNodeCode())) {
+            throw SchedulingExceptions.validation("DAG 存在环，禁止创建边");
+        }
         SchedulingDagEdge edge = new SchedulingDagEdge();
         edge.setDagVersionId(versionId);
         edge.setFromNodeCode(dto.getFromNodeCode());
@@ -570,6 +620,44 @@ public class SchedulingService {
         getDagVersion(dagId, versionId)
                 .orElseThrow(() -> SchedulingExceptions.notFound("DAG版本不存在: %s", versionId));
         return dagEdgeRepository.findByDagVersionId(versionId);
+    }
+
+    /**
+     * DAG 运行统计（Run 级别）：total/success/failed/avgDurationMs/p95DurationMs/p99DurationMs。
+     * 使用 SQL 聚合与分位点查询，避免大数据量时全量加载到内存。
+     */
+    public SchedulingDagStatsDto getDagStats(Long dagId) {
+        dagRepository.findById(dagId)
+                .orElseThrow(() -> SchedulingExceptions.notFound("DAG不存在: %s", dagId));
+        Object[] agg = dagRunRepository.getDagRunStatsAggregation(dagId);
+        if (agg == null || agg.length < 5) {
+            SchedulingDagStatsDto dto = new SchedulingDagStatsDto();
+            dto.setTotal(0);
+            dto.setSuccess(0);
+            dto.setFailed(0);
+            return dto;
+        }
+        long total = ((Number) agg[0]).longValue();
+        long success = ((Number) agg[1]).longValue();
+        long failed = ((Number) agg[2]).longValue();
+        long completedCount = ((Number) agg[3]).longValue();
+        Double avgMs = agg[4] != null ? ((Number) agg[4]).doubleValue() : null;
+
+        SchedulingDagStatsDto dto = new SchedulingDagStatsDto();
+        dto.setTotal(total);
+        dto.setSuccess(success);
+        dto.setFailed(failed);
+        dto.setAvgDurationMs(avgMs != null ? avgMs.longValue() : null);
+
+        if (completedCount > 0) {
+            int idx95 = Math.max(0, Math.min((int) Math.ceil(completedCount * 0.95) - 1, (int) completedCount - 1));
+            int idx99 = Math.max(0, Math.min((int) Math.ceil(completedCount * 0.99) - 1, (int) completedCount - 1));
+            Double p95 = dagRunRepository.getDurationMsAtOffset(dagId, idx95);
+            Double p99 = dagRunRepository.getDurationMsAtOffset(dagId, idx99);
+            dto.setP95DurationMs(p95 != null ? p95.longValue() : null);
+            dto.setP99DurationMs(p99 != null ? p99.longValue() : null);
+        }
+        return dto;
     }
 
     // ==================== DAG 调度触发/控制 ====================
@@ -665,12 +753,23 @@ public class SchedulingService {
             throw SchedulingExceptions.systemError("停止 DAG Job 失败: %s", e, e.getMessage());
         }
         
-        // 停止所有运行中的实例
+        // 停止所有运行中的 Run，并将对应任务实例中未终态的标为 CANCELLED
         List<SchedulingDagRun> runningRuns = dagRunRepository.findByDagIdAndStatus(dagId, "RUNNING");
         for (SchedulingDagRun run : runningRuns) {
             run.setStatus("CANCELLED");
             run.setEndTime(LocalDateTime.now());
             dagRunRepository.save(run);
+
+            List<SchedulingTaskInstance> instances = taskInstanceRepository.findByDagRunId(run.getId());
+            for (SchedulingTaskInstance inst : instances) {
+                String s = inst.getStatus();
+                if ("PENDING".equals(s) || "RESERVED".equals(s) || "RUNNING".equals(s)) {
+                    inst.setStatus("CANCELLED");
+                }
+            }
+            if (!instances.isEmpty()) {
+                taskInstanceRepository.saveAll(instances);
+            }
         }
 
         recordAudit("dag", dagId, "STOP", Map.of("cancelledRuns", runningRuns.size()), dag.getTenantId());
@@ -832,6 +931,7 @@ public class SchedulingService {
             instance.setDagId(run.getDagId());
             instance.setDagVersionId(version.getId());
             instance.setNodeCode(node.getNodeCode());
+            instance.setConcurrencyKey(resolveConcurrencyKey(node, node.getTaskId()));
             instance.setTaskId(node.getTaskId());
             instance.setTenantId(run.getTenantId());
             instance.setAttemptNo(1);
@@ -901,6 +1001,7 @@ public class SchedulingService {
             instance.setDagId(dagId);
             instance.setDagVersionId(version.getId());
             instance.setNodeCode(node.getNodeCode());
+            instance.setConcurrencyKey(resolveConcurrencyKey(node, node.getTaskId()));
             instance.setTaskId(node.getTaskId());
             instance.setTenantId(run.getTenantId());
             instance.setAttemptNo(1);
@@ -956,6 +1057,7 @@ public class SchedulingService {
                     retryInstance.setDagId(dagId);
                     retryInstance.setDagVersionId(version.getId());
                     retryInstance.setNodeCode(node.getNodeCode());
+                    retryInstance.setConcurrencyKey(resolveConcurrencyKey(node, node.getTaskId()));
                     retryInstance.setTaskId(node.getTaskId());
                     retryInstance.setTenantId(run.getTenantId());
                     retryInstance.setAttemptNo(instance.getAttemptNo() + 1);
@@ -963,6 +1065,26 @@ public class SchedulingService {
                     retryInstance.setScheduledAt(LocalDateTime.now());
                     retryInstance.setParams(node.getOverrideParams());
                     taskInstanceRepository.save(retryInstance);
+
+                    // 将同一次 run 中、因本节点失败而被标为 SKIPPED 的下游实例恢复为 PENDING，以便本节点重试成功后继续执行
+                    List<String> downstreamNodeCodes = dagEdgeRepository
+                            .findByDagVersionIdAndFromNodeCode(version.getId(), node.getNodeCode())
+                            .stream()
+                            .map(SchedulingDagEdge::getToNodeCode)
+                            .collect(Collectors.toList());
+                    if (!downstreamNodeCodes.isEmpty()) {
+                        List<SchedulingTaskInstance> runInstances = taskInstanceRepository.findByDagRunId(run.getId());
+                        Set<String> downstreamSet = new HashSet<>(downstreamNodeCodes);
+                        for (SchedulingTaskInstance inst : runInstances) {
+                            if ("SKIPPED".equals(inst.getStatus()) && inst.getNodeCode() != null && downstreamSet.contains(inst.getNodeCode())) {
+                                inst.setStatus("PENDING");
+                                inst.setScheduledAt(null);
+                                inst.setNextRetryAt(null);
+                                taskInstanceRepository.save(inst);
+                                logger.info("节点重试时恢复下游实例为 PENDING, instanceId: {}, nodeCode: {}", inst.getId(), inst.getNodeCode());
+                            }
+                        }
+                    }
                     
                     logger.info("节点重试成功, dagId: {}, nodeId: {}, instanceId: {}", 
                             dagId, nodeId, retryInstance.getId());
@@ -1068,9 +1190,32 @@ public class SchedulingService {
 
     // ==================== 运行历史 ====================
 
-    public Page<SchedulingDagRun> getDagRuns(Long dagId, Pageable pageable) {
-        Specification<SchedulingDagRun> spec = (root, query, cb) -> 
-                cb.equal(root.get("dagId"), dagId);
+    /**
+     * 分页查询 DAG 运行历史，支持按状态、触发类型、运行编号、开始时间范围筛选。
+     */
+    public Page<SchedulingDagRun> getDagRuns(Long dagId, Pageable pageable,
+            String status, String triggerType, String runNo,
+            LocalDateTime startTimeFrom, LocalDateTime startTimeTo) {
+        Specification<SchedulingDagRun> spec = (root, q, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.get("dagId"), dagId));
+            if (status != null && !status.isBlank()) {
+                predicates.add(cb.equal(root.get("status"), status.trim()));
+            }
+            if (triggerType != null && !triggerType.isBlank()) {
+                predicates.add(cb.equal(root.get("triggerType"), triggerType.trim()));
+            }
+            if (runNo != null && !runNo.isBlank()) {
+                predicates.add(cb.like(root.get("runNo"), "%" + runNo.trim() + "%"));
+            }
+            if (startTimeFrom != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("startTime"), startTimeFrom));
+            }
+            if (startTimeTo != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("startTime"), startTimeTo));
+            }
+            return predicates.isEmpty() ? cb.conjunction() : cb.and(predicates.toArray(new Predicate[0]));
+        };
         return dagRunRepository.findAll(spec, pageable);
     }
 
@@ -1128,19 +1273,95 @@ public class SchedulingService {
             if (action != null && !action.isEmpty()) {
                 predicates.add(cb.equal(root.get("action"), action));
             }
-            return cb.and(predicates.toArray(new Predicate[0]));
+            return predicates.isEmpty() ? cb.conjunction() : cb.and(predicates.toArray(new Predicate[0]));
         };
         return auditRepository.findAll(spec, pageable);
     }
 
+    /**
+     * 同步 DAG 的 Cron 配置到 Quartz（以数据库为准）。
+     * DAG 禁用（enabled=false）时删除 Quartz Job，避免禁用后仍触发；cron 为空或 cronEnabled=false 时同样删除。
+     */
+    private void syncDagCronToQuartz(SchedulingDag dag) {
+        try {
+            if (!Boolean.TRUE.equals(dag.getEnabled())) {
+                quartzSchedulerService.deleteDagJob(dag.getId());
+                return;
+            }
+            String cronExpression = dag.getCronExpression();
+            Boolean cronEnabled = dag.getCronEnabled();
+            if (cronExpression == null || cronExpression.trim().isEmpty()
+                    || (cronEnabled != null && !cronEnabled)) {
+                // 删除 Quartz Job
+                quartzSchedulerService.deleteDagJob(dag.getId());
+            } else {
+                // 创建或更新 Quartz Job（从 DB 读取）
+                quartzSchedulerService.createOrUpdateDagJob(dag, cronExpression, dag.getCronTimezone());
+            }
+        } catch (Exception e) {
+            throw SchedulingExceptions.systemError("同步定时调度失败: %s", e, e.getMessage());
+        }
+    }
+
+    /**
+     * 判断加入边 (fromNodeCode, toNodeCode) 是否会在当前版本的 DAG 中形成环。
+     * 策略：加载当前版本所有边并加上新边构建有向图，仅从 toNode 做 DFS（不遍历全图），
+     * 若能到达 fromNode 则存在环。图很大时可考虑按 versionId 缓存邻接表并在增删边时失效。
+     */
+    private boolean wouldCreateCycle(Long versionId, String fromNodeCode, String toNodeCode) {
+        List<SchedulingDagEdge> edges = dagEdgeRepository.findByDagVersionId(versionId);
+        Map<String, List<String>> adj = new HashMap<>();
+        for (SchedulingDagEdge e : edges) {
+            adj.computeIfAbsent(e.getFromNodeCode(), k -> new ArrayList<>()).add(e.getToNodeCode());
+        }
+        adj.computeIfAbsent(fromNodeCode, k -> new ArrayList<>()).add(toNodeCode);
+
+        Set<String> visited = new HashSet<>();
+        Deque<String> stack = new ArrayDeque<>();
+        stack.push(toNodeCode);
+        while (!stack.isEmpty()) {
+            String u = stack.pop();
+            if (u.equals(fromNodeCode)) {
+                return true;
+            }
+            if (visited.add(u)) {
+                for (String v : adj.getOrDefault(u, Collections.emptyList())) {
+                    if (!visited.contains(v)) {
+                        stack.push(v);
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 解析 KEYED 并发键：parallelGroup 优先，否则 nodeCode，否则 TASK-&lt;taskId&gt;。最长 128 字符。
+     */
+    private static String resolveConcurrencyKey(SchedulingDagTask node, Long taskId) {
+        String key = null;
+        if (node.getParallelGroup() != null && !node.getParallelGroup().isBlank()) {
+            key = node.getParallelGroup();
+        } else if (node.getNodeCode() != null && !node.getNodeCode().isBlank()) {
+            key = node.getNodeCode();
+        } else if (taskId != null) {
+            key = "TASK-" + taskId;
+        }
+        if (key == null) {
+            return null;
+        }
+        return key.length() > 128 ? key.substring(0, 128) : key;
+    }
+
+    /**
+     * 使用 Quartz CronExpression 校验，与 Quartz 调度器及前端设计器（Quartz 风格，含 L/? 等）一致。
+     */
     private void validateCronExpression(String cronExpression) {
         if (cronExpression == null || cronExpression.trim().isEmpty()) {
             return;
         }
         String trimmed = cronExpression.trim();
-        try {
-            CronExpression.parse(trimmed);
-        } catch (IllegalArgumentException e) {
+        if (!CronExpression.isValidExpression(trimmed)) {
             throw SchedulingExceptions.validation("Cron 表达式无效: %s", trimmed);
         }
     }

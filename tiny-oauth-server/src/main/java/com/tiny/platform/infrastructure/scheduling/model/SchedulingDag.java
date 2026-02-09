@@ -30,6 +30,18 @@ public class SchedulingDag implements Serializable {
     @Column(nullable = false)
     private Boolean enabled = true;
 
+    /** Cron 表达式，用于定时触发 DAG；持久化后支持重启从 DB 恢复至 Quartz */
+    @Column(name = "cron_expression", length = 120)
+    private String cronExpression;
+
+    /** Cron 时区（如 Asia/Shanghai），为空则使用系统默认时区 */
+    @Column(name = "cron_timezone", length = 64)
+    private String cronTimezone;
+
+    /** 是否启用 Cron 调度（与 enabled 独立控制），默认 true */
+    @Column(name = "cron_enabled")
+    private Boolean cronEnabled = true;
+
     @Column(name = "created_by", length = 128)
     private String createdBy;
 
@@ -97,6 +109,30 @@ public class SchedulingDag implements Serializable {
 
     public void setEnabled(Boolean enabled) {
         this.enabled = enabled;
+    }
+
+    public String getCronExpression() {
+        return cronExpression;
+    }
+
+    public void setCronExpression(String cronExpression) {
+        this.cronExpression = cronExpression;
+    }
+
+    public String getCronTimezone() {
+        return cronTimezone;
+    }
+
+    public void setCronTimezone(String cronTimezone) {
+        this.cronTimezone = cronTimezone;
+    }
+
+    public Boolean getCronEnabled() {
+        return cronEnabled != null ? cronEnabled : true;
+    }
+
+    public void setCronEnabled(Boolean cronEnabled) {
+        this.cronEnabled = cronEnabled;
     }
 
     public String getCreatedBy() {

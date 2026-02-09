@@ -1,0 +1,13 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-scheduling-task-instance-error-message
+      author: tiny
+      comment: scheduling_task_instance 增加 error_message 列，用于记录失败原因（含超时），与 result 分离避免误伤正常 JSON 返回值
+      changes:
+        - addColumn:
+            tableName: scheduling_task_instance
+            columns:
+              - column:
+                  name: error_message
+                  type: VARCHAR(512)
+                  remarks: 最近一次失败原因（如 TIMEOUT:...），仅失败/超时写入；僵尸回收据此排除超时实例

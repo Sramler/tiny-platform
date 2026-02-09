@@ -38,7 +38,7 @@
             </template>
             返回首页
           </a-button>
-          <a-button v-if="errorInfo.from" size="large" @click="goBack">
+          <a-button size="large" @click="goBack">
             <template #icon>
               <ArrowLeftOutlined />
             </template>
@@ -76,11 +76,17 @@ const goHome = () => {
   router.push('/')
 }
 
+/** 返回上一页：仅 DAG 相关错误时返回列表页，其余走浏览器后退或首页 */
 const goBack = () => {
-  if (errorInfo.value.from) {
-    window.location.href = errorInfo.value.from
-  } else {
+  const failedPath = (errorInfo.value.path as string) || ''
+  if (failedPath.includes('scheduling/dag')) {
+    router.push('/scheduling/dag').catch(() => router.push('/'))
+    return
+  }
+  if (window.history.length > 1) {
     router.go(-1)
+  } else {
+    router.push('/')
   }
 }
 </script>

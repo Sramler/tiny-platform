@@ -33,32 +33,6 @@
         </div>
       </div>
 
-      <div class="demo-card">
-        <a-alert
-          type="info"
-          show-icon
-          message="示例执行器快速体验"
-          description="一键创建 logging/delay 示例任务类型，配合文档即可快速演示任务执行效果。"
-        />
-        <a-space class="mt-2">
-          <a-button
-            :loading="creatingDemoType === 'logging'"
-            @click="handleCreateDemo('logging')"
-          >
-            创建 Logging 示例
-          </a-button>
-          <a-button
-            :loading="creatingDemoType === 'delay'"
-            @click="handleCreateDemo('delay')"
-          >
-            创建 Delay 示例
-          </a-button>
-          <a-button type="link" href="/docs/SCHEDULING_TASK_EXECUTOR_GUIDE.md" target="_blank">
-            查看执行器指南
-          </a-button>
-        </a-space>
-      </div>
-
       <a-table
         :columns="columns"
         :data-source="dataSource"
@@ -104,8 +78,14 @@
         <a-form-item label="描述">
           <a-textarea v-model:value="formData.description" :rows="3" placeholder="请输入描述" />
         </a-form-item>
-        <a-form-item label="执行器">
-          <a-input v-model:value="formData.executor" placeholder="请输入执行器标识" />
+        <a-form-item label="执行器" extra="填写已注册的 Bean 名（如 shellExecutor）或全类名，选项来自 GET /scheduling/executors">
+          <a-select
+            v-model:value="formData.executor"
+            placeholder="请选择执行器"
+            allow-clear
+            style="width: 100%"
+            :options="executorOptions"
+          />
         </a-form-item>
         <a-form-item label="参数Schema">
           <a-textarea v-model:value="formData.paramSchema" :rows="4" placeholder="请输入JSON格式的参数Schema" />
@@ -128,8 +108,9 @@
 import { ref, reactive, onMounted } from 'vue'
 import { message } from 'ant-design-vue'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
-import { taskTypeList, createTaskType, updateTaskType, deleteTaskType } from '@/api/scheduling'
+import { taskTypeList, createTaskType, updateTaskType, deleteTaskType, getExecutors } from '@/api/scheduling'
 import { throttle } from '@/utils/debounce'
+import { extractErrorFromAxios } from '@/utils/problemParser'
 
 const loading = ref(false)
 const refreshing = ref(false)
@@ -137,7 +118,7 @@ const formVisible = ref(false)
 const formTitle = ref('新建任务类型')
 const selectedRowKeys = ref<number[]>([])
 const dataSource = ref<any[]>([])
-const creatingDemoType = ref<string | null>(null)
+const executorOptions = ref<{ value: string; label: string }[]>([])
 
 const query = reactive({
   code: '',
@@ -179,6 +160,15 @@ const columns = [
   { title: '操作', key: 'action', width: 150, fixed: 'right' },
 ]
 
+const loadExecutors = async () => {
+  try {
+    const list = await getExecutors()
+    executorOptions.value = (Array.isArray(list) ? list : []).map((id: string) => ({ value: id, label: id }))
+  } catch (e) {
+    executorOptions.value = []
+  }
+}
+
 const loadData = async () => {
   loading.value = true
   try {
@@ -191,7 +181,7 @@ const loadData = async () => {
     dataSource.value = res.records
     pagination.total = Number(res.total ?? res.totalElements ?? 0)
   } catch (error: any) {
-    message.error(error.message || '加载数据失败')
+    message.error(extractErrorFromAxios(error, '加载数据失败'))
   } finally {
     loading.value = false
   }
@@ -215,80 +205,6 @@ const handleRefresh = throttle(() => {
     refreshing.value = false
   })
 }, 500)
-
-const demoTaskTypes = {
-  logging: {
-    tenantId: 1,
-    code: 'demo_logging',
-    name: '示例-Logging 执行器',
-    description: '使用 loggingTaskExecutor 打印参数并返回结果',
-    executor: 'loggingTaskExecutor',
-    paramSchema: JSON.stringify(
-      {
-        type: 'object',
-        properties: {
-          message: {
-            type: 'string',
-            description: '需要打印的消息',
-          },
-        },
-      },
-      null,
-      2,
-    ),
-    defaultTimeoutSec: 60,
-    defaultMaxRetry: 0,
-    enabled: true,
-    createdBy: 'demo',
-  },
-  delay: {
-    tenantId: 1,
-    code: 'demo_delay',
-    name: '示例-Delay 执行器',
-    description: '使用 delayTaskExecutor 支持延迟/失败模拟',
-    executor: 'delayTaskExecutor',
-    paramSchema: JSON.stringify(
-      {
-        type: 'object',
-        properties: {
-          delayMs: {
-            type: 'integer',
-            description: '延迟毫秒数',
-            default: 1000,
-          },
-          fail: {
-            type: 'boolean',
-            description: '是否模拟失败',
-            default: false,
-          },
-        },
-        required: ['delayMs'],
-      },
-      null,
-      2,
-    ),
-    defaultTimeoutSec: 120,
-    defaultMaxRetry: 2,
-    enabled: true,
-    createdBy: 'demo',
-  },
-}
-
-const handleCreateDemo = async (typeKey: keyof typeof demoTaskTypes) => {
-  if (creatingDemoType.value) {
-    return
-  }
-  creatingDemoType.value = typeKey
-  try {
-    await createTaskType(demoTaskTypes[typeKey])
-    message.success(`已创建 ${demoTaskTypes[typeKey].name}`)
-    loadData()
-  } catch (error: any) {
-    message.error(error.message || '创建示例失败')
-  } finally {
-    creatingDemoType.value = null
-  }
-}
 
 const handleTableChange = (pag: any) => {
   pagination.current = pag.current
@@ -320,43 +236,70 @@ const handleCreate = () => {
 
 const handleEdit = (record: any) => {
   formTitle.value = '编辑任务类型'
+  // 兼容接口返回 camelCase / snake_case；数字字段统一为 number，避免 a-input-number 与后端 Integer 不一致
+  const num = (v: unknown) => (v !== null && v !== undefined && v !== '' ? Number(v) : 0)
+  const numOr = (v: unknown, def: number) => {
+    const n = num(v)
+    return Number.isNaN(n) ? def : n
+  }
   Object.assign(formData, {
-    id: record.id,
-    tenantId: record.tenantId,
-    code: record.code,
-    name: record.name,
-    description: record.description || '',
-    executor: record.executor || '',
-    paramSchema: record.paramSchema || '',
-    defaultTimeoutSec: record.defaultTimeoutSec || 0,
-    defaultMaxRetry: record.defaultMaxRetry || 0,
-    enabled: record.enabled !== undefined ? record.enabled : true,
-    createdBy: record.createdBy || '',
+    id: record.id != null ? Number(record.id) : undefined,
+    tenantId: record.tenantId != null ? Number(record.tenantId) : undefined,
+    code: record.code ?? record['code'] ?? '',
+    name: record.name ?? record['name'] ?? '',
+    description: record.description ?? record['description'] ?? '',
+    executor: record.executor ?? record['executor'] ?? '',
+    paramSchema: record.paramSchema ?? record['param_schema'] ?? '',
+    defaultTimeoutSec: numOr(record.defaultTimeoutSec ?? record['default_timeout_sec'], 0),
+    defaultMaxRetry: numOr(record.defaultMaxRetry ?? record['default_max_retry'], 0),
+    enabled: record.enabled !== undefined ? Boolean(record.enabled) : true,
+    createdBy: record.createdBy ?? record['created_by'] ?? '',
   })
   formVisible.value = true
 }
 
+/** 构建创建/更新用 payload，保证数字与空串不导致后端 400 */
+function buildTaskTypePayload() {
+  const sec = Number(formData.defaultTimeoutSec)
+  const retry = Number(formData.defaultMaxRetry)
+  return {
+    tenantId: formData.tenantId,
+    code: String(formData.code ?? '').trim(),
+    name: String(formData.name ?? '').trim(),
+    description: formData.description ?? '',
+    executor: formData.executor ?? '',
+    paramSchema: formData.paramSchema ?? '',
+    defaultTimeoutSec: Number.isNaN(sec) || sec < 0 ? 0 : sec,
+    defaultMaxRetry: Number.isNaN(retry) || retry < 0 ? 0 : retry,
+    enabled: Boolean(formData.enabled),
+    createdBy: formData.createdBy ?? '',
+  }
+}
+
 const handleSubmit = async () => {
-  if (!formData.code) {
+  const code = String(formData.code ?? '').trim()
+  const name = String(formData.name ?? '').trim()
+  if (!code) {
     message.error('请输入编码')
     return
   }
-  if (!formData.name) {
+  if (!name) {
     message.error('请输入名称')
     return
   }
   try {
-    if (formData.id) {
-      await updateTaskType(formData.id, formData)
+    const payload = buildTaskTypePayload()
+    if (formData.id != null) {
+      await updateTaskType(Number(formData.id), payload)
       message.success('更新成功')
     } else {
-      await createTaskType(formData)
+      await createTaskType(payload)
       message.success('创建成功')
     }
     formVisible.value = false
     loadData()
   } catch (error: any) {
-    message.error(error.message || '操作失败')
+    message.error(extractErrorFromAxios(error, '操作失败'))
   }
 }
 
@@ -374,7 +317,8 @@ const handleDelete = async (id: number) => {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
+  await loadExecutors()
   loadData()
 })
 </script>
@@ -399,14 +343,6 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 16px;
-}
-
-.demo-card {
-  margin-bottom: 16px;
-  background: #f9fbff;
-  border: 1px solid #e6f0ff;
-  border-radius: 4px;
-  padding: 12px 16px;
 }
 
 .table-title {
@@ -437,10 +373,6 @@ onMounted(() => {
 
 .ml-2 {
   margin-left: 8px;
-}
-
-.mt-2 {
-  margin-top: 12px;
 }
 </style>
 

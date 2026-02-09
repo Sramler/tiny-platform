@@ -10,8 +10,9 @@ SRC_RULES_DIR="$SRC_ROOT/rules"
 
 mkdir -p "$OUT_DIR"
 
-# 清理旧 .mdc（避免 map 移除后残留）
+# 清理旧产物（避免 map 移除或格式切换后残留）
 find "$OUT_DIR" -maxdepth 1 -type f -name "*.mdc" -print0 | xargs -0r rm -f
+find "$OUT_DIR" -mindepth 1 -maxdepth 1 -type d -print0 | xargs -0r rm -rf
 
 echo "📝 Building Cursor Project Rules (.mdc) -> $OUT_DIR"
 echo "MAP: $MAP_JSON"

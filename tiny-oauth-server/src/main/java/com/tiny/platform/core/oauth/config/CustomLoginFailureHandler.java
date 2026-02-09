@@ -3,6 +3,7 @@ package com.tiny.platform.core.oauth.config;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.core.oauth.service.AuthenticationAuditService;
+import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.core.util.IpUtils;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -53,20 +54,23 @@ public class CustomLoginFailureHandler implements AuthenticationFailureHandler {
         if (username != null && !username.isBlank()) {
             try {
                 // 尝试查找用户并记录失败登录信息
-                userRepository.findUserByUsername(username).ifPresent(user -> {
-                    recordFailedLogin(user, request);
-                    // 记录登录失败审计
-                    auditService.recordLoginFailure(
-                        user.getUsername(), 
-                        user.getId(), 
-                        authProvider != null ? authProvider : "LOCAL",
-                        authType != null ? authType : "PASSWORD",
-                        request
-                    );
-                });
+                Long tenantId = TenantContext.getTenantId();
+                if (tenantId != null) {
+                    userRepository.findUserByUsernameAndTenantId(username, tenantId).ifPresent(user -> {
+                        recordFailedLogin(user, request);
+                        // 记录登录失败审计
+                        auditService.recordLoginFailure(
+                            user.getUsername(), 
+                            user.getId(), 
+                            authProvider != null ? authProvider : "LOCAL",
+                            authType != null ? authType : "PASSWORD",
+                            request
+                        );
+                    });
+                }
                 
                 // 如果用户不存在，也记录审计（userId为null）
-                if (userRepository.findUserByUsername(username).isEmpty()) {
+                if (tenantId == null || userRepository.findUserByUsernameAndTenantId(username, tenantId).isEmpty()) {
                     auditService.recordLoginFailure(
                         username,
                         null,

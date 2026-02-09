@@ -66,13 +66,14 @@ CREATE TABLE IF NOT EXISTS `resource` (
     `parent_id` BIGINT DEFAULT NULL COMMENT '父资源ID',
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    `enabled` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否启用',
+    `enabled` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否启用（与 Resource.enabled 实体默认 true 一致）',
     UNIQUE KEY `uk_resource_name` (`name`) COMMENT '资源名称唯一约束，防止重复插入',
     KEY `idx_resource_parent_id` (`parent_id`),
     KEY `idx_resource_type` (`type`),
     KEY `idx_resource_sort` (`sort`),
     KEY `idx_resource_hidden` (`hidden`),
-    FOREIGN KEY (`parent_id`) REFERENCES `resource` (`id`) ON DELETE CASCADE
+    FOREIGN KEY (`parent_id`) REFERENCES `resource` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `chk_resource_api_uri_method` CHECK (type <> 3 OR (uri <> '' AND method <> '')) COMMENT '接口类型(3)必须填写 uri 与 method，与实体校验一致'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='权限资源表';
 
 -- 创建角色-资源关联表
@@ -443,12 +444,16 @@ CREATE TABLE IF NOT EXISTS `scheduling_dag` (
   `name` VARCHAR(128) NOT NULL COMMENT 'DAG 名称',
   `description` TEXT DEFAULT NULL COMMENT 'DAG 描述',
   `enabled` TINYINT(1) DEFAULT 1 COMMENT '是否启用该 DAG（1=启用）',
+  `cron_expression` VARCHAR(120) DEFAULT NULL COMMENT 'Cron 表达式，用于定时触发 DAG',
+  `cron_timezone` VARCHAR(64) DEFAULT NULL COMMENT 'Cron 时区（如 Asia/Shanghai），为空则使用系统默认时区',
+  `cron_enabled` TINYINT(1) DEFAULT 1 COMMENT '是否启用 Cron 调度（1=启用，0=禁用），与 enabled 独立控制',
   `created_by` VARCHAR(128) DEFAULT NULL COMMENT '创建者',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间（UTC）',
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间（UTC）',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_scheduling_dag_tenant_code` (`tenant_id`,`code`),
   KEY `idx_scheduling_dag_enabled` (`enabled`),
+  KEY `idx_scheduling_dag_cron_enabled` (`cron_enabled`),
   KEY `idx_scheduling_dag_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='DAG 表：流程元数据（无外键）';
@@ -537,16 +542,18 @@ CREATE TABLE IF NOT EXISTS `scheduling_task_instance` (
   `dag_id` BIGINT DEFAULT NULL COMMENT '所属 scheduling_dag.id',
   `dag_version_id` BIGINT DEFAULT NULL COMMENT '所属 scheduling_dag_version.id',
   `node_code` VARCHAR(128) DEFAULT NULL COMMENT '节点编码，对应 dag_version 中的 node_code',
+  `concurrency_key` VARCHAR(128) DEFAULT NULL COMMENT 'KEYED 并发键：parallelGroup 优先否则 nodeCode 否则 TASK-<taskId>',
   `task_id` BIGINT NOT NULL COMMENT '引用 scheduling_task.id',
   `tenant_id` BIGINT DEFAULT NULL COMMENT '租户ID',
   `attempt_no` INT DEFAULT 1 COMMENT '本次尝试序号',
-  `status` VARCHAR(32) DEFAULT 'PENDING' COMMENT 'PENDING/RESERVED/RUNNING/SUCCESS/FAILED/SKIPPED',
+  `status` VARCHAR(32) DEFAULT 'PENDING' COMMENT 'PENDING/RESERVED/RUNNING/SUCCESS/FAILED/SKIPPED/PAUSED/CANCELLED',
   `scheduled_at` DATETIME DEFAULT NULL COMMENT '计划执行时间',
   `locked_by` VARCHAR(128) DEFAULT NULL COMMENT '被哪个 worker 锁定',
   `lock_time` DATETIME DEFAULT NULL COMMENT '锁定时间',
   `next_retry_at` DATETIME DEFAULT NULL COMMENT '下一次重试时间',
   `params` JSON DEFAULT NULL COMMENT '执行参数快照',
   `result` JSON DEFAULT NULL COMMENT '执行结果快照',
+  `error_message` VARCHAR(512) DEFAULT NULL COMMENT '最近一次失败原因（如 TIMEOUT:...），仅失败/超时写入',
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '入队时间',
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
@@ -556,7 +563,9 @@ CREATE TABLE IF NOT EXISTS `scheduling_task_instance` (
   KEY `idx_scheduling_task_instance_node` (`node_code`),
   KEY `idx_scheduling_task_instance_dag_run` (`dag_run_id`),
   KEY `idx_scheduling_task_instance_status_scheduled` (`status`, `scheduled_at`),
-  KEY `idx_scheduling_task_instance_locked_by` (`locked_by`)
+  KEY `idx_scheduling_task_instance_status_next_retry` (`status`, `next_retry_at`),
+  KEY `idx_scheduling_task_instance_locked_by` (`locked_by`),
+  KEY `idx_scheduling_task_instance_task_concurrency_status` (`task_id`, `concurrency_key`, `status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='任务实例表：调度队列与 Worker 抢占（无外键）';
 

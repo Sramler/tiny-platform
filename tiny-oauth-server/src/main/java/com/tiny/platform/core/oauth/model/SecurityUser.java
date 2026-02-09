@@ -24,6 +24,8 @@ public class SecurityUser implements UserDetails {
 
     private final Long userId;
 
+    private final Long tenantId;
+
     // 用户名
     private final String username;
 
@@ -60,6 +62,7 @@ public class SecurityUser implements UserDetails {
      */
     public SecurityUser(User user, String password) {
         this.userId = user.getId();
+        this.tenantId = user.getTenantId();
         this.username = user.getUsername();
         this.password = password != null ? password : "";
         this.authorities = user.getRoles().stream()
@@ -84,6 +87,7 @@ public class SecurityUser implements UserDetails {
     @JsonCreator
     public SecurityUser(
             @JsonProperty("userId") Long userId,
+            @JsonProperty("tenantId") Long tenantId,
             @JsonProperty("username") String username,
             @JsonProperty("password") String password,
             @JsonProperty("authorities") Collection<? extends GrantedAuthority> authorities,
@@ -92,6 +96,7 @@ public class SecurityUser implements UserDetails {
             @JsonProperty("credentialsNonExpired") boolean credentialsNonExpired,
             @JsonProperty("enabled") boolean enabled) {
         this.userId = userId;
+        this.tenantId = tenantId;
         this.username = username;
         this.password = password;
         this.authorities = authorities;
@@ -125,6 +130,12 @@ public class SecurityUser implements UserDetails {
     @JsonDeserialize(using = SecurityUserLongDeserializer.class)
     public Long getUserId() {
         return userId;
+    }
+
+    @JsonSerialize(using = SecurityUserLongSerializer.class)
+    @JsonDeserialize(using = SecurityUserLongDeserializer.class)
+    public Long getTenantId() {
+        return tenantId;
     }
 
     /**

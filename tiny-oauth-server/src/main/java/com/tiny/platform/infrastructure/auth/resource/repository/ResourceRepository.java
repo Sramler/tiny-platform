@@ -42,12 +42,16 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
      * @return 子资源列表
      */
     List<Resource> findByParentIdOrderBySortAsc(Long parentId);
+
+    List<Resource> findByParentIdAndTenantIdOrderBySortAsc(Long parentId, Long tenantId);
     
     /**
      * 查找顶级资源（parentId为null）
      * @return 顶级资源列表
      */
     List<Resource> findByParentIdIsNullOrderBySortAsc();
+
+    List<Resource> findByParentIdIsNullAndTenantIdOrderBySortAsc(Long tenantId);
     
     /**
      * 根据名称查找资源
@@ -55,6 +59,8 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
      * @return 资源对象
      */
     Optional<Resource> findByName(String name);
+
+    Optional<Resource> findByNameAndTenantId(String name, Long tenantId);
     
     /**
      * 根据URL查找资源
@@ -62,6 +68,8 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
      * @return 资源对象
      */
     Optional<Resource> findByUrl(String url);
+
+    Optional<Resource> findByUrlAndTenantId(String url, Long tenantId);
     
     /**
      * 根据URI查找资源
@@ -69,6 +77,8 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
      * @return 资源对象
      */
     Optional<Resource> findByUri(String uri);
+
+    Optional<Resource> findByUriAndTenantId(String uri, Long tenantId);
     
     /**
      * 根据权限标识查找资源
@@ -183,16 +193,16 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
      * @param parentId 父级资源ID
      * @return 最大排序值
      */
-    @Query("SELECT COALESCE(MAX(r.sort), 0) FROM Resource r WHERE r.parentId = :parentId")
-    Integer findMaxSortByParentId(@Param("parentId") Long parentId);
+    @Query("SELECT COALESCE(MAX(r.sort), 0) FROM Resource r WHERE r.parentId = :parentId AND r.tenantId = :tenantId")
+    Integer findMaxSortByParentId(@Param("parentId") Long parentId, @Param("tenantId") Long tenantId);
     
     /**
      * 根据资源类型获取最大排序值
      * @param type 资源类型
      * @return 最大排序值
      */
-    @Query("SELECT COALESCE(MAX(r.sort), 0) FROM Resource r WHERE r.type = :type")
-    Integer findMaxSortByType(@Param("type") ResourceType type);
+    @Query("SELECT COALESCE(MAX(r.sort), 0) FROM Resource r WHERE r.type = :type AND r.tenantId = :tenantId")
+    Integer findMaxSortByType(@Param("type") ResourceType type, @Param("tenantId") Long tenantId);
     
     /**
      * 复合查询：根据多个条件查询资源
@@ -214,6 +224,7 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
            //"(:permission IS NULL OR r.permission LIKE %:permission%) AND " +
            //"(:title IS NULL OR r.title LIKE %:title%) AND " +
            //"(:hidden IS NULL OR r.hidden = :hidden) AND " +
+            "r.tenantId = :tenantId AND " +
             "(:type IS NULL OR r.type = :type) AND " +
            "r.parentId = :parentId " +
            "ORDER BY r.sort ASC")
@@ -226,6 +237,7 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
             @Param("type") ResourceType type,
             @Param("parentId") Long parentId,
             @Param("hidden") Boolean hidden,
+            @Param("tenantId") Long tenantId,
             Pageable pageable
     );
     
@@ -242,7 +254,7 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
      * @param pageable 分页参数
      * @return 分页结果
      */
-    Page<Resource> findByTypeInAndParentId(List<ResourceType> types, Long parentId, Pageable pageable);
+    Page<Resource> findByTypeInAndParentIdAndTenantId(List<ResourceType> types, Long parentId, Long tenantId, Pageable pageable);
 
     /**
      * 多条件分页查询菜单（type IN、parentId、title、name、permission、enabled）
@@ -258,6 +270,7 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
     @Query("""
     SELECT r FROM Resource r
     WHERE (:parentId IS NULL OR r.parentId = :parentId)
+      AND r.tenantId = :tenantId
       AND (COALESCE(:types, NULL) IS NULL OR r.type IN :types)
       AND (:title IS NULL OR r.title LIKE %:title%)
       AND (:name IS NULL OR r.name LIKE %:name%)
@@ -272,6 +285,7 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
         @Param("name") String name,
         @Param("permission") String permission,
         @Param("enabled") Boolean enabled,
+        @Param("tenantId") Long tenantId,
         Pageable pageable
     );
 
@@ -305,6 +319,7 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
            ) AS leaf
     FROM resource r
     WHERE (:parentId IS NULL OR r.parent_id = :parentId)
+      AND r.tenant_id = :tenantId
       AND (:title IS NULL OR r.title LIKE CONCAT('%', :title, '%'))
       AND (:name IS NULL OR r.name LIKE CONCAT('%', :name, '%'))
       AND (:permission IS NULL OR r.permission LIKE CONCAT('%', :permission, '%'))
@@ -315,6 +330,7 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
             countQuery = """
     SELECT COUNT(*) FROM resource r
     WHERE (:parentId IS NULL OR r.parent_id = :parentId)
+      AND r.tenant_id = :tenantId
       AND (:title IS NULL OR r.title LIKE CONCAT('%', :title, '%'))
       AND (:name IS NULL OR r.name LIKE CONCAT('%', :name, '%'))
       AND (:permission IS NULL OR r.permission LIKE CONCAT('%', :permission, '%'))
@@ -331,6 +347,7 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
             @Param("name") String name,
             @Param("permission") String permission,
             @Param("enabled") Boolean enabled,
+            @Param("tenantId") Long tenantId,
             Pageable pageable
     );
 
@@ -346,6 +363,7 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
     )
     FROM Resource r
     WHERE (:parentId IS NULL OR r.parentId = :parentId)
+      AND r.tenantId = :tenantId
       AND (:title IS NULL OR r.title LIKE %:title%)
       AND (:name IS NULL OR r.name LIKE %:name%)
       AND (:permission IS NULL OR r.permission LIKE %:permission%)
@@ -360,6 +378,7 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
             @Param("name") String name,
             @Param("permission") String permission,
             @Param("enabled") Boolean enabled,
+            @Param("tenantId") Long tenantId,
             Pageable pageable
     );
 
@@ -370,6 +389,8 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
      * @return 菜单列表
      */
     List<Resource> findByTypeInAndParentIdOrderBySortAsc(List<ResourceType> types, Long parentId);
+
+    List<Resource> findByTypeInAndParentIdAndTenantIdOrderBySortAsc(List<ResourceType> types, Long parentId, Long tenantId);
     
     /**
      * 根据类型列表查询顶级菜单（parentId为null）
@@ -377,6 +398,8 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
      * @return 顶级菜单列表
      */
     List<Resource> findByTypeInAndParentIdIsNullOrderBySortAsc(List<ResourceType> types);
+
+    List<Resource> findByTypeInAndParentIdIsNullAndTenantIdOrderBySortAsc(List<ResourceType> types, Long tenantId);
     
     /**
      * 根据父级ID列表查询资源（用于批量判断叶子节点）
@@ -384,5 +407,7 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
      * @return 资源列表
      */
     List<Resource> findByParentIdIn(List<Long> parentIds);
+
+    List<Resource> findByParentIdInAndTenantId(List<Long> parentIds, Long tenantId);
 
 }

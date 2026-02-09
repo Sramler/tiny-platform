@@ -196,6 +196,15 @@ camunda:
     # 流程引擎配置
     process-engine:
       enforce-history-time-to-live: false # 临时禁用 TTL 强制检查
+# 调度模块 Worker 配置（任务抢占与执行）
+scheduling:
+  worker:
+    lock-timeout-sec: 300 # 抢占锁超时（秒），超时视为僵尸任务并回收为 PENDING
+    pool:
+      core-size: 4
+      max-size: 16
+      queue-capacity: 200
+
 security:
   mfa:
     mode: OPTIONAL # MFA模式: NONE(完全禁用), OPTIONAL(推荐可跳过), REQUIRED(强制必须绑定)

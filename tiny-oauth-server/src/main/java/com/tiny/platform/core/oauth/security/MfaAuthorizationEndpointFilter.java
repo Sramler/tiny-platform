@@ -4,6 +4,7 @@ import com.tiny.platform.core.oauth.config.FrontendProperties;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.core.oauth.service.SecurityService;
+import com.tiny.platform.core.oauth.tenant.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
@@ -92,7 +93,8 @@ public class MfaAuthorizationEndpointFilter extends OncePerRequestFilter {
             return;
         }
 
-        User user = userRepository.findUserByUsername(username).orElse(null);
+        Long tenantId = TenantContext.getTenantId();
+        User user = tenantId != null ? userRepository.findUserByUsernameAndTenantId(username, tenantId).orElse(null) : null;
         if (user == null) {
             filterChain.doFilter(request, response);
             return;

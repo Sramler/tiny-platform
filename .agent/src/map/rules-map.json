@@ -30,6 +30,20 @@
           "frontmatter": { "description": "Vue 3 / TS 编码规范", "globs": ["**/*.vue", "**/*.ts", "**/*.tsx"] }
         }
       },
+      "25-logging.rules.md": {
+        "cursor": {
+          "id": "25-logging",
+          "frontmatter": {
+            "description": "日志规范（链路追踪与脱敏）",
+            "globs": [
+              "**/src/main/**/*.java",
+              "**/src/**/*.ts",
+              "**/src/**/*.tsx",
+              "**/src/**/*.vue"
+            ]
+          }
+        }
+      },
       "30-antdv.rules.md": {
         "cursor": {
           "id": "30-antdv",
@@ -52,12 +66,32 @@
           }
         }
       },
+      "55-code-review.rules.md": {
+        "cursor": {
+          "id": "55-code-review",
+          "frontmatter": { "description": "代码审查规范（流程与检查清单）", "alwaysApply": true }
+        }
+      },
       "70-database.rules.md": {
         "cursor": {
           "id": "70-database",
           "frontmatter": {
             "description": "数据库/SQL 规范",
             "globs": ["**/*.sql", "**/schema.sql", "**/changelog/**"]
+          }
+        }
+      },
+      "65-performance.rules.md": {
+        "cursor": {
+          "id": "65-performance",
+          "frontmatter": {
+            "description": "性能优化规范",
+            "globs": [
+              "**/src/main/**/*.java",
+              "**/src/**/*.ts",
+              "**/src/**/*.tsx",
+              "**/src/**/*.vue"
+            ]
           }
         }
       },
@@ -79,12 +113,39 @@
           }
         }
       },
+      "77-dependency.rules.md": {
+        "cursor": {
+          "id": "77-dependency",
+          "frontmatter": {
+            "description": "依赖管理规范",
+            "globs": ["**/pom.xml", "**/build.gradle", "**/build.gradle.kts", "**/package.json"]
+          }
+        }
+      },
+      "78-config.rules.md": {
+        "cursor": {
+          "id": "78-config",
+          "frontmatter": {
+            "description": "配置管理规范",
+            "globs": ["**/application*.yml", "**/application*.yaml", "**/.env*", "**/config/**"]
+          }
+        }
+      },
       "80-api.rules.md": {
         "cursor": {
           "id": "80-api",
           "frontmatter": {
             "description": "REST API 设计规范",
             "globs": ["**/controller/**", "**/*Controller.java"]
+          }
+        }
+      },
+      "85-documentation.rules.md": {
+        "cursor": {
+          "id": "85-documentation",
+          "frontmatter": {
+            "description": "文档规范",
+            "globs": ["**/*.md", "**/README.md", "**/CHANGELOG.md"]
           }
         }
       },
@@ -111,12 +172,18 @@
         "60-git.rules.md",
         "10-java.rules.md",
         "20-vue.rules.md",
+        "25-logging.rules.md",
         "30-antdv.rules.md",
         "50-testing.rules.md",
+        "55-code-review.rules.md",
+        "65-performance.rules.md",
         "70-database.rules.md",
         "75-exception.rules.md",
         "76-idempotent.rules.md",
+        "77-dependency.rules.md",
+        "78-config.rules.md",
         "80-api.rules.md",
+        "85-documentation.rules.md",
         "90-tiny-platform.rules.md",
         "91-tiny-platform-auth.rules.md"
       ]

@@ -21,6 +21,10 @@ public class SchedulingDagCreateUpdateDto {
     
     private String cronExpression; // Cron 表达式，用于定时调度
     
+    private String cronTimezone; // Cron 时区（如 Asia/Shanghai），为空则使用系统默认时区
+    
+    private Boolean cronEnabled = true; // 是否启用 Cron 调度（与 enabled 独立控制）
+    
     private String createdBy;
 
     // Getters and Setters
@@ -78,6 +82,22 @@ public class SchedulingDagCreateUpdateDto {
 
     public void setCronExpression(String cronExpression) {
         this.cronExpression = cronExpression;
+    }
+
+    public String getCronTimezone() {
+        return cronTimezone;
+    }
+
+    public void setCronTimezone(String cronTimezone) {
+        this.cronTimezone = cronTimezone;
+    }
+
+    public Boolean getCronEnabled() {
+        return cronEnabled;
+    }
+
+    public void setCronEnabled(Boolean cronEnabled) {
+        this.cronEnabled = cronEnabled;
     }
 
     public String getCreatedBy() {

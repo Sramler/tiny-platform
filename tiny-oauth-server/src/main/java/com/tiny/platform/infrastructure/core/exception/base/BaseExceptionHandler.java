@@ -8,11 +8,13 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.context.request.NativeWebRequest;
 
 import jakarta.annotation.Nonnull;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.stream.Collectors;
 import java.net.URI;
 
 /**
@@ -67,6 +69,42 @@ public abstract class BaseExceptionHandler {
         ProblemDetail body = buildProblemDetail(
                 errorCode,
                 ExceptionUtils.getExceptionDetail(ex),
+                request
+        );
+        return ResponseEntity.of(body).build();
+    }
+
+    /**
+     * 处理参数校验异常（@Valid 触发的 MethodArgumentNotValidException）
+     *
+     * <p>便于在日志中直接看到校验失败字段和原因，便于排查「编辑确定」等接口错误。</p>
+     *
+     * @param ex 参数校验异常
+     * @param request 请求
+     * @return 错误响应（400 BAD_REQUEST）
+     */
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ProblemDetail> handleMethodArgumentNotValid(
+            @Nonnull MethodArgumentNotValidException ex, @Nonnull NativeWebRequest request) {
+
+        String errors = ex.getBindingResult().getFieldErrors().stream()
+                .map(e -> e.getField() + ": " + (e.getDefaultMessage() != null ? e.getDefaultMessage() : ""))
+                .collect(Collectors.joining("; "));
+        String detail = errors.isEmpty() ? "参数校验失败" : errors;
+
+        String path = null;
+        try {
+            HttpServletRequest httpRequest = request.getNativeRequest(HttpServletRequest.class);
+            if (httpRequest != null) {
+                path = httpRequest.getRequestURI();
+            }
+        } catch (Exception ignored) {
+        }
+        log.warn("参数校验失败: path={}, errors={}", path, detail);
+
+        ProblemDetail body = buildProblemDetail(
+                ErrorCode.VALIDATION_ERROR,
+                detail,
                 request
         );
         return ResponseEntity.of(body).build();

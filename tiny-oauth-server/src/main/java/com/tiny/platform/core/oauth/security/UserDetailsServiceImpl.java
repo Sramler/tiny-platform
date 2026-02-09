@@ -1,6 +1,7 @@
 package com.tiny.platform.core.oauth.security;
 
 import com.tiny.platform.core.oauth.model.SecurityUser;
+import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -21,9 +22,13 @@ public class UserDetailsServiceImpl implements UserDetailsService {
     }
 
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        User user = userRepository.findUserByUsername(username)
+        Long tenantId = TenantContext.getTenantId();
+        if (tenantId == null) {
+            throw new UsernameNotFoundException("缺少租户信息");
+        }
+        User user = userRepository.findUserByUsernameAndTenantId(username, tenantId)
                 .orElseThrow(() -> new UsernameNotFoundException("用户不存在: " + username));
 
         // Update last login time

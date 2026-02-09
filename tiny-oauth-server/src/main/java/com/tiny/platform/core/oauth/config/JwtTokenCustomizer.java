@@ -173,6 +173,7 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
         if (securityUser != null) {
             Long userId = securityUser.getUserId();
             String username = securityUser.getUsername();
+            Long tenantId = securityUser.getTenantId();
             log.info("[JwtTokenCustomizer] Access Token - SecurityUser 来源: {}, userId: {}, username: {}", 
                     source, userId, username);
             
@@ -183,6 +184,9 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
             // 添加用户ID和用户名
             claims.claim("userId", userId);
             claims.claim("username", username);
+            if (tenantId != null) {
+                claims.claim("tenantId", tenantId);
+            }
             
             // 添加权限列表（角色和资源权限）
             Set<String> authorities = principal.getAuthorities().stream()
@@ -331,8 +335,12 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
         if (securityUser != null) {
             userId = securityUser.getUserId();
             username = securityUser.getUsername();
+            Long tenantId = securityUser.getTenantId();
             claims.claim("userId", userId);
             claims.claim("username", username);
+            if (tenantId != null) {
+                claims.claim("tenantId", tenantId);
+            }
             log.info("[JwtTokenCustomizer] ID Token - 添加 userId: {}, username: {}", userId, username);
             
             // 标准 OIDC claims: sub (subject) 通常由框架自动设置
@@ -361,7 +369,9 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
         
         // 查询完整的 User 信息以获取 email、phone、nickname 等字段
         if (username != null && userRepository != null) {
-            userRepository.findUserByUsername(username).ifPresent(user -> {
+            Long tenantId = securityUser != null ? securityUser.getTenantId() : null;
+            if (tenantId != null) {
+                userRepository.findUserByUsernameAndTenantId(username, tenantId).ifPresent(user -> {
                 // 根据请求的 scope 添加相应的字段
                 Set<String> scopes = context.getAuthorizedScopes();
                 
@@ -391,7 +401,8 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
                         claims.claim("phone_number_verified", true);
                     }
                 }
-            });
+                });
+            }
         }
     }
     

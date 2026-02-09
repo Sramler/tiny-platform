@@ -1,5 +1,6 @@
 package com.tiny.platform.infrastructure.scheduling.dto;
 
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
@@ -14,6 +15,7 @@ public class SchedulingTaskCreateUpdateDto {
     @Size(max = 128, message = "编码长度不能超过128")
     private String code;
     
+    @NotBlank(message = "任务名称不能为空")
     @Size(max = 128, message = "名称长度不能超过128")
     private String name;
     

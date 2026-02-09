@@ -7,25 +7,31 @@
 
 ## 📊 现有规则文件概览
 
-### 已存在的规则文件（13 个）
+### 已存在的规则文件（19 个）
 
 | 文件 | 主题 | 行数 | 状态 |
 |------|------|------|------|
 | `00-base.rules.md` | 全局基础规范 | ~30 | ✅ 完整 |
 | `10-java.rules.md` | Java 编码规范 | ~40 | ✅ 完整 |
 | `20-vue.rules.md` | Vue 3 编码规范 | ~40 | ✅ 完整 |
+| `25-logging.rules.md` | 日志规范 | ~120 | ✅ 完整 |
 | `30-antdv.rules.md` | Ant Design Vue 规范 | ~40 | ✅ 完整 |
 | `40-security.rules.md` | 安全规范（全局红线） | ~40 | ✅ 完整 |
 | `50-testing.rules.md` | 测试规范 | ~45 | ✅ 完整 |
+| `55-code-review.rules.md` | 代码审查规范 | ~80 | ✅ 完整 |
 | `60-git.rules.md` | Git 规范 | ~40 | ✅ 完整 |
+| `65-performance.rules.md` | 性能优化规范 | ~90 | ✅ 完整 |
 | `70-database.rules.md` | 数据库/SQL 规范 | ~85 | ✅ 完整 |
 | `75-exception.rules.md` | 异常处理规范 | ~70 | ✅ 完整 |
 | `76-idempotent.rules.md` | 幂等性规范 | ~60 | ✅ 完整 |
+| `77-dependency.rules.md` | 依赖管理规范 | ~90 | ✅ 完整 |
+| `78-config.rules.md` | 配置管理规范 | ~90 | ✅ 完整 |
 | `80-api.rules.md` | REST API 设计规范 | ~80 | ✅ 完整 |
+| `85-documentation.rules.md` | 文档规范 | ~70 | ✅ 完整 |
 | `90-tiny-platform.rules.md` | 平台特定规则 | ~35 | ✅ 完整 |
 | `91-tiny-platform-auth.rules.md` | OAuth2/认证规范 | ~70 | ✅ 完整 |
 
-**总计**：~588 行，13 个规则文件
+**总计**：约 19 个规则文件
 
 ---
 

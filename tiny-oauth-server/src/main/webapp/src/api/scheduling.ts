@@ -3,15 +3,25 @@ import request from '@/utils/request'
 
 // ==================== TaskType - 任务类型 ====================
 
+// 仅保留有值的查询参数，避免向后端传递 undefined 导致 500（如 tenantId=undefined）
+function cleanParams(p: Record<string, any>): Record<string, any> {
+  const out: Record<string, any> = {}
+  for (const k of Object.keys(p)) {
+    const v = p[k]
+    if (v !== undefined && v !== null && v !== '') out[k] = v
+  }
+  return out
+}
+
 // 分页查询任务类型列表
 export function taskTypeList(params: any) {
-  const apiParams: { [key: string]: any } = {
+  const apiParams = cleanParams({
     page: (params.current || 1) - 1,
     size: params.pageSize || 10,
     tenantId: params.tenantId,
     code: params.code,
     name: params.name,
-  }
+  })
   return request.get('/scheduling/task-type/list', { params: apiParams }).then((res: any) => {
     return {
       records: res.content || [],
@@ -38,6 +48,11 @@ export function deleteTaskType(id: number) {
 // 查看任务类型详情
 export function getTaskType(id: number) {
   return request.get(`/scheduling/task-type/${id}`)
+}
+
+// 获取已注册执行器标识列表（供任务类型表单下拉选择）
+export function getExecutors() {
+  return request.get<string[]>('/scheduling/executors')
 }
 
 // ==================== Task - 任务实例定义 ====================
@@ -253,18 +268,35 @@ export function resumeNode(dagId: number, nodeId: number) {
 
 // ==================== 运行历史 ====================
 
-// 查询 DAG 所有运行历史
+// 查询 DAG 运行历史（支持状态、触发类型、运行编号、开始时间范围）
 export function getDagRuns(dagId: number, params: any) {
   const apiParams: { [key: string]: any } = {
     page: (params.current || 1) - 1,
     size: params.pageSize || 10,
   }
+  if (params.status != null && params.status !== '') apiParams.status = params.status
+  if (params.triggerType != null && params.triggerType !== '') apiParams.triggerType = params.triggerType
+  if (params.runNo != null && params.runNo !== '') apiParams.runNo = params.runNo
+  if (params.startTimeFrom != null && params.startTimeFrom !== '') apiParams.startTimeFrom = params.startTimeFrom
+  if (params.startTimeTo != null && params.startTimeTo !== '') apiParams.startTimeTo = params.startTimeTo
   return request.get(`/scheduling/dag/${dagId}/runs`, { params: apiParams }).then((res: any) => {
     return {
       records: res.content || [],
       total: res.totalElements || 0,
     }
   })
+}
+
+// DAG 运行统计（Run 级别：total/success/failed/avgDurationMs/p95/p99）
+export function getDagStats(dagId: number) {
+  return request.get<{
+    total: number
+    success: number
+    failed: number
+    avgDurationMs: number | null
+    p95DurationMs: number | null
+    p99DurationMs: number | null
+  }>(`/scheduling/dag/${dagId}/stats`)
 }
 
 // 查看 DAG 单次运行详情

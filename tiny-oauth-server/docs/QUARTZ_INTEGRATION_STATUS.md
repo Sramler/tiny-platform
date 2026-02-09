@@ -1,142 +1,58 @@
 # Quartz 集成状态分析
 
+> 触发链路与实现细节见 [SCHEDULING_TRIGGER_DESIGN.md](./SCHEDULING_TRIGGER_DESIGN.md)。
+
 ## 当前集成状态
 
 ### ✅ 已实现的功能
 
-#### 1. **手动触发 DAG** - 部分实现
+#### 1. **手动触发 DAG** — 已实现
 - **位置**: `SchedulingService.triggerDag()`
-- **实现**: 调用 `QuartzSchedulerService.triggerDagNow()` 创建一次性 Quartz Job
-- **状态**: ✅ 已关联 Quartz，但存在逻辑问题（见下方问题）
+- **实现**: 先创建 `SchedulingDagRun`，再调用 `triggerDagNow(dag, run.getId(), version.getId())`，JobDataMap 传递 dagRunId/dagVersionId
+- **状态**: ✅ 逻辑正确，Run 与执行一一对应
 
-#### 2. **暂停 DAG** - 已实现
+#### 2. **定时调度（Cron）** — 已实现
+- **位置**: `createDag()` / `updateDag()`，`SchedulingDagCreateUpdateDto.cronExpression`
+- **实现**: 有 cron 时调用 `createOrUpdateDagJob(dag, cronExpression)`；更新时清空 cron 则 `deleteDagJob(dagId)`
+- **状态**: ✅ Cron 触发时 Job 仅传 dagId，`executeDag(dagId, null, null)` 内创建 Run
+
+#### 3. **暂停 DAG** — 已实现
 - **位置**: `SchedulingService.pauseDag()`
-- **实现**: 调用 `QuartzSchedulerService.pauseDagJob()` 暂停 Quartz Job
+- **实现**: 调用 `QuartzSchedulerService.pauseDagJob()`
 - **状态**: ✅ 已关联 Quartz
 
-#### 3. **恢复 DAG** - 已实现
+#### 4. **恢复 DAG** — 已实现
 - **位置**: `SchedulingService.resumeDag()`
-- **实现**: 调用 `QuartzSchedulerService.resumeDagJob()` 恢复 Quartz Job
+- **实现**: 调用 `QuartzSchedulerService.resumeDagJob()`
 - **状态**: ✅ 已关联 Quartz
 
-#### 4. **DAG 执行 Job** - 已实现
+#### 5. **停止 DAG** — 已实现
+- **位置**: `SchedulingService.stopDag()`
+- **实现**: 调用 `pauseDagJob(dagId)`，并将 RUNNING 的 Run 标为 CANCELLED
+- **状态**: ✅ 已关联 Quartz
+
+#### 6. **重试 DAG** — 已实现
+- **位置**: `SchedulingService.retryDag()`
+- **实现**: 为失败 Run 创建 retry Run，再调用 `triggerDagNow(dag, retryRun.getId(), retryRun.getDagVersionId())`
+- **状态**: ✅ 重试会真正触发执行
+
+#### 7. **删除 DAG** — 已实现
+- **位置**: `SchedulingService.deleteDag()`
+- **实现**: 调用 `quartzSchedulerService.deleteDagJob(id)`；失败仅用 logger 记录，不阻止删除
+- **状态**: ✅ 已清理 Quartz Job
+
+#### 8. **DAG 执行 Job** — 已实现
 - **位置**: `DagExecutionJob.execute()`
-- **实现**: Quartz Job 执行 DAG，创建任务实例
+- **实现**: 从 JobDataMap 读取 dagRunId/dagVersionId，调用 `executeDag(dagId, dagRunId, dagVersionId)`；为空时走定时分支在内部创建 Run
 - **状态**: ✅ 已实现
 
-### ❌ 缺失的功能
+### 历史问题（已修复）
 
-#### 1. **定时调度（Cron）** - 未实现
-- **问题**: DAG 创建/更新时没有创建定时调度的 Quartz Job
-- **缺失代码**:
-  - `SchedulingDagCreateUpdateDto` 中没有 `cronExpression` 字段
-  - `createDag()` 和 `updateDag()` 方法没有调用 `createOrUpdateDagJob()`
-- **影响**: 无法实现基于 Cron 表达式的定时调度
+- **triggerDag 顺序**：已改为先创建 `SchedulingDagRun`，再 `triggerDagNow(dag, run.getId(), version.getId())`，Job 内使用已有 Run。
+- **triggerDagNow 参数**：已支持传入 `dagRunId`、`dagVersionId` 并写入 JobDataMap。
+- **DagExecutionJob**：已根据 JobDataMap 中是否有 dagRunId/dagVersionId 区分手动/定时，定时时在 `executeDag(dagId, null, null)` 内创建 Run。
 
-#### 2. **停止 DAG** - 未关联 Quartz
-- **位置**: `SchedulingService.stopDag()`
-- **问题**: 只更新了数据库状态，没有停止 Quartz Job
-- **影响**: Quartz Job 可能继续执行
-
-#### 3. **重试 DAG** - 未关联 Quartz
-- **位置**: `SchedulingService.retryDag()`
-- **问题**: 只创建了新的 `dagRun`，没有触发 Quartz Job
-- **影响**: 重试不会真正执行
-
-#### 4. **删除 DAG** - 未清理 Quartz Job
-- **位置**: `SchedulingService.deleteDag()`
-- **问题**: 没有调用 `deleteDagJob()` 清理 Quartz Job
-- **影响**: Quartz 中会残留 Job
-
-### ⚠️ 存在的问题
-
-#### 1. **triggerDag 方法的逻辑问题**
-```java
-// 当前实现（有问题）
-public SchedulingDagRun triggerDag(Long dagId, String triggeredBy) {
-    // 1. 先调用 Quartz 触发
-    quartzSchedulerService.triggerDagNow(dag);
-    
-    // 2. 然后创建 dagRun（但 Job 已经执行了）
-    SchedulingDagRun run = new SchedulingDagRun();
-    // ...
-    return run;
-}
-```
-
-**问题**:
-- `triggerDagNow()` 创建的一次性 Job 会立即执行
-- `DagExecutionJob` 内部会自己创建 `dagRun`（用于定时调度）
-- 手动触发时应该先创建 `dagRun`，然后传递 `dagRunId` 给 Job
-
-**应该改为**:
-```java
-public SchedulingDagRun triggerDag(Long dagId, String triggeredBy) {
-    // 1. 先创建 dagRun
-    SchedulingDagRun run = createDagRun(dagId, triggeredBy);
-    
-    // 2. 然后触发 Quartz Job，传递 dagRunId
-    quartzSchedulerService.triggerDagNow(dag, run.getId(), version.getId());
-    
-    return run;
-}
-```
-
-#### 2. **triggerDagNow 方法缺少参数**
-```java
-// 当前实现
-public void triggerDagNow(SchedulingDag dag) throws SchedulerException {
-    // 只传递了 dagId
-    .usingJobData("dagId", dag.getId())
-}
-```
-
-**问题**: 
-- 手动触发时，应该传递 `dagRunId` 和 `dagVersionId`
-- 定时触发时，Job 内部自己创建 `dagRun`
-
-**应该改为**:
-```java
-public void triggerDagNow(SchedulingDag dag, Long dagRunId, Long dagVersionId) {
-    .usingJobData("dagId", dag.getId())
-    .usingJobData("dagRunId", dagRunId)  // 手动触发时传递
-    .usingJobData("dagVersionId", dagVersionId)  // 手动触发时传递
-}
-```
-
-#### 3. **DagExecutionJob 需要区分触发类型**
-```java
-// 当前实现
-public void execute(JobExecutionContext context) {
-    Long dagId = context.getJobDetail().getJobDataMap().getLong("dagId");
-    // 总是自己创建 dagRun
-    SchedulingDagRun run = new SchedulingDagRun();
-    // ...
-}
-```
-
-**问题**: 
-- 手动触发时，`dagRun` 应该已经存在（由 `triggerDag` 创建）
-- 定时触发时，`dagRun` 由 Job 内部创建
-
-**应该改为**:
-```java
-public void execute(JobExecutionContext context) {
-    Long dagId = context.getJobDetail().getJobDataMap().getLong("dagId");
-    Long dagRunId = context.getJobDetail().getJobDataMap().getLong("dagRunId");
-    
-    if (dagRunId != null && dagRunId > 0) {
-        // 手动触发：使用已存在的 dagRun
-        run = dagRunRepository.findById(dagRunId).orElseThrow(...);
-    } else {
-        // 定时触发：创建新的 dagRun
-        run = new SchedulingDagRun();
-        // ...
-    }
-}
-```
-
-## 需要改进的地方
+## 需要改进的地方（可选）
 
 ### 1. 添加 Cron 表达式支持
 

@@ -11,13 +11,20 @@ import com.tiny.platform.infrastructure.scheduling.repository.SchedulingTaskInst
 import com.tiny.platform.infrastructure.scheduling.repository.SchedulingTaskHistoryRepository;
 import com.tiny.platform.infrastructure.scheduling.repository.SchedulingTaskRepository;
 import com.tiny.platform.infrastructure.scheduling.repository.SchedulingTaskTypeRepository;
+import com.tiny.platform.infrastructure.scheduling.repository.SchedulingDagEdgeRepository;
 import com.tiny.platform.infrastructure.scheduling.repository.SchedulingDagTaskRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+
+import com.fasterxml.jackson.databind.JsonNode;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -43,15 +50,25 @@ public class TaskWorkerService {
     private final SchedulingTaskRepository taskRepository;
     private final SchedulingTaskTypeRepository taskTypeRepository;
     private final SchedulingDagTaskRepository dagTaskRepository;
+    private final SchedulingDagEdgeRepository dagEdgeRepository;
     private final TaskExecutorService taskExecutorService;
     private final DependencyCheckerService dependencyCheckerService;
     private final ObjectMapper objectMapper;
 
     private static final int TASK_PAGE_SIZE = 100;
     private static final int MAX_TASKS_PER_CYCLE = 500;
+    private static final int DEFAULT_RETRY_DELAY_SEC = 60;
+
+    @Value("${scheduling.worker.lock-timeout-sec:300}")
+    private int lockTimeoutSec;
 
     private final String workerId;
     private final ExecutorService executorService;
+
+    /** 自注入，用于通过代理调用 @Transactional 方法，避免同类内部调用导致事务不生效 */
+    @Autowired
+    @Lazy
+    private TaskWorkerService self;
 
     @Autowired
     public TaskWorkerService(
@@ -60,24 +77,22 @@ public class TaskWorkerService {
             SchedulingTaskRepository taskRepository,
             SchedulingTaskTypeRepository taskTypeRepository,
             SchedulingDagTaskRepository dagTaskRepository,
+            SchedulingDagEdgeRepository dagEdgeRepository,
             TaskExecutorService taskExecutorService,
             DependencyCheckerService dependencyCheckerService,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            @Qualifier("schedulingTaskExecutor") ExecutorService executorService) {
         this.taskInstanceRepository = taskInstanceRepository;
         this.taskHistoryRepository = taskHistoryRepository;
         this.taskRepository = taskRepository;
         this.taskTypeRepository = taskTypeRepository;
         this.dagTaskRepository = dagTaskRepository;
+        this.dagEdgeRepository = dagEdgeRepository;
         this.taskExecutorService = taskExecutorService;
         this.dependencyCheckerService = dependencyCheckerService;
         this.objectMapper = objectMapper;
+        this.executorService = executorService;
         this.workerId = "worker-" + UUID.randomUUID().toString().substring(0, 8);
-        // 创建线程池用于任务执行
-        this.executorService = Executors.newCachedThreadPool(r -> {
-            Thread t = new Thread(r, "task-executor-" + workerId);
-            t.setDaemon(true);
-            return t;
-        });
         logger.info("Worker 启动, workerId: {}", workerId);
     }
 
@@ -92,7 +107,7 @@ public class TaskWorkerService {
             while (processed < MAX_TASKS_PER_CYCLE) {
                 LocalDateTime now = LocalDateTime.now();
                 Page<SchedulingTaskInstance> page = taskInstanceRepository
-                        .findByStatusAndScheduledAtLessThanEqual("PENDING", now, PageRequest.of(0, TASK_PAGE_SIZE));
+                        .findPendingReadyForExecution("PENDING", now, now, PageRequest.of(0, TASK_PAGE_SIZE));
 
                 if (!page.hasContent()) {
                     break;
@@ -108,8 +123,8 @@ public class TaskWorkerService {
                         continue;
                     }
 
-                    if (reserveTask(instance)) {
-                        executeTask(instance);
+                    if (self.reserveTask(instance)) {
+                        self.executeTask(instance);
                         processed++;
                     }
                 }
@@ -127,12 +142,28 @@ public class TaskWorkerService {
         }
     }
 
+    /** 僵尸任务回收：每 30 秒将超时未完成的 RESERVED/RUNNING 置为 PENDING、清空锁，并设 scheduledAt=now 以便立即重排 */
+    @Scheduled(fixedDelay = 30000)
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recoverZombieTasks() {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime threshold = now.minusSeconds(lockTimeoutSec);
+        int n = taskInstanceRepository.recoverZombies(ZOMBIE_RECOVERY_STATUSES, threshold, now);
+        if (n > 0) {
+            logger.warn("僵尸任务回收: 将 {} 个超时实例置为 PENDING 并重排 (lock_time < {})", n, threshold);
+        }
+    }
+
     private static final Set<String> ACTIVE_STATUSES = Set.of("RESERVED", "RUNNING");
 
+    /** 僵尸回收仅回收 RESERVED（已抢占未开跑），不回收 RUNNING */
+    private static final Set<String> ZOMBIE_RECOVERY_STATUSES = Set.of("RESERVED");
+
     /**
-     * 抢占任务（原子操作）
+     * 抢占任务（原子操作）。
+     * REQUIRES_NEW 确保在定时线程中调用时始终开启新事务，使 @Modifying 的 reserveTaskInstance 在事务内执行，避免 TransactionRequiredException。
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public boolean reserveTask(SchedulingTaskInstance instance) {
         if (!canAcquire(instance)) {
             logger.debug("Worker {} 并发策略限制，无法抢占任务, instanceId: {}", workerId, instance.getId());
@@ -176,11 +207,13 @@ public class TaskWorkerService {
                 return !taskInstanceRepository.existsByTaskIdAndStatusIn(
                         instance.getTaskId(), ACTIVE_STATUSES);
             case "KEYED":
-                String key = getConcurrencyKey(instance);
+                String key = instance.getConcurrencyKey() != null && !instance.getConcurrencyKey().isBlank()
+                        ? instance.getConcurrencyKey()
+                        : getConcurrencyKey(instance);
                 if (key == null) {
                     return true;
                 }
-                return !taskInstanceRepository.existsByTaskIdAndNodeCodeAndStatusIn(
+                return !taskInstanceRepository.existsByTaskIdAndConcurrencyKeyAndStatusIn(
                         instance.getTaskId(), key, ACTIVE_STATUSES);
             case "PARALLEL":
             default:
@@ -209,6 +242,18 @@ public class TaskWorkerService {
     @Transactional
     public void executeTask(SchedulingTaskInstance instance) {
         logger.info("Worker {} 开始执行任务, instanceId: {}", workerId, instance.getId());
+
+        // 执行前状态二次校验，避免已取消/已终态仍被执行
+        SchedulingTaskInstance latest = taskInstanceRepository.findById(instance.getId()).orElse(null);
+        if (latest == null) {
+            logger.warn("任务实例已不存在，跳过执行, instanceId: {}", instance.getId());
+            return;
+        }
+        String st = latest.getStatus();
+        if (!"PENDING".equals(st) && !"RESERVED".equals(st) && !"RUNNING".equals(st)) {
+            logger.warn("任务实例状态已变更为 {}，跳过执行, instanceId: {}", st, instance.getId());
+            return;
+        }
 
         // 1. 更新状态为 RUNNING
         instance.setStatus("RUNNING");
@@ -248,9 +293,13 @@ public class TaskWorkerService {
                     future.cancel(true);
                     logger.warn("Worker {} 任务执行超时, instanceId: {}, 超时时间: {}秒", 
                             workerId, instance.getId(), timeoutSec);
+                    String timeoutMsg = "TIMEOUT: 任务执行超时（超过 " + timeoutSec + " 秒）";
                     result = TaskExecutorService.TaskExecutionResult.failure(
-                            "任务执行超时（超过 " + timeoutSec + " 秒）", 
+                            timeoutMsg,
                             new TimeoutException("任务执行超时"));
+                    // 立即写入 instance.errorMessage（与 result 分离），便于僵尸回收排除超时实例（若此后进程异常退出）
+                    instance.setErrorMessage(timeoutMsg);
+                    taskInstanceRepository.save(instance);
                 } catch (ExecutionException e) {
                     // 任务执行异常
                     Throwable cause = e.getCause();
@@ -319,12 +368,17 @@ public class TaskWorkerService {
         int currentAttempt = instance.getAttemptNo();
 
         if (currentAttempt < maxRetry) {
-            // 可以重试
+            // 可以重试：按 retryPolicy 计算延迟，并同步 scheduledAt 使 Worker 只在到点后拾取
+            int retryDelaySec = resolveRetryDelaySec(instance);
+            LocalDateTime nextRetryAt = LocalDateTime.now().plusSeconds(retryDelaySec);
             instance.setStatus("PENDING");
             instance.setAttemptNo(currentAttempt + 1);
-            instance.setNextRetryAt(LocalDateTime.now().plusSeconds(60)); // 60秒后重试
+            instance.setNextRetryAt(nextRetryAt);
+            instance.setScheduledAt(nextRetryAt);
             instance.setLockedBy(null);
             instance.setLockTime(null);
+            instance.setResult(null);
+            instance.setErrorMessage(null); // 清空上次失败原因，避免 PENDING 携带旧 errorMessage
             taskInstanceRepository.save(instance);
 
             history.setStatus("FAILED");
@@ -339,6 +393,7 @@ public class TaskWorkerService {
             // 达到最大重试次数，标记为失败
             instance.setStatus("FAILED");
             instance.setResult(null);
+            instance.setErrorMessage(result.getErrorMessage()); // 保留失败原因，便于排查与僵尸回收排除
             instance.setLockedBy(null);
             instance.setLockTime(null);
             taskInstanceRepository.save(instance);
@@ -358,34 +413,29 @@ public class TaskWorkerService {
     }
 
     /**
-     * 调度下游任务
+     * 调度下游任务：仅按边查出下游节点编码，再只加载这些节点的 PENDING 实例。
      */
     @Transactional
     public void scheduleDownstreamTasks(SchedulingTaskInstance completedInstance) {
-        // 1. 查找所有依赖此任务的下游任务
-        List<SchedulingTaskInstance> downstreamInstances = taskInstanceRepository
-                .findByDagRunId(completedInstance.getDagRunId())
+        List<String> downstreamNodeCodes = dagEdgeRepository
+                .findByDagVersionIdAndFromNodeCode(completedInstance.getDagVersionId(), completedInstance.getNodeCode())
                 .stream()
-                .filter(instance -> {
-                    // TODO: 根据 DAG Edge 检查是否是下游任务
-                    // 简化处理：检查是否有依赖关系
-                    return dependencyCheckerService.isDownstreamTask(
-                            completedInstance.getNodeCode(), 
-                            instance.getNodeCode(),
-                            completedInstance.getDagVersionId());
-                })
-                .filter(instance -> "PENDING".equals(instance.getStatus()) && instance.getScheduledAt() == null)
+                .map(edge -> edge.getToNodeCode())
                 .toList();
+        if (downstreamNodeCodes.isEmpty()) {
+            return;
+        }
+        List<SchedulingTaskInstance> downstreamInstances = taskInstanceRepository
+                .findByDagRunIdAndNodeCodeInAndStatusAndScheduledAtIsNull(
+                        completedInstance.getDagRunId(), downstreamNodeCodes, "PENDING");
 
-        // 2. 检查下游任务的依赖是否全部满足
         LocalDateTime now = LocalDateTime.now();
         for (SchedulingTaskInstance downstream : downstreamInstances) {
             if (dependencyCheckerService.checkDependencies(downstream)) {
-                // 所有依赖已满足，设置调度时间
                 downstream.setScheduledAt(now);
                 taskInstanceRepository.save(downstream);
-                logger.info("调度下游任务, instanceId: {}, nodeCode: {}", 
-                        downstream.getId(), downstream.getNodeCode());
+                logger.info("节点 {} 完成，调度下游节点 {}, taskInstanceId: {}",
+                        completedInstance.getNodeCode(), downstream.getNodeCode(), downstream.getId());
             }
         }
     }
@@ -487,6 +537,26 @@ public class TaskWorkerService {
         
         // 默认不重试
         return 0;
+    }
+
+    /**
+     * 从任务 retryPolicy（JSON）解析重试延迟秒数，支持最小字段 {"delaySec": 60}，默认 60 秒。
+     */
+    private int resolveRetryDelaySec(SchedulingTaskInstance instance) {
+        try {
+            SchedulingTask task = taskRepository.findById(instance.getTaskId()).orElse(null);
+            if (task == null || task.getRetryPolicy() == null || task.getRetryPolicy().isBlank()) {
+                return DEFAULT_RETRY_DELAY_SEC;
+            }
+            JsonNode node = objectMapper.readTree(task.getRetryPolicy());
+            if (node != null && node.has("delaySec") && node.get("delaySec").isNumber()) {
+                int sec = node.get("delaySec").asInt();
+                return sec > 0 ? sec : DEFAULT_RETRY_DELAY_SEC;
+            }
+        } catch (Exception e) {
+            logger.warn("解析 retryPolicy 失败, instanceId: {}, 使用默认延迟 {} 秒", instance.getId(), DEFAULT_RETRY_DELAY_SEC, e);
+        }
+        return DEFAULT_RETRY_DELAY_SEC;
     }
 
     /**

@@ -69,3 +69,4 @@
 - 认证：JWT / Session 混合策略（按客户端来源切换）
 - 前端：Vue3 + Ant Design Vue
 - 安全：RS256 JWT + JWK Set + MFA(TOTP)
+- 规则扩展记录：2026-02-05 增补 logging/performance/dependency/config/docs/code-review 规则并加强构建清理策略
