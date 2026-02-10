@@ -1,288 +1,121 @@
-# Token Claims 企业级规范对比
-
-## 标准规范参考
-
-- **OAuth 2.1** (RFC 6749, RFC 8252)
-- **OpenID Connect 1.0** (OIDC Core 1.0)
-- **JWT** (RFC 7519)
-
----
-
-## 1. Access Token 字段规范
-
-### 1.1 标准必需字段（由框架自动添加）
-
-| 字段    | 类型         | 说明                         | 是否自动添加    |
-| ------- | ------------ | ---------------------------- | --------------- |
-| `iss`   | String       | 签发者（Issuer）             | ✅ 框架自动     |
-| `sub`   | String       | 主题（Subject，用户标识）    | ✅ 框架自动     |
-| `aud`   | String/Array | 受众（Audience，资源服务器） | ✅ 框架自动     |
-| `exp`   | Number       | 过期时间（Unix 时间戳）      | ✅ 框架自动     |
-| `iat`   | Number       | 签发时间（Unix 时间戳）      | ✅ 框架自动     |
-| `jti`   | String       | JWT ID（唯一标识）           | ✅ 框架自动     |
-| `scope` | String       | 授权范围（空格分隔）         | ⚠️ 需要手动添加 |
-
-### 1.2 企业级推荐字段
-
-| 字段          | 类型          | 说明                                         | 当前实现  | 优先级 |
-| ------------- | ------------- | -------------------------------------------- | --------- | ------ |
-| `userId`      | Number        | 用户 ID（数据库主键）                        | ✅ 已实现 | 高     |
-| `username`    | String        | 用户名                                       | ✅ 已实现 | 高     |
-| `authorities` | Array<String> | 权限列表（角色+资源权限）                    | ✅ 已实现 | 高     |
-| `client_id`   | String        | 客户端 ID                                    | ✅ 已实现 | 高     |
-| `scope`       | String        | 授权范围                                     | ✅ 已实现 | 高     |
-| `auth_time`   | Number        | 用户认证时间（Unix 时间戳）                  | ❌ 未实现 | 中     |
-| `acr`         | String        | 认证上下文类（Authentication Context Class） | ❌ 未实现 | 低     |
-| `amr`         | Array<String> | 认证方法引用（如 password, totp）            | ❌ 未实现 | 中     |
-| `tenant_id`   | String        | 租户 ID（多租户场景）                        | ❌ 未实现 | 低     |
-| `device_id`   | String        | 设备 ID                                      | ❌ 未实现 | 低     |
-
-### 1.3 当前实现状态
-
-✅ **已实现**：
-
-- `userId` - 用户 ID
-- `username` - 用户名
-- `authorities` - 权限列表
-- `client_id` - 客户端 ID
-- `scope` - 授权范围
-
-❌ **缺失**：
-
-- `auth_time` - 用户认证时间
-- `amr` - 认证方法（如 password, totp）
-
----
-
-## 2. ID Token 字段规范
-
-### 2.1 标准必需字段（由框架自动添加）
-
-| 字段        | 类型         | 说明                 | 是否自动添加                  |
-| ----------- | ------------ | -------------------- | ----------------------------- |
-| `iss`       | String       | 签发者               | ✅ 框架自动                   |
-| `sub`       | String       | 主题（用户唯一标识） | ✅ 框架自动                   |
-| `aud`       | String/Array | 受众（客户端 ID）    | ✅ 框架自动                   |
-| `exp`       | Number       | 过期时间             | ✅ 框架自动                   |
-| `iat`       | Number       | 签发时间             | ✅ 框架自动                   |
-| `auth_time` | Number       | 用户认证时间         | ⚠️ 需要手动添加               |
-| `nonce`     | String       | 防重放攻击随机值     | ✅ 框架自动（如果请求中包含） |
+# Token Claims 企业规范（当前实现）
 
-### 2.2 标准可选字段（根据 scope 请求）
+最后更新：2026-02-10  
+适用模块：`tiny-oauth-server`
 
-| 字段                    | 类型    | 说明             | Scope 要求 | 当前实现  |
-| ----------------------- | ------- | ---------------- | ---------- | --------- |
-| `name`                  | String  | 用户全名/昵称    | `profile`  | ❌ 未实现 |
-| `given_name`            | String  | 名               | `profile`  | ❌ 未实现 |
-| `family_name`           | String  | 姓               | `profile`  | ❌ 未实现 |
-| `middle_name`           | String  | 中间名           | `profile`  | ❌ 未实现 |
-| `nickname`              | String  | 昵称             | `profile`  | ❌ 未实现 |
-| `preferred_username`    | String  | 首选用户名       | `profile`  | ❌ 未实现 |
-| `profile`               | String  | 用户资料页面 URL | `profile`  | ❌ 未实现 |
-| `picture`               | String  | 用户头像 URL     | `profile`  | ❌ 未实现 |
-| `website`               | String  | 用户网站         | `profile`  | ❌ 未实现 |
-| `gender`                | String  | 性别             | `profile`  | ❌ 未实现 |
-| `birthdate`             | String  | 生日             | `profile`  | ❌ 未实现 |
-| `zoneinfo`              | String  | 时区             | `profile`  | ❌ 未实现 |
-| `locale`                | String  | 语言区域         | `profile`  | ❌ 未实现 |
-| `email`                 | String  | 邮箱地址         | `email`    | ❌ 未实现 |
-| `email_verified`        | Boolean | 邮箱是否已验证   | `email`    | ❌ 未实现 |
-| `phone_number`          | String  | 手机号           | `phone`    | ❌ 未实现 |
-| `phone_number_verified` | Boolean | 手机号是否已验证 | `phone`    | ❌ 未实现 |
-| `address`               | Object  | 地址信息         | `address`  | ❌ 未实现 |
+## 1. 文档目标
 
-### 2.3 企业级自定义字段
+本文档描述当前代码中实际签发的 JWT Claims，用于排查以下问题：
 
-| 字段       | 类型          | 说明                          | 当前实现  |
-| ---------- | ------------- | ----------------------------- | --------- |
-| `userId`   | Number        | 用户 ID（数据库主键）         | ✅ 已实现 |
-| `username` | String        | 用户名                        | ✅ 已实现 |
-| `amr`      | Array<String> | 认证方法（如 password, totp） | ❌ 未实现 |
+- Token 是否包含 `tenantId`
+- `amr` 是否符合本次认证因子
+- 不同 `security.mfa.mode` 下的 Claims 预期
 
-### 2.4 当前实现状态
+对应实现：`src/main/java/com/tiny/platform/core/oauth/config/JwtTokenCustomizer.java`
 
-✅ **已实现**：
+## 2. Access Token 当前 Claims
 
-- `sub` - 主题（用户名）
-- `userId` - 用户 ID
-- `username` - 用户名
+### 2.1 框架标准字段（Spring Authorization Server）
 
-❌ **缺失（重要）**：
+- `iss`
+- `sub`
+- `aud`
+- `exp`
+- `iat`
+- `jti`
 
-- `auth_time` - 用户认证时间
-- `name` / `nickname` - 用户显示名称（需要从 User 实体获取）
-- `email` / `email_verified` - 邮箱信息（需要从 User 实体获取）
-- `phone_number` / `phone_number_verified` - 手机号信息（需要从 User 实体获取）
-- `amr` - 认证方法
+### 2.2 当前已实现的业务字段
 
----
+- `userId`
+- `username`
+- `tenantId`（仅在 `SecurityUser.tenantId` 非空时写入）
+- `authorities`
+- `client_id`
+- `scope`
+- `auth_time`
+- `amr`
 
-## 3. Refresh Token 字段规范
+## 3. ID Token 当前 Claims
 
-### 3.1 标准字段（如果配置为 JWT 格式）
+### 3.1 当前已实现字段
 
-| 字段  | 类型   | 说明     | 当前实现    |
-| ----- | ------ | -------- | ----------- |
-| `iss` | String | 签发者   | ✅ 框架自动 |
-| `sub` | String | 主题     | ✅ 框架自动 |
-| `aud` | String | 受众     | ✅ 框架自动 |
-| `exp` | Number | 过期时间 | ✅ 框架自动 |
-| `iat` | Number | 签发时间 | ✅ 框架自动 |
+- `userId`
+- `username`
+- `tenantId`（同 Access Token）
+- `auth_time`
+- `amr`
 
-### 3.2 企业级推荐字段
+### 3.2 基于 Scope 的扩展字段
 
-| 字段         | 类型   | 说明         | 当前实现  |
-| ------------ | ------ | ------------ | --------- |
-| `userId`     | Number | 用户 ID      | ✅ 已实现 |
-| `username`   | String | 用户名       | ✅ 已实现 |
-| `client_id`  | String | 客户端 ID    | ✅ 已实现 |
-| `grant_type` | String | 授权类型     | ✅ 已实现 |
-| `scope`      | String | 授权范围     | ✅ 已实现 |
-| `auth_time`  | Number | 用户认证时间 | ❌ 未实现 |
-| `device_id`  | String | 设备 ID      | ❌ 未实现 |
+当 `authorizedScopes` 包含对应 scope 且用户资料存在时，可能补充：
 
-### 3.3 当前实现状态
+- `profile` -> `name`, `nickname`
+- `email` -> `email`, `email_verified`
+- `phone` -> `phone_number`, `phone_number_verified`
 
-✅ **已实现**：
+说明：相关字段由 `UserRepository.findUserByUsernameAndTenantId(...)` 查询补充。
 
-- `userId` - 用户 ID
-- `username` - 用户名
-- `client_id` - 客户端 ID
-- `grant_type` - 授权类型
-- `scope` - 授权范围
+## 4. Refresh Token Claims
 
-❌ **缺失**：
+`JwtTokenCustomizer` 中实现了 Refresh Token claims 填充逻辑，但仅在 Refresh Token 实际为 JWT 时生效。  
+若系统使用默认 opaque refresh token，则不会直接看到这些 claims。
 
-- `auth_time` - 用户认证时间
+代码中可写入字段：
 
----
+- `userId`
+- `username`
+- `client_id`
+- `grant_type`
+- `scope`
+- `auth_time`
 
-## 4. 符合度评估
+## 5. `amr` 生成规则
 
-### 4.1 Access Token 符合度：**75%** ✅
+`amr` 来源：`MultiFactorAuthenticationToken.completedFactors`
 
-**优点**：
+映射关系：
 
-- ✅ 包含核心业务字段（userId, username, authorities）
-- ✅ 包含客户端和授权范围信息
+- `PASSWORD` -> `password`
+- `TOTP` -> `totp`
+- `OAUTH2` -> `oauth2`
+- `EMAIL` -> `email`
+- `MFA` -> `mfa`
 
-**改进建议**：
+兜底规则：
 
-- ⚠️ 添加 `auth_time`（用户认证时间）
-- ⚠️ 添加 `amr`（认证方法，如 password, totp）
+- 若 `principal.isAuthenticated() == true` 且未提取到任何因子，则写入 `password`
 
-### 4.2 ID Token 符合度：**40%** ⚠️
+## 6. MFA 模式与 `amr` 预期
 
-**优点**：
+### 6.1 `mode=NONE`
 
-- ✅ 包含基本用户标识（sub, userId, username）
+- 预期：`amr` 仅包含 `password`
+- 代码保证：`CustomLoginSuccessHandler` 在 `disableMfa=true` 分支不会调用 `promoteToFullyAuthenticated`，避免无条件补 `totp`
 
-**严重缺失**：
+### 6.2 `mode=OPTIONAL`
 
-- ❌ 缺少 `auth_time`（OIDC 标准字段）
-- ❌ 缺少 `name` / `nickname`（用户显示名称）
-- ❌ 缺少 `email` / `email_verified`（邮箱信息）
-- ❌ 缺少 `phone_number` / `phone_number_verified`（手机号信息）
-- ❌ 缺少 `amr`（认证方法）
+- 已绑定且激活 TOTP：预期 `amr=["password","totp"]`
+- 未绑定或未激活（且允许跳过）：预期 `amr=["password"]`
 
-**改进建议**：
+### 6.3 `mode=REQUIRED`
 
-- 🔴 **高优先级**：添加 `auth_time`、`name`、`email`、`email_verified`
-- 🟡 **中优先级**：添加 `phone_number`、`phone_number_verified`、`amr`
-- 🟢 **低优先级**：添加其他 profile 字段
+- 已绑定并完成 TOTP：预期 `amr=["password","totp"]`
+- 未绑定/未激活：应被绑定流程拦截，不应签发最终授权 token
 
-### 4.3 Refresh Token 符合度：**85%** ✅
+## 7. `tenantId` 说明
 
-**优点**：
+- `tenantId` 来自 `SecurityUser.tenantId`
+- 登录链路中租户上下文由 `TenantContextFilter` 建立
+- 若登录/授权请求未携带可解析租户，后端应在前置阶段失败（如 `missing_tenant`），而不是签发无租户 token
 
-- ✅ 包含完整的追踪信息（userId, username, client_id, grant_type, scope）
+## 8. 已知限制
 
-**改进建议**：
+- `auth_time` 当前优先读 `OAuth2Authorization.attributes["auth_time"]`，缺失时回退 `Instant.now()`
+- `skipMfaRemind` 目前未持久化，仅用于会话内分支控制
 
-- ⚠️ 添加 `auth_time`（用户认证时间）
+## 9. 排查清单
 
----
-
-## 5. 改进建议优先级
-
-### 🔴 高优先级（必须实现）
-
-1. **ID Token 添加 `auth_time`**
-
-   - OIDC 标准必需字段
-   - 用于追踪用户认证时间
-
-2. **ID Token 添加用户基本信息**
-
-   - `name` / `nickname` - 从 User 实体获取
-   - `email` / `email_verified` - 从 User 实体获取
-
-3. **Access Token 添加 `auth_time`**
-   - 用于审计和追踪
-
-### 🟡 中优先级（建议实现）
-
-1. **添加 `amr`（认证方法）**
-
-   - Access Token、ID Token、Refresh Token 都应包含
-   - 用于追踪认证方式（password, totp 等）
-
-2. **ID Token 添加 `phone_number` / `phone_number_verified`**
-   - 如果业务需要手机号验证
-
-### 🟢 低优先级（可选）
-
-1. 其他 profile 字段（picture, website, gender 等）
-2. 多租户支持（tenant_id）
-3. 设备追踪（device_id）
-
----
-
-## 6. 实现方案
-
-### 6.1 获取完整 User 信息
-
-由于 `SecurityUser` 只包含基本信息，需要从以下途径获取完整 User 信息：
-
-1. **从 OAuth2Authorization 获取**（推荐）
-
-   - 通过 `context.getAuthorization()` 获取 `OAuth2Authorization`
-   - 从 `OAuth2Authorization.getAttribute(Principal.class.getName())` 获取 Principal
-   - 但 Principal 可能也是 `SecurityUser`，需要额外查询
-
-2. **通过 UserRepository 查询**（备选）
-
-   - 根据 `username` 查询完整的 `User` 实体
-   - 获取 `email`、`phone`、`nickname` 等字段
-
-3. **扩展 SecurityUser**（长期方案）
-   - 在 `SecurityUser` 中添加 `email`、`phone`、`nickname` 字段
-   - 修改 `UserDetailsServiceImpl` 填充这些字段
-
-### 6.2 获取认证方法（amr）
-
-从 `Authentication` 对象中提取：
-
-- 如果是 `MultiFactorAuthenticationToken`，可以从 `getCompletedFactors()` 获取
-- 例如：`["password", "totp"]`
-
-### 6.3 获取认证时间（auth_time）
-
-- 从 `Authentication` 的创建时间获取
-- 或从 `OAuth2Authorization` 的创建时间获取
-
----
-
-## 7. 总结
-
-当前实现**基本符合**企业级规范，但 **ID Token 缺少关键字段**，需要重点改进：
-
-1. ✅ **Access Token**：符合度 75%，建议添加 `auth_time` 和 `amr`
-2. ⚠️ **ID Token**：符合度 40%，**需要大量改进**，特别是用户信息字段
-3. ✅ **Refresh Token**：符合度 85%，建议添加 `auth_time`
-
-**下一步行动**：
-
-1. 优先实现 ID Token 的 `auth_time`、`name`、`email`、`email_verified`
-2. 实现 `amr` 字段（所有 token 类型）
-3. 考虑扩展 `SecurityUser` 或从 `UserRepository` 查询完整用户信息
+1. 先看 `CustomLoginSuccessHandler` 日志：是否进入 `disableMfa` / `requireTotp` 分支。
+2. 再看 `MfaAuthorizationEndpointFilter`：`/oauth2/authorize` 是否二次拦截。
+3. 解码 access token，核对 `tenantId`、`amr`、`auth_time`。
+4. 若 `mode=NONE` 仍出现 `totp`，优先检查是否走了旧会话或旧服务进程。
