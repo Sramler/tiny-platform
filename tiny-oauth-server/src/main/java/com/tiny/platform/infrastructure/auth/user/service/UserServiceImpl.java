@@ -27,6 +27,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import java.util.HashSet;
 import java.util.HashMap;
 import java.time.LocalDateTime;
+import com.tiny.platform.core.oauth.tenant.TenantContext;
 
 @Service
 public class UserServiceImpl implements UserService {
@@ -48,8 +49,10 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public Page<UserResponseDto> users(UserRequestDto query, Pageable pageable) {
+        Long tenantId = requireTenantId();
         Page<User> users = userRepository.findAll((Specification<User>) (root, q, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.get("tenantId"), tenantId));
 
             if (StringUtils.hasText(query.getUsername())) {
                 predicates.add(cb.like(root.get("username"), "%" + query.getUsername() + "%"));
@@ -72,22 +75,23 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public Optional<User> findById(Long id) {
-        return userRepository.findById(id);
+        return userRepository.findByIdAndTenantId(id, requireTenantId());
     }
 
     @Override
     public Optional<User> findByUsername(String username) {
-        return userRepository.findUserByUsername(username);
+        return userRepository.findUserByUsernameAndTenantId(username, requireTenantId());
     }
 
     @Override
     public User create(User user) {
+        user.setTenantId(requireTenantId());
         return userRepository.save(user);
     }
 
     @Override
     public User update(Long id, User user) {
-        return userRepository.findById(id)
+        return userRepository.findByIdAndTenantId(id, requireTenantId())
             .map(existing -> {
                 existing.setUsername(user.getUsername());
                 // 不再更新 user.password，密码已迁移到 user_authentication_method 表
@@ -101,14 +105,16 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public void delete(Long id) {
-        userRepository.deleteById(id);
+        userRepository.findByIdAndTenantId(id, requireTenantId())
+            .ifPresent(userRepository::delete);
     }
 
     @Override
     @Transactional
     public User createFromDto(UserCreateUpdateDto userDto) {
+        Long tenantId = requireTenantId();
         // 检查用户名是否已存在
-        if (userRepository.findUserByUsername(userDto.getUsername()).isPresent()) {
+        if (userRepository.findUserByUsernameAndTenantId(userDto.getUsername(), tenantId).isPresent()) {
             throw new BusinessException(
                 ErrorCode.RESOURCE_ALREADY_EXISTS,
                 "用户名已存在: " + userDto.getUsername()
@@ -117,6 +123,7 @@ public class UserServiceImpl implements UserService {
         
         // 创建新用户（不设置密码）
         User user = new User();
+        user.setTenantId(tenantId);
         user.setUsername(userDto.getUsername());
         user.setNickname(userDto.getNickname());
         user.setEnabled(userDto.getEnabled());
@@ -126,21 +133,26 @@ public class UserServiceImpl implements UserService {
         
         // 处理角色
         if (userDto.getRoleIds() != null && !userDto.getRoleIds().isEmpty()) {
-            var roles = roleRepository.findAllById(userDto.getRoleIds());
+            var roles = roleRepository.findByIdInAndTenantId(userDto.getRoleIds(), tenantId);
             if (roles.size() != userDto.getRoleIds().size()) {
                 throw new BusinessException(
                     ErrorCode.NOT_FOUND,
                     "部分角色不存在"
                 );
             }
-            user.setRoles(new HashSet<>(roles));
         }
         
         // 保存用户，获取用户ID
         user = userRepository.save(user);
+
+        if (userDto.getRoleIds() != null && !userDto.getRoleIds().isEmpty()) {
+            for (Long roleId : userDto.getRoleIds()) {
+                userRepository.addUserRoleRelation(tenantId, user.getId(), roleId);
+            }
+        }
         
         // 创建认证方法（将密码存储在 user_authentication_method 表中）
-        createPasswordAuthenticationMethod(user.getId(), userDto.getPassword());
+        createPasswordAuthenticationMethod(user.getId(), tenantId, userDto.getPassword());
         
         return user;
     }
@@ -148,14 +160,15 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public User updateFromDto(UserCreateUpdateDto userDto) {
-        User existingUser = userRepository.findById(userDto.getId())
+        Long tenantId = requireTenantId();
+        User existingUser = userRepository.findByIdAndTenantId(userDto.getId(), tenantId)
             .orElseThrow(() -> new BusinessException(
                 ErrorCode.NOT_FOUND,
                 "用户不存在: " + userDto.getId()
             ));
         
         // 检查用户名是否已被其他用户使用
-        Optional<User> userWithSameUsername = userRepository.findUserByUsername(userDto.getUsername());
+        Optional<User> userWithSameUsername = userRepository.findUserByUsernameAndTenantId(userDto.getUsername(), tenantId);
         if (userWithSameUsername.isPresent() && !userWithSameUsername.get().getId().equals(userDto.getId())) {
             throw new BusinessException(
                 ErrorCode.RESOURCE_ALREADY_EXISTS,
@@ -181,19 +194,22 @@ public class UserServiceImpl implements UserService {
         
         // 如果提供了新密码，则更新认证方法表中的密码
         if (userDto.needUpdatePassword()) {
-            updatePasswordAuthenticationMethod(userDto.getId(), userDto.getPassword());
+            updatePasswordAuthenticationMethod(userDto.getId(), tenantId, userDto.getPassword());
         }
         
         // 处理角色
         if (userDto.getRoleIds() != null) {
-            var roles = roleRepository.findAllById(userDto.getRoleIds());
+            var roles = roleRepository.findByIdInAndTenantId(userDto.getRoleIds(), tenantId);
             if (roles.size() != userDto.getRoleIds().size()) {
                 throw new BusinessException(
                     ErrorCode.NOT_FOUND,
                     "部分角色不存在"
                 );
             }
-            existingUser.setRoles(new HashSet<>(roles));
+            userRepository.deleteUserRoleRelationsByUserId(existingUser.getId(), tenantId);
+            for (Long roleId : userDto.getRoleIds()) {
+                userRepository.addUserRoleRelation(tenantId, existingUser.getId(), roleId);
+            }
         }
         
         return userRepository.save(existingUser);
@@ -204,7 +220,7 @@ public class UserServiceImpl implements UserService {
      * @param userId 用户ID
      * @param plainPassword 明文密码
      */
-    private void createPasswordAuthenticationMethod(Long userId, String plainPassword) {
+    private void createPasswordAuthenticationMethod(Long userId, Long tenantId, String plainPassword) {
         // 加密密码（DelegatingPasswordEncoder 会自动添加 {bcrypt} 前缀）
         String encodedPassword = passwordEncoder.encode(plainPassword);
         
@@ -215,6 +231,7 @@ public class UserServiceImpl implements UserService {
         // 创建认证方法
         UserAuthenticationMethod method = new UserAuthenticationMethod();
         method.setUserId(userId);
+        method.setTenantId(tenantId);
         method.setAuthenticationProvider("LOCAL");
         method.setAuthenticationType("PASSWORD");
         method.setAuthenticationConfiguration(config);
@@ -233,10 +250,10 @@ public class UserServiceImpl implements UserService {
      * @param userId 用户ID
      * @param plainPassword 新明文密码
      */
-    private void updatePasswordAuthenticationMethod(Long userId, String plainPassword) {
+    private void updatePasswordAuthenticationMethod(Long userId, Long tenantId, String plainPassword) {
         // 查找现有的认证方法
         Optional<UserAuthenticationMethod> existingMethod = authenticationMethodRepository
-                .findByUserIdAndAuthenticationProviderAndAuthenticationType(userId, "LOCAL", "PASSWORD");
+                .findByUserIdAndTenantIdAndAuthenticationProviderAndAuthenticationType(userId, tenantId, "LOCAL", "PASSWORD");
         
         if (existingMethod.isPresent()) {
             // 更新现有认证方法
@@ -253,7 +270,7 @@ public class UserServiceImpl implements UserService {
             authenticationMethodRepository.save(method);
         } else {
             // 如果不存在，则创建新的认证方法
-            createPasswordAuthenticationMethod(userId, plainPassword);
+            createPasswordAuthenticationMethod(userId, tenantId, plainPassword);
         }
     }
 
@@ -261,7 +278,10 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public void batchEnable(List<Long> ids) {
         // 批量启用用户，使用事务确保一致性
-        List<User> users = userRepository.findAllById(ids);
+        Long tenantId = requireTenantId();
+        List<User> users = userRepository.findAllById(ids).stream()
+                .filter(u -> u.getTenantId().equals(tenantId))
+                .toList();
         if (users.size() != ids.size()) {
                 throw new BusinessException(
                     ErrorCode.NOT_FOUND,
@@ -279,7 +299,10 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public void batchDisable(List<Long> ids) {
         // 批量禁用用户，使用事务确保一致性
-        List<User> users = userRepository.findAllById(ids);
+        Long tenantId = requireTenantId();
+        List<User> users = userRepository.findAllById(ids).stream()
+                .filter(u -> u.getTenantId().equals(tenantId))
+                .toList();
         if (users.size() != ids.size()) {
                 throw new BusinessException(
                     ErrorCode.NOT_FOUND,
@@ -297,7 +320,10 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public void batchDelete(List<Long> ids) {
         // 批量删除用户，使用事务确保一致性
-        List<User> users = userRepository.findAllById(ids);
+        Long tenantId = requireTenantId();
+        List<User> users = userRepository.findAllById(ids).stream()
+                .filter(u -> u.getTenantId().equals(tenantId))
+                .toList();
         if (users.size() != ids.size()) {
                 throw new BusinessException(
                     ErrorCode.NOT_FOUND,
@@ -311,20 +337,31 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public void updateUserRoles(Long userId, List<Long> roleIds) {
-        User user = userRepository.findById(userId)
+        Long tenantId = requireTenantId();
+        User user = userRepository.findByIdAndTenantId(userId, tenantId)
             .orElseThrow(() -> new BusinessException(
                 ErrorCode.NOT_FOUND,
                 "用户不存在: " + userId
             ));
         // 查询所有角色
-        List<Role> roles = roleRepository.findAllById(roleIds);
+        List<Role> roles = roleRepository.findByIdInAndTenantId(roleIds, tenantId);
         if (roles.size() != roleIds.size()) {
             throw new BusinessException(
                 ErrorCode.NOT_FOUND,
                 "部分角色不存在"
             );
         }
-        user.setRoles(new java.util.HashSet<>(roles));
-        userRepository.save(user);
+        userRepository.deleteUserRoleRelationsByUserId(user.getId(), tenantId);
+        for (Role role : roles) {
+            userRepository.addUserRoleRelation(tenantId, user.getId(), role.getId());
+        }
+    }
+
+    private Long requireTenantId() {
+        Long tenantId = TenantContext.getTenantId();
+        if (tenantId == null) {
+            throw new BusinessException(ErrorCode.MISSING_PARAMETER, "缺少租户信息");
+        }
+        return tenantId;
     }
 }

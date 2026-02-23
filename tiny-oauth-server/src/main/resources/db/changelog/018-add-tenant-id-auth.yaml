@@ -1,0 +1,356 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-tenant-id-auth-tables
+      author: tiny
+      comment: auth 用户/角色/资源加入 tenant_id 及租户级唯一约束
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user' AND COLUMN_NAME = 'tenant_id'),
+                  'SELECT 1',
+                  'ALTER TABLE `user` ADD COLUMN `tenant_id` BIGINT NULL COMMENT ''租户ID'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+              UPDATE `user` SET tenant_id = 1 WHERE tenant_id IS NULL;
+              ALTER TABLE `user` MODIFY COLUMN `tenant_id` BIGINT NOT NULL COMMENT '租户ID';
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user' AND INDEX_NAME = 'uk_user_username'),
+                  'DROP INDEX `uk_user_username` ON `user`',
+                  'SELECT 1'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user' AND INDEX_NAME = 'idx_user_tenant_id'),
+                  'SELECT 1',
+                  'ALTER TABLE `user` ADD KEY `idx_user_tenant_id` (`tenant_id`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user' AND INDEX_NAME = 'uk_user_tenant_username'),
+                  'SELECT 1',
+                  'ALTER TABLE `user` ADD UNIQUE KEY `uk_user_tenant_username` (`tenant_id`, `username`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'role' AND COLUMN_NAME = 'tenant_id'),
+                  'SELECT 1',
+                  'ALTER TABLE `role` ADD COLUMN `tenant_id` BIGINT NULL COMMENT ''租户ID'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+              UPDATE `role` SET tenant_id = 1 WHERE tenant_id IS NULL;
+              ALTER TABLE `role` MODIFY COLUMN `tenant_id` BIGINT NOT NULL COMMENT '租户ID';
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'role' AND INDEX_NAME = 'uk_role_code'),
+                  'DROP INDEX `uk_role_code` ON `role`',
+                  'SELECT 1'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'role' AND INDEX_NAME = 'uk_role_name'),
+                  'DROP INDEX `uk_role_name` ON `role`',
+                  'SELECT 1'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+              -- 去重：按 (tenant_id, code)
+              UPDATE `user_role` ur
+              JOIN (
+                SELECT tenant_id, code, MIN(id) AS keep_id
+                FROM `role`
+                GROUP BY tenant_id, code
+              ) k ON k.tenant_id = (SELECT r.tenant_id FROM `role` r WHERE r.id = ur.role_id)
+                 AND k.code = (SELECT r.code FROM `role` r WHERE r.id = ur.role_id)
+              SET ur.role_id = k.keep_id
+              WHERE ur.role_id <> k.keep_id;
+              UPDATE `role_resource` rr
+              JOIN (
+                SELECT tenant_id, code, MIN(id) AS keep_id
+                FROM `role`
+                GROUP BY tenant_id, code
+              ) k ON k.tenant_id = (SELECT r.tenant_id FROM `role` r WHERE r.id = rr.role_id)
+                 AND k.code = (SELECT r.code FROM `role` r WHERE r.id = rr.role_id)
+              SET rr.role_id = k.keep_id
+              WHERE rr.role_id <> k.keep_id;
+              DELETE r1 FROM `role` r1
+              JOIN `role` r2
+                ON r1.tenant_id = r2.tenant_id AND r1.code = r2.code AND r1.id > r2.id;
+              -- 去重：按 (tenant_id, name)
+              UPDATE `user_role` ur
+              JOIN (
+                SELECT tenant_id, name, MIN(id) AS keep_id
+                FROM `role`
+                GROUP BY tenant_id, name
+              ) k ON k.tenant_id = (SELECT r.tenant_id FROM `role` r WHERE r.id = ur.role_id)
+                 AND k.name = (SELECT r.name FROM `role` r WHERE r.id = ur.role_id)
+              SET ur.role_id = k.keep_id
+              WHERE ur.role_id <> k.keep_id;
+              UPDATE `role_resource` rr
+              JOIN (
+                SELECT tenant_id, name, MIN(id) AS keep_id
+                FROM `role`
+                GROUP BY tenant_id, name
+              ) k ON k.tenant_id = (SELECT r.tenant_id FROM `role` r WHERE r.id = rr.role_id)
+                 AND k.name = (SELECT r.name FROM `role` r WHERE r.id = rr.role_id)
+              SET rr.role_id = k.keep_id
+              WHERE rr.role_id <> k.keep_id;
+              DELETE r1 FROM `role` r1
+              JOIN `role` r2
+                ON r1.tenant_id = r2.tenant_id AND r1.name = r2.name AND r1.id > r2.id;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'role' AND INDEX_NAME = 'idx_role_tenant_id'),
+                  'SELECT 1',
+                  'ALTER TABLE `role` ADD KEY `idx_role_tenant_id` (`tenant_id`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'role' AND INDEX_NAME = 'uk_role_tenant_code'),
+                  'SELECT 1',
+                  'ALTER TABLE `role` ADD UNIQUE KEY `uk_role_tenant_code` (`tenant_id`, `code`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'role' AND INDEX_NAME = 'uk_role_tenant_name'),
+                  'SELECT 1',
+                  'ALTER TABLE `role` ADD UNIQUE KEY `uk_role_tenant_name` (`tenant_id`, `name`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'resource' AND COLUMN_NAME = 'tenant_id'),
+                  'SELECT 1',
+                  'ALTER TABLE `resource` ADD COLUMN `tenant_id` BIGINT NULL COMMENT ''租户ID'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+              UPDATE `resource` SET tenant_id = 1 WHERE tenant_id IS NULL;
+              ALTER TABLE `resource` MODIFY COLUMN `tenant_id` BIGINT NOT NULL COMMENT '租户ID';
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'resource' AND INDEX_NAME = 'uk_resource_name'),
+                  'DROP INDEX `uk_resource_name` ON `resource`',
+                  'SELECT 1'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'resource' AND INDEX_NAME = 'idx_resource_tenant_id'),
+                  'SELECT 1',
+                  'ALTER TABLE `resource` ADD KEY `idx_resource_tenant_id` (`tenant_id`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'resource' AND INDEX_NAME = 'uk_resource_tenant_name'),
+                  'SELECT 1',
+                  'ALTER TABLE `resource` ADD UNIQUE KEY `uk_resource_tenant_name` (`tenant_id`, `name`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_role' AND COLUMN_NAME = 'tenant_id'),
+                  'SELECT 1',
+                  'ALTER TABLE `user_role` ADD COLUMN `tenant_id` BIGINT NULL COMMENT ''租户ID'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+              UPDATE `user_role` SET tenant_id = 1 WHERE tenant_id IS NULL;
+              ALTER TABLE `user_role` MODIFY COLUMN `tenant_id` BIGINT NOT NULL COMMENT '租户ID';
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_role' AND INDEX_NAME = 'uk_user_role'),
+                  'DROP INDEX `uk_user_role` ON `user_role`',
+                  'SELECT 1'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_role' AND INDEX_NAME = 'idx_user_role_tenant_id'),
+                  'SELECT 1',
+                  'ALTER TABLE `user_role` ADD KEY `idx_user_role_tenant_id` (`tenant_id`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_role' AND INDEX_NAME = 'uk_user_role_tenant'),
+                  'SELECT 1',
+                  'ALTER TABLE `user_role` ADD UNIQUE KEY `uk_user_role_tenant` (`tenant_id`, `user_id`, `role_id`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'role_resource' AND COLUMN_NAME = 'tenant_id'),
+                  'SELECT 1',
+                  'ALTER TABLE `role_resource` ADD COLUMN `tenant_id` BIGINT NULL COMMENT ''租户ID'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+              UPDATE `role_resource` SET tenant_id = 1 WHERE tenant_id IS NULL;
+              ALTER TABLE `role_resource` MODIFY COLUMN `tenant_id` BIGINT NOT NULL COMMENT '租户ID';
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'role_resource' AND INDEX_NAME = 'uk_role_resource'),
+                  'DROP INDEX `uk_role_resource` ON `role_resource`',
+                  'SELECT 1'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'role_resource' AND INDEX_NAME = 'idx_role_resource_tenant_id'),
+                  'SELECT 1',
+                  'ALTER TABLE `role_resource` ADD KEY `idx_role_resource_tenant_id` (`tenant_id`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'role_resource' AND INDEX_NAME = 'uk_role_resource_tenant'),
+                  'SELECT 1',
+                  'ALTER TABLE `role_resource` ADD UNIQUE KEY `uk_role_resource_tenant` (`tenant_id`, `role_id`, `resource_id`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_authentication_method' AND COLUMN_NAME = 'tenant_id'),
+                  'SELECT 1',
+                  'ALTER TABLE `user_authentication_method` ADD COLUMN `tenant_id` BIGINT NULL COMMENT ''租户ID'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+              UPDATE `user_authentication_method` SET tenant_id = 1 WHERE tenant_id IS NULL;
+              ALTER TABLE `user_authentication_method` MODIFY COLUMN `tenant_id` BIGINT NOT NULL COMMENT '租户ID';
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_authentication_method' AND INDEX_NAME = 'uk_user_auth_method'),
+                  'DROP INDEX `uk_user_auth_method` ON `user_authentication_method`',
+                  'SELECT 1'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_authentication_method' AND INDEX_NAME = 'idx_user_auth_method_tenant_id'),
+                  'SELECT 1',
+                  'ALTER TABLE `user_authentication_method` ADD KEY `idx_user_auth_method_tenant_id` (`tenant_id`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_authentication_method' AND INDEX_NAME = 'uk_user_auth_method'),
+                  'SELECT 1',
+                  'ALTER TABLE `user_authentication_method` ADD UNIQUE KEY `uk_user_auth_method` (`tenant_id`, `user_id`, `authentication_provider`, `authentication_type`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_authentication_audit' AND COLUMN_NAME = 'tenant_id'),
+                  'SELECT 1',
+                  'ALTER TABLE `user_authentication_audit` ADD COLUMN `tenant_id` BIGINT NULL COMMENT ''租户ID'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+              UPDATE `user_authentication_audit` SET tenant_id = 1 WHERE tenant_id IS NULL;
+              ALTER TABLE `user_authentication_audit` MODIFY COLUMN `tenant_id` BIGINT NOT NULL COMMENT '租户ID';
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_authentication_audit' AND INDEX_NAME = 'idx_user_auth_audit_tenant_id'),
+                  'SELECT 1',
+                  'ALTER TABLE `user_authentication_audit` ADD KEY `idx_user_auth_audit_tenant_id` (`tenant_id`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;

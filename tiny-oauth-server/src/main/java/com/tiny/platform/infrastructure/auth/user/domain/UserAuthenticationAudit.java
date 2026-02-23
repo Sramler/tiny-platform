@@ -11,6 +11,7 @@ import java.time.LocalDateTime;
 @Entity
 @Table(name = "user_authentication_audit", indexes = {
     @Index(name = "idx_user_id", columnList = "user_id"),
+    @Index(name = "idx_user_auth_audit_tenant_id", columnList = "tenant_id"),
     @Index(name = "idx_username", columnList = "username"),
     @Index(name = "idx_event_type", columnList = "event_type"),
     @Index(name = "idx_created_at", columnList = "created_at"),
@@ -25,8 +26,26 @@ public class UserAuthenticationAudit implements Serializable {
     @Column(name = "user_id")
     private Long userId;
 
-    @Column(name = "tenant_id", nullable = false)
+    @Column(name = "tenant_id")
     private Long tenantId;
+
+    /**
+     * 租户解析结果码：
+     * - resolved: 成功解析 tenantId
+     * - tenant_context_missing: 当前请求未解析到租户上下文
+     */
+    @Column(name = "tenant_resolution_code", length = 64)
+    private String tenantResolutionCode;
+
+    /**
+     * 租户解析来源：
+     * - token: 来自 JWT token
+     * - session: 来自会话冻结上下文
+     * - login_param: 来自登录/授权入口参数（预认证阶段）
+     * - unknown: 无法识别来源
+     */
+    @Column(name = "tenant_resolution_source", length = 64)
+    private String tenantResolutionSource;
 
     @Column(name = "username", nullable = false, length = 50)
     private String username;
@@ -99,6 +118,22 @@ public class UserAuthenticationAudit implements Serializable {
 
     public void setTenantId(Long tenantId) {
         this.tenantId = tenantId;
+    }
+
+    public String getTenantResolutionCode() {
+        return tenantResolutionCode;
+    }
+
+    public void setTenantResolutionCode(String tenantResolutionCode) {
+        this.tenantResolutionCode = tenantResolutionCode;
+    }
+
+    public String getTenantResolutionSource() {
+        return tenantResolutionSource;
+    }
+
+    public void setTenantResolutionSource(String tenantResolutionSource) {
+        this.tenantResolutionSource = tenantResolutionSource;
     }
 
     public String getUsername() {

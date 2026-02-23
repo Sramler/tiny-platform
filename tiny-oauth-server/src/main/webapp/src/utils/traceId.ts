@@ -247,6 +247,13 @@ export async function fetchWithTraceId(
 ): Promise<Response> {
   const { timeout = 5000, skipAuthError = false, ...fetchOptions } = options // 默认 5 秒超时
   const optionsWithTraceId = addTraceIdToFetchOptions(fetchOptions)
+  const { getTenantId } = await import('@/utils/tenant')
+  const headers = new Headers(optionsWithTraceId.headers)
+  const tenantId = getTenantId()
+  if (tenantId) {
+    headers.set('X-Tenant-Id', tenantId)
+  }
+  optionsWithTraceId.headers = headers
 
   // 创建 AbortController 用于超时控制
   const controller = new AbortController()

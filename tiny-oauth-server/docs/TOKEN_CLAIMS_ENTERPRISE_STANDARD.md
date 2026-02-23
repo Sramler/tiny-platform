@@ -105,8 +105,14 @@
 ## 7. `tenantId` 说明
 
 - `tenantId` 来自 `SecurityUser.tenantId`
-- 登录链路中租户上下文由 `TenantContextFilter` 建立
+- 登录链路中租户上下文由 `TenantContextFilter` 建立，认证后仅信任 token/session 中冻结的 `tenantId`
+- 登录页提交 `tenantCode`，后端在认证前统一解析为 `tenantId`
 - 若登录/授权请求未携带可解析租户，后端应在前置阶段失败（如 `missing_tenant`），而不是签发无租户 token
+
+补充说明：
+
+- 当前 token claim 仍以 `tenantId` 为准，不写入 `tenantCode`
+- 前端本地可保留 `tenantCode` 仅用于登录输入体验，运行时鉴权链路只依赖 `tenantId`
 
 ## 8. 已知限制
 

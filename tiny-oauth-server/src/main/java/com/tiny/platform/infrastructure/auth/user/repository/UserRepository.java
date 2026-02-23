@@ -57,6 +57,10 @@ public interface UserRepository extends JpaRepository<User, Long>, JpaSpecificat
     @Query(value = "DELETE FROM user_role WHERE user_id = :userId AND role_id = :roleId AND tenant_id = :tenantId", nativeQuery = true)
     void deleteUserRoleRelation(@Param("userId") Long userId, @Param("roleId") Long roleId, @Param("tenantId") Long tenantId);
 
+    @Modifying
+    @Query(value = "DELETE FROM user_role WHERE user_id = :userId AND tenant_id = :tenantId", nativeQuery = true)
+    void deleteUserRoleRelationsByUserId(@Param("userId") Long userId, @Param("tenantId") Long tenantId);
+
     /**
      * 添加用户与角色的关联关系
      * @param userId 用户ID

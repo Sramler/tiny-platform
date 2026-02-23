@@ -1,0 +1,44 @@
+databaseChangeLog:
+  - changeSet:
+      id: 022-auth-audit-tenant-resolution
+      author: tiny
+      validCheckSum:
+        - ANY
+      comment: 认证审计 tenant_id 允许为空并补充 tenant_resolution_code
+      changes:
+        - sql:
+            dbms: mysql
+            sql: |
+              ALTER TABLE `user_authentication_audit`
+                MODIFY COLUMN `tenant_id` BIGINT NULL COMMENT '租户ID';
+
+              SET @tenant_resolution_code_exists := (
+                SELECT COUNT(*)
+                  FROM information_schema.columns
+                 WHERE table_schema = DATABASE()
+                   AND table_name = 'user_authentication_audit'
+                   AND column_name = 'tenant_resolution_code'
+              );
+              SET @tenant_resolution_code_sql := IF(
+                @tenant_resolution_code_exists = 0,
+                'ALTER TABLE `user_authentication_audit` ADD COLUMN `tenant_resolution_code` VARCHAR(64) NULL COMMENT ''租户解析结果码''',
+                'SELECT 1'
+              );
+              PREPARE stmt_tenant_resolution_code FROM @tenant_resolution_code_sql;
+              EXECUTE stmt_tenant_resolution_code;
+              DEALLOCATE PREPARE stmt_tenant_resolution_code;
+
+              UPDATE `user_authentication_audit`
+                 SET `tenant_id` = NULL,
+                     `tenant_resolution_code` = 'legacy_unknown'
+               WHERE `tenant_id` = 0;
+
+              UPDATE `user_authentication_audit`
+                 SET `tenant_resolution_code` = 'resolved'
+               WHERE `tenant_id` IS NOT NULL
+                 AND (`tenant_resolution_code` IS NULL OR `tenant_resolution_code` = '');
+
+              UPDATE `user_authentication_audit`
+                 SET `tenant_resolution_code` = 'tenant_context_missing'
+               WHERE `tenant_id` IS NULL
+                 AND (`tenant_resolution_code` IS NULL OR `tenant_resolution_code` = '');

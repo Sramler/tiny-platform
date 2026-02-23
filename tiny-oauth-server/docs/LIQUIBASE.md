@@ -3,6 +3,8 @@
 本文档记录 **tiny-oauth-server 模块接入 Liquibase 的完整过程、踩过的坑和约定的使用规范**，重点围绕：
 
 - demo 导出测试表 `demo_export_usage` 的存储过程 `sp_generate_demo_export_usage`
+
+说明：`demo_export_usage` 已将 `tenant_code` 统一迁移为 `tenant_id`，历史数据默认写入 `tenant_id=1`（见 `019-rename-demo-export-tenant-id.yaml`）。
 - 后续在本项目中使用 Liquibase 管理 DDL / DML 的统一做法
 
 目录：
@@ -69,13 +71,14 @@ databaseChangeLog:
 
 ```sql
 CREATE PROCEDURE sp_generate_demo_export_usage(
+    IN p_tenant_id BIGINT,
     IN p_days INT,
     IN p_rows_per_day INT,
     IN p_target_rows INT,
     IN p_clear_existing TINYINT(1)
 )
 BEGIN
-    -- 存储过程体：循环插入 demo_export_usage 测试数据
+    -- 存储过程体：按 tenant_id 生成 demo_export_usage 测试数据
     -- ...
 END;
 ```

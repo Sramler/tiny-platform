@@ -1,0 +1,109 @@
+databaseChangeLog:
+  - changeSet:
+      id: extend-tenant-fields
+      author: tiny
+      comment: 扩展租户字段（域名/套餐/配额/联系人）
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tenant' AND COLUMN_NAME = 'domain'),
+                  'SELECT 1',
+                  'ALTER TABLE `tenant` ADD COLUMN `domain` VARCHAR(255) NULL COMMENT ''租户域名/访问入口'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tenant' AND COLUMN_NAME = 'plan_code'),
+                  'SELECT 1',
+                  'ALTER TABLE `tenant` ADD COLUMN `plan_code` VARCHAR(64) NULL COMMENT ''租户套餐'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tenant' AND COLUMN_NAME = 'expires_at'),
+                  'SELECT 1',
+                  'ALTER TABLE `tenant` ADD COLUMN `expires_at` TIMESTAMP NULL COMMENT ''到期时间'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tenant' AND COLUMN_NAME = 'max_users'),
+                  'SELECT 1',
+                  'ALTER TABLE `tenant` ADD COLUMN `max_users` INT NULL COMMENT ''最大用户数配额'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tenant' AND COLUMN_NAME = 'max_storage_gb'),
+                  'SELECT 1',
+                  'ALTER TABLE `tenant` ADD COLUMN `max_storage_gb` INT NULL COMMENT ''存储配额(GB)'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tenant' AND COLUMN_NAME = 'contact_name'),
+                  'SELECT 1',
+                  'ALTER TABLE `tenant` ADD COLUMN `contact_name` VARCHAR(64) NULL COMMENT ''联系人'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tenant' AND COLUMN_NAME = 'contact_email'),
+                  'SELECT 1',
+                  'ALTER TABLE `tenant` ADD COLUMN `contact_email` VARCHAR(128) NULL COMMENT ''联系邮箱'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tenant' AND COLUMN_NAME = 'contact_phone'),
+                  'SELECT 1',
+                  'ALTER TABLE `tenant` ADD COLUMN `contact_phone` VARCHAR(32) NULL COMMENT ''联系电话'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tenant' AND INDEX_NAME = 'uk_tenant_domain'),
+                  'SELECT 1',
+                  'ALTER TABLE `tenant` ADD UNIQUE KEY `uk_tenant_domain` (`domain`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;

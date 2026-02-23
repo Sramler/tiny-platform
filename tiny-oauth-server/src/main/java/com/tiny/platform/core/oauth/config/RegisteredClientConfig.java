@@ -4,6 +4,7 @@ import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient;
@@ -43,7 +44,10 @@ public class RegisteredClientConfig {
      * 应用启动后，自动注册 YAML 配置中的客户端到 RegisteredClientRepository
      */
     @Bean
-    public CommandLineRunner registerClients(ClientProperties properties, RegisteredClientRepository repository) {
+    public CommandLineRunner registerClients(
+            ClientProperties properties,
+            @Qualifier("defaultRegisteredClientRepository") RegisteredClientRepository repository
+    ) {
         return args -> {
             for (ClientProperties.Client config : properties.getClients()) {
 

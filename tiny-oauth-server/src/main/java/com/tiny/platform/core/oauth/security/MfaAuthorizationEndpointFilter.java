@@ -1,9 +1,11 @@
 package com.tiny.platform.core.oauth.security;
 
 import com.tiny.platform.core.oauth.config.FrontendProperties;
+import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.core.oauth.service.SecurityService;
+import com.tiny.platform.core.oauth.tenant.IssuerTenantSupport;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,7 +51,7 @@ public class MfaAuthorizationEndpointFilter extends OncePerRequestFilter {
     protected boolean shouldNotFilter(@org.springframework.lang.NonNull jakarta.servlet.http.HttpServletRequest request) {
         String uri = request.getRequestURI();
         // 仅拦截 /oauth2/authorize（授权端点），其他请求不处理
-        return uri == null || !uri.startsWith("/oauth2/authorize");
+        return !IssuerTenantSupport.isAuthorizationEndpointPath(uri);
     }
 
     @Override
@@ -93,7 +95,7 @@ public class MfaAuthorizationEndpointFilter extends OncePerRequestFilter {
             return;
         }
 
-        Long tenantId = TenantContext.getTenantId();
+        Long tenantId = resolveTenantId(authentication);
         User user = tenantId != null ? userRepository.findUserByUsernameAndTenantId(username, tenantId).orElse(null) : null;
         if (user == null) {
             filterChain.doFilter(request, response);
@@ -192,5 +194,21 @@ public class MfaAuthorizationEndpointFilter extends OncePerRequestFilter {
             url.append('?').append(query);
         }
         return url.toString();
+    }
+
+    private Long resolveTenantId(Authentication authentication) {
+        Long tenantId = TenantContext.getTenantId();
+        if (tenantId != null && tenantId > 0) {
+            return tenantId;
+        }
+        Object principal = authentication.getPrincipal();
+        if (principal instanceof SecurityUser securityUser) {
+            return securityUser.getTenantId();
+        }
+        Object details = authentication.getDetails();
+        if (details instanceof SecurityUser securityUser) {
+            return securityUser.getTenantId();
+        }
+        return null;
     }
 }

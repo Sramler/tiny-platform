@@ -10,7 +10,11 @@ import java.util.HashSet;
 import java.util.Set;
 
 @Entity
-@Table(name = "user")
+@Table(name = "user",
+    uniqueConstraints = {
+        @UniqueConstraint(name = "uk_user_tenant_username", columnNames = {"tenant_id", "username"})
+    }
+)
 public class User implements Serializable {
 
     @Id
@@ -20,7 +24,7 @@ public class User implements Serializable {
     @Column(name = "tenant_id", nullable = false)
     private Long tenantId;
 
-    @Column(unique = true, nullable = false, length = 50)
+    @Column(nullable = false, length = 50)
     private String username;
 
     private String nickname;

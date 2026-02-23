@@ -44,6 +44,31 @@ databaseChangeLog:
       file: 017-add-resource-api-uri-method-check.yaml
       relativeToChangelogFile: true
 
+  # auth 表补充 tenant_id 与租户级唯一约束
+  - include:
+      file: 018-add-tenant-id-auth.yaml
+      relativeToChangelogFile: true
+
+  # 租户表与租户外键约束
+  - include:
+      file: 020-add-tenant-table.yaml
+      relativeToChangelogFile: true
+
+  # 扩展租户字段（域名/套餐/配额/联系人）
+  - include:
+      file: 021-extend-tenant-fields.yaml
+      relativeToChangelogFile: true
+
+  # 认证审计租户解析字段（tenant_id 可空 + reason code）
+  - include:
+      file: 022-auth-audit-tenant-resolution.yaml
+      relativeToChangelogFile: true
+
+  # 认证审计租户来源字段（token/session/login_param）
+  - include:
+      file: 023-auth-audit-tenant-source.yaml
+      relativeToChangelogFile: true
+
   # 数据修复：修复资源 URL 格式
   - include:
       file: 004-fix-resource-url-format.yaml
@@ -62,6 +87,11 @@ databaseChangeLog:
   # 扩展 demo_export_usage 表字段
   - include:
       file: 007-extend-demo-export-usage-fields.yaml
+      relativeToChangelogFile: true
+
+  # demo_export_usage tenant_code -> tenant_id
+  - include:
+      file: 019-rename-demo-export-tenant-id.yaml
       relativeToChangelogFile: true
 
   # 为字典表添加内置标识和锁定字段（必须在字典初始化之前执行）

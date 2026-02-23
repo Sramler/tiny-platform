@@ -10,6 +10,7 @@ import com.tiny.platform.infrastructure.auth.resource.dto.ResourceRequestDto;
 import com.tiny.platform.infrastructure.auth.resource.dto.ResourceResponseDto;
 import com.tiny.platform.infrastructure.auth.resource.enums.ResourceType;
 import com.tiny.platform.infrastructure.auth.resource.repository.ResourceRepository;
+import com.tiny.platform.core.oauth.tenant.TenantContext;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -77,6 +78,7 @@ public class MenuServiceImpl implements MenuService {
      * 使用 EntityManager 和原生 SQL，性能最优
      */
     private Page<ResourceResponseDto> findMenusByNativeHibernate(ResourceRequestDto query, List<Integer> typeCodes, Pageable pageable) {
+        Long tenantId = requireTenantId();
         // 构建动态 SQL 查询条件
         StringBuilder sqlBuilder = new StringBuilder();
         StringBuilder countSqlBuilder = new StringBuilder();
@@ -99,7 +101,7 @@ public class MenuServiceImpl implements MenuService {
                    r.parent_id AS parentId,
                    r.enabled,
                    CASE WHEN EXISTS (
-                       SELECT 1 FROM resource c WHERE c.parent_id = r.id
+                       SELECT 1 FROM resource c WHERE c.parent_id = r.id AND c.tenant_id = :tenantId
                    ) THEN 0 ELSE 1 END AS leaf
             FROM resource r
             WHERE 1=1
@@ -109,6 +111,9 @@ public class MenuServiceImpl implements MenuService {
         countSqlBuilder.append("""
             SELECT COUNT(*) FROM resource r WHERE 1=1
             """);
+
+        sqlBuilder.append(" AND r.tenant_id = :tenantId");
+        countSqlBuilder.append(" AND r.tenant_id = :tenantId");
         
         // 动态添加查询条件
         if (query.getParentId() != null) {
@@ -146,6 +151,9 @@ public class MenuServiceImpl implements MenuService {
         // 创建查询对象
         Query sqlQuery = entityManager.createNativeQuery(sqlBuilder.toString());
         Query countQuery = entityManager.createNativeQuery(countSqlBuilder.toString());
+
+        sqlQuery.setParameter("tenantId", tenantId);
+        countQuery.setParameter("tenantId", tenantId);
         
         // 设置查询参数
         if (query.getParentId() != null) {
@@ -281,7 +289,8 @@ public class MenuServiceImpl implements MenuService {
      */
     @Override
     public List<ResourceResponseDto> menuTree() {
-        List<Resource> menus = resourceRepository.findByTypeInOrderBySortAsc(List.of(ResourceType.DIRECTORY, ResourceType.MENU));
+        List<Resource> menus = resourceRepository.findByTypeInAndTenantIdOrderBySortAsc(
+                List.of(ResourceType.DIRECTORY, ResourceType.MENU), requireTenantId());
         List<ResourceResponseDto> fullTree = buildResourceTree(menus);
 
         // 1. 获取所有节点的扁平化列表，用于后续查找 redirect 目标
@@ -305,7 +314,8 @@ public class MenuServiceImpl implements MenuService {
      */
     @Override
     public List<ResourceResponseDto> menuTreeAll() {
-        List<Resource> menus = resourceRepository.findByTypeInOrderBySortAsc(List.of(ResourceType.DIRECTORY, ResourceType.MENU));
+        List<Resource> menus = resourceRepository.findByTypeInAndTenantIdOrderBySortAsc(
+                List.of(ResourceType.DIRECTORY, ResourceType.MENU), requireTenantId());
         return buildResourceTree(menus);
     }
 
@@ -377,10 +387,12 @@ public class MenuServiceImpl implements MenuService {
         List<Resource> menus;
         if (parentId == null || parentId == 0) {
             // 查询顶级菜单（parentId为null或0）
-            menus = resourceRepository.findByTypeInAndParentIdIsNullOrderBySortAsc(List.of(ResourceType.DIRECTORY, ResourceType.MENU));
+            menus = resourceRepository.findByTypeInAndParentIdIsNullAndTenantIdOrderBySortAsc(
+                    List.of(ResourceType.DIRECTORY, ResourceType.MENU), requireTenantId());
         } else {
             // 查询指定父级ID的子菜单
-            menus = resourceRepository.findByTypeInAndParentIdOrderBySortAsc(List.of(ResourceType.DIRECTORY, ResourceType.MENU), parentId);
+            menus = resourceRepository.findByTypeInAndParentIdAndTenantIdOrderBySortAsc(
+                    List.of(ResourceType.DIRECTORY, ResourceType.MENU), parentId, requireTenantId());
         }
         return menus.stream().map(this::toDto).collect(Collectors.toList());
     }
@@ -390,6 +402,7 @@ public class MenuServiceImpl implements MenuService {
      */
     @Override
     public Resource createMenu(ResourceCreateUpdateDto resourceDto) {
+        Long tenantId = requireTenantId();
         // 只允许 type=0/1
         if (resourceDto.getType() == null || (resourceDto.getType() != ResourceType.DIRECTORY.getCode() && resourceDto.getType() != ResourceType.MENU.getCode())) {
             resourceDto.setType(ResourceType.MENU.getCode());
@@ -400,6 +413,7 @@ public class MenuServiceImpl implements MenuService {
         validateParentId(0L, resourceDto.getParentId());
         
         Resource resource = new Resource();
+        resource.setTenantId(tenantId);
         resource.setName(resourceDto.getName());
         resource.setTitle(resourceDto.getTitle());
         resource.setUrl(resourceDto.getUrl());
@@ -423,7 +437,9 @@ public class MenuServiceImpl implements MenuService {
      */
     @Override
     public Resource updateMenu(ResourceCreateUpdateDto resourceDto) {
+        Long tenantId = requireTenantId();
         Resource resource = resourceRepository.findById(resourceDto.getId())
+                .filter(r -> r.getTenantId().equals(tenantId))
                 .orElseThrow(() -> new RuntimeException("菜单不存在"));
         
         // 验证父ID设置
@@ -452,6 +468,7 @@ public class MenuServiceImpl implements MenuService {
      * 验证父ID设置是否有效
      */
     private void validateParentId(Long menuId, Long parentId) {
+        Long tenantId = requireTenantId();
         Long normalizedParentId = normalizeParentId(parentId);
         // 如果父ID为空，表示设置为顶级菜单，这是允许的
         if (normalizedParentId == null) {
@@ -468,6 +485,7 @@ public class MenuServiceImpl implements MenuService {
         
         // 检查父菜单是否存在
         Resource parentResource = resourceRepository.findById(normalizedParentId)
+                .filter(r -> r.getTenantId().equals(tenantId))
                 .orElseThrow(() -> new BusinessException(
                     ErrorCode.NOT_FOUND,
                     "父菜单不存在，ID: " + normalizedParentId
@@ -494,6 +512,7 @@ public class MenuServiceImpl implements MenuService {
      * 检查是否会造成循环引用
      */
     private boolean wouldCreateCircularReference(Long menuId, Long parentId) {
+        Long tenantId = requireTenantId();
         Long currentParentId = parentId;
         Set<Long> visitedIds = new HashSet<>();
         
@@ -511,7 +530,9 @@ public class MenuServiceImpl implements MenuService {
             visitedIds.add(currentParentId);
             
             // 获取当前父菜单的父ID
-            Resource currentParent = resourceRepository.findById(currentParentId).orElse(null);
+            Resource currentParent = resourceRepository.findById(currentParentId)
+                    .filter(r -> r.getTenantId().equals(tenantId))
+                    .orElse(null);
             if (currentParent == null) {
                 break;
             }
@@ -529,8 +550,10 @@ public class MenuServiceImpl implements MenuService {
     @Override
     @Transactional
     public void deleteMenu(Long id) {
+        Long tenantId = requireTenantId();
         // 检查菜单是否存在
         Resource resource = resourceRepository.findById(id)
+                .filter(r -> r.getTenantId().equals(tenantId))
                 .orElseThrow(() -> new NotFoundException(
                         "菜单不存在: " + id));
         
@@ -545,8 +568,9 @@ public class MenuServiceImpl implements MenuService {
      * 递归删除菜单及其所有子菜单
      */
     private void deleteMenuRecursive(Long parentId) {
+        Long tenantId = requireTenantId();
         // 查找所有子菜单（包括目录和菜单类型）
-        List<Resource> children = resourceRepository.findByParentIdOrderBySortAsc(parentId);
+        List<Resource> children = resourceRepository.findByParentIdAndTenantIdOrderBySortAsc(parentId, tenantId);
         
         // 递归删除每个子菜单
         for (Resource child : children) {
@@ -560,14 +584,18 @@ public class MenuServiceImpl implements MenuService {
      * 先删除 role_resource 表中的关联记录，再删除资源本身
      */
     private void deleteResourceWithRoleAssociations(Long resourceId) {
+        Long tenantId = requireTenantId();
         // 先删除 role_resource 表中的关联记录
         Query deleteRoleResourceQuery = entityManager.createNativeQuery(
-                "DELETE FROM role_resource WHERE resource_id = :resourceId");
+                "DELETE FROM role_resource WHERE resource_id = :resourceId AND tenant_id = :tenantId");
         deleteRoleResourceQuery.setParameter("resourceId", resourceId);
+        deleteRoleResourceQuery.setParameter("tenantId", tenantId);
         deleteRoleResourceQuery.executeUpdate();
         
         // 然后删除资源本身
-        resourceRepository.deleteById(resourceId);
+        resourceRepository.findById(resourceId)
+                .filter(r -> r.getTenantId().equals(tenantId))
+                .ifPresent(resourceRepository::delete);
     }
 
     /**
@@ -654,7 +682,7 @@ public class MenuServiceImpl implements MenuService {
             dto.setEnabled(Boolean.TRUE.equals(resource.getEnabled()));
             
             // 判断是否为叶子节点（没有子资源）
-            Boolean isLeaf = !resourceRepository.existsByParentId(resource.getId());
+            Boolean isLeaf = !resourceRepository.existsByParentIdAndTenantId(resource.getId(), requireTenantId());
             dto.setLeaf(Boolean.TRUE.equals(isLeaf));
             
             // 初始化children为空集合，避免null指针异常
@@ -684,6 +712,7 @@ public class MenuServiceImpl implements MenuService {
      */
     @SuppressWarnings("unused") // retained for potential native SQL path
     private Page<ResourceResponseDto> findMenusByNativeSql(ResourceRequestDto query, List<Integer> typeCodes, Pageable pageable) {
+        Long tenantId = requireTenantId();
         Page<ResourceProjection> page = resourceRepository.findMenusByNativeSql(
             typeCodes,
             typeCodes.size(),
@@ -692,6 +721,7 @@ public class MenuServiceImpl implements MenuService {
             StringUtils.hasText(query.getName()) ? query.getName() : null,
             StringUtils.hasText(query.getPermission()) ? query.getPermission() : null,
             query.getEnabled(),
+            tenantId,
             pageable
         );
         
@@ -722,6 +752,7 @@ public class MenuServiceImpl implements MenuService {
      */
     @SuppressWarnings("unused") // kept for future switch to JPQL projection query
     private Page<ResourceResponseDto> findMenusByJpqlDto(ResourceRequestDto query, List<Integer> typeCodes, Pageable pageable) {
+        Long tenantId = requireTenantId();
         return resourceRepository.findMenusByJpqlDto(
             typeCodes,
             query.getParentId(),
@@ -729,6 +760,7 @@ public class MenuServiceImpl implements MenuService {
             StringUtils.hasText(query.getName()) ? query.getName() : null,
             StringUtils.hasText(query.getPermission()) ? query.getPermission() : null,
             query.getEnabled(),
+            tenantId,
             pageable
         );
     }
@@ -739,6 +771,7 @@ public class MenuServiceImpl implements MenuService {
     @Override
     @SuppressWarnings("unchecked")
     public List<ResourceResponseDto> list(ResourceRequestDto query) {
+        Long tenantId = requireTenantId();
         // 查询 type=0/1（目录和菜单）
         List<ResourceType> types = List.of(ResourceType.DIRECTORY, ResourceType.MENU); // 目录和菜单
         List<Integer> typeCodes = types.stream().map(ResourceType::getCode).toList();
@@ -761,13 +794,14 @@ public class MenuServiceImpl implements MenuService {
                r.parent_id AS parentId,
                r.enabled,
                CASE WHEN EXISTS (
-                   SELECT 1 FROM resource c WHERE c.parent_id = r.id
+                   SELECT 1 FROM resource c WHERE c.parent_id = r.id AND c.tenant_id = :tenantId
                ) THEN 0 ELSE 1 END AS leaf
         FROM resource r
         WHERE 1=1
         """);
 
         // 动态条件拼接
+        sqlBuilder.append(" AND r.tenant_id = :tenantId");
         if (query.getParentId() != null) {
             sqlBuilder.append(" AND r.parent_id = :parentId");
         } else {
@@ -792,6 +826,7 @@ public class MenuServiceImpl implements MenuService {
         Query sqlQuery = entityManager.createNativeQuery(sqlBuilder.toString());
 
         // 设置参数
+        sqlQuery.setParameter("tenantId", tenantId);
         if (query.getParentId() != null) {
             sqlQuery.setParameter("parentId", query.getParentId());
         }
@@ -813,5 +848,13 @@ public class MenuServiceImpl implements MenuService {
         return results.stream()
                 .map(this::mapToResourceResponseDto)
                 .collect(Collectors.toList());
+    }
+
+    private Long requireTenantId() {
+        Long tenantId = TenantContext.getTenantId();
+        if (tenantId == null) {
+            throw new BusinessException(ErrorCode.MISSING_PARAMETER, "缺少租户信息");
+        }
+        return tenantId;
     }
 } 

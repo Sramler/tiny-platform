@@ -1,0 +1,144 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-tenant-table-and-fks
+      author: tiny
+      comment: 新增租户表并补充租户外键约束
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              CREATE TABLE IF NOT EXISTS `tenant` (
+                  `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '租户ID',
+                  `code` VARCHAR(64) NOT NULL COMMENT '租户编码',
+                  `name` VARCHAR(128) NOT NULL COMMENT '租户名称',
+                  `enabled` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否启用',
+                  `remark` VARCHAR(255) DEFAULT NULL COMMENT '备注',
+                  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+                  `deleted_at` TIMESTAMP NULL COMMENT '删除时间',
+                  UNIQUE KEY `uk_tenant_code` (`code`),
+                  KEY `idx_tenant_enabled` (`enabled`)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='租户表';
+
+              INSERT INTO `tenant` (`id`, `code`, `name`, `enabled`, `created_at`, `updated_at`)
+              SELECT 1, 'default', '默认租户', 1, NOW(), NOW()
+              WHERE NOT EXISTS (SELECT 1 FROM `tenant` WHERE `id` = 1);
+
+              INSERT INTO `tenant` (`id`, `code`, `name`, `enabled`, `created_at`, `updated_at`)
+              SELECT DISTINCT t.tenant_id,
+                              CONCAT('tenant-', t.tenant_id),
+                              CONCAT('Tenant ', t.tenant_id),
+                              1,
+                              NOW(),
+                              NOW()
+              FROM (
+                SELECT tenant_id FROM `user`
+                UNION SELECT tenant_id FROM `role`
+                UNION SELECT tenant_id FROM `resource`
+                UNION SELECT tenant_id FROM `user_role`
+                UNION SELECT tenant_id FROM `role_resource`
+                UNION SELECT tenant_id FROM `user_authentication_method`
+                UNION SELECT tenant_id FROM `user_authentication_audit`
+              ) t
+              WHERE t.tenant_id IS NOT NULL AND t.tenant_id > 0
+                AND NOT EXISTS (SELECT 1 FROM `tenant` WHERE `id` = t.tenant_id);
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user' AND CONSTRAINT_NAME = 'fk_user_tenant'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `user` ADD CONSTRAINT `fk_user_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'role' AND CONSTRAINT_NAME = 'fk_role_tenant'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `role` ADD CONSTRAINT `fk_role_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'resource' AND CONSTRAINT_NAME = 'fk_resource_tenant'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `resource` ADD CONSTRAINT `fk_resource_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_role' AND CONSTRAINT_NAME = 'fk_user_role_tenant'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `user_role` ADD CONSTRAINT `fk_user_role_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'role_resource' AND CONSTRAINT_NAME = 'fk_role_resource_tenant'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `role_resource` ADD CONSTRAINT `fk_role_resource_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_authentication_method' AND CONSTRAINT_NAME = 'fk_user_auth_method_tenant'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `user_authentication_method` ADD CONSTRAINT `fk_user_auth_method_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_authentication_audit' AND CONSTRAINT_NAME = 'fk_user_auth_audit_tenant'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `user_authentication_audit` ADD CONSTRAINT `fk_user_auth_audit_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;

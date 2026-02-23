@@ -11,6 +11,7 @@ import { useAuth, logout } from '@/auth/auth'
 import router from '@/router' // 引入路由实例
 // 引入 TRACE_ID 工具
 import { getOrCreateTraceId, generateRequestId, getCurrentTraceId } from '@/utils/traceId'
+import { clearTenantContext, getTenantId, syncTenantContextFromAccessToken } from '@/utils/tenant'
 // 引入 Problem 响应解析工具
 import { extractErrorFromAxios, extractErrorInfo } from '@/utils/problemParser'
 
@@ -48,7 +49,6 @@ service.interceptors.request.use(
     config.headers['X-Trace-Id'] = traceId
     // 同时添加 x-request-id，后端会使用它作为 fallback
     config.headers['X-Request-Id'] = requestId
-
     // 调用 getAccessToken 动态获取有效 token
     const { getAccessToken } = useAuth()
     const token = await getAccessToken()
@@ -56,6 +56,13 @@ service.interceptors.request.use(
     if (token) {
       // 如果获取到 token，则添加到请求头中
       config.headers.Authorization = `Bearer ${token}`
+      // tenantId 以 access_token 中的 claim 为准，防止本地状态丢失导致租户头缺失
+      syncTenantContextFromAccessToken(token)
+    }
+
+    const tenantId = getTenantId()
+    if (tenantId) {
+      config.headers['X-Tenant-Id'] = tenantId
     }
 
     return config
@@ -188,6 +195,23 @@ service.interceptors.response.use(
     // 处理400请求错误
     if (error.response?.status === 400) {
       const requestUrl = error.config?.url || currentPath
+      const problemError = error.response?.data?.error
+      const problemDescription = error.response?.data?.error_description
+      if (problemError === 'missing_tenant') {
+        console.warn('[400] missing_tenant，清理本地租户上下文并跳转登录页')
+        clearTenantContext()
+        if (currentPath !== '/login' && currentPath !== '/callback') {
+          router.push({
+            path: '/login',
+            query: {
+              redirect: currentFullPath || '/',
+              error: typeof problemDescription === 'string' ? problemDescription : 'missing_tenant',
+            },
+          })
+        }
+        return Promise.reject(error)
+      }
+
       const errorMessage = error.response?.data?.message || error.response?.data?.detail || '请求参数错误或格式不正确'
       const traceId = getTraceId()
       console.log('[400] 检测到 400 错误，URL:', requestUrl, 'Message:', errorMessage, 'TraceId:', traceId)

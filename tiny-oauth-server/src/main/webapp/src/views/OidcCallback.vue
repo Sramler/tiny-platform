@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { userManager } from '@/auth/oidc.ts'
 import { useAuth } from '@/auth/auth'
 import { persistentLogger } from '@/utils/logger'
+import { syncTenantContextFromAccessToken, syncTenantContextFromClaims } from '@/utils/tenant'
 
 const router = useRouter()
 const { isAuthenticated } = useAuth()
@@ -36,6 +37,8 @@ onMounted(async () => {
 
       try {
         const user = await userManager.signinRedirectCallback()
+        syncTenantContextFromClaims(user?.profile as Record<string, unknown>)
+        syncTenantContextFromAccessToken(user?.access_token)
         trace('signinRedirectCallback.success', {
           hasRefreshToken: !!user?.refresh_token,
           scope: user?.scope,

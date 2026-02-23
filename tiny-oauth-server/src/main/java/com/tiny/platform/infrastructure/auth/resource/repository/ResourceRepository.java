@@ -28,6 +28,8 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
      * @return 资源列表
      */
     List<Resource> findByTypeOrderBySortAsc(ResourceType type);
+
+    List<Resource> findByTypeAndTenantIdOrderBySortAsc(ResourceType type, Long tenantId);
     
     /**
      * 根据多个资源类型查找资源
@@ -35,6 +37,8 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
      * @return 资源列表
      */
     List<Resource> findByTypeInOrderBySortAsc(List<ResourceType> types);
+
+    List<Resource> findByTypeInAndTenantIdOrderBySortAsc(List<ResourceType> types, Long tenantId);
     
     /**
      * 根据父级ID查找子资源
@@ -79,6 +83,8 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
     Optional<Resource> findByUri(String uri);
 
     Optional<Resource> findByUriAndTenantId(String uri, Long tenantId);
+
+    List<Resource> findByIdInAndTenantId(List<Long> ids, Long tenantId);
     
     /**
      * 根据权限标识查找资源
@@ -86,6 +92,8 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
      * @return 资源列表
      */
     List<Resource> findByPermission(String permission);
+
+    List<Resource> findByPermissionAndTenantId(String permission, Long tenantId);
     
     /**
      * 根据HTTP方法查找资源
@@ -93,6 +101,8 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
      * @return 资源列表
      */
     List<Resource> findByMethod(String method);
+
+    List<Resource> findByMethodAndTenantId(String method, Long tenantId);
     
     /**
      * 根据是否隐藏查找资源
@@ -295,6 +305,8 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
      * @return 是否存在
      */
     boolean existsByParentId(Long parentId);
+
+    boolean existsByParentIdAndTenantId(Long parentId, Long tenantId);
 
     /**
      * 原生SQL方式分页查询菜单，直接返回leaf字段

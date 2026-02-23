@@ -1,9 +1,18 @@
 package com.tiny.platform.core.oauth.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.tiny.platform.core.oauth.multitenancy.CurrentIssuerIdentifierResolver;
+import com.tiny.platform.core.oauth.multitenancy.IssuerDelegatingOAuth2AuthorizationConsentService;
+import com.tiny.platform.core.oauth.multitenancy.IssuerDelegatingOAuth2AuthorizationService;
+import com.tiny.platform.core.oauth.multitenancy.IssuerDelegatingRegisteredClientRepository;
+import com.tiny.platform.core.oauth.multitenancy.TenantPerIssuerComponentRegistry;
+import com.tiny.platform.infrastructure.tenant.domain.Tenant;
+import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsentService;
@@ -15,6 +24,8 @@ import org.springframework.security.oauth2.server.authorization.JdbcOAuth2Author
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService.OAuth2AuthorizationParametersMapper;
 
 import javax.sql.DataSource;
+import java.time.LocalDateTime;
+import java.util.Locale;
 
 /**
  * OAuth2 数据库持久化配置类。
@@ -64,8 +75,23 @@ public class OAuth2DataConfig {
      * @return 注册客户端仓库实例
      */
     @Bean
-    public RegisteredClientRepository registeredClientRepository(JdbcTemplate jdbcTemplate) {
+    public TenantPerIssuerComponentRegistry tenantPerIssuerComponentRegistry() {
+        return new TenantPerIssuerComponentRegistry();
+    }
+
+    @Bean(name = "defaultRegisteredClientRepository")
+    public RegisteredClientRepository defaultRegisteredClientRepository(JdbcTemplate jdbcTemplate) {
         return new JdbcRegisteredClientRepository(jdbcTemplate);
+    }
+
+    @Bean
+    @Primary
+    public RegisteredClientRepository registeredClientRepository(
+            TenantPerIssuerComponentRegistry registry,
+            CurrentIssuerIdentifierResolver issuerResolver,
+            @Qualifier("defaultRegisteredClientRepository") RegisteredClientRepository defaultDelegate
+    ) {
+        return new IssuerDelegatingRegisteredClientRepository(registry, issuerResolver, defaultDelegate);
     }
 
     /**
@@ -107,10 +133,10 @@ public class OAuth2DataConfig {
      * @return OAuth2 授权服务实例
      * @see com.tiny.platform.core.oauth.config.jackson.JacksonConfig#authorizationMapper(org.springframework.http.converter.json.Jackson2ObjectMapperBuilder)
      */
-    @Bean(name = "oauth2AuthorizationService")
-    public OAuth2AuthorizationService oauth2AuthorizationService(
+    @Bean(name = "defaultOAuth2AuthorizationService")
+    public OAuth2AuthorizationService defaultOAuth2AuthorizationService(
             DataSource dataSource,
-            RegisteredClientRepository registeredClientRepository,
+            @Qualifier("defaultRegisteredClientRepository") RegisteredClientRepository registeredClientRepository,
             @Qualifier("authorizationMapper") ObjectMapper authorizationObjectMapper
     ) {
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
@@ -129,6 +155,16 @@ public class OAuth2DataConfig {
         service.setAuthorizationParametersMapper(parametersMapper);
 
         return service;
+    }
+
+    @Bean(name = "oauth2AuthorizationService")
+    @Primary
+    public OAuth2AuthorizationService oauth2AuthorizationService(
+            TenantPerIssuerComponentRegistry registry,
+            CurrentIssuerIdentifierResolver issuerResolver,
+            @Qualifier("defaultOAuth2AuthorizationService") OAuth2AuthorizationService defaultDelegate
+    ) {
+        return new IssuerDelegatingOAuth2AuthorizationService(registry, issuerResolver, defaultDelegate);
     }
 
     /**
@@ -152,11 +188,58 @@ public class OAuth2DataConfig {
      * @param registeredClientRepository 注册客户端仓库
      * @return OAuth2 授权同意服务实例
      */
-    @Bean
-    public OAuth2AuthorizationConsentService customOAuth2AuthorizationConsentService(
+    @Bean(name = "defaultOAuth2AuthorizationConsentService")
+    public OAuth2AuthorizationConsentService defaultOAuth2AuthorizationConsentService(
             JdbcTemplate jdbcTemplate,
-            RegisteredClientRepository registeredClientRepository
+            @Qualifier("defaultRegisteredClientRepository") RegisteredClientRepository registeredClientRepository
     ) {
         return new JdbcOAuth2AuthorizationConsentService(jdbcTemplate, registeredClientRepository);
+    }
+
+    @Bean
+    @Primary
+    public OAuth2AuthorizationConsentService customOAuth2AuthorizationConsentService(
+            TenantPerIssuerComponentRegistry registry,
+            CurrentIssuerIdentifierResolver issuerResolver,
+            @Qualifier("defaultOAuth2AuthorizationConsentService") OAuth2AuthorizationConsentService defaultDelegate
+    ) {
+        return new IssuerDelegatingOAuth2AuthorizationConsentService(registry, issuerResolver, defaultDelegate);
+    }
+
+    @Bean
+    public CommandLineRunner registerTenantIssuerComponents(
+            TenantRepository tenantRepository,
+            TenantPerIssuerComponentRegistry registry,
+            @Qualifier("defaultRegisteredClientRepository") RegisteredClientRepository registeredClientRepository,
+            @Qualifier("defaultOAuth2AuthorizationService") OAuth2AuthorizationService oauth2AuthorizationService,
+            @Qualifier("defaultOAuth2AuthorizationConsentService") OAuth2AuthorizationConsentService oauth2AuthorizationConsentService
+    ) {
+        return args -> tenantRepository.findAll().stream()
+                .filter(this::isTenantActive)
+                .forEach(tenant -> {
+                    String tenantCode = tenant.getCode() == null
+                            ? null
+                            : tenant.getCode().trim().toLowerCase(Locale.ROOT);
+                    if (tenantCode == null || tenantCode.isBlank()) {
+                        return;
+                    }
+                    registry.register(tenantCode, RegisteredClientRepository.class, registeredClientRepository);
+                    registry.register(tenantCode, OAuth2AuthorizationService.class, oauth2AuthorizationService);
+                    registry.register(tenantCode, OAuth2AuthorizationConsentService.class, oauth2AuthorizationConsentService);
+                });
+    }
+
+    private boolean isTenantActive(Tenant tenant) {
+        if (tenant == null) {
+            return false;
+        }
+        if (!tenant.isEnabled()) {
+            return false;
+        }
+        if (tenant.getDeletedAt() != null) {
+            return false;
+        }
+        LocalDateTime expiresAt = tenant.getExpiresAt();
+        return expiresAt == null || !expiresAt.isBefore(LocalDateTime.now());
     }
 }

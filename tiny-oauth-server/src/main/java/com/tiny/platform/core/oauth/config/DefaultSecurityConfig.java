@@ -22,6 +22,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import jakarta.servlet.http.HttpServletRequest;
 
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
+import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationSessionManager;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.core.oauth.tenant.TenantContextFilter;
@@ -105,8 +106,8 @@ public class DefaultSecurityConfig {
     }
 
     @Bean
-    public TenantContextFilter tenantContextFilter() {
-        return new TenantContextFilter();
+    public TenantContextFilter tenantContextFilter(TenantRepository tenantRepository) {
+        return new TenantContextFilter(tenantRepository);
     }
 
     @Bean

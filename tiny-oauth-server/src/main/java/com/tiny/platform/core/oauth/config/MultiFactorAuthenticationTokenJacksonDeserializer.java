@@ -83,9 +83,19 @@ public class MultiFactorAuthenticationTokenJacksonDeserializer
         }
         
         // 解析 authorities
+        // 兼容 Jackson 类型注入结构：
+        // ["java.util.Collections$UnmodifiableRandomAccessList", [ {...}, {...} ]]
         List<GrantedAuthority> authorities = new ArrayList<>();
         if (jsonNode.has("authorities") && jsonNode.get("authorities").isArray()) {
-            for (JsonNode authority : jsonNode.get("authorities")) {
+            JsonNode authoritiesNode = jsonNode.get("authorities");
+            if (authoritiesNode.size() == 2
+                    && authoritiesNode.get(0).isTextual()
+                    && authoritiesNode.get(1).isArray()
+                    && authoritiesNode.get(0).asText().startsWith("java.util.")) {
+                authoritiesNode = authoritiesNode.get(1);
+            }
+
+            for (JsonNode authority : authoritiesNode) {
                 if (authority.has("authority")) {
                     authorities.add(new SimpleGrantedAuthority(authority.get("authority").asText()));
                 } else if (authority.isTextual()) {

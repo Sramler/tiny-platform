@@ -10,7 +10,12 @@ import java.util.HashSet;
 import java.util.Set;
 
 @Entity
-@Table(name = "role")
+@Table(name = "role",
+    uniqueConstraints = {
+        @UniqueConstraint(name = "uk_role_tenant_code", columnNames = {"tenant_id", "code"}),
+        @UniqueConstraint(name = "uk_role_tenant_name", columnNames = {"tenant_id", "name"})
+    }
+)
 public class Role implements Serializable {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -19,7 +24,7 @@ public class Role implements Serializable {
     @Column(name = "tenant_id", nullable = false)
     private Long tenantId;
 
-    @Column(nullable = false, unique = true, length = 50)
+    @Column(nullable = false, length = 50)
     private String code; // 权限标识：ROLE_ADMIN
 
     @Column(nullable = false, length = 50)

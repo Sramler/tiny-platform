@@ -2,6 +2,7 @@ package com.tiny.platform.core.oauth.controller;
 
 import com.tiny.platform.core.oauth.config.CustomWebAuthenticationDetailsSource;
 import com.tiny.platform.core.oauth.config.FrontendProperties;
+import com.tiny.platform.core.oauth.tenant.IssuerTenantSupport;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
@@ -220,7 +221,7 @@ public class SecurityController {
             recordLoginInfo(user, request);
             // 记录MFA绑定审计
             auditService.recordMfaBind(user.getUsername(), user.getId(), "TOTP", request);
-            promoteToFullyAuthenticated(user, request, response);
+            promoteToFullyAuthenticated(user, request, response, true);
             return buildRedirectUrl(redirect);
         } else {
             String error = String.valueOf(result.getOrDefault("error", "绑定失败"));
@@ -280,7 +281,7 @@ public class SecurityController {
             recordLoginInfo(user, request);
             // 记录登录成功审计（TOTP验证完成，完全登录）
             auditService.recordLoginSuccess(user.getUsername(), user.getId(), "LOCAL", "MFA", request);
-            promoteToFullyAuthenticated(user, request, response);
+            promoteToFullyAuthenticated(user, request, response, true);
             return buildRedirectUrl(redirect);
         } else {
             String error = String.valueOf(result.getOrDefault("error", "验证失败"));
@@ -371,7 +372,18 @@ public class SecurityController {
      * 委托给 MultiFactorAuthenticationSessionManager，并持久化到 session
      */
     private void promoteToFullyAuthenticated(User user, HttpServletRequest request, jakarta.servlet.http.HttpServletResponse response) {
-        sessionManager.promoteToFullyAuthenticated(user, request, response);
+        promoteToFullyAuthenticated(user, request, response, false);
+    }
+
+    private void promoteToFullyAuthenticated(User user,
+                                             HttpServletRequest request,
+                                             jakarta.servlet.http.HttpServletResponse response,
+                                             boolean appendTotpFactor) {
+        sessionManager.promoteToFullyAuthenticated(
+                user,
+                request,
+                response,
+                appendTotpFactor ? MultiFactorAuthenticationToken.AuthenticationFactorType.TOTP : null);
     }
 
     /**
@@ -430,11 +442,13 @@ public class SecurityController {
             return false;
         }
         return redirect.startsWith("/oauth2/")
+                || redirect.matches("^/[a-z0-9][a-z0-9-]{1,31}/oauth2/.*$")
                 || redirect.startsWith("/login")
                 || redirect.startsWith("/logout")
                 || redirect.startsWith("/error")
                 || redirect.startsWith("/actuator")
-                || redirect.startsWith("/self/security/status");
+                || redirect.startsWith("/self/security/status")
+                || IssuerTenantSupport.isAuthorizationServerEndpointPath(redirect);
     }
 
     /**
@@ -459,4 +473,5 @@ public class SecurityController {
                 .warn("记录用户 {} 登录信息失败: {}", user.getUsername(), e.getMessage());
         }
     }
+
 }

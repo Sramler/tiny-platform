@@ -52,7 +52,12 @@ public class MultiFactorAuthenticationSessionManager {
      * @param user 当前用户对象
      */
     public void promoteToFullyAuthenticated(User user) {
-        promoteToFullyAuthenticated(user, null, null);
+        promoteToFullyAuthenticated(
+                user,
+                (HttpServletRequest) null,
+                (HttpServletResponse) null,
+                null
+        );
     }
 
     /**
@@ -67,7 +72,7 @@ public class MultiFactorAuthenticationSessionManager {
      * @param request HttpServletRequest，可为空
      */
     public void promoteToFullyAuthenticated(User user, HttpServletRequest request) {
-        promoteToFullyAuthenticated(user, request, null);
+        promoteToFullyAuthenticated(user, request, (HttpServletResponse) null, null);
     }
 
     /**
@@ -90,9 +95,16 @@ public class MultiFactorAuthenticationSessionManager {
     public void promoteToFullyAuthenticated(User user,
                                             HttpServletRequest request,
                                             HttpServletResponse response) {
+        promoteToFullyAuthenticated(user, request, response, null);
+    }
+
+    public void promoteToFullyAuthenticated(User user,
+                                            HttpServletRequest request,
+                                            HttpServletResponse response,
+                                            MultiFactorAuthenticationToken.AuthenticationFactorType additionalFactor) {
         // 从 SecurityContextHolder 获取当前认证
         Authentication currentAuth = SecurityContextHolder.getContext().getAuthentication();
-        promoteToFullyAuthenticated(user, currentAuth, request, response);
+        promoteToFullyAuthenticated(user, currentAuth, request, response, additionalFactor);
     }
 
     /**
@@ -119,6 +131,14 @@ public class MultiFactorAuthenticationSessionManager {
                                             Authentication currentAuth,
                                             HttpServletRequest request,
                                             HttpServletResponse response) {
+        promoteToFullyAuthenticated(user, currentAuth, request, response, null);
+    }
+
+    public void promoteToFullyAuthenticated(User user,
+                                            Authentication currentAuth,
+                                            HttpServletRequest request,
+                                            HttpServletResponse response,
+                                            MultiFactorAuthenticationToken.AuthenticationFactorType additionalFactor) {
         if (user == null) {
             return;
         }
@@ -141,7 +161,11 @@ public class MultiFactorAuthenticationSessionManager {
             
             if (currentAuth instanceof MultiFactorAuthenticationToken mfaToken) {
                 // ✨ 正确做法：调用 token 的提升方法（期望其继承 provider/completedFactors/details）
-                authenticated = mfaToken.promoteToFullyAuthenticated(authorities);
+                if (additionalFactor != null) {
+                    authenticated = mfaToken.promoteToFullyAuthenticatedWithFactor(additionalFactor, authorities);
+                } else {
+                    authenticated = mfaToken.promoteToFullyAuthenticated(authorities);
+                }
                 
                 // 防护：如果 promote 方法没有设置 authenticated/清空凭证/拷贝 details，补上
                 // 注意：虽然 promoteToFullyAuthenticated 使用已认证构造函数（会自动设置 authenticated=true），
@@ -166,6 +190,9 @@ public class MultiFactorAuthenticationSessionManager {
 
                 EnumSet<MultiFactorAuthenticationToken.AuthenticationFactorType> completedFactors =
                         EnumSet.of(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD);
+                if (additionalFactor != null) {
+                    completedFactors.add(additionalFactor);
+                }
 
                 MultiFactorAuthenticationToken provisional = new MultiFactorAuthenticationToken(
                         user.getUsername(),

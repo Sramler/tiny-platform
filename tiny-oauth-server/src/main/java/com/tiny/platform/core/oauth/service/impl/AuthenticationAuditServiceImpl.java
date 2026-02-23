@@ -4,6 +4,8 @@ import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationAudit
 import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationAuditRepository;
 import com.tiny.platform.core.oauth.service.AuthenticationAuditService;
 import com.tiny.platform.infrastructure.core.util.IpUtils;
+import com.tiny.platform.core.oauth.tenant.TenantContext;
+import com.tiny.platform.core.oauth.tenant.TenantContextFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -20,6 +22,8 @@ import jakarta.servlet.http.HttpSession;
 public class AuthenticationAuditServiceImpl implements AuthenticationAuditService {
 
     private static final Logger logger = LoggerFactory.getLogger(AuthenticationAuditServiceImpl.class);
+    private static final String TENANT_RESOLUTION_RESOLVED = "resolved";
+    private static final String TENANT_RESOLUTION_MISSING = "tenant_context_missing";
 
     private final UserAuthenticationAuditRepository auditRepository;
 
@@ -36,6 +40,10 @@ public class AuthenticationAuditServiceImpl implements AuthenticationAuditServic
             UserAuthenticationAudit audit = new UserAuthenticationAudit();
             audit.setUsername(username != null ? username : "unknown");
             audit.setUserId(userId);
+            TenantResolution tenantResolution = resolveTenant(request);
+            audit.setTenantId(tenantResolution.tenantId());
+            audit.setTenantResolutionCode(tenantResolution.code());
+            audit.setTenantResolutionSource(tenantResolution.source());
             audit.setEventType(eventType);
             audit.setSuccess(success);
             audit.setAuthenticationProvider(authenticationProvider);
@@ -101,6 +109,10 @@ public class AuthenticationAuditServiceImpl implements AuthenticationAuditServic
         UserAuthenticationAudit audit = new UserAuthenticationAudit();
         audit.setUsername(username != null ? username : "unknown");
         audit.setUserId(userId);
+        TenantResolution tenantResolution = resolveTenant(request);
+        audit.setTenantId(tenantResolution.tenantId());
+        audit.setTenantResolutionCode(tenantResolution.code());
+        audit.setTenantResolutionSource(tenantResolution.source());
         audit.setEventType("TOKEN_ISSUE");
         audit.setSuccess(true);
         audit.setTokenId(tokenId);
@@ -123,6 +135,10 @@ public class AuthenticationAuditServiceImpl implements AuthenticationAuditServic
         UserAuthenticationAudit audit = new UserAuthenticationAudit();
         audit.setUsername(username != null ? username : "unknown");
         audit.setUserId(userId);
+        TenantResolution tenantResolution = resolveTenant(request);
+        audit.setTenantId(tenantResolution.tenantId());
+        audit.setTenantResolutionCode(tenantResolution.code());
+        audit.setTenantResolutionSource(tenantResolution.source());
         audit.setEventType("TOKEN_REVOKE");
         audit.setSuccess(true);
         audit.setTokenId(tokenId);
@@ -138,4 +154,29 @@ public class AuthenticationAuditServiceImpl implements AuthenticationAuditServic
             logger.error("记录Token撤销审计失败: username={}, error={}", username, e.getMessage(), e);
         }
     }
+
+    private TenantResolution resolveTenant(HttpServletRequest request) {
+        Long tenantId = TenantContext.getTenantId();
+        String tenantSource = resolveTenantSource(request);
+        if (tenantId == null || tenantId <= 0) {
+            return new TenantResolution(null, TENANT_RESOLUTION_MISSING, tenantSource);
+        }
+        return new TenantResolution(tenantId, TENANT_RESOLUTION_RESOLVED, tenantSource);
+    }
+
+    private String resolveTenantSource(HttpServletRequest request) {
+        if (request != null) {
+            Object sourceAttribute = request.getAttribute(TenantContextFilter.TENANT_SOURCE_REQUEST_ATTRIBUTE);
+            if (sourceAttribute instanceof String source && !source.isBlank()) {
+                return source;
+            }
+        }
+        String sourceFromContext = TenantContext.getTenantSource();
+        if (sourceFromContext == null || sourceFromContext.isBlank()) {
+            return TenantContext.SOURCE_UNKNOWN;
+        }
+        return sourceFromContext;
+    }
+
+    private record TenantResolution(Long tenantId, String code, String source) {}
 }

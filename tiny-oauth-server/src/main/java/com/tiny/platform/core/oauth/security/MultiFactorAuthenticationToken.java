@@ -255,8 +255,25 @@ public class MultiFactorAuthenticationToken extends AbstractAuthenticationToken 
 
     public MultiFactorAuthenticationToken promoteToFullyAuthenticated(Collection<? extends GrantedAuthority> authorities) {
         EnumSet<AuthenticationFactorType> newCompletedFactors = EnumSet.copyOf(this.completedFactors);
-        if (!newCompletedFactors.contains(AuthenticationFactorType.TOTP)) {
-            newCompletedFactors.add(AuthenticationFactorType.TOTP);
+        MultiFactorAuthenticationToken newToken = new MultiFactorAuthenticationToken(
+                this.username,
+                null,
+                this.provider,
+                newCompletedFactors,
+                authorities == null ? Collections.emptyList() : List.copyOf(authorities)
+        );
+        if (this.getDetails() != null) {
+            newToken.setDetails(this.getDetails());
+        }
+        return newToken;
+    }
+
+    public MultiFactorAuthenticationToken promoteToFullyAuthenticatedWithFactor(
+            AuthenticationFactorType additionalFactor,
+            Collection<? extends GrantedAuthority> authorities) {
+        EnumSet<AuthenticationFactorType> newCompletedFactors = EnumSet.copyOf(this.completedFactors);
+        if (additionalFactor != null && additionalFactor != AuthenticationFactorType.UNKNOWN) {
+            newCompletedFactors.add(additionalFactor);
         }
         MultiFactorAuthenticationToken newToken = new MultiFactorAuthenticationToken(
                 this.username,

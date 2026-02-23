@@ -21,6 +21,8 @@ public interface RoleRepository extends JpaRepository<Role, Long>, JpaSpecificat
 
     Optional<Role> findByNameAndTenantId(String name, Long tenantId);
 
+    List<Role> findByIdInAndTenantId(List<Long> ids, Long tenantId);
+
     /**
      * 查询角色已经分配的所有资源ID
      */

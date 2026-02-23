@@ -6,9 +6,23 @@
         <p>请输入您的账号信息</p>
       </div>
 
-      <div v-if="errorText" class="error-message">{{ errorText }}</div>
+      <div v-if="errorText || errorMessage" class="error-message">{{ errorText || errorMessage }}</div>
 
       <form ref="formRef" :action="loginActionUrl" method="post" class="login-form" @submit="handleSubmit">
+        <div class="form-group">
+          <label for="tenantCode">租户编码</label>
+          <input
+            ref="tenantRef"
+            id="tenantCode"
+            name="tenantCode"
+            type="text"
+            placeholder="请输入租户编码（如 tiny-prod）"
+            required
+            autocomplete="organization"
+            maxlength="32"
+          />
+        </div>
+
         <div class="form-group">
           <label for="username">用户名</label>
           <input ref="usernameRef" id="username" name="username" type="text" placeholder="请输入用户名" required
@@ -24,6 +38,7 @@
         <!-- 认证参数 -->
         <input type="hidden" name="authenticationProvider" value="LOCAL" />
         <input type="hidden" name="authenticationType" value="PASSWORD" />
+        <input type="hidden" name="redirect" :value="redirectParam" />
 
         <button type="submit" class="login-button" :class="{ loading: isSubmitting }" :disabled="isSubmitting">
           {{ isSubmitting ? '登录中...' : '登录' }}
@@ -40,6 +55,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { clearTenantId, getTenantCode, isValidTenantCode, setTenantCode } from '@/utils/tenant'
 
 defineOptions({
   name: 'LoginPage',
@@ -48,8 +64,10 @@ defineOptions({
 const route = useRoute()
 const isSubmitting = ref(false)
 const formRef = ref<HTMLFormElement | null>(null)
+const tenantRef = ref<HTMLInputElement | null>(null)
 const usernameRef = ref<HTMLInputElement | null>(null)
 const passwordRef = ref<HTMLInputElement | null>(null)
+const errorMessage = ref('')
 
 const defaultCredentials = {
   username: 'admin',
@@ -70,11 +88,46 @@ const errorText = computed(() => {
   return String(raw)
 })
 
-const handleSubmit = () => {
+const redirectParam = computed(() => {
+  const raw = route.query.redirect
+  const value = Array.isArray(raw) ? raw[0] ?? '/' : raw ?? '/'
+  const normalized = String(value)
+  try {
+    return decodeURIComponent(normalized)
+  } catch {
+    return normalized
+  }
+})
+
+const handleSubmit = (event: Event) => {
+  errorMessage.value = ''
+  event.preventDefault()
+  const rawTenantCode = tenantRef.value?.value?.trim() ?? ''
+  if (!rawTenantCode) {
+    errorMessage.value = '请先输入租户编码'
+    return
+  }
+  if (!isValidTenantCode(rawTenantCode)) {
+    errorMessage.value = '租户编码格式错误：仅支持小写字母、数字和中划线，长度 2-32'
+    return
+  }
+  const normalizedTenantCode = rawTenantCode.toLowerCase()
+  if (tenantRef.value) tenantRef.value.value = normalizedTenantCode
+  setTenantCode(normalizedTenantCode)
+  // 登录前清理旧租户ID，避免沿用上一会话租户导致后续链路冲突
+  clearTenantId()
+
   isSubmitting.value = true
+  formRef.value?.submit()
 }
 
 onMounted(() => {
+  if (tenantRef.value) {
+    const storedTenantCode = getTenantCode()
+    if (storedTenantCode) {
+      tenantRef.value.value = storedTenantCode
+    }
+  }
   if (usernameRef.value) {
     usernameRef.value.focus()
     usernameRef.value.value = defaultCredentials.username

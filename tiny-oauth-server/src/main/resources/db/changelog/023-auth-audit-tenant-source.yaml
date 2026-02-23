@@ -1,0 +1,31 @@
+databaseChangeLog:
+  - changeSet:
+      id: 023-auth-audit-tenant-source
+      author: tiny
+      validCheckSum:
+        - ANY
+      comment: 认证审计补充租户来源 tenant_resolution_source
+      changes:
+        - sql:
+            dbms: mysql
+            sql: |
+              SET @tenant_resolution_source_exists := (
+                SELECT COUNT(*)
+                  FROM information_schema.columns
+                 WHERE table_schema = DATABASE()
+                   AND table_name = 'user_authentication_audit'
+                   AND column_name = 'tenant_resolution_source'
+              );
+              SET @tenant_resolution_source_sql := IF(
+                @tenant_resolution_source_exists = 0,
+                'ALTER TABLE `user_authentication_audit` ADD COLUMN `tenant_resolution_source` VARCHAR(64) NULL COMMENT ''租户解析来源''',
+                'SELECT 1'
+              );
+              PREPARE stmt_tenant_resolution_source FROM @tenant_resolution_source_sql;
+              EXECUTE stmt_tenant_resolution_source;
+              DEALLOCATE PREPARE stmt_tenant_resolution_source;
+
+              UPDATE `user_authentication_audit`
+                 SET `tenant_resolution_source` = 'unknown'
+               WHERE `tenant_resolution_source` IS NULL
+                  OR `tenant_resolution_source` = '';

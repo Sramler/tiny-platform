@@ -20,6 +20,7 @@ import TotpVerify from '@/views/security/TotpVerify.vue'
 import { menuTree, type MenuItem } from '@/api/menu' // 引入菜单 API
 import logger from '@/utils/logger' // 引入日志工具
 import { useMenuRouteState, updateMenuRouteState } from './menuState'
+import { getTenantCode } from '@/utils/tenant'
 
 const MENU_LOAD_MESSAGE_KEY = 'menu-load-error'
 const menuRouteState = useMenuRouteState()
@@ -327,14 +328,19 @@ const authGuard: NavigationGuard = async (to, _from, next) => {
     return
   }
 
-  logger.log('用户未认证，直接交给后端控制登录与 MFA 路由')
-
   try {
-    // 由后端根据 security.mfa.mode 与用户状态决定：
-    // 1) 直接进入授权流程
-    // 2) 重定向到 TOTP 绑定页
-    // 3) 重定向到 TOTP 验证页
-    await authContext.login()
+    const tenantCode = getTenantCode()
+    if (!tenantCode) {
+      next({
+        path: '/login',
+        query: {
+          redirect: to.fullPath || '/',
+        },
+      })
+      return
+    }
+
+    await authContext.login(to.fullPath || '/')
     return
   } catch (error) {
     logger.error('登录重定向失败:', error)

@@ -1,0 +1,42 @@
+databaseChangeLog:
+  - changeSet:
+      id: rename-demo-export-tenant-id
+      author: tiny
+      comment: demo_export_usage tenant_code -> tenant_id
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: MARK_RAN
+        - columnExists:
+            tableName: demo_export_usage
+            columnName: tenant_code
+      changes:
+        - addColumn:
+            tableName: demo_export_usage
+            columns:
+              - column:
+                  name: tenant_id
+                  type: BIGINT
+                  defaultValueNumeric: 1
+                  constraints:
+                    nullable: false
+        - update:
+            tableName: demo_export_usage
+            columns:
+              - column:
+                  name: tenant_id
+                  valueNumeric: 1
+            where: tenant_id IS NULL
+        - dropIndex:
+            tableName: demo_export_usage
+            indexName: idx_demo_usage_tenant_date
+        - createIndex:
+            tableName: demo_export_usage
+            indexName: idx_demo_usage_tenant_date
+            columns:
+              - column:
+                  name: tenant_id
+              - column:
+                  name: usage_date
+        - dropColumn:
+            tableName: demo_export_usage
+            columnName: tenant_code

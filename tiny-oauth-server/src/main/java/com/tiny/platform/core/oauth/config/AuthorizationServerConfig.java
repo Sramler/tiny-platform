@@ -6,6 +6,7 @@ import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.tiny.platform.infrastructure.core.util.PemUtils;
 import com.tiny.platform.core.oauth.security.MfaAuthorizationEndpointFilter;
+import com.tiny.platform.core.oauth.tenant.IssuerTenantSupport;
 import com.tiny.platform.core.oauth.tenant.TenantContextFilter;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
@@ -18,8 +19,11 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
+import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsentService;
+import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.config.annotation.web.configuration.OAuth2AuthorizationServerConfiguration;
 import org.springframework.security.oauth2.server.authorization.config.annotation.web.configurers.OAuth2AuthorizationServerConfigurer;
+import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
 import org.springframework.security.oauth2.server.authorization.token.*;
 import org.springframework.security.web.SecurityFilterChain;
@@ -54,11 +58,23 @@ public class AuthorizationServerConfig {
     @Bean
     @Order(1)
     public SecurityFilterChain authorizationServerSecurityFilterChain(HttpSecurity http,
+                                                                     @Qualifier("registeredClientRepository") RegisteredClientRepository registeredClientRepository,
+                                                                     @Qualifier("oauth2AuthorizationService") OAuth2AuthorizationService oauth2AuthorizationService,
+                                                                     @Qualifier("customOAuth2AuthorizationConsentService") OAuth2AuthorizationConsentService oauth2AuthorizationConsentService,
                                                                      MfaAuthorizationEndpointFilter mfaAuthorizationEndpointFilter,
                                                                      TenantContextFilter tenantContextFilter)
             throws Exception {
+        // SAS 1.5.x 在部分配置阶段会直接从 ApplicationContext 按类型查 Bean（忽略 @Primary），
+        // 这里提前设置 shared object，避免 default/delegating 双 Bean 导致 NoUniqueBeanDefinitionException。
+        http.setSharedObject(RegisteredClientRepository.class, registeredClientRepository);
+        http.setSharedObject(OAuth2AuthorizationService.class, oauth2AuthorizationService);
+        http.setSharedObject(OAuth2AuthorizationConsentService.class, oauth2AuthorizationConsentService);
+
         OAuth2AuthorizationServerConfiguration.applyDefaultSecurity(http);
         http.getConfigurer(OAuth2AuthorizationServerConfigurer.class)
+                .registeredClientRepository(registeredClientRepository)
+                .authorizationService(oauth2AuthorizationService)
+                .authorizationConsentService(oauth2AuthorizationConsentService)
                 //开启OpenID Connect 1.0（其中oidc为OpenID Connect的缩写）。
                 .oidc(Customizer.withDefaults());
         http
@@ -91,9 +107,9 @@ public class AuthorizationServerConfig {
                                 request -> {
                                     String uri = request.getRequestURI();
                                     // OAuth2 和 OIDC 端点总是返回 JSON 或重定向，不是 JSON 响应
-                                    if (uri.startsWith("/oauth2/") || uri.startsWith("/.well-known/") || uri.startsWith("/connect/")) {
+                                    if (IssuerTenantSupport.isAuthorizationServerEndpointPath(uri)) {
                                         // 注销端点可能需要 HTML 重定向，所以特殊处理
-                                        if (uri.equals("/connect/logout")) {
+                                        if (uri.equals("/connect/logout") || uri.matches("^/[a-z0-9][a-z0-9-]{1,31}/connect/logout$")) {
                                             return false; // 注销端点可能需要 HTML 重定向
                                         }
                                         return true;
@@ -203,8 +219,10 @@ public class AuthorizationServerConfig {
      */
     @Bean
     public AuthorizationServerSettings authorizationServerSettings() {
-        //什么都不配置，则使用默认地址
-        return AuthorizationServerSettings.builder().build();
+        // 严格按 SAS 多 issuer 指南启用 path-based issuer
+        return AuthorizationServerSettings.builder()
+                .multipleIssuersAllowed(true)
+                .build();
     }
 
     /**

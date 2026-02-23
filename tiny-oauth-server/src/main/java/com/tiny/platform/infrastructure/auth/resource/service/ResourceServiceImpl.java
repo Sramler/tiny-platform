@@ -11,6 +11,7 @@ import com.tiny.platform.infrastructure.auth.resource.repository.ResourceReposit
 import com.tiny.platform.infrastructure.auth.role.domain.Role;
 import com.tiny.platform.infrastructure.auth.role.repository.RoleRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
+import com.tiny.platform.core.oauth.tenant.TenantContext;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -38,6 +39,7 @@ public class ResourceServiceImpl implements ResourceService {
 
     @Override
     public Page<ResourceResponseDto> resources(ResourceRequestDto query, Pageable pageable) {
+        Long tenantId = requireTenantId();
         // 构建查询条件
         ResourceType type = query.getType() != null ? ResourceType.fromCode(query.getType()) : null;
         
@@ -51,6 +53,7 @@ public class ResourceServiceImpl implements ResourceService {
                 type,
                 query.getParentId(),
                 query.getHidden(),
+                tenantId,
                 pageable
         );
         
@@ -62,17 +65,20 @@ public class ResourceServiceImpl implements ResourceService {
 
     @Override
     public Optional<Resource> findById(Long id) {
-        return resourceRepository.findById(id);
+        return resourceRepository.findById(id).filter(r -> r.getTenantId().equals(requireTenantId()));
     }
 
     @Override
     public Resource create(Resource resource) {
+        resource.setTenantId(requireTenantId());
         return resourceRepository.save(resource);
     }
 
     @Override
     public Resource update(Long id, Resource resource) {
+        Long tenantId = requireTenantId();
         Resource existingResource = resourceRepository.findById(id)
+                .filter(r -> r.getTenantId().equals(tenantId))
                 .orElseThrow(() -> new RuntimeException("资源不存在"));
         
         // 更新字段
@@ -97,10 +103,11 @@ public class ResourceServiceImpl implements ResourceService {
 
     @Override
     public Resource createFromDto(ResourceCreateUpdateDto resourceDto) {
+        Long tenantId = requireTenantId();
         validateResourceByType(resourceDto);
 
         // 检查名称是否已存在
-        if (resourceRepository.findByName(resourceDto.getName()).isPresent()) {
+        if (resourceRepository.findByNameAndTenantId(resourceDto.getName(), tenantId).isPresent()) {
             throw new BusinessException(
                 ErrorCode.RESOURCE_ALREADY_EXISTS,
                 "资源名称已存在: " + resourceDto.getName()
@@ -109,7 +116,7 @@ public class ResourceServiceImpl implements ResourceService {
         
         // 检查URL是否已存在（如果提供了URL）
         if (StringUtils.hasText(resourceDto.getUrl()) && 
-            resourceRepository.findByUrl(resourceDto.getUrl()).isPresent()) {
+            resourceRepository.findByUrlAndTenantId(resourceDto.getUrl(), tenantId).isPresent()) {
             throw new BusinessException(
                 ErrorCode.RESOURCE_ALREADY_EXISTS,
                 "资源URL已存在: " + resourceDto.getUrl()
@@ -118,7 +125,7 @@ public class ResourceServiceImpl implements ResourceService {
         
         // 检查URI是否已存在（如果提供了URI）
         if (StringUtils.hasText(resourceDto.getUri()) && 
-            resourceRepository.findByUri(resourceDto.getUri()).isPresent()) {
+            resourceRepository.findByUriAndTenantId(resourceDto.getUri(), tenantId).isPresent()) {
             throw new BusinessException(
                 ErrorCode.RESOURCE_ALREADY_EXISTS,
                 "资源URI已存在: " + resourceDto.getUri()
@@ -127,6 +134,7 @@ public class ResourceServiceImpl implements ResourceService {
         
         // 创建资源对象
         Resource resource = new Resource();
+        resource.setTenantId(tenantId);
         resource.setName(resourceDto.getName());
         resource.setTitle(resourceDto.getTitle());
         resource.setUrl(resourceDto.getUrl());
@@ -160,16 +168,18 @@ public class ResourceServiceImpl implements ResourceService {
 
     @Override
     public Resource updateFromDto(ResourceCreateUpdateDto resourceDto) {
+        Long tenantId = requireTenantId();
         validateResourceByType(resourceDto);
 
         Resource existingResource = resourceRepository.findById(resourceDto.getId())
+                .filter(r -> r.getTenantId().equals(tenantId))
                 .orElseThrow(() -> new BusinessException(
                     ErrorCode.NOT_FOUND,
                     "资源不存在: " + resourceDto.getId()
                 ));
         
         // 检查名称是否已被其他资源使用
-        Optional<Resource> resourceWithSameName = resourceRepository.findByName(resourceDto.getName());
+        Optional<Resource> resourceWithSameName = resourceRepository.findByNameAndTenantId(resourceDto.getName(), tenantId);
         if (resourceWithSameName.isPresent() && !resourceWithSameName.get().getId().equals(resourceDto.getId())) {
             throw new BusinessException(
                 ErrorCode.RESOURCE_ALREADY_EXISTS,
@@ -179,7 +189,7 @@ public class ResourceServiceImpl implements ResourceService {
         
         // 检查URL是否已被其他资源使用（如果提供了URL）
         if (StringUtils.hasText(resourceDto.getUrl())) {
-            Optional<Resource> resourceWithSameUrl = resourceRepository.findByUrl(resourceDto.getUrl());
+            Optional<Resource> resourceWithSameUrl = resourceRepository.findByUrlAndTenantId(resourceDto.getUrl(), tenantId);
             if (resourceWithSameUrl.isPresent() && !resourceWithSameUrl.get().getId().equals(resourceDto.getId())) {
                 throw new BusinessException(
                     ErrorCode.RESOURCE_ALREADY_EXISTS,
@@ -190,7 +200,7 @@ public class ResourceServiceImpl implements ResourceService {
         
         // 检查URI是否已被其他资源使用（如果提供了URI）
         if (StringUtils.hasText(resourceDto.getUri())) {
-            Optional<Resource> resourceWithSameUri = resourceRepository.findByUri(resourceDto.getUri());
+            Optional<Resource> resourceWithSameUri = resourceRepository.findByUriAndTenantId(resourceDto.getUri(), tenantId);
             if (resourceWithSameUri.isPresent() && !resourceWithSameUri.get().getId().equals(resourceDto.getId())) {
                 throw new BusinessException(
                     ErrorCode.RESOURCE_ALREADY_EXISTS,
@@ -268,24 +278,28 @@ public class ResourceServiceImpl implements ResourceService {
     @Override
     @Transactional
     public void delete(Long id) {
+        Long tenantId = requireTenantId();
         // 检查是否有子资源
-        List<Resource> children = resourceRepository.findByParentIdOrderBySortAsc(id);
+        List<Resource> children = resourceRepository.findByParentIdAndTenantIdOrderBySortAsc(id, tenantId);
         if (!children.isEmpty()) {
             throw new BusinessException(
                 ErrorCode.RESOURCE_CONFLICT,
                 String.format("无法删除有子资源的资源，请先删除子资源。资源ID: %d，子资源数量: %d", id, children.size())
             );
         }
-        
-        resourceRepository.deleteById(id);
+
+        resourceRepository.findById(id)
+                .filter(r -> r.getTenantId().equals(tenantId))
+                .ifPresent(resourceRepository::delete);
     }
 
     @Override
     @Transactional
     public void batchDelete(List<Long> ids) {
+        Long tenantId = requireTenantId();
         // 检查是否有资源包含子资源
         for (Long id : ids) {
-            List<Resource> children = resourceRepository.findByParentIdOrderBySortAsc(id);
+            List<Resource> children = resourceRepository.findByParentIdAndTenantIdOrderBySortAsc(id, tenantId);
             if (!children.isEmpty()) {
                 throw new BusinessException(
                     ErrorCode.RESOURCE_CONFLICT,
@@ -293,28 +307,35 @@ public class ResourceServiceImpl implements ResourceService {
                 );
             }
         }
-        
-        resourceRepository.deleteAllById(ids);
+
+        List<Resource> resources = resourceRepository.findAllById(ids).stream()
+                .filter(r -> r.getTenantId().equals(tenantId))
+                .toList();
+        resourceRepository.deleteAll(resources);
     }
 
     @Override
     public List<Resource> findByType(ResourceType type) {
-        return resourceRepository.findByTypeOrderBySortAsc(type);
+        return resourceRepository.findByTypeOrderBySortAsc(type).stream()
+                .filter(r -> r.getTenantId().equals(requireTenantId()))
+                .toList();
     }
 
     @Override
     public List<Resource> findByTypeIn(List<ResourceType> types) {
-        return resourceRepository.findByTypeInOrderBySortAsc(types);
+        return resourceRepository.findByTypeInOrderBySortAsc(types).stream()
+                .filter(r -> r.getTenantId().equals(requireTenantId()))
+                .toList();
     }
 
     @Override
     public List<Resource> findByParentId(Long parentId) {
-        return resourceRepository.findByParentIdOrderBySortAsc(parentId);
+        return resourceRepository.findByParentIdAndTenantIdOrderBySortAsc(parentId, requireTenantId());
     }
 
     @Override
     public List<Resource> findTopLevel() {
-        return resourceRepository.findByParentIdIsNullOrderBySortAsc();
+        return resourceRepository.findByParentIdIsNullAndTenantIdOrderBySortAsc(requireTenantId());
     }
 
     @Override
@@ -373,51 +394,62 @@ public class ResourceServiceImpl implements ResourceService {
 
     @Override
     public Optional<Resource> findByName(String name) {
-        return resourceRepository.findByName(name);
+        return resourceRepository.findByNameAndTenantId(name, requireTenantId());
     }
 
     @Override
     public Optional<Resource> findByUrl(String url) {
-        return resourceRepository.findByUrl(url);
+        return resourceRepository.findByUrlAndTenantId(url, requireTenantId());
     }
 
     @Override
     public Optional<Resource> findByUri(String uri) {
-        return resourceRepository.findByUri(uri);
+        return resourceRepository.findByUriAndTenantId(uri, requireTenantId());
     }
 
     @Override
     public List<Resource> findByPermission(String permission) {
-        return resourceRepository.findByPermission(permission);
+        return resourceRepository.findByPermissionAndTenantId(permission, requireTenantId());
     }
 
     @Override
     public boolean existsByName(String name, Long excludeId) {
+        Long tenantId = requireTenantId();
         if (excludeId == null) {
-            return resourceRepository.findByName(name).isPresent();
+            return resourceRepository.findByNameAndTenantId(name, tenantId).isPresent();
         }
-        return resourceRepository.existsByNameAndIdNot(name, excludeId);
+        return resourceRepository.findByNameAndTenantId(name, tenantId)
+                .filter(r -> !r.getId().equals(excludeId))
+                .isPresent();
     }
 
     @Override
     public boolean existsByUrl(String url, Long excludeId) {
+        Long tenantId = requireTenantId();
         if (excludeId == null) {
-            return resourceRepository.findByUrl(url).isPresent();
+            return resourceRepository.findByUrlAndTenantId(url, tenantId).isPresent();
         }
-        return resourceRepository.existsByUrlAndIdNot(url, excludeId);
+        return resourceRepository.findByUrlAndTenantId(url, tenantId)
+                .filter(r -> !r.getId().equals(excludeId))
+                .isPresent();
     }
 
     @Override
     public boolean existsByUri(String uri, Long excludeId) {
+        Long tenantId = requireTenantId();
         if (excludeId == null) {
-            return resourceRepository.findByUri(uri).isPresent();
+            return resourceRepository.findByUriAndTenantId(uri, tenantId).isPresent();
         }
-        return resourceRepository.existsByUriAndIdNot(uri, excludeId);
+        return resourceRepository.findByUriAndTenantId(uri, tenantId)
+                .filter(r -> !r.getId().equals(excludeId))
+                .isPresent();
     }
 
     @Override
     public Resource updateSort(Long id, Integer sort) {
+        Long tenantId = requireTenantId();
         Resource resource = resourceRepository.findById(id)
+                .filter(r -> r.getTenantId().equals(tenantId))
                 .orElseThrow(() -> new RuntimeException("资源不存在"));
         resource.setSort(sort);
         return resourceRepository.save(resource);
@@ -430,6 +462,7 @@ public class ResourceServiceImpl implements ResourceService {
 
     @Override
     public List<Resource> findByRoleId(Long roleId) {
+        Long tenantId = requireTenantId();
         if (roleId == null) {
             return Collections.emptyList();
         }
@@ -437,14 +470,15 @@ public class ResourceServiceImpl implements ResourceService {
         if (resourceIds == null || resourceIds.isEmpty()) {
             return Collections.emptyList();
         }
-        List<Resource> resources = resourceRepository.findAllById(resourceIds);
+        List<Resource> resources = resourceRepository.findByIdInAndTenantId(resourceIds, tenantId);
         resources.sort(Comparator.comparing(Resource::getSort, Comparator.nullsLast(Integer::compareTo)));
         return resources;
     }
 
     @Override
     public List<Resource> findByUserId(Long userId) {
-        return userRepository.findById(userId)
+        Long tenantId = requireTenantId();
+        return userRepository.findByIdAndTenantId(userId, tenantId)
                 .map(user -> {
                     // 收集用户的角色ID
                     Set<Long> roleIds = user.getRoles().stream()
@@ -469,7 +503,7 @@ public class ResourceServiceImpl implements ResourceService {
                     }
 
                     // 查询资源实体并按 sort 升序返回
-                    List<Resource> resources = resourceRepository.findAllById(resourceIds);
+                    List<Resource> resources = resourceRepository.findByIdInAndTenantId(new ArrayList<>(resourceIds), tenantId);
                     resources.sort(Comparator.comparing(Resource::getSort, Comparator.nullsLast(Integer::compareTo)));
                     return resources;
                 })
@@ -516,5 +550,13 @@ public class ResourceServiceImpl implements ResourceService {
             default:
                 return "未知";
         }
+    }
+
+    private Long requireTenantId() {
+        Long tenantId = TenantContext.getTenantId();
+        if (tenantId == null) {
+            throw new BusinessException(ErrorCode.MISSING_PARAMETER, "缺少租户信息");
+        }
+        return tenantId;
     }
 } 

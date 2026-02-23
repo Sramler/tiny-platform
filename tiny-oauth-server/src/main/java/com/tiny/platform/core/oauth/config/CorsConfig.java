@@ -43,6 +43,9 @@ public class CorsConfig {
                 "Origin",
                 "Access-Control-Request-Method",
                 "Access-Control-Request-Headers",
+                // 多租户请求头
+                "X-Tenant-Id",
+                "x-tenant-id",
                 // TRACE_ID 相关 headers
                 "X-Trace-Id",
                 "X-Request-Id",

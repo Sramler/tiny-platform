@@ -3,10 +3,11 @@
  * 所有可调项均通过环境变量注入，详见 docs/ENV_CONFIG.md。
  * 该文件在模块加载阶段完成配置校验，确保生产环境必须显式提供关键地址。
  */
-import { UserManager, WebStorageStateStore } from 'oidc-client-ts'
+import { OidcClient, UserManager, WebStorageStateStore } from 'oidc-client-ts'
 import type { UserManagerSettings } from 'oidc-client-ts'
 import { logger } from '@/utils/logger'
 import { addTraceIdToFetchOptions } from '@/utils/traceId'
+import { getTenantCode } from '@/utils/tenant'
 
 type Env = {
   VITE_OIDC_AUTHORITY?: string
@@ -46,7 +47,7 @@ const resolveEnvValue = (
   return fallback
 }
 
-const authority = resolveEnvValue(env.VITE_OIDC_AUTHORITY, 'http://localhost:9000', {
+const authorityBase = resolveEnvValue(env.VITE_OIDC_AUTHORITY, 'http://localhost:9000', {
   key: 'VITE_OIDC_AUTHORITY',
   requiredInProd: true,
 })
@@ -78,6 +79,27 @@ const scopes = resolveEnvValue(env.VITE_OIDC_SCOPES, 'openid profile offline_acc
   key: 'VITE_OIDC_SCOPES',
 })
 
+function resolveTenantAuthority(baseAuthority: string): string {
+  const tenantCode = getTenantCode()
+  if (!tenantCode) {
+    return baseAuthority
+  }
+  try {
+    const baseUrl = new URL(baseAuthority)
+    const normalizedPath = baseUrl.pathname.replace(/\/+$/, '')
+    if (normalizedPath.endsWith(`/${tenantCode}`)) {
+      return baseUrl.toString().replace(/\/+$/, '')
+    }
+    baseUrl.pathname = `${normalizedPath}/${tenantCode}`
+    return baseUrl.toString().replace(/\/+$/, '')
+  } catch {
+    const normalizedBase = baseAuthority.replace(/\/+$/, '')
+    return `${normalizedBase}/${tenantCode}`
+  }
+}
+
+const authority = resolveTenantAuthority(authorityBase)
+
 /**
  * 为 oidc-client-ts 使用的 fetch 安装 TRACE_ID 支持
  *
@@ -103,6 +125,7 @@ function installOidcFetchWithTraceId(oidcAuthority: string): void {
   anyWindow.__oidcTraceFetchInstalled = true
 
   const originalFetch = window.fetch.bind(window)
+  const authorityUrl = new URL(oidcAuthority)
 
   window.fetch = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     try {
@@ -111,11 +134,14 @@ function installOidcFetchWithTraceId(oidcAuthority: string): void {
 
       // 仅对指向同一 authority 的请求注入 traceId，避免影响其他第三方域名
       // 例如 authority = http://localhost:9000
-      const isSameAuthority = urlString.startsWith(oidcAuthority)
+      const requestUrl = new URL(urlString, window.location.origin)
+      const isSameAuthority = requestUrl.origin === authorityUrl.origin
 
       if (isSameAuthority) {
         const optionsWithTrace = addTraceIdToFetchOptions(init ?? {})
-        return originalFetch(input, optionsWithTrace)
+        return originalFetch(input, {
+          ...optionsWithTrace,
+        })
       }
     } catch (e) {
       // 失败时退回原始 fetch，避免影响正常功能
@@ -168,3 +194,4 @@ export type OidcSettings = Readonly<UserManagerSettings>
 export const settings: OidcSettings = Object.freeze(baseSettings)
 
 export const userManager = new UserManager(settings)
+export const oidcClient = new OidcClient(settings)

@@ -6,6 +6,7 @@ import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationSessionManager;
 import com.tiny.platform.core.oauth.service.AuthenticationAuditService;
 import com.tiny.platform.core.oauth.service.SecurityService;
+import com.tiny.platform.core.oauth.tenant.IssuerTenantSupport;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.core.util.IpUtils;
 import com.tiny.platform.infrastructure.core.util.DeviceUtils;
@@ -30,6 +31,7 @@ import java.util.Map;
 public class CustomLoginSuccessHandler implements AuthenticationSuccessHandler {
     
     private static final Logger logger = LoggerFactory.getLogger(CustomLoginSuccessHandler.class);
+    private static final String SESSION_TENANT_ID_KEY = "AUTH_TENANT_ID";
 
     private final SecurityService securityService;
     private final UserRepository userRepository;
@@ -71,6 +73,8 @@ public class CustomLoginSuccessHandler implements AuthenticationSuccessHandler {
             response.sendRedirect("/");
             return;
         }
+
+        freezeTenantId(request, user.getTenantId());
         
         Map<String, Object> status = securityService.getSecurityStatus(user);
         boolean totpBound = Boolean.TRUE.equals(status.get("totpBound"));
@@ -78,6 +82,7 @@ public class CustomLoginSuccessHandler implements AuthenticationSuccessHandler {
         boolean disableMfa = Boolean.TRUE.equals(status.get("disableMfa"));
         boolean skipMfaRemind = Boolean.TRUE.equals(status.get("skipMfaRemind"));
         boolean forceMfa = Boolean.TRUE.equals(status.get("forceMfa"));
+        boolean requireTotp = Boolean.TRUE.equals(status.get("requireTotp"));
 
         // 解析原意图跳转 URL
         String intendedUrl = extractIntendedUrl(request, response);
@@ -98,8 +103,9 @@ public class CustomLoginSuccessHandler implements AuthenticationSuccessHandler {
             recordLoginInfo(user, request);
             // 记录登录成功审计
             auditService.recordLoginSuccess(user.getUsername(), user.getId(), authProvider, authFactor, request);
-            sessionManager.promoteToFullyAuthenticated(user, request, response);
-            response.sendRedirect(intendedUrl);
+            // mode=NONE 时不应人为补全 TOTP 因子，保留 PASSWORD-only 认证结果，
+            // 以确保 JWT amr 与实际认证流程一致（仅 password）。
+            redirectToIntendedUrl(intendedUrl, request, response);
             return;
         }
 
@@ -107,7 +113,8 @@ public class CustomLoginSuccessHandler implements AuthenticationSuccessHandler {
         if (authentication instanceof MultiFactorAuthenticationToken mfaToken) {
             if (mfaToken.hasCompletedFactor(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD) &&
                 !mfaToken.hasCompletedFactor(MultiFactorAuthenticationToken.AuthenticationFactorType.TOTP) &&
-                totpActivated) {
+                totpActivated &&
+                requireTotp) {
                 logger.info("用户 {} 已完成密码验证，但还需 TOTP 验证，跳转 TOTP 验证页", user.getUsername());
                 String totpVerifyUrl = buildFrontendUrl(frontendProperties.getTotpVerifyUrl(), request, "redirect", encodedUrl);
                 redirectToFrontend(totpVerifyUrl, request, response);
@@ -138,17 +145,29 @@ public class CustomLoginSuccessHandler implements AuthenticationSuccessHandler {
         // 记录登录成功审计
         auditService.recordLoginSuccess(user.getUsername(), user.getId(), authProvider, authFactor, request);
         logger.info("用户 {} 登录成功（MFA 校验完成或不需要 MFA），将跳转 {}", user.getUsername(), intendedUrl);
-        
-        sessionManager.promoteToFullyAuthenticated(user, request, response);
-        
+
+        // 仅在本次会话确实要求 TOTP 时，才升级为“完整 MFA 认证”状态。
+        // OPTIONAL / NONE 下不应无条件补上 TOTP 因子，否则 amr 会错误包含 totp。
+        if (requireTotp) {
+            sessionManager.promoteToFullyAuthenticated(user, request, response);
+        }
+        redirectToIntendedUrl(intendedUrl, request, response);
+    }
+
+    private void redirectToIntendedUrl(String intendedUrl, HttpServletRequest request, HttpServletResponse response)
+            throws IOException, ServletException {
+        if (isBackendOnlyPath(intendedUrl)) {
+            response.sendRedirect(intendedUrl);
+            return;
+        }
+
         if (intendedUrl.startsWith("/") && !intendedUrl.startsWith("/api/") && !intendedUrl.startsWith("/oauth2/")) {
             // 前端路由处理
             String loginUrl = frontendProperties.getLoginUrl();
             if (loginUrl.startsWith("redirect:")) {
                 String baseUrl = loginUrl.substring("redirect:".length());
                 String devServerBase = baseUrl.substring(0, baseUrl.indexOf("/", baseUrl.indexOf("://") + 3));
-                String separator = intendedUrl.contains("?") ? "&" : "?";
-                String redirectUrl = devServerBase + intendedUrl + separator + "formLogin=true";
+                String redirectUrl = devServerBase + intendedUrl;
                 logger.info("开发环境重定向前端路由: {}", redirectUrl);
                 response.sendRedirect(redirectUrl);
                 return;
@@ -165,6 +184,20 @@ public class CustomLoginSuccessHandler implements AuthenticationSuccessHandler {
 
         // 默认重定向
         response.sendRedirect(intendedUrl);
+    }
+
+    private boolean isBackendOnlyPath(String path) {
+        if (path == null || path.isBlank() || !path.startsWith("/")) {
+            return false;
+        }
+        return path.startsWith("/oauth2/")
+                || path.matches("^/[a-z0-9][a-z0-9-]{1,31}/oauth2/.*$")
+                || path.startsWith("/login")
+                || path.startsWith("/logout")
+                || path.startsWith("/error")
+                || path.startsWith("/actuator")
+                || path.startsWith("/self/security/")
+                || IssuerTenantSupport.isAuthorizationServerEndpointPath(path);
     }
 
     private String extractIntendedUrl(HttpServletRequest request, HttpServletResponse response) {
@@ -254,5 +287,13 @@ public class CustomLoginSuccessHandler implements AuthenticationSuccessHandler {
             // 记录登录信息失败不应该影响登录流程，只记录日志
             logger.warn("记录用户 {} 登录信息失败: {}", user.getUsername(), e.getMessage(), e);
         }
+    }
+
+    private void freezeTenantId(HttpServletRequest request, Long tenantId) {
+        if (request == null || tenantId == null || tenantId <= 0) {
+            return;
+        }
+        var session = request.getSession(true);
+        session.setAttribute(SESSION_TENANT_ID_KEY, tenantId);
     }
 }

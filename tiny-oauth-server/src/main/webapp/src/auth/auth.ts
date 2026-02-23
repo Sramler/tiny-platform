@@ -1,11 +1,18 @@
 import { ref, computed } from 'vue'
 import type { Ref, ComputedRef } from 'vue'
-import { userManager, settings } from './oidc'
+import { oidcClient, userManager, settings } from './oidc'
 import { authRuntimeConfig } from './config'
 import type { User } from 'oidc-client-ts'
-import { jwtVerify, createRemoteJWKSet, type JWKS } from 'jose'
+import { jwtVerify, createRemoteJWKSet } from 'jose'
 import { logger, persistentLogger } from '@/utils/logger'
 import { getOrCreateTraceId } from '@/utils/traceId'
+import {
+  clearTenantId,
+  getTenantCode,
+  getTenantId,
+  syncTenantContextFromAccessToken,
+  syncTenantContextFromClaims,
+} from '@/utils/tenant'
 
 const OIDC_TRACE_ENABLED =
   import.meta.env.VITE_ENABLE_OIDC_TRACE === 'true' || !import.meta.env.PROD
@@ -29,7 +36,7 @@ const oidcTrace = (step: string, payload?: unknown) => {
  * - `userManager.metadataService.getMetadata()` 会根据 authority 加载并缓存 discovery 文档
  * - 这样既避免了多余的一次 `fetch /.well-known/openid-configuration`，又不破坏企业级职责边界
  */
-let jwks: ReturnType<typeof createRemoteJWKSet<JWKS.JSONWebKeySet>> | null = null
+let jwks: ReturnType<typeof createRemoteJWKSet> | null = null
 
 async function getJWKS() {
   if (jwks) {
@@ -75,7 +82,7 @@ export async function verifyAccessToken(token: string | null | undefined) {
 export interface AuthContext {
   user: Ref<User | null>
   isAuthenticated: ComputedRef<boolean>
-  login: () => Promise<void>
+  login: (returnUrl?: string) => Promise<void>
   logout: () => Promise<void>
   getAccessToken: () => Promise<string | null>
   fetchWithAuth: (url: string, options?: RequestInit) => Promise<Response>
@@ -89,10 +96,18 @@ let loginInProgress = false
 let lastLoginAttempt = 0
 const LOGIN_COOLDOWN = 2000 // 2秒冷却时间
 
+const appendTenantHeader = (headers: Headers): void => {
+  const tenantId = getTenantId()
+  if (tenantId) {
+    headers.set('X-Tenant-Id', tenantId)
+  }
+}
+
 // 顶层定义，避免 useAuth() 调用循环引用
-export const login = async () => {
+export const login = async (returnUrl?: string) => {
   const now = Date.now()
-  oidcTrace('login.invoke', { href: window.location.href })
+  const redirectPath = returnUrl || `${window.location.pathname}${window.location.search}`
+  oidcTrace('login.invoke', { href: window.location.href, redirectPath })
 
   // 防止重复重定向 - 检查冷却时间
   if (loginInProgress || now - lastLoginAttempt < LOGIN_COOLDOWN) {
@@ -115,27 +130,33 @@ export const login = async () => {
     return
   }
 
-  // 检查是否已经在授权服务器页面
-  if (window.location.href.includes('localhost:9000')) {
-    oidcTrace('login.skip', { reason: 'already on authorization server' })
-    return
+  const tenantCode = getTenantCode()
+  if (!tenantCode) {
+    oidcTrace('login.skip', { reason: 'missing tenantCode before authorize redirect' })
+    throw new Error('missing tenant context')
   }
 
   try {
     const traceId = getOrCreateTraceId()
-    oidcTrace('login.redirect', { redirect_uri: settings.redirect_uri, trace_id: traceId })
+    oidcTrace('login.redirect', { redirect_uri: settings.redirect_uri, trace_id: traceId, redirectPath })
     loginInProgress = true
     lastLoginAttempt = now
 
-    await userManager.signinRedirect({
+    const signinRequest = await oidcClient.createSigninRequest({
       state: {
-        returnUrl: window.location.pathname + window.location.search,
+        returnUrl: redirectPath,
         trace_id: traceId,
       },
       extraQueryParams: {
         trace_id: traceId,
       },
     })
+
+    const authorizeUrl = signinRequest.url
+    if (!authorizeUrl) {
+      throw new Error('failed to create authorize url')
+    }
+    window.location.assign(authorizeUrl)
   } catch (error) {
     logger.error('[OIDC] 登录重定向失败', error)
     oidcTrace('login.error', error)
@@ -148,12 +169,13 @@ export const logout = async () => {
   try {
     const currentUser = await userManager.getUser()
     if (currentUser && currentUser.id_token) {
+      const postLogoutRedirect = settings.post_logout_redirect_uri ?? window.location.origin
       // 为注销流程也绑定当前会话的 traceId，方便串起整条链路
       const traceId = getOrCreateTraceId()
       await userManager.signoutRedirect({
         id_token_hint: currentUser.id_token,
         // post_logout_redirect_uri 必须与后端注册值完全一致，禁止追加 query
-        post_logout_redirect_uri: settings.post_logout_redirect_uri,
+        post_logout_redirect_uri: postLogoutRedirect,
         // 将 trace_id 作为额外查询参数传给注销端点，后端过滤器会读取
         extraQueryParams: {
           trace_id: traceId,
@@ -167,9 +189,10 @@ export const logout = async () => {
 
   await userManager.removeUser()
   user.value = null
+  clearTenantId()
   loginInProgress = false
   // 本地回退：使用与后端注册值一致的固定跳转地址，避免 OIDC 校验失败
-  window.location.href = settings.post_logout_redirect_uri
+  window.location.href = settings.post_logout_redirect_uri ?? window.location.origin
 }
 
 let renewInProgress = false
@@ -179,7 +202,13 @@ async function safeSilentRenew() {
   renewInProgress = true
   try {
     const renewed = await userManager.signinSilent()
+    if (!renewed) {
+      user.value = null
+      return null
+    }
     user.value = renewed
+    syncTenantContextFromClaims(renewed.profile as Record<string, unknown>)
+    syncTenantContextFromAccessToken(renewed.access_token)
     oidcTrace('silentRenew.success', {
       hasRefreshToken: !!renewed?.refresh_token,
       scope: renewed?.scope,
@@ -216,6 +245,8 @@ export async function initAuth() {
     const u = await userManager.getUser()
     if (u && !u.expired) {
       user.value = u
+      syncTenantContextFromClaims(u.profile as Record<string, unknown>)
+      syncTenantContextFromAccessToken(u.access_token)
       oidcTrace('initAuth.restored', {
         hasRefreshToken: !!u.refresh_token,
         scope: u.scope,
@@ -227,22 +258,35 @@ export async function initAuth() {
     } else {
       oidcTrace('initAuth.noState')
       user.value = null
+      clearTenantId()
     }
   } catch (error) {
     logger.error('[OIDC] 初始化认证状态失败', error)
     oidcTrace('initAuth.error', error)
     user.value = null
+    clearTenantId()
   }
 }
 
 // 提供 Vue 组件中使用的 Auth API
 export function useAuth(): AuthContext {
   const getAccessToken = async () => {
+    if (!user.value) {
+      const cachedUser = await userManager.getUser()
+      if (cachedUser && !cachedUser.expired) {
+        user.value = cachedUser
+        syncTenantContextFromClaims(cachedUser.profile as Record<string, unknown>)
+      }
+    }
+
     if (!user.value || user.value.expired) {
       const renewed = await safeSilentRenew()
       if (!renewed) return null
     }
-    return user.value?.access_token || null
+
+    const accessToken = user.value?.access_token || null
+    syncTenantContextFromAccessToken(accessToken)
+    return accessToken
   }
 
   const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
@@ -257,6 +301,7 @@ export function useAuth(): AuthContext {
       const { addTraceIdToFetchOptions } = await import('@/utils/traceId')
       const headers = new Headers(options.headers)
       headers.set('Authorization', `Bearer ${token}`)
+      appendTenantHeader(headers)
 
       const traceOptions = addTraceIdToFetchOptions({
         ...options,
@@ -304,6 +349,8 @@ userManager.events.addUserLoaded((u) => {
     expires_at: u.expires_at,
   })
   user.value = u
+  syncTenantContextFromClaims(u.profile as Record<string, unknown>)
+  syncTenantContextFromAccessToken(u.access_token)
   loginInProgress = false // 重置登录状态
   verifyAccessToken(u.access_token)
 })
@@ -311,6 +358,7 @@ userManager.events.addUserLoaded((u) => {
 userManager.events.addUserUnloaded(() => {
   oidcTrace('event.userUnloaded')
   user.value = null
+  clearTenantId()
   loginInProgress = false // 重置登录状态
 })
 
@@ -321,6 +369,7 @@ userManager.events.addSilentRenewError((err) => {
 userManager.events.addUserSignedOut(() => {
   oidcTrace('event.userSignedOut')
   user.value = null
+  clearTenantId()
   loginInProgress = false // 重置登录状态
   // 可选：跳转登录页
   window.location.href = '/login'
