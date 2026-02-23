@@ -81,7 +81,8 @@ function handleIconSearchEnter() {
   try {
     const filtered = filteredIconList.value
     if (filtered.length === 1) {
-      selectIcon(filtered[0].name)
+      const only = filtered[0]
+      if (only) selectIcon(only.name)
     }
   } catch (error) {
     console.warn('IconSelect search error:', error)

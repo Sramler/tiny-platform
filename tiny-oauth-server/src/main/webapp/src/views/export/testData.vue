@@ -3,8 +3,8 @@
     <div class="content-card">
       <div class="form-container">
         <a-form layout="inline" :model="query">
-          <a-form-item label="租户编码">
-            <a-input v-model:value="query.tenantCode" placeholder="请输入租户编码" allow-clear />
+          <a-form-item label="租户ID">
+            <a-input :value="tenantIdDisplay" disabled />
           </a-form-item>
           <a-form-item label="产品编码">
             <a-input v-model:value="query.productCode" placeholder="请输入产品编码" allow-clear />
@@ -283,8 +283,8 @@
       :title="drawerMode === 'create' ? '新建测试数据' : drawerMode === 'edit' ? '编辑测试数据' : '查看测试数据'" width="50%"
       :get-container="false" :style="{ position: 'absolute' }" @close="handleDrawerClose">
       <a-form :model="formState" layout="vertical">
-        <a-form-item label="租户编码">
-          <a-input v-model:value="formState.tenantCode" :disabled="drawerMode === 'view'" />
+        <a-form-item label="租户ID">
+          <a-input :value="tenantIdDisplay" disabled />
         </a-form-item>
         <a-form-item label="用量日期">
           <a-date-picker v-model:value="formState.usageDate" style="width: 100%" :disabled="drawerMode === 'view'" />
@@ -534,12 +534,13 @@ import {
 } from '@/api/demoExportUsage'
 import { useThrottle } from '@/utils/debounce'
 import request from '@/utils/request'
+import { getTenantId } from '@/utils/tenant'
 
 const router = useRouter()
 
 interface DemoUsageFormState {
   id?: number
-  tenantCode: string
+  tenantId: number
   usageDate: Dayjs | null
   productCode: string
   productName: string
@@ -583,10 +584,22 @@ const statusColorMap: Record<string, string> = {
 }
 
 const query = ref({
-  tenantCode: '',
+  tenantId: '',
   productCode: '',
   status: undefined as string | undefined,
 })
+
+const tenantIdDisplay = computed(() => {
+  const tenantId = resolveTenantId()
+  return tenantId != null ? String(tenantId) : '-'
+})
+
+function resolveTenantId(): number | undefined {
+  const raw = getTenantId()
+  if (!raw) return undefined
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
 
 const tableData = ref<any[]>([])
 const loading = ref(false)
@@ -620,7 +633,7 @@ const paginationConfig = computed(() => {
 
 const INITIAL_COLUMNS = [
   { title: 'ID', dataIndex: 'id', width: 80, sorter: true },
-  { title: '租户编码', dataIndex: 'tenantCode', width: 140 },
+  { title: '租户ID', dataIndex: 'tenantId', width: 140 },
   { title: '用量日期', dataIndex: 'usageDate', width: 120, sorter: true },
   { title: '产品编码', dataIndex: 'productCode', width: 120 },
   { title: '产品名称', dataIndex: 'productName', width: 160 },
@@ -658,7 +671,7 @@ const INITIAL_COLUMNS = [
 
 // 默认显示的列（基础字段 + 部分重要新字段）
 const DEFAULT_VISIBLE_COLUMNS = [
-  'id', 'tenantCode', 'usageDate', 'productCode', 'productName',
+  'id', 'tenantId', 'usageDate', 'productCode', 'productName',
   'usageQty', 'unit', 'amount', 'currency', 'billable', 'status',
   'priority', 'qualityScore', 'customerName', 'action'
 ]
@@ -708,10 +721,17 @@ const tableLocale = computed(() => {
 })
 
 async function loadData() {
+  const tenantId = resolveTenantId()
+  if (!tenantId) {
+    message.error('请先选择租户')
+    tableData.value = []
+    pagination.value.total = 0
+    return
+  }
   loading.value = true
   try {
     const params = {
-      tenantCode: query.value.tenantCode.trim(),
+      tenantId,
       productCode: query.value.productCode.trim(),
       status: query.value.status,
       current: pagination.value.current,
@@ -735,7 +755,7 @@ function handleSearch() {
 const throttledSearch = useThrottle(handleSearch, 800)
 
 function handleReset() {
-  query.value.tenantCode = ''
+  query.value.tenantId = resolveTenantId() ? String(resolveTenantId()) : ''
   query.value.productCode = ''
   query.value.status = undefined
   pagination.value.current = 1
@@ -770,7 +790,7 @@ function handlePageSizeChange(_current: number, size: number) {
 const drawerVisible = ref(false)
 const drawerMode = ref<'create' | 'edit' | 'view'>('create')
 const formState = ref<DemoUsageFormState>({
-  tenantCode: '',
+  tenantId: 0,
   usageDate: null,
   productCode: '',
   productName: '',
@@ -947,9 +967,14 @@ const generateFormState = ref({
 })
 
 function openCreateDrawer() {
+  const tenantId = resolveTenantId()
+  if (!tenantId) {
+    message.error('请先选择租户')
+    return
+  }
   drawerMode.value = 'create'
   formState.value = {
-    tenantCode: '',
+    tenantId,
     usageDate: dayjs(),
     productCode: '',
     productName: '',
@@ -991,7 +1016,7 @@ function openEditDrawer(record: any) {
   drawerMode.value = 'edit'
   formState.value = {
     id: record.id,
-    tenantCode: record.tenantCode || '',
+    tenantId: record.tenantId ?? resolveTenantId() ?? 0,
     usageDate: record.usageDate ? dayjs(record.usageDate) : null,
     productCode: record.productCode || '',
     productName: record.productName || '',
@@ -1033,7 +1058,7 @@ function handleView(record: any) {
   drawerMode.value = 'view'
   formState.value = {
     id: record.id,
-    tenantCode: record.tenantCode || '',
+    tenantId: record.tenantId ?? resolveTenantId() ?? 0,
     usageDate: record.usageDate ? dayjs(record.usageDate) : null,
     productCode: record.productCode || '',
     productName: record.productName || '',
@@ -1078,8 +1103,13 @@ function handleDrawerClose() {
 }
 
 async function handleSubmit() {
+  const tenantId = resolveTenantId()
+  if (!tenantId) {
+    message.error('请先选择租户')
+    return
+  }
   const payload: any = {
-    tenantCode: formState.value.tenantCode,
+    tenantId,
     usageDate: formState.value.usageDate ? formState.value.usageDate.format('YYYY-MM-DD') : null,
     productCode: formState.value.productCode,
     productName: formState.value.productName,
@@ -1167,6 +1197,11 @@ function handleGenerateDrawerClose() {
 }
 
 async function handleGenerateSubmit() {
+  const tenantId = resolveTenantId()
+  if (!tenantId) {
+    message.error('请先选择租户')
+    return
+  }
   if (!generateFormState.value.days || generateFormState.value.days <= 0) {
     message.warning('请输入有效的生成天数')
     return
@@ -1180,6 +1215,7 @@ async function handleGenerateSubmit() {
   try {
     await generateDemoExportUsage(
       {
+        tenantId,
         days: generateFormState.value.days,
         rowsPerDay: generateFormState.value.rowsPerDay,
         targetRows: generateFormState.value.targetRows || 0,
@@ -1249,6 +1285,11 @@ function parseCategoryPath(categoryPath: any): string[] {
 }
 
 async function handleClearDemo() {
+  const tenantId = resolveTenantId()
+  if (!tenantId) {
+    message.error('请先选择租户')
+    return
+  }
   Modal.confirm({
     title: '清空测试数据',
     content: '此操作将删除 demo_export_usage 表中的所有记录，仅建议在开发/测试环境使用，确认继续？',
@@ -1257,7 +1298,7 @@ async function handleClearDemo() {
     cancelText: '取消',
     onOk: async () => {
       try {
-        await clearDemoExportUsage()
+        await clearDemoExportUsage({ tenantId })
         message.success('已清空测试数据')
         loadData()
       } catch (error: any) {
@@ -1682,8 +1723,9 @@ const getExportColumns = () => {
 // 构建导出请求的过滤条件
 const getExportFilters = () => {
   const filters: Record<string, any> = {}
-  if (query.value.tenantCode?.trim()) {
-    filters.tenantCode = query.value.tenantCode.trim()
+  const tenantId = resolveTenantId()
+  if (tenantId) {
+    filters.tenantId = tenantId
   }
   if (query.value.productCode?.trim()) {
     filters.productCode = query.value.productCode.trim()
@@ -1696,6 +1738,11 @@ const getExportFilters = () => {
 
 // 同步导出当前页数据
 async function handleExportSync() {
+  const tenantId = resolveTenantId()
+  if (!tenantId) {
+    message.error('请先选择租户')
+    return
+  }
   exporting.value = true
   try {
     const baseFilters = getExportFilters()
@@ -1741,6 +1788,11 @@ async function handleExportSync() {
 
 // 异步导出全部数据
 async function handleExportAsync() {
+  const tenantId = resolveTenantId()
+  if (!tenantId) {
+    message.error('请先选择租户')
+    return
+  }
   exportingAsync.value = true
   try {
     const exportRequest = {

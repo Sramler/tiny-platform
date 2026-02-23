@@ -438,7 +438,7 @@ async function loadData() {
     }
     const res = await userList(params)
     tableData.value = Array.isArray(res.records) ? res.records : []
-    pagination.value.total = Number(res.total ?? res.totalElements ?? 0)
+    pagination.value.total = Number(res.total ?? 0)
   } catch (error) {
     tableData.value = []
     pagination.value.total = 0

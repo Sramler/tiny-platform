@@ -37,6 +37,7 @@ public class DemoExportUsageController {
      */
     @PostMapping("/generate")
     public ResponseEntity<Map<String, Object>> generate(
+            @RequestParam Long tenantId,
             @RequestParam(defaultValue = "7") int days,
             @RequestParam(defaultValue = "2000") int rowsPerDay,
             @RequestParam(defaultValue = "0") int targetRows,
@@ -50,7 +51,7 @@ public class DemoExportUsageController {
         // #endregion agent log
 
         // 同步调用存储过程，让前端等待任务完成（配合前端单次请求自定义 timeout）
-        service.generateDemoData(days, rowsPerDay, targetRows, clearExisting);
+        service.generateDemoData(tenantId, days, rowsPerDay, targetRows, clearExisting);
 
         long elapsed = System.currentTimeMillis() - start;
         // #region agent log
@@ -62,6 +63,7 @@ public class DemoExportUsageController {
 
         return ResponseEntity.ok(Map.of(
                 "message", "已生成测试数据",
+                "tenantId", tenantId,
                 "days", days,
                 "rowsPerDay", rowsPerDay,
                 "targetRows", targetRows,
@@ -74,9 +76,9 @@ public class DemoExportUsageController {
      * 清空所有测试数据
      */
     @PostMapping("/clear")
-    public ResponseEntity<Map<String, Object>> clear() {
-        service.clearAll();
-        return ResponseEntity.ok(Map.of("message", "已清空所有测试数据"));
+    public ResponseEntity<Map<String, Object>> clear(@RequestParam Long tenantId) {
+        service.clearByTenantId(tenantId);
+        return ResponseEntity.ok(Map.of("message", "已清空租户测试数据", "tenantId", tenantId));
     }
 
     @PutMapping("/{id}")
@@ -102,15 +104,14 @@ public class DemoExportUsageController {
      */
     @GetMapping
     public ResponseEntity<PageResponse<DemoExportUsageEntity>> list(
-            @RequestParam(required = false) String tenantCode,
+            @RequestParam(required = false) Long tenantId,
             @RequestParam(required = false) String productCode,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) LocalDate startDate,
             @RequestParam(required = false) LocalDate endDate,
             @PageableDefault(size = 10, sort = "id", direction = Sort.Direction.DESC) Pageable pageable) {
         return ResponseEntity.ok(
-                new PageResponse<>(service.search(tenantCode, productCode, status, startDate, endDate, pageable)));
+                new PageResponse<>(service.search(tenantId, productCode, status, startDate, endDate, pageable)));
     }
 }
-
 

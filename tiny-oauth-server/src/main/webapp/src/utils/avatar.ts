@@ -54,7 +54,7 @@ export function generateAvatarColor(userId: string | number | null | undefined, 
   const hash = stringToHash(seed)
   const colorIndex = hash % COLOR_PAIRS.length
   
-  return COLOR_PAIRS[colorIndex]
+  return COLOR_PAIRS[colorIndex] ?? ['#667eea', '#764ba2']
 }
 
 /**

@@ -132,6 +132,7 @@ function findMenuPosition(
 ): MenuPosition | null {
   for (let i = 0; i < menuList.length; i++) {
     const item = menuList[i]
+    if (!item) continue
 
     // 检查一级菜单
     if (item.url === targetPath) {
@@ -145,6 +146,7 @@ function findMenuPosition(
     if (hasChildren(item)) {
       for (let j = 0; j < item.children!.length; j++) {
         const sub = item.children![j]
+        if (!sub) continue
 
         if (sub.url === targetPath) {
           return {
@@ -156,6 +158,7 @@ function findMenuPosition(
         // 检查三级菜单
         if (hasChildren(sub)) {
           for (const third of sub.children!) {
+            if (!third) continue
             if (third.url === targetPath) {
               return {
                 firstLevelIdx: i,

@@ -66,7 +66,7 @@
                                 <div style="display: flex; align-items: center;">
                                     <a-checkbox :checked="showColumnKeys.length === allColumns.length"
                                         :indeterminate="showColumnKeys.length > 0 && showColumnKeys.length < allColumns.length"
-                                        @change="(e: any) => onCheckAllChange(e)" />
+                                        @change="onCheckAllChange" />
                                     <span style="font-weight: bold; margin-left: 8px;">列展示/排序</span>
                                 </div>
                                 <span style="font-weight: bold; color: #1677ff; cursor: pointer;"
@@ -75,14 +75,14 @@
                                 </span>
                             </div>
                             <VueDraggable v-model="draggableColumns"
-                                :item-key="(item: any) => item?.dataIndex || `col_${Math.random()}`"
+                                :item-key="(item: { dataIndex?: string }) => item?.dataIndex || `col_${Math.random()}`"
                                 handle=".drag-handle" @end="onDragEnd" class="draggable-columns"
                                 ghost-class="sortable-ghost" chosen-class="sortable-chosen" tag="div">
                                 <template #item="{ element: col }">
                                     <div class="draggable-column-item">
                                         <HolderOutlined class="drag-handle" />
                                         <a-checkbox :checked="showColumnKeys.includes(col.dataIndex)"
-                                            @change="(e: any) => onCheckboxChange(col.dataIndex, e.target.checked)">
+                                            @change="(e: { target: { checked: boolean } }) => onCheckboxChange(col.dataIndex, e.target.checked)">
                                             {{ col.title }}
                                         </a-checkbox>
                                     </div>
@@ -241,14 +241,15 @@ const query = ref({
     tenantId: ''
 })
 
-const tableData = ref<any[]>([])
+const tableData = ref<Deployment[]>([])
 const loading = ref(false)
 const refreshing = ref(false)
 const selectedRowKeys = ref<string[]>([])
 const showDeploymentDetail = ref(false)
 const selectedDeployment = ref<Deployment | null>(null)
 const showSortTooltip = ref(true)
-const fileList = ref([])
+type UploadFileLike = { uid?: string; name?: string; type?: string; size?: number }
+const fileList = ref<UploadFileLike[]>([])
 
 const tenants = ref<Array<{ id: string; name: string }>>([])
 
@@ -326,7 +327,7 @@ function onCheckboxChange(dataIndex: string, checked: boolean) {
     }
 }
 
-function onCheckAllChange(e: any) {
+function onCheckAllChange(e: { target: { checked: boolean } }) {
     if (e.target.checked) {
         showColumnKeys.value = INITIAL_COLUMNS.map(col => col.dataIndex)
     } else {
@@ -342,7 +343,7 @@ function resetColumnOrder() {
         .map(col => col.dataIndex)
 }
 
-function onDragEnd(event: any) {
+function onDragEnd(_event: unknown) {
     console.log('拖拽结束，新顺序:', draggableColumns.value.map(col => col.title))
 }
 
@@ -374,7 +375,7 @@ const columns = computed(() => {
 
 const rowSelection = computed(() => ({
     selectedRowKeys: selectedRowKeys.value,
-    onChange: (selectedKeys: string[], selectedRows: any[]) => {
+    onChange: (selectedKeys: string[], selectedRows: Deployment[]) => {
         selectedRowKeys.value = selectedKeys;
     },
     checkStrictly: false,
@@ -450,7 +451,7 @@ function handleReset() {
 
 const throttledReset = useThrottle(handleReset, 1000)
 
-function handleTableChange(pag: any, filters: any, sorter: any) {
+function handleTableChange(pag: { current?: number; pageSize?: number }, _filters: unknown, _sorter: unknown) {
     if (pag && typeof pag.current === 'number') {
         pagination.value.current = pag.current
     }
@@ -475,14 +476,14 @@ function clearSelection() {
     selectedRowKeys.value = []
 }
 
-function getRowClassName(record: any) {
+function getRowClassName(record: Deployment) {
     if (selectedRowKeys.value.includes(record.id)) {
         return 'checkbox-selected-row'
     }
     return ''
 }
 
-function onCustomRow(record: any) {
+function onCustomRow(record: Deployment) {
     return {
         onClick: (event: MouseEvent) => {
             if ((event.target as HTMLElement).closest('.ant-checkbox-wrapper')) return;
@@ -527,7 +528,7 @@ function handleBatchDelete() {
         onOk: () => {
             return Promise.all(
                 selectedRowKeys.value.map(id =>
-                    deploymentApi.deleteDeployment(id, true).catch(error => {
+                    deploymentApi.deleteDeployment(id).catch(error => {
                         console.error(`删除部署记录 ${id} 失败:`, error)
                         throw error
                     })
@@ -536,9 +537,9 @@ function handleBatchDelete() {
                 message.success('批量删除成功')
                 selectedRowKeys.value = []
                 loadData()
-            }).catch((error: any) => {
+            }).catch((error: unknown) => {
                 // 优先使用 Problem 格式的 detail，否则使用 error.message
-            const errorMessage = (error as any)?.errorInfo?.message || error?.message || '未知错误'
+            const errorMessage = (error as { errorInfo?: { message?: string } })?.errorInfo?.message || (error as Error)?.message || '未知错误'
             message.error('批量删除失败: ' + errorMessage)
                 return Promise.reject(error)
             })
@@ -548,55 +549,63 @@ function handleBatchDelete() {
 
 const throttledBatchDelete = useThrottle(handleBatchDelete, 1000)
 
-function handleView(record: any) {
+function handleView(record: Deployment) {
     selectedDeployment.value = record
     showDeploymentDetail.value = true
 }
 
-const throttledView = useThrottle(handleView, 500)
+const throttledView = useThrottle((record: unknown) => handleView(record as Deployment), 500)
 
-function handleDownload(record: any) {
+function handleDownload(_record: Deployment) {
     try {
         // 实现下载功能
         message.info('下载功能开发中...')
         // TODO: 实现部署文件下载功能
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('下载失败:', error)
-        message.error('下载失败：' + (error.message || '未知错误'))
+        const errorMessage = error instanceof Error ? error.message : '未知错误'
+        message.error('下载失败：' + errorMessage)
     }
 }
 
-const throttledDownload = useThrottle(handleDownload, 500)
+const throttledDownload = useThrottle((record: unknown) => handleDownload(record as Deployment), 500)
 
-function handleDelete(record: any) {
+function handleDelete(record: Deployment) {
     Modal.confirm({
         title: '确认删除',
         content: `确定要删除部署记录 ${record.name} 吗？`,
         okText: '确认',
         cancelText: '取消',
         onOk: () => {
-            return deploymentApi.deleteDeployment(record.id, true)
+            return deploymentApi.deleteDeployment(record.id)
                 .then(() => {
                     message.success('部署记录删除成功')
                     loadData()
                 })
-                .catch((error: any) => {
-                    message.error('删除部署记录失败: ' + (error.message || '未知错误'))
+                .catch((error: unknown) => {
+                    const errorMessage = error instanceof Error ? error.message : '未知错误'
+                    message.error('删除部署记录失败: ' + errorMessage)
                     return Promise.reject(error)
                 })
         }
     })
 }
 
-const throttledDelete = useThrottle(handleDelete, 500)
+const throttledDelete = useThrottle((record: unknown) => handleDelete(record as Deployment), 500)
 
-const beforeUpload = (file: any) => {
-    const isBpmn = file.type === 'application/xml' || file.name.endsWith('.bpmn') || file.name.endsWith('.xml')
+const beforeUpload = (file: UploadFileLike) => {
+    const fileName = file.name || ''
+    if (!fileName) {
+        message.error('文件名无效!')
+        return false
+    }
+    const isBpmn = file.type === 'application/xml' || fileName.endsWith('.bpmn') || fileName.endsWith('.xml')
     if (!isBpmn) {
         message.error('只能上传 BPMN 或 XML 文件!')
         return false
     }
-    const isLt10M = file.size / 1024 / 1024 < 10
+    const fileSize = file.size ?? 0
+    const isLt10M = fileSize / 1024 / 1024 < 10
     if (!isLt10M) {
         message.error('文件大小不能超过 10MB!')
         return false
@@ -604,12 +613,12 @@ const beforeUpload = (file: any) => {
     return true
 }
 
-const handleUpload = async (options: any) => {
+const handleUpload = async (options: { file: File }) => {
     const { file } = options
     try {
         const formData = new FormData()
         formData.append('file', file)
-        formData.append('name', file.name)
+        formData.append('name', file.name || 'process.bpmn')
         if (query.value.tenantId) {
             formData.append('tenantId', query.value.tenantId)
         }
@@ -617,9 +626,10 @@ const handleUpload = async (options: any) => {
         const result = await deploymentApi.deployProcess(formData)
         message.success('流程部署成功!')
         loadData()
-    } catch (error: any) {
+    } catch (error: unknown) {
         console.error('部署失败:', error)
-        message.error('部署失败：' + (error.message || '未知错误'))
+        const errorMessage = error instanceof Error ? error.message : '未知错误'
+        message.error('部署失败：' + errorMessage)
     }
 }
 

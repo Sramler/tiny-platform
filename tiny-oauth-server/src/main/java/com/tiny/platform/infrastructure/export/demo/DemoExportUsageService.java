@@ -33,7 +33,7 @@ public class DemoExportUsageService {
     public DemoExportUsageEntity update(Long id, DemoExportUsageEntity entity) {
         DemoExportUsageEntity existing = repository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("记录不存在: " + id));
-        existing.setTenantCode(entity.getTenantCode());
+        existing.setTenantId(entity.getTenantId());
         existing.setUsageDate(entity.getUsageDate());
         existing.setProductCode(entity.getProductCode());
         existing.setProductName(entity.getProductName());
@@ -83,7 +83,7 @@ public class DemoExportUsageService {
     }
 
     public Page<DemoExportUsageEntity> search(
-            String tenantCode,
+            Long tenantId,
             String productCode,
             String status,
             LocalDate startDate,
@@ -93,7 +93,7 @@ public class DemoExportUsageService {
         // #region agent log
         try (FileWriter fw = new FileWriter("/Users/bliu/code/tiny-platform/.cursor/debug.log", true)) {
             fw.write("{\"sessionId\":\"debug-session\",\"runId\":\"list-debug\",\"hypothesisId\":\"H3\",\"location\":\"DemoExportUsageService.search:before\",\"message\":\"search called\",\"data\":{" +
-                    "\"tenantCode\":\"" + (tenantCode == null ? "" : tenantCode) + "\"," +
+                    "\"tenantId\":\"" + (tenantId == null ? "" : tenantId) + "\"," +
                     "\"productCode\":\"" + (productCode == null ? "" : productCode) + "\"," +
                     "\"status\":\"" + (status == null ? "" : status) + "\"," +
                     "\"page\":" + pageable.getPageNumber() + "," +
@@ -105,8 +105,8 @@ public class DemoExportUsageService {
 
         Specification<DemoExportUsageEntity> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
-            if (tenantCode != null && !tenantCode.isBlank()) {
-                predicates.add(cb.equal(root.get("tenantCode"), tenantCode));
+            if (tenantId != null) {
+                predicates.add(cb.equal(root.get("tenantId"), tenantId));
             }
             if (productCode != null && !productCode.isBlank()) {
                 predicates.add(cb.equal(root.get("productCode"), productCode));
@@ -148,12 +148,13 @@ public class DemoExportUsageService {
 
     /**
      * 调用存储过程生成测试数据 sp_generate_demo_export_usage
+     * @param tenantId 租户ID
      * @param days 生成天数
      * @param rowsPerDay 每天生成行数
      * @param targetRows 目标总行数（0 表示不限制）
      * @param clearExisting 是否清空现有数据（true=清空，false=保留）
      */
-    public int generateDemoData(int days, int rowsPerDay, int targetRows, boolean clearExisting) {
+    public int generateDemoData(Long tenantId, int days, int rowsPerDay, int targetRows, boolean clearExisting) {
         long start = System.currentTimeMillis();
         // #region agent log
         try (FileWriter fw = new FileWriter("/Users/bliu/code/tiny-platform/.cursor/debug.log", true)) {
@@ -163,13 +164,16 @@ public class DemoExportUsageService {
         // #endregion agent log
 
         // 简单防御性校验
+        if (tenantId == null || tenantId <= 0) {
+            tenantId = 1L;
+        }
         if (days <= 0) days = 7;
         if (rowsPerDay <= 0) rowsPerDay = 2000;
         if (targetRows < 0) targetRows = 0;
 
         // 将 boolean 转换为 TINYINT(1)：true=1, false=0
         int clearFlag = clearExisting ? 1 : 0;
-        jdbcTemplate.update("CALL sp_generate_demo_export_usage(?, ?, ?, ?)", days, rowsPerDay, targetRows, clearFlag);
+        jdbcTemplate.update("CALL sp_generate_demo_export_usage(?, ?, ?, ?, ?)", tenantId, days, rowsPerDay, targetRows, clearFlag);
 
         long elapsed = System.currentTimeMillis() - start;
         // #region agent log
@@ -186,9 +190,10 @@ public class DemoExportUsageService {
     /**
      * 清空所有测试数据
      */
-    public void clearAll() {
-        repository.deleteAllInBatch();
+    public void clearByTenantId(Long tenantId) {
+        if (tenantId == null || tenantId <= 0) {
+            throw new IllegalArgumentException("tenantId is required");
+        }
+        repository.deleteByTenantId(tenantId);
     }
 }
-
-

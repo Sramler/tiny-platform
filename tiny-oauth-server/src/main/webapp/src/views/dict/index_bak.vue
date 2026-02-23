@@ -244,7 +244,6 @@ import { PlusOutlined, ReloadOutlined, PoweroffOutlined, SettingOutlined, Holder
 import { message, Modal } from 'ant-design-vue'
 import VueDraggable from 'vuedraggable'
 import { useThrottle } from '@/utils/debounce'
-import type { TableColumnsType } from 'ant-design-vue'
 import {
   getDictTypeList,
   createDictType,
@@ -340,7 +339,7 @@ const paginationConfig = computed(() => {
 })
 
 // 阶段4: 列定义
-const INITIAL_COLUMNS: TableColumnsType = [
+const INITIAL_COLUMNS: Array<Record<string, any>> = [
   { title: 'ID', dataIndex: 'id', width: 80, sorter: true },
   { title: '字典编码', dataIndex: 'dictCode', width: 150 },
   { title: '字典名称', dataIndex: 'dictName', width: 150 },
@@ -360,7 +359,7 @@ const DEFAULT_VISIBLE_COLUMNS = [
 ]
 
 // 列管理相关（将在阶段8完善）
-const allColumns = ref([...INITIAL_COLUMNS])
+const allColumns = ref<Array<Record<string, any>>>([...INITIAL_COLUMNS])
 const draggableColumns = ref([...INITIAL_COLUMNS])
 const showColumnKeys = ref(DEFAULT_VISIBLE_COLUMNS.filter((key): key is string => typeof key === 'string'))
 const isSyncingColumns = ref(false)

@@ -260,7 +260,9 @@ const currentUser = computed(() => {
         try {
             const token = user.value.access_token
             if (token) {
-                const payload = JSON.parse(atob(token.split('.')[1]))
+                const parts = token.split('.')
+                if (!parts[1]) return 'admin'
+                const payload = JSON.parse(atob(parts[1]))
                 return payload.preferred_username || payload.sub || payload.username || 'admin'
             }
         } catch (error) {

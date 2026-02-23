@@ -1,18 +1,26 @@
 import request from '@/utils/request'
 
-export function roleList(params: any) {
+export type Role = {
+  id: string
+  code?: string
+  name: string
+  description?: string
+  tenantId?: number
+}
+
+export function roleList(params: { current?: number; pageSize?: number; name?: string; code?: string }) {
   return request.get('/sys/roles', { params })
 }
 
 export function getRoleById(id: string) {
-  return request.get(`/sys/roles/${id}`)
+  return request.get<Role>(`/sys/roles/${id}`)
 }
 
-export function createRole(data: any) {
+export function createRole(data: Partial<Role> & Record<string, unknown>) {
   return request.post('/sys/roles', data)
 }
 
-export function updateRole(id: string, data: any) {
+export function updateRole(id: string, data: Partial<Role> & Record<string, unknown>) {
   return request.put(`/sys/roles/${id}`, data)
 }
 
@@ -22,7 +30,7 @@ export function deleteRole(id: string) {
 
 // 获取所有角色（不分页，适用于a-transfer）
 export function getAllRoles() {
-  return request.get('/sys/roles/all')
+  return request.get<Role[]>('/sys/roles/all')
 }
 
 // 获取某角色下已分配用户（返回用户ID数组或用户列表，需后端实现）

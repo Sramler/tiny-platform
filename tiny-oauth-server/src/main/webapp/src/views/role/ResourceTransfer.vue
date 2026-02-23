@@ -10,11 +10,11 @@
           <!-- 左侧树形结构 -->
           <a-tree v-if="direction === 'left'" block-node checkable default-expand-all :checked-keys="[]"
             :tree-data="leftTreeData" :field-names="{ title: 'title', key: 'key', children: 'children' }"
-            @check="(_, info: any) => handleTreeCheck(info)" @select="(_, info: any) => handleTreeSelect(info)" />
+            @check="onTreeCheck" @select="onTreeSelect" />
           <!-- 右侧树形结构 -->
           <a-tree v-if="direction === 'right'" block-node checkable default-expand-all :checked-keys="rightKeys"
             :tree-data="rightTreeData" :field-names="{ title: 'title', key: 'key', children: 'children' }"
-            @check="(_, info: any) => handleTreeCheck(info)" @select="(_, info: any) => handleTreeSelect(info)" />
+            @check="onTreeCheck" @select="onTreeSelect" />
         </template>
       </a-transfer>
     </div>
@@ -37,20 +37,39 @@ const emit = defineEmits(['update:open', 'submit'])
 
 // 控制弹窗显示
 const visible = ref(props.open)
-watch(() => props.open, v => visible.value = v)
-watch(visible, v => emit('update:open', v))
+watch(() => props.open, (v: boolean) => (visible.value = v))
+watch(visible, (v: boolean) => emit('update:open', v))
 
 // 加载状态
 const loading = ref(false)
 
+type ResourceTreeNode = {
+  id?: number | string
+  title?: string
+  name?: string
+  children?: ResourceTreeNode[]
+}
+
+type TransferTreeNode = {
+  key: number
+  title: string
+  children?: TransferTreeNode[]
+}
+
+type TransferItem = {
+  key: number
+  title: string
+  disabled: boolean
+}
+
 // 原始树形数据（从后端加载）
-const originalTreeData = ref<any[]>([]);
+const originalTreeData = ref<TransferTreeNode[]>([]);
 
 // 已分配资源key
 const rightKeys = ref<number[]>([]);
 
 // 扁平化的transfer数据源
-const transferDataSource = ref<any[]>([]);
+const transferDataSource = ref<TransferItem[]>([]);
 
 type TreeNodeInfo = {
   key: number
@@ -58,7 +77,15 @@ type TreeNodeInfo = {
   children: number[]
 }
 
+type TreeEventInfo = {
+  node: { eventKey?: string | number }
+  checked?: boolean
+}
+
 const treeNodeMap = new Map<number, TreeNodeInfo>()
+
+const onTreeCheck = (_: unknown, info: unknown) => handleTreeCheck(info as TreeEventInfo)
+const onTreeSelect = (_: unknown, info: unknown) => handleTreeSelect(info as TreeEventInfo)
 
 // 加载资源树数据
 async function loadResourceTree() {
@@ -96,16 +123,16 @@ async function loadRoleResources(targetRoleId?: number) {
 }
 
 // 转换树数据格式
-function transformTreeData(nodes: any[]): any[] {
+function transformTreeData(nodes: ResourceTreeNode[]): TransferTreeNode[] {
   return nodes.map(node => ({
     key: Number(node.id), // 确保key为number类型
-    title: node.title || node.name, // 优先使用title，备选使用name
+    title: node.title || node.name || '', // 优先使用title，备选使用name
     children: node.children ? transformTreeData(node.children) : undefined
   }))
 }
 
 // 扁平化树形数据为transfer组件需要的格式
-function flattenTreeData(list: any[] = []) {
+function flattenTreeData(list: TransferTreeNode[] = []) {
   transferDataSource.value = [];
   list.forEach(item => {
     transferDataSource.value.push({
@@ -119,10 +146,10 @@ function flattenTreeData(list: any[] = []) {
   });
 }
 
-function buildTreeMap(nodes: any[] = [], parent?: number) {
+function buildTreeMap(nodes: TransferTreeNode[] = [], parent?: number) {
   nodes.forEach(node => {
     const key = Number(node.key)
-    const children = node.children ? node.children.map((child: any) => Number(child.key)) : []
+    const children = node.children ? node.children.map((child) => Number(child.key)) : []
     treeNodeMap.set(key, { key, parent, children })
     if (node.children) {
       buildTreeMap(node.children, key)
@@ -199,39 +226,43 @@ function handleTreeData(treeNodes: any[], targetKeys: (string | number)[] = []):
 }
 
 // 递归过滤树，仅保留key在rightKeys中的节点（已分配的资源）
-function filterAssignedTree(nodes: any[], assignedKeys: (string | number)[]): any[] {
-  return nodes
-    .map(node => {
-      if (assignedKeys.includes(node.key)) {
-        const children = node.children ? filterAssignedTree(node.children, assignedKeys) : [];
-        return { ...node, children: children.length > 0 ? children : undefined };
-      } else if (node.children) {
-        const children = filterAssignedTree(node.children, assignedKeys);
-        if (children.length > 0) {
-          return { ...node, children };
-        }
+function filterAssignedTree(nodes: TransferTreeNode[], assignedKeys: (string | number)[]): TransferTreeNode[] {
+  const result: TransferTreeNode[] = []
+  for (const node of nodes) {
+    if (assignedKeys.includes(node.key)) {
+      const children = node.children ? filterAssignedTree(node.children, assignedKeys) : []
+      result.push({ ...node, children: children.length > 0 ? children : undefined })
+      continue
+    }
+
+    if (node.children) {
+      const children = filterAssignedTree(node.children, assignedKeys)
+      if (children.length > 0) {
+        result.push({ ...node, children })
       }
-      return null;
-    })
-    .filter(Boolean);
+    }
+  }
+  return result
 }
 
 // 递归过滤树，仅保留key不在rightKeys中的节点（未分配的资源）
-function filterUnassignedTree(nodes: any[], assignedKeys: (string | number)[]): any[] {
-  return nodes
-    .map(node => {
-      if (!assignedKeys.includes(node.key)) {
-        const children = node.children ? filterUnassignedTree(node.children, assignedKeys) : [];
-        return { ...node, children: children.length > 0 ? children : undefined };
-      } else if (node.children) {
-        const children = filterUnassignedTree(node.children, assignedKeys);
-        if (children.length > 0) {
-          return { ...node, children };
-        }
+function filterUnassignedTree(nodes: TransferTreeNode[], assignedKeys: (string | number)[]): TransferTreeNode[] {
+  const result: TransferTreeNode[] = []
+  for (const node of nodes) {
+    if (!assignedKeys.includes(node.key)) {
+      const children = node.children ? filterUnassignedTree(node.children, assignedKeys) : []
+      result.push({ ...node, children: children.length > 0 ? children : undefined })
+      continue
+    }
+
+    if (node.children) {
+      const children = filterUnassignedTree(node.children, assignedKeys)
+      if (children.length > 0) {
+        result.push({ ...node, children })
       }
-      return null;
-    })
-    .filter(Boolean);
+    }
+  }
+  return result
 }
 
 // 左侧树数据 (只显示未分配的资源)
@@ -241,15 +272,15 @@ const leftTreeData = computed(() => filterUnassignedTree(originalTreeData.value,
 const rightTreeData = computed(() => filterAssignedTree(originalTreeData.value, rightKeys.value));
 
 // 处理树节点选中事件
-const handleTreeCheck = (info: any) => {
+const handleTreeCheck = (info: TreeEventInfo) => {
   const { eventKey } = info.node
   if (eventKey === undefined) return
-  const checked = info.checked
+  const checked = !!info.checked
   toggleCascadeSelection(Number(eventKey), checked)
 }
 
 // 处理树节点选择事件（与勾选行为保持一致）
-const handleTreeSelect = (info: any) => {
+const handleTreeSelect = (info: TreeEventInfo) => {
   const { eventKey } = info.node
   if (eventKey === undefined) return
   const isSelected = rightKeys.value.includes(Number(eventKey))

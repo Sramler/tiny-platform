@@ -1,4 +1,5 @@
 import request from '@/utils/request'
+import type { UserSummary } from '@/api/user'
 
 export interface ProcessDefinition {
   id: string
@@ -8,15 +9,22 @@ export interface ProcessDefinition {
   deploymentId: string
   deploymentTime: string
   tenantId?: string
+  suspended?: boolean
+  created?: string
+  description?: string
 }
 
 export interface ProcessInstance {
   id: string
   processDefinitionId: string
-  processDefinitionName: string
-  suspended: boolean
+  processDefinitionName?: string
+  processKey?: string
+  suspended?: boolean
   startTime: string
+  endTime?: string
+  state?: string
   tenantId?: string
+  variables?: Record<string, unknown>
 }
 
 export interface Task {
@@ -28,17 +36,6 @@ export interface Task {
   dueDate?: string
   priority?: number
   tenantId?: string
-}
-
-export interface ProcessInstance {
-  id: string
-  processKey: string
-  processDefinitionId: string
-  state: string
-  startTime: string
-  endTime?: string
-  tenantId?: string
-  variables?: Record<string, any>
 }
 
 export interface Deployment {
@@ -73,12 +70,12 @@ export interface ProcessInfo {
 
 export interface StartProcessRequest {
   processKey: string
-  variables?: Record<string, any>
+  variables?: Record<string, unknown>
 }
 
 export interface CompleteTaskRequest {
   taskId: string
-  variables?: Record<string, any>
+  variables?: Record<string, unknown>
 }
 
 // 流程定义管理
@@ -105,10 +102,14 @@ export const processApi = {
 // 流程部署管理
 export const deploymentApi = {
   // 部署流程
-  deployProcess: (bpmnXml: string) =>
-    request.post<{ deploymentId: string; message: string }>('/process/deploy', bpmnXml, {
-      headers: { 'Content-Type': 'application/xml' },
-    }),
+  deployProcess: (bpmnXml: string | FormData) => {
+    const isFormData = typeof FormData !== 'undefined' && bpmnXml instanceof FormData
+    return request.post<{ deploymentId: string; message: string }>(
+      '/process/deploy',
+      bpmnXml,
+      isFormData ? {} : { headers: { 'Content-Type': 'application/xml' } },
+    )
+  },
 
   // 部署流程（带信息）
   deployProcessWithInfo: (data: { bpmnXml: string } & ProcessInfo) =>
@@ -158,7 +159,7 @@ export const instanceApi = {
     }),
 
   // 完成任务
-  completeTask: (taskId: string, variables: Record<string, any>) =>
+  completeTask: (taskId: string, variables: Record<string, unknown>) =>
     request.post<{ message: string }>(`/process/task/${taskId}/complete`, variables),
 }
 
@@ -203,8 +204,7 @@ export const tenantApi = {
 // 用户管理
 export const userApi = {
   // 获取当前用户信息
-  getCurrentUser: () =>
-    request.get<{ id: string; username: string; nickname?: string }>('/sys/users/current'),
+  getCurrentUser: () => request.get<UserSummary>('/sys/users/current'),
 }
 
 // 运维管理

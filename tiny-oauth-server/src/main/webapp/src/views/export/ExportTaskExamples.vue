@@ -64,7 +64,7 @@
                         与同步导出相同，保持列定义一致，便于统一报表。
                     </a-descriptions-item>
                     <a-descriptions-item label="filters">
-                        {"{"} "is_billable": true {"}"} 或按日期区间、租户等条件构造查询。
+                        {"{"} "is_billable": true {"}"} 或按日期区间、租户ID等条件构造查询。
                     </a-descriptions-item>
                 </a-descriptions>
                 <div class="card-actions">
@@ -89,40 +89,53 @@
 import { h } from 'vue'
 import { Modal, message } from 'ant-design-vue'
 import request from '@/utils/request'
+import { getTenantId } from '@/utils/tenant'
 
 // 符合后端 ExportRequest/SheetConfig 结构的示例请求体
-const demoExportRequest = {
-    fileName: 'demo_export_usage',
-    pageSize: 5000,
-    async: false,
-    sheets: [
-        {
-            sheetName: '用量明细',
-            exportType: 'demo_export_usage', // 需要在后端注册对应 DataProvider
-            filters: { is_billable: true },
-            // 简化的列定义：字段名需与 DemoExportUsageRow 属性一致
-            columns: [
-                { title: '租户', field: 'tenantCode' },
-                { title: '用量日期', field: 'usageDate' },
-                { title: '产品编码', field: 'productCode' },
-                { title: '产品名称', field: 'productName' },
-                { title: '套餐档位', field: 'planTier' },
-                { title: '区域', field: 'region' },
-                { title: '用量', field: 'usageQty' },
-                { title: '单位', field: 'unit' },
-                { title: '单价', field: 'unitPrice' },
-                { title: '金额', field: 'amount' },
-                { title: '币种', field: 'currency' },
-                { title: '税率', field: 'taxRate' },
-                { title: '是否计费', field: 'billable' },
-                { title: '状态', field: 'status' },
-            ],
-            // aggregateKey/options 可选，示例中暂不使用
-        },
-    ],
+function resolveTenantId(): string | undefined {
+    const raw = getTenantId()
+    return raw ? String(raw) : undefined
+}
+
+function buildDemoExportRequest(asyncFlag = false) {
+    const tenantId = resolveTenantId()
+    return {
+        fileName: 'demo_export_usage',
+        pageSize: 5000,
+        async: asyncFlag,
+        sheets: [
+            {
+                sheetName: '用量明细',
+                exportType: 'demo_export_usage', // 需要在后端注册对应 DataProvider
+                filters: {
+                    is_billable: true,
+                    ...(tenantId ? { tenantId } : {}),
+                },
+                // 简化的列定义：字段名需与 DemoExportUsageRow 属性一致
+                columns: [
+                    { title: '租户ID', field: 'tenantId' },
+                    { title: '用量日期', field: 'usageDate' },
+                    { title: '产品编码', field: 'productCode' },
+                    { title: '产品名称', field: 'productName' },
+                    { title: '套餐档位', field: 'planTier' },
+                    { title: '区域', field: 'region' },
+                    { title: '用量', field: 'usageQty' },
+                    { title: '单位', field: 'unit' },
+                    { title: '单价', field: 'unitPrice' },
+                    { title: '金额', field: 'amount' },
+                    { title: '币种', field: 'currency' },
+                    { title: '税率', field: 'taxRate' },
+                    { title: '是否计费', field: 'billable' },
+                    { title: '状态', field: 'status' },
+                ],
+                // aggregateKey/options 可选，示例中暂不使用
+            },
+        ],
+    }
 }
 
 function showSyncDemo() {
+    const demoExportRequest = buildDemoExportRequest(false)
     Modal.info({
         title: '同步导出示例（demo_export_usage）',
         width: 520,
@@ -137,6 +150,7 @@ function showSyncDemo() {
 }
 
 function showAsyncDemo() {
+    const demoExportRequest = buildDemoExportRequest(true)
     Modal.info({
         title: '异步导出示例（demo_export_usage）',
         width: 520,
@@ -159,6 +173,7 @@ function showAsyncDemo() {
 
 async function triggerSyncExport() {
     try {
+        const demoExportRequest = buildDemoExportRequest(false)
         const blob = await request.post<Blob>('/export/sync', demoExportRequest, {
             // axios responseType，TS 这里简单断言
             responseType: 'blob' as any
@@ -177,6 +192,7 @@ async function triggerSyncExport() {
 
 async function triggerAsyncExport() {
     try {
+        const demoExportRequest = buildDemoExportRequest(true)
         const res = await request.post<{ taskId: string }>('/export/async', {
             ...demoExportRequest,
             async: true,

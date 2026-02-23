@@ -7,6 +7,6 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface DemoExportUsageRepository extends JpaRepository<DemoExportUsageEntity, Long>,
         JpaSpecificationExecutor<DemoExportUsageEntity> {
+    void deleteByTenantId(Long tenantId);
 }
-
 

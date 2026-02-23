@@ -87,7 +87,7 @@
                                 <div style="display: flex; align-items: center;">
                                     <a-checkbox :checked="showColumnKeys.length === allColumns.length"
                                         :indeterminate="showColumnKeys.length > 0 && showColumnKeys.length < allColumns.length"
-                                        @change="(e: any) => onCheckAllChange(e)" />
+                                        @change="onCheckAllChange" />
                                     <span style="font-weight: bold; margin-left: 8px;">列展示/排序</span>
                                 </div>
                                 <span style="font-weight: bold; color: #1677ff; cursor: pointer;"
@@ -96,14 +96,14 @@
                                 </span>
                             </div>
                             <VueDraggable v-model="draggableColumns"
-                                :item-key="(item: any) => item?.dataIndex || `col_${Math.random()}`"
+                                :item-key="(item: { dataIndex?: string }) => item?.dataIndex || `col_${Math.random()}`"
                                 handle=".drag-handle" @end="onDragEnd" class="draggable-columns"
                                 ghost-class="sortable-ghost" chosen-class="sortable-chosen" tag="div">
                                 <template #item="{ element: col }">
                                     <div class="draggable-column-item">
                                         <HolderOutlined class="drag-handle" />
                                         <a-checkbox :checked="showColumnKeys.includes(col.dataIndex)"
-                                            @change="(e: any) => onCheckboxChange(col.dataIndex, e.target.checked)">
+                                            @change="(e: { target: { checked: boolean } }) => onCheckboxChange(col.dataIndex, e.target.checked)">
                                             {{ col.title }}
                                         </a-checkbox>
                                     </div>
@@ -504,16 +504,21 @@ async function loadData() {
         if (params.state === 'completed') {
             const hist = await historyApi.getHistoricInstances(params.tenantId)
             const normalized = Array.isArray(hist)
-                ? hist.map((h: any) => ({
-                    id: String(h.id ?? h.instanceId ?? ''),
-                    processKey: h.processKey ?? h.processDefinitionKey ?? h.key ?? '',
-                    processDefinitionId: h.processDefinitionId ?? '',
+                ? hist.map((h: unknown) => {
+                    const item = h as Record<string, any>
+                    return {
+                    id: String(item.id ?? item.instanceId ?? ''),
+                    processKey: item.processKey ?? item.processDefinitionKey ?? item.key ?? '',
+                    processDefinitionId: item.processDefinitionId ?? '',
+                    processDefinitionName: item.processDefinitionName ?? item.processDefinitionKey ?? '',
+                    suspended: false,
                     state: 'completed',
-                    startTime: h.startTime ?? h.start_time ?? h.start_date ?? '',
-                    endTime: h.endTime ?? h.end_time ?? h.end_date ?? '',
-                    tenantId: h.tenantId ?? h.tenant_id ?? undefined,
-                    variables: h.variables ?? {}
-                }))
+                    startTime: item.startTime ?? item.start_time ?? item.start_date ?? '',
+                    endTime: item.endTime ?? item.end_time ?? item.end_date ?? '',
+                    tenantId: item.tenantId ?? item.tenant_id ?? undefined,
+                    variables: item.variables ?? {}
+                }
+                })
                 : []
             tableData.value = normalized
         } else {
@@ -714,7 +719,7 @@ function handleBatchDelete() {
                 loadData()
             }).catch((error: unknown) => {
                 // 优先使用 Problem 格式的 detail，否则使用 error.message
-                const errorMessage = (error as any)?.errorInfo?.message || 
+                const errorMessage = (error as { errorInfo?: { message?: string } })?.errorInfo?.message ||
                                    (error instanceof Error ? error.message : '未知错误')
                 message.error('批量删除失败: ' + errorMessage)
                 return Promise.reject(error)
@@ -726,11 +731,11 @@ function handleBatchDelete() {
 const throttledBatchDelete = useThrottle(handleBatchDelete, 1000)
 
 function handleView(record: ProcessInstance) {
-    selectedInstance.value = record
+    selectedInstance.value = record as ProcessInstance
     showInstanceDetail.value = true
 }
 
-const throttledView = useThrottle(handleView, 500)
+const throttledView = useThrottle((record: unknown) => handleView(record as ProcessInstance), 500)
 
 function handleSuspend(record: ProcessInstance) {
     Modal.confirm({
@@ -753,7 +758,7 @@ function handleSuspend(record: ProcessInstance) {
     })
 }
 
-const throttledSuspend = useThrottle(handleSuspend, 500)
+const throttledSuspend = useThrottle((record: unknown) => handleSuspend(record as ProcessInstance), 500)
 
 function handleActivate(record: ProcessInstance) {
     Modal.confirm({
@@ -776,7 +781,7 @@ function handleActivate(record: ProcessInstance) {
     })
 }
 
-const throttledActivate = useThrottle(handleActivate, 500)
+const throttledActivate = useThrottle((record: unknown) => handleActivate(record as ProcessInstance), 500)
 
 async function handleViewTasks(record: ProcessInstance) {
     try {
@@ -793,7 +798,7 @@ async function handleViewTasks(record: ProcessInstance) {
     }
 }
 
-const throttledViewTasks = useThrottle(handleViewTasks, 500)
+const throttledViewTasks = useThrottle((record: unknown) => handleViewTasks(record as ProcessInstance), 500)
 
 function handleDelete(record: ProcessInstance) {
     Modal.confirm({
@@ -816,7 +821,7 @@ function handleDelete(record: ProcessInstance) {
     })
 }
 
-const throttledDelete = useThrottle(handleDelete, 500)
+const throttledDelete = useThrottle((record: unknown) => handleDelete(record as ProcessInstance), 500)
 
 async function claimTask(task: Task) {
     try {
@@ -844,30 +849,30 @@ async function completeTask(task: Task) {
     }
 }
 
-const formatDate = (dateString: string | Date) => {
+const formatDate = (dateString: string | Date | undefined) => {
     if (!dateString) return '-'
     const date = typeof dateString === 'string' ? new Date(dateString) : dateString
     return date.toLocaleString('zh-CN')
 }
 
-const getStateColor = (state: string) => {
+const getStateColor = (state?: string) => {
     const stateColors: Record<string, string> = {
         'active': 'green',
         'suspended': 'orange',
         'completed': 'blue',
         'cancelled': 'red'
     }
-    return stateColors[state] || 'default'
+    return state ? (stateColors[state] || 'default') : 'default'
 }
 
-const getStateText = (state: string) => {
+const getStateText = (state?: string) => {
     const stateTexts: Record<string, string> = {
         'active': '活跃',
         'suspended': '暂停',
         'completed': '已完成',
         'cancelled': '已取消'
     }
-    return stateTexts[state] || state
+    return state ? (stateTexts[state] || state) : '未知'
 }
 
 const getDuration = (startTime: string | Date, endTime?: string | Date) => {

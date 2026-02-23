@@ -66,7 +66,7 @@
                                 <div style="display: flex; align-items: center;">
                                     <a-checkbox :checked="showColumnKeys.length === allColumns.length"
                                         :indeterminate="showColumnKeys.length > 0 && showColumnKeys.length < allColumns.length"
-                                        @change="(e: any) => onCheckAllChange(e)" />
+                                        @change="onCheckAllChange" />
                                     <span style="font-weight: bold; margin-left: 8px;">列展示/排序</span>
                                 </div>
                                 <span style="font-weight: bold; color: #1677ff; cursor: pointer;"
@@ -75,14 +75,14 @@
                                 </span>
                             </div>
                             <VueDraggable v-model="draggableColumns"
-                                :item-key="(item: any) => item?.dataIndex || 'col_' + Math.random()"
+                                :item-key="(item: { dataIndex?: string }) => item?.dataIndex || 'col_' + Math.random()"
                                 handle=".drag-handle" @end="onDragEnd" class="draggable-columns"
                                 ghost-class="sortable-ghost" chosen-class="sortable-chosen" tag="div">
                                 <template #item="{ element: col }">
                                     <div class="draggable-column-item">
                                         <HolderOutlined class="drag-handle" />
                                         <a-checkbox :checked="showColumnKeys.includes(col.dataIndex)"
-                                            @change="(e: any) => onCheckboxChange(col.dataIndex, e.target.checked)">
+                                            @change="(e: { target: { checked: boolean } }) => onCheckboxChange(col.dataIndex, e.target.checked)">
                                             {{ col.title }}
                                         </a-checkbox>
                                     </div>
@@ -266,7 +266,7 @@ const query = ref({
     tenantId: ''
 })
 
-const tableData = ref<any[]>([])
+const tableData = ref<ProcessDefinition[]>([])
 const loading = ref(false)
 const refreshing = ref(false)
 const selectedRowKeys = ref<string[]>([])
@@ -285,7 +285,7 @@ const processInfo = ref({
 
 // 查看详情相关状态
 const viewOpen = ref(false)
-const viewRecord = ref<any | null>(null)
+const viewRecord = ref<ProcessDefinition | null>(null)
 
 // 预览相关状态
 const previewOpen = ref(false)
@@ -397,7 +397,7 @@ function onCheckboxChange(dataIndex: string, checked: boolean) {
     }
 }
 
-function onCheckAllChange(e: any) {
+function onCheckAllChange(e: { target: { checked: boolean } }) {
     if (e.target.checked) {
         showColumnKeys.value = INITIAL_COLUMNS.map(col => col.dataIndex)
     } else {
@@ -413,7 +413,7 @@ function resetColumnOrder() {
         .map(col => col.dataIndex)
 }
 
-function onDragEnd(event: any) {
+function onDragEnd(_event: unknown) {
     console.log('拖拽结束，新顺序:', draggableColumns.value.map(col => col.title))
 }
 
@@ -445,7 +445,7 @@ const columns = computed(() => {
 
 const rowSelection = computed(() => ({
     selectedRowKeys: selectedRowKeys.value,
-    onChange: (selectedKeys: string[], selectedRows: any[]) => {
+    onChange: (selectedKeys: string[], selectedRows: ProcessDefinition[]) => {
         selectedRowKeys.value = selectedKeys;
     },
     checkStrictly: false,
@@ -523,7 +523,7 @@ function handleReset() {
 
 const throttledReset = useThrottle(handleReset, 1000)
 
-function handleTableChange(pag: any, filters: any, sorter: any) {
+function handleTableChange(pag: { current?: number; pageSize?: number }, _filters: unknown, _sorter: unknown) {
     if (pag && typeof pag.current === 'number') {
         pagination.value.current = pag.current
     }
@@ -548,14 +548,14 @@ function clearSelection() {
     selectedRowKeys.value = []
 }
 
-function getRowClassName(record: any) {
+function getRowClassName(record: ProcessDefinition) {
     if (selectedRowKeys.value.includes(record.id)) {
         return 'checkbox-selected-row'
     }
     return ''
 }
 
-function onCustomRow(record: any) {
+function onCustomRow(record: ProcessDefinition) {
     return {
         onClick: (event: MouseEvent) => {
             if ((event.target as HTMLElement).closest('.ant-checkbox-wrapper')) return;
@@ -609,9 +609,9 @@ function handleBatchDelete() {
                 message.success('批量删除成功')
                 selectedRowKeys.value = []
                 loadData()
-            }).catch((error: any) => {
+            }).catch((error: unknown) => {
                 // 优先使用 Problem 格式的 detail，否则使用 error.message
-            const errorMessage = (error as any)?.errorInfo?.message || error?.message || '未知错误'
+            const errorMessage = (error as { errorInfo?: { message?: string } })?.errorInfo?.message || (error as Error)?.message || '未知错误'
             message.error('批量删除失败: ' + errorMessage)
                 return Promise.reject(error)
             })
@@ -621,7 +621,7 @@ function handleBatchDelete() {
 
 const throttledBatchDelete = useThrottle(handleBatchDelete, 1000)
 
-function handleView(record: any) {
+function handleView(record: ProcessDefinition) {
     viewRecord.value = record || null
     viewOpen.value = true
 }
@@ -631,31 +631,31 @@ function closeView() {
     viewRecord.value = null
 }
 
-const throttledView = useThrottle(handleView, 500)
+const throttledView = useThrottle((record: unknown) => handleView(record as ProcessDefinition), 500)
 
-async function handlePreview(record: any) {
+async function handlePreview(record: ProcessDefinition) {
     previewRecord.value = (record as ProcessDefinition) || null
     previewOpen.value = true
 }
 
 // 已改为在详情抽屉之上直接打开预览抽屉，无需中转函数
 
-const throttledPreview = useThrottle(handlePreview, 500)
+const throttledPreview = useThrottle((record: unknown) => handlePreview(record as ProcessDefinition), 500)
 
-function handleEdit(record: any) {
+function handleEdit(record: ProcessDefinition) {
     message.info(`编辑流程：${record.name}`)
     // TODO: 实现流程编辑功能
 }
 
-const throttledEdit = useThrottle(handleEdit, 500)
+const throttledEdit = useThrottle((record: unknown) => handleEdit(record as ProcessDefinition), 500)
 
-function handleStart(record: any) {
+function handleStart(record: ProcessDefinition) {
     startProcess(record)
 }
 
-const throttledStart = useThrottle(handleStart, 500)
+const throttledStart = useThrottle((record: unknown) => handleStart(record as ProcessDefinition), 500)
 
-function handleDelete(record: any) {
+function handleDelete(record: ProcessDefinition) {
     Modal.confirm({
         title: '确认删除',
         content: `确定要删除流程定义 ${record.name} 吗？`,
@@ -667,17 +667,18 @@ function handleDelete(record: any) {
                     message.success('流程定义删除成功')
                     loadData()
                 })
-                .catch((error: any) => {
-                    message.error('删除流程定义失败: ' + (error.message || '未知错误'))
+                .catch((error: unknown) => {
+                    const errorMessage = error instanceof Error ? error.message : '未知错误'
+                    message.error('删除流程定义失败: ' + errorMessage)
                     return Promise.reject(error)
                 })
         }
     })
 }
 
-const throttledDelete = useThrottle(handleDelete, 500)
+const throttledDelete = useThrottle((record: unknown) => handleDelete(record as ProcessDefinition), 500)
 
-function handleToggleSuspend(record: any) {
+function handleToggleSuspend(record: ProcessDefinition) {
     const action = record.suspended ? '激活' : '暂停'
     Modal.confirm({
         title: `确认${action}流程`,
@@ -692,7 +693,7 @@ function handleToggleSuspend(record: any) {
     })
 }
 
-const throttledToggleSuspend = useThrottle(handleToggleSuspend, 500)
+const throttledToggleSuspend = useThrottle((record: unknown) => handleToggleSuspend(record as ProcessDefinition), 500)
 
 /**
  * 动态计算表格内容区（body）的高度
@@ -719,7 +720,7 @@ function onPreviewAfterOpenChange(open: boolean) {
     // 预览渲染由子组件负责
 }
 
-const formatDate = (dateString: string | Date) => {
+const formatDate = (dateString: string | Date | undefined) => {
     if (!dateString) return '-'
     const date = typeof dateString === 'string' ? new Date(dateString) : dateString
     return date.toLocaleString('zh-CN')

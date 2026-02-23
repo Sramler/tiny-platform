@@ -18,8 +18,8 @@ public class DemoExportUsageEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "tenant_code", nullable = false, length = 64)
-    private String tenantCode;
+    @Column(name = "tenant_id", nullable = false)
+    private Long tenantId;
 
     @Column(name = "usage_date", nullable = false)
     private LocalDate usageDate;
@@ -147,12 +147,12 @@ public class DemoExportUsageEntity {
         this.id = id;
     }
 
-    public String getTenantCode() {
-        return tenantCode;
+    public Long getTenantId() {
+        return tenantId;
     }
 
-    public void setTenantCode(String tenantCode) {
-        this.tenantCode = tenantCode;
+    public void setTenantId(Long tenantId) {
+        this.tenantId = tenantId;
     }
 
     public LocalDate getUsageDate() {
@@ -451,5 +451,4 @@ public class DemoExportUsageEntity {
         this.attachmentInfo = attachmentInfo;
     }
 }
-
 

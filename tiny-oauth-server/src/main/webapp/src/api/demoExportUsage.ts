@@ -2,7 +2,7 @@ import request from '@/utils/request'
 
 export interface DemoExportUsage {
   id?: number
-  tenantId?: string
+  tenantId?: number
   tenantName?: string
   loginName?: string
   createdAt?: string
@@ -21,7 +21,7 @@ export function demoExportUsageList(params: any) {
     page: (params.current || 1) - 1,
     size: params.pageSize || 10,
     // 与后端 DemoExportUsageController.list 参数保持一致
-    tenantCode: params.tenantCode,
+    tenantId: params.tenantId,
     productCode: params.productCode,
     status: params.status,
   }
@@ -51,7 +51,13 @@ export function deleteDemoExportUsage(id: number) {
 }
 
 export function generateDemoExportUsage(
-  params?: { days?: number; rowsPerDay?: number; targetRows?: number; clearExisting?: boolean },
+  params?: {
+    tenantId?: number
+    days?: number
+    rowsPerDay?: number
+    targetRows?: number
+    clearExisting?: boolean
+  },
   config?: any,
 ) {
   return request.post('/demo/export-usage/generate', null, {
@@ -60,6 +66,6 @@ export function generateDemoExportUsage(
   })
 }
 
-export function clearDemoExportUsage() {
-  return request.post('/demo/export-usage/clear')
+export function clearDemoExportUsage(params?: { tenantId?: number }) {
+  return request.post('/demo/export-usage/clear', null, { params })
 }

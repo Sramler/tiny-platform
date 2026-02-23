@@ -48,15 +48,6 @@
       />
     </a-form-item>
 
-    <a-form-item label="租户ID" name="tenantId">
-      <a-input-number
-        v-model:value="formData.tenantId"
-        :min="0"
-        placeholder="0表示平台字典项，>0表示租户自定义字典项"
-        style="width: 100%"
-      />
-    </a-form-item>
-
     <a-form-item label="排序顺序" name="sortOrder">
       <a-input-number
         v-model:value="formData.sortOrder"
@@ -78,6 +69,7 @@ import { ref, reactive, watch, onMounted } from 'vue'
 import type { FormInstance } from 'ant-design-vue'
 import type { DictItem, DictItemCreateUpdateDto, DictTypeItem } from '@/api/dict'
 import { getDictTypesByTenant } from '@/api/dict'
+import { getTenantId } from '@/utils/tenant'
 
 const props = defineProps<{
   formData?: DictItem | null
@@ -91,7 +83,7 @@ const formData = reactive<DictItemCreateUpdateDto>({
   value: '',
   label: '',
   description: '',
-  tenantId: 0,
+  tenantId: undefined,
   sortOrder: 0,
   enabled: true,
 })
@@ -116,7 +108,8 @@ const rules = {
 // 加载字典类型选项
 async function loadDictTypeOptions() {
   try {
-    const result = await getDictTypesByTenant(0)
+    const tenantId = resolveTenantId()
+    const result = await getDictTypesByTenant(tenantId ?? 0)
     dictTypeOptions.value = result
   } catch (error) {
     console.error('加载字典类型选项失败:', error)
@@ -134,7 +127,7 @@ watch(
         value: newVal.value || '',
         label: newVal.label || '',
         description: newVal.description || '',
-        tenantId: newVal.tenantId ?? 0,
+        tenantId: newVal.tenantId ?? resolveTenantId(),
         sortOrder: newVal.sortOrder ?? 0,
         enabled: newVal.enabled ?? true,
       })
@@ -145,7 +138,7 @@ watch(
         value: '',
         label: '',
         description: '',
-        tenantId: 0,
+        tenantId: resolveTenantId(),
         sortOrder: 0,
         enabled: true,
       })
@@ -153,6 +146,13 @@ watch(
   },
   { immediate: true, deep: true }
 )
+
+function resolveTenantId(): number | undefined {
+  const raw = getTenantId()
+  if (!raw) return undefined
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
 
 // 监听 dictTypeId 变化
 watch(
@@ -172,7 +172,7 @@ async function validate() {
 
 // 获取表单数据
 function getFormData(): DictItemCreateUpdateDto {
-  return { ...formData }
+  return { ...formData, tenantId: resolveTenantId() ?? formData.tenantId }
 }
 
 onMounted(() => {
@@ -184,4 +184,3 @@ defineExpose({
   getFormData,
 })
 </script>
-

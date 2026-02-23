@@ -51,7 +51,7 @@ const isPersistentLogEnabled = computed(() => {
   const value = import.meta.env.VITE_ENABLE_PERSISTENT_LOG
   const isProd = import.meta.env.PROD
   if (value === undefined) return !isProd // 默认在非生产环境启用（开发、测试、预发布等）
-  return value === 'true' || value === true
+  return value === 'true'
 })
 
 // 调试日志
@@ -94,4 +94,3 @@ onMounted(() => {
   /* 可以添加自定义样式 */
 }
 </style>
-

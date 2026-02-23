@@ -150,8 +150,7 @@
             placeholder="请输入描述信息" />
         </a-form-item>
         <a-form-item label="租户ID" name="tenantId">
-          <a-input-number v-model:value="formState.tenantId" :min="0" style="width: 100%"
-            :disabled="drawerMode === 'view'" placeholder="0表示平台字典项" />
+          <a-input :value="tenantIdDisplay" disabled />
         </a-form-item>
         <a-form-item label="排序" name="sortOrder">
           <a-input-number v-model:value="formState.sortOrder" :min="0" style="width: 100%"
@@ -181,7 +180,7 @@ import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
 import { useThrottle } from '@/utils/debounce'
-import type { TableColumnsType } from 'ant-design-vue'
+import { getTenantId } from '@/utils/tenant'
 import {
   getDictTypesByTenant,
   getDictItemList,
@@ -211,7 +210,13 @@ const dictTypeOptions = ref<DictTypeItem[]>([])
 // 加载字典类型选项
 async function loadDictTypeOptions() {
   try {
-    const result = await getDictTypesByTenant(0)
+    const tenantId = resolveTenantId()
+    if (tenantId == null) {
+      message.error('请先选择租户')
+      dictTypeOptions.value = []
+      return
+    }
+    const result = await getDictTypesByTenant(tenantId)
     dictTypeOptions.value = result
   } catch (error) {
     console.error('加载字典类型选项失败:', error)
@@ -295,7 +300,7 @@ const paginationConfig = computed(() => {
 })
 
 // 阶段8: 列定义
-const INITIAL_COLUMNS: TableColumnsType = [
+const INITIAL_COLUMNS: Array<Record<string, any>> = [
   { title: 'ID', dataIndex: 'id', width: 80, sorter: true },
   { title: '字典编码', dataIndex: 'dictCode', width: 150 },
   { title: '字典值', dataIndex: 'value', width: 150 },
@@ -315,7 +320,7 @@ const DEFAULT_VISIBLE_COLUMNS = [
   'id', 'dictCode', 'value', 'label', 'description', 'isBuiltin', 'sortOrder', 'enabled', 'createdAt', 'action'
 ]
 
-const allColumns = ref([...INITIAL_COLUMNS])
+const allColumns = ref<Array<Record<string, any>>>([...INITIAL_COLUMNS])
 const showColumnKeys = ref(DEFAULT_VISIBLE_COLUMNS.filter((key): key is string => typeof key === 'string'))
 
 // 阶段8: 计算列（过滤显示的列）
@@ -413,15 +418,31 @@ const formState = ref<DictItemFormState>({
   value: '',
   label: '',
   description: '',
-  tenantId: 0,
+  tenantId: undefined,
   enabled: true,
   sortOrder: 0,
 })
+
+const tenantIdDisplay = computed(() => {
+  const tenantId = formState.value.tenantId ?? resolveTenantId()
+  return tenantId != null ? String(tenantId) : '-'
+})
+
+function resolveTenantId(): number | undefined {
+  const raw = getTenantId()
+  if (!raw) return undefined
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
 
 // 阶段9: Drawer 操作
 function openCreateDrawer() {
   if (!query.value.dictTypeId) {
     message.warning('请先选择字典类型')
+    return
+  }
+  if (resolveTenantId() == null) {
+    message.warning('请先选择租户')
     return
   }
   drawerMode.value = 'create'
@@ -430,7 +451,7 @@ function openCreateDrawer() {
     value: '',
     label: '',
     description: '',
-    tenantId: 0,
+    tenantId: resolveTenantId(),
     isBuiltin: false,
     enabled: true,
     sortOrder: 0,
@@ -446,7 +467,7 @@ function openEditDrawer(record: any) {
     value: record.value || '',
     label: record.label || '',
     description: record.description || '',
-    tenantId: record.tenantId ?? 0,
+    tenantId: record.tenantId ?? resolveTenantId(),
     isBuiltin: record.isBuiltin ?? false,
     enabled: record.enabled ?? true,
     sortOrder: record.sortOrder ?? 0,
@@ -462,7 +483,7 @@ function handleView(record: any) {
     value: record.value || '',
     label: record.label || '',
     description: record.description || '',
-    tenantId: record.tenantId ?? 0,
+    tenantId: record.tenantId ?? resolveTenantId(),
     isBuiltin: record.isBuiltin ?? false,
     enabled: record.enabled ?? true,
     sortOrder: record.sortOrder ?? 0,
@@ -478,12 +499,17 @@ function handleDrawerClose() {
 
 async function handleSubmit() {
   try {
+    const tenantId = resolveTenantId()
+    if (tenantId == null) {
+      message.error('请先选择租户')
+      return
+    }
     const payload: DictItemCreateUpdateDto = {
       dictTypeId: formState.value.dictTypeId,
       value: formState.value.value,
       label: formState.value.label,
       description: formState.value.description,
-      tenantId: formState.value.tenantId ?? 0,
+      tenantId,
       enabled: formState.value.enabled ?? true,
       sortOrder: formState.value.sortOrder ?? 0,
     }

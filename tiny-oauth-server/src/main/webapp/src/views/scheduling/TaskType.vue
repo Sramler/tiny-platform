@@ -179,7 +179,7 @@ const loadData = async () => {
     }
     const res = await taskTypeList(params)
     dataSource.value = res.records
-    pagination.total = Number(res.total ?? res.totalElements ?? 0)
+    pagination.total = Number(res.total ?? 0)
   } catch (error: any) {
     message.error(extractErrorFromAxios(error, '加载数据失败'))
   } finally {
@@ -375,5 +375,4 @@ onMounted(async () => {
   margin-left: 8px;
 }
 </style>
-
 

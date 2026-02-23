@@ -204,7 +204,7 @@ const humanReadable = computed(() => {
   if (presetKey.value === 'daily')
     return `每天 ${String(dailyHour.value).padStart(2, '0')}:${String(dailyMinute.value).padStart(2, '0')} 执行`
   if (presetKey.value === 'weekly')
-    return `每周${DOW_NAMES[weeklyDow.value]} ${String(weeklyHour.value).padStart(2, '0')}:${String(weeklyMinute.value).padStart(2, '0')} 执行`
+    return `每周${DOW_NAMES[weeklyDow.value] ?? ''} ${String(weeklyHour.value).padStart(2, '0')}:${String(weeklyMinute.value).padStart(2, '0')} 执行`
   if (presetKey.value === 'monthly') {
     const dayDesc = monthlyDayType.value === 'last' ? '最后一天' : `${monthlyDay.value} 日`
     return `每月${dayDesc} ${String(monthlyHour.value).padStart(2, '0')}:${String(monthlyMinute.value).padStart(2, '0')} 执行`
@@ -216,7 +216,7 @@ const humanReadable = computed(() => {
 function humanReadableFromExpr(expr: string): string {
   const parts = expr.trim().split(/\s+/)
   if (parts.length < 6) return '自定义表达式'
-  const [sec, min, hour, dom, month, dow] = parts
+  const [sec = '', min = '', hour = '', dom = '', month = '', dow = ''] = parts
   if (sec === '0' && min === '0' && hour !== '*' && dom === '*' && month === '*' && (dow === '?' || dow === '*'))
     return `每天 ${hour.padStart(2, '0')}:00 执行`
   if (sec === '0' && min === '*' && hour === '*' && dom === '*' && month === '*' && dow === '?')
@@ -232,7 +232,7 @@ function validateQuartzCron(expr: string): string | null {
   if (!v) return null
   const parts = v.split(/\s+/)
   if (parts.length !== 6) return '需要 6 段：秒 分 时 日 月 周，用空格分隔'
-  const [sec, min, hour, dom, month, dow] = parts
+  const [sec = '', min = '', hour = '', dom = '', month = '', dow = ''] = parts
   const numOrStar = (s: string, max: number) =>
     s === '*' || s === '?' || (/^\d+$/.test(s) && parseInt(s, 10) >= 0 && parseInt(s, 10) <= max)
   if (!numOrStar(sec, 59)) return '秒：0-59 或 *'
@@ -264,7 +264,7 @@ function getNextRunText(expr: string): string {
   if (parts.length < 6) return ''
 
   const now = new Date()
-  const [sec, min, hour, dom, month, dow] = parts
+  const [sec = '', min = '', hour = '', dom = '', month = '', dow = ''] = parts
 
   if (sec === '0' && min === '*' && hour === '*' && dom === '*' && month === '*' && dow === '?') {
     const next = new Date(now)
@@ -307,8 +307,8 @@ function getNextRunText(expr: string): string {
   }
   if (presetKey.value === 'weekly' || (dom === '?' && dow && dow !== '*' && dow !== '?')) {
     const targetDow = parseInt(dow, 10)
-    const h = parseInt(parts[2], 10)
-    const minVal = parseInt(parts[1], 10)
+    const h = parseInt(hour, 10)
+    const minVal = parseInt(min, 10)
     const next = new Date(now)
     next.setHours(h, minVal, 0, 0)
     const nowDow = next.getDay() === 0 ? 7 : next.getDay()
@@ -428,7 +428,7 @@ function parseInitial(value: string) {
   }
   const parts = v.split(/\s+/)
   if (parts.length >= 6) {
-    const [sec, min, hour, dom, month, dow] = parts
+  const [sec = '', min = '', hour = '', dom = '', month = '', dow = ''] = parts
     if (sec === '0' && hour !== '*' && dom === '*' && month === '*' && (dow === '?' || dow === '*')) {
       presetKey.value = 'daily'
       dailyHour.value = parseInt(hour, 10) || 0
@@ -437,25 +437,25 @@ function parseInitial(value: string) {
     }
     if (sec === '0' && dom === '?' && month === '*' && dow && dow !== '*' && dow !== '?') {
       presetKey.value = 'weekly'
-      weeklyHour.value = parseInt(parts[2], 10) || 0
-      weeklyMinute.value = parseInt(parts[1], 10) || 0
+      weeklyHour.value = parseInt(hour, 10) || 0
+      weeklyMinute.value = parseInt(min, 10) || 0
       weeklyDow.value = parseInt(dow, 10) || 2
       return
     }
-    if (sec === '0' && parts[5] === '?') {
-      const domVal = parts[3]
+    if (sec === '0' && dow === '?') {
+      const domVal = dom
       if (domVal === 'L') {
         presetKey.value = 'monthly'
         monthlyDayType.value = 'last'
-        monthlyHour.value = parseInt(parts[2], 10) || 0
-        monthlyMinute.value = parseInt(parts[1], 10) || 0
+        monthlyHour.value = parseInt(hour, 10) || 0
+        monthlyMinute.value = parseInt(min, 10) || 0
         return
       }
-      if (parts[4] === '*') {
+      if (month === '*') {
         presetKey.value = 'monthly'
         monthlyDayType.value = 'day'
-        monthlyHour.value = parseInt(parts[2], 10) || 0
-        monthlyMinute.value = parseInt(parts[1], 10) || 0
+        monthlyHour.value = parseInt(hour, 10) || 0
+        monthlyMinute.value = parseInt(min, 10) || 0
         monthlyDay.value = parseInt(domVal, 10) || 1
         return
       }

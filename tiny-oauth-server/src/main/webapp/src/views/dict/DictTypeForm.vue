@@ -35,15 +35,6 @@
       />
     </a-form-item>
 
-    <a-form-item label="租户ID" name="tenantId">
-      <a-input-number
-        v-model:value="formData.tenantId"
-        :min="0"
-        placeholder="0表示平台字典，>0表示租户自定义字典"
-        style="width: 100%"
-      />
-    </a-form-item>
-
     <a-form-item label="分类ID" name="categoryId">
       <a-input-number
         v-model:value="formData.categoryId"
@@ -73,6 +64,7 @@
 import { ref, reactive, watch } from 'vue'
 import type { FormInstance } from 'ant-design-vue'
 import type { DictTypeItem, DictTypeCreateUpdateDto } from '@/api/dict'
+import { getTenantId } from '@/utils/tenant'
 
 const props = defineProps<{
   formData?: DictTypeItem | null
@@ -84,7 +76,7 @@ const formData = reactive<DictTypeCreateUpdateDto>({
   dictCode: '',
   dictName: '',
   description: '',
-  tenantId: 0,
+  tenantId: undefined,
   categoryId: undefined,
   sortOrder: 0,
   enabled: true,
@@ -113,7 +105,7 @@ watch(
         dictCode: newVal.dictCode || '',
         dictName: newVal.dictName || '',
         description: newVal.description || '',
-        tenantId: newVal.tenantId ?? 0,
+        tenantId: newVal.tenantId ?? resolveTenantId(),
         categoryId: newVal.categoryId,
         sortOrder: newVal.sortOrder ?? 0,
         enabled: newVal.enabled ?? true,
@@ -124,7 +116,7 @@ watch(
         dictCode: '',
         dictName: '',
         description: '',
-        tenantId: 0,
+        tenantId: resolveTenantId(),
         categoryId: undefined,
         sortOrder: 0,
         enabled: true,
@@ -134,6 +126,13 @@ watch(
   { immediate: true, deep: true }
 )
 
+function resolveTenantId(): number | undefined {
+  const raw = getTenantId()
+  if (!raw) return undefined
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
 // 验证表单
 async function validate() {
   await formRef.value?.validate()
@@ -141,7 +140,7 @@ async function validate() {
 
 // 获取表单数据
 function getFormData(): DictTypeCreateUpdateDto {
-  return { ...formData }
+  return { ...formData, tenantId: resolveTenantId() ?? formData.tenantId }
 }
 
 defineExpose({
@@ -149,4 +148,3 @@ defineExpose({
   getFormData,
 })
 </script>
-

@@ -1,6 +1,30 @@
+-- 创建租户表
+CREATE TABLE IF NOT EXISTS `tenant` (
+    `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '租户ID',
+    `code` VARCHAR(64) NOT NULL COMMENT '租户编码',
+    `name` VARCHAR(128) NOT NULL COMMENT '租户名称',
+    `domain` VARCHAR(255) DEFAULT NULL COMMENT '租户域名/访问入口',
+    `enabled` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否启用',
+    `plan_code` VARCHAR(64) DEFAULT NULL COMMENT '租户套餐',
+    `expires_at` TIMESTAMP NULL COMMENT '到期时间',
+    `max_users` INT DEFAULT NULL COMMENT '最大用户数配额',
+    `max_storage_gb` INT DEFAULT NULL COMMENT '存储配额(GB)',
+    `contact_name` VARCHAR(64) DEFAULT NULL COMMENT '联系人',
+    `contact_email` VARCHAR(128) DEFAULT NULL COMMENT '联系邮箱',
+    `contact_phone` VARCHAR(32) DEFAULT NULL COMMENT '联系电话',
+    `remark` VARCHAR(255) DEFAULT NULL COMMENT '备注',
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    `deleted_at` TIMESTAMP NULL COMMENT '删除时间',
+    UNIQUE KEY `uk_tenant_code` (`code`),
+    UNIQUE KEY `uk_tenant_domain` (`domain`),
+    KEY `idx_tenant_enabled` (`enabled`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='租户表';
+
 -- 创建用户表
 CREATE TABLE IF NOT EXISTS `user` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '用户ID',
+    `tenant_id` BIGINT NOT NULL COMMENT '租户ID',
     `username` VARCHAR(50) NOT NULL COMMENT '用户名',
     `nickname` VARCHAR(50) DEFAULT NULL COMMENT '昵称',
     `enabled` BOOLEAN NOT NULL DEFAULT TRUE COMMENT '是否启用',
@@ -16,12 +40,15 @@ CREATE TABLE IF NOT EXISTS `user` (
     `last_failed_login_at` TIMESTAMP NULL COMMENT '最后失败登录时间',
     `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    UNIQUE KEY `uk_user_username` (`username`)
+    KEY `idx_user_tenant_id` (`tenant_id`),
+    UNIQUE KEY `uk_user_tenant_username` (`tenant_id`, `username`),
+    CONSTRAINT `fk_user_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户表';
 
 -- 创建角色表
 CREATE TABLE IF NOT EXISTS `role` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '角色ID',
+    `tenant_id` BIGINT NOT NULL COMMENT '租户ID',
     `code` VARCHAR(50) NOT NULL COMMENT '角色标识',
     `name` VARCHAR(50) NOT NULL COMMENT '角色名称',
     `description` VARCHAR(200) DEFAULT NULL COMMENT '角色描述',
@@ -29,26 +56,32 @@ CREATE TABLE IF NOT EXISTS `role` (
     `enabled` BOOLEAN NOT NULL DEFAULT TRUE COMMENT '是否启用',
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    UNIQUE KEY `uk_role_code` (`code`),
-    UNIQUE KEY `uk_role_name` (`name`)
+    KEY `idx_role_tenant_id` (`tenant_id`),
+    UNIQUE KEY `uk_role_tenant_code` (`tenant_id`, `code`),
+    UNIQUE KEY `uk_role_tenant_name` (`tenant_id`, `name`),
+    CONSTRAINT `fk_role_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='角色表';
 
 -- 创建用户-角色关联表
 CREATE TABLE IF NOT EXISTS `user_role` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '关联ID',
+    `tenant_id` BIGINT NOT NULL COMMENT '租户ID',
     `user_id` BIGINT NOT NULL COMMENT '用户ID',
     `role_id` BIGINT NOT NULL COMMENT '角色ID',
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    UNIQUE KEY `uk_user_role` (`user_id`, `role_id`),
+    UNIQUE KEY `uk_user_role_tenant` (`tenant_id`, `user_id`, `role_id`),
+    KEY `idx_user_role_tenant_id` (`tenant_id`),
     KEY `idx_user_role_user_id` (`user_id`),
     KEY `idx_user_role_role_id` (`role_id`),
     FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
-    FOREIGN KEY (`role_id`) REFERENCES `role` (`id`) ON DELETE CASCADE
+    FOREIGN KEY (`role_id`) REFERENCES `role` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_user_role_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户-角色关联表';
 
 -- 创建资源表（统一的权限资源表，包含菜单和API）
 CREATE TABLE IF NOT EXISTS `resource` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
+    `tenant_id` BIGINT NOT NULL COMMENT '租户ID',
     `name` VARCHAR(100) NOT NULL COMMENT '权限资源名（后端内部识别名）',
     `url` VARCHAR(200) NOT NULL DEFAULT '' COMMENT '前端路由路径',
     `uri` VARCHAR(200) NOT NULL DEFAULT '' COMMENT '后端 API 路径',
@@ -67,32 +100,38 @@ CREATE TABLE IF NOT EXISTS `resource` (
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     `enabled` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否启用（与 Resource.enabled 实体默认 true 一致）',
-    UNIQUE KEY `uk_resource_name` (`name`) COMMENT '资源名称唯一约束，防止重复插入',
+    UNIQUE KEY `uk_resource_tenant_name` (`tenant_id`, `name`) COMMENT '资源名称租户内唯一',
+    KEY `idx_resource_tenant_id` (`tenant_id`),
     KEY `idx_resource_parent_id` (`parent_id`),
     KEY `idx_resource_type` (`type`),
     KEY `idx_resource_sort` (`sort`),
     KEY `idx_resource_hidden` (`hidden`),
     FOREIGN KEY (`parent_id`) REFERENCES `resource` (`id`) ON DELETE CASCADE,
-    CONSTRAINT `chk_resource_api_uri_method` CHECK (type <> 3 OR (uri <> '' AND method <> '')) COMMENT '接口类型(3)必须填写 uri 与 method，与实体校验一致'
+    CONSTRAINT `chk_resource_api_uri_method` CHECK (type <> 3 OR (uri <> '' AND method <> '')) COMMENT '接口类型(3)必须填写 uri 与 method，与实体校验一致',
+    CONSTRAINT `fk_resource_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='权限资源表';
 
 -- 创建角色-资源关联表
 CREATE TABLE IF NOT EXISTS `role_resource` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '关联ID',
+    `tenant_id` BIGINT NOT NULL COMMENT '租户ID',
     `role_id` BIGINT NOT NULL COMMENT '角色ID',
     `resource_id` BIGINT NOT NULL COMMENT '资源ID',
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    UNIQUE KEY `uk_role_resource` (`role_id`, `resource_id`),
+    UNIQUE KEY `uk_role_resource_tenant` (`tenant_id`, `role_id`, `resource_id`),
+    KEY `idx_role_resource_tenant_id` (`tenant_id`),
     KEY `idx_role_resource_role_id` (`role_id`),
     KEY `idx_role_resource_resource_id` (`resource_id`),
     FOREIGN KEY (`role_id`) REFERENCES `role` (`id`) ON DELETE CASCADE,
-    FOREIGN KEY (`resource_id`) REFERENCES `resource` (`id`) ON DELETE CASCADE
+    FOREIGN KEY (`resource_id`) REFERENCES `resource` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_role_resource_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='角色-资源关联表';
 
 -- 创建用户认证方法表
 CREATE TABLE IF NOT EXISTS `user_authentication_method` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
     `user_id` BIGINT NOT NULL COMMENT '用户ID',
+    `tenant_id` BIGINT NOT NULL COMMENT '租户ID',
     `authentication_provider` VARCHAR(50) NOT NULL COMMENT '认证提供者',
     `authentication_type` VARCHAR(50) NOT NULL COMMENT '认证类型',
     `authentication_configuration` JSON NOT NULL COMMENT '认证配置',
@@ -105,14 +144,19 @@ CREATE TABLE IF NOT EXISTS `user_authentication_method` (
     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     `expires_at` TIMESTAMP NULL COMMENT '过期时间',
     FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
-    UNIQUE KEY `uk_user_auth_method` (`user_id`, `authentication_provider`, `authentication_type`),
-    KEY `idx_user_provider` (`user_id`, `authentication_provider`)
+    UNIQUE KEY `uk_user_auth_method` (`tenant_id`, `user_id`, `authentication_provider`, `authentication_type`),
+    KEY `idx_user_auth_method_tenant_id` (`tenant_id`),
+    KEY `idx_user_provider` (`user_id`, `authentication_provider`),
+    CONSTRAINT `fk_user_auth_method_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户认证方法表';
 
 -- 创建用户认证审计表
 CREATE TABLE IF NOT EXISTS `user_authentication_audit` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
     `user_id` BIGINT NULL COMMENT '对应 user.id，可为空（匿名或外部登录）',
+    `tenant_id` BIGINT NULL COMMENT '租户ID',
+    `tenant_resolution_code` VARCHAR(64) NULL COMMENT '租户解析结果码',
+    `tenant_resolution_source` VARCHAR(64) NULL COMMENT '租户解析来源：token/session/login_param/unknown',
     `username` VARCHAR(50) NOT NULL COMMENT '用户名冗余字段，便于查询',
     `event_type` VARCHAR(50) NOT NULL COMMENT '事件类型，如 LOGIN / LOGOUT / MFA_BIND / TOKEN_ISSUE',
     `success` BOOLEAN NOT NULL DEFAULT TRUE COMMENT '事件是否成功',
@@ -125,10 +169,12 @@ CREATE TABLE IF NOT EXISTS `user_authentication_audit` (
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '记录创建时间',
     `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '记录更新时间',
     KEY `idx_user_id` (`user_id`),
+    KEY `idx_user_auth_audit_tenant_id` (`tenant_id`),
     KEY `idx_username` (`username`),
     KEY `idx_event_type` (`event_type`),
     KEY `idx_created_at` (`created_at`),
-    KEY `idx_success` (`success`)
+    KEY `idx_success` (`success`),
+    CONSTRAINT `fk_user_auth_audit_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户认证审计表';
 
 -- 创建用户头像表
@@ -217,7 +263,7 @@ CREATE TABLE IF NOT EXISTS `export_task` (
 -- 导出教学示例：用量/账单混合场景
 CREATE TABLE IF NOT EXISTS `demo_export_usage` (
     `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-    `tenant_code` VARCHAR(64) NOT NULL COMMENT '租户/客户编码',
+    `tenant_id` BIGINT NOT NULL COMMENT '租户ID',
     `usage_date` DATE NOT NULL COMMENT '用量日期',
     `product_code` VARCHAR(64) NOT NULL COMMENT '产品编码',
     `product_name` VARCHAR(128) NOT NULL COMMENT '产品名称',
@@ -256,7 +302,7 @@ CREATE TABLE IF NOT EXISTS `demo_export_usage` (
     `attachment_info` JSON COMMENT '附件信息（Upload 文件上传，JSON 格式存储文件信息）',
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     PRIMARY KEY (`id`),
-    KEY `idx_demo_usage_tenant_date` (`tenant_code`, `usage_date`),
+    KEY `idx_demo_usage_tenant_date` (`tenant_id`, `usage_date`),
     KEY `idx_demo_usage_product` (`product_code`),
     KEY `idx_demo_usage_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='导出教学示例表：用量/账单型数据（扩展版，覆盖所有表单组件类型）';
@@ -272,6 +318,7 @@ CREATE TABLE IF NOT EXISTS `demo_export_usage` (
 -- DROP PROCEDURE IF EXISTS `sp_generate_demo_export_usage`;
 -- DELIMITER $$
 -- CREATE PROCEDURE `sp_generate_demo_export_usage`(
+--     IN p_tenant_id BIGINT,
 --     IN p_days INT,
 --     IN p_rows_per_day INT,
 --     IN p_target_rows INT,
@@ -281,7 +328,7 @@ CREATE TABLE IF NOT EXISTS `demo_export_usage` (
 --     DECLARE d INT DEFAULT 0;
 --     DECLARE i INT;
 --     DECLARE usage_dt DATE;
---     DECLARE tenant_code VARCHAR(64);
+--     DECLARE tenant_id BIGINT;
 --     DECLARE product_code VARCHAR(64);
 --     DECLARE product_name VARCHAR(128);
 --     DECLARE plan_tier VARCHAR(32);
@@ -297,7 +344,7 @@ CREATE TABLE IF NOT EXISTS `demo_export_usage` (
 --
 --     -- 如果 p_clear_existing 为 1（true），则先清空表中的所有数据
 --     IF p_clear_existing IS NOT NULL AND p_clear_existing = 1 THEN
---         TRUNCATE TABLE `demo_export_usage`;
+--         DELETE FROM `demo_export_usage` WHERE `tenant_id` = IFNULL(p_tenant_id, 1);
 --     END IF;
 --
 --     IF p_rows_per_day IS NULL OR p_rows_per_day <= 0 THEN SET p_rows_per_day = 2000; END IF;
@@ -314,7 +361,7 @@ CREATE TABLE IF NOT EXISTS `demo_export_usage` (
 --         SET usage_dt = CURDATE() - INTERVAL d DAY;
 --         SET i = 0;
 --         WHILE i < p_rows_per_day AND inserted_rows < target_rows DO
---             SET tenant_code = ELT(1 + FLOOR(RAND() * 3), 'tenant-alpha', 'tenant-beta', 'tenant-gamma');
+--             SET tenant_id = IFNULL(p_tenant_id, 1);
 --             SET product_code = ELT(1 + FLOOR(RAND() * 5), 'cdn', 'oss', 'api', 'mq', 'db');
 --             SET product_name = CASE product_code
 --                 WHEN 'cdn' THEN 'CDN 流量'
@@ -351,11 +398,11 @@ CREATE TABLE IF NOT EXISTS `demo_export_usage` (
 --             SET status_val = ELT(1 + FLOOR(RAND() * 3), 'UNBILLED', 'BILLED', 'ADJUSTED');
 --
 --             INSERT INTO `demo_export_usage` (
---                 `tenant_code`, `usage_date`, `product_code`, `product_name`, `plan_tier`, `region`,
+--                 `tenant_id`, `usage_date`, `product_code`, `product_name`, `plan_tier`, `region`,
 --                 `usage_qty`, `unit`, `unit_price`, `amount`, `currency`, `tax_rate`, `is_billable`,
 --                 `status`, `metadata`, `created_at`
 --             ) VALUES (
---                 tenant_code,
+--                 tenant_id,
 --                 usage_dt,
 --                 product_code,
 --                 product_name,

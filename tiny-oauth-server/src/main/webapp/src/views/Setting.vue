@@ -206,7 +206,7 @@ const basicRules: Record<string, Rule[]> = {
   ],
   email: [
     {
-      validator: (_rule: any, value: string) => {
+      validator: (_rule: unknown, value: string) => {
         if (!value || value.trim() === '') {
           return Promise.resolve() // 允许为空
         }
@@ -223,7 +223,7 @@ const basicRules: Record<string, Rule[]> = {
   ],
   phone: [
     {
-      validator: (_rule: any, value: string) => {
+      validator: (_rule: unknown, value: string) => {
         if (!value || value.trim() === '') {
           return Promise.resolve() // 允许为空
         }
@@ -266,7 +266,7 @@ const passwordRules: Record<string, Rule[]> = {
   confirmPassword: [
     { required: true, message: '请确认新密码' },
     {
-      validator: (_rule: any, value: string) => {
+      validator: (_rule: unknown, value: string) => {
         if (!value) {
           return Promise.reject('请确认新密码')
         }
@@ -529,9 +529,9 @@ const loadUserInfo = async () => {
 const handleBasicSubmit = async () => {
   basicLoading.value = true
   try {
-    // 处理空值：空字符串转换为 null
-    const emailValue = basicForm.email && basicForm.email.trim() ? basicForm.email.trim() : null
-    const phoneValue = basicForm.phone && basicForm.phone.trim() ? basicForm.phone.trim() : null
+    // 处理空值：空字符串转换为 undefined
+    const emailValue = basicForm.email && basicForm.email.trim() ? basicForm.email.trim() : undefined
+    const phoneValue = basicForm.phone && basicForm.phone.trim() ? basicForm.phone.trim() : undefined
     
     // 提交基本信息（包含 username，虽然不可修改但需要传递以通过后端验证）
     await updateUser(basicForm.id, {

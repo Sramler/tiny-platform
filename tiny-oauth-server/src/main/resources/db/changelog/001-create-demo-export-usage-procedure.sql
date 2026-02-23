@@ -2,6 +2,7 @@
 -- 仅管理存储过程，表结构仍由 schema.sql 管理
 
 CREATE PROCEDURE sp_generate_demo_export_usage(
+    IN p_tenant_id BIGINT,
     IN p_days INT,
     IN p_rows_per_day INT,
     IN p_target_rows INT,
@@ -11,7 +12,7 @@ BEGIN
     DECLARE d INT DEFAULT 0;
     DECLARE i INT;
     DECLARE usage_dt DATE;
-    DECLARE tenant_code VARCHAR(64);
+    DECLARE tenant_id BIGINT;
     DECLARE product_code VARCHAR(64);
     DECLARE product_name VARCHAR(128);
     DECLARE plan_tier VARCHAR(32);
@@ -49,7 +50,7 @@ BEGIN
     DECLARE attachment_info_val JSON;
 
     IF p_clear_existing IS NOT NULL AND p_clear_existing = 1 THEN
-        TRUNCATE TABLE demo_export_usage;
+        DELETE FROM demo_export_usage WHERE tenant_id = IFNULL(p_tenant_id, 1);
     END IF;
 
     IF p_rows_per_day IS NULL OR p_rows_per_day <= 0 THEN SET p_rows_per_day = 2000; END IF;
@@ -66,7 +67,7 @@ BEGIN
         SET usage_dt = CURDATE() - INTERVAL d DAY;
         SET i = 0;
         WHILE i < p_rows_per_day AND inserted_rows < target_rows DO
-            SET tenant_code = ELT(1 + FLOOR(RAND() * 3), 'tenant-alpha', 'tenant-beta', 'tenant-gamma');
+            SET tenant_id = IFNULL(p_tenant_id, 1);
             SET product_code = ELT(1 + FLOOR(RAND() * 5), 'cdn', 'oss', 'api', 'mq', 'db');
             SET product_name = CASE product_code
                 WHEN 'cdn' THEN 'CDN 流量'
@@ -157,7 +158,7 @@ BEGIN
             END;
 
             INSERT INTO demo_export_usage (
-                tenant_code, usage_date, product_code, product_name, plan_tier, region,
+                tenant_id, usage_date, product_code, product_name, plan_tier, region,
                 usage_qty, unit, unit_price, amount, currency, tax_rate, is_billable,
                 status, metadata, created_at,
                 description, priority, tags, usage_time, quality_score, discount_percentage,
@@ -165,7 +166,7 @@ BEGIN
                 start_date, end_date, selected_features, min_value, max_value,
                 start_time, end_time, payment_method, notes, attachment_info
             ) VALUES (
-                tenant_code,
+                tenant_id,
                 usage_dt,
                 product_code,
                 product_name,
@@ -213,5 +214,3 @@ BEGIN
         END WHILE;
     END WHILE;
 END;
-
-

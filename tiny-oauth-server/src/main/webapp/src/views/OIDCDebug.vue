@@ -111,7 +111,7 @@ const environmentInfo = computed(() => ({
 function decodeJwt(token?: string | null) {
   if (!token) return null
   const parts = token.split('.')
-  if (parts.length !== 3) return null
+  if (parts.length !== 3 || !parts[1]) return null
   try {
     const payload = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'))
     return JSON.parse(decodeURIComponent(escape(payload)))

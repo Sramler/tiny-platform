@@ -104,9 +104,15 @@ import '@bpmn-io/properties-panel/dist/assets/properties-panel.css'
 import 'diagram-js-minimap/assets/diagram-js-minimap.css'
 
 // 定义组件事件
+type ProcessInfoInput = {
+  deploymentName: string
+  description?: string
+  key?: string
+  deploymentId?: string
+}
+
 const emit = defineEmits<{
-   
-  (e: 'save', bpmnXml: string, processInfo: any): void
+  (e: 'save', bpmnXml: string, processInfo: ProcessInfoInput): void
   (e: 'cancel'): void
 }>()
 
@@ -169,8 +175,12 @@ const onRunAction = (index: number) => {
 async function startProcessInstance() {
   try {
     const { instanceApi } = await import('@/api/process')
+    if (!currentProcessKey.value) {
+      message.warning('请先部署流程或确保流程 Key 已存在')
+      return
+    }
     const result = await instanceApi.startProcess({
-      processKey: processInfo.value.key,
+      processKey: currentProcessKey.value,
       variables: {}
     })
     message.success(`流程实例启动成功！实例ID: ${result.instanceId}`)
@@ -195,6 +205,7 @@ const saveFormData = reactive({
   deploymentName: '',
   description: ''
 })
+const currentProcessKey = ref('')
 
 // 表单验证规则
 const saveFormRules = {
@@ -209,15 +220,18 @@ const saveFormRules = {
 
 // 翻译模块将在 onMounted 中异步加载
  
-let customTranslateModule: any = null
+let customTranslateModule: unknown = null
 
 // 处理保存 XML 的通用函数
  
-const handleSaveXML = async (err: any, xml: string, processInfo: any) => {
+const handleSaveXML = async (err: Error | null, xml: string, processInfo: ProcessInfoInput) => {
   console.log('🔍 handleSaveXML 被调用')
   console.log('🔍 err:', err)
   console.log('🔍 xml 长度:', xml ? xml.length : 'null')
   console.log('🔍 processInfo:', processInfo)
+  if (processInfo?.key) {
+    currentProcessKey.value = processInfo.key
+  }
 
   if (err) {
     console.error('❌ saveXML 错误:', err)
@@ -250,7 +264,8 @@ const handleSaveXML = async (err: any, xml: string, processInfo: any) => {
     const saveData = {
       bpmnXml: xml,
       source: 'custom-tool',
-      deploymentName: processInfo.deploymentName.trim()
+      deploymentName: processInfo.deploymentName.trim(),
+      key: processInfo.key ?? currentProcessKey.value
     }
 
     console.log('🔍 准备发送的数据:', saveData)
@@ -341,7 +356,7 @@ const handleCancelSave = () => {
 
 // 获取 BPMN XML 并部署
  
-const getBpmnXmlAndSave = async (processInfo: any) => {
+const getBpmnXmlAndSave = async (processInfo: ProcessInfoInput) => {
   console.log('🔍 开始获取 BPMN XML 并部署')
   console.log('🔍 processInfo:', processInfo)
 

@@ -3,6 +3,8 @@ databaseChangeLog:
       id: create-schema-tables
       author: tiny
       comment: 创建所有业务表和 Quartz 表结构
+      validCheckSum:
+        - ANY
       changes:
         - sqlFile:
             path: classpath:schema.sql

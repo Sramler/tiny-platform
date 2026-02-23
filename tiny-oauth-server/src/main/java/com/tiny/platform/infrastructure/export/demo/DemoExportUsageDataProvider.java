@@ -107,10 +107,14 @@ public class DemoExportUsageDataProvider implements FilterAwareDataProvider<Demo
             List<Predicate> predicates = new ArrayList<>();
             
             if (filters != null) {
-                if (filters.containsKey("tenantCode") && filters.get("tenantCode") != null) {
-                    String tenantCode = filters.get("tenantCode").toString().trim();
-                    if (!tenantCode.isEmpty()) {
-                        predicates.add(cb.equal(root.get("tenantCode"), tenantCode));
+                if (filters.containsKey("tenantId") && filters.get("tenantId") != null) {
+                    String tenantIdRaw = filters.get("tenantId").toString().trim();
+                    if (!tenantIdRaw.isEmpty()) {
+                        try {
+                            Long tenantId = Long.parseLong(tenantIdRaw);
+                            predicates.add(cb.equal(root.get("tenantId"), tenantId));
+                        } catch (NumberFormatException ignored) {
+                        }
                     }
                 }
                 if (filters.containsKey("productCode") && filters.get("productCode") != null) {
@@ -128,10 +132,10 @@ public class DemoExportUsageDataProvider implements FilterAwareDataProvider<Demo
                 // 可以继续添加其他过滤条件
             }
             
-            // 默认排序：按 usageDate DESC, tenantCode, productCode
+            // 默认排序：按 usageDate DESC, tenantId, productCode
             query.orderBy(
                 cb.desc(root.get("usageDate")),
-                cb.asc(root.get("tenantCode")),
+                cb.asc(root.get("tenantId")),
                 cb.asc(root.get("productCode"))
             );
             
@@ -199,4 +203,3 @@ public class DemoExportUsageDataProvider implements FilterAwareDataProvider<Demo
         }
     }
 }
-

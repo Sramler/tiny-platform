@@ -202,7 +202,7 @@ async function loadRoles() {
   }))
   // 获取当前用户已分配角色
   if (form.value.id) {
-    const userRoleIds = await getUserRoles(form.value.id)
+    const userRoleIds = await getUserRoles(Number(form.value.id))
     selectedRoleIds.value = (userRoleIds || []).map((id: any) => String(id))
   } else {
     selectedRoleIds.value = []

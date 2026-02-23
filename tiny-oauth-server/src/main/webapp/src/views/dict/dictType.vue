@@ -160,8 +160,7 @@
             placeholder="请输入描述信息" />
         </a-form-item>
         <a-form-item label="租户ID" name="tenantId">
-          <a-input-number v-model:value="formState.tenantId" :min="0" style="width: 100%"
-            :disabled="drawerMode === 'view'" placeholder="0表示平台字典" />
+          <a-input :value="tenantIdDisplay" disabled />
         </a-form-item>
         <a-form-item label="分类ID" name="categoryId">
           <a-input-number v-model:value="formState.categoryId" :min="0" style="width: 100%"
@@ -200,7 +199,7 @@ import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
 import { useThrottle } from '@/utils/debounce'
-import type { TableColumnsType } from 'ant-design-vue'
+import { getTenantId } from '@/utils/tenant'
 import {
   getDictTypeList,
   createDictType,
@@ -301,7 +300,7 @@ const paginationConfig = computed(() => {
 })
 
 // 阶段4: 列定义
-const INITIAL_COLUMNS: TableColumnsType = [
+const INITIAL_COLUMNS: Array<Record<string, any>> = [
   { title: 'ID', dataIndex: 'id', width: 80, sorter: true },
   { title: '字典编码', dataIndex: 'dictCode', width: 150 },
   { title: '字典名称', dataIndex: 'dictName', width: 150 },
@@ -322,7 +321,7 @@ const DEFAULT_VISIBLE_COLUMNS = [
   'id', 'dictCode', 'dictName', 'description', 'isBuiltin', 'builtinLocked', 'sortOrder', 'enabled', 'createdAt', 'action'
 ]
 
-const allColumns = ref([...INITIAL_COLUMNS])
+const allColumns = ref<Array<Record<string, any>>>([...INITIAL_COLUMNS])
 const showColumnKeys = ref(DEFAULT_VISIBLE_COLUMNS.filter((key): key is string => typeof key === 'string'))
 
 // 阶段4: 计算列（过滤显示的列）
@@ -343,7 +342,7 @@ const tableScrollX = computed(() => {
   }
   const totalWidth = columns.value.reduce((sum, col) => {
     if (!col) return sum
-    return sum + (col.width || 100)
+    return sum + Number(col.width || 100)
   }, 0)
   return totalWidth + 100
 })
@@ -420,11 +419,23 @@ const formState = ref<DictTypeFormState>({
   dictCode: '',
   dictName: '',
   description: '',
-  tenantId: 0,
+  tenantId: undefined,
   categoryId: undefined,
   enabled: true,
   sortOrder: 0,
 })
+
+const tenantIdDisplay = computed(() => {
+  const tenantId = formState.value.tenantId ?? resolveTenantId()
+  return tenantId != null ? String(tenantId) : '-'
+})
+
+function resolveTenantId(): number | undefined {
+  const raw = getTenantId()
+  if (!raw) return undefined
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
 
 // 阶段5: Drawer 操作
 function openCreateDrawer() {
@@ -433,7 +444,7 @@ function openCreateDrawer() {
     dictCode: '',
     dictName: '',
     description: '',
-    tenantId: 0,
+    tenantId: resolveTenantId(),
     categoryId: undefined,
     isBuiltin: false,
     builtinLocked: false,
@@ -450,7 +461,7 @@ function openEditDrawer(record: any) {
     dictCode: record.dictCode || '',
     dictName: record.dictName || '',
     description: record.description || '',
-    tenantId: record.tenantId ?? 0,
+    tenantId: record.tenantId ?? resolveTenantId(),
     categoryId: record.categoryId,
     isBuiltin: record.isBuiltin ?? false,
     builtinLocked: record.builtinLocked ?? false,
@@ -467,7 +478,7 @@ function handleView(record: any) {
     dictCode: record.dictCode || '',
     dictName: record.dictName || '',
     description: record.description || '',
-    tenantId: record.tenantId ?? 0,
+    tenantId: record.tenantId ?? resolveTenantId(),
     categoryId: record.categoryId,
     isBuiltin: record.isBuiltin ?? false,
     builtinLocked: record.builtinLocked ?? false,
@@ -485,11 +496,16 @@ function handleDrawerClose() {
 
 async function handleSubmit() {
   try {
+    const tenantId = resolveTenantId()
+    if (tenantId == null) {
+      message.error('请先选择租户')
+      return
+    }
     const payload: DictTypeCreateUpdateDto = {
       dictCode: formState.value.dictCode,
       dictName: formState.value.dictName,
       description: formState.value.description,
-      tenantId: formState.value.tenantId ?? 0,
+      tenantId,
       categoryId: formState.value.categoryId,
       enabled: formState.value.enabled ?? true,
       sortOrder: formState.value.sortOrder ?? 0,

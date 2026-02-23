@@ -44,7 +44,7 @@ export class TranslateUtils {
   /**
    * 调试日志输出
    */
-  private debugLog(message: string, ...args: any[]): void {
+  private debugLog(message: string, ...args: unknown[]): void {
     if (this.enableDebugLogs) {
       console.debug(message, ...args)
     }
@@ -163,13 +163,14 @@ export class TranslateUtils {
    */
   public translate(
     template: string,
-    replacements?: Record<string, any>,
+    replacements?: Record<string, unknown>,
     context?: {
       source?: string
       component?: string
     },
   ): string {
     try {
+      performanceStats.totalTranslations += 1
       replacements = replacements || {}
       if (context) {
         this.debugLog('🌐 翻译上下文:', context)
@@ -188,13 +189,16 @@ export class TranslateUtils {
       if (this.enableOfficialFallback && this.officialTranslations[template]) {
         translation = this.officialTranslations[template]
         isTranslated = true
+        performanceStats.officialFallbacks += 1
         this.debugLog(`🌍 [官方] ${template} -> ${translation}`)
+        notifyStatsUpdate()
         return this.replacePlaceholders(translation, replacements)
       }
 
       if (!isTranslated && allTranslations[template]) {
         translation = allTranslations[template]
         isTranslated = true
+        performanceStats.moduleTranslations += 1
 
         // 确定具体是哪个模块提供的翻译
         let moduleName = 'unknown'
@@ -209,13 +213,16 @@ export class TranslateUtils {
         }
 
         this.debugLog(`📚 [${moduleName}] ${template} -> ${translation}`)
+        notifyStatsUpdate()
         return this.replacePlaceholders(translation, replacements)
       }
 
       if (!isTranslated && this.customTranslations[template]) {
         translation = this.customTranslations[template]
         isTranslated = true
+        performanceStats.temporaryTranslations += 1
         this.debugLog(`🎨 [临时] ${template} -> ${translation}`)
+        notifyStatsUpdate()
         return this.replacePlaceholders(translation, replacements)
       }
 
@@ -232,6 +239,8 @@ export class TranslateUtils {
       // 记录未翻译的键
       if (!isTranslated) {
         console.warn(`❌ 翻译键未找到: ${template}`)
+        performanceStats.untranslatedKeys.add(template)
+        notifyStatsUpdate()
       }
 
       // 替换占位符
@@ -249,9 +258,10 @@ export class TranslateUtils {
    * @param replacements 替换参数
    * @returns 替换后的文本
    */
-  private replacePlaceholders(text: string, replacements: Record<string, any>): string {
-    return text.replace(/{([^}]+)}/g, (_, key: string) => {
-      return replacements[key] || `{${key}}`
+  private replacePlaceholders(text: string, replacements: Record<string, unknown>): string {
+    return text.replace(/{([^}]+)}/g, (_: string, key: string) => {
+      const value = replacements[key]
+      return value == null ? `{${key}}` : String(value)
     })
   }
 
@@ -315,7 +325,7 @@ export class TranslateUtils {
    * @param replacements 替换参数
    * @returns 翻译后的文本数组
    */
-  public translateBatch(templates: string[], replacements?: Record<string, any>): string[] {
+  public translateBatch(templates: string[], replacements?: Record<string, unknown>): string[] {
     return templates.map((template) => this.translate(template, replacements))
   }
 
@@ -337,7 +347,7 @@ export class TranslateUtils {
     return {
       translate: [
         'value',
-        (template: string, replacements?: Record<string, any>) => {
+        (template: string, replacements?: Record<string, unknown>) => {
           const result = this.translate(template, replacements)
           return result
         },
@@ -412,21 +422,21 @@ export class TranslateUtils {
     const officialKeys = Object.keys(this.officialTranslations)
     const officialMatch = officialKeys.find((k) => k === key)
     if (officialMatch) {
-      return this.officialTranslations[officialMatch]
+      return this.officialTranslations[officialMatch] ?? null
     }
 
     // 2. 查找模块翻译
     const localKeys = Object.keys(allTranslations)
     const localMatch = localKeys.find((k) => k === key)
     if (localMatch) {
-      return allTranslations[localMatch]
+      return allTranslations[localMatch] ?? null
     }
 
     // 3. 查找临时翻译
     const customKeys = Object.keys(this.customTranslations)
     const customMatch = customKeys.find((k) => k === key)
     if (customMatch) {
-      return this.customTranslations[customMatch]
+      return this.customTranslations[customMatch] ?? null
     }
 
     // 4. 所有翻译源都没找到，返回 null
@@ -465,7 +475,7 @@ export const translateUtils = TranslateUtils.getInstance()
 // 导出便捷函数
 export const translate = (
   template: string,
-  replacements?: Record<string, any>,
+  replacements?: Record<string, unknown>,
   context?: {
     source?: string
     component?: string
@@ -494,7 +504,120 @@ export const setDebugLogs = (enable: boolean) => translateUtils.setDebugLogs(ena
 
 export const isDebugLogsEnabled = () => translateUtils.isDebugLogsEnabled()
 
-export const importTranslations = (data: any) => translateUtils.importTranslations(data)
+export const importTranslations = (data: { official?: TranslationMap; custom?: TranslationMap }) =>
+  translateUtils.importTranslations(data)
+
+// 性能统计与未翻译键追踪
+type PerformanceStats = {
+  totalTranslations: number
+  cacheHits: number
+  cacheMisses: number
+  cacheHitRate: string
+  officialFallbacks: number
+  officialFallbackRate: string
+  moduleTranslations: number
+  moduleTranslationRate: string
+  temporaryTranslations: number
+  temporaryTranslationRate: string
+  untranslatedCount: number
+  untranslatedRate: string
+  untranslatedKeys: string[]
+}
+
+const performanceStats = {
+  totalTranslations: 0,
+  cacheHits: 0,
+  cacheMisses: 0,
+  officialFallbacks: 0,
+  moduleTranslations: 0,
+  temporaryTranslations: 0,
+  untranslatedKeys: new Set<string>(),
+}
+
+const statsListeners = new Set<() => void>()
+
+function notifyStatsUpdate() {
+  statsListeners.forEach((fn) => fn())
+}
+
+function computeRates(total: number, count: number): string {
+  if (!total) return '0%'
+  return `${Math.round((count / total) * 100)}%`
+}
+
+export function getPerformanceStats(): PerformanceStats {
+  const total = performanceStats.totalTranslations
+  const untranslatedCount = performanceStats.untranslatedKeys.size
+  return {
+    totalTranslations: total,
+    cacheHits: performanceStats.cacheHits,
+    cacheMisses: performanceStats.cacheMisses,
+    cacheHitRate: computeRates(total, performanceStats.cacheHits),
+    officialFallbacks: performanceStats.officialFallbacks,
+    officialFallbackRate: computeRates(total, performanceStats.officialFallbacks),
+    moduleTranslations: performanceStats.moduleTranslations,
+    moduleTranslationRate: computeRates(total, performanceStats.moduleTranslations),
+    temporaryTranslations: performanceStats.temporaryTranslations,
+    temporaryTranslationRate: computeRates(total, performanceStats.temporaryTranslations),
+    untranslatedCount,
+    untranslatedRate: computeRates(total, untranslatedCount),
+    untranslatedKeys: Array.from(performanceStats.untranslatedKeys),
+  }
+}
+
+export function resetPerformanceStats(): void {
+  performanceStats.totalTranslations = 0
+  performanceStats.cacheHits = 0
+  performanceStats.cacheMisses = 0
+  performanceStats.officialFallbacks = 0
+  performanceStats.moduleTranslations = 0
+  performanceStats.temporaryTranslations = 0
+  performanceStats.untranslatedKeys.clear()
+  notifyStatsUpdate()
+}
+
+export function onStatsUpdate(cb: () => void): () => void {
+  statsListeners.add(cb)
+  return () => statsListeners.delete(cb)
+}
+
+export function getUntranslatedKeys(): string[] {
+  return Array.from(performanceStats.untranslatedKeys)
+}
+
+export function getUntranslatedStats(): { count: number; keys: string[] } {
+  const keys = getUntranslatedKeys()
+  return { count: keys.length, keys }
+}
+
+export function exportUntranslatedKeys(): string[] {
+  const keys = getUntranslatedKeys()
+  if (keys.length) {
+    console.log('未翻译键导出:', keys)
+  }
+  return keys
+}
+
+export function generateTranslationSuggestions(): Record<string, string> {
+  return {}
+}
+
+export function getOfficialPackagesInfo(): Record<string, unknown> {
+  return {}
+}
+
+export function getOfficialTranslationStatus(): { loaded: boolean; count: number } {
+  const merged = translateUtils.getMergedTranslations()
+  return { loaded: Object.keys(merged).length > 0, count: Object.keys(merged).length }
+}
+
+export async function initializeTranslationSystem(): Promise<void> {
+  await translateUtils.initialize()
+}
+
+export function clearCache(): void {
+  // 暂无缓存实现，保留接口
+}
 
 // 全局上下文管理
 let globalTranslationContext = {
@@ -547,6 +670,6 @@ export const bpmnTranslations = {
   add: (translations: TranslationMap) => translateUtils.addCustomTranslations(translations),
 
   // 翻译单个文本
-  translate: (template: string, replacements?: Record<string, any>) =>
+  translate: (template: string, replacements?: Record<string, unknown>) =>
     translateUtils.translate(template, replacements),
 }
