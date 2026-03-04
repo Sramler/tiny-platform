@@ -20,7 +20,13 @@ public class UserResponseDto {
 
     private LocalDateTime lastLoginAt;
 
-    public UserResponseDto(Long id, String username, String nickname, boolean enabled, boolean accountNonExpired, boolean accountNonLocked, boolean credentialsNonExpired, LocalDateTime lastLoginAt) {
+    private Integer failedLoginCount;
+
+    private LocalDateTime lastFailedLoginAt;
+
+    public UserResponseDto(Long id, String username, String nickname, boolean enabled, boolean accountNonExpired,
+                           boolean accountNonLocked, boolean credentialsNonExpired, LocalDateTime lastLoginAt,
+                           Integer failedLoginCount, LocalDateTime lastFailedLoginAt) {
         this.id = id;
         this.username = username;
         this.nickname = nickname;
@@ -29,6 +35,8 @@ public class UserResponseDto {
         this.accountNonLocked = accountNonLocked;
         this.credentialsNonExpired = credentialsNonExpired;
         this.lastLoginAt = lastLoginAt;
+        this.failedLoginCount = failedLoginCount;
+        this.lastFailedLoginAt = lastFailedLoginAt;
     }
 
     public Long getId() {
@@ -61,5 +69,13 @@ public class UserResponseDto {
 
     public LocalDateTime getLastLoginAt() {
         return lastLoginAt;
+    }
+
+    public Integer getFailedLoginCount() {
+        return failedLoginCount;
+    }
+
+    public LocalDateTime getLastFailedLoginAt() {
+        return lastFailedLoginAt;
     }
 }

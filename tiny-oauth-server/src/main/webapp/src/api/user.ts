@@ -22,6 +22,9 @@ export type UserSummary = {
   accountNonExpired?: boolean
   accountNonLocked?: boolean
   credentialsNonExpired?: boolean
+  failedLoginCount?: number
+  lastLoginAt?: string
+  lastFailedLoginAt?: string
 }
 
 type PageResponse<T> = {

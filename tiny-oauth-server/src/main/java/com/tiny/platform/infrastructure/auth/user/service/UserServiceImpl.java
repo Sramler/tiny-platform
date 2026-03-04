@@ -70,7 +70,8 @@ public class UserServiceImpl implements UserService {
 
     private UserResponseDto toDto(User user) {
         return new UserResponseDto(user.getId(),user.getUsername(),user.getNickname(),user.isEnabled(),
-                user.isAccountNonExpired(),user.isAccountNonLocked(),user.isCredentialsNonExpired(),user.getLastLoginAt());
+                user.isAccountNonExpired(),user.isAccountNonLocked(),user.isCredentialsNonExpired(),user.getLastLoginAt(),
+                user.getFailedLoginCount() != null ? user.getFailedLoginCount() : 0, user.getLastFailedLoginAt());
     }
 
     @Override

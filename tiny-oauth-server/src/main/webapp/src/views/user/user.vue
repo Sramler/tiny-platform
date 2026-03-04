@@ -176,6 +176,9 @@
                   {{ record[column.dataIndex] ? '是' : '否' }}
                 </a-tag>
               </template>
+              <template v-else-if="['lastLoginAt', 'lastFailedLoginAt'].includes(column.dataIndex)">
+                <span>{{ formatDateTime(record[column.dataIndex]) }}</span>
+              </template>
               <template v-else-if="column.dataIndex === 'action'">
                 <div class="action-buttons">
                   <a-button type="link" size="small" @click.stop="throttledEdit(record)" class="action-btn">
@@ -310,6 +313,8 @@ const INITIAL_COLUMNS = [
   { title: '是否启用', dataIndex: 'enabled', sorter: true },
   { title: '账号未过期', dataIndex: 'accountNonExpired', sorter: true },
   { title: '账号未锁定', dataIndex: 'accountNonLocked', sorter: true },
+  { title: '失败登录次数', dataIndex: 'failedLoginCount', sorter: true, width: 120 },
+  { title: '最后失败时间', dataIndex: 'lastFailedLoginAt', sorter: true, width: 180 },
   { title: '密码未过期', dataIndex: 'credentialsNonExpired', sorter: true },
   {
     title: '最后登录时间',
@@ -444,6 +449,25 @@ async function loadData() {
     pagination.value.total = 0
   } finally {
     loading.value = false
+  }
+}
+
+function formatDateTime(text: string | null | undefined) {
+  if (!text) return '-'
+  try {
+    const date = new Date(text)
+    if (Number.isNaN(date.getTime())) return '-'
+    return date.toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    })
+  } catch (error) {
+    return '-'
   }
 }
 

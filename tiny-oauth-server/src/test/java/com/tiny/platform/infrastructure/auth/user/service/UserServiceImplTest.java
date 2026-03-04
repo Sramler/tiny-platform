@@ -4,10 +4,16 @@ import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.auth.role.repository.RoleRepository;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.dto.UserCreateUpdateDto;
+import com.tiny.platform.infrastructure.auth.user.dto.UserRequestDto;
+import com.tiny.platform.infrastructure.auth.user.dto.UserResponseDto;
 import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.time.LocalDateTime;
@@ -15,6 +21,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -114,5 +121,46 @@ class UserServiceImplTest {
         assertThat(updated.isAccountNonLocked()).isFalse();
         assertThat(updated.getFailedLoginCount()).isEqualTo(4);
         assertThat(updated.getLastFailedLoginAt()).isEqualTo(failedAt);
+    }
+
+    @Test
+    void should_include_failed_login_fields_in_user_list_dto() {
+        UserRepository userRepository = mock(UserRepository.class);
+        UserServiceImpl service = new UserServiceImpl(
+                userRepository,
+                mock(PasswordEncoder.class),
+                mock(RoleRepository.class),
+                mock(UserAuthenticationMethodRepository.class)
+        );
+
+        TenantContext.setTenantId(1L);
+
+        LocalDateTime lastFailedAt = LocalDateTime.of(2026, 3, 4, 10, 15);
+        User existingUser = new User();
+        existingUser.setId(11L);
+        existingUser.setTenantId(1L);
+        existingUser.setUsername("carol");
+        existingUser.setNickname("Carol");
+        existingUser.setEnabled(true);
+        existingUser.setAccountNonExpired(true);
+        existingUser.setAccountNonLocked(false);
+        existingUser.setCredentialsNonExpired(true);
+        existingUser.setLastLoginAt(LocalDateTime.of(2026, 3, 4, 10, 0));
+        existingUser.setFailedLoginCount(5);
+        existingUser.setLastFailedLoginAt(lastFailedAt);
+
+        PageRequest pageable = PageRequest.of(0, 10);
+        when(userRepository.findAll(org.mockito.ArgumentMatchers.<Specification<User>>any(), eq(pageable)))
+            .thenReturn(new PageImpl<>(java.util.List.of(existingUser), pageable, 1));
+
+        Page<UserResponseDto> page = service.users(new UserRequestDto(), pageable);
+
+        assertThat(page.getContent()).hasSize(1);
+        UserResponseDto dto = page.getContent().getFirst();
+        assertThat(dto.getUsername()).isEqualTo("carol");
+        assertThat(dto.isAccountNonLocked()).isFalse();
+        assertThat(dto.getFailedLoginCount()).isEqualTo(5);
+        assertThat(dto.getLastLoginAt()).isEqualTo(LocalDateTime.of(2026, 3, 4, 10, 0));
+        assertThat(dto.getLastFailedLoginAt()).isEqualTo(lastFailedAt);
     }
 }

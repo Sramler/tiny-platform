@@ -123,7 +123,7 @@ class ApplicationOAuthModelCoverageTest {
         assertThat(userCreate.getPhone()).isEqualTo("13800000000");
         assertThat(userCreate.getAccountNonLocked()).isFalse();
 
-        UserResponseDto userResponse = new UserResponseDto(2L, "bob", "Bob", true, true, false, true, created);
+        UserResponseDto userResponse = new UserResponseDto(2L, "bob", "Bob", true, true, false, true, created, 3, created.minusHours(1));
         assertThat(userResponse.getId()).isEqualTo(2L);
         assertThat(userResponse.getUsername()).isEqualTo("bob");
         assertThat(userResponse.getNickname()).isEqualTo("Bob");
@@ -132,6 +132,8 @@ class ApplicationOAuthModelCoverageTest {
         assertThat(userResponse.isAccountNonLocked()).isFalse();
         assertThat(userResponse.isCredentialsNonExpired()).isTrue();
         assertThat(userResponse.getLastLoginAt()).isEqualTo(created);
+        assertThat(userResponse.getFailedLoginCount()).isEqualTo(3);
+        assertThat(userResponse.getLastFailedLoginAt()).isEqualTo(created.minusHours(1));
 
         ResourceRequestDto resourceRequest = new ResourceRequestDto();
         resourceRequest.setName("menu");
