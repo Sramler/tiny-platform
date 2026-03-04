@@ -9,6 +9,9 @@ logs/
 **/logs/
 *.tmp
 *.swp
+**/test-results/
+**/playwright-report/
+**/blob-report/
 
 # Java 编译产物
 *.class
