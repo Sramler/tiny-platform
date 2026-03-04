@@ -1,6 +1,7 @@
 package com.tiny.platform.core.oauth.controller;
 
 import com.tiny.platform.core.oauth.config.FrontendProperties;
+import com.tiny.platform.core.oauth.security.RedirectPathSanitizer;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
@@ -36,9 +37,8 @@ public class LoginController {
      */
     private String buildFrontendUrl(String configuredUrl, HttpServletRequest request) {
         if (configuredUrl.startsWith("redirect:")) {
-            // 开发环境：重定向到 Vite dev server，需要附加查询参数
             String baseUrl = configuredUrl.substring("redirect:".length());
-            String queryString = request.getQueryString();
+            String queryString = RedirectPathSanitizer.buildSanitizedQueryString(request, java.util.Set.of("redirect"));
             if (queryString != null && !queryString.isEmpty()) {
                 return configuredUrl + (baseUrl.contains("?") ? "&" : "?") + queryString;
             }

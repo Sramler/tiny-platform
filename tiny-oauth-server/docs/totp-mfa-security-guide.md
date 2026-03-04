@@ -1579,62 +1579,70 @@ public OAuth2AuthorizationService oauth2AuthorizationService(
 
 #### 1. 登录时的 MFA 流程 ✅ **已实现**
 
-**当前实现**：
+**当前实现（2026-03-04）**：
 
-- ✅ 已实现真正的 MFA 登录流程：密码登录 → TOTP 验证 → 登录成功
+- ✅ 已实现真正的两阶段 MFA 登录流程：密码登录 → TOTP challenge → 会话升级 → 登录成功
 - ✅ 支持多因素认证（PASSWORD + TOTP）
-- ✅ 支持部分认证 Token（`MultiFactorAuthenticationToken`）
-- ✅ 支持会话升级（`promoteToFullyAuthenticated`）
+- ✅ 支持 partial MFA token（`authenticated=false`）
+- ✅ 以 factor authority 作为主语义（`FACTOR_PASSWORD` / `FACTOR_TOTP`）
+- ✅ 支持会话升级（`promoteToFullyAuthenticated` / `tryPromoteToFullyAuthenticated`）
+- ✅ 已收敛 redirect 与 CSRF 边界
+- ✅ 已增加 TOTP 在线防爆破保护
 
-**实现方案**：两步登录（推荐）
+**现行流程**：
 
 1. 用户输入用户名和密码 → 验证密码
-2. `MultiAuthenticationProvider` 检测到用户配置了 PASSWORD + TOTP
-3. 验证密码成功后，返回完全认证的 Token（`completedFactors=["PASSWORD"]`）
-4. `CustomLoginSuccessHandler` 检查用户已绑定并激活 TOTP
-5. 跳转到 `/self/security/totp-verify` 页面
-6. 用户输入 TOTP 码 → 验证 TOTP → 升级会话 → 登录成功
+2. `MultiAuthenticationProvider` 检测到用户配置了 PASSWORD + TOTP，且本次会话 `requireTotp=true`
+3. 密码成功后，返回 partial token：
+   - `authenticated=false`
+   - `FACTOR_PASSWORD`
+4. `CustomLoginSuccessHandler` 根据 factor authority + `requireTotp` 判断，跳转到 `/self/security/totp-verify`
+5. 用户输入 TOTP 码
+6. `SecurityController` 调用 `MultiFactorAuthenticationSessionManager` 升级会话
+7. 升级成功后，才回到原始 `/oauth2/authorize?...` 或站内目标地址
+8. 最终 token 的 `amr` 只在真实完成 TOTP 后才包含 `totp`
 
 **已实现功能**：
 
 - [x] 修改登录流程，支持两步验证
 - [x] 创建登录中间状态（密码验证成功，等待 TOTP 验证）
 - [x] TOTP 验证页面（`/self/security/totp-verify`）
-- [x] 在 `MultiAuthenticationProvider` 中集成 `TotpService.verify()`（TOTP 验证逻辑已提取到独立服务）
-- [x] 实现 `authenticateTotp()` 方法，调用 `TotpService.verify()`
+- [x] 在 `MultiAuthenticationProvider` 与 `SecurityServiceImpl` 中统一接入 `TotpVerificationGuard`
 - [x] 从 `authentication_configuration` 中获取 `secretKey`
 - [x] 正确处理 TOTP 验证失败的情况
-- [x] 支持用户未绑定 TOTP 时直接跳转到目标页面
+- [x] 支持用户未绑定 TOTP 时进入绑定页面，`OPTIONAL` 下可按规则跳过提醒
 - [x] 使用枚举类型（`Provider`、`Factor`）替代字符串，提供类型安全
 - [x] 使用 `EnumSet<Factor>` 替代 `Set<String>`，提高性能
 - [x] 创建 `MultiFactorAuthenticationSessionManager` 统一管理会话升级
 - [x] 移除 `PartialAuthenticationAuthorizationManager`，简化流程
+- [x] 登录/MFA 表单启用 CSRF
+- [x] 登录/MFA `redirect` 收敛为内部相对路径
+- [x] TOTP 连续失败保护（默认 10 分钟窗口内失败 5 次锁定 10 分钟）
 
 **关键代码**：
 
 ```java
 // MultiAuthenticationProvider.java
 private Authentication handleMultiFactorAuthentication(...) {
-    // 验证密码成功后，返回完全认证的 Token
+    // 验证密码成功后，返回 partial token（authenticated=false）
     if (completed.contains(MultiFactorAuthenticationToken.Factor.PASSWORD) &&
         remaining.stream().anyMatch(m -> FACTOR_TOTP.equalsIgnoreCase(m.getAuthenticationType()))) {
         UserDetails userDetails = userDetailsService.loadUserByUsername(user.getUsername());
-        MultiFactorAuthenticationToken authenticated = new MultiFactorAuthenticationToken(
+        MultiFactorAuthenticationToken partial = MultiFactorAuthenticationToken.partiallyAuthenticated(
             user.getUsername(),
             null,
             MultiFactorAuthenticationToken.Provider.from(provider),
             completed,
             userDetails.getAuthorities()
         );
-        authenticated.setAuthenticated(true); // 标记为已认证，以便触发 successHandler
-        return authenticated;
+        return partial;
     }
 }
 
 // CustomLoginSuccessHandler.java
 if (authentication instanceof MultiFactorAuthenticationToken mfaToken) {
-    if (mfaToken.hasCompletedFactor(MultiFactorAuthenticationToken.Factor.PASSWORD) &&
-        !mfaToken.hasCompletedFactor(MultiFactorAuthenticationToken.Factor.TOTP) &&
+    if (AuthenticationFactorAuthorities.hasFactor(authentication, PASSWORD) &&
+        !AuthenticationFactorAuthorities.hasFactor(authentication, TOTP) &&
         totpActivated) {
         response.sendRedirect("/self/security/totp-verify?redirect=" + encoded);
         return;
@@ -1647,7 +1655,7 @@ if (authentication instanceof MultiFactorAuthenticationToken mfaToken) {
 - ✅ 使用枚举类型（`Factor.PASSWORD`、`Factor.TOTP`）替代字符串，提供编译期类型检查
 - ✅ 使用 `EnumSet<Factor>` 替代 `Set<String>`，提高性能和内存效率
 - ✅ 使用 `hasCompletedFactor()` 方法替代 `contains()`，提供更好的 API
-- ✅ TOTP 验证逻辑已提取到 `TotpService` 服务类，统一管理
+- ✅ TOTP 算法仍由 `TotpService` 提供；在线防爆破与锁定逻辑由 `TotpVerificationGuard` 统一管理
 - ✅ 会话升级逻辑已提取到 `MultiFactorAuthenticationSessionManager`，统一管理
 
 **相关文件**：
@@ -1655,10 +1663,11 @@ if (authentication instanceof MultiFactorAuthenticationToken mfaToken) {
 - `MultiAuthenticationProvider.java` - 多因素认证处理
 - `MultiFactorAuthenticationToken.java` - MFA Token（使用枚举类型，类型安全）
 - `TotpService.java` - TOTP 验证服务（统一管理 TOTP 验证逻辑）
+- `TotpVerificationGuard.java` - TOTP 限流/锁定保护
 - `MultiFactorAuthenticationSessionManager.java` - MFA 会话管理（统一管理会话升级）
 - `CustomLoginSuccessHandler.java` - 登录成功后的跳转逻辑
 - `SecurityController.java` - TOTP 验证处理
-- `totp-verify.html` - TOTP 验证页面
+- `src/main/webapp/src/views/security/TotpVerify.vue` - TOTP 验证页面
 
 **架构优化**：
 

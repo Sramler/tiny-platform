@@ -5,6 +5,7 @@ import com.tiny.platform.core.oauth.filter.HttpRequestLoggingFilter;
 import com.tiny.platform.core.oauth.logging.HttpLogSanitizer;
 import com.tiny.platform.core.oauth.model.HttpRequestLog;
 import com.tiny.platform.core.oauth.model.SecurityUser;
+import com.tiny.platform.core.oauth.security.AuthenticationFactorAuthorities;
 import com.tiny.platform.core.oauth.service.HttpRequestLogService;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.core.util.IpUtils;
@@ -150,7 +151,10 @@ public class HttpRequestLoggingInterceptor implements HandlerInterceptor {
 
     private String resolveCurrentUserId() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated()) {
+        if (authentication == null) {
+            return null;
+        }
+        if (!authentication.isAuthenticated() && !AuthenticationFactorAuthorities.hasAnyFactor(authentication)) {
             return null;
         }
         Object principal = authentication.getPrincipal();

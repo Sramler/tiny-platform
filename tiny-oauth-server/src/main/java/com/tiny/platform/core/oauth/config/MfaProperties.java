@@ -19,12 +19,51 @@ public class MfaProperties {
      */
     private String mode = "NONE";
 
+    /**
+     * TOTP 最大连续失败次数
+     */
+    private int totpMaxFailedAttempts = 5;
+
+    /**
+     * TOTP 失败统计窗口（分钟）
+     */
+    private int totpFailureWindowMinutes = 10;
+
+    /**
+     * TOTP 触发锁定后的锁定时长（分钟）
+     */
+    private int totpLockMinutes = 10;
+
     public String getMode() {
         return mode;
     }
 
     public void setMode(String mode) {
         this.mode = mode;
+    }
+
+    public int getTotpMaxFailedAttempts() {
+        return totpMaxFailedAttempts;
+    }
+
+    public void setTotpMaxFailedAttempts(int totpMaxFailedAttempts) {
+        this.totpMaxFailedAttempts = totpMaxFailedAttempts;
+    }
+
+    public int getTotpFailureWindowMinutes() {
+        return totpFailureWindowMinutes;
+    }
+
+    public void setTotpFailureWindowMinutes(int totpFailureWindowMinutes) {
+        this.totpFailureWindowMinutes = totpFailureWindowMinutes;
+    }
+
+    public int getTotpLockMinutes() {
+        return totpLockMinutes;
+    }
+
+    public void setTotpLockMinutes(int totpLockMinutes) {
+        this.totpLockMinutes = totpLockMinutes;
     }
 
     /**

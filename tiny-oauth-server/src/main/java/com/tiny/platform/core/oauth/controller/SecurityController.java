@@ -7,8 +7,10 @@ import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
+import com.tiny.platform.core.oauth.security.RedirectPathSanitizer;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationSessionManager;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
+import com.tiny.platform.core.oauth.security.AuthenticationFactorAuthorities;
 import com.tiny.platform.core.oauth.service.AuthenticationAuditService;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.infrastructure.core.util.IpUtils;
@@ -153,12 +155,19 @@ public class SecurityController {
         return ResponseEntity.ok(securityService.checkTotp(user, totpCode));
     }
 
-    /** 跳过/不再提醒绑定TOTP */
+    /**
+     * 跳过/不再提醒绑定 TOTP。
+     * 仅允许在 OPTIONAL 模式下、用户尚未激活 TOTP 时调用；
+     * 已激活 TOTP、全局禁用 MFA、强制 MFA 场景都会被业务层拒绝。
+     */
     @PostMapping("/skip-mfa-remind")
     @ResponseBody
     public ResponseEntity<Map<String, Object>> skipMfaRemind(@RequestBody Map<String, Object> req) {
         User user = getCurrentUser();
         if (user == null) return ResponseEntity.status(401).body(Map.of("success", false, "error", "未登录"));
+        if (!canSkipMfaRemind(user)) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "error", "当前状态不允许跳过二次验证绑定提醒"));
+        }
         boolean skip = Boolean.TRUE.equals(req.get("skipMfaRemind"));
         return ResponseEntity.ok(securityService.skipMfaRemind(user, skip));
     }
@@ -186,7 +195,7 @@ public class SecurityController {
 
     /**
      * GET TOTP绑定页（页面渲染）
-     * 支持部分认证 Token（已完成 PASSWORD 验证，等待 TOTP 验证）
+     * 支持携带 PASSWORD 因子 authority、等待 TOTP 的部分认证 Token
      *
      * 根据配置区分开发环境和生产环境：
      * - 开发环境：重定向到 Vite dev server (http://localhost:5173/self/security/totp-bind)
@@ -202,7 +211,7 @@ public class SecurityController {
      * POST TOTP绑定表单（页面表单提交），成功后重定向回原目标
      * 使用 -form 后缀以避免与 JSON 接口 /totp/bind 冲突
      * 注意：password 参数是可选的，如果用户没有本地密码（如通过 OAuth2 登录），则不需要密码
-     * 支持部分认证 Token（已完成 PASSWORD 验证，等待 TOTP 验证）
+     * 支持携带 PASSWORD 因子 authority、等待 TOTP 的部分认证 Token
      */
     @PostMapping("/totp/bind-form")
     public String bindTotpForm(@RequestParam String totpCode,
@@ -211,21 +220,26 @@ public class SecurityController {
                                HttpServletRequest request,
                                jakarta.servlet.http.HttpServletResponse response) {
         User user = getCurrentUser();
+        String safeRedirect = RedirectPathSanitizer.sanitize(redirect, request);
         if (user == null) {
-            return "redirect:/login?error=" + URLEncoder.encode("未登录", StandardCharsets.UTF_8);
+            return "redirect:/login?redirect="
+                    + URLEncoder.encode(safeRedirect, StandardCharsets.UTF_8)
+                    + "&error=" + URLEncoder.encode("未登录", StandardCharsets.UTF_8);
         }
 
         Map<String, Object> result = securityService.bindTotp(user, password, totpCode);
         if(Boolean.TRUE.equals(result.get("success"))) {
-            // 记录登录IP和登录时间
-            recordLoginInfo(user, request);
             // 记录MFA绑定审计
             auditService.recordMfaBind(user.getUsername(), user.getId(), "TOTP", request);
-            promoteToFullyAuthenticated(user, request, response, true);
-            return buildRedirectUrl(redirect);
+            if (!promoteToFullyAuthenticated(user, request, response, true)) {
+                return buildSessionPromotionFailureRedirect(safeRedirect);
+            }
+            // 记录登录IP和登录时间
+            recordLoginInfo(user, request);
+            return buildRedirectUrl(safeRedirect, request);
         } else {
             String error = String.valueOf(result.getOrDefault("error", "绑定失败"));
-            String encodedRedirect = URLEncoder.encode(redirect, StandardCharsets.UTF_8);
+            String encodedRedirect = URLEncoder.encode(safeRedirect, StandardCharsets.UTF_8);
             String encodedError = URLEncoder.encode(error, StandardCharsets.UTF_8);
             return "redirect:/self/security/totp-bind?redirect=" + encodedRedirect + "&error=" + encodedError;
         }
@@ -233,16 +247,26 @@ public class SecurityController {
 
     /**
      * POST 跳过二次认证（页面表单），成功后重定向回原目标
-     * 支持部分认证 Token（已完成 PASSWORD 验证，等待 TOTP 验证）
+     * 支持携带 PASSWORD 因子 authority、等待 TOTP 的部分认证 Token。
+     * 该入口只服务于“未绑定/未激活 TOTP 的提醒页跳过”，
+     * 不是已激活 TOTP 用户的 step-up 绕过通道。
      */
     @PostMapping("/totp/skip")
-    public String skipTotp(@RequestParam String redirect) {
+    public String skipTotp(@RequestParam String redirect, HttpServletRequest request) {
         User user = getCurrentUser();
+        String safeRedirect = RedirectPathSanitizer.sanitize(redirect, request);
         if (user == null) {
-            return "redirect:/login?error=" + URLEncoder.encode("未登录", StandardCharsets.UTF_8);
+            return "redirect:/login?redirect="
+                    + URLEncoder.encode(safeRedirect, StandardCharsets.UTF_8)
+                    + "&error=" + URLEncoder.encode("未登录", StandardCharsets.UTF_8);
+        }
+        if (!canSkipMfaRemind(user)) {
+            String encodedRedirect = URLEncoder.encode(safeRedirect, StandardCharsets.UTF_8);
+            String encodedError = URLEncoder.encode("当前状态不允许跳过二次验证绑定提醒", StandardCharsets.UTF_8);
+            return "redirect:/self/security/totp-bind?redirect=" + encodedRedirect + "&error=" + encodedError;
         }
         securityService.skipMfaRemind(user, true);
-        return buildRedirectUrl(redirect);
+        return buildRedirectUrl(safeRedirect, request);
     }
 
     /**
@@ -269,23 +293,26 @@ public class SecurityController {
                                 HttpServletRequest request,
                                 jakarta.servlet.http.HttpServletResponse response) {
         User user = getCurrentUser();
+        String safeRedirect = RedirectPathSanitizer.sanitize(redirect, request);
         if (user == null) {
-            String encodedRedirect = URLEncoder.encode(redirect, StandardCharsets.UTF_8);
+            String encodedRedirect = URLEncoder.encode(safeRedirect, StandardCharsets.UTF_8);
             String encodedError = URLEncoder.encode("未登录", StandardCharsets.UTF_8);
             return "redirect:/self/security/totp-verify?redirect=" + encodedRedirect + "&error=" + encodedError;
         }
 
         Map<String, Object> result = securityService.checkTotp(user, totpCode);
         if(Boolean.TRUE.equals(result.get("success"))) {
+            if (!promoteToFullyAuthenticated(user, request, response, true)) {
+                return buildSessionPromotionFailureRedirect(safeRedirect);
+            }
             // 记录登录IP和登录时间
             recordLoginInfo(user, request);
             // 记录登录成功审计（TOTP验证完成，完全登录）
             auditService.recordLoginSuccess(user.getUsername(), user.getId(), "LOCAL", "MFA", request);
-            promoteToFullyAuthenticated(user, request, response, true);
-            return buildRedirectUrl(redirect);
+            return buildRedirectUrl(safeRedirect, request);
         } else {
             String error = String.valueOf(result.getOrDefault("error", "验证失败"));
-            String encodedRedirect = URLEncoder.encode(redirect, StandardCharsets.UTF_8);
+            String encodedRedirect = URLEncoder.encode(safeRedirect, StandardCharsets.UTF_8);
             String encodedError = URLEncoder.encode(error, StandardCharsets.UTF_8);
             return "redirect:/self/security/totp-verify?redirect=" + encodedRedirect + "&error=" + encodedError;
         }
@@ -302,11 +329,10 @@ public class SecurityController {
             return null;
         }
 
-        // 支持部分认证 Token（MultiFactorAuthenticationToken with completedFactors）
-        // 即使 authenticated=false，只要有已完成因子，也应该允许获取用户信息
+        // 支持带有 factor authority 的部分认证 Token。
+        // 即使 authenticated=false，只要已经完成至少一个因子，也允许继续 challenge 流程中的用户解析。
         if (authentication instanceof com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken mfaToken) {
-            // 如果是多因素认证 Token，即使 authenticated=false，只要有已完成因子，也允许访问
-            if (!mfaToken.getCompletedFactors().isEmpty() || mfaToken.isAuthenticated()) {
+            if (AuthenticationFactorAuthorities.hasAnyFactor(mfaToken) || mfaToken.isAuthenticated()) {
                 String username = mfaToken.getUsername();
                 return userRepository.findUserByUsernameAndTenantId(username, tenantId).orElse(null);
             }
@@ -321,11 +347,19 @@ public class SecurityController {
         return null;
     }
 
+    private boolean canSkipMfaRemind(User user) {
+        Map<String, Object> status = securityService.getSecurityStatus(user);
+        boolean disableMfa = Boolean.TRUE.equals(status.get("disableMfa"));
+        boolean forceMfa = Boolean.TRUE.equals(status.get("forceMfa"));
+        boolean totpActivated = Boolean.TRUE.equals(status.get("totpActivated"));
+        return !disableMfa && !forceMfa && !totpActivated;
+    }
+
     /**
      * 获取当前用户的登录方式
      * <p>
      * 支持部分认证的 {@link MultiFactorAuthenticationToken}（即使 {@code authenticated=false}，
-     * 只要有已完成因子，也能获取登录方式，与 {@link #getCurrentUser()} 保持一致）。
+     * 只要存在因子 authority，也能获取登录方式，与 {@link #getCurrentUser()} 保持一致）。
      *
      * @return [authenticationProvider, authenticationType]，如果无法确定则返回 [null, null]
      */
@@ -336,10 +370,22 @@ public class SecurityController {
         }
 
         // 优先处理 MultiFactorAuthenticationToken（允许部分认证）
-        // 即使 authenticated=false，只要有已完成因子，也应该允许获取登录方式
         if (authentication instanceof com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken mfa) {
             String provider = mfa.getAuthenticationProvider();
-            String type = mfa.getAuthenticationType();
+            String type;
+            boolean hasPassword = AuthenticationFactorAuthorities.hasFactor(authentication,
+                    MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD);
+            boolean hasTotp = AuthenticationFactorAuthorities.hasFactor(authentication,
+                    MultiFactorAuthenticationToken.AuthenticationFactorType.TOTP);
+            if (hasPassword && hasTotp) {
+                type = "MFA";
+            } else if (hasTotp) {
+                type = "TOTP";
+            } else if (hasPassword) {
+                type = "PASSWORD";
+            } else {
+                type = mfa.getAuthenticationType();
+            }
             // 如果 provider 为 null 或 type 为 UNKNOWN，表示无法确定登录方式
             if (provider == null || "UNKNOWN".equals(type)) {
                 return new String[]{null, null};
@@ -375,15 +421,21 @@ public class SecurityController {
         promoteToFullyAuthenticated(user, request, response, false);
     }
 
-    private void promoteToFullyAuthenticated(User user,
-                                             HttpServletRequest request,
-                                             jakarta.servlet.http.HttpServletResponse response,
-                                             boolean appendTotpFactor) {
-        sessionManager.promoteToFullyAuthenticated(
+    private boolean promoteToFullyAuthenticated(User user,
+                                                HttpServletRequest request,
+                                                jakarta.servlet.http.HttpServletResponse response,
+                                                boolean appendTotpFactor) {
+        return sessionManager.tryPromoteToFullyAuthenticated(
                 user,
                 request,
                 response,
                 appendTotpFactor ? MultiFactorAuthenticationToken.AuthenticationFactorType.TOTP : null);
+    }
+
+    private String buildSessionPromotionFailureRedirect(String safeRedirect) {
+        String encodedRedirect = URLEncoder.encode(safeRedirect, StandardCharsets.UTF_8);
+        String encodedError = URLEncoder.encode("登录状态更新失败，请重新登录", StandardCharsets.UTF_8);
+        return "redirect:/login?redirect=" + encodedRedirect + "&error=" + encodedError;
     }
 
     /**
@@ -393,9 +445,8 @@ public class SecurityController {
      */
     private String buildFrontendUrl(String configuredUrl, HttpServletRequest request) {
         if (configuredUrl.startsWith("redirect:")) {
-            // 开发环境：重定向到 Vite dev server，需要附加查询参数
             String baseUrl = configuredUrl.substring("redirect:".length());
-            String queryString = request.getQueryString();
+            String queryString = RedirectPathSanitizer.buildSanitizedQueryString(request, java.util.Set.of("redirect"));
             if (queryString != null && !queryString.isEmpty()) {
                 return configuredUrl + (baseUrl.contains("?") ? "&" : "?") + queryString;
             }
@@ -411,15 +462,13 @@ public class SecurityController {
      * - 开发环境：如果是相对路径，转换为前端完整 URL
      * - 生产环境：保持相对路径
      */
-    private String buildRedirectUrl(String redirect) {
-        // 如果已经是完整 URL，直接返回
-        if (redirect.startsWith("http://") || redirect.startsWith("https://")) {
-            return "redirect:" + redirect;
-        }
+    private String buildRedirectUrl(String redirect, HttpServletRequest request) {
+        String safeRedirect = RedirectPathSanitizer.sanitize(redirect, request);
 
+        // 如果已经是完整 URL，直接返回
         // 某些路径必须回到后端（如 /oauth2/authorize 等），否则会出现 OIDC state 丢失
-        if (isBackendOnlyPath(redirect)) {
-            return "redirect:" + redirect;
+        if (isBackendOnlyPath(safeRedirect)) {
+            return "redirect:" + safeRedirect;
         }
 
         // 获取登录页面配置，用于判断环境
@@ -429,11 +478,11 @@ public class SecurityController {
             String baseUrl = loginUrl.substring("redirect:".length());
             // 提取基础 URL（去掉路径部分）
             String devServerBase = baseUrl.substring(0, baseUrl.indexOf("/", baseUrl.indexOf("://") + 3));
-            String redirectUrl = devServerBase + redirect;
+            String redirectUrl = devServerBase + safeRedirect;
             return "redirect:" + redirectUrl;
         } else {
             // 生产环境：使用相对路径
-            return "redirect:" + redirect;
+            return "redirect:" + safeRedirect;
         }
     }
 

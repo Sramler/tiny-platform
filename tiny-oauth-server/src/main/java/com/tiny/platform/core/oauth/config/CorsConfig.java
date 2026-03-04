@@ -54,7 +54,9 @@ public class CorsConfig {
                 "x-b3-traceid",
                 "x-trace-id",
                 "x-b3-spanid",
-                "span-id"
+                "span-id",
+                "X-XSRF-TOKEN",
+                "x-xsrf-token"
         ));
 
         // 允许暴露的响应头

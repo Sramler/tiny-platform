@@ -4,7 +4,7 @@ import com.tiny.platform.core.oauth.config.MfaProperties;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationMethod;
 import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
-import com.tiny.platform.core.oauth.security.TotpService;
+import com.tiny.platform.core.oauth.security.TotpVerificationGuard;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.infrastructure.core.util.IpUtils;
 import com.tiny.platform.infrastructure.core.util.DeviceUtils;
@@ -40,17 +40,17 @@ public class SecurityServiceImpl implements SecurityService {
     private final UserAuthenticationMethodRepository authenticationMethodRepository;
     private final PasswordEncoder passwordEncoder;
     private final MfaProperties mfaProperties;
-    private final TotpService totpService;
+    private final TotpVerificationGuard totpVerificationGuard;
 
     @Autowired
     public SecurityServiceImpl(UserAuthenticationMethodRepository authenticationMethodRepository,
                                PasswordEncoder passwordEncoder,
                                MfaProperties mfaProperties,
-                               TotpService totpService) {
+                               TotpVerificationGuard totpVerificationGuard) {
         this.authenticationMethodRepository = authenticationMethodRepository;
         this.passwordEncoder = passwordEncoder;
         this.mfaProperties = mfaProperties;
-        this.totpService = totpService;
+        this.totpVerificationGuard = totpVerificationGuard;
     }
 
     @Override
@@ -196,14 +196,17 @@ public class SecurityServiceImpl implements SecurityService {
             secret = String.valueOf(totpConfig.get("secretKey"));
         }
         // 用真实 TOTP 算法校验
-        if (!validateTotpCode(secret, totpCode)) {
-            return Map.of("success", false, "error", "验证码错误");
-        }
-        totpConfig.put("activated", true);
         method.setUserId(user.getId());
         method.setTenantId(user.getTenantId());
         method.setAuthenticationProvider("LOCAL");
         method.setAuthenticationType("TOTP");
+
+        try {
+            totpVerificationGuard.verifyOrThrow(user.getUsername(), method, secret, totpCode, "验证码错误");
+        } catch (org.springframework.security.authentication.BadCredentialsException ex) {
+            return Map.of("success", false, "error", ex.getMessage());
+        }
+        totpConfig.put("activated", true);
         method.setAuthenticationConfiguration(totpConfig);
         method.setIsPrimaryMethod(false);
         method.setIsMethodEnabled(true);
@@ -268,8 +271,10 @@ public class SecurityServiceImpl implements SecurityService {
         if (totpCode == null || totpCode.isEmpty()) {
             return Map.of("success", false, "error", "请提供TOTP验证码");
         }
-        if (!validateTotpCode(secret, totpCode)) {
-            return Map.of("success", false, "error", "验证码错误");
+        try {
+            totpVerificationGuard.verifyOrThrow(user.getUsername(), totpMethodOpt.get(), secret, totpCode, "验证码错误");
+        } catch (org.springframework.security.authentication.BadCredentialsException ex) {
+            return Map.of("success", false, "error", ex.getMessage());
         }
         
         // 验证通过，删除 TOTP 认证方法
@@ -291,12 +296,14 @@ public class SecurityServiceImpl implements SecurityService {
         if (secret == null || secret.isEmpty() || "null".equals(secret)) {
             return Map.of("success", false, "error", "未找到TOTP密钥");
         }
-        if (!validateTotpCode(secret, totpCode)) {
-            return Map.of("success", false, "error", "验证码错误");
+        UserAuthenticationMethod totpMethod = totpMethodOpt.get();
+        try {
+            totpVerificationGuard.verifyOrThrow(user.getUsername(), totpMethod, secret, totpCode, "验证码错误");
+        } catch (org.springframework.security.authentication.BadCredentialsException ex) {
+            return Map.of("success", false, "error", ex.getMessage());
         }
         
         // 记录认证方法验证成功的信息
-        UserAuthenticationMethod totpMethod = totpMethodOpt.get();
         recordAuthenticationMethodVerification(totpMethod);
         
         return Map.of("success", true, "message", "验证码校验通过");
@@ -417,14 +424,6 @@ public class SecurityServiceImpl implements SecurityService {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < 16; i++) sb.append(chars.charAt(rnd.nextInt(chars.length())));
         return sb.toString();
-    }
-
-    /**
-     * 真实 TOTP 校验，兼容1步偏移，6位Code
-     * 使用 TotpService 进行验证
-     */
-    private boolean validateTotpCode(String secret, String submittedCode) {
-        return totpService.verify(secret, submittedCode);
     }
 
     private String urlEncode(String str) {

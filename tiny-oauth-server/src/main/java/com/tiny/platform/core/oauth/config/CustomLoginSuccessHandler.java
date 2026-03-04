@@ -2,8 +2,10 @@ package com.tiny.platform.core.oauth.config;
 
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
+import com.tiny.platform.core.oauth.security.AuthenticationFactorAuthorities;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationSessionManager;
+import com.tiny.platform.core.oauth.security.RedirectPathSanitizer;
 import com.tiny.platform.core.oauth.service.AuthenticationAuditService;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.core.oauth.tenant.IssuerTenantSupport;
@@ -56,14 +58,15 @@ public class CustomLoginSuccessHandler implements AuthenticationSuccessHandler {
     /**
      * 登录成功后处理流程：
      * 1. 获取当前登录用户名，查对应用户实例。
-     * 2. 检查是否是部分认证（已完成 PASSWORD，但还需要 TOTP）
-     * 3. 拉取用户当前二步认证状态（是否已绑定、激活、系统是否要求强制二次认证）。
-     * 4. 解析当前用户原意图跳转URL（优先SavedRequest, 其次redirect参数，兜底首页）。
+     * 2. 解析原意图跳转 URL（优先 SavedRequest，其次 redirect 参数，且统一经 RedirectPathSanitizer 收口）。
+     * 3. 拉取用户当前 MFA 状态（是否已绑定、激活、本次会话是否要求 TOTP、是否允许跳过提醒）。
      * 5. 跳转策略：
-     *    - 完全关闭MFA (enforce=off)：直接跳原意图页面。
-     *    - 部分认证（已完成 PASSWORD，但还需要 TOTP）：跳转到 TOTP 验证页面。
-     *    - 未激活（无论是否已创建记录）：统一跳转至 totp-bind 继续绑定流程（用户可继续扫码/输入验证码激活）。
-     *    - 已激活且完全认证：直接跳回原意图页面。
+     *    - 完全关闭 MFA：直接跳原意图页面。
+     *    - partial MFA token（authenticated=false）且仅具备 PASSWORD factor authority、同时 requireTotp=true：跳转到 TOTP 验证页面。
+     *    - 已绑定但未激活：统一跳转至 totp-bind 继续绑定流程。
+     *    - 未绑定且当前允许提醒：跳转至 totp-bind。
+     *    - 已完成所需因子或本次无需 TOTP：跳回原意图页面。
+     * 6. 只有本次会话确实 requireTotp 时，才升级为 fully authenticated 会话，避免把 OPTIONAL/NONE 场景错误补成 MFA。
      */
     public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response, Authentication authentication) throws IOException, ServletException {
         String username = authentication.getName();
@@ -84,7 +87,8 @@ public class CustomLoginSuccessHandler implements AuthenticationSuccessHandler {
         boolean forceMfa = Boolean.TRUE.equals(status.get("forceMfa"));
         boolean requireTotp = Boolean.TRUE.equals(status.get("requireTotp"));
 
-        // 解析原意图跳转 URL
+        // 解析原意图跳转 URL。这里只允许站内相对路径或内部授权端点路径，
+        // 外部 redirect_uri 只能由后续 /oauth2/authorize 标准流程决定。
         String intendedUrl = extractIntendedUrl(request, response);
         if (intendedUrl == null || intendedUrl.isBlank()) intendedUrl = "/";
         if ("/login".equals(intendedUrl) || intendedUrl.startsWith("/login?")) {
@@ -109,10 +113,10 @@ public class CustomLoginSuccessHandler implements AuthenticationSuccessHandler {
             return;
         }
 
-        // 2️⃣ 检查是否是 MultiFactorAuthenticationToken（部分认证状态）
+        // 2️⃣ 检查是否仅具备 PASSWORD factor authority、仍需继续 TOTP challenge
         if (authentication instanceof MultiFactorAuthenticationToken mfaToken) {
-            if (mfaToken.hasCompletedFactor(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD) &&
-                !mfaToken.hasCompletedFactor(MultiFactorAuthenticationToken.AuthenticationFactorType.TOTP) &&
+            if (AuthenticationFactorAuthorities.hasFactor(authentication, MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD) &&
+                !AuthenticationFactorAuthorities.hasFactor(authentication, MultiFactorAuthenticationToken.AuthenticationFactorType.TOTP) &&
                 totpActivated &&
                 requireTotp) {
                 logger.info("用户 {} 已完成密码验证，但还需 TOTP 验证，跳转 TOTP 验证页", user.getUsername());
@@ -202,10 +206,11 @@ public class CustomLoginSuccessHandler implements AuthenticationSuccessHandler {
 
     private String extractIntendedUrl(HttpServletRequest request, HttpServletResponse response) {
         SavedRequest savedRequest = requestCache.getRequest(request, response);
-        if (savedRequest != null && savedRequest.getRedirectUrl() != null) return savedRequest.getRedirectUrl();
+        if (savedRequest != null && savedRequest.getRedirectUrl() != null) {
+            return RedirectPathSanitizer.sanitize(savedRequest.getRedirectUrl(), request);
+        }
         String redirect = request.getParameter("redirect");
-        if (redirect != null && !redirect.isBlank()) return redirect;
-        return null;
+        return RedirectPathSanitizer.sanitize(redirect, request);
     }
 
     private String buildFrontendUrl(String configuredUrl, HttpServletRequest request, String paramName, String paramValue) {
@@ -249,13 +254,15 @@ public class CustomLoginSuccessHandler implements AuthenticationSuccessHandler {
      */
     private String extractAuthenticationFactor(Authentication authentication) {
         if (authentication instanceof MultiFactorAuthenticationToken mfaToken) {
-            // 如果已完成多个因子，返回主要因子或组合因子
-            if (mfaToken.hasCompletedFactor(MultiFactorAuthenticationToken.AuthenticationFactorType.TOTP) &&
-                mfaToken.hasCompletedFactor(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD)) {
-                return "MFA"; // 多因素认证
-            } else if (mfaToken.hasCompletedFactor(MultiFactorAuthenticationToken.AuthenticationFactorType.TOTP)) {
+            boolean hasPassword = AuthenticationFactorAuthorities.hasFactor(authentication,
+                    MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD);
+            boolean hasTotp = AuthenticationFactorAuthorities.hasFactor(authentication,
+                    MultiFactorAuthenticationToken.AuthenticationFactorType.TOTP);
+            if (hasPassword && hasTotp) {
+                return "MFA";
+            } else if (hasTotp) {
                 return "TOTP";
-            } else if (mfaToken.hasCompletedFactor(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD)) {
+            } else if (hasPassword) {
                 return "PASSWORD";
             }
             return mfaToken.getAuthenticationType() != null ? mfaToken.getAuthenticationType() : "PASSWORD";

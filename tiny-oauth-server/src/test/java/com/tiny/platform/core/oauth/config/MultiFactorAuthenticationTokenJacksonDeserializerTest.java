@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tiny.platform.core.oauth.model.SecurityUser;
+import com.tiny.platform.core.oauth.security.AuthenticationFactorAuthorities;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.core.GrantedAuthority;
@@ -59,7 +60,12 @@ class MultiFactorAuthenticationTokenJacksonDeserializerTest {
                 .doesNotContain(MultiFactorAuthenticationToken.AuthenticationFactorType.UNKNOWN);
         assertThat(token.getAuthorities())
                 .extracting(GrantedAuthority::getAuthority)
-                .containsExactlyInAnyOrder("SCOPE_profile", "ROLE_USER");
+                .containsExactlyInAnyOrder(
+                        "SCOPE_profile",
+                        "ROLE_USER",
+                        AuthenticationFactorAuthorities.FACTOR_AUTHORITY_PREFIX + "PASSWORD",
+                        AuthenticationFactorAuthorities.FACTOR_AUTHORITY_PREFIX + "TOTP"
+                );
         assertThat(token.getDetails()).isInstanceOf(SecurityUser.class);
         SecurityUser details = (SecurityUser) token.getDetails();
         assertThat(details.getUserId()).isEqualTo(123L);
@@ -88,6 +94,12 @@ class MultiFactorAuthenticationTokenJacksonDeserializerTest {
         assertThat(token.isAuthenticated()).isFalse();
         assertThat(token.getProvider()).isEqualTo(MultiFactorAuthenticationToken.AuthenticationProviderType.LDAP);
         assertThat(token.getCompletedFactors()).containsExactly(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD);
+        assertThat(token.getAuthorities())
+                .extracting(GrantedAuthority::getAuthority)
+                .containsExactlyInAnyOrder(
+                        "SCOPE_profile",
+                        AuthenticationFactorAuthorities.FACTOR_AUTHORITY_PREFIX + "PASSWORD"
+                );
         assertThat(token.getDetails()).isInstanceOf(Map.class);
         @SuppressWarnings("unchecked")
         Map<String, Object> details = (Map<String, Object>) token.getDetails();
@@ -114,6 +126,12 @@ class MultiFactorAuthenticationTokenJacksonDeserializerTest {
         assertThat(token.getCompletedFactors())
                 .contains(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD,
                         MultiFactorAuthenticationToken.AuthenticationFactorType.TOTP);
+        assertThat(token.getAuthorities())
+                .extracting(GrantedAuthority::getAuthority)
+                .containsExactlyInAnyOrder(
+                        AuthenticationFactorAuthorities.FACTOR_AUTHORITY_PREFIX + "PASSWORD",
+                        AuthenticationFactorAuthorities.FACTOR_AUTHORITY_PREFIX + "TOTP"
+                );
         // details 反序列化失败会被吞掉，不影响 token 返回
         assertThat(token.getDetails()).isNull();
     }

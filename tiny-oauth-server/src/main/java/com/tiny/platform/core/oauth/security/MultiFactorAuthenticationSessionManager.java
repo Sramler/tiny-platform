@@ -52,7 +52,7 @@ public class MultiFactorAuthenticationSessionManager {
      * @param user 当前用户对象
      */
     public void promoteToFullyAuthenticated(User user) {
-        promoteToFullyAuthenticated(
+        tryPromoteToFullyAuthenticated(
                 user,
                 (HttpServletRequest) null,
                 (HttpServletResponse) null,
@@ -72,7 +72,7 @@ public class MultiFactorAuthenticationSessionManager {
      * @param request HttpServletRequest，可为空
      */
     public void promoteToFullyAuthenticated(User user, HttpServletRequest request) {
-        promoteToFullyAuthenticated(user, request, (HttpServletResponse) null, null);
+        tryPromoteToFullyAuthenticated(user, request, (HttpServletResponse) null, null);
     }
 
     /**
@@ -95,23 +95,30 @@ public class MultiFactorAuthenticationSessionManager {
     public void promoteToFullyAuthenticated(User user,
                                             HttpServletRequest request,
                                             HttpServletResponse response) {
-        promoteToFullyAuthenticated(user, request, response, null);
+        tryPromoteToFullyAuthenticated(user, request, response, null);
     }
 
     public void promoteToFullyAuthenticated(User user,
                                             HttpServletRequest request,
                                             HttpServletResponse response,
                                             MultiFactorAuthenticationToken.AuthenticationFactorType additionalFactor) {
+        tryPromoteToFullyAuthenticated(user, request, response, additionalFactor);
+    }
+
+    public boolean tryPromoteToFullyAuthenticated(User user,
+                                                  HttpServletRequest request,
+                                                  HttpServletResponse response,
+                                                  MultiFactorAuthenticationToken.AuthenticationFactorType additionalFactor) {
         // 从 SecurityContextHolder 获取当前认证
         Authentication currentAuth = SecurityContextHolder.getContext().getAuthentication();
-        promoteToFullyAuthenticated(user, currentAuth, request, response, additionalFactor);
+        return tryPromoteToFullyAuthenticated(user, currentAuth, request, response, additionalFactor);
     }
 
     /**
      * 将当前会话升级为完全认证（例如完成 PASSWORD + TOTP）。
      * <p>
      * ✨ 改进版：接受当前 Authentication 参数，如果当前是 {@link MultiFactorAuthenticationToken}，
-     * 则继承其 provider、completedFactors 和 details，确保信息不丢失。
+     * 则继承其 provider、已完成因子以及 details，确保信息不丢失。
      * <p>
      * 功能：
      * <ul>
@@ -131,7 +138,7 @@ public class MultiFactorAuthenticationSessionManager {
                                             Authentication currentAuth,
                                             HttpServletRequest request,
                                             HttpServletResponse response) {
-        promoteToFullyAuthenticated(user, currentAuth, request, response, null);
+        tryPromoteToFullyAuthenticated(user, currentAuth, request, response, null);
     }
 
     public void promoteToFullyAuthenticated(User user,
@@ -139,8 +146,16 @@ public class MultiFactorAuthenticationSessionManager {
                                             HttpServletRequest request,
                                             HttpServletResponse response,
                                             MultiFactorAuthenticationToken.AuthenticationFactorType additionalFactor) {
+        tryPromoteToFullyAuthenticated(user, currentAuth, request, response, additionalFactor);
+    }
+
+    public boolean tryPromoteToFullyAuthenticated(User user,
+                                                  Authentication currentAuth,
+                                                  HttpServletRequest request,
+                                                  HttpServletResponse response,
+                                                  MultiFactorAuthenticationToken.AuthenticationFactorType additionalFactor) {
         if (user == null) {
-            return;
+            return false;
         }
 
         // 如果 currentAuth 为空，从 SecurityContextHolder 获取
@@ -160,7 +175,7 @@ public class MultiFactorAuthenticationSessionManager {
             MultiFactorAuthenticationToken authenticated;
             
             if (currentAuth instanceof MultiFactorAuthenticationToken mfaToken) {
-                // ✨ 正确做法：调用 token 的提升方法（期望其继承 provider/completedFactors/details）
+                // 复用现有 MFA token，保留 provider/details，并以 factor authority 为主延续已完成因子
                 if (additionalFactor != null) {
                     authenticated = mfaToken.promoteToFullyAuthenticatedWithFactor(additionalFactor, authorities);
                 } else {
@@ -189,7 +204,10 @@ public class MultiFactorAuthenticationSessionManager {
                                 .orElse(MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL);
 
                 EnumSet<MultiFactorAuthenticationToken.AuthenticationFactorType> completedFactors =
-                        EnumSet.of(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD);
+                        AuthenticationFactorAuthorities.extractFactors(currentAuth);
+                if (completedFactors.isEmpty()) {
+                    completedFactors = EnumSet.of(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD);
+                }
                 if (additionalFactor != null) {
                     completedFactors.add(additionalFactor);
                 }
@@ -250,11 +268,26 @@ public class MultiFactorAuthenticationSessionManager {
                 }
             } catch (Exception e) {
                 logger.warn("failed to persist security context for user={}, ex: {}", user.getUsername(), e.getMessage());
+                cleanupFailedPromotion(request);
+                return false;
             }
         } catch (Exception ex) {
             logger.warn("promoteToFullyAuthenticated failed for user={}, ex: {}", 
                     user == null ? "null" : user.getUsername(), ex.getMessage(), ex);
-            // 不要抛异常影响用户流程
+            cleanupFailedPromotion(request);
+            return false;
+        }
+        return true;
+    }
+
+    private void cleanupFailedPromotion(HttpServletRequest request) {
+        SecurityContextHolder.clearContext();
+        if (request == null) {
+            return;
+        }
+        HttpSession session = request.getSession(false);
+        if (session != null) {
+            session.removeAttribute(HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY);
         }
     }
 

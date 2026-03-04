@@ -1,22 +1,29 @@
 package com.tiny.platform.core.oauth.config;
 
+import com.tiny.platform.core.oauth.security.AuthenticationFactorAuthorities;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.authentication.AuthenticationDetailsSource;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.WebAuthenticationDetails;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.security.web.util.matcher.OrRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -31,6 +38,11 @@ import com.tiny.platform.core.oauth.tenant.TenantContextFilter;
 @Order(2)
 @EnableMethodSecurity(jsr250Enabled = true, securedEnabled = true)
 public class DefaultSecurityConfig {
+
+    static final RequestMatcher CSRF_PROTECTED_PATHS = new OrRequestMatcher(
+            new AntPathRequestMatcher("/login", "POST"),
+            new AntPathRequestMatcher("/self/security/**", "POST")
+    );
 
     private final CorsConfigurationSource corsConfigurationSource;
 
@@ -54,6 +66,7 @@ public class DefaultSecurityConfig {
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(
                                 "/login",
+                                "/csrf",
                                 "/favicon.ico",
                                 "/error",
                                 "/webjars/**",
@@ -61,6 +74,28 @@ public class DefaultSecurityConfig {
                                 "/css/**",
                                 "/js/**"
                         ).permitAll()
+                        // challenge 端点允许 partial MFA token 继续完成绑定/验证流程。
+                        .requestMatchers(
+                                "/self/security/status",
+                                "/self/security/totp-bind",
+                                "/self/security/totp-verify",
+                                "/self/security/totp/pre-bind",
+                                "/self/security/totp/bind-form",
+                                "/self/security/totp/check-form",
+                                "/self/security/totp/skip",
+                                "/self/security/skip-mfa-remind"
+                        ).access((authentication, context) ->
+                                new AuthorizationDecision(hasChallengeFlowAccess(authentication.get())))
+                        // 需要完整登录态，但不要求已完成 TOTP 的安全接口。
+                        .requestMatchers(
+                                "/self/security/totp/bind",
+                                "/self/security/totp/check"
+                        ).access((authentication, context) ->
+                                new AuthorizationDecision(hasSensitiveSecurityAccess(authentication.get())))
+                        // 高敏操作：必须完整登录且已完成 TOTP。
+                        .requestMatchers("/self/security/totp/unbind").access((authentication, context) ->
+                                new AuthorizationDecision(hasTotpSensitiveAccess(authentication.get())))
+                        .requestMatchers("/self/security/**").denyAll()
                         .requestMatchers("/sys/users/**").permitAll()
                         .anyRequest().authenticated()
                 )
@@ -74,7 +109,10 @@ public class DefaultSecurityConfig {
                         .permitAll()
                 )
                 .cors(cors -> cors.configurationSource(corsConfigurationSource))
-                .csrf(csrf -> csrf.disable())
+                .csrf(csrf -> csrf
+                        .csrfTokenRepository(csrfTokenRepository())
+                        .requireCsrfProtectionMatcher(CSRF_PROTECTED_PATHS)
+                )
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(Customizer.withDefaults()))
                 .authenticationProvider(authenticationProvider)
@@ -85,6 +123,16 @@ public class DefaultSecurityConfig {
     @Bean
     public PasswordEncoder passwordEncoder() {
         return PasswordEncoderFactories.createDelegatingPasswordEncoder();
+    }
+
+    @Bean
+    public CookieCsrfTokenRepository csrfTokenRepository() {
+        CookieCsrfTokenRepository repository = CookieCsrfTokenRepository.withHttpOnlyFalse();
+        repository.setCookiePath("/");
+        repository.setCookieName("XSRF-TOKEN");
+        repository.setHeaderName("X-XSRF-TOKEN");
+        repository.setParameterName("_csrf");
+        return repository;
     }
 
     @Bean
@@ -123,5 +171,22 @@ public class DefaultSecurityConfig {
     public CustomLoginFailureHandler customLoginFailureHandler(UserRepository userRepository,
                                                                com.tiny.platform.core.oauth.service.AuthenticationAuditService auditService) {
         return new CustomLoginFailureHandler(userRepository, auditService);
+    }
+
+    public static boolean hasChallengeFlowAccess(Authentication authentication) {
+        return authentication != null
+                && (authentication.isAuthenticated() || AuthenticationFactorAuthorities.hasAnyFactor(authentication));
+    }
+
+    public static boolean hasSensitiveSecurityAccess(Authentication authentication) {
+        return authentication != null && authentication.isAuthenticated();
+    }
+
+    public static boolean hasTotpSensitiveAccess(Authentication authentication) {
+        return hasSensitiveSecurityAccess(authentication)
+                && AuthenticationFactorAuthorities.hasFactor(
+                authentication,
+                com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken.AuthenticationFactorType.TOTP
+        );
     }
 }

@@ -2,6 +2,7 @@
  * TRACE_ID 工具函数
  * 用于生成和管理分布式追踪 ID
  */
+import { ensureCsrfToken, isUnsafeHttpMethod } from '@/utils/csrf'
 
 /**
  * 生成一个随机十六进制字符串（32 字符，用于 TRACE_ID）
@@ -252,6 +253,11 @@ export async function fetchWithTraceId(
   const tenantId = getTenantId()
   if (tenantId) {
     headers.set('X-Tenant-Id', tenantId)
+  }
+  if (isUnsafeHttpMethod(fetchOptions.method) && fetchOptions.credentials === 'include') {
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000'
+    const csrf = await ensureCsrfToken(apiBaseUrl)
+    headers.set(csrf.headerName, csrf.token)
   }
   optionsWithTraceId.headers = headers
 

@@ -39,6 +39,7 @@
         <input type="hidden" name="authenticationProvider" value="LOCAL" />
         <input type="hidden" name="authenticationType" value="PASSWORD" />
         <input type="hidden" name="redirect" :value="redirectParam" />
+        <input v-if="csrfParameterName" type="hidden" :name="csrfParameterName" :value="csrfToken" />
 
         <button type="submit" class="login-button" :class="{ loading: isSubmitting }" :disabled="isSubmitting">
           {{ isSubmitting ? '登录中...' : '登录' }}
@@ -55,6 +56,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { ensureCsrfToken } from '@/utils/csrf'
+import { sanitizeInternalRedirect } from '@/utils/redirect'
 import { clearTenantId, getTenantCode, isValidTenantCode, setTenantCode } from '@/utils/tenant'
 
 defineOptions({
@@ -68,6 +71,8 @@ const tenantRef = ref<HTMLInputElement | null>(null)
 const usernameRef = ref<HTMLInputElement | null>(null)
 const passwordRef = ref<HTMLInputElement | null>(null)
 const errorMessage = ref('')
+const csrfToken = ref('')
+const csrfParameterName = ref('_csrf')
 
 const defaultCredentials = {
   username: 'admin',
@@ -93,13 +98,19 @@ const redirectParam = computed(() => {
   const value = Array.isArray(raw) ? raw[0] ?? '/' : raw ?? '/'
   const normalized = String(value)
   try {
-    return decodeURIComponent(normalized)
+    return sanitizeInternalRedirect(decodeURIComponent(normalized))
   } catch {
-    return normalized
+    return sanitizeInternalRedirect(normalized)
   }
 })
 
-const handleSubmit = (event: Event) => {
+const loadCsrfToken = async () => {
+  const csrf = await ensureCsrfToken(baseUrl)
+  csrfToken.value = csrf.token
+  csrfParameterName.value = csrf.parameterName
+}
+
+const handleSubmit = async (event: Event) => {
   errorMessage.value = ''
   event.preventDefault()
   const rawTenantCode = tenantRef.value?.value?.trim() ?? ''
@@ -117,11 +128,24 @@ const handleSubmit = (event: Event) => {
   // 登录前清理旧租户ID，避免沿用上一会话租户导致后续链路冲突
   clearTenantId()
 
+  if (!csrfToken.value) {
+    try {
+      await loadCsrfToken()
+    } catch (error) {
+      console.error('获取 CSRF token 失败:', error)
+      errorMessage.value = '安全校验初始化失败，请刷新页面重试'
+      return
+    }
+  }
+
   isSubmitting.value = true
   formRef.value?.submit()
 }
 
 onMounted(() => {
+  loadCsrfToken().catch((error) => {
+    console.error('初始化 CSRF token 失败:', error)
+  })
   if (tenantRef.value) {
     const storedTenantCode = getTenantCode()
     if (storedTenantCode) {

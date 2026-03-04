@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { userManager } from '@/auth/oidc.ts'
 import { useAuth } from '@/auth/auth'
 import { persistentLogger } from '@/utils/logger'
+import { sanitizeInternalRedirect } from '@/utils/redirect'
 import { syncTenantContextFromAccessToken, syncTenantContextFromClaims } from '@/utils/tenant'
 
 const router = useRouter()
@@ -53,7 +54,7 @@ onMounted(async () => {
         await new Promise(resolve => setTimeout(resolve, 100))
 
         // 登录成功后跳转回主页或原始路径
-        const returnUrl = (user?.state as any)?.returnUrl || '/'
+        const returnUrl = sanitizeInternalRedirect((user?.state as any)?.returnUrl || '/')
         trace('redirect', { returnUrl })
 
         // 使用 replace 避免历史记录问题

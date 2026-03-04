@@ -1,6 +1,7 @@
 package com.tiny.platform.core.oauth.tenant;
 
 import com.tiny.platform.core.oauth.model.SecurityUser;
+import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
 import com.tiny.platform.infrastructure.tenant.domain.Tenant;
 import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -95,6 +96,41 @@ class TenantContextFilterTest {
         assertThat(request.getSession(false)).isNotNull();
         assertThat(request.getSession(false).getAttribute("AUTH_TENANT_ID")).isEqualTo(9L);
         assertThat(TenantContext.getTenantId()).isNull();
+    }
+
+    @Test
+    void shouldResolveTenantFromPartialMfaTokenWithFactors() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/self/security/status");
+        request.getSession(true);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AtomicReference<Long> tenantInChain = new AtomicReference<>();
+
+        SecurityUser details = new SecurityUser(
+                1L,
+                6L,
+                "admin",
+                "",
+                List.of(),
+                true,
+                true,
+                true,
+                true
+        );
+        MultiFactorAuthenticationToken auth = MultiFactorAuthenticationToken.partiallyAuthenticated(
+                "admin",
+                null,
+                MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL,
+                java.util.Set.of(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD),
+                List.of()
+        );
+        auth.setDetails(details);
+        SecurityContextHolder.getContext().setAuthentication(auth);
+
+        filter.doFilter(request, response, (req, resp) -> tenantInChain.set(TenantContext.getTenantId()));
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(tenantInChain.get()).isEqualTo(6L);
+        assertThat(request.getSession(false).getAttribute("AUTH_TENANT_ID")).isEqualTo(6L);
     }
 
     @Test

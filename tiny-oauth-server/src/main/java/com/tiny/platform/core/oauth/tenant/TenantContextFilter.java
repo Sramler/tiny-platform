@@ -3,6 +3,7 @@ package com.tiny.platform.core.oauth.tenant;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tiny.platform.core.oauth.model.SecurityUser;
+import com.tiny.platform.core.oauth.security.AuthenticationFactorAuthorities;
 import com.tiny.platform.infrastructure.tenant.domain.Tenant;
 import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import jakarta.servlet.FilterChain;
@@ -71,7 +72,7 @@ public class TenantContextFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI();
-        if ("GET".equalsIgnoreCase(request.getMethod()) && "/login".equals(path)) {
+        if ("GET".equalsIgnoreCase(request.getMethod()) && ("/login".equals(path) || "/csrf".equals(path))) {
             return true;
         }
         if (IssuerTenantSupport.isWellKnownOrJwkSetPath(path)) {
@@ -320,8 +321,11 @@ public class TenantContextFilter extends OncePerRequestFilter {
 
     private ResolvedTenant resolveTenantFromAuthentication() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated()
-                || authentication instanceof AnonymousAuthenticationToken) {
+        boolean hasPartialFactors = AuthenticationFactorAuthorities.hasAnyFactor(authentication);
+        if (authentication == null || authentication instanceof AnonymousAuthenticationToken) {
+            return new ResolvedTenant(null, null);
+        }
+        if (!authentication.isAuthenticated() && !hasPartialFactors) {
             return new ResolvedTenant(null, null);
         }
 

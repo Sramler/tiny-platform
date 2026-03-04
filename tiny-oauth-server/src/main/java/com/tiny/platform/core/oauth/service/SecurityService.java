@@ -31,7 +31,9 @@ public interface SecurityService {
     Map<String, Object> checkTotp(User user, String totpCode);
 
     /**
-     * 跳过/不再提醒MFA
+     * 跳过/不再提醒 MFA。
+     * 该能力只用于 OPTIONAL 模式下、未激活 TOTP 用户的“提醒抑制”；
+     * 不是已激活 TOTP 用户的验证绕过通道。
      */
     Map<String, Object> skipMfaRemind(User user, boolean skip);
 

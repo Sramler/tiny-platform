@@ -12,6 +12,7 @@
       <div v-if="errorText" class="error-message">{{ errorText }}</div>
 
       <form
+        ref="verifyFormRef"
         class="form"
         :action="checkFormActionUrl"
         method="post"
@@ -30,6 +31,7 @@
           />
         </div>
         <input type="hidden" name="redirect" :value="redirectParam" />
+        <input v-if="csrfParameterName" type="hidden" :name="csrfParameterName" :value="csrfToken" />
         <button type="submit" class="btn" :class="{ loading: isSubmitting }" :disabled="isSubmitting">
           {{ isSubmitting ? '确认中...' : '确认' }}
         </button>
@@ -43,11 +45,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { ensureCsrfToken } from '@/utils/csrf'
+import { sanitizeInternalRedirect } from '@/utils/redirect'
 
 const route = useRoute()
 const isSubmitting = ref(false)
+const verifyFormRef = ref<HTMLFormElement | null>(null)
+const csrfToken = ref('')
+const csrfParameterName = ref('_csrf')
 
 // 获取后端 API 基础 URL，如果没有配置则使用默认值
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000'
@@ -61,10 +68,10 @@ const redirectParam = computed(() => {
   const raw = Array.isArray(value) ? value[0] ?? '/' : value ?? '/'
   const str = String(raw)
   try {
-    return decodeURIComponent(str)
+    return sanitizeInternalRedirect(decodeURIComponent(str))
   } catch (error) {
     console.warn('无法解码 redirect 参数:', error)
-    return str
+    return sanitizeInternalRedirect(str)
   }
 })
 
@@ -75,8 +82,30 @@ const errorText = computed(() => {
   return String(value)
 })
 
-const handleSubmit = () => {
+const loadCsrfToken = async () => {
+  const csrf = await ensureCsrfToken(baseUrl)
+  csrfToken.value = csrf.token
+  csrfParameterName.value = csrf.parameterName
+}
+
+onMounted(() => {
+  loadCsrfToken().catch((error) => {
+    console.error('初始化 CSRF token 失败:', error)
+  })
+})
+
+const handleSubmit = async (event: Event) => {
+  event.preventDefault()
+  if (!csrfToken.value) {
+    try {
+      await loadCsrfToken()
+    } catch (error) {
+      console.error('获取 CSRF token 失败:', error)
+      return
+    }
+  }
   isSubmitting.value = true
+  verifyFormRef.value?.submit()
 }
 </script>
 

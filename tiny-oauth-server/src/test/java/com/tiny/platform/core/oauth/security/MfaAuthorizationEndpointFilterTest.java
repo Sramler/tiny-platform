@@ -139,6 +139,42 @@ class MfaAuthorizationEndpointFilterTest {
         assertThat(blankUserChain.getRequest()).isNotNull();
     }
 
+    @Test
+    void should_redirect_when_partialMfaTokenStillNeedsTotp() throws Exception {
+        SecurityService securityService = mock(SecurityService.class);
+        UserRepository userRepository = mock(UserRepository.class);
+        MfaAuthorizationEndpointFilter filter = newFilter(securityService, userRepository);
+        User user = user(3L, "partial");
+
+        SecurityUser securityUser = new SecurityUser(
+                3L, 5L, "partial", "",
+                List.of(new SimpleGrantedAuthority("ROLE_USER")),
+                true, true, true, true
+        );
+        MultiFactorAuthenticationToken partial = MultiFactorAuthenticationToken.partiallyAuthenticated(
+                "partial",
+                null,
+                MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL,
+                Set.of(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD),
+                List.of(new SimpleGrantedAuthority("ROLE_USER"))
+        );
+        partial.setDetails(securityUser);
+        SecurityContextHolder.getContext().setAuthentication(partial);
+
+        when(userRepository.findUserByUsernameAndTenantId("partial", 5L)).thenReturn(Optional.of(user));
+        when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
+                "totpBound", true,
+                "totpActivated", true,
+                "forceMfa", false,
+                "requireTotp", true
+        ));
+
+        MockHttpServletResponse verifyResponse = new MockHttpServletResponse();
+        filter.doFilter(new MockHttpServletRequest("GET", "/oauth2/authorize"), verifyResponse, new MockFilterChain());
+
+        assertThat(verifyResponse.getRedirectedUrl()).contains("http://localhost:5173/totp-verify");
+    }
+
     private static MfaAuthorizationEndpointFilter newFilter(SecurityService securityService, UserRepository userRepository) {
         FrontendProperties frontendProperties = new FrontendProperties();
         frontendProperties.setTotpBindUrl("redirect:http://localhost:5173/totp-bind");

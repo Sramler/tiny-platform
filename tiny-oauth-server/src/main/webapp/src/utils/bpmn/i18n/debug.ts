@@ -65,8 +65,8 @@ const performanceStats = ref<DebugStats>({
   untranslatedKeys: [],
 })
 
-// 自动刷新定时器
-let refreshTimer: number | null = null
+// 自动刷新定时器。使用 globalThis 保持与当前类型环境一致。
+let refreshTimer: ReturnType<typeof globalThis.setInterval> | null = null
 
 /**
  * 初始化调试功能
@@ -167,7 +167,7 @@ function startAutoRefresh(): void {
     clearInterval(refreshTimer)
   }
 
-  refreshTimer = setInterval(() => {
+  refreshTimer = globalThis.setInterval(() => {
     if (debugConfig.value.enabled && debugConfig.value.autoRefresh) {
       refreshStats()
     }

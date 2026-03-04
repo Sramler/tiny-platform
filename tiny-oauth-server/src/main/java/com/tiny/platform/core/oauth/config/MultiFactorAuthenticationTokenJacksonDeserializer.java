@@ -119,27 +119,24 @@ public class MultiFactorAuthenticationTokenJacksonDeserializer
                     authorities
                 );
             } else {
-                // 使用未认证的构造器
-                MultiFactorAuthenticationToken.AuthenticationFactorType initialFactor = null;
+                // 未认证 token 仍需保留已完成因子和已解析的 authorities。
+                java.util.Set<MultiFactorAuthenticationToken.AuthenticationFactorType> factorsForToken =
+                        completedFactors.isEmpty() ? new java.util.HashSet<>() : new java.util.HashSet<>(completedFactors);
                 if (!completedFactors.isEmpty()) {
-                    initialFactor = completedFactors.iterator().next();
                 } else if (initialFactorStr != null) {
-                    initialFactor = MultiFactorAuthenticationToken.AuthenticationFactorType.from(initialFactorStr);
+                    MultiFactorAuthenticationToken.AuthenticationFactorType initialFactor =
+                            MultiFactorAuthenticationToken.AuthenticationFactorType.from(initialFactorStr);
+                    if (initialFactor != null && initialFactor != MultiFactorAuthenticationToken.AuthenticationFactorType.UNKNOWN) {
+                        factorsForToken.add(initialFactor);
+                    }
                 }
-                token = new MultiFactorAuthenticationToken(
+                token = MultiFactorAuthenticationToken.partiallyAuthenticated(
                     username,
                     credentials,
                     MultiFactorAuthenticationToken.AuthenticationProviderType.from(providerStr),
-                    initialFactor
+                    factorsForToken.isEmpty() ? null : factorsForToken,
+                    authorities
                 );
-                // 如果还有其他因子，添加进去
-                if (completedFactors.size() > 1) {
-                    for (MultiFactorAuthenticationToken.AuthenticationFactorType f : completedFactors) {
-                        if (f != initialFactor) {
-                            token.addCompletedFactor(f);
-                        }
-                    }
-                }
             }
             
             // 如果 authenticated 状态与构造器不一致，使用反射修改

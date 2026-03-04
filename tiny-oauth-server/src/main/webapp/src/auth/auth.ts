@@ -5,6 +5,7 @@ import { authRuntimeConfig } from './config'
 import type { User } from 'oidc-client-ts'
 import { jwtVerify, createRemoteJWKSet } from 'jose'
 import { logger, persistentLogger } from '@/utils/logger'
+import { sanitizeInternalRedirect } from '@/utils/redirect'
 import { clearTraceId, createNewTraceId } from '@/utils/traceId'
 import {
   clearTenantId,
@@ -106,7 +107,9 @@ const appendTenantHeader = (headers: Headers): void => {
 // 顶层定义，避免 useAuth() 调用循环引用
 export const login = async (returnUrl?: string) => {
   const now = Date.now()
-  const redirectPath = returnUrl || `${window.location.pathname}${window.location.search}`
+  const redirectPath = sanitizeInternalRedirect(
+    returnUrl || `${window.location.pathname}${window.location.search}`,
+  )
   oidcTrace('login.invoke', { href: window.location.href, redirectPath })
 
   // 防止重复重定向 - 检查冷却时间

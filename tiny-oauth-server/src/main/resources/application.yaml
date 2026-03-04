@@ -208,6 +208,9 @@ scheduling:
 security:
   mfa:
     mode: OPTIONAL # MFA模式: NONE(完全禁用), OPTIONAL(推荐可跳过), REQUIRED(强制必须绑定)
+    totp-max-failed-attempts: 5 # TOTP 验证连续失败达到阈值后触发临时锁定
+    totp-failure-window-minutes: 10 # TOTP 失败计数窗口（分钟）
+    totp-lock-minutes: 10 # TOTP 触发锁定后的锁定时长（分钟）
 
 # HTTP 请求日志与链路追踪补充配置
 http:

@@ -751,13 +751,13 @@ const throttledBatchClaim = useThrottle(batchClaim, 1000)
 const throttledBatchComplete = useThrottle(batchComplete, 1000)
 
 
-// 自动刷新定时器
-let autoRefreshTimer: number | null = null
+// 自动刷新定时器。使用 globalThis 保持与当前类型环境一致。
+let autoRefreshTimer: ReturnType<typeof globalThis.setInterval> | null = null
 
 // 启动自动刷新
 function startAutoRefresh() {
     if (autoRefreshTimer) return
-    autoRefreshTimer = setInterval(() => {
+    autoRefreshTimer = globalThis.setInterval(() => {
         console.log('自动刷新任务列表...')
         fetchTasks()
     }, 30000) // 30秒自动刷新一次

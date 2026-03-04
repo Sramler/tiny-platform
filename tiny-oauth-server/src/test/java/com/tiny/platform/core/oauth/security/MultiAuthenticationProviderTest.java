@@ -1,6 +1,7 @@
 package com.tiny.platform.core.oauth.security;
 
 import com.tiny.platform.core.oauth.config.CustomWebAuthenticationDetailsSource;
+import com.tiny.platform.core.oauth.config.MfaProperties;
 import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
@@ -131,6 +132,9 @@ class MultiAuthenticationProviderTest {
         assertThat(token.getProvider()).isEqualTo(MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL);
         assertThat(token.getCompletedFactors()).containsExactly(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD);
         assertThat(token.getDetails()).isEqualTo(securityUser);
+        assertThat(token.getAuthorities())
+            .extracting(authority -> authority.getAuthority())
+            .contains("ROLE_USER", AuthenticationFactorAuthorities.FACTOR_AUTHORITY_PREFIX + "PASSWORD");
         assertThat(passwordMethod.getLastVerifiedAt()).isNotNull();
         assertThat(passwordMethod.getLastVerifiedIp()).isEqualTo("127.0.0.1");
         verify(methodRepository).save(passwordMethod);
@@ -162,17 +166,90 @@ class MultiAuthenticationProviderTest {
         Authentication noTotpRequired = provider.authenticate(auth("alice", "raw", "LOCAL", "PASSWORD"));
         assertThat(((MultiFactorAuthenticationToken) noTotpRequired).getCompletedFactors())
             .containsExactly(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD);
+        assertThat(noTotpRequired.getAuthorities())
+            .extracting(authority -> authority.getAuthority())
+            .contains(AuthenticationFactorAuthorities.FACTOR_AUTHORITY_PREFIX + "PASSWORD");
+
+        assertThatThrownBy(() -> provider.authenticate(auth("alice", "123456", "LOCAL", "TOTP")))
+            .isInstanceOf(BadCredentialsException.class)
+            .hasMessageContaining("必须先完成前置认证步骤");
 
         when(securityService.getSecurityStatus(user)).thenReturn(Map.of("requireTotp", true));
         Authentication partial = provider.authenticate(auth("alice", "raw", "LOCAL", "PASSWORD"));
+        assertThat(partial.isAuthenticated()).isFalse();
         assertThat(((MultiFactorAuthenticationToken) partial).getCompletedFactors())
             .containsExactly(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD);
+        assertThat(partial.getAuthorities())
+            .extracting(authority -> authority.getAuthority())
+            .contains(AuthenticationFactorAuthorities.FACTOR_AUTHORITY_PREFIX + "PASSWORD");
 
         when(totpService.verify("BASE32SECRET", "123456")).thenReturn(true);
-        Authentication totp = provider.authenticate(auth("alice", "123456", "LOCAL", "TOTP"));
-        assertThat(((MultiFactorAuthenticationToken) totp).getCompletedFactors())
-            .containsExactly(MultiFactorAuthenticationToken.AuthenticationFactorType.TOTP);
+        assertThatThrownBy(() -> provider.authenticate(auth("alice", "123456", "LOCAL", "TOTP")))
+            .isInstanceOf(BadCredentialsException.class)
+            .hasMessageContaining("必须先完成前置认证步骤");
+
+        MultiFactorAuthenticationToken oneShot = new MultiFactorAuthenticationToken(
+            "alice",
+            Map.of("password", "raw", "totp", "123456"),
+            MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL,
+            MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD
+        );
+
+        Authentication fullyAuthenticated = provider.authenticate(oneShot);
+        assertThat(fullyAuthenticated.isAuthenticated()).isTrue();
+        assertThat(((MultiFactorAuthenticationToken) fullyAuthenticated).getCompletedFactors())
+            .containsExactlyInAnyOrder(
+                MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD,
+                MultiFactorAuthenticationToken.AuthenticationFactorType.TOTP
+            );
+        assertThat(fullyAuthenticated.getAuthorities())
+            .extracting(authority -> authority.getAuthority())
+            .contains(
+                AuthenticationFactorAuthorities.FACTOR_AUTHORITY_PREFIX + "PASSWORD",
+                AuthenticationFactorAuthorities.FACTOR_AUTHORITY_PREFIX + "TOTP"
+            );
         verify(userDetailsService, times(3)).loadUserByUsername("alice");
+    }
+
+    @Test
+    void should_lock_totp_after_repeated_failures() {
+        UserRepository userRepository = mock(UserRepository.class);
+        UserAuthenticationMethodRepository methodRepository = mock(UserAuthenticationMethodRepository.class);
+        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
+        UserDetailsService userDetailsService = mock(UserDetailsService.class);
+        TotpService totpService = mock(TotpService.class);
+        SecurityService securityService = mock(SecurityService.class);
+        MultiAuthenticationProvider provider = newProvider(userRepository, methodRepository, passwordEncoder,
+            userDetailsService, totpService, securityService);
+
+        TenantContext.setTenantId(1L);
+        User user = user(1L, "alice");
+        UserAuthenticationMethod passwordMethod = method(21L, "LOCAL", "PASSWORD", Map.of("password", "{bcrypt}encoded"));
+        UserAuthenticationMethod totpMethod = method(22L, "LOCAL", "TOTP", new java.util.HashMap<>(Map.of("secret", "BASE32SECRET")));
+        SecurityUser securityUser = securityUser(user);
+        when(userRepository.findUserByUsernameAndTenantId("alice", 1L)).thenReturn(Optional.of(user));
+        when(methodRepository.findEnabledMethodsByUserId(1L, 1L)).thenReturn(List.of(passwordMethod, totpMethod));
+        when(passwordEncoder.matches("raw", "{bcrypt}encoded")).thenReturn(true);
+        when(userDetailsService.loadUserByUsername("alice")).thenReturn(securityUser);
+        when(securityService.getSecurityStatus(user)).thenReturn(Map.of("requireTotp", true));
+        when(totpService.verify("BASE32SECRET", "000000")).thenReturn(false);
+
+        MultiFactorAuthenticationToken oneShot = new MultiFactorAuthenticationToken(
+                "alice",
+                Map.of("password", "raw", "totp", "000000"),
+                MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL,
+                MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD
+        );
+
+        for (int i = 0; i < 4; i++) {
+            assertThatThrownBy(() -> provider.authenticate(oneShot))
+                    .isInstanceOf(BadCredentialsException.class)
+                    .hasMessageContaining("TOTP 验证失败");
+        }
+
+        assertThatThrownBy(() -> provider.authenticate(oneShot))
+                .isInstanceOf(BadCredentialsException.class)
+                .hasMessageContaining("TOTP 验证尝试过多");
     }
 
     private static MultiAuthenticationProvider newProvider() {
@@ -186,7 +263,9 @@ class MultiAuthenticationProviderTest {
                                                            UserDetailsService userDetailsService,
                                                            TotpService totpService,
                                                            SecurityService securityService) {
-        return new MultiAuthenticationProvider(userRepository, methodRepository, passwordEncoder, userDetailsService, totpService, securityService);
+        MfaProperties mfaProperties = new MfaProperties();
+        TotpVerificationGuard guard = new TotpVerificationGuard(methodRepository, mfaProperties, totpService);
+        return new MultiAuthenticationProvider(userRepository, methodRepository, passwordEncoder, userDetailsService, securityService, guard);
     }
 
     private static UsernamePasswordAuthenticationToken auth(String username, String credential, String provider, String type) {

@@ -29,7 +29,8 @@ import java.util.Map;
  *   <li>只有当本次所需因子全部完成时，才允许进入授权端点，确保发出的 Access/ID Token 中的 {@code amr} 能准确反映认证因子</li>
  * </ul>
  *
- * 这属于“思路 A”在 OAuth2/OIDC 授权层的落地：先完成本地 MFA，再进入授权码流程。
+ * 这属于当前 OAuth2/OIDC 授权层的落地：先完成本地 MFA，再进入授权码流程。
+ * 这里以 factor authority 为主语义，兼容 partial MFA token（authenticated=false）。
  */
 public class MfaAuthorizationEndpointFilter extends OncePerRequestFilter {
 
@@ -66,14 +67,13 @@ public class MfaAuthorizationEndpointFilter extends OncePerRequestFilter {
         }
 
         // ✅ 关键点：支持“部分认证”的 MultiFactorAuthenticationToken
-        // - 对于 mfaToken，只要已经完成了至少一个因子（例如 PASSWORD），就认为可以参与 MFA 策略判断
+        // - 对于 mfaToken，只要已经具备至少一个 factor authority（例如 PASSWORD），就认为可以参与 MFA 策略判断
         // - 对于其他类型的 Authentication，则仍然要求 isAuthenticated()==true
-        boolean isMfaTokenWithFactors = false;
+        boolean isMfaTokenWithFactors = AuthenticationFactorAuthorities.hasAnyFactor(authentication);
         if (authentication instanceof MultiFactorAuthenticationToken mfaToken) {
-            isMfaTokenWithFactors = !mfaToken.getCompletedFactors().isEmpty();
             if (log.isDebugEnabled()) {
-                log.debug("[MFA] /oauth2/authorize 当前认证为 MultiFactorAuthenticationToken, completedFactors={}, authenticated={}",
-                        mfaToken.getCompletedFactors(), mfaToken.isAuthenticated());
+                log.debug("[MFA] /oauth2/authorize 当前认证为 MultiFactorAuthenticationToken, factors={}, authenticated={}",
+                        AuthenticationFactorAuthorities.extractFactors(mfaToken), mfaToken.isAuthenticated());
             }
         }
 
@@ -147,12 +147,14 @@ public class MfaAuthorizationEndpointFilter extends OncePerRequestFilter {
         }
 
         // 需要 TOTP：检查当前 Authentication 是否已经完成 TOTP 因子
-        boolean totpCompleted = false;
+        boolean totpCompleted = AuthenticationFactorAuthorities.hasFactor(
+                authentication,
+                MultiFactorAuthenticationToken.AuthenticationFactorType.TOTP
+        );
         if (authentication instanceof MultiFactorAuthenticationToken mfaToken) {
-            totpCompleted = mfaToken.hasCompletedFactor(MultiFactorAuthenticationToken.AuthenticationFactorType.TOTP);
             if (log.isDebugEnabled()) {
-                log.debug("[MFA] 当前 MultiFactorAuthenticationToken.completedFactors={} (user={})",
-                        mfaToken.getCompletedFactors(), username);
+                log.debug("[MFA] 当前 MultiFactorAuthenticationToken.factors={} (user={})",
+                        AuthenticationFactorAuthorities.extractFactors(mfaToken), username);
             }
         }
 

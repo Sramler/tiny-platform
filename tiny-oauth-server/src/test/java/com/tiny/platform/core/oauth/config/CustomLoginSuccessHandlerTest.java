@@ -11,6 +11,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.mock.web.MockHttpSession;
+import org.springframework.security.web.savedrequest.HttpSessionRequestCache;
 
 import java.util.List;
 import java.util.Map;
@@ -97,11 +99,11 @@ class CustomLoginSuccessHandlerTest {
                 "requireTotp", true
         ));
 
-        MultiFactorAuthenticationToken authentication = new MultiFactorAuthenticationToken(
+        MultiFactorAuthenticationToken authentication = MultiFactorAuthenticationToken.partiallyAuthenticated(
                 "admin",
                 null,
                 MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL,
-                MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD,
+                java.util.Set.of(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD),
                 List.of()
         );
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/login");
@@ -183,11 +185,11 @@ class CustomLoginSuccessHandlerTest {
                 "requireTotp", true
         ));
 
-        MultiFactorAuthenticationToken authentication = new MultiFactorAuthenticationToken(
+        MultiFactorAuthenticationToken authentication = MultiFactorAuthenticationToken.partiallyAuthenticated(
                 "admin",
                 null,
                 MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL,
-                MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD,
+                java.util.Set.of(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD),
                 List.of()
         );
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/login");
@@ -200,6 +202,106 @@ class CustomLoginSuccessHandlerTest {
         assertThat(response.getRedirectedUrl()).startsWith("http://localhost:5173/self/security/totp-verify");
         assertThat(response.getRedirectedUrl())
                 .contains("redirect=%2Fdefault%2Foauth2%2Fauthorize%3Fclient_id%3Dvue-client");
+    }
+
+    @Test
+    void shouldFallbackToRootWhenRedirectParameterTargetsExternalSite() throws Exception {
+        FrontendProperties frontendProperties = frontendProperties();
+        CustomLoginSuccessHandler handler = new CustomLoginSuccessHandler(
+                securityService,
+                userRepository,
+                frontendProperties,
+                sessionManager,
+                auditService
+        );
+
+        User user = user();
+        when(userRepository.findUserByUsernameAndTenantId("admin", 1L)).thenReturn(Optional.of(user));
+        when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
+                "totpBound", true,
+                "totpActivated", true,
+                "disableMfa", true,
+                "skipMfaRemind", false,
+                "forceMfa", false,
+                "requireTotp", false
+        ));
+
+        MultiFactorAuthenticationToken authentication = new MultiFactorAuthenticationToken(
+                "admin",
+                null,
+                MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL,
+                MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD,
+                List.of()
+        );
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/login");
+        request.setScheme("http");
+        request.setServerName("localhost");
+        request.setServerPort(80);
+        request.setParameter("redirect", "https://evil.com/callback");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        TenantContext.setTenantId(1L);
+        handler.onAuthenticationSuccess(request, response, authentication);
+
+        assertThat(response.getRedirectedUrl()).isEqualTo("http://localhost:5173/");
+    }
+
+    @Test
+    void shouldPreserveSavedRequestAuthorizePathAndNotDirectlyRedirectToClientCallback() throws Exception {
+        FrontendProperties frontendProperties = frontendProperties();
+        CustomLoginSuccessHandler handler = new CustomLoginSuccessHandler(
+                securityService,
+                userRepository,
+                frontendProperties,
+                sessionManager,
+                auditService
+        );
+
+        User user = user();
+        when(userRepository.findUserByUsernameAndTenantId("admin", 1L)).thenReturn(Optional.of(user));
+        when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
+                "totpBound", true,
+                "totpActivated", true,
+                "disableMfa", false,
+                "skipMfaRemind", false,
+                "forceMfa", false,
+                "requireTotp", true
+        ));
+
+        MultiFactorAuthenticationToken authentication = MultiFactorAuthenticationToken.partiallyAuthenticated(
+                "admin",
+                null,
+                MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL,
+                java.util.Set.of(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD),
+                List.of()
+        );
+
+        MockHttpServletRequest authorizeRequest = new MockHttpServletRequest("GET", "/oauth2/authorize");
+        authorizeRequest.setScheme("http");
+        authorizeRequest.setServerName("localhost");
+        authorizeRequest.setServerPort(80);
+        authorizeRequest.setQueryString("client_id=vue-client&redirect_uri=https://client.example.com/callback");
+        authorizeRequest.setParameter("client_id", "vue-client");
+        authorizeRequest.setParameter("redirect_uri", "https://client.example.com/callback");
+        MockHttpServletResponse authorizeResponse = new MockHttpServletResponse();
+        HttpSessionRequestCache requestCache = new HttpSessionRequestCache();
+        requestCache.saveRequest(authorizeRequest, authorizeResponse);
+
+        MockHttpSession session = (MockHttpSession) authorizeRequest.getSession(false);
+        MockHttpServletRequest loginRequest = new MockHttpServletRequest("POST", "/login");
+        loginRequest.setScheme("http");
+        loginRequest.setServerName("localhost");
+        loginRequest.setServerPort(80);
+        loginRequest.setSession(session);
+        MockHttpServletResponse loginResponse = new MockHttpServletResponse();
+
+        TenantContext.setTenantId(1L);
+        handler.onAuthenticationSuccess(loginRequest, loginResponse, authentication);
+
+        assertThat(loginResponse.getRedirectedUrl()).startsWith("http://localhost:5173/self/security/totp-verify");
+        assertThat(loginResponse.getRedirectedUrl())
+                .contains("redirect=%2Foauth2%2Fauthorize%3Fclient_id%3Dvue-client%26redirect_uri%3Dhttps%3A%2F%2Fclient.example.com%2Fcallback");
+        assertThat(loginResponse.getRedirectedUrl()).doesNotContain("redirect=https://client.example.com/callback");
     }
 
     private FrontendProperties frontendProperties() {

@@ -45,6 +45,7 @@
           <p class="hint">请从您的验证器 App 中输入 6 位动态验证码</p>
         </div>
         <input type="hidden" name="redirect" :value="redirectParam" />
+        <input v-if="csrfParameterName" type="hidden" :name="csrfParameterName" :value="csrfToken" />
         <button
           type="submit"
           class="btn"
@@ -57,12 +58,14 @@
 
       <form
         v-if="!forceMfa"
+        ref="skipFormRef"
         class="form form--secondary"
         :action="skipFormActionUrl"
         method="post"
         @submit="handleSkipSubmit"
       >
         <input type="hidden" name="redirect" :value="redirectParam" />
+        <input v-if="csrfParameterName" type="hidden" :name="csrfParameterName" :value="csrfToken" />
         <button type="submit" class="btn btn--secondary" :class="{ loading: isSkipping }" :disabled="isSkipping">
           {{ isSkipping ? '正在跳过...' : '跳过' }}
         </button>
@@ -88,6 +91,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { ensureCsrfToken } from '@/utils/csrf'
+import { sanitizeInternalRedirect } from '@/utils/redirect'
 
 const route = useRoute()
 
@@ -104,10 +109,10 @@ const redirectParam = computed(() => {
   const raw = Array.isArray(value) ? value[0] ?? '/' : value ?? '/'
   const str = String(raw)
   try {
-    return decodeURIComponent(str)
+    return sanitizeInternalRedirect(decodeURIComponent(str))
   } catch (error) {
     console.warn('无法解码 redirect 参数:', error)
-    return str
+    return sanitizeInternalRedirect(str)
   }
 })
 
@@ -119,6 +124,7 @@ const errorText = computed(() => {
 })
 
 const bindFormRef = ref<HTMLFormElement | null>(null)
+const skipFormRef = ref<HTMLFormElement | null>(null)
 const isBinding = ref(false)
 const isSkipping = ref(false)
 const disableMfa = ref(false)
@@ -126,16 +132,50 @@ const forceMfa = ref(false)
 const secretKey = ref('')
 const qrcodeUrl = ref('')
 const loadError = ref('')
+const csrfToken = ref('')
+const csrfParameterName = ref('_csrf')
 
-const handleBindSubmit = () => {
-  isBinding.value = true
+const loadCsrfToken = async () => {
+  const csrf = await ensureCsrfToken(baseUrl)
+  csrfToken.value = csrf.token
+  csrfParameterName.value = csrf.parameterName
 }
 
-const handleSkipSubmit = () => {
+const handleBindSubmit = async (event: Event) => {
+  event.preventDefault()
+  if (!csrfToken.value) {
+    try {
+      await loadCsrfToken()
+    } catch (error) {
+      console.error('获取 CSRF token 失败:', error)
+      loadError.value = '安全校验初始化失败，请刷新页面重试'
+      return
+    }
+  }
+  isBinding.value = true
+  bindFormRef.value?.submit()
+}
+
+const handleSkipSubmit = async (event: Event) => {
+  event.preventDefault()
+  if (!csrfToken.value) {
+    try {
+      await loadCsrfToken()
+    } catch (error) {
+      console.error('获取 CSRF token 失败:', error)
+      loadError.value = '安全校验初始化失败，请刷新页面重试'
+      return
+    }
+  }
   isSkipping.value = true
+  skipFormRef.value?.submit()
 }
 
 onMounted(async () => {
+  await loadCsrfToken().catch((error) => {
+    console.error('初始化 CSRF token 失败:', error)
+    loadError.value = '安全校验初始化失败，请刷新页面重试'
+  })
   await Promise.all([fetchSecurityStatus(), fetchTotpInfo()])
 })
 

@@ -88,7 +88,12 @@ public class MultiFactorAuthenticationToken extends AbstractAuthenticationToken 
     public MultiFactorAuthenticationToken(String username, Object credentials,
                                           AuthenticationProviderType provider,
                                           AuthenticationFactorType initialFactor) {
-        super(Collections.emptyList());
+        super(AuthenticationFactorAuthorities.augmentAuthorities(
+                Collections.emptyList(),
+                initialFactor == null || initialFactor == AuthenticationFactorType.UNKNOWN
+                        ? Collections.emptySet()
+                        : EnumSet.of(initialFactor)
+        ));
         this.username = Objects.requireNonNull(username, "username");
         this.credentials = credentials;
         this.provider = provider == null ? AuthenticationProviderType.UNKNOWN : provider;
@@ -105,7 +110,10 @@ public class MultiFactorAuthenticationToken extends AbstractAuthenticationToken 
                                           AuthenticationProviderType provider,
                                           Set<AuthenticationFactorType> completedFactors,
                                           Collection<? extends GrantedAuthority> authorities) {
-        super(authorities == null ? Collections.emptyList() : List.copyOf(authorities));
+        super(AuthenticationFactorAuthorities.augmentAuthorities(
+                authorities == null ? Collections.emptyList() : List.copyOf(authorities),
+                completedFactors == null ? Collections.emptySet() : completedFactors
+        ));
         this.username = Objects.requireNonNull(username, "username");
         this.credentials = credentials;
         this.provider = provider == null ? AuthenticationProviderType.UNKNOWN : provider;
@@ -121,7 +129,12 @@ public class MultiFactorAuthenticationToken extends AbstractAuthenticationToken 
                                           AuthenticationProviderType provider,
                                           AuthenticationFactorType initialFactor,
                                           Collection<? extends GrantedAuthority> authorities) {
-        super(authorities == null ? Collections.emptyList() : List.copyOf(authorities));
+        super(AuthenticationFactorAuthorities.augmentAuthorities(
+                authorities == null ? Collections.emptyList() : List.copyOf(authorities),
+                initialFactor == null || initialFactor == AuthenticationFactorType.UNKNOWN
+                        ? Collections.emptySet()
+                        : EnumSet.of(initialFactor)
+        ));
         this.username = Objects.requireNonNull(username, "username");
         this.credentials = credentials;
         this.provider = provider == null ? AuthenticationProviderType.UNKNOWN : provider;
@@ -157,8 +170,32 @@ public class MultiFactorAuthenticationToken extends AbstractAuthenticationToken 
                 authorities);
     }
 
+    public static MultiFactorAuthenticationToken partiallyAuthenticated(String username,
+                                                                        Object credentials,
+                                                                        AuthenticationProviderType provider,
+                                                                        Set<AuthenticationFactorType> completedFactors,
+                                                                        Collection<? extends GrantedAuthority> authorities) {
+        MultiFactorAuthenticationToken token = new MultiFactorAuthenticationToken(
+                username,
+                credentials,
+                provider,
+                completedFactors,
+                authorities
+        );
+        token.setAuthenticated(false);
+        return token;
+    }
+
 
     // --- getters / override ---
+
+    @Override
+    public Collection<GrantedAuthority> getAuthorities() {
+        return List.copyOf(AuthenticationFactorAuthorities.augmentAuthorities(
+                super.getAuthorities(),
+                getCompletedFactors()
+        ));
+    }
 
     @Override
     public Object getPrincipal() {
@@ -198,20 +235,17 @@ public class MultiFactorAuthenticationToken extends AbstractAuthenticationToken 
      * 获取字符串形式的认证类型（向后兼容）
      */
     public String getAuthenticationType() {
-        // 返回第一个已完成的因子，如果没有则返回 UNKNOWN
-        synchronized (completedFactors) {
-            if (completedFactors.isEmpty()) {
-                return AuthenticationFactorType.UNKNOWN.name();
-            }
-            // 优先返回 PASSWORD，然后是 TOTP，最后是其他
-            if (completedFactors.contains(AuthenticationFactorType.PASSWORD)) {
-                return AuthenticationFactorType.PASSWORD.name();
-            }
-            if (completedFactors.contains(AuthenticationFactorType.TOTP)) {
-                return AuthenticationFactorType.TOTP.name();
-            }
-            return completedFactors.iterator().next().name();
+        EnumSet<AuthenticationFactorType> factors = currentFactors();
+        if (factors.isEmpty()) {
+            return AuthenticationFactorType.UNKNOWN.name();
         }
+        if (factors.contains(AuthenticationFactorType.PASSWORD)) {
+            return AuthenticationFactorType.PASSWORD.name();
+        }
+        if (factors.contains(AuthenticationFactorType.TOTP)) {
+            return AuthenticationFactorType.TOTP.name();
+        }
+        return factors.iterator().next().name();
     }
 
     /**
@@ -224,10 +258,9 @@ public class MultiFactorAuthenticationToken extends AbstractAuthenticationToken 
     }
 
     public boolean hasCompletedFactor(AuthenticationFactorType factor) {
-        if (factor == null || factor == AuthenticationFactorType.UNKNOWN) return false;
-        synchronized (completedFactors) {
-            return completedFactors.contains(factor);
-        }
+        return factor != null
+                && factor != AuthenticationFactorType.UNKNOWN
+                && currentFactors().contains(factor);
     }
 
     public boolean hasCompletedFactor(String factorStr) {
@@ -235,10 +268,7 @@ public class MultiFactorAuthenticationToken extends AbstractAuthenticationToken 
     }
 
     public boolean hasCompletedAllFactors(Set<AuthenticationFactorType> required) {
-        if (required == null || required.isEmpty()) return true;
-        synchronized (completedFactors) {
-            return completedFactors.containsAll(required);
-        }
+        return required == null || required.isEmpty() || currentFactors().containsAll(required);
     }
 
     public MultiFactorAuthenticationToken addCompletedFactor(AuthenticationFactorType factor) {
@@ -254,7 +284,7 @@ public class MultiFactorAuthenticationToken extends AbstractAuthenticationToken 
     }
 
     public MultiFactorAuthenticationToken promoteToFullyAuthenticated(Collection<? extends GrantedAuthority> authorities) {
-        EnumSet<AuthenticationFactorType> newCompletedFactors = EnumSet.copyOf(this.completedFactors);
+        EnumSet<AuthenticationFactorType> newCompletedFactors = currentFactors();
         MultiFactorAuthenticationToken newToken = new MultiFactorAuthenticationToken(
                 this.username,
                 null,
@@ -271,7 +301,7 @@ public class MultiFactorAuthenticationToken extends AbstractAuthenticationToken 
     public MultiFactorAuthenticationToken promoteToFullyAuthenticatedWithFactor(
             AuthenticationFactorType additionalFactor,
             Collection<? extends GrantedAuthority> authorities) {
-        EnumSet<AuthenticationFactorType> newCompletedFactors = EnumSet.copyOf(this.completedFactors);
+        EnumSet<AuthenticationFactorType> newCompletedFactors = currentFactors();
         if (additionalFactor != null && additionalFactor != AuthenticationFactorType.UNKNOWN) {
             newCompletedFactors.add(additionalFactor);
         }
@@ -296,20 +326,18 @@ public class MultiFactorAuthenticationToken extends AbstractAuthenticationToken 
 
     @Override
     public String toString() {
-        synchronized (completedFactors) {
-            return "MultiFactorAuthenticationToken{" +
-                    "username='" + username + '\'' +
-                    ", provider=" + provider +
-                    ", completedFactors=" + completedFactors +
-                    ", authenticated=" + isAuthenticated() +
-                    ", authorities=" + getAuthorities() +
-                    '}';
-        }
+        return "MultiFactorAuthenticationToken{" +
+                "username='" + username + '\'' +
+                ", provider=" + provider +
+                ", completedFactors=" + currentFactors() +
+                ", authenticated=" + isAuthenticated() +
+                ", authorities=" + getAuthorities() +
+                '}';
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(username, provider, EnumSet.copyOf(completedFactors), getAuthorities());
+        return Objects.hash(username, provider, currentFactors(), getAuthorities());
     }
 
     @Override
@@ -318,7 +346,13 @@ public class MultiFactorAuthenticationToken extends AbstractAuthenticationToken 
         if (!(obj instanceof MultiFactorAuthenticationToken other)) return false;
         return Objects.equals(username, other.username)
                 && Objects.equals(provider, other.provider)
-                && Objects.equals(EnumSet.copyOf(completedFactors), EnumSet.copyOf(other.completedFactors))
+                && Objects.equals(currentFactors(), other.currentFactors())
                 && Objects.equals(getAuthorities(), other.getAuthorities());
+    }
+
+    private EnumSet<AuthenticationFactorType> currentFactors() {
+        EnumSet<AuthenticationFactorType> factors = EnumSet.noneOf(AuthenticationFactorType.class);
+        factors.addAll(AuthenticationFactorAuthorities.extractFactors(this));
+        return factors;
     }
 }

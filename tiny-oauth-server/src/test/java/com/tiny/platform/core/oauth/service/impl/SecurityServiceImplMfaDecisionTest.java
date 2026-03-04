@@ -2,6 +2,7 @@ package com.tiny.platform.core.oauth.service.impl;
 
 import com.tiny.platform.core.oauth.config.MfaProperties;
 import com.tiny.platform.core.oauth.security.TotpService;
+import com.tiny.platform.core.oauth.security.TotpVerificationGuard;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationMethod;
 import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
@@ -64,7 +65,8 @@ class SecurityServiceImplMfaDecisionTest {
             )).thenReturn(Optional.of(method));
         }
 
-        return new SecurityServiceImpl(repository, passwordEncoder, mfaProperties, totpService);
+        TotpVerificationGuard guard = new TotpVerificationGuard(repository, mfaProperties, totpService);
+        return new SecurityServiceImpl(repository, passwordEncoder, mfaProperties, guard);
     }
 
     private User mockUser() {
@@ -75,4 +77,3 @@ class SecurityServiceImplMfaDecisionTest {
         return user;
     }
 }
-

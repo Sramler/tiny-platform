@@ -2,6 +2,7 @@ package com.tiny.platform.core.oauth.config;
 
 import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
+import com.tiny.platform.core.oauth.security.AuthenticationFactorAuthorities;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -453,29 +454,24 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
      * @return 认证方法列表，如 ["password", "totp"]
      */
     private List<String> getAuthenticationMethods(Authentication principal) {
-        List<String> amr = new ArrayList<>();
         if (principal == null) {
             log.debug("[JwtTokenCustomizer] getAuthenticationMethods - principal 为 null, 返回空 amr");
-            return amr;
+            return new ArrayList<>();
         }
         log.debug("[JwtTokenCustomizer] getAuthenticationMethods - principalClass={}, authenticated={}",
                 principal.getClass().getName(), principal.isAuthenticated());
         
-        // 如果是 MultiFactorAuthenticationToken，从 completedFactors 获取
+        // 如果是 MultiFactorAuthenticationToken，优先从 factor authorities 推导 amr
         if (principal instanceof MultiFactorAuthenticationToken mfaToken) {
             try {
-                log.debug("[JwtTokenCustomizer] getAuthenticationMethods - principal 是 MultiFactorAuthenticationToken, completedFactors={}",
-                        mfaToken.getCompletedFactors());
+                log.debug("[JwtTokenCustomizer] getAuthenticationMethods - principal 是 MultiFactorAuthenticationToken, factors={}",
+                        AuthenticationFactorAuthorities.extractFactors(mfaToken));
             } catch (Exception ignored) {
                 // 日志失败不影响后续逻辑
             }
-            mfaToken.getCompletedFactors().forEach(factor -> {
-                String method = mapFactorToAmr(factor.name());
-                if (method != null && !amr.contains(method)) {
-                    amr.add(method);
-                }
-            });
         }
+
+        List<String> amr = new ArrayList<>(AuthenticationFactorAuthorities.toAmr(principal));
         
         // 如果 principal 已认证，至少添加一个认证方法
         if (principal.isAuthenticated() && amr.isEmpty()) {
@@ -496,14 +492,9 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
         if (factorName == null) {
             return null;
         }
-        
-        return switch (factorName.toUpperCase()) {
-            case "PASSWORD" -> "password";
-            case "TOTP" -> "totp";
-            case "OAUTH2" -> "oauth2";
-            case "EMAIL" -> "email";
-            case "MFA" -> "mfa";
-            default -> null;
-        };
+
+        return AuthenticationFactorAuthorities.toAmrValue(
+                MultiFactorAuthenticationToken.AuthenticationFactorType.from(factorName)
+        );
     }
 }

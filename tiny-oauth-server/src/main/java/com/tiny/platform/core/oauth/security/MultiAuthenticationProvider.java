@@ -34,7 +34,9 @@ import java.util.function.Supplier;
  * 设计原则：
  *  - 最少 DB 查询（复用 enabledMethods）
  *  - 不在日志中输出敏感信息（密码/secret/验证码）
- *  - 为 MFA 提供清晰的分支：一次性验证 / 分步返回部分 Token / 完成所有因子返回完全认证 Token
+ *  - 为 MFA 提供清晰的分支：一次性验证 / 分步返回带 factor authority 的 partial token / 完成所有因子返回完全认证 token
+ *  - partial MFA token 保持 authenticated=false，后续是否允许继续 challenge 由 factor authority 决定
+ *  - TOTP 因子统一经过 TotpVerificationGuard，防止在线爆破
  */
 @Component
 public class MultiAuthenticationProvider implements AuthenticationProvider {
@@ -50,21 +52,21 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
     private final UserAuthenticationMethodRepository authenticationMethodRepository;
     private final PasswordEncoder passwordEncoder;
     private final UserDetailsService userDetailsService;
-    private final TotpService totpService;
     private final SecurityService securityService;
+    private final TotpVerificationGuard totpVerificationGuard;
 
     public MultiAuthenticationProvider(UserRepository userRepository,
                                        UserAuthenticationMethodRepository authenticationMethodRepository,
                                        PasswordEncoder passwordEncoder,
                                        UserDetailsService userDetailsService,
-                                       TotpService totpService,
-                                       SecurityService securityService) {
+                                       SecurityService securityService,
+                                       TotpVerificationGuard totpVerificationGuard) {
         this.userRepository = userRepository;
         this.authenticationMethodRepository = authenticationMethodRepository;
         this.passwordEncoder = passwordEncoder;
         this.userDetailsService = userDetailsService;
-        this.totpService = totpService;
         this.securityService = securityService;
+        this.totpVerificationGuard = totpVerificationGuard;
     }
 
     @Override
@@ -195,6 +197,11 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
             if (!requireTotpThisSession) {
                 // 当前会话允许跳过 TOTP：按单因子方式直接认证（通常就是 PASSWORD），
                 // 保证符合思路 A：本次 requiredFactors = {PASSWORD}，完成后即可发最终 Token。
+                if (FACTOR_TOTP.equalsIgnoreCase(finalType)
+                        && mfaCandidates.stream().anyMatch(m -> FACTOR_PASSWORD.equalsIgnoreCase(m.getAuthenticationType()))) {
+                    logger.warn("用户 {} 在未完成密码验证前尝试直接使用 TOTP 登录，已拒绝", username);
+                    throw new BadCredentialsException("必须先完成前置认证步骤");
+                }
                 logger.info("[MFA] 本次会话不要求 TOTP，按单因子 {} 完成认证 (user={})", finalType, username);
                 String cred = credentials != null ? credentials.toString() : null;
                 return switch (finalType) {
@@ -223,9 +230,9 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
      *
      * 设计要点：
      *  - 如果用户提交了多个凭证（Map），尝试一次性验证所有因子
-     *  - 如果只提交了第一个因子（通常是 password），验证后返回已认证 token（但带上 completedFactors），
-     *    由 success handler 判断是否仍需 TOTP 验证并跳转到相应页面（你的 successHandler 需支持该逻辑）
-     *  - 部分认证（未完成所有因子）返回未完全认证的 Token（isAuthenticated=false），但也可以选择返回完全认证并在 successHandler 中判断
+     *  - 如果只提交了第一个因子（通常是 password），验证后返回 partial token，并把已完成因子映射到 factor authority，
+     *    由 success handler 判断是否仍需 TOTP 验证并跳转到相应页面
+     *  - 未完成全部因子时返回 authenticated=false 的 token，避免把“半程 MFA”误当成完整登录
      */
     private Authentication handleMultiFactorAuthentication(User user,
                                                            Object credentials,
@@ -243,6 +250,10 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
             // 单值凭证，按照请求类型放入 map
             credentialMap.put(requestedType.toLowerCase(Locale.ROOT), credentials.toString());
         }
+
+        // 不允许跳过前置因子直接验证后置因子。
+        // 典型场景：同时配置 PASSWORD + TOTP 时，单独提交 authenticationType=TOTP 不得直接完成登录。
+        validateNoSkippedPrerequisite(user, mfaMethods, credentialMap);
         
         Set<MultiFactorAuthenticationToken.AuthenticationFactorType> completed = new LinkedHashSet<>();
         List<UserAuthenticationMethod> remaining = new ArrayList<>(mfaMethods);
@@ -263,13 +274,13 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
             if (provided == null || provided.isBlank()) {
                 // 没有该因子的凭证：分步情形或跳过
                 logger.debug("用户 {} 未提供 {} 因子的凭证（可能分步验证）", user.getUsername(), methodType);
-                // 如果已有完成的因子，则表明这是第二步，返回已认证 token 让 successHandler 处理
+                // 如果已有完成的因子，则表明这是第二步，返回 partial token 让 successHandler 处理
                 if (!completed.isEmpty()) {
-                    MultiFactorAuthenticationToken authenticated = buildAuthenticatedToken(
+                    MultiFactorAuthenticationToken partial = buildPartialToken(
                         user.getUsername(), provider, completed, userDetailsSupplier.get()
                     );
-                    logger.info("用户 {} 部分认证完成，返回已认证 MFA token（需后续验证），将在 successHandler 中处理", user.getUsername());
-                    return authenticated;
+                    logger.info("用户 {} 已完成部分因子，返回 partial MFA token（需后续验证）", user.getUsername());
+                    return partial;
                 } else {
                     // 尚未完成任何因子，继续尝试下一个（可能用户只提交 TOTP，但没有密码）
                     remaining.remove(method);
@@ -300,24 +311,22 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
 
         // 如果未完成全部因子（仍有 remaining），需要分步处理
         if (!remaining.isEmpty()) {
-            // 如果已经完成了 PASSWORD 并还剩 TOTP，则可选择返回完全认证 token（trigger successHandler）或部分 token。
-            // 这里的策略是：返回一个**已认证**的 token（标记为 MFA），这样会触发 successHandler，
-            // successHandler 负责看到 completedFactors 后把用户导向 TOTP 验证页面（你现有的 successHandler 已实现该逻辑）。
+            // 如果已经完成了 PASSWORD 并还剩 TOTP，则返回 partial token。
+            // successHandler 和后续授权链通过 factor authority + authenticated=false 判断这是待补全的 MFA 会话。
             if (completed.contains(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD) && 
                 remaining.stream().anyMatch(m -> FACTOR_TOTP.equalsIgnoreCase(m.getAuthenticationType()))) {
-                MultiFactorAuthenticationToken authenticated = buildAuthenticatedToken(
+                MultiFactorAuthenticationToken partial = buildPartialToken(
                     user.getUsername(), provider, completed, userDetailsSupplier.get()
                 );
-                logger.info("用户 {} 已完成密码验证，返回已认证 MFA token（需后续 TOTP）", user.getUsername());
-                return authenticated;
+                logger.info("用户 {} 已完成密码验证，返回 partial MFA token（仍需 TOTP）", user.getUsername());
+                return partial;
             } else {
-                // 其他情况：也返回已认证的 Token，让 successHandler 处理跳转
-                // 这样可以统一处理，不需要 PartialAuthenticationAuthorizationManager
-                MultiFactorAuthenticationToken authenticated = buildAuthenticatedToken(
+                // 其他情况也统一返回 partial token，让 successHandler 处理后续跳转。
+                MultiFactorAuthenticationToken partial = buildPartialToken(
                     user.getUsername(), provider, completed, userDetailsSupplier.get()
                 );
-                logger.info("用户 {} 部分认证完成，返回已认证 MFA token（需后续验证），将在 successHandler 中处理", user.getUsername());
-                return authenticated;
+                logger.info("用户 {} 已完成部分因子，返回 partial MFA token（需后续验证）", user.getUsername());
+                return partial;
             }
         }
 
@@ -327,6 +336,60 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
         );
         logger.info("用户 {} 完成所有 MFA 因子，认证成功", user.getUsername());
         return finalToken;
+    }
+
+    private void validateNoSkippedPrerequisite(User user,
+                                               List<UserAuthenticationMethod> orderedMethods,
+                                               Map<String, String> credentialMap) {
+        Set<String> providedFactors = providedFactors(credentialMap);
+        if (providedFactors.isEmpty()) {
+            return;
+        }
+
+        boolean previousFactorMissing = false;
+        for (UserAuthenticationMethod method : orderedMethods) {
+            String factorType = method.getAuthenticationType();
+            if (factorType == null || factorType.isBlank()) {
+                continue;
+            }
+            String normalizedFactor = factorType.trim().toUpperCase(Locale.ROOT);
+            boolean provided = providedFactors.contains(normalizedFactor);
+            if (!provided) {
+                previousFactorMissing = true;
+                continue;
+            }
+            if (previousFactorMissing) {
+                logger.warn("用户 {} 尝试跳过前置因子直接验证 {}，已拒绝", user.getUsername(), normalizedFactor);
+                throw new BadCredentialsException("必须先完成前置认证步骤");
+            }
+        }
+    }
+
+    private Set<String> providedFactors(Map<String, String> credentialMap) {
+        Set<String> providedFactors = new LinkedHashSet<>();
+        if (hasCredential(credentialMap, FACTOR_PASSWORD)) {
+            providedFactors.add(FACTOR_PASSWORD);
+        }
+        if (hasCredential(credentialMap, FACTOR_TOTP)) {
+            providedFactors.add(FACTOR_TOTP);
+        }
+        return providedFactors;
+    }
+
+    private boolean hasCredential(Map<String, String> credentialMap, String factorType) {
+        if (credentialMap == null || credentialMap.isEmpty()) {
+            return false;
+        }
+        if (FACTOR_TOTP.equalsIgnoreCase(factorType)) {
+            return hasText(credentialMap.get(FACTOR_TOTP.toLowerCase(Locale.ROOT)))
+                    || hasText(credentialMap.get("totpcode"))
+                    || hasText(credentialMap.get("totp_code"));
+        }
+        return hasText(credentialMap.get(factorType.toLowerCase(Locale.ROOT)));
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
     
     private Authentication authenticateFactor(User user,
@@ -423,11 +486,13 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
         }
 
         // 不在日志中打印 secret 或 code
-        boolean ok = totpService.verify(secret, totpCode);
-        if (!ok) {
-            logger.warn("用户 {} 的 TOTP 验证失败", user.getUsername());
-            throw new BadCredentialsException("TOTP 验证失败");
-        }
+        totpVerificationGuard.verifyOrThrow(
+                user.getUsername(),
+                method,
+                secret,
+                totpCode,
+                "TOTP 验证失败"
+        );
 
         // 记录认证方法验证成功的信息
         recordAuthenticationMethodVerification(method);
@@ -461,16 +526,31 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
 
     private MultiFactorAuthenticationToken buildAuthenticatedToken(String username,
                                                                    String provider,
-                                                                   Set<MultiFactorAuthenticationToken.AuthenticationFactorType> completedFactors,
+                                                                   Set<MultiFactorAuthenticationToken.AuthenticationFactorType> resolvedFactors,
                                                                    UserDetails userDetails) {
         MultiFactorAuthenticationToken token = new MultiFactorAuthenticationToken(
             username,
             null,
             MultiFactorAuthenticationToken.AuthenticationProviderType.from(provider),
-            completedFactors,
+            resolvedFactors,
             userDetails.getAuthorities()
         );
         token.setAuthenticated(true);
+        attachSecurityUserDetails(token, userDetails, username);
+        return token;
+    }
+
+    private MultiFactorAuthenticationToken buildPartialToken(String username,
+                                                             String provider,
+                                                             Set<MultiFactorAuthenticationToken.AuthenticationFactorType> resolvedFactors,
+                                                             UserDetails userDetails) {
+        MultiFactorAuthenticationToken token = MultiFactorAuthenticationToken.partiallyAuthenticated(
+                username,
+                null,
+                MultiFactorAuthenticationToken.AuthenticationProviderType.from(provider),
+                resolvedFactors,
+                userDetails.getAuthorities()
+        );
         attachSecurityUserDetails(token, userDetails, username);
         return token;
     }
