@@ -4,8 +4,10 @@ import com.tiny.platform.infrastructure.export.writer.WriterAdapter;
 import com.tiny.platform.infrastructure.export.writer.poi.POIWriterAdapter;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.task.TaskDecorator;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import java.util.concurrent.ThreadPoolExecutor;
@@ -34,6 +36,7 @@ public class ExportConfig {
 
     @Bean
     public ThreadPoolTaskExecutor exportExecutor(
+        @Qualifier("mdcTaskDecorator") TaskDecorator mdcTaskDecorator,
         @Value("${export.executor.core-pool-size:8}") int corePoolSize,
         @Value("${export.executor.max-pool-size:16}") int maxPoolSize,
         @Value("${export.executor.queue-capacity:1000}") int queueCapacity,
@@ -49,6 +52,7 @@ public class ExportConfig {
         t.setKeepAliveSeconds(keepAliveSeconds);
         t.setAllowCoreThreadTimeOut(true);
         t.setThreadNamePrefix("export-exec-");
+        t.setTaskDecorator(mdcTaskDecorator);
         // 拒绝策略：队列满时由提交线程执行，形成背压而非直接抛异常
         t.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         // 优雅关闭：等待队列与执行中的任务完成，避免中断写文件

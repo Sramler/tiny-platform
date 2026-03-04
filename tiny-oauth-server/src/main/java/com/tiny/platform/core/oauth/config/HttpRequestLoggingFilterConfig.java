@@ -1,6 +1,7 @@
 package com.tiny.platform.core.oauth.config;
 
 import com.tiny.platform.core.oauth.filter.HttpRequestLoggingFilter;
+import com.tiny.platform.core.oauth.service.HttpRequestLogService;
 import jakarta.servlet.Filter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
@@ -23,9 +24,10 @@ public class HttpRequestLoggingFilterConfig {
     @Bean
     public HttpRequestLoggingFilter httpRequestLoggingFilter(
             HttpRequestLoggingProperties properties,
+            HttpRequestLogService logService,
             Environment environment,
             @Value("${spring.application.name:oauth-server}") String serviceName) {
-        return new HttpRequestLoggingFilter(properties, environment, serviceName);
+        return new HttpRequestLoggingFilter(properties, logService, environment, serviceName);
     }
 
     /**

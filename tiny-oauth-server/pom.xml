@@ -222,7 +222,27 @@
                                 <configuration>
                                     <rules>
                                         <rule>
+                                            <!-- Phase 0: 全模块基线，防止整体覆盖率回退（当前测试规模下可达成） -->
+                                            <element>BUNDLE</element>
+                                            <limits>
+                                                <limit>
+                                                    <counter>LINE</counter>
+                                                    <value>COVEREDRATIO</value>
+                                                    <minimum>0.10</minimum>
+                                                </limit>
+                                            </limits>
+                                        </rule>
+                                        <rule>
+                                            <!-- Phase 1: 核心 trace/audit 链路按类约束，优先保证排障链路质量 -->
                                             <element>CLASS</element>
+                                            <includes>
+                                                <include>com/tiny/platform/core/oauth/filter/HttpRequestLoggingFilter</include>
+                                                <include>com/tiny/platform/core/oauth/interceptor/HttpRequestLoggingInterceptor</include>
+                                                <include>com/tiny/platform/core/oauth/logging/HttpLogSanitizer</include>
+                                                <include>com/tiny/platform/core/oauth/config/HttpRequestLoggingProperties</include>
+                                                <include>com/tiny/platform/core/oauth/config/MdcTaskDecorator</include>
+                                                <include>com/tiny/platform/core/oauth/service/impl/HttpRequestLogServiceImpl</include>
+                                            </includes>
                                             <limits>
                                                 <limit>
                                                     <counter>LINE</counter>

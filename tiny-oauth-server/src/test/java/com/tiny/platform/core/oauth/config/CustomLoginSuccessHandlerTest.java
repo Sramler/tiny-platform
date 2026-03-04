@@ -69,6 +69,9 @@ class CustomLoginSuccessHandlerTest {
         handler.onAuthenticationSuccess(request, response, authentication);
 
         verify(sessionManager, never()).promoteToFullyAuthenticated(any(User.class), any(), any());
+        verify(userRepository).save(user);
+        verify(auditService).recordLoginSuccess(eq("admin"), eq(1L), eq("LOCAL"), eq("PASSWORD"), eq(request));
+        assertThat(user.getLastLoginAt()).isNotNull();
         assertThat(response.getRedirectedUrl()).isEqualTo("http://localhost:5173/");
     }
 
@@ -108,6 +111,8 @@ class CustomLoginSuccessHandlerTest {
         handler.onAuthenticationSuccess(request, response, authentication);
 
         verify(sessionManager, never()).promoteToFullyAuthenticated(any(User.class), any(), any());
+        verify(userRepository, never()).save(any(User.class));
+        verify(auditService, never()).recordLoginSuccess(any(), any(), any(), any(), any());
         assertThat(response.getRedirectedUrl()).startsWith("http://localhost:5173/self/security/totp-verify");
     }
 
@@ -150,6 +155,9 @@ class CustomLoginSuccessHandlerTest {
         handler.onAuthenticationSuccess(request, response, authentication);
 
         verify(sessionManager, times(1)).promoteToFullyAuthenticated(eq(user), eq(request), eq(response));
+        verify(userRepository).save(user);
+        verify(auditService).recordLoginSuccess(eq("admin"), eq(1L), eq("LOCAL"), eq("MFA"), eq(request));
+        assertThat(user.getLastLoginAt()).isNotNull();
         assertThat(response.getRedirectedUrl()).isEqualTo("http://localhost:5173/");
     }
 

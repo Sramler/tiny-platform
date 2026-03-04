@@ -197,11 +197,15 @@ CREATE TABLE IF NOT EXISTS `http_request_log` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键，自增ID',
     `trace_id` CHAR(32) NOT NULL COMMENT '全链路 trace id（十六进制）',
     `span_id` CHAR(32) DEFAULT NULL COMMENT '当前 span id（可选）',
-    `request_id` CHAR(32) NOT NULL COMMENT '本服务内请求ID（唯一）',
+    `request_id` CHAR(32) NOT NULL COMMENT '本服务内请求ID（服务端生成，唯一）',
+    `client_request_id` CHAR(32) DEFAULT NULL COMMENT '客户端请求ID（若传入且合法，已归一化）',
+    `trace_source` VARCHAR(64) DEFAULT NULL COMMENT 'trace_id 来源（header/query/fallback/generated）',
     `service_name` VARCHAR(64) NOT NULL COMMENT '服务名，如 user-service',
     `env` VARCHAR(32) NOT NULL COMMENT '环境：dev/test/pre/prod',
     `module` VARCHAR(64) DEFAULT NULL COMMENT '业务模块/分组，如 order/payment',
     `user_id` VARCHAR(128) DEFAULT NULL COMMENT '用户ID（若未登录则空）',
+    `tenant_id` BIGINT UNSIGNED DEFAULT NULL COMMENT '租户ID（多租户场景）',
+    `issuer` VARCHAR(255) DEFAULT NULL COMMENT '当前 OAuth issuer（若适用）',
     `client_ip` VARCHAR(45) DEFAULT NULL COMMENT '客户端IP（支持 IPv6）',
     `host` VARCHAR(128) DEFAULT NULL COMMENT '请求的 Host/域名',
     `user_agent` VARCHAR(512) DEFAULT NULL COMMENT 'User-Agent（建议截断）',
@@ -226,8 +230,11 @@ CREATE TABLE IF NOT EXISTS `http_request_log` (
     KEY `idx_service_env_created` (`service_name`, `env`, `created_at`),
     KEY `idx_path_template_created` (`path_template`, `created_at`),
     KEY `idx_user_created` (`user_id`, `created_at`),
+    KEY `idx_tenant_created` (`tenant_id`, `created_at`),
+    KEY `idx_issuer_created` (`issuer`, `created_at`),
     KEY `idx_status_created` (`status`, `created_at`),
     KEY `idx_trace` (`trace_id`),
+    KEY `idx_trace_source_created` (`trace_source`, `created_at`),
     KEY `idx_request_at` (`request_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci COMMENT='HTTP 请求/响应日志（面向数据分析，body 可选，注意脱敏与限长）';
 

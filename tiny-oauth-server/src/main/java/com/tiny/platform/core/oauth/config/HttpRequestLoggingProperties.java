@@ -34,6 +34,22 @@ public class HttpRequestLoggingProperties {
     private int maxBodyLength = 5 * 1024;
 
     /**
+     * traceId 缺失时的兜底策略：
+     * - REQUEST_ID: 使用当前请求的 requestId 作为 traceId（兼容旧行为）
+     * - GENERATED: 生成新的独立 traceId（语义更清晰）
+     */
+    private String traceIdFallbackStrategy = TraceIdFallbackStrategy.REQUEST_ID.name();
+
+    /**
+     * 允许从 query 参数 trace_id 读取 traceId 的路径片段白名单（contains 匹配）
+     */
+    private List<String> traceIdQueryParamAllowedPathFragments = new ArrayList<>(List.of(
+            "/oauth2/",
+            "/connect/",
+            "/logout"
+    ));
+
+    /**
      * 需要跳过记录的路径前缀
      */
     private List<String> excludedPathPrefixes = new ArrayList<>(List.of(
@@ -75,11 +91,47 @@ public class HttpRequestLoggingProperties {
         this.maxBodyLength = maxBodyLength;
     }
 
+    public String getTraceIdFallbackStrategy() {
+        return traceIdFallbackStrategy;
+    }
+
+    public void setTraceIdFallbackStrategy(String traceIdFallbackStrategy) {
+        this.traceIdFallbackStrategy = traceIdFallbackStrategy;
+    }
+
+    public TraceIdFallbackStrategy resolveTraceIdFallbackStrategy() {
+        if (traceIdFallbackStrategy == null || traceIdFallbackStrategy.isBlank()) {
+            return TraceIdFallbackStrategy.REQUEST_ID;
+        }
+        try {
+            String normalized = traceIdFallbackStrategy.trim()
+                    .replace('-', '_')
+                    .replace(' ', '_')
+                    .toUpperCase();
+            return TraceIdFallbackStrategy.valueOf(normalized);
+        } catch (IllegalArgumentException ex) {
+            return TraceIdFallbackStrategy.REQUEST_ID;
+        }
+    }
+
     public List<String> getExcludedPathPrefixes() {
         return excludedPathPrefixes;
     }
 
     public void setExcludedPathPrefixes(List<String> excludedPathPrefixes) {
         this.excludedPathPrefixes = excludedPathPrefixes;
+    }
+
+    public List<String> getTraceIdQueryParamAllowedPathFragments() {
+        return traceIdQueryParamAllowedPathFragments;
+    }
+
+    public void setTraceIdQueryParamAllowedPathFragments(List<String> traceIdQueryParamAllowedPathFragments) {
+        this.traceIdQueryParamAllowedPathFragments = traceIdQueryParamAllowedPathFragments;
+    }
+
+    public enum TraceIdFallbackStrategy {
+        REQUEST_ID,
+        GENERATED
     }
 }

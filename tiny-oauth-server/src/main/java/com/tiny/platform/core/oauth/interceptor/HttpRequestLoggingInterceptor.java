@@ -2,9 +2,11 @@ package com.tiny.platform.core.oauth.interceptor;
 
 import com.tiny.platform.core.oauth.config.HttpRequestLoggingProperties;
 import com.tiny.platform.core.oauth.filter.HttpRequestLoggingFilter;
+import com.tiny.platform.core.oauth.logging.HttpLogSanitizer;
 import com.tiny.platform.core.oauth.model.HttpRequestLog;
 import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.service.HttpRequestLogService;
+import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.core.util.IpUtils;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -16,6 +18,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.security.oauth2.server.authorization.context.AuthorizationServerContext;
+import org.springframework.security.oauth2.server.authorization.context.AuthorizationServerContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.slf4j.MDC;
@@ -53,6 +57,10 @@ public class HttpRequestLoggingInterceptor implements HandlerInterceptor {
             if (userId != null) {
                 MDC.put("userId", userId);
             }
+            Long tenantId = TenantContext.getTenantId();
+            if (tenantId != null) {
+                MDC.put("tenantId", String.valueOf(tenantId));
+            }
         }
         return true;
     }
@@ -76,6 +84,8 @@ public class HttpRequestLoggingInterceptor implements HandlerInterceptor {
         log.setTraceId((String) request.getAttribute(HttpRequestLoggingFilter.ATTR_TRACE_ID));
         log.setSpanId((String) request.getAttribute(HttpRequestLoggingFilter.ATTR_SPAN_ID));
         log.setRequestId((String) request.getAttribute(HttpRequestLoggingFilter.ATTR_REQUEST_ID));
+        log.setClientRequestId((String) request.getAttribute(HttpRequestLoggingFilter.ATTR_CLIENT_REQUEST_ID));
+        log.setTraceSource((String) request.getAttribute(HttpRequestLoggingFilter.ATTR_TRACE_SOURCE));
         log.setRequestAt(LocalDateTime.now());
 
         log.setModule(extractModuleName(request.getRequestURI()));
@@ -84,16 +94,19 @@ public class HttpRequestLoggingInterceptor implements HandlerInterceptor {
             userId = resolveCurrentUserId();
         }
         log.setUserId(userId);
+        log.setTenantId(TenantContext.getTenantId());
+        log.setIssuer(truncate(resolveCurrentIssuer(), 255));
         log.setClientIp(IpUtils.getClientIp(request));
-        log.setHost(request.getHeader(HttpHeaders.HOST));
-        log.setUserAgent(truncate(request.getHeader(HttpHeaders.USER_AGENT), 512));
+        log.setHost(truncate(HttpLogSanitizer.sanitizeHeaderValue(HttpHeaders.HOST, request.getHeader(HttpHeaders.HOST)), 128));
+        log.setUserAgent(truncate(HttpLogSanitizer.sanitizeHeaderValue(HttpHeaders.USER_AGENT,
+                request.getHeader(HttpHeaders.USER_AGENT)), 512));
         log.setHttpVersion(request.getProtocol());
         log.setMethod(request.getMethod());
 
         String pathTemplate = (String) request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
         log.setPathTemplate(StringUtils.hasText(pathTemplate) ? pathTemplate : request.getRequestURI());
         log.setRawPath(request.getRequestURI());
-        log.setQueryString(truncate(request.getQueryString(), 1024));
+        log.setQueryString(truncate(HttpLogSanitizer.sanitizeQueryString(request.getQueryString()), 1024));
 
         if (request instanceof ContentCachingRequestWrapper cachingRequest) {
             long requestSize = cachingRequest.getContentLengthLong();
@@ -124,6 +137,15 @@ public class HttpRequestLoggingInterceptor implements HandlerInterceptor {
         }
 
         logService.save(log);
+        request.setAttribute(HttpRequestLoggingFilter.ATTR_AUDIT_LOGGED, Boolean.TRUE);
+    }
+
+    private String resolveCurrentIssuer() {
+        AuthorizationServerContext context = AuthorizationServerContextHolder.getContext();
+        if (context == null) {
+            return null;
+        }
+        return context.getIssuer();
     }
 
     private String resolveCurrentUserId() {
@@ -194,8 +216,7 @@ public class HttpRequestLoggingInterceptor implements HandlerInterceptor {
             return "base64:" + Base64.getEncoder().encodeToString(truncated);
         }
         Charset charset = StringUtils.hasText(encoding) ? Charset.forName(encoding) : StandardCharsets.UTF_8;
-        return new String(truncated, charset);
+        String body = new String(truncated, charset);
+        return HttpLogSanitizer.sanitizeBody(body, contentType);
     }
 }
-
-

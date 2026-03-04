@@ -1,8 +1,10 @@
 package com.tiny.platform.infrastructure.scheduling.config;
 
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.task.TaskDecorator;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -26,7 +28,7 @@ public class SchedulingWorkerConfig {
     private int queueCapacity;
 
     @Bean(name = "schedulingTaskExecutor")
-    public ExecutorService schedulingTaskExecutor() {
+    public ExecutorService schedulingTaskExecutor(@Qualifier("mdcTaskDecorator") TaskDecorator mdcTaskDecorator) {
         AtomicInteger counter = new AtomicInteger(0);
         return new ThreadPoolExecutor(
                 coreSize,
@@ -39,6 +41,11 @@ public class SchedulingWorkerConfig {
                     t.setDaemon(true);
                     return t;
                 },
-                new ThreadPoolExecutor.CallerRunsPolicy());
+                new ThreadPoolExecutor.CallerRunsPolicy()) {
+            @Override
+            public void execute(Runnable command) {
+                super.execute(mdcTaskDecorator.decorate(command));
+            }
+        };
     }
 }

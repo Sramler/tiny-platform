@@ -5,7 +5,7 @@ import { authRuntimeConfig } from './config'
 import type { User } from 'oidc-client-ts'
 import { jwtVerify, createRemoteJWKSet } from 'jose'
 import { logger, persistentLogger } from '@/utils/logger'
-import { getOrCreateTraceId } from '@/utils/traceId'
+import { clearTraceId, createNewTraceId } from '@/utils/traceId'
 import {
   clearTenantId,
   getTenantCode,
@@ -137,7 +137,8 @@ export const login = async (returnUrl?: string) => {
   }
 
   try {
-    const traceId = getOrCreateTraceId()
+    // 登录链路使用新的 traceId，避免复用上一个会话/失败流程的 traceId
+    const traceId = createNewTraceId()
     oidcTrace('login.redirect', { redirect_uri: settings.redirect_uri, trace_id: traceId, redirectPath })
     loginInProgress = true
     lastLoginAttempt = now
@@ -170,8 +171,8 @@ export const logout = async () => {
     const currentUser = await userManager.getUser()
     if (currentUser && currentUser.id_token) {
       const postLogoutRedirect = settings.post_logout_redirect_uri ?? window.location.origin
-      // 为注销流程也绑定当前会话的 traceId，方便串起整条链路
-      const traceId = getOrCreateTraceId()
+      // 为注销流程单独创建新的 traceId，避免跨会话复用
+      const traceId = createNewTraceId()
       await userManager.signoutRedirect({
         id_token_hint: currentUser.id_token,
         // post_logout_redirect_uri 必须与后端注册值完全一致，禁止追加 query
@@ -181,6 +182,8 @@ export const logout = async () => {
           trace_id: traceId,
         },
       })
+      // 最佳努力清理；若浏览器已开始跳转，此行可能来不及执行
+      clearTraceId()
       return
     }
   } catch (error) {
@@ -190,6 +193,7 @@ export const logout = async () => {
   await userManager.removeUser()
   user.value = null
   clearTenantId()
+  clearTraceId()
   loginInProgress = false
   // 本地回退：使用与后端注册值一致的固定跳转地址，避免 OIDC 校验失败
   window.location.href = settings.post_logout_redirect_uri ?? window.location.origin
@@ -221,6 +225,7 @@ async function safeSilentRenew() {
     if (authRuntimeConfig.forceLogoutOnRenewFail) {
       await userManager.removeUser()
       user.value = null
+      clearTraceId()
       loginInProgress = false // 重置登录状态
       window.location.href = '/login'
     }

@@ -69,6 +69,11 @@ databaseChangeLog:
       file: 023-auth-audit-tenant-source.yaml
       relativeToChangelogFile: true
 
+  # HTTP 请求日志链路增强：客户端请求ID/租户/issuer/trace来源
+  - include:
+      file: 024-http-request-log-trace-hardening.yaml
+      relativeToChangelogFile: true
+
   # 数据修复：修复资源 URL 格式
   - include:
       file: 004-fix-resource-url-format.yaml

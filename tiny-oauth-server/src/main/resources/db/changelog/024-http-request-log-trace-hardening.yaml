@@ -1,0 +1,127 @@
+databaseChangeLog:
+  - changeSet:
+      id: 024-http-request-log-trace-hardening
+      author: tiny
+      validCheckSum:
+        - ANY
+      comment: http_request_log 增加 client_request_id/tenant_id/issuer/trace_source 字段与索引
+      changes:
+        - sql:
+            dbms: mysql
+            sql: |
+              SET @client_request_id_exists := (
+                SELECT COUNT(*)
+                  FROM information_schema.columns
+                 WHERE table_schema = DATABASE()
+                   AND table_name = 'http_request_log'
+                   AND column_name = 'client_request_id'
+              );
+              SET @client_request_id_sql := IF(
+                @client_request_id_exists = 0,
+                'ALTER TABLE `http_request_log` ADD COLUMN `client_request_id` CHAR(32) NULL COMMENT ''客户端请求ID（若传入且合法，已归一化）'' AFTER `request_id`',
+                'SELECT 1'
+              );
+              PREPARE stmt_client_request_id FROM @client_request_id_sql;
+              EXECUTE stmt_client_request_id;
+              DEALLOCATE PREPARE stmt_client_request_id;
+
+              SET @trace_source_exists := (
+                SELECT COUNT(*)
+                  FROM information_schema.columns
+                 WHERE table_schema = DATABASE()
+                   AND table_name = 'http_request_log'
+                   AND column_name = 'trace_source'
+              );
+              SET @trace_source_sql := IF(
+                @trace_source_exists = 0,
+                'ALTER TABLE `http_request_log` ADD COLUMN `trace_source` VARCHAR(64) NULL COMMENT ''trace_id 来源（header/query/fallback/generated）'' AFTER `client_request_id`',
+                'SELECT 1'
+              );
+              PREPARE stmt_trace_source FROM @trace_source_sql;
+              EXECUTE stmt_trace_source;
+              DEALLOCATE PREPARE stmt_trace_source;
+
+              SET @tenant_id_exists := (
+                SELECT COUNT(*)
+                  FROM information_schema.columns
+                 WHERE table_schema = DATABASE()
+                   AND table_name = 'http_request_log'
+                   AND column_name = 'tenant_id'
+              );
+              SET @tenant_id_sql := IF(
+                @tenant_id_exists = 0,
+                'ALTER TABLE `http_request_log` ADD COLUMN `tenant_id` BIGINT UNSIGNED NULL COMMENT ''租户ID（多租户场景）'' AFTER `user_id`',
+                'SELECT 1'
+              );
+              PREPARE stmt_tenant_id FROM @tenant_id_sql;
+              EXECUTE stmt_tenant_id;
+              DEALLOCATE PREPARE stmt_tenant_id;
+
+              SET @issuer_exists := (
+                SELECT COUNT(*)
+                  FROM information_schema.columns
+                 WHERE table_schema = DATABASE()
+                   AND table_name = 'http_request_log'
+                   AND column_name = 'issuer'
+              );
+              SET @issuer_sql := IF(
+                @issuer_exists = 0,
+                'ALTER TABLE `http_request_log` ADD COLUMN `issuer` VARCHAR(255) NULL COMMENT ''当前 OAuth issuer（若适用）'' AFTER `tenant_id`',
+                'SELECT 1'
+              );
+              PREPARE stmt_issuer FROM @issuer_sql;
+              EXECUTE stmt_issuer;
+              DEALLOCATE PREPARE stmt_issuer;
+
+              UPDATE `http_request_log`
+                 SET `trace_source` = 'legacy'
+               WHERE `trace_source` IS NULL
+                  OR `trace_source` = '';
+
+              SET @idx_tenant_created_exists := (
+                SELECT COUNT(*)
+                  FROM information_schema.statistics
+                 WHERE table_schema = DATABASE()
+                   AND table_name = 'http_request_log'
+                   AND index_name = 'idx_tenant_created'
+              );
+              SET @idx_tenant_created_sql := IF(
+                @idx_tenant_created_exists = 0,
+                'CREATE INDEX `idx_tenant_created` ON `http_request_log` (`tenant_id`, `created_at`)',
+                'SELECT 1'
+              );
+              PREPARE stmt_idx_tenant_created FROM @idx_tenant_created_sql;
+              EXECUTE stmt_idx_tenant_created;
+              DEALLOCATE PREPARE stmt_idx_tenant_created;
+
+              SET @idx_issuer_created_exists := (
+                SELECT COUNT(*)
+                  FROM information_schema.statistics
+                 WHERE table_schema = DATABASE()
+                   AND table_name = 'http_request_log'
+                   AND index_name = 'idx_issuer_created'
+              );
+              SET @idx_issuer_created_sql := IF(
+                @idx_issuer_created_exists = 0,
+                'CREATE INDEX `idx_issuer_created` ON `http_request_log` (`issuer`, `created_at`)',
+                'SELECT 1'
+              );
+              PREPARE stmt_idx_issuer_created FROM @idx_issuer_created_sql;
+              EXECUTE stmt_idx_issuer_created;
+              DEALLOCATE PREPARE stmt_idx_issuer_created;
+
+              SET @idx_trace_source_created_exists := (
+                SELECT COUNT(*)
+                  FROM information_schema.statistics
+                 WHERE table_schema = DATABASE()
+                   AND table_name = 'http_request_log'
+                   AND index_name = 'idx_trace_source_created'
+              );
+              SET @idx_trace_source_created_sql := IF(
+                @idx_trace_source_created_exists = 0,
+                'CREATE INDEX `idx_trace_source_created` ON `http_request_log` (`trace_source`, `created_at`)',
+                'SELECT 1'
+              );
+              PREPARE stmt_idx_trace_source_created FROM @idx_trace_source_created_sql;
+              EXECUTE stmt_idx_trace_source_created;
+              DEALLOCATE PREPARE stmt_idx_trace_source_created;

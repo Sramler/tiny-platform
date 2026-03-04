@@ -13,8 +13,11 @@ import java.time.LocalDateTime;
         @Index(name = "idx_service_env_created", columnList = "service_name, env, created_at"),
         @Index(name = "idx_path_template_created", columnList = "path_template, created_at"),
         @Index(name = "idx_user_created", columnList = "user_id, created_at"),
+        @Index(name = "idx_tenant_created", columnList = "tenant_id, created_at"),
+        @Index(name = "idx_issuer_created", columnList = "issuer, created_at"),
         @Index(name = "idx_status_created", columnList = "status, created_at"),
         @Index(name = "idx_trace", columnList = "trace_id"),
+        @Index(name = "idx_trace_source_created", columnList = "trace_source, created_at"),
         @Index(name = "idx_request_at", columnList = "request_at")
 })
 public class HttpRequestLog {
@@ -32,6 +35,12 @@ public class HttpRequestLog {
     @Column(name = "request_id", nullable = false, length = 32, unique = true)
     private String requestId;
 
+    @Column(name = "client_request_id", length = 32)
+    private String clientRequestId;
+
+    @Column(name = "trace_source", length = 64)
+    private String traceSource;
+
     @Column(name = "service_name", nullable = false, length = 64)
     private String serviceName;
 
@@ -43,6 +52,12 @@ public class HttpRequestLog {
 
     @Column(name = "user_id", length = 128)
     private String userId;
+
+    @Column(name = "tenant_id")
+    private Long tenantId;
+
+    @Column(name = "issuer", length = 255)
+    private String issuer;
 
     @Column(name = "client_ip", length = 45)
     private String clientIp;
@@ -144,6 +159,22 @@ public class HttpRequestLog {
         this.requestId = requestId;
     }
 
+    public String getClientRequestId() {
+        return clientRequestId;
+    }
+
+    public void setClientRequestId(String clientRequestId) {
+        this.clientRequestId = clientRequestId;
+    }
+
+    public String getTraceSource() {
+        return traceSource;
+    }
+
+    public void setTraceSource(String traceSource) {
+        this.traceSource = traceSource;
+    }
+
     public String getServiceName() {
         return serviceName;
     }
@@ -174,6 +205,22 @@ public class HttpRequestLog {
 
     public void setUserId(String userId) {
         this.userId = userId;
+    }
+
+    public Long getTenantId() {
+        return tenantId;
+    }
+
+    public void setTenantId(Long tenantId) {
+        this.tenantId = tenantId;
+    }
+
+    public String getIssuer() {
+        return issuer;
+    }
+
+    public void setIssuer(String issuer) {
+        this.issuer = issuer;
     }
 
     public String getClientIp() {
@@ -320,5 +367,3 @@ public class HttpRequestLog {
         this.createdAt = createdAt;
     }
 }
-
-

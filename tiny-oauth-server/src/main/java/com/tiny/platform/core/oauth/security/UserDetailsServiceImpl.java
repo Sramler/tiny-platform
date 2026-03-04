@@ -10,8 +10,6 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
-
 @Service
 public class UserDetailsServiceImpl implements UserDetailsService {
 
@@ -22,7 +20,7 @@ public class UserDetailsServiceImpl implements UserDetailsService {
     }
 
     @Override
-    @Transactional
+    @Transactional(readOnly = true)
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
         Long tenantId = TenantContext.getTenantId();
         if (tenantId == null) {
@@ -30,10 +28,6 @@ public class UserDetailsServiceImpl implements UserDetailsService {
         }
         User user = userRepository.findUserByUsernameAndTenantId(username, tenantId)
                 .orElseThrow(() -> new UsernameNotFoundException("用户不存在: " + username));
-
-        // Update last login time
-        user.setLastLoginAt(LocalDateTime.now());
-        userRepository.save(user);
 
         // 创建 SecurityUser
         // 注意：密码验证已经在 MultiAuthenticationProvider 中完成，

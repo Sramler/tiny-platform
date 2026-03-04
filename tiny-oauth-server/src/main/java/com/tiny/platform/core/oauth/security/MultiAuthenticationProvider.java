@@ -25,6 +25,8 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 
 /**
  * MultiAuthenticationProvider - 支持多认证方式与 MFA 分步/一次性校验。
@@ -107,6 +109,7 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
         // 先查用户（单次）
         User user = userRepository.findUserByUsernameAndTenantId(username, tenantId)
                 .orElseThrow(() -> new BadCredentialsException("用户不存在"));
+        Supplier<UserDetails> userDetailsSupplier = memoizedUserDetailsLoader(user.getUsername());
 
         // 读取所有已启用的方法（只查询一次）
         List<UserAuthenticationMethod> enabledMethods = authenticationMethodRepository.findEnabledMethodsByUserId(user.getId(), tenantId);
@@ -195,21 +198,21 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
                 logger.info("[MFA] 本次会话不要求 TOTP，按单因子 {} 完成认证 (user={})", finalType, username);
                 String cred = credentials != null ? credentials.toString() : null;
                 return switch (finalType) {
-                    case FACTOR_PASSWORD -> authenticatePassword(user, cred, method, finalProvider, finalType);
-                    case FACTOR_TOTP -> authenticateTotp(user, cred, method, finalProvider, finalType);
+                    case FACTOR_PASSWORD -> authenticatePassword(user, cred, method, finalProvider, finalType, userDetailsSupplier);
+                    case FACTOR_TOTP -> authenticateTotp(user, cred, method, finalProvider, finalType, userDetailsSupplier);
                     default -> throw new BadCredentialsException("不支持的认证类型: " + finalType);
                 };
             }
 
             // 当前会话“必须”完成 TOTP：走原有 MFA 分步/一次性流程。
             logger.info("[MFA] 本次会话要求 TOTP，进入多因子分步流程 (user={})", username);
-            return handleMultiFactorAuthentication(user, credentials, mfaCandidates, finalProvider, finalType);
+            return handleMultiFactorAuthentication(user, credentials, mfaCandidates, finalProvider, finalType, userDetailsSupplier);
         } else {
             // 普通单因子认证
             String cred = credentials != null ? credentials.toString() : null;
             return switch (finalType) {
-                case FACTOR_PASSWORD -> authenticatePassword(user, cred, method, finalProvider, finalType);
-                case FACTOR_TOTP -> authenticateTotp(user, cred, method, finalProvider, finalType);
+                case FACTOR_PASSWORD -> authenticatePassword(user, cred, method, finalProvider, finalType, userDetailsSupplier);
+                case FACTOR_TOTP -> authenticateTotp(user, cred, method, finalProvider, finalType, userDetailsSupplier);
                 default -> throw new BadCredentialsException("不支持的认证类型: " + finalType);
             };
         }
@@ -225,10 +228,11 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
      *  - 部分认证（未完成所有因子）返回未完全认证的 Token（isAuthenticated=false），但也可以选择返回完全认证并在 successHandler 中判断
      */
     private Authentication handleMultiFactorAuthentication(User user,
-            Object credentials,
-                                                            List<UserAuthenticationMethod> mfaMethods,
-            String provider,
-            String requestedType) {
+                                                           Object credentials,
+                                                           List<UserAuthenticationMethod> mfaMethods,
+                                                           String provider,
+                                                           String requestedType,
+                                                           Supplier<UserDetails> userDetailsSupplier) {
         // 解析传入凭证：支持 Map<String, Object> 或单值
         Map<String, String> credentialMap = new HashMap<>();
         if (credentials instanceof Map<?, ?> rawMap) {
@@ -261,21 +265,9 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
                 logger.debug("用户 {} 未提供 {} 因子的凭证（可能分步验证）", user.getUsername(), methodType);
                 // 如果已有完成的因子，则表明这是第二步，返回已认证 token 让 successHandler 处理
                 if (!completed.isEmpty()) {
-                    UserDetails userDetails = userDetailsService.loadUserByUsername(user.getUsername());
-                    MultiFactorAuthenticationToken authenticated = new MultiFactorAuthenticationToken(
-                            user.getUsername(),
-                            null,
-                    MultiFactorAuthenticationToken.AuthenticationProviderType.from(provider),
-                            completed,
-                            userDetails.getAuthorities()
+                    MultiFactorAuthenticationToken authenticated = buildAuthenticatedToken(
+                        user.getUsername(), provider, completed, userDetailsSupplier.get()
                     );
-                    authenticated.setAuthenticated(true);
-                    // 将 SecurityUser 设置到 details 中，以便在 JWT Token 生成时获取 userId
-                    if (userDetails instanceof com.tiny.platform.core.oauth.model.SecurityUser securityUser) {
-                        authenticated.setDetails(securityUser);
-                        logger.debug("用户 {} 的 SecurityUser 已设置到 MultiFactorAuthenticationToken.details (userId: {})", 
-                                user.getUsername(), securityUser.getUserId());
-                    }
                     logger.info("用户 {} 部分认证完成，返回已认证 MFA token（需后续验证），将在 successHandler 中处理", user.getUsername());
                     return authenticated;
                 } else {
@@ -286,7 +278,7 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
             }
 
             // 验证当前因子
-            Authentication step = authenticateFactor(user, provided, method, methodType);
+            Authentication step = authenticateFactor(user, provided, method, methodType, userDetailsSupplier);
             if (!step.isAuthenticated()) {
                 throw new BadCredentialsException(methodType + " 验证失败");
             }
@@ -313,72 +305,39 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
             // successHandler 负责看到 completedFactors 后把用户导向 TOTP 验证页面（你现有的 successHandler 已实现该逻辑）。
             if (completed.contains(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD) && 
                 remaining.stream().anyMatch(m -> FACTOR_TOTP.equalsIgnoreCase(m.getAuthenticationType()))) {
-                UserDetails userDetails = userDetailsService.loadUserByUsername(user.getUsername());
-                MultiFactorAuthenticationToken authenticated = new MultiFactorAuthenticationToken(
-                        user.getUsername(),
-                        null,
-                        MultiFactorAuthenticationToken.AuthenticationProviderType.from(provider),
-                        completed,
-                        userDetails.getAuthorities()
+                MultiFactorAuthenticationToken authenticated = buildAuthenticatedToken(
+                    user.getUsername(), provider, completed, userDetailsSupplier.get()
                 );
-                // setAuthenticated(true) 在构造器中已设置，但为了保险可以再次设置
-                authenticated.setAuthenticated(true);
-                // 将 SecurityUser 设置到 details 中，以便在 JWT Token 生成时获取 userId
-                if (userDetails instanceof com.tiny.platform.core.oauth.model.SecurityUser securityUser) {
-                    authenticated.setDetails(securityUser);
-                    logger.debug("用户 {} 的 SecurityUser 已设置到 MultiFactorAuthenticationToken.details (userId: {})", 
-                            user.getUsername(), securityUser.getUserId());
-                }
                 logger.info("用户 {} 已完成密码验证，返回已认证 MFA token（需后续 TOTP）", user.getUsername());
                 return authenticated;
             } else {
                 // 其他情况：也返回已认证的 Token，让 successHandler 处理跳转
                 // 这样可以统一处理，不需要 PartialAuthenticationAuthorizationManager
-                UserDetails userDetails = userDetailsService.loadUserByUsername(user.getUsername());
-                MultiFactorAuthenticationToken authenticated = new MultiFactorAuthenticationToken(
-                        user.getUsername(),
-                        null,
-                        MultiFactorAuthenticationToken.AuthenticationProviderType.from(provider),
-                        completed,
-                        userDetails.getAuthorities()
+                MultiFactorAuthenticationToken authenticated = buildAuthenticatedToken(
+                    user.getUsername(), provider, completed, userDetailsSupplier.get()
                 );
-                authenticated.setAuthenticated(true);
-                // 将 SecurityUser 设置到 details 中，以便在 JWT Token 生成时获取 userId
-                if (userDetails instanceof com.tiny.platform.core.oauth.model.SecurityUser securityUser) {
-                    authenticated.setDetails(securityUser);
-                    logger.debug("用户 {} 的 SecurityUser 已设置到 MultiFactorAuthenticationToken.details (userId: {})", 
-                            user.getUsername(), securityUser.getUserId());
-                }
                 logger.info("用户 {} 部分认证完成，返回已认证 MFA token（需后续验证），将在 successHandler 中处理", user.getUsername());
                 return authenticated;
             }
         }
 
         // 所有因子完成 => 完全认证
-        UserDetails userDetails = userDetailsService.loadUserByUsername(user.getUsername());
-        MultiFactorAuthenticationToken finalToken = new MultiFactorAuthenticationToken(
-                user.getUsername(),
-                null,
-                MultiFactorAuthenticationToken.AuthenticationProviderType.from(provider),
-                completed,
-                userDetails.getAuthorities()
+        MultiFactorAuthenticationToken finalToken = buildAuthenticatedToken(
+            user.getUsername(), provider, completed, userDetailsSupplier.get()
         );
-        finalToken.setAuthenticated(true);
-        // 将 SecurityUser 设置到 details 中，以便在 JWT Token 生成时获取 userId
-        if (userDetails instanceof com.tiny.platform.core.oauth.model.SecurityUser securityUser) {
-            finalToken.setDetails(securityUser);
-            logger.debug("用户 {} 的 SecurityUser 已设置到 MultiFactorAuthenticationToken.details (userId: {})", 
-                    user.getUsername(), securityUser.getUserId());
-        }
         logger.info("用户 {} 完成所有 MFA 因子，认证成功", user.getUsername());
         return finalToken;
     }
     
-    private Authentication authenticateFactor(User user, String credential, UserAuthenticationMethod method, String factorType) {
+    private Authentication authenticateFactor(User user,
+                                              String credential,
+                                              UserAuthenticationMethod method,
+                                              String factorType,
+                                              Supplier<UserDetails> userDetailsSupplier) {
         if (FACTOR_PASSWORD.equalsIgnoreCase(factorType)) {
-                return authenticatePassword(user, credential, method, method.getAuthenticationProvider(), factorType);
+                return authenticatePassword(user, credential, method, method.getAuthenticationProvider(), factorType, userDetailsSupplier);
         } else if (FACTOR_TOTP.equalsIgnoreCase(factorType)) {
-                return authenticateTotp(user, credential, method, method.getAuthenticationProvider(), factorType);
+                return authenticateTotp(user, credential, method, method.getAuthenticationProvider(), factorType, userDetailsSupplier);
         } else {
             throw new BadCredentialsException("不支持的认证因子: " + factorType);
         }
@@ -387,7 +346,12 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
     /**
      * 密码认证（已包含详细日志与异常处理）
      */
-    private Authentication authenticatePassword(User user, String password, UserAuthenticationMethod method, String provider, String type) {
+    private Authentication authenticatePassword(User user,
+                                                String password,
+                                                UserAuthenticationMethod method,
+                                                String provider,
+                                                String type,
+                                                Supplier<UserDetails> userDetailsSupplier) {
         Map<String, Object> config = method.getAuthenticationConfiguration();
         
         if (config == null || !config.containsKey("password")) {
@@ -417,30 +381,30 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
         // 记录认证方法验证成功的信息
         recordAuthenticationMethodVerification(method);
 
-        UserDetails userDetails = userDetailsService.loadUserByUsername(user.getUsername());
+        UserDetails userDetails = userDetailsSupplier.get();
 
         // 返回 MultiFactorAuthenticationToken 以携带 provider/type 信息（向后兼容）
         MultiFactorAuthenticationToken.AuthenticationFactorType initialFactor = MultiFactorAuthenticationToken.AuthenticationFactorType.from(type);
-            MultiFactorAuthenticationToken token = new MultiFactorAuthenticationToken(
-                    user.getUsername(),
-                null,
-                MultiFactorAuthenticationToken.AuthenticationProviderType.from(provider),
-                initialFactor,
-                    userDetails.getAuthorities()
-            );
-            // 将 SecurityUser 设置到 details 中，以便在 JWT Token 生成时获取 userId
-            if (userDetails instanceof com.tiny.platform.core.oauth.model.SecurityUser securityUser) {
-                token.setDetails(securityUser);
-                logger.debug("用户 {} 的 SecurityUser 已设置到 MultiFactorAuthenticationToken.details (userId: {})", 
-                        user.getUsername(), securityUser.getUserId());
-            }
-            return token;
+        MultiFactorAuthenticationToken token = new MultiFactorAuthenticationToken(
+                user.getUsername(),
+            null,
+            MultiFactorAuthenticationToken.AuthenticationProviderType.from(provider),
+            initialFactor,
+                userDetails.getAuthorities()
+        );
+        attachSecurityUserDetails(token, userDetails, user.getUsername());
+        return token;
     }
 
     /**
      * TOTP 验证（使用 TotpService）
      */
-    private Authentication authenticateTotp(User user, String totpCode, UserAuthenticationMethod method, String provider, String type) {
+    private Authentication authenticateTotp(User user,
+                                            String totpCode,
+                                            UserAuthenticationMethod method,
+                                            String provider,
+                                            String type,
+                                            Supplier<UserDetails> userDetailsSupplier) {
         Map<String, Object> config = method.getAuthenticationConfiguration();
 
         if (config == null) {
@@ -468,23 +432,55 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
         // 记录认证方法验证成功的信息
         recordAuthenticationMethodVerification(method);
 
-        UserDetails userDetails = userDetailsService.loadUserByUsername(user.getUsername());
+        UserDetails userDetails = userDetailsSupplier.get();
 
         MultiFactorAuthenticationToken.AuthenticationFactorType initialFactor = MultiFactorAuthenticationToken.AuthenticationFactorType.from(type);
-            MultiFactorAuthenticationToken token = new MultiFactorAuthenticationToken(
-                    user.getUsername(),
-                null,
-                MultiFactorAuthenticationToken.AuthenticationProviderType.from(provider),
-                initialFactor,
-                    userDetails.getAuthorities()
-            );
-            // 将 SecurityUser 设置到 details 中，以便在 JWT Token 生成时获取 userId
-            if (userDetails instanceof com.tiny.platform.core.oauth.model.SecurityUser securityUser) {
-                token.setDetails(securityUser);
-                logger.debug("用户 {} 的 SecurityUser 已设置到 MultiFactorAuthenticationToken.details (userId: {})", 
-                        user.getUsername(), securityUser.getUserId());
+        MultiFactorAuthenticationToken token = new MultiFactorAuthenticationToken(
+                user.getUsername(),
+            null,
+            MultiFactorAuthenticationToken.AuthenticationProviderType.from(provider),
+            initialFactor,
+                userDetails.getAuthorities()
+        );
+        attachSecurityUserDetails(token, userDetails, user.getUsername());
+        return token;
+    }
+
+    private Supplier<UserDetails> memoizedUserDetailsLoader(String username) {
+        AtomicReference<UserDetails> cachedUserDetails = new AtomicReference<>();
+        return () -> {
+            UserDetails existing = cachedUserDetails.get();
+            if (existing != null) {
+                return existing;
             }
-            return token;
+            UserDetails loaded = userDetailsService.loadUserByUsername(username);
+            cachedUserDetails.compareAndSet(null, loaded);
+            return cachedUserDetails.get();
+        };
+    }
+
+    private MultiFactorAuthenticationToken buildAuthenticatedToken(String username,
+                                                                   String provider,
+                                                                   Set<MultiFactorAuthenticationToken.AuthenticationFactorType> completedFactors,
+                                                                   UserDetails userDetails) {
+        MultiFactorAuthenticationToken token = new MultiFactorAuthenticationToken(
+            username,
+            null,
+            MultiFactorAuthenticationToken.AuthenticationProviderType.from(provider),
+            completedFactors,
+            userDetails.getAuthorities()
+        );
+        token.setAuthenticated(true);
+        attachSecurityUserDetails(token, userDetails, username);
+        return token;
+    }
+
+    private void attachSecurityUserDetails(MultiFactorAuthenticationToken token, UserDetails userDetails, String username) {
+        if (userDetails instanceof com.tiny.platform.core.oauth.model.SecurityUser securityUser) {
+            token.setDetails(securityUser);
+            logger.debug("用户 {} 的 SecurityUser 已设置到 MultiFactorAuthenticationToken.details (userId: {})",
+                username, securityUser.getUserId());
+        }
     }
 
 

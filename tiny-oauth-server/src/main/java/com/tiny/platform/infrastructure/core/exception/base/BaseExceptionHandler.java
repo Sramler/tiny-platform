@@ -5,9 +5,11 @@ import com.tiny.platform.infrastructure.core.exception.exception.BusinessExcepti
 import com.tiny.platform.infrastructure.core.exception.util.ExceptionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.context.request.NativeWebRequest;
@@ -220,7 +222,15 @@ public abstract class BaseExceptionHandler {
         if (httpRequest != null) {
             problemDetail.setProperty("path", httpRequest.getRequestURI());
         }
+        putIfText(problemDetail, "traceId", MDC.get("traceId"));
+        putIfText(problemDetail, "requestId", MDC.get("requestId"));
         return problemDetail;
     }
-}
 
+    private void putIfText(ProblemDetail problemDetail, String key, String value) {
+        if (problemDetail == null || !StringUtils.hasText(key) || !StringUtils.hasText(value)) {
+            return;
+        }
+        problemDetail.setProperty(key, value);
+    }
+}

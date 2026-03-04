@@ -209,6 +209,19 @@ security:
   mfa:
     mode: OPTIONAL # MFA模式: NONE(完全禁用), OPTIONAL(推荐可跳过), REQUIRED(强制必须绑定)
 
+# HTTP 请求日志与链路追踪补充配置
+http:
+  request-log:
+    # traceId 缺失时的兜底策略：
+    # - REQUEST_ID: 使用当前请求 requestId 作为 traceId（默认，兼容旧行为）
+    # - GENERATED: 生成新的独立 traceId（减少 traceId/requestId 值重叠）
+    trace-id-fallback-strategy: REQUEST_ID
+    # 允许从 query 参数 trace_id 读取链路 ID 的路径片段白名单（contains 匹配）
+    trace-id-query-param-allowed-path-fragments:
+      - /oauth2/
+      - /connect/
+      - /logout
+
 # 前端页面配置
 # 默认配置为生产环境（forward 到打包后的静态文件）
 # 开发环境请使用 application-dev.yaml 覆盖配置
