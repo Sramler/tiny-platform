@@ -53,7 +53,7 @@ class CustomLoginFailureHandlerTest {
 
         handler.onAuthenticationFailure(request, response, new BadCredentialsException("bad"));
 
-        assertThat(response.getRedirectedUrl()).isEqualTo("/login?error=true");
+        assertThat(response.getRedirectedUrl()).isEqualTo("/login?error=true&message=bad");
         verify(userRepository, never()).findUserByUsernameAndTenantId(any(), any());
         verify(auditService, never()).recordLoginFailure(any(), any(), any(), any(), any());
     }
@@ -76,11 +76,14 @@ class CustomLoginFailureHandlerTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setRemoteAddr("127.0.0.9");
         request.setParameter("username", "alice");
+        request.setParameter("redirect", "/dashboard");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         handler.onAuthenticationFailure(request, response, new BadCredentialsException("bad password"));
 
-        assertThat(response.getRedirectedUrl()).isEqualTo("/login?error=true");
+        assertThat(response.getRedirectedUrl()).startsWith("/login?error=true");
+        assertThat(response.getRedirectedUrl()).contains("redirect=%2Fdashboard");
+        assertThat(response.getRedirectedUrl()).contains("message=bad+password");
         assertThat(user.getFailedLoginCount()).isEqualTo(2);
         assertThat(user.getLastFailedLoginAt()).isNotNull();
         verify(userRepository).save(user);
@@ -101,7 +104,8 @@ class CustomLoginFailureHandlerTest {
 
         handler.onAuthenticationFailure(request, response, new BadCredentialsException("bad"));
 
-        assertThat(response.getRedirectedUrl()).isEqualTo("/login?error=true");
+        assertThat(response.getRedirectedUrl()).startsWith("/login?error=true");
+        assertThat(response.getRedirectedUrl()).contains("message=bad");
         verify(userRepository, never()).findUserByUsernameAndTenantId(any(), any());
         verify(auditService).recordLoginFailure(eq("bob"), isNull(), eq("LDAP"), eq("PASSWORD"), same(request));
     }
@@ -125,7 +129,7 @@ class CustomLoginFailureHandlerTest {
 
         handler.onAuthenticationFailure(request, response, new BadCredentialsException("bad"));
 
-        assertThat(response.getRedirectedUrl()).isEqualTo("/login?error=true");
+        assertThat(response.getRedirectedUrl()).startsWith("/login?error=true");
         verify(auditService).recordLoginFailure(eq("charlie"), isNull(), eq("LOCAL"), eq("PASSWORD"), same(request));
     }
 
@@ -151,7 +155,7 @@ class CustomLoginFailureHandlerTest {
 
         handler.onAuthenticationFailure(request, response, new BadCredentialsException("bad"));
 
-        assertThat(response.getRedirectedUrl()).isEqualTo("/login?error=true");
+        assertThat(response.getRedirectedUrl()).startsWith("/login?error=true");
         // recordFailedLogin catch 不应中断审计流程
         verify(auditService).recordLoginFailure(eq("dave"), eq(7L), eq("LOCAL"), eq("PASSWORD"), same(request));
     }
@@ -178,7 +182,7 @@ class CustomLoginFailureHandlerTest {
 
         handler.onAuthenticationFailure(request, response, new BadCredentialsException("bad"));
 
-        assertThat(response.getRedirectedUrl()).isEqualTo("/login?error=true");
+        assertThat(response.getRedirectedUrl()).startsWith("/login?error=true");
         assertThat(user.getFailedLoginCount()).isEqualTo(1);
         verify(auditService).recordLoginFailure(eq("erin"), eq(8L), eq("LOCAL"), eq("PASSWORD"), same(request));
     }
@@ -198,13 +202,13 @@ class CustomLoginFailureHandlerTest {
         when(userRepository.findUserByUsernameAndTenantId("frank", 88L)).thenReturn(Optional.of(user));
 
         MockHttpServletRequest request = new MockHttpServletRequest();
-        request.getSession(true).setAttribute("SPRING_SECURITY_LAST_EXCEPTION", new LockedException("locked"));
         request.setParameter("username", "frank");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         handler.onAuthenticationFailure(request, response, new LockedException("locked"));
 
-        assertThat(response.getRedirectedUrl()).isEqualTo("/login?error=true");
+        assertThat(response.getRedirectedUrl()).startsWith("/login?error=true");
+        assertThat(response.getRedirectedUrl()).contains("message=locked");
         assertThat(user.getFailedLoginCount()).isEqualTo(5);
         verify(userRepository, never()).save(any(User.class));
         verify(auditService).recordLoginFailure(eq("frank"), eq(10L), eq("LOCAL"), eq("PASSWORD"), same(request));

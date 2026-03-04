@@ -17,6 +17,8 @@ import org.springframework.security.web.authentication.AuthenticationFailureHand
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationFailureHandler;
 
 import java.io.IOException;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 
 /**
@@ -38,7 +40,7 @@ public class CustomLoginFailureHandler implements AuthenticationFailureHandler {
         this.userRepository = userRepository;
         this.auditService = auditService;
         this.loginFailurePolicy = loginFailurePolicy;
-        this.defaultHandler = new SimpleUrlAuthenticationFailureHandler("/login?error=true");
+        this.defaultHandler = new SimpleUrlAuthenticationFailureHandler();
     }
 
     @Override
@@ -106,7 +108,7 @@ public class CustomLoginFailureHandler implements AuthenticationFailureHandler {
             }
         }
 
-        // 使用默认处理器进行重定向
+        defaultHandler.setDefaultFailureUrl(buildFailureRedirectUrl(request, exception));
         defaultHandler.onAuthenticationFailure(request, response, exception);
     }
 
@@ -129,5 +131,27 @@ public class CustomLoginFailureHandler implements AuthenticationFailureHandler {
         } catch (Exception e) {
             logger.warn("记录用户 {} 登录失败信息失败: {}", user.getUsername(), e.getMessage(), e);
         }
+    }
+
+    private String buildFailureRedirectUrl(HttpServletRequest request, AuthenticationException exception) {
+        StringBuilder url = new StringBuilder("/login?error=true");
+        String redirect = com.tiny.platform.core.oauth.security.RedirectPathSanitizer.sanitize(
+                request.getParameter("redirect"),
+                request
+        );
+        if (redirect != null && !redirect.isBlank() && !"/".equals(redirect)) {
+            url.append("&redirect=").append(urlEncode(redirect));
+        }
+        String message = exception != null && exception.getMessage() != null
+                ? exception.getMessage().trim()
+                : null;
+        if (message != null && !message.isBlank()) {
+            url.append("&message=").append(urlEncode(message));
+        }
+        return url.toString();
+    }
+
+    private String urlEncode(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 }

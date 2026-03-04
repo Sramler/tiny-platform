@@ -85,6 +85,17 @@ describe('Login.vue', () => {
     expect(mocks.clearTenantId).not.toHaveBeenCalled()
   })
 
+  it('should render backend failure message from query', async () => {
+    routeState.query = {
+      message: '登录失败次数过多，请 15 分钟后重试',
+    }
+
+    const wrapper = mount(Login)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('登录失败次数过多，请 15 分钟后重试')
+  })
+
   it('should normalize tenant code and submit form for valid input', async () => {
     const wrapper = mount(Login)
     await flushPromises()

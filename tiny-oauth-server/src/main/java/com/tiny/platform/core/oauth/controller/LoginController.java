@@ -7,6 +7,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.StringJoiner;
+
 /**
  * 登录页面控制器
  * 将登录页请求交给前端单页应用处理
@@ -38,7 +42,7 @@ public class LoginController {
     private String buildFrontendUrl(String configuredUrl, HttpServletRequest request) {
         if (configuredUrl.startsWith("redirect:")) {
             String baseUrl = configuredUrl.substring("redirect:".length());
-            String queryString = RedirectPathSanitizer.buildSanitizedQueryString(request, java.util.Set.of("redirect"));
+            String queryString = buildLoginQueryString(request);
             if (queryString != null && !queryString.isEmpty()) {
                 return configuredUrl + (baseUrl.contains("?") ? "&" : "?") + queryString;
             }
@@ -47,5 +51,27 @@ public class LoginController {
             // 生产环境：forward 会自动保留查询参数，直接返回
             return configuredUrl;
         }
+    }
+
+    private String buildLoginQueryString(HttpServletRequest request) {
+        if (request == null) {
+            return "";
+        }
+        StringJoiner joiner = new StringJoiner("&");
+        appendQueryParam(joiner, "redirect", RedirectPathSanitizer.sanitize(request.getParameter("redirect"), request));
+        appendQueryParam(joiner, "error", request.getParameter("error"));
+        appendQueryParam(joiner, "message", request.getParameter("message"));
+        return joiner.toString();
+    }
+
+    private void appendQueryParam(StringJoiner joiner, String name, String value) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        joiner.add(urlEncode(name) + "=" + urlEncode(value));
+    }
+
+    private String urlEncode(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8);
     }
 }
