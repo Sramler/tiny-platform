@@ -206,6 +206,9 @@ scheduling:
       queue-capacity: 200
 
 security:
+  login:
+    max-failed-attempts: 5 # 密码登录连续失败达到阈值后进入临时锁定
+    lock-minutes: 15 # 密码登录临时锁定时长（分钟）
   mfa:
     mode: OPTIONAL # MFA模式: NONE(完全禁用), OPTIONAL(推荐可跳过), REQUIRED(强制必须绑定)
     totp-max-failed-attempts: 5 # TOTP 验证连续失败达到阈值后触发临时锁定

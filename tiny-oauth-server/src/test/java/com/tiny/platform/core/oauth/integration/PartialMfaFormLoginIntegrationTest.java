@@ -8,8 +8,10 @@ import com.tiny.platform.core.oauth.config.CustomWebAuthenticationDetailsSource;
 import com.tiny.platform.core.oauth.config.DefaultSecurityConfig;
 import com.tiny.platform.core.oauth.config.FrontendProperties;
 import com.tiny.platform.core.oauth.config.MfaProperties;
+import com.tiny.platform.core.oauth.config.LoginProtectionProperties;
 import com.tiny.platform.core.oauth.controller.CsrfController;
 import com.tiny.platform.core.oauth.controller.SecurityController;
+import com.tiny.platform.core.oauth.security.LoginFailurePolicy;
 import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.security.MultiAuthenticationProvider;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationSessionManager;
@@ -134,7 +136,8 @@ class PartialMfaFormLoginIntegrationTest {
                 passwordEncoder,
                 userDetailsService,
                 securityService,
-                new TotpVerificationGuard(authenticationMethodRepository, new MfaProperties(), totpService)
+                new TotpVerificationGuard(authenticationMethodRepository, new MfaProperties(), totpService),
+                new LoginFailurePolicy(new LoginProtectionProperties())
         );
 
         UsernamePasswordAuthenticationFilter loginFilter = new UsernamePasswordAuthenticationFilter();
@@ -148,7 +151,8 @@ class PartialMfaFormLoginIntegrationTest {
         ));
         loginFilter.setAuthenticationFailureHandler(new CustomLoginFailureHandler(
                 userRepository,
-                authenticationAuditService
+                authenticationAuditService,
+                new LoginFailurePolicy(new LoginProtectionProperties())
         ));
         loginFilter.setAuthenticationDetailsSource(new CustomWebAuthenticationDetailsSource());
         loginFilter.setSecurityContextRepository(securityContextRepository);

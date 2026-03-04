@@ -189,8 +189,13 @@ public class UserServiceImpl implements UserService {
             : null);
         existingUser.setEnabled(userDto.getEnabled());
         existingUser.setAccountNonExpired(userDto.getAccountNonExpired());
+        boolean unlockingUser = !existingUser.isAccountNonLocked() && Boolean.TRUE.equals(userDto.getAccountNonLocked());
         existingUser.setAccountNonLocked(userDto.getAccountNonLocked());
         existingUser.setCredentialsNonExpired(userDto.getCredentialsNonExpired());
+        if (unlockingUser) {
+            existingUser.setFailedLoginCount(0);
+            existingUser.setLastFailedLoginAt(null);
+        }
         
         // 如果提供了新密码，则更新认证方法表中的密码
         if (userDto.needUpdatePassword()) {

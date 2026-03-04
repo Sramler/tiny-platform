@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.AuthenticationException;
@@ -54,19 +55,22 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
     private final UserDetailsService userDetailsService;
     private final SecurityService securityService;
     private final TotpVerificationGuard totpVerificationGuard;
+    private final LoginFailurePolicy loginFailurePolicy;
 
     public MultiAuthenticationProvider(UserRepository userRepository,
                                        UserAuthenticationMethodRepository authenticationMethodRepository,
                                        PasswordEncoder passwordEncoder,
                                        UserDetailsService userDetailsService,
                                        SecurityService securityService,
-                                       TotpVerificationGuard totpVerificationGuard) {
+                                       TotpVerificationGuard totpVerificationGuard,
+                                       LoginFailurePolicy loginFailurePolicy) {
         this.userRepository = userRepository;
         this.authenticationMethodRepository = authenticationMethodRepository;
         this.passwordEncoder = passwordEncoder;
         this.userDetailsService = userDetailsService;
         this.securityService = securityService;
         this.totpVerificationGuard = totpVerificationGuard;
+        this.loginFailurePolicy = loginFailurePolicy;
     }
 
     @Override
@@ -111,6 +115,17 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
         // 先查用户（单次）
         User user = userRepository.findUserByUsernameAndTenantId(username, tenantId)
                 .orElseThrow(() -> new BadCredentialsException("用户不存在"));
+        LocalDateTime now = LocalDateTime.now();
+        if (loginFailurePolicy.isManuallyLocked(user)) {
+            throw new LockedException(loginFailurePolicy.buildManualLockMessage());
+        }
+        if (loginFailurePolicy.isTemporarilyLocked(user, now)) {
+            throw new LockedException(loginFailurePolicy.buildTemporaryLockMessage(user, now));
+        }
+        if (loginFailurePolicy.shouldResetFailureWindow(user, now)) {
+            loginFailurePolicy.clearExpiredFailureWindow(user);
+            userRepository.save(user);
+        }
         Supplier<UserDetails> userDetailsSupplier = memoizedUserDetailsLoader(user.getUsername());
 
         // 读取所有已启用的方法（只查询一次）

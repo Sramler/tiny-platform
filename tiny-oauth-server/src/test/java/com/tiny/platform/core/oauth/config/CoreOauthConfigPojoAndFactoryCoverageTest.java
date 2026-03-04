@@ -1,6 +1,7 @@
 package com.tiny.platform.core.oauth.config;
 
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationSessionManager;
+import com.tiny.platform.core.oauth.security.LoginFailurePolicy;
 import com.tiny.platform.core.oauth.service.AuthenticationAuditService;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
@@ -102,7 +103,8 @@ class CoreOauthConfigPojoAndFactoryCoverageTest {
 
         UserRepository userRepository = mock(UserRepository.class);
         AuthenticationAuditService auditService = mock(AuthenticationAuditService.class);
-        assertThat(securityConfig.customLoginFailureHandler(userRepository, auditService))
+        LoginFailurePolicy loginFailurePolicy = new LoginFailurePolicy(new LoginProtectionProperties());
+        assertThat(securityConfig.customLoginFailureHandler(userRepository, auditService, loginFailurePolicy))
                 .isInstanceOf(CustomLoginFailureHandler.class);
 
         SecurityService securityService = mock(SecurityService.class);

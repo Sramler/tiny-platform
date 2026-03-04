@@ -14,6 +14,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -252,6 +253,62 @@ class MultiAuthenticationProviderTest {
                 .hasMessageContaining("TOTP 验证尝试过多");
     }
 
+    @Test
+    void should_reject_manually_locked_user_before_password_verification() {
+        UserRepository userRepository = mock(UserRepository.class);
+        UserAuthenticationMethodRepository methodRepository = mock(UserAuthenticationMethodRepository.class);
+        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
+        MultiAuthenticationProvider provider = newProvider(userRepository, methodRepository, passwordEncoder,
+            mock(UserDetailsService.class), mock(TotpService.class), mock(SecurityService.class));
+
+        TenantContext.setTenantId(1L);
+        User user = user(1L, "alice");
+        user.setAccountNonLocked(false);
+        when(userRepository.findUserByUsernameAndTenantId("alice", 1L)).thenReturn(Optional.of(user));
+
+        assertThatThrownBy(() -> provider.authenticate(auth("alice", "raw", "LOCAL", "PASSWORD")))
+            .isInstanceOf(LockedException.class)
+            .hasMessageContaining("账号已被锁定");
+        verify(passwordEncoder, times(0)).matches(any(), any());
+    }
+
+    @Test
+    void should_reject_temporarily_locked_user_and_clear_expired_window_before_authentication() {
+        UserRepository userRepository = mock(UserRepository.class);
+        UserAuthenticationMethodRepository methodRepository = mock(UserAuthenticationMethodRepository.class);
+        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
+        UserDetailsService userDetailsService = mock(UserDetailsService.class);
+        MultiAuthenticationProvider provider = newProvider(userRepository, methodRepository, passwordEncoder,
+            userDetailsService, mock(TotpService.class), mock(SecurityService.class));
+
+        TenantContext.setTenantId(1L);
+        User temporarilyLocked = user(1L, "alice");
+        temporarilyLocked.setFailedLoginCount(5);
+        temporarilyLocked.setLastFailedLoginAt(java.time.LocalDateTime.now());
+        when(userRepository.findUserByUsernameAndTenantId("alice", 1L)).thenReturn(Optional.of(temporarilyLocked));
+
+        assertThatThrownBy(() -> provider.authenticate(auth("alice", "raw", "LOCAL", "PASSWORD")))
+            .isInstanceOf(LockedException.class)
+            .hasMessageContaining("登录失败次数过多");
+        verify(passwordEncoder, times(0)).matches(any(), any());
+
+        User expiredLocked = user(1L, "bob");
+        expiredLocked.setFailedLoginCount(5);
+        expiredLocked.setLastFailedLoginAt(java.time.LocalDateTime.now().minusMinutes(30));
+        UserAuthenticationMethod passwordMethod = method(31L, "LOCAL", "PASSWORD", Map.of("password", "{bcrypt}encoded"));
+        SecurityUser securityUser = securityUser(expiredLocked);
+        when(userRepository.findUserByUsernameAndTenantId("bob", 1L)).thenReturn(Optional.of(expiredLocked));
+        when(methodRepository.findEnabledMethodsByUserId(1L, 1L)).thenReturn(List.of(passwordMethod));
+        when(passwordEncoder.matches("raw", "{bcrypt}encoded")).thenReturn(true);
+        when(userDetailsService.loadUserByUsername("bob")).thenReturn(securityUser);
+
+        Authentication result = provider.authenticate(auth("bob", "raw", "LOCAL", "PASSWORD"));
+
+        assertThat(result.isAuthenticated()).isTrue();
+        assertThat(expiredLocked.getFailedLoginCount()).isZero();
+        verify(userRepository).save(expiredLocked);
+    }
+
     private static MultiAuthenticationProvider newProvider() {
         return newProvider(mock(UserRepository.class), mock(UserAuthenticationMethodRepository.class), mock(PasswordEncoder.class),
             mock(UserDetailsService.class), mock(TotpService.class), mock(SecurityService.class));
@@ -265,7 +322,10 @@ class MultiAuthenticationProviderTest {
                                                            SecurityService securityService) {
         MfaProperties mfaProperties = new MfaProperties();
         TotpVerificationGuard guard = new TotpVerificationGuard(methodRepository, mfaProperties, totpService);
-        return new MultiAuthenticationProvider(userRepository, methodRepository, passwordEncoder, userDetailsService, securityService, guard);
+        com.tiny.platform.core.oauth.config.LoginProtectionProperties loginProtectionProperties =
+            new com.tiny.platform.core.oauth.config.LoginProtectionProperties();
+        LoginFailurePolicy loginFailurePolicy = new LoginFailurePolicy(loginProtectionProperties);
+        return new MultiAuthenticationProvider(userRepository, methodRepository, passwordEncoder, userDetailsService, securityService, guard, loginFailurePolicy);
     }
 
     private static UsernamePasswordAuthenticationToken auth(String username, String credential, String provider, String type) {

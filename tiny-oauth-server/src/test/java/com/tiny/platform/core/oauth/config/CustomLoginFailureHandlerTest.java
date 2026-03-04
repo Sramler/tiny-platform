@@ -1,6 +1,8 @@
 package com.tiny.platform.core.oauth.config;
 
 import com.tiny.platform.core.oauth.service.AuthenticationAuditService;
+import com.tiny.platform.core.oauth.config.LoginProtectionProperties;
+import com.tiny.platform.core.oauth.security.LoginFailurePolicy;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
@@ -9,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.LockedException;
 
 import java.util.Optional;
 
@@ -26,6 +29,13 @@ import static org.mockito.Mockito.when;
 
 class CustomLoginFailureHandlerTest {
 
+    private static LoginFailurePolicy loginFailurePolicy() {
+        LoginProtectionProperties properties = new LoginProtectionProperties();
+        properties.setMaxFailedAttempts(5);
+        properties.setLockMinutes(15);
+        return new LoginFailurePolicy(properties);
+    }
+
     @AfterEach
     void tearDown() {
         TenantContext.clear();
@@ -35,7 +45,7 @@ class CustomLoginFailureHandlerTest {
     void shouldRedirectAndSkipAuditWhenUsernameBlank() throws Exception {
         UserRepository userRepository = mock(UserRepository.class);
         AuthenticationAuditService auditService = mock(AuthenticationAuditService.class);
-        CustomLoginFailureHandler handler = new CustomLoginFailureHandler(userRepository, auditService);
+        CustomLoginFailureHandler handler = new CustomLoginFailureHandler(userRepository, auditService, loginFailurePolicy());
 
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setParameter("username", "   ");
@@ -52,7 +62,7 @@ class CustomLoginFailureHandlerTest {
     void shouldRecordFailedLoginForExistingTenantUserAndRedirect() throws Exception {
         UserRepository userRepository = mock(UserRepository.class);
         AuthenticationAuditService auditService = mock(AuthenticationAuditService.class);
-        CustomLoginFailureHandler handler = new CustomLoginFailureHandler(userRepository, auditService);
+        CustomLoginFailureHandler handler = new CustomLoginFailureHandler(userRepository, auditService, loginFailurePolicy());
 
         User user = new User();
         user.setId(99L);
@@ -81,7 +91,7 @@ class CustomLoginFailureHandlerTest {
     void shouldAuditFailureWithNullUserWhenTenantMissing() throws Exception {
         UserRepository userRepository = mock(UserRepository.class);
         AuthenticationAuditService auditService = mock(AuthenticationAuditService.class);
-        CustomLoginFailureHandler handler = new CustomLoginFailureHandler(userRepository, auditService);
+        CustomLoginFailureHandler handler = new CustomLoginFailureHandler(userRepository, auditService, loginFailurePolicy());
 
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setParameter("username", "bob");
@@ -100,7 +110,7 @@ class CustomLoginFailureHandlerTest {
     void shouldFallbackToAuditWhenRepositoryThrowsAndIgnoreAuditErrors() throws Exception {
         UserRepository userRepository = mock(UserRepository.class);
         AuthenticationAuditService auditService = mock(AuthenticationAuditService.class);
-        CustomLoginFailureHandler handler = new CustomLoginFailureHandler(userRepository, auditService);
+        CustomLoginFailureHandler handler = new CustomLoginFailureHandler(userRepository, auditService, loginFailurePolicy());
 
         TenantContext.setTenantId(20L);
         when(userRepository.findUserByUsernameAndTenantId("charlie", 20L))
@@ -123,7 +133,7 @@ class CustomLoginFailureHandlerTest {
     void shouldFallbackToAuditWhenSaveFailedInsideRecordFailedLogin() throws Exception {
         UserRepository userRepository = mock(UserRepository.class);
         AuthenticationAuditService auditService = mock(AuthenticationAuditService.class);
-        CustomLoginFailureHandler handler = new CustomLoginFailureHandler(userRepository, auditService);
+        CustomLoginFailureHandler handler = new CustomLoginFailureHandler(userRepository, auditService, loginFailurePolicy());
 
         User user = new User();
         user.setId(7L);
@@ -144,5 +154,59 @@ class CustomLoginFailureHandlerTest {
         assertThat(response.getRedirectedUrl()).isEqualTo("/login?error=true");
         // recordFailedLogin catch 不应中断审计流程
         verify(auditService).recordLoginFailure(eq("dave"), eq(7L), eq("LOCAL"), eq("PASSWORD"), same(request));
+    }
+
+    @Test
+    void shouldResetExpiredFailureWindowBeforeIncrementingAgain() throws Exception {
+        UserRepository userRepository = mock(UserRepository.class);
+        AuthenticationAuditService auditService = mock(AuthenticationAuditService.class);
+        CustomLoginFailureHandler handler = new CustomLoginFailureHandler(userRepository, auditService, loginFailurePolicy());
+
+        User user = new User();
+        user.setId(8L);
+        user.setUsername("erin");
+        user.setFailedLoginCount(5);
+        user.setLastFailedLoginAt(java.time.LocalDateTime.now().minusMinutes(30));
+
+        TenantContext.setTenantId(88L);
+        when(userRepository.findUserByUsernameAndTenantId("erin", 88L)).thenReturn(Optional.of(user));
+        when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setParameter("username", "erin");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        handler.onAuthenticationFailure(request, response, new BadCredentialsException("bad"));
+
+        assertThat(response.getRedirectedUrl()).isEqualTo("/login?error=true");
+        assertThat(user.getFailedLoginCount()).isEqualTo(1);
+        verify(auditService).recordLoginFailure(eq("erin"), eq(8L), eq("LOCAL"), eq("PASSWORD"), same(request));
+    }
+
+    @Test
+    void shouldNotIncrementCounterWhenFailureIsLockedRejection() throws Exception {
+        UserRepository userRepository = mock(UserRepository.class);
+        AuthenticationAuditService auditService = mock(AuthenticationAuditService.class);
+        CustomLoginFailureHandler handler = new CustomLoginFailureHandler(userRepository, auditService, loginFailurePolicy());
+
+        User user = new User();
+        user.setId(10L);
+        user.setUsername("frank");
+        user.setFailedLoginCount(5);
+
+        TenantContext.setTenantId(88L);
+        when(userRepository.findUserByUsernameAndTenantId("frank", 88L)).thenReturn(Optional.of(user));
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.getSession(true).setAttribute("SPRING_SECURITY_LAST_EXCEPTION", new LockedException("locked"));
+        request.setParameter("username", "frank");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        handler.onAuthenticationFailure(request, response, new LockedException("locked"));
+
+        assertThat(response.getRedirectedUrl()).isEqualTo("/login?error=true");
+        assertThat(user.getFailedLoginCount()).isEqualTo(5);
+        verify(userRepository, never()).save(any(User.class));
+        verify(auditService).recordLoginFailure(eq("frank"), eq(10L), eq("LOCAL"), eq("PASSWORD"), same(request));
     }
 }

@@ -1,5 +1,6 @@
 package com.tiny.platform.core.oauth.config;
 
+import com.tiny.platform.core.oauth.security.LoginFailurePolicy;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.core.oauth.service.AuthenticationAuditService;
@@ -11,6 +12,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.AuthenticationException;
+import org.springframework.security.authentication.LockedException;
 import org.springframework.security.web.authentication.AuthenticationFailureHandler;
 import org.springframework.security.web.authentication.SimpleUrlAuthenticationFailureHandler;
 
@@ -27,11 +29,15 @@ public class CustomLoginFailureHandler implements AuthenticationFailureHandler {
 
     private final UserRepository userRepository;
     private final AuthenticationAuditService auditService;
+    private final LoginFailurePolicy loginFailurePolicy;
     private final SimpleUrlAuthenticationFailureHandler defaultHandler;
 
-    public CustomLoginFailureHandler(UserRepository userRepository, AuthenticationAuditService auditService) {
+    public CustomLoginFailureHandler(UserRepository userRepository,
+                                     AuthenticationAuditService auditService,
+                                     LoginFailurePolicy loginFailurePolicy) {
         this.userRepository = userRepository;
         this.auditService = auditService;
+        this.loginFailurePolicy = loginFailurePolicy;
         this.defaultHandler = new SimpleUrlAuthenticationFailureHandler("/login?error=true");
     }
 
@@ -55,9 +61,12 @@ public class CustomLoginFailureHandler implements AuthenticationFailureHandler {
             try {
                 // 尝试查找用户并记录失败登录信息
                 Long tenantId = TenantContext.getTenantId();
+                var userOpt = tenantId != null
+                        ? userRepository.findUserByUsernameAndTenantId(username, tenantId)
+                        : java.util.Optional.<User>empty();
                 if (tenantId != null) {
-                    userRepository.findUserByUsernameAndTenantId(username, tenantId).ifPresent(user -> {
-                        recordFailedLogin(user, request);
+                    userOpt.ifPresent(user -> {
+                        recordFailedLogin(user, request, exception);
                         // 记录登录失败审计
                         auditService.recordLoginFailure(
                             user.getUsername(), 
@@ -70,7 +79,7 @@ public class CustomLoginFailureHandler implements AuthenticationFailureHandler {
                 }
                 
                 // 如果用户不存在，也记录审计（userId为null）
-                if (tenantId == null || userRepository.findUserByUsernameAndTenantId(username, tenantId).isEmpty()) {
+                if (tenantId == null || userOpt.isEmpty()) {
                     auditService.recordLoginFailure(
                         username,
                         null,
@@ -104,13 +113,14 @@ public class CustomLoginFailureHandler implements AuthenticationFailureHandler {
     /**
      * 记录登录失败信息（失败次数和时间）
      */
-    private void recordFailedLogin(User user, HttpServletRequest request) {
+    private void recordFailedLogin(User user, HttpServletRequest request, AuthenticationException exception) {
         try {
+            if (exception instanceof LockedException) {
+                logger.debug("用户 {} 当前处于锁定状态，本次失败不再累计计数", user.getUsername());
+                return;
+            }
             LocalDateTime now = LocalDateTime.now();
-            Integer currentCount = user.getFailedLoginCount() != null ? user.getFailedLoginCount() : 0;
-            
-            user.setFailedLoginCount(currentCount + 1);
-            user.setLastFailedLoginAt(now);
+            loginFailurePolicy.recordFailure(user, now);
             
             userRepository.save(user);
             

@@ -169,8 +169,9 @@ public class DefaultSecurityConfig {
 
     @Bean
     public CustomLoginFailureHandler customLoginFailureHandler(UserRepository userRepository,
-                                                               com.tiny.platform.core.oauth.service.AuthenticationAuditService auditService) {
-        return new CustomLoginFailureHandler(userRepository, auditService);
+                                                               com.tiny.platform.core.oauth.service.AuthenticationAuditService auditService,
+                                                               com.tiny.platform.core.oauth.security.LoginFailurePolicy loginFailurePolicy) {
+        return new CustomLoginFailureHandler(userRepository, auditService, loginFailurePolicy);
     }
 
     public static boolean hasChallengeFlowAccess(Authentication authentication) {
