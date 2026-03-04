@@ -163,4 +163,38 @@ test.describe('auth flow pages', () => {
     await page.getByRole('button', { name: '返回首页' }).click()
     await page.waitForURL('**/')
   })
+
+  test('400 and 403 exception pages render details and return to safe destinations', async ({ page }) => {
+    await page.route('**/api/csrf', async (route) => {
+      await route.fulfill(buildCsrfResponse())
+    })
+
+    await page.goto('/exception/400?path=%2Fapi%2Finput&message=bad-request&traceId=trace-400')
+    await expect(page.getByRole('heading', { name: '请求错误' })).toBeVisible()
+    await expect(page.getByText('bad-request')).toBeVisible()
+    await expect(page.getByText('trace-400')).toBeVisible()
+    await page.getByRole('button', { name: '返回首页' }).click()
+    await page.waitForURL('**/')
+
+    await page.goto('/login')
+    await page.goto('/exception/403?path=%2Fapi%2Fadmin&message=forbidden&traceId=trace-403')
+    await expect(page.getByRole('heading', { name: '访问被拒绝' })).toBeVisible()
+    await expect(page.getByText('forbidden')).toBeVisible()
+    await expect(page.getByText('trace-403')).toBeVisible()
+    await page.getByRole('button', { name: '返回上一页' }).click()
+    await page.waitForURL('**/login')
+  })
+
+  test('500 exception page can return to the provided internal previous page', async ({ page }) => {
+    await page.route('**/api/csrf', async (route) => {
+      await route.fulfill(buildCsrfResponse())
+    })
+
+    await page.goto('/exception/500?from=%2Flogin&path=%2Fapi%2Fserver&message=server-error&traceId=trace-500')
+    await expect(page.getByRole('heading', { name: '服务器错误' })).toBeVisible()
+    await expect(page.getByText('server-error')).toBeVisible()
+    await expect(page.getByText('trace-500')).toBeVisible()
+    await page.getByRole('button', { name: '返回上一页' }).click()
+    await page.waitForURL('**/login')
+  })
 })
