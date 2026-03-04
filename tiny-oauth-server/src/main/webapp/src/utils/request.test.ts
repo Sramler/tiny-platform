@@ -124,6 +124,7 @@ describe('request.ts interceptors', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     vi.unstubAllGlobals()
   })
 
@@ -209,5 +210,135 @@ describe('request.ts interceptors', () => {
         traceId: 'trace-403',
       },
     })
+  })
+
+  it('should route 404 errors to exception page with current trace id fallback', async () => {
+    const rejected = axiosState.service.interceptors.response.use.mock.calls[0]?.[1] as
+      | ResponseRejected
+      | undefined
+    expect(rejected).toBeTypeOf('function')
+
+    const error = {
+      response: {
+        status: 404,
+        data: {
+          detail: 'not found',
+        },
+        headers: {},
+      },
+      config: {
+        url: '/api/missing',
+      },
+    }
+
+    await expect(rejected!(error)).rejects.toBe(error)
+
+    expect(mocks.routerPush).toHaveBeenCalledWith({
+      path: '/exception/404',
+      query: {
+        from: '/dashboard?tab=security',
+        path: '/api/missing',
+        message: 'not found',
+        traceId: 'trace-current',
+      },
+    })
+  })
+
+  it('should route 500 errors to exception page with response trace id', async () => {
+    const rejected = axiosState.service.interceptors.response.use.mock.calls[0]?.[1] as
+      | ResponseRejected
+      | undefined
+    expect(rejected).toBeTypeOf('function')
+
+    const error = {
+      response: {
+        status: 500,
+        data: {
+          message: 'server exploded',
+        },
+        headers: {
+          'x-trace-id': 'trace-500',
+        },
+      },
+      config: {
+        url: '/api/system',
+      },
+    }
+
+    await expect(rejected!(error)).rejects.toBe(error)
+
+    expect(mocks.routerPush).toHaveBeenCalledWith({
+      path: '/exception/500',
+      query: {
+        from: '/dashboard?tab=security',
+        path: '/api/system',
+        message: 'server exploded',
+        traceId: 'trace-500',
+      },
+    })
+  })
+
+  it('should enrich 409 conflicts without redirecting', async () => {
+    const rejected = axiosState.service.interceptors.response.use.mock.calls[0]?.[1] as
+      | ResponseRejected
+      | undefined
+    expect(rejected).toBeTypeOf('function')
+
+    const error: any = {
+      response: {
+        status: 409,
+        data: {
+          title: 'conflict',
+        },
+        headers: {},
+      },
+      config: {
+        url: '/api/resource',
+      },
+      message: 'original',
+    }
+
+    await expect(rejected!(error)).rejects.toBe(error)
+
+    expect(mocks.extractErrorInfo).toHaveBeenCalledWith(error)
+    expect(mocks.extractErrorFromAxios).toHaveBeenCalledWith(error, '操作失败')
+    expect(error.message).toBe('conflict')
+    expect(error.errorInfo).toEqual({ code: 40903, message: 'conflict', status: 409 })
+    expect(mocks.routerPush).not.toHaveBeenCalled()
+    expect(mocks.routerReplace).not.toHaveBeenCalled()
+  })
+
+  it('should debounce network errors and redirect to login once', async () => {
+    vi.useFakeTimers()
+
+    const rejected = axiosState.service.interceptors.response.use.mock.calls[0]?.[1] as
+      | ResponseRejected
+      | undefined
+    expect(rejected).toBeTypeOf('function')
+
+    const firstError = {
+      code: 'ERR_NETWORK',
+      message: 'Network Error',
+      config: {
+        url: '/api/first',
+      },
+    }
+    const secondError = {
+      code: 'ERR_NETWORK',
+      message: 'Network Error',
+      config: {
+        url: '/api/second',
+      },
+    }
+
+    await expect(rejected!(firstError)).rejects.toBe(firstError)
+    await expect(rejected!(secondError)).rejects.toBe(secondError)
+
+    expect(mocks.routerReplace).not.toHaveBeenCalled()
+
+    vi.advanceTimersByTime(200)
+
+    expect(mocks.routerReplace).toHaveBeenCalledTimes(1)
+    expect(mocks.routerReplace).toHaveBeenCalledWith('/login')
   })
 })
