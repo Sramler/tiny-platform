@@ -62,6 +62,19 @@ test.describe('auth flow pages', () => {
     expect(posted?.get('_csrf')).toBe('csrf-token')
   })
 
+  test('login page shows lock message and keeps internal redirect', async ({ page }) => {
+    await page.route('**/api/csrf', async (route) => {
+      await route.fulfill(buildCsrfResponse())
+    })
+
+    await page.goto(
+      '/login?message=%E7%99%BB%E5%BD%95%E5%A4%B1%E8%B4%A5%E6%AC%A1%E6%95%B0%E8%BF%87%E5%A4%9A%EF%BC%8C%E8%AF%B7+15+%E5%88%86%E9%92%9F%E5%90%8E%E9%87%8D%E8%AF%95&redirect=%2Fdashboard%3Ftab%3Dsecurity'
+    )
+
+    await expect(page.getByText('登录失败次数过多，请 15 分钟后重试')).toBeVisible()
+    await expect(page.locator('input[name="redirect"]')).toHaveValue('/dashboard?tab=security')
+  })
+
   test('totp bind page renders secret and skip submit keeps redirect internal', async ({ page }) => {
     let posted: URLSearchParams | null = null
 
