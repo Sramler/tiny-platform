@@ -67,9 +67,7 @@ public class LoginFailurePolicy {
         if (user == null || now == null || user.getLastFailedLoginAt() == null) {
             return "登录失败次数过多，请稍后重试";
         }
-        LocalDateTime lockedUntil = user.getLastFailedLoginAt().plusMinutes(lockMinutes());
-        long seconds = Math.max(1, Duration.between(now, lockedUntil).getSeconds());
-        long minutes = (seconds + 59) / 60;
+        long minutes = remainingLockMinutes(user, now);
         return "登录失败次数过多，请 " + minutes + " 分钟后重试";
     }
 
@@ -83,5 +81,14 @@ public class LoginFailurePolicy {
 
     private int lockMinutes() {
         return Math.max(1, properties.getLockMinutes());
+    }
+
+    public int remainingLockMinutes(User user, LocalDateTime now) {
+        if (user == null || now == null || user.getLastFailedLoginAt() == null) {
+            return 0;
+        }
+        LocalDateTime lockedUntil = user.getLastFailedLoginAt().plusMinutes(lockMinutes());
+        long seconds = Math.max(1, Duration.between(now, lockedUntil).getSeconds());
+        return (int) ((seconds + 59) / 60);
     }
 }

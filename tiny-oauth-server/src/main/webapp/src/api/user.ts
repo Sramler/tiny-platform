@@ -25,6 +25,8 @@ export type UserSummary = {
   failedLoginCount?: number
   lastLoginAt?: string
   lastFailedLoginAt?: string
+  temporarilyLocked?: boolean
+  lockRemainingMinutes?: number
 }
 
 type PageResponse<T> = {

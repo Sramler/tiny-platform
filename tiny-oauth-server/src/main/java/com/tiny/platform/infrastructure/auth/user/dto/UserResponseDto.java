@@ -24,9 +24,14 @@ public class UserResponseDto {
 
     private LocalDateTime lastFailedLoginAt;
 
+    private boolean temporarilyLocked;
+
+    private Integer lockRemainingMinutes;
+
     public UserResponseDto(Long id, String username, String nickname, boolean enabled, boolean accountNonExpired,
                            boolean accountNonLocked, boolean credentialsNonExpired, LocalDateTime lastLoginAt,
-                           Integer failedLoginCount, LocalDateTime lastFailedLoginAt) {
+                           Integer failedLoginCount, LocalDateTime lastFailedLoginAt,
+                           boolean temporarilyLocked, Integer lockRemainingMinutes) {
         this.id = id;
         this.username = username;
         this.nickname = nickname;
@@ -37,6 +42,8 @@ public class UserResponseDto {
         this.lastLoginAt = lastLoginAt;
         this.failedLoginCount = failedLoginCount;
         this.lastFailedLoginAt = lastFailedLoginAt;
+        this.temporarilyLocked = temporarilyLocked;
+        this.lockRemainingMinutes = lockRemainingMinutes;
     }
 
     public Long getId() {
@@ -77,5 +84,13 @@ public class UserResponseDto {
 
     public LocalDateTime getLastFailedLoginAt() {
         return lastFailedLoginAt;
+    }
+
+    public boolean isTemporarilyLocked() {
+        return temporarilyLocked;
+    }
+
+    public Integer getLockRemainingMinutes() {
+        return lockRemainingMinutes;
     }
 }

@@ -1,6 +1,8 @@
 package com.tiny.platform.infrastructure.auth.user.service;
 
 import com.tiny.platform.core.oauth.tenant.TenantContext;
+import com.tiny.platform.core.oauth.config.LoginProtectionProperties;
+import com.tiny.platform.core.oauth.security.LoginFailurePolicy;
 import com.tiny.platform.infrastructure.auth.role.repository.RoleRepository;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.dto.UserCreateUpdateDto;
@@ -28,6 +30,13 @@ import static org.mockito.Mockito.when;
 
 class UserServiceImplTest {
 
+    private LoginFailurePolicy loginFailurePolicy() {
+        LoginProtectionProperties properties = new LoginProtectionProperties();
+        properties.setMaxFailedAttempts(5);
+        properties.setLockMinutes(15);
+        return new LoginFailurePolicy(properties);
+    }
+
     @AfterEach
     void tearDown() {
         TenantContext.clear();
@@ -40,7 +49,8 @@ class UserServiceImplTest {
                 userRepository,
                 mock(PasswordEncoder.class),
                 mock(RoleRepository.class),
-                mock(UserAuthenticationMethodRepository.class)
+                mock(UserAuthenticationMethodRepository.class),
+                loginFailurePolicy()
         );
 
         TenantContext.setTenantId(1L);
@@ -85,7 +95,8 @@ class UserServiceImplTest {
                 userRepository,
                 mock(PasswordEncoder.class),
                 mock(RoleRepository.class),
-                mock(UserAuthenticationMethodRepository.class)
+                mock(UserAuthenticationMethodRepository.class),
+                loginFailurePolicy()
         );
 
         TenantContext.setTenantId(1L);
@@ -130,7 +141,8 @@ class UserServiceImplTest {
                 userRepository,
                 mock(PasswordEncoder.class),
                 mock(RoleRepository.class),
-                mock(UserAuthenticationMethodRepository.class)
+                mock(UserAuthenticationMethodRepository.class),
+                loginFailurePolicy()
         );
 
         TenantContext.setTenantId(1L);
@@ -162,5 +174,7 @@ class UserServiceImplTest {
         assertThat(dto.getFailedLoginCount()).isEqualTo(5);
         assertThat(dto.getLastLoginAt()).isEqualTo(LocalDateTime.of(2026, 3, 4, 10, 0));
         assertThat(dto.getLastFailedLoginAt()).isEqualTo(lastFailedAt);
+        assertThat(dto.isTemporarilyLocked()).isTrue();
+        assertThat(dto.getLockRemainingMinutes()).isBetween(1, 15);
     }
 }

@@ -60,7 +60,7 @@ class UserControllerTest {
         UserRequestDto query = new UserRequestDto();
         Pageable pageable = PageRequest.of(0, 10);
         UserResponseDto responseDto = new UserResponseDto(1L, "alice", "Alice", true, true, true, true,
-            LocalDateTime.of(2026, 3, 1, 12, 0), 2, LocalDateTime.of(2026, 3, 1, 9, 0));
+            LocalDateTime.of(2026, 3, 1, 12, 0), 2, LocalDateTime.of(2026, 3, 1, 9, 0), true, 12);
         User user = user(2L, "bob");
         UserCreateUpdateDto dto = new UserCreateUpdateDto();
         dto.setUsername("bob");
@@ -77,6 +77,8 @@ class UserControllerTest {
         assertThat(listBody.getContent()).containsExactly(responseDto);
         assertThat(listBody.getContent().getFirst().getFailedLoginCount()).isEqualTo(2);
         assertThat(listBody.getContent().getFirst().getLastFailedLoginAt()).isEqualTo(LocalDateTime.of(2026, 3, 1, 9, 0));
+        assertThat(listBody.getContent().getFirst().isTemporarilyLocked()).isTrue();
+        assertThat(listBody.getContent().getFirst().getLockRemainingMinutes()).isEqualTo(12);
 
         assertThat(controller.getUser(2L).getBody()).isEqualTo(user);
         assertThat(controller.getUser(99L).getStatusCode().value()).isEqualTo(404);

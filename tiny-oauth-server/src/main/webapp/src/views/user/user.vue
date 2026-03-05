@@ -176,6 +176,17 @@
                   {{ record[column.dataIndex] ? '是' : '否' }}
                 </a-tag>
               </template>
+              <template v-else-if="column.dataIndex === 'lockStatus'">
+                <a-tag v-if="record.temporarilyLocked" color="orange">临时锁定</a-tag>
+                <a-tag v-else-if="record.accountNonLocked === false" color="red">管理员锁定</a-tag>
+                <a-tag v-else color="green">正常</a-tag>
+              </template>
+              <template v-else-if="column.dataIndex === 'lockRemainingMinutes'">
+                <span v-if="record.temporarilyLocked && record.lockRemainingMinutes">
+                  约 {{ record.lockRemainingMinutes }} 分钟
+                </span>
+                <span v-else>-</span>
+              </template>
               <template v-else-if="['lastLoginAt', 'lastFailedLoginAt'].includes(column.dataIndex)">
                 <span>{{ formatDateTime(record[column.dataIndex]) }}</span>
               </template>
@@ -313,6 +324,8 @@ const INITIAL_COLUMNS = [
   { title: '是否启用', dataIndex: 'enabled', sorter: true },
   { title: '账号未过期', dataIndex: 'accountNonExpired', sorter: true },
   { title: '账号未锁定', dataIndex: 'accountNonLocked', sorter: true },
+  { title: '锁定状态', dataIndex: 'lockStatus', width: 120 },
+  { title: '剩余锁定时间', dataIndex: 'lockRemainingMinutes', width: 140 },
   { title: '失败登录次数', dataIndex: 'failedLoginCount', sorter: true, width: 120 },
   { title: '最后失败时间', dataIndex: 'lastFailedLoginAt', sorter: true, width: 180 },
   { title: '密码未过期', dataIndex: 'credentialsNonExpired', sorter: true },

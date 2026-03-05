@@ -1,5 +1,6 @@
 package com.tiny.platform.infrastructure.auth.user.service;
 
+import com.tiny.platform.core.oauth.security.LoginFailurePolicy;
 import com.tiny.platform.infrastructure.core.exception.code.ErrorCode;
 import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
@@ -36,14 +37,17 @@ public class UserServiceImpl implements UserService {
     private final PasswordEncoder passwordEncoder;
     private final RoleRepository roleRepository;
     private final UserAuthenticationMethodRepository authenticationMethodRepository;
+    private final LoginFailurePolicy loginFailurePolicy;
 
     @Autowired
     public UserServiceImpl(UserRepository userRepository, PasswordEncoder passwordEncoder, 
-                          RoleRepository roleRepository, UserAuthenticationMethodRepository authenticationMethodRepository) {
+                          RoleRepository roleRepository, UserAuthenticationMethodRepository authenticationMethodRepository,
+                          LoginFailurePolicy loginFailurePolicy) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.roleRepository = roleRepository;
         this.authenticationMethodRepository = authenticationMethodRepository;
+        this.loginFailurePolicy = loginFailurePolicy;
     }
 
 
@@ -69,9 +73,13 @@ public class UserServiceImpl implements UserService {
     }
 
     private UserResponseDto toDto(User user) {
+        LocalDateTime now = LocalDateTime.now();
+        boolean temporarilyLocked = loginFailurePolicy.isTemporarilyLocked(user, now);
         return new UserResponseDto(user.getId(),user.getUsername(),user.getNickname(),user.isEnabled(),
                 user.isAccountNonExpired(),user.isAccountNonLocked(),user.isCredentialsNonExpired(),user.getLastLoginAt(),
-                user.getFailedLoginCount() != null ? user.getFailedLoginCount() : 0, user.getLastFailedLoginAt());
+                user.getFailedLoginCount() != null ? user.getFailedLoginCount() : 0, user.getLastFailedLoginAt(),
+                temporarilyLocked,
+                temporarilyLocked ? loginFailurePolicy.remainingLockMinutes(user, now) : null);
     }
 
     @Override
