@@ -187,6 +187,14 @@ import VueDraggable from 'vuedraggable'
 import { message } from 'ant-design-vue'
 import { useThrottle } from '@/utils/debounce'
 import ExportTaskExamples from './ExportTaskExamples.vue'
+import {
+    buildDownloadUrl,
+    exportTaskRowKey,
+    filterTasks,
+    formatDateTime,
+    paginateTasks,
+    statusLabel
+} from './taskUtils'
 
 const route = useRoute()
 
@@ -289,24 +297,11 @@ watch(draggableColumns, (val) => {
 })
 
 const filteredTasks = computed(() => {
-    const taskId = query.value.taskId.trim().toLowerCase()
-    const username = query.value.username.trim().toLowerCase()
-    const status = query.value.status
-    return rawTasks.value.filter(task => {
-        const matchTask = taskId ? (task.taskId || '').toLowerCase().includes(taskId) : true
-        const matchUser = username ? (task.username || '').toLowerCase().includes(username) || (task.userId || '').toLowerCase().includes(username) : true
-        const matchStatus = status ? task.status === status : true
-        return matchTask && matchUser && matchStatus
-    })
+    return filterTasks(rawTasks.value, query.value)
 })
 
 const pagedTasks = computed(() => {
-    const current = Number(pagination.value.current) || 1
-    const pageSize = Number(pagination.value.pageSize) || 10
-    const start = (current - 1) * pageSize
-    const end = start + pageSize
-    const data = filteredTasks.value.slice(start, end)
-    return data
+    return paginateTasks(filteredTasks.value, pagination.value.current, pagination.value.pageSize)
 })
 
 watch(
@@ -472,15 +467,7 @@ function handleDrawerClose() {
 }
 
 function rowKey(record: ExportTask & { id?: string | number }) {
-    return String(record.taskId || record.id)
-}
-
-function buildDownloadUrl(taskId: string) {
-    const base = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
-    if (base) {
-        return `${base}/export/task/${taskId}/download`
-    }
-    return `/export/task/${taskId}/download`
+    return exportTaskRowKey(record)
 }
 
 function handleDownload(record: ExportTask) {
@@ -490,38 +477,6 @@ function handleDownload(record: ExportTask) {
     }
     const url = buildDownloadUrl(record.taskId)
     window.open(url, '_blank')
-}
-
-function statusLabel(status?: string) {
-    switch (status) {
-        case 'PENDING':
-            return '排队中'
-        case 'RUNNING':
-            return '运行中'
-        case 'SUCCESS':
-            return '成功'
-        case 'FAILED':
-            return '失败'
-        case 'CANCELED':
-            return '已取消'
-        default:
-            return status || '-'
-    }
-}
-
-function formatDateTime(val?: string) {
-    if (!val) return '-'
-    const date = new Date(val)
-    if (isNaN(date.getTime())) return '-'
-    return date.toLocaleString('zh-CN', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false
-    })
 }
 
 const tableContentRef = ref<HTMLElement | null>(null)
