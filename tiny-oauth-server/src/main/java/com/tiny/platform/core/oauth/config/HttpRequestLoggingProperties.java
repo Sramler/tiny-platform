@@ -59,6 +59,13 @@ public class HttpRequestLoggingProperties {
             "/webjars"
     ));
 
+    /**
+     * 对大流量/大文件响应禁用 ContentCachingResponseWrapper，避免整包响应驻留堆内存。
+     */
+    private List<String> responseBodyPassthroughPathPrefixes = new ArrayList<>(List.of(
+            "/export"
+    ));
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -128,6 +135,14 @@ public class HttpRequestLoggingProperties {
 
     public void setTraceIdQueryParamAllowedPathFragments(List<String> traceIdQueryParamAllowedPathFragments) {
         this.traceIdQueryParamAllowedPathFragments = traceIdQueryParamAllowedPathFragments;
+    }
+
+    public List<String> getResponseBodyPassthroughPathPrefixes() {
+        return responseBodyPassthroughPathPrefixes;
+    }
+
+    public void setResponseBodyPassthroughPathPrefixes(List<String> responseBodyPassthroughPathPrefixes) {
+        this.responseBodyPassthroughPathPrefixes = responseBodyPassthroughPathPrefixes;
     }
 
     public enum TraceIdFallbackStrategy {

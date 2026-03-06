@@ -86,7 +86,8 @@ public class UserDataProvider implements FilterAwareDataProvider<Map<String, Obj
               FROM user
             """;
 
-        String whereSql = whereClause.length() > 0
+        boolean hasWhereClause = whereClause.length() > 0;
+        String whereSql = hasWhereClause
             ? " WHERE " + whereClause.substring(5) // 去掉开头的 " AND "
             : "";
 
@@ -113,14 +114,8 @@ public class UserDataProvider implements FilterAwareDataProvider<Map<String, Obj
             return list.iterator();
         }
 
-        // 导出全部：先统计总数，再分页流式查询
-        String countSql = "SELECT COUNT(*) FROM user" + whereSql;
-        Long totalCount = jdbcTemplate.queryForObject(countSql, params.toArray(), Long.class);
-        if (totalCount == null || totalCount == 0) {
-            return new ArrayList<Map<String, Object>>().iterator();
-        }
-
-        return new PaginatedIterator(batchSize, totalCount.intValue(), baseSql + whereSql + orderBySql, params);
+        // 导出全部：使用 keyset 分页（id 游标），避免深分页 offset 退化
+        return new KeysetIterator(batchSize, baseSql + whereSql, params, hasWhereClause);
     }
 
     private int parseInt(Object value, int defaultVal) {
@@ -155,45 +150,54 @@ public class UserDataProvider implements FilterAwareDataProvider<Map<String, Obj
     /**
      * 简单分页迭代器：每次按 batchSize 查询一批用户，直到读取完 totalCount。
      */
-    private class PaginatedIterator implements Iterator<Map<String, Object>> {
+    private class KeysetIterator implements Iterator<Map<String, Object>> {
         private final int batchSize;
-        private final int totalCount;
         private final String baseSql;
         private final List<Object> baseParams;
+        private final boolean hasWhereClause;
 
-        private int currentOffset = 0;
         private List<Map<String, Object>> currentBatch = new ArrayList<>();
         private int currentBatchIndex = 0;
         private boolean hasMore = true;
+        private Long lastSeenId = null;
 
-        PaginatedIterator(int batchSize, int totalCount, String baseSql, List<Object> baseParams) {
+        KeysetIterator(int batchSize, String baseSql, List<Object> baseParams, boolean hasWhereClause) {
             this.batchSize = batchSize;
-            this.totalCount = totalCount;
             this.baseSql = baseSql;
             this.baseParams = new ArrayList<>(baseParams);
+            this.hasWhereClause = hasWhereClause;
             loadNextBatch();
         }
 
         private void loadNextBatch() {
-            if (currentOffset >= totalCount) {
+            StringBuilder sqlBuilder = new StringBuilder(baseSql);
+            List<Object> params = new ArrayList<>(baseParams);
+            if (lastSeenId != null) {
+                sqlBuilder.append(hasWhereClause ? " AND id < ?" : " WHERE id < ?");
+                params.add(lastSeenId);
+            }
+            sqlBuilder.append(" ORDER BY id DESC LIMIT ?");
+            params.add(batchSize);
+
+            currentBatch = jdbcTemplate.query(sqlBuilder.toString(), params.toArray(), UserDataProvider.this::mapRowToMap);
+            currentBatchIndex = 0;
+
+            if (currentBatch.isEmpty()) {
                 hasMore = false;
-                currentBatch = new ArrayList<>();
-                currentBatchIndex = 0;
                 return;
             }
-
-            String sql = baseSql + " LIMIT ? OFFSET ?";
-            List<Object> params = new ArrayList<>(baseParams);
-            params.add(batchSize);
-            params.add(currentOffset);
-
-            currentBatch = jdbcTemplate.query(sql, params.toArray(), UserDataProvider.this::mapRowToMap);
-            currentBatchIndex = 0;
-            currentOffset += batchSize;
-
-            if (currentBatch.isEmpty() || currentOffset >= totalCount) {
-                hasMore = false;
+            Object cursor = currentBatch.get(currentBatch.size() - 1).get("id");
+            if (cursor instanceof Number number) {
+                lastSeenId = number.longValue();
+            } else if (cursor != null) {
+                try {
+                    lastSeenId = Long.parseLong(cursor.toString());
+                } catch (NumberFormatException ignored) {
+                    hasMore = false;
+                    return;
+                }
             }
+            hasMore = currentBatch.size() >= batchSize;
         }
 
         @Override
@@ -219,5 +223,4 @@ public class UserDataProvider implements FilterAwareDataProvider<Map<String, Obj
         }
     }
 }
-
 

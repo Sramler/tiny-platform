@@ -1,6 +1,7 @@
 package com.tiny.platform.infrastructure.export.config;
 
 import com.tiny.platform.infrastructure.export.writer.WriterAdapter;
+import com.tiny.platform.infrastructure.export.writer.fesod.FesodWriterAdapter;
 import com.tiny.platform.infrastructure.export.writer.poi.POIWriterAdapter;
 
 import org.springframework.beans.factory.annotation.Value;
@@ -11,6 +12,7 @@ import org.springframework.core.task.TaskDecorator;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import java.util.concurrent.ThreadPoolExecutor;
+import java.util.Locale;
 
 /**
  * ExportConfig —— Spring Bean 配置
@@ -28,10 +30,24 @@ import java.util.concurrent.ThreadPoolExecutor;
 public class ExportConfig {
 
     @Bean
-    public WriterAdapter writerAdapter() {
+    public WriterAdapter writerAdapter(
+        @Value("${export.writer.type:fesod}") String writerType,
+        @Value("${export.poi.row-access-window-size:200}") int rowAccessWindowSize,
+        @Value("${export.poi.max-rows-per-sheet:1048576}") int maxRowsPerSheet,
+        @Value("${export.poi.compress-temp-files:true}") boolean compressTempFiles,
+        @Value("${export.fesod.batch-size:1024}") int fesodBatchSize,
+        @Value("${export.fesod.max-rows-per-sheet:1048576}") int fesodMaxRowsPerSheet
+    ) {
+        String normalized = writerType == null ? "fesod" : writerType.trim().toLowerCase(Locale.ROOT);
+        if ("fesod".equals(normalized)) {
+            return new FesodWriterAdapter(fesodBatchSize, fesodMaxRowsPerSheet);
+        }
+        if (!"poi".equals(normalized)) {
+            throw new IllegalArgumentException("unsupported export.writer.type: " + writerType);
+        }
         // 默认使用 POI SXSSF 流式写，避免一次性占用大量内存
         // rowAccessWindowSize 可按行宽/内存调优，200 对多数场景足够
-        return new POIWriterAdapter(200);
+        return new POIWriterAdapter(rowAccessWindowSize, maxRowsPerSheet, compressTempFiles);
     }
 
     @Bean
@@ -53,8 +69,8 @@ public class ExportConfig {
         t.setAllowCoreThreadTimeOut(true);
         t.setThreadNamePrefix("export-exec-");
         t.setTaskDecorator(mdcTaskDecorator);
-        // 拒绝策略：队列满时由提交线程执行，形成背压而非直接抛异常
-        t.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        // 拒绝策略：队列满时立即拒绝，避免回退到请求线程执行导致接口线程被长任务占用
+        t.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
         // 优雅关闭：等待队列与执行中的任务完成，避免中断写文件
         t.setWaitForTasksToCompleteOnShutdown(true);
         t.setAwaitTerminationSeconds(60);

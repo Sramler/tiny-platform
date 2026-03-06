@@ -17,6 +17,8 @@ import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.util.CellRangeAddress;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.OutputStream;
 import java.util.ArrayList;
@@ -25,6 +27,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -38,6 +41,9 @@ import java.util.stream.Collectors;
  *  - 可扩展 WriterAdapter 接口，与 POI 版本保持一致
  */
 public class FesodWriterAdapter implements WriterAdapter {
+    private static final Logger log = LoggerFactory.getLogger(FesodWriterAdapter.class);
+    private static final int XLSX_MAX_ROWS = 1_048_576;
+    private static final int SHEET_NAME_MAX_LEN = 31;
 
     public static final String EXTRA_TOP_INFO_ROWS = "topInfoRows";
     public static final String EXTRA_LEAF_FIELDS = "leafFields";
@@ -45,13 +51,19 @@ public class FesodWriterAdapter implements WriterAdapter {
     public static final String EXTRA_STRATEGY = "aggregateStrategy";
 
     private final int batchSize;
+    private final int maxRowsPerSheet;
 
     public FesodWriterAdapter() {
-        this(1024);
+        this(1024, XLSX_MAX_ROWS);
     }
 
     public FesodWriterAdapter(int batchSize) {
+        this(batchSize, XLSX_MAX_ROWS);
+    }
+
+    public FesodWriterAdapter(int batchSize, int maxRowsPerSheet) {
         this.batchSize = Math.max(1, batchSize);
+        this.maxRowsPerSheet = Math.max(1, Math.min(maxRowsPerSheet, XLSX_MAX_ROWS));
     }
 
     @Override
@@ -65,16 +77,67 @@ public class FesodWriterAdapter implements WriterAdapter {
         ExcelWriter writer = builder.build();
         try {
             int index = 0;
+            Set<String> usedSheetNames = new java.util.HashSet<>();
             for (SheetWriteModel model : sheets) {
                 if (model == null) {
                     continue;
                 }
-                WriteSheet writeSheet = buildWriteSheet(index++, model);
-                streamRows(writer, writeSheet, model);
-                writeSummaryRow(writer, writeSheet, model);
+                index = writeSheetModel(writer, index, usedSheetNames, model);
             }
         } finally {
             writer.finish();
+        }
+    }
+
+    private int writeSheetModel(ExcelWriter writer,
+                                int sheetIndex,
+                                Set<String> usedSheetNames,
+                                SheetWriteModel model) {
+        String baseSheetName = (model.getSheetName() == null || model.getSheetName().isBlank())
+                ? "Sheet" + (sheetIndex + 1)
+                : model.getSheetName();
+        List<List<String>> head = model.getHead();
+        TopInfoPlan plan = TopInfoPlan.from(model.getTopInfoRows(), head);
+        int dataStartRow = plan.topRowCount() + headerRowCount(head);
+        if (dataStartRow >= maxRowsPerSheet) {
+            throw new IllegalArgumentException("表头行数超过单Sheet最大行数限制: " + maxRowsPerSheet);
+        }
+
+        int part = 1;
+        SheetPartCursor cursor = openSheet(sheetIndex++, baseSheetName, part, usedSheetNames, model, plan);
+        Iterator<List<Object>> iterator = model.getRows();
+        List<List<Object>> batch = new ArrayList<>(batchSize);
+        boolean wroteData = false;
+        try {
+            while (iterator != null && iterator.hasNext()) {
+                if (cursor.dataRowsWritten >= cursor.dataCapacity) {
+                    if (!batch.isEmpty()) {
+                        writer.write(batch, cursor.writeSheet);
+                        batch = new ArrayList<>(batchSize);
+                    }
+                    cursor = openSheet(sheetIndex++, baseSheetName, ++part, usedSheetNames, model, plan);
+                }
+                batch.add(iterator.next());
+                cursor.dataRowsWritten++;
+                wroteData = true;
+                if (batch.size() >= batchSize || cursor.dataRowsWritten >= cursor.dataCapacity) {
+                    writer.write(batch, cursor.writeSheet);
+                    batch = new ArrayList<>(batchSize);
+                }
+            }
+            if (!batch.isEmpty()) {
+                writer.write(batch, cursor.writeSheet);
+            }
+            if (!wroteData) {
+                writer.write(Collections.emptyList(), cursor.writeSheet);
+            }
+            if (requiresNewSheetForSummary(cursor, model)) {
+                cursor = openSheet(sheetIndex++, baseSheetName, ++part, usedSheetNames, model, plan);
+            }
+            writeSummaryRow(writer, cursor.writeSheet, model);
+            return sheetIndex;
+        } finally {
+            closeIterator(iterator);
         }
     }
 
@@ -93,10 +156,20 @@ public class FesodWriterAdapter implements WriterAdapter {
         return new SheetWriteModel(sheetName, head, rows, topInfo, leafFields, strategy, sumMap);
     }
 
-    private WriteSheet buildWriteSheet(int sheetIndex, SheetWriteModel model) {
-        String sheetName = (model.getSheetName() == null || model.getSheetName().isBlank())
-                ? "Sheet" + (sheetIndex + 1)
-                : model.getSheetName();
+    private SheetPartCursor openSheet(int sheetIndex,
+                                      String baseSheetName,
+                                      int part,
+                                      Set<String> usedSheetNames,
+                                      SheetWriteModel model,
+                                      TopInfoPlan plan) {
+        String desiredName = buildSheetName(baseSheetName, part);
+        String sheetName = resolveUniqueSheetName(desiredName, usedSheetNames);
+        WriteSheet writeSheet = buildWriteSheet(sheetIndex, sheetName, model, plan);
+        int dataCapacity = maxRowsPerSheet - (plan.topRowCount() + headerRowCount(model.getHead()));
+        return new SheetPartCursor(writeSheet, dataCapacity);
+    }
+
+    private WriteSheet buildWriteSheet(int sheetIndex, String sheetName, SheetWriteModel model, TopInfoPlan plan) {
         ExcelWriterSheetBuilder sheetBuilder = EasyExcel.writerSheet(sheetIndex, sheetName);
         List<List<String>> head = model.getHead();
         if (head != null && !head.isEmpty()) {
@@ -106,39 +179,12 @@ public class FesodWriterAdapter implements WriterAdapter {
         } else {
             sheetBuilder.needHead(false);
         }
-
-        TopInfoPlan plan = TopInfoPlan.from(model.getTopInfoRows(), head);
         if (plan.hasTopInfo()) {
             sheetBuilder.relativeHeadRowIndex(plan.topRowCount());
             sheetBuilder.registerWriteHandler(new TopInfoSheetWriteHandler(plan));
         }
 
         return sheetBuilder.build();
-    }
-
-    private void streamRows(ExcelWriter writer, WriteSheet writeSheet, SheetWriteModel model) {
-        Iterator<List<Object>> iterator = model.getRows();
-        if (iterator == null) {
-            writer.write(Collections.emptyList(), writeSheet);
-            return;
-        }
-        List<List<Object>> batch = new ArrayList<>(batchSize);
-        boolean wrote = false;
-        while (iterator.hasNext()) {
-            batch.add(iterator.next());
-            if (batch.size() >= batchSize) {
-                writer.write(batch, writeSheet);
-                wrote = true;
-                batch = new ArrayList<>(batchSize);
-            }
-        }
-        if (!batch.isEmpty()) {
-            writer.write(batch, writeSheet);
-            wrote = true;
-        }
-        if (!wrote) {
-            writer.write(Collections.emptyList(), writeSheet);
-        }
     }
 
     private void writeSummaryRow(ExcelWriter writer, WriteSheet writeSheet, SheetWriteModel model) {
@@ -165,6 +211,23 @@ public class FesodWriterAdapter implements WriterAdapter {
         writer.write(Collections.singletonList(summary), writeSheet);
     }
 
+    private boolean requiresNewSheetForSummary(SheetPartCursor cursor, SheetWriteModel model) {
+        AggregateStrategy strategy = model.getStrategy();
+        Map<String, Object> sumMap = model.getSumMap();
+        if (strategy == null || sumMap == null || sumMap.isEmpty()) {
+            return false;
+        }
+        return cursor.dataRowsWritten >= cursor.dataCapacity;
+    }
+
+    private int headerRowCount(List<List<String>> head) {
+        if (head == null || head.isEmpty()) {
+            return 0;
+        }
+        List<String> first = head.get(0);
+        return first == null ? 0 : first.size();
+    }
+
     private List<String> leafFieldsOrHead(List<String> leafFields, List<List<String>> head) {
         if (leafFields != null && !leafFields.isEmpty()) {
             return leafFields;
@@ -177,6 +240,55 @@ public class FesodWriterAdapter implements WriterAdapter {
             placeholder.add("");
         }
         return placeholder;
+    }
+
+    private String buildSheetName(String baseName, int part) {
+        String normalizedBase = baseName == null || baseName.isBlank() ? "Sheet" : baseName.trim();
+        if (part <= 1) {
+            return truncateSheetName(normalizedBase);
+        }
+        String suffix = "_" + part;
+        int allowedBaseLen = Math.max(1, SHEET_NAME_MAX_LEN - suffix.length());
+        return truncateSheetName(normalizedBase, allowedBaseLen) + suffix;
+    }
+
+    private String resolveUniqueSheetName(String desired, Set<String> usedSheetNames) {
+        String base = desired == null || desired.isBlank() ? "Sheet" : desired;
+        String candidate = base;
+        int idx = 1;
+        while (usedSheetNames.contains(candidate)) {
+            String suffix = "_" + idx++;
+            int allowedBaseLen = Math.max(1, SHEET_NAME_MAX_LEN - suffix.length());
+            candidate = truncateSheetName(base, allowedBaseLen) + suffix;
+        }
+        usedSheetNames.add(candidate);
+        return candidate;
+    }
+
+    private String truncateSheetName(String name) {
+        return truncateSheetName(name, SHEET_NAME_MAX_LEN);
+    }
+
+    private String truncateSheetName(String name, int maxLen) {
+        if (name == null || name.isBlank()) {
+            return "Sheet";
+        }
+        String trimmed = name.trim();
+        if (trimmed.length() <= maxLen) {
+            return trimmed;
+        }
+        return trimmed.substring(0, maxLen);
+    }
+
+    private void closeIterator(Iterator<List<Object>> iterator) {
+        if (!(iterator instanceof AutoCloseable closeable)) {
+            return;
+        }
+        try {
+            closeable.close();
+        } catch (Exception ex) {
+            log.debug("failed to close row iterator", ex);
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -200,6 +312,17 @@ public class FesodWriterAdapter implements WriterAdapter {
             return (List<String>) value;
         } catch (ClassCastException ex) {
             throw new IllegalArgumentException("extras.leafFields 类型必须是 List<String>", ex);
+        }
+    }
+
+    private static final class SheetPartCursor {
+        private final WriteSheet writeSheet;
+        private final int dataCapacity;
+        private int dataRowsWritten;
+
+        private SheetPartCursor(WriteSheet writeSheet, int dataCapacity) {
+            this.writeSheet = writeSheet;
+            this.dataCapacity = dataCapacity;
         }
     }
 

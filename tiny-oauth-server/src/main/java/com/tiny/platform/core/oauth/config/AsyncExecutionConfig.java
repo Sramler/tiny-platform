@@ -30,7 +30,8 @@ public class AsyncExecutionConfig {
         executor.setKeepAliveSeconds(Math.toIntExact(keepAlive.getSeconds()));
         executor.setThreadNamePrefix(threadNamePrefix);
         executor.setTaskDecorator(mdcTaskDecorator);
-        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        // 队列满时抛拒绝异常，避免请求线程被迫执行耗时任务
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(30);
         executor.initialize();

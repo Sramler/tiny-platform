@@ -227,6 +227,32 @@ http:
       - /oauth2/
       - /connect/
       - /logout
+    # 对大文件导出路径禁用响应体缓存包装，避免 ContentCachingResponseWrapper 导致内存放大
+    response-body-passthrough-path-prefixes:
+      - /export
+
+export:
+  writer:
+    type: fesod
+  concurrent:
+    max-system: 10
+    max-user: 3
+  fesod:
+    batch-size: 1024
+    max-rows-per-sheet: 1048576
+  poi:
+    row-access-window-size: 200
+    max-rows-per-sheet: 1048576
+    compress-temp-files: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,threaddump,heapdump
+  endpoint:
+    health:
+      show-details: when_authorized
 
 # 前端页面配置
 # 默认配置为生产环境（forward 到打包后的静态文件）

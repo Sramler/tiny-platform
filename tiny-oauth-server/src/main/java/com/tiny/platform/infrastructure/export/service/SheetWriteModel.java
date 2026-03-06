@@ -23,6 +23,7 @@ public class SheetWriteModel {
     }
 
     public SheetWriteModel(String sheetName, List<List<String>> head, Iterator<List<Object>> rowIterator, List<List<String>> topInfoRows, List<String> leafFields, AggregateStrategy strategy, Map<String, Object> sumMap) {
+        this.sheetName = sheetName;
         this.head = head;
         this.rows = rowIterator;
         this.topInfoRows = topInfoRows;

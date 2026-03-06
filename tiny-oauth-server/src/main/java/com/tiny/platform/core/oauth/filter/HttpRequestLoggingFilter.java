@@ -94,9 +94,7 @@ public class HttpRequestLoggingFilter extends OncePerRequestFilter {
         if (!StringUtils.hasText(uri)) {
             return false;
         }
-        return properties.getExcludedPathPrefixes().stream()
-                .filter(StringUtils::hasText)
-                .anyMatch(uri::startsWith);
+        return matchesAnyPrefix(uri, properties.getExcludedPathPrefixes());
     }
 
     @Override
@@ -110,7 +108,11 @@ public class HttpRequestLoggingFilter extends OncePerRequestFilter {
         }
 
         ContentCachingRequestWrapper requestWrapper = wrapRequest(request);
-        ContentCachingResponseWrapper responseWrapper = wrapResponse(response);
+        boolean passthroughResponseBody = isResponseBodyPassthrough(requestWrapper);
+        HttpServletResponse responseToUse = passthroughResponseBody ? response : wrapResponse(response);
+        ContentCachingResponseWrapper responseWrapper = responseToUse instanceof ContentCachingResponseWrapper ccr
+                ? ccr
+                : null;
 
         long start = System.currentTimeMillis();
         requestWrapper.setAttribute(ATTR_START_TIME, start);
@@ -122,7 +124,7 @@ public class HttpRequestLoggingFilter extends OncePerRequestFilter {
         TraceResolution traceResolution = resolveTrace(requestWrapper, requestId);
         String traceId = traceResolution.traceId();
         String spanId = resolveSpanId(requestWrapper);
-        setResponseCorrelationHeaders(responseWrapper, requestId, traceId);
+        setResponseCorrelationHeaders(responseToUse, requestId, traceId);
 
         requestWrapper.setAttribute(ATTR_REQUEST_ID, requestId);
         requestWrapper.setAttribute(ATTR_CLIENT_REQUEST_ID, clientRequestId);
@@ -159,14 +161,17 @@ public class HttpRequestLoggingFilter extends OncePerRequestFilter {
         }
 
         try {
-            filterChain.doFilter(requestWrapper, responseWrapper);
+            filterChain.doFilter(requestWrapper, responseToUse);
         } finally {
             if (!requestWrapper.isAsyncStarted()) {
-                saveFallbackAuditLogIfNeeded(requestWrapper, responseWrapper);
+                saveFallbackAuditLogIfNeeded(requestWrapper, responseToUse);
             }
             // 恢复进入过滤器前的 MDC，避免误清理其他框架写入的上下文
             restoreMdc(previousMdc);
-            
+
+            if (responseWrapper == null) {
+                return;
+            }
             if (requestWrapper.isAsyncStarted()) {
                 requestWrapper.getAsyncContext().addListener(new AsyncListener() {
                     @Override
@@ -204,6 +209,23 @@ public class HttpRequestLoggingFilter extends OncePerRequestFilter {
             return existing;
         }
         return new ContentCachingResponseWrapper(response);
+    }
+
+    private boolean isResponseBodyPassthrough(HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        if (!StringUtils.hasText(uri)) {
+            return false;
+        }
+        return matchesAnyPrefix(uri, properties.getResponseBodyPassthroughPathPrefixes());
+    }
+
+    private boolean matchesAnyPrefix(String uri, List<String> prefixes) {
+        if (!StringUtils.hasText(uri) || prefixes == null || prefixes.isEmpty()) {
+            return false;
+        }
+        return prefixes.stream()
+                .filter(StringUtils::hasText)
+                .anyMatch(uri::startsWith);
     }
 
     private String resolveClientRequestId(HttpServletRequest request) {

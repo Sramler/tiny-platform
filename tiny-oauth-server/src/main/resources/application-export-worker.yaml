@@ -1,0 +1,28 @@
+# 导出专用节点叠加配置
+# 使用方式:
+#   SPRING_PROFILES_ACTIVE=prod,export-worker
+#
+# 目标:
+# - 将超大导出与在线业务节点隔离
+# - 默认使用 fesod，但保留 export.writer.type=poi 的回退能力
+# - 对 1000w 级导出采用保守并发，优先稳定性
+
+export:
+  writer:
+    type: fesod
+  concurrent:
+    max-system: 1
+    max-user: 1
+  executor:
+    core-pool-size: 1
+    max-pool-size: 1
+    queue-capacity: 5
+    queue-reject-threshold: 3
+    keep-alive-seconds: 60
+  fesod:
+    batch-size: 1024
+    max-rows-per-sheet: 1048576
+  poi:
+    row-access-window-size: 200
+    max-rows-per-sheet: 1048576
+    compress-temp-files: true

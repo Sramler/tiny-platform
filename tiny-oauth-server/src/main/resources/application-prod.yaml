@@ -1,5 +1,7 @@
 # 生产环境配置
 # 使用方式: spring.profiles.active=prod
+# 导出专用节点建议使用: spring.profiles.active=prod,export-worker
+# export-worker 为叠加 profile，仅覆盖导出 writer / 并发 / 线程池等导出相关配置
 # 
 # 在生产环境中，前端静态文件已经打包到 /dist 目录
 # 后端通过 forward 将请求转发到打包后的静态文件
@@ -97,4 +99,3 @@ http:
       - /webjars
       - /oauth2/jwks                     # OAuth2 端点通常不需要详细日志
       - /.well-known                     # 元数据端点不需要详细日志
-

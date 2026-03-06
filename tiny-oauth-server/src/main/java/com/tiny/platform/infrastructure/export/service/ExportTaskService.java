@@ -2,10 +2,14 @@ package com.tiny.platform.infrastructure.export.service;
 
 import com.tiny.platform.infrastructure.export.persistence.ExportTaskEntity;
 import com.tiny.platform.infrastructure.export.persistence.ExportTaskRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.Sort;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -17,6 +21,8 @@ import java.util.Optional;
  */
 @Service
 public class ExportTaskService {
+
+    private static final Logger log = LoggerFactory.getLogger(ExportTaskService.class);
 
     private final ExportTaskRepository repository;
 
@@ -134,8 +140,30 @@ public class ExportTaskService {
     }
 
     @Transactional
+    public long deleteByTaskId(String taskId) {
+        return repository.deleteByTaskId(taskId);
+    }
+
+    @Transactional
     public int cleanupExpired(LocalDateTime now) {
-        return repository.deleteExpired(now);
+        List<ExportTaskEntity> expiredTasks = repository.findByExpireAtBefore(now);
+        if (expiredTasks.isEmpty()) {
+            return 0;
+        }
+
+        for (ExportTaskEntity task : expiredTasks) {
+            String filePath = task.getFilePath();
+            if (filePath == null || filePath.isBlank()) {
+                continue;
+            }
+            try {
+                Files.deleteIfExists(Path.of(filePath));
+            } catch (Exception ex) {
+                log.warn("Failed to delete expired export file taskId={} filePath={}", task.getTaskId(), filePath, ex);
+            }
+        }
+        repository.deleteAllInBatch(expiredTasks);
+        return expiredTasks.size();
     }
 
     @Transactional
