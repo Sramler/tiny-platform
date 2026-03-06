@@ -5,7 +5,7 @@ import com.tiny.platform.infrastructure.export.core.WriterOptions;
 import com.tiny.platform.infrastructure.export.service.SheetWriteModel;
 import com.tiny.platform.infrastructure.export.writer.WriterAdapter;
 import org.apache.fesod.sheet.ExcelWriter;
-import org.apache.fesod.sheet.EasyExcel;
+import org.apache.fesod.sheet.FesodSheet;
 import org.apache.fesod.sheet.support.ExcelTypeEnum;
 import org.apache.fesod.sheet.write.builder.ExcelWriterBuilder;
 import org.apache.fesod.sheet.write.builder.ExcelWriterSheetBuilder;
@@ -31,7 +31,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * FesodWriterAdapter —— 基于 Apache Fesod (EasyExcel) 的多 Sheet 写入实现
+ * FesodWriterAdapter —— 基于 Apache Fesod 的多 Sheet 写入实现
  *
  * 功能支持：
  *  - 多业务 Sheet 同时导出
@@ -71,7 +71,7 @@ public class FesodWriterAdapter implements WriterAdapter {
         if (sheets == null || sheets.isEmpty()) {
             return;
         }
-        ExcelWriterBuilder builder = EasyExcel.write(out)
+        ExcelWriterBuilder builder = FesodSheet.write(out)
                 .autoCloseStream(false)
                 .excelType(ExcelTypeEnum.XLSX);
         ExcelWriter writer = builder.build();
@@ -170,7 +170,7 @@ public class FesodWriterAdapter implements WriterAdapter {
     }
 
     private WriteSheet buildWriteSheet(int sheetIndex, String sheetName, SheetWriteModel model, TopInfoPlan plan) {
-        ExcelWriterSheetBuilder sheetBuilder = EasyExcel.writerSheet(sheetIndex, sheetName);
+        ExcelWriterSheetBuilder sheetBuilder = FesodSheet.writerSheet(sheetIndex, sheetName);
         List<List<String>> head = model.getHead();
         if (head != null && !head.isEmpty()) {
             sheetBuilder.head(head);

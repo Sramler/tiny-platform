@@ -157,7 +157,7 @@
             <artifactId>javase</artifactId>
         </dependency>
         <!-- Apache Fesod (Incubating) for high-performance spreadsheet processing
-             版本显式指定为 2.0.0-incubating，避免 BOM 解析异常导致缺少 version 报错；
+             版本显式指定为 2.0.1-incubating，避免 BOM 解析异常导致缺少 version 报错；
              同时排除 fesod-shaded 以绕过其父 POM fesod-parent:${revision} 的解析问题。 -->
         <dependency>
             <groupId>org.apache.fesod</groupId>
