@@ -110,6 +110,96 @@ export E2E_BACKEND_PROFILE=e2e
 
 ---
 
+## GitHub Actions secrets 与触发说明
+
+当前仓库已提供独立的 real-link workflow：
+
+- [verify-webapp-real-e2e.yml](../../.github/workflows/verify-webapp-real-e2e.yml)
+
+该 workflow 的定位是：
+
+- **不进入默认 PR 快速链路**
+- 只用于：
+  - `workflow_dispatch`
+  - `schedule`
+
+### 需要配置的 GitHub Actions secrets
+
+最少需要以下 secrets：
+
+- `E2E_DB_PASSWORD`
+- `E2E_TENANT_CODE`
+- `E2E_USERNAME`
+- `E2E_PASSWORD`
+- `E2E_TOTP_SECRET`
+- `E2E_TENANT_CODE_B`
+- `E2E_USERNAME_B`
+- `E2E_PASSWORD_B`
+- `E2E_TOTP_SECRET_B`
+- `E2E_USERNAME_BIND`
+- `E2E_PASSWORD_BIND`
+
+可选：
+
+- `E2E_TENANT_CODE_BIND`
+  - 不配置时，首绑用户默认回退到主租户 `E2E_TENANT_CODE`
+
+### secrets 对应关系
+
+| GitHub secret | 说明 |
+| --- | --- |
+| `E2E_DB_PASSWORD` | MySQL root/test password |
+| `E2E_TENANT_CODE` | 主自动化租户编码 |
+| `E2E_USERNAME` / `E2E_PASSWORD` | 主自动化管理员账号 |
+| `E2E_TOTP_SECRET` | 主自动化管理员 TOTP secret |
+| `E2E_TENANT_CODE_B` | 第二自动化租户编码 |
+| `E2E_USERNAME_B` / `E2E_PASSWORD_B` | 第二自动化管理员账号 |
+| `E2E_TOTP_SECRET_B` | 第二自动化管理员 TOTP secret |
+| `E2E_TENANT_CODE_BIND` | 首绑用户所属租户，可选 |
+| `E2E_USERNAME_BIND` / `E2E_PASSWORD_BIND` | 未绑定 TOTP 的首绑专用用户 |
+
+### 手动触发
+
+1. 打开 GitHub Actions。
+2. 选择 `Verify webapp real-link E2E`。
+3. 点击 `Run workflow`。
+
+运行前应确保：
+
+- 对应测试环境允许 `tiny-oauth-server` 使用 MySQL 8.4 service 启动
+- 上述 GitHub secrets 已配置完整
+- 自动化身份在目标环境中是隔离账号，不复用人工账号
+
+### 定时触发
+
+当前 workflow 已配置 nightly：
+
+- 每天 `02:00 UTC`
+
+如果后续要改频率，应同步更新：
+
+- workflow 的 `schedule`
+- 本文档
+- [TINY_PLATFORM_TESTING_PLAYBOOK.md](../../docs/TINY_PLATFORM_TESTING_PLAYBOOK.md) 中的 CI 分层说明
+
+### 失败时的第一检查项
+
+如果 `Verify webapp real-link E2E` 失败，优先判断：
+
+1. secrets 是否缺失
+2. bind 用户是否仍然被错误地保留了旧 TOTP 绑定
+3. tenant B 是否错误继承了 tenant A 的 `E2E_TOTP_CODE`
+4. MySQL service 是否健康
+5. OIDC redirect URI / client 配置是否仍与 `5173` 对齐
+
+其中第 3 项已由：
+
+- `src/e2e/realGlobalSetup.test.ts`
+
+做回归保护，CI 会先跑它，再跑完整 real-link E2E。
+
+---
+
 ## 使用约束
 
 - `application-e2e.yaml` 中不允许写入真实密码、真实 client secret、真实 TOTP secret。
