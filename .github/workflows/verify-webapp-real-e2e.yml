@@ -120,8 +120,103 @@ jobs:
       - name: Run real-link setup regression
         run: npm run test:unit -- src/e2e/realGlobalSetup.test.ts
 
+      - name: Start backend
+        env:
+          SPRING_PROFILES_ACTIVE: ${{ env.E2E_BACKEND_PROFILE }}
+          E2E_DB_HOST: ${{ env.E2E_DB_HOST }}
+          E2E_DB_PORT: ${{ env.E2E_DB_PORT }}
+          E2E_DB_NAME: ${{ env.E2E_DB_NAME }}
+          E2E_DB_USER: ${{ env.E2E_DB_USER }}
+          E2E_DB_PASSWORD: ${{ env.E2E_DB_PASSWORD }}
+          MYSQL_ROOT_PASSWORD: ${{ env.E2E_DB_PASSWORD }}
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/tiny-platform-real-e2e
+          mvn -pl tiny-oauth-server spring-boot:run \
+            > /tmp/tiny-platform-real-e2e/backend.log 2>&1 &
+          echo $! > /tmp/tiny-platform-real-e2e/backend.pid
+
+          for _ in $(seq 1 120); do
+            if curl -fsS "http://127.0.0.1:${E2E_BACKEND_PORT}/login" >/dev/null 2>&1; then
+              exit 0
+            fi
+            if ! kill -0 "$(cat /tmp/tiny-platform-real-e2e/backend.pid)" 2>/dev/null; then
+              echo "Backend exited before becoming ready."
+              cat /tmp/tiny-platform-real-e2e/backend.log
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "Backend did not become ready in time."
+          cat /tmp/tiny-platform-real-e2e/backend.log
+          exit 1
+
+      - name: Start frontend
+        env:
+          VITE_API_BASE_URL: ${{ env.E2E_BACKEND_BASE_URL }}
+          VITE_OIDC_AUTHORITY: ${{ env.E2E_BACKEND_BASE_URL }}
+          VITE_OIDC_CLIENT_ID: ${{ env.E2E_OIDC_CLIENT_ID }}
+          VITE_OIDC_REDIRECT_URI: ${{ env.E2E_FRONTEND_BASE_URL }}/callback
+          VITE_OIDC_POST_LOGOUT_REDIRECT_URI: ${{ env.E2E_FRONTEND_BASE_URL }}/
+          VITE_OIDC_SILENT_REDIRECT_URI: ${{ env.E2E_FRONTEND_BASE_URL }}/silent-renew.html
+          VITE_ENABLE_OIDC_TRACE: ${{ env.E2E_ENABLE_OIDC_TRACE }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/tiny-platform-real-e2e
+          npm run dev -- --host localhost --port "${E2E_FRONTEND_PORT}" \
+            > /tmp/tiny-platform-real-e2e/frontend.log 2>&1 &
+          echo $! > /tmp/tiny-platform-real-e2e/frontend.pid
+
+          for _ in $(seq 1 60); do
+            if curl -fsS "http://127.0.0.1:${E2E_FRONTEND_PORT}/login" >/dev/null 2>&1; then
+              exit 0
+            fi
+            if ! kill -0 "$(cat /tmp/tiny-platform-real-e2e/frontend.pid)" 2>/dev/null; then
+              echo "Frontend exited before becoming ready."
+              cat /tmp/tiny-platform-real-e2e/frontend.log
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "Frontend did not become ready in time."
+          cat /tmp/tiny-platform-real-e2e/frontend.log
+          exit 1
+
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
       - name: Run real-link E2E
+        env:
+          E2E_SKIP_WEBSERVER: 'true'
         run: npm run test:e2e:real -- --reporter=line
+
+      - name: Dump server logs on failure
+        if: failure()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f /tmp/tiny-platform-real-e2e/backend.log ]; then
+            echo '== backend.log =='
+            tail -n 200 /tmp/tiny-platform-real-e2e/backend.log
+          fi
+          if [ -f /tmp/tiny-platform-real-e2e/frontend.log ]; then
+            echo '== frontend.log =='
+            tail -n 200 /tmp/tiny-platform-real-e2e/frontend.log
+          fi
+
+      - name: Stop started servers
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          for pid_file in /tmp/tiny-platform-real-e2e/frontend.pid /tmp/tiny-platform-real-e2e/backend.pid; do
+            if [ -f "$pid_file" ]; then
+              pid="$(cat "$pid_file")"
+              kill "$pid" 2>/dev/null || true
+            fi
+          done

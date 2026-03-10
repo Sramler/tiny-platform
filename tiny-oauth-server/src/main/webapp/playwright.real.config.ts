@@ -36,6 +36,7 @@ const dbName = readEnv(['E2E_DB_NAME', 'E2E_MYSQL_DATABASE'], 'tiny_web')
 const dbUser = readEnv(['E2E_DB_USER', 'E2E_MYSQL_USER'], 'root')
 const dbPassword = readEnv(['E2E_DB_PASSWORD', 'E2E_MYSQL_PASSWORD', 'MYSQL_ROOT_PASSWORD'], '')
 const skipRealSetup = process.env.E2E_SKIP_REAL_SETUP === 'true'
+const skipWebServer = process.env.E2E_SKIP_WEBSERVER === 'true'
 
 export default defineConfig({
   testDir: './e2e',
@@ -51,7 +52,7 @@ export default defineConfig({
     baseURL: frontendBaseURL,
     trace: 'on-first-retry',
   },
-  webServer: skipRealSetup
+  webServer: skipRealSetup || skipWebServer
     ? undefined
     : [
         {
