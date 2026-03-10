@@ -167,7 +167,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p /tmp/tiny-platform-real-e2e
-          npm run dev -- --host localhost --port "${E2E_FRONTEND_PORT}" \
+          npm run dev -- --host 127.0.0.1 --port "${E2E_FRONTEND_PORT}" \
             > /tmp/tiny-platform-real-e2e/frontend.log 2>&1 &
           echo $! > /tmp/tiny-platform-real-e2e/frontend.pid
 
