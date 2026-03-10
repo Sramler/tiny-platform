@@ -3,6 +3,17 @@ databaseChangeLog:
       id: add-resource-api-uri-method-check
       author: tiny
       comment: resource 表增加类型级约束，接口类型(type=3)必须填写 uri 与 method，与服务层校验一致
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - sqlCheck:
+            expectedResult: "0"
+            sql: |
+              SELECT COUNT(*)
+              FROM information_schema.table_constraints
+              WHERE constraint_schema = DATABASE()
+                AND table_name = 'resource'
+                AND constraint_name = 'chk_resource_api_uri_method'
       changes:
         - sql:
             dbms: mysql
