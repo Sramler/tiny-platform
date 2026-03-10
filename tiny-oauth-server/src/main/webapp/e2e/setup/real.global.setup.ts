@@ -15,6 +15,8 @@ const ensureAuthScriptPath = path.resolve(backendRoot, 'scripts/e2e/ensure-sched
 const generateAuthStateScriptPath = path.resolve(__dirname, 'generate-auth-state.mjs')
 const EMPTY_STORAGE_STATE = JSON.stringify({ cookies: [], origins: [] }, null, 2)
 
+function readEnv(names: string[], fallback: string): string
+function readEnv(names: string[], fallback?: string): string | undefined
 function readEnv(names: string[], fallback?: string) {
   for (const name of names) {
     const value = process.env[name]
