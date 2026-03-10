@@ -47,6 +47,11 @@ E2E_USERNAME="$(read_env E2E_USERNAME || true)"
 E2E_PASSWORD="$(read_env E2E_PASSWORD || true)"
 E2E_TOTP_SECRET="$(read_env E2E_TOTP_SECRET || true)"
 
+# 可选的“未绑定 TOTP 首绑专用”身份；如果未配置，则跳过首绑用户准备。
+BIND_TENANT_CODE="$(read_env E2E_TENANT_CODE_BIND E2E_TENANT_CODE || true)"
+BIND_USERNAME="$(read_env E2E_USERNAME_BIND || true)"
+BIND_PASSWORD="$(read_env E2E_PASSWORD_BIND || true)"
+
 require_value "E2E_DB_PASSWORD / E2E_MYSQL_PASSWORD / MYSQL_ROOT_PASSWORD" "${DB_PASSWORD}"
 require_value "E2E_TENANT_CODE" "${TENANT_CODE}"
 require_value "E2E_USERNAME" "${E2E_USERNAME}"
@@ -62,6 +67,10 @@ export E2E_EFFECTIVE_TENANT_CODE="${TENANT_CODE}"
 export E2E_EFFECTIVE_USERNAME="${E2E_USERNAME}"
 export E2E_EFFECTIVE_PASSWORD="${E2E_PASSWORD}"
 export E2E_EFFECTIVE_TOTP_SECRET="${E2E_TOTP_SECRET}"
+
+export E2E_BIND_TENANT_CODE="${BIND_TENANT_CODE}"
+export E2E_BIND_USERNAME="${BIND_USERNAME}"
+export E2E_BIND_PASSWORD="${BIND_PASSWORD}"
 
 CLASSPATH_FILE="${TMPDIR:-/tmp}/tiny-oauth-e2e-runtime-classpath.txt"
 
@@ -193,10 +202,14 @@ try (Connection connection = DriverManager.getConnection(jdbcUrl, dbUser, dbPass
         }
     }
     if (roleId == null) {
+        String roleDisplayName = "default".equals(tenantCode)
+                ? "系统管理员"
+                : "系统管理员(" + tenantCode + ")";
         try (PreparedStatement ps = connection.prepareStatement(
-                "INSERT INTO role (tenant_id, code, name, description, builtin, enabled) VALUES (?, 'ROLE_ADMIN', '系统管理员', 'real e2e admin role', true, true)",
+                "INSERT INTO role (tenant_id, code, name, description, builtin, enabled) VALUES (?, 'ROLE_ADMIN', ?, 'real e2e admin role', true, true)",
                 Statement.RETURN_GENERATED_KEYS)) {
             ps.setLong(1, tenantId);
+            ps.setString(2, roleDisplayName);
             ps.executeUpdate();
             try (ResultSet rs = ps.getGeneratedKeys()) {
                 if (rs.next()) {
@@ -239,8 +252,132 @@ try (Connection connection = DriverManager.getConnection(jdbcUrl, dbUser, dbPass
         ps.executeUpdate();
     }
 
-    connection.commit();
     System.out.println("Prepared real scheduling e2e auth user: tenant=" + tenantCode + ", username=" + username);
+
+    // =========================
+    // 可选：准备“未绑定 TOTP 首绑专用”用户
+    // =========================
+    String bindTenantCode = System.getenv("E2E_BIND_TENANT_CODE");
+    String bindUsername = System.getenv("E2E_BIND_USERNAME");
+    String bindPassword = System.getenv("E2E_BIND_PASSWORD");
+
+    if (bindUsername != null && !bindUsername.isBlank() && bindPassword != null && !bindPassword.isBlank()) {
+        String effectiveBindTenantCode = (bindTenantCode != null && !bindTenantCode.isBlank())
+                ? bindTenantCode
+                : tenantCode;
+
+        Long bindTenantId = null;
+        try (PreparedStatement ps = connection.prepareStatement("SELECT id FROM tenant WHERE code = ? LIMIT 1")) {
+            ps.setString(1, effectiveBindTenantCode);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    bindTenantId = rs.getLong(1);
+                }
+            }
+        }
+        if (bindTenantId == null) {
+            throw new IllegalStateException("未找到首绑用户租户: " + effectiveBindTenantCode);
+        }
+
+        Long bindUserId = null;
+        try (PreparedStatement ps = connection.prepareStatement(
+                "SELECT id FROM user WHERE tenant_id = ? AND username = ? LIMIT 1")) {
+            ps.setLong(1, bindTenantId);
+            ps.setString(2, bindUsername);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    bindUserId = rs.getLong(1);
+                }
+            }
+        }
+        if (bindUserId == null) {
+            try (PreparedStatement ps = connection.prepareStatement(
+                    "INSERT INTO user (tenant_id, username, nickname, enabled, account_non_expired, account_non_locked, credentials_non_expired, failed_login_count) VALUES (?, ?, ?, true, true, true, true, 0)",
+                    Statement.RETURN_GENERATED_KEYS)) {
+                ps.setLong(1, bindTenantId);
+                ps.setString(2, bindUsername);
+                ps.setString(3, "E2E首绑用户");
+                ps.executeUpdate();
+                try (ResultSet rs = ps.getGeneratedKeys()) {
+                    if (rs.next()) {
+                        bindUserId = rs.getLong(1);
+                    }
+                }
+            }
+        }
+        if (bindUserId == null) {
+            throw new IllegalStateException("创建 E2E 首绑用户失败: " + bindUsername);
+        }
+
+        try (PreparedStatement ps = connection.prepareStatement(
+                "UPDATE user SET enabled = true, account_non_expired = true, account_non_locked = true, credentials_non_expired = true, failed_login_count = 0, last_failed_login_at = NULL WHERE id = ? AND tenant_id = ?")) {
+            ps.setLong(1, bindUserId);
+            ps.setLong(2, bindTenantId);
+            ps.executeUpdate();
+        }
+
+        Long bindRoleId = null;
+        try (PreparedStatement ps = connection.prepareStatement(
+                "SELECT id FROM role WHERE tenant_id = ? AND code = 'ROLE_ADMIN' LIMIT 1")) {
+            ps.setLong(1, bindTenantId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    bindRoleId = rs.getLong(1);
+                }
+            }
+        }
+        if (bindRoleId == null) {
+            String bindRoleDisplayName = "default".equals(effectiveBindTenantCode)
+                    ? "系统管理员(bind)"
+                    : "系统管理员(bind-" + effectiveBindTenantCode + ")";
+            try (PreparedStatement ps = connection.prepareStatement(
+                    "INSERT INTO role (tenant_id, code, name, description, builtin, enabled) VALUES (?, 'ROLE_ADMIN', ?, 'real e2e admin role (bind)', true, true)",
+                    Statement.RETURN_GENERATED_KEYS)) {
+                ps.setLong(1, bindTenantId);
+                ps.setString(2, bindRoleDisplayName);
+                ps.executeUpdate();
+                try (ResultSet rs = ps.getGeneratedKeys()) {
+                    if (rs.next()) {
+                        bindRoleId = rs.getLong(1);
+                    }
+                }
+            }
+        }
+        if (bindRoleId == null) {
+            throw new IllegalStateException("未找到或创建 ROLE_ADMIN (bind) 失败");
+        }
+
+        try (PreparedStatement ps = connection.prepareStatement(
+                "INSERT IGNORE INTO user_role (tenant_id, user_id, role_id) VALUES (?, ?, ?)")) {
+            ps.setLong(1, bindTenantId);
+            ps.setLong(2, bindUserId);
+            ps.setLong(3, bindRoleId);
+            ps.executeUpdate();
+        }
+
+        String bindPasswordJson = "{\"password\":\"{noop}" + bindPassword + "\",\"created_by\":\"real-e2e-bind\",\"hash_algorithm\":\"noop\",\"password_version\":1,\"password_changed_at\":\"" + Instant.now().toString() + "\"}";
+        try (PreparedStatement ps = connection.prepareStatement(
+                "INSERT INTO user_authentication_method (tenant_id, user_id, authentication_provider, authentication_type, authentication_configuration, is_primary_method, is_method_enabled, authentication_priority, created_at, updated_at) " +
+                        "VALUES (?, ?, 'LOCAL', 'PASSWORD', CAST(? AS JSON), true, true, 0, NOW(), NOW()) " +
+                        "ON DUPLICATE KEY UPDATE authentication_configuration = CAST(VALUES(authentication_configuration) AS JSON), is_primary_method = true, is_method_enabled = true, authentication_priority = 0, updated_at = NOW()")) {
+            ps.setLong(1, bindTenantId);
+            ps.setLong(2, bindUserId);
+            ps.setString(3, bindPasswordJson);
+            ps.executeUpdate();
+        }
+
+        // 删除该用户所有 LOCAL/TOTP 记录，确保每次 real E2E 运行前都是“未绑定 TOTP”的首绑状态。
+        try (PreparedStatement ps = connection.prepareStatement(
+                "DELETE FROM user_authentication_method WHERE tenant_id = ? AND user_id = ? AND authentication_provider = 'LOCAL' AND authentication_type = 'TOTP'")) {
+            ps.setLong(1, bindTenantId);
+            ps.setLong(2, bindUserId);
+            ps.executeUpdate();
+        }
+
+        System.out.println("Prepared real e2e bind user without TOTP: tenant=" + effectiveBindTenantCode + ", username=" + bindUsername);
+    }
+
+    connection.commit();
 }
 /exit
 EOF

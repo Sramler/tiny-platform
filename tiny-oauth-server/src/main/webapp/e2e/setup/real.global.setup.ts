@@ -9,9 +9,11 @@ const webappRoot = path.resolve(__dirname, '..', '..')
 const backendRoot = path.resolve(webappRoot, '..', '..', '..')
 const authDir = path.resolve(webappRoot, 'e2e/.auth')
 const authStatePath = path.resolve(authDir, 'scheduling-user.json')
+const secondaryAuthStatePath = path.resolve(authDir, 'tenant-b-user.json')
 const seedSqlPath = path.resolve(backendRoot, 'scripts/e2e/seed-scheduling-orchestration.sql')
 const ensureAuthScriptPath = path.resolve(backendRoot, 'scripts/e2e/ensure-scheduling-e2e-auth.sh')
 const generateAuthStateScriptPath = path.resolve(__dirname, 'generate-auth-state.mjs')
+const EMPTY_STORAGE_STATE = JSON.stringify({ cookies: [], origins: [] }, null, 2)
 
 function readEnv(names: string[], fallback?: string) {
   for (const name of names) {
@@ -26,6 +28,8 @@ function readEnv(names: string[], fallback?: string) {
 async function prepareAuthState() {
   await fs.mkdir(authDir, { recursive: true })
   await fs.rm(authStatePath, { force: true })
+  await fs.rm(secondaryAuthStatePath, { force: true })
+  await fs.writeFile(secondaryAuthStatePath, EMPTY_STORAGE_STATE, 'utf8')
 }
 
 function hasMysqlClient() {
@@ -80,6 +84,17 @@ function ensureDeterministicE2EAuth() {
   })
 }
 
+function ensureDeterministicE2EAuthFor(envOverrides: Record<string, string>) {
+  execFileSync('bash', [ensureAuthScriptPath], {
+    cwd: backendRoot,
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      ...envOverrides,
+    },
+  })
+}
+
 function generateAuthState() {
   execFileSync('node', [generateAuthStateScriptPath], {
     cwd: webappRoot,
@@ -91,9 +106,80 @@ function generateAuthState() {
   })
 }
 
+export function buildSecondaryAuthStateEnv(
+  baseEnv: NodeJS.ProcessEnv,
+  envOverrides: Record<string, string>,
+  outputPath: string,
+): NodeJS.ProcessEnv {
+  return {
+    ...baseEnv,
+    ...envOverrides,
+    // 避免沿用主身份注入的 E2E_TOTP_CODE；tenant B 未显式提供 code 时应回退到自己的 secret。
+    E2E_TOTP_CODE: envOverrides.E2E_TOTP_CODE ?? '',
+    E2E_AUTH_STATE_PATH: outputPath,
+  }
+}
+
+function generateAuthStateFor(envOverrides: Record<string, string>, outputPath: string) {
+  execFileSync('node', [generateAuthStateScriptPath], {
+    cwd: webappRoot,
+    stdio: 'inherit',
+    env: buildSecondaryAuthStateEnv(process.env, envOverrides, outputPath),
+  })
+}
+
+function isConfiguredValue(value: string | undefined) {
+  if (!value || value.trim() === '') {
+    return false
+  }
+  const normalized = value.trim()
+  return !(normalized.startsWith('<') && normalized.endsWith('>'))
+}
+
+function resolveSecondaryIdentityEnv(): Record<string, string> | null {
+  const tenantCode = process.env.E2E_TENANT_CODE_B
+  const username = process.env.E2E_USERNAME_B
+  const password = process.env.E2E_PASSWORD_B
+  const totpSecret = process.env.E2E_TOTP_SECRET_B
+  const totpCode = process.env.E2E_TOTP_CODE_B
+
+  const hasAnySecondaryValue = [tenantCode, username, password, totpSecret, totpCode].some(
+    isConfiguredValue,
+  )
+  if (!hasAnySecondaryValue) {
+    return null
+  }
+
+  const missing: string[] = []
+  if (!isConfiguredValue(tenantCode)) missing.push('E2E_TENANT_CODE_B')
+  if (!isConfiguredValue(username)) missing.push('E2E_USERNAME_B')
+  if (!isConfiguredValue(password)) missing.push('E2E_PASSWORD_B')
+  if (!isConfiguredValue(totpSecret)) missing.push('E2E_TOTP_SECRET_B')
+
+  if (missing.length > 0) {
+    throw new Error(
+      `跨租户 real-link 需要完整的第二租户身份配置，缺少: ${missing.join(', ')}`
+    )
+  }
+
+  return {
+    E2E_TENANT_CODE: tenantCode!.trim(),
+    E2E_USERNAME: username!.trim(),
+    E2E_PASSWORD: password!.trim(),
+    E2E_TOTP_SECRET: totpSecret!.trim(),
+    ...(isConfiguredValue(totpCode) ? { E2E_TOTP_CODE: totpCode!.trim() } : {}),
+  }
+}
+
 export default async function globalSetup() {
   await prepareAuthState()
   ensureDeterministicE2EAuth()
   await runMysqlSeed()
   generateAuthState()
+
+  const secondaryIdentityEnv = resolveSecondaryIdentityEnv()
+  if (secondaryIdentityEnv) {
+    ensureDeterministicE2EAuthFor(secondaryIdentityEnv)
+    generateAuthStateFor(secondaryIdentityEnv, secondaryAuthStatePath)
+  }
 }

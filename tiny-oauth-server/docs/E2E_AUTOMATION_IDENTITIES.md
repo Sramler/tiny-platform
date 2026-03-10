@@ -27,11 +27,20 @@
 - 具备当前正向链路所需最小权限
 - 可以脚本化初始化、重置和轮换
 
+对于完整的跨租户 real-link 回归，还需要第二组专用测试身份：
+
+- 第二测试租户：`E2E_TENANT_CODE_B`
+- 第二管理员账号：`E2E_USERNAME_B`
+- 第二账号密码：`E2E_PASSWORD_B`
+- 第二账号 TOTP secret：`E2E_TOTP_SECRET_B`
+
+这组身份只用于双身份跨租户拒绝场景，不应复用主自动化身份。
+
 ---
 
 ## 推荐扩展的身份矩阵
 
-当前脚本只消费一组主测试身份，但企业场景建议继续扩展以下矩阵：
+当前真实 E2E 已稳定消费一组主测试身份，并支持第二租户身份用于跨租户拒绝场景。企业场景仍建议继续扩展以下矩阵：
 
 - `automation-admin`：租户管理员，覆盖正向管理链路
 - `automation-mfa`：启用 TOTP，覆盖绑定/校验链路
@@ -45,6 +54,23 @@
 - `E2E_VIEWER_USERNAME`
 - `E2E_CROSS_TENANT_USERNAME`
 - `E2E_DISABLED_USERNAME`
+
+当前已落地的第二租户身份变量为：
+
+- `E2E_TENANT_CODE_B`
+- `E2E_USERNAME_B`
+- `E2E_PASSWORD_B`
+- `E2E_TOTP_SECRET_B`
+- `E2E_TOTP_CODE_B`（可选，仅用于 CI 注入一次性验证码）
+
+此外，为了支持“未绑定 TOTP 首绑 real-link”，还需要一组专用首绑身份：
+
+- `E2E_TENANT_CODE_BIND`（可选，不配置时回退到 `E2E_TENANT_CODE`）
+- `E2E_USERNAME_BIND`
+- `E2E_PASSWORD_BIND`
+
+这组身份只用于 `real/mfa-bind-flow.spec.ts` 所对应的“首绑 + 再次登录”链路，后端通过
+`scripts/e2e/ensure-scheduling-e2e-auth.sh` 保证该用户每次测试前都没有本地 TOTP 绑定记录。
 
 ---
 
@@ -101,3 +127,23 @@ export E2E_BACKEND_PROFILE=e2e
 - `E2E_MYSQL_*`
 
 `src/main/webapp/.env.e2e.example` 同时提供了两组模板，目的是在不改动现有脚本的前提下保持自动化可用。后续如果统一变量命名，可以再收敛为一套前缀。
+
+---
+
+## 当前 real-link 项目与身份映射
+
+- `chromium`
+  - 使用 `e2e/.auth/scheduling-user.json`
+  - 覆盖调度编排、post-login 安全中心等主身份 real-link
+- `chromium-mfa`
+  - 不使用 `storageState`
+  - 从 `/login` 起步，使用主身份走已绑定 TOTP 的真实 MFA 登录链路
+- `chromium-mfa-bind`
+  - 不使用 `storageState`
+  - 从 `/login` 起步，使用首绑身份走“未绑定 → 首绑 → 再次登录验证”的真实 MFA 链路
+- `chromium-cross-tenant-a`
+  - 使用 `e2e/.auth/scheduling-user.json`
+  - 以 tenant A 身份访问 tenant B 资源
+- `chromium-cross-tenant-b`
+  - 使用 `e2e/.auth/tenant-b-user.json`
+  - 以 tenant B 身份访问 tenant A 资源

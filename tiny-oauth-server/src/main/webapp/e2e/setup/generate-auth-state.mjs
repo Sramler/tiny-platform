@@ -70,6 +70,25 @@ function generateTotpCode(secret, timestampMs = Date.now()) {
   return String(binaryCode % 1_000_000).padStart(6, '0')
 }
 
+async function waitForOidcIdentity(page) {
+  await page.waitForFunction(() => {
+    const oidcKey = Object.keys(window.localStorage).find((key) => key.startsWith('oidc.user:'))
+    if (!oidcKey) {
+      return false
+    }
+    const rawUser = window.localStorage.getItem(oidcKey)
+    if (!rawUser) {
+      return false
+    }
+    try {
+      const user = JSON.parse(rawUser)
+      return Boolean(user?.access_token)
+    } catch {
+      return false
+    }
+  }, { timeout: 90_000 })
+}
+
 async function main() {
   const browser = await chromium.launch({ headless: true })
   const context = await browser.newContext()
@@ -112,10 +131,18 @@ async function main() {
     await page.waitForURL(/\/(callback|OIDCDebug|exception\/(403|404)|$)/, {
       timeout: 90_000,
     })
+
+    await waitForOidcIdentity(page)
+
     if (!page.url().includes(landingPath)) {
       await page.goto(`${frontendBaseURL}${landingPath}`)
+      const oidcDebugHeading = page.getByRole('heading', { name: 'OIDC 调试工具' })
+      const oidcDebugVisible = await oidcDebugHeading.isVisible({ timeout: 5_000 }).catch(() => false)
+      if (!oidcDebugVisible) {
+        // 某些租户未初始化菜单资源时，/OIDCDebug 会退化到“菜单为空”的壳页；此时只要浏览器中已有真实 OIDC 登录态即可持久化 storageState。
+        await waitForOidcIdentity(page)
+      }
     }
-    await page.getByRole('heading', { name: 'OIDC 调试工具' }).waitFor({ timeout: 90_000 })
 
     await context.storageState({ path: path.resolve(authStatePath) })
   } finally {
