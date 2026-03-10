@@ -110,8 +110,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: tiny-oauth-server/src/main/webapp/package-lock.json
 
       - name: Install webapp dependencies
         run: npm install
