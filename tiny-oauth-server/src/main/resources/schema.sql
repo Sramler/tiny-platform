@@ -107,7 +107,7 @@ CREATE TABLE IF NOT EXISTS `resource` (
     KEY `idx_resource_sort` (`sort`),
     KEY `idx_resource_hidden` (`hidden`),
     FOREIGN KEY (`parent_id`) REFERENCES `resource` (`id`) ON DELETE CASCADE,
-    CONSTRAINT `chk_resource_api_uri_method` CHECK (type <> 3 OR (uri <> '' AND method <> '')) COMMENT '接口类型(3)必须填写 uri 与 method，与实体校验一致',
+    CONSTRAINT `chk_resource_api_uri_method` CHECK (type <> 3 OR (uri <> '' AND method <> '')),
     CONSTRAINT `fk_resource_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='权限资源表';
 
