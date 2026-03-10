@@ -9,10 +9,19 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface SchedulingTaskHistoryRepository extends JpaRepository<SchedulingTaskHistory, Long>, JpaSpecificationExecutor<SchedulingTaskHistory> {
+    Optional<SchedulingTaskHistory> findByIdAndTenantId(Long id, Long tenantId);
+
+    boolean existsByTaskId(Long taskId);
+
     List<SchedulingTaskHistory> findByTaskInstanceId(Long taskInstanceId);
+
+    List<SchedulingTaskHistory> findByTaskInstanceIdAndTenantIdOrderByIdAsc(Long taskInstanceId, Long tenantId);
+
+    Optional<SchedulingTaskHistory> findTopByTaskInstanceIdAndTenantIdOrderByIdDesc(Long taskInstanceId, Long tenantId);
     
     List<SchedulingTaskHistory> findByDagRunId(Long dagRunId);
     
@@ -22,5 +31,3 @@ public interface SchedulingTaskHistoryRepository extends JpaRepository<Schedulin
     @Query("DELETE FROM SchedulingTaskHistory th WHERE th.dagRunId = :dagRunId")
     void deleteByDagRunId(@Param("dagRunId") Long dagRunId);
 }
-
-

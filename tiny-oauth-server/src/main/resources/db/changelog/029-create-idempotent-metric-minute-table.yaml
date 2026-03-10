@@ -1,0 +1,98 @@
+databaseChangeLog:
+  - changeSet:
+      id: create-idempotent-metric-minute-table
+      author: tiny
+      comment: 创建 sys_idempotent_metric_minute 幂等分钟聚合指标表
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: MARK_RAN
+        - not:
+            tableExists:
+              tableName: sys_idempotent_metric_minute
+      changes:
+        - createTable:
+            tableName: sys_idempotent_metric_minute
+            remarks: 幂等治理分钟聚合指标表
+            columns:
+              - column:
+                  name: bucket_minute
+                  type: DATETIME
+                  constraints:
+                    nullable: false
+              - column:
+                  name: scope
+                  type: VARCHAR(191)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: pass_count
+                  type: BIGINT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: hit_count
+                  type: BIGINT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: success_count
+                  type: BIGINT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: failure_count
+                  type: BIGINT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: store_error_count
+                  type: BIGINT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: validation_reject_count
+                  type: BIGINT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: hot_count
+                  type: BIGINT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_time
+                  type: DATETIME
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_time
+                  type: DATETIME
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+        - addPrimaryKey:
+            tableName: sys_idempotent_metric_minute
+            columnNames: bucket_minute, scope
+            constraintName: pk_sys_idempotent_metric_minute
+        - createIndex:
+            tableName: sys_idempotent_metric_minute
+            indexName: idx_idempotent_metric_bucket
+            columns:
+              - column:
+                  name: bucket_minute
+        - createIndex:
+            tableName: sys_idempotent_metric_minute
+            indexName: idx_idempotent_metric_scope_bucket
+            columns:
+              - column:
+                  name: scope
+              - column:
+                  name: bucket_minute

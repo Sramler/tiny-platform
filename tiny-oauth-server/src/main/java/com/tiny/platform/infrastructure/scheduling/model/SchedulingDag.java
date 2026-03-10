@@ -15,7 +15,7 @@ public class SchedulingDag implements Serializable {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "tenant_id")
+    @Column(name = "tenant_id", nullable = false)
     private Long tenantId;
 
     @Column(length = 128)
@@ -50,6 +50,15 @@ public class SchedulingDag implements Serializable {
 
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
+
+    @Transient
+    private Long currentVersionId;
+
+    @Transient
+    private Boolean hasRunningRun;
+
+    @Transient
+    private Boolean hasRetryableRun;
 
     @PrePersist
     protected void onCreate() {
@@ -158,6 +167,28 @@ public class SchedulingDag implements Serializable {
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
     }
+
+    public Long getCurrentVersionId() {
+        return currentVersionId;
+    }
+
+    public void setCurrentVersionId(Long currentVersionId) {
+        this.currentVersionId = currentVersionId;
+    }
+
+    public Boolean getHasRunningRun() {
+        return hasRunningRun;
+    }
+
+    public void setHasRunningRun(Boolean hasRunningRun) {
+        this.hasRunningRun = hasRunningRun;
+    }
+
+    public Boolean getHasRetryableRun() {
+        return hasRetryableRun;
+    }
+
+    public void setHasRetryableRun(Boolean hasRetryableRun) {
+        this.hasRetryableRun = hasRetryableRun;
+    }
 }
-
-

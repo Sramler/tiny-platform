@@ -8,8 +8,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.web.bind.annotation.*;
 
-import java.io.FileWriter;
-import java.io.IOException;
 import java.time.LocalDate;
 import java.util.Map;
 import java.util.Optional;
@@ -43,23 +41,11 @@ public class DemoExportUsageController {
             @RequestParam(defaultValue = "0") int targetRows,
             @RequestParam(defaultValue = "false") boolean clearExisting) {
         long start = System.currentTimeMillis();
-        // #region agent log
-        try (FileWriter fw = new FileWriter("/Users/bliu/code/tiny-platform/.cursor/debug.log", true)) {
-            fw.write("{\"sessionId\":\"debug-session\",\"runId\":\"pre-fix\",\"hypothesisId\":\"H2\",\"location\":\"DemoExportUsageController.generate:before\",\"message\":\"generate endpoint called\",\"data\":{\"days\":" + days + ",\"rowsPerDay\":" + rowsPerDay + ",\"targetRows\":" + targetRows + ",\"clearExisting\":" + clearExisting + "},\"timestamp\":" + System.currentTimeMillis() + "}\n");
-        } catch (IOException ignored) {
-        }
-        // #endregion agent log
 
         // 同步调用存储过程，让前端等待任务完成（配合前端单次请求自定义 timeout）
         service.generateDemoData(tenantId, days, rowsPerDay, targetRows, clearExisting);
 
         long elapsed = System.currentTimeMillis() - start;
-        // #region agent log
-        try (FileWriter fw = new FileWriter("/Users/bliu/code/tiny-platform/.cursor/debug.log", true)) {
-            fw.write("{\"sessionId\":\"debug-session\",\"runId\":\"pre-fix\",\"hypothesisId\":\"H2\",\"location\":\"DemoExportUsageController.generate:after\",\"message\":\"generate endpoint finished\",\"data\":{\"elapsedMs\":" + elapsed + "},\"timestamp\":" + System.currentTimeMillis() + "}\n");
-        } catch (IOException ignored) {
-        }
-        // #endregion agent log
 
         return ResponseEntity.ok(Map.of(
                 "message", "已生成测试数据",

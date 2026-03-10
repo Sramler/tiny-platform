@@ -17,15 +17,30 @@ export function getRoleById(id: string) {
 }
 
 export function createRole(data: Partial<Role> & Record<string, unknown>) {
-  return request.post('/sys/roles', data)
+  return request.post('/sys/roles', data, {
+    idempotency: {
+      scope: 'sys-roles:create',
+      payload: data,
+    },
+  })
 }
 
 export function updateRole(id: string, data: Partial<Role> & Record<string, unknown>) {
-  return request.put(`/sys/roles/${id}`, data)
+  return request.put(`/sys/roles/${id}`, data, {
+    idempotency: {
+      scope: `sys-roles:update:${id}`,
+      payload: data,
+    },
+  })
 }
 
 export function deleteRole(id: string) {
-  return request.delete(`/sys/roles/${id}`)
+  return request.delete(`/sys/roles/${id}`, {
+    idempotency: {
+      scope: `sys-roles:delete:${id}`,
+      payload: { id },
+    },
+  })
 }
 
 // 获取所有角色（不分页，适用于a-transfer）
@@ -42,7 +57,12 @@ export function getRoleUsers(roleId: number) {
 // 保存角色与用户的关系（需后端实现）
 export function updateRoleUsers(roleId: number, userIds: number[]) {
   // 向后端提交该角色分配的所有用户ID
-  return request.post(`/sys/roles/${roleId}/users`, userIds)
+  return request.post(`/sys/roles/${roleId}/users`, userIds, {
+    idempotency: {
+      scope: `sys-roles:users:update:${roleId}`,
+      payload: userIds,
+    },
+  })
 }
 
 // 获取某角色下已分配资源（返回资源ID数组，需后端实现）
@@ -54,5 +74,10 @@ export function getRoleResources(roleId: number) {
 // 保存角色与资源的关系（需后端实现）
 export function updateRoleResources(roleId: number, resourceIds: number[]) {
   // 向后端提交该角色分配的所有资源ID
-  return request.post(`/sys/roles/${roleId}/resources`, resourceIds)
+  return request.post(`/sys/roles/${roleId}/resources`, resourceIds, {
+    idempotency: {
+      scope: `sys-roles:resources:update:${roleId}`,
+      payload: resourceIds,
+    },
+  })
 }

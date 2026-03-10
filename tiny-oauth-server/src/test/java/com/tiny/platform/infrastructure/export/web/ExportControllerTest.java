@@ -6,6 +6,7 @@ import com.tiny.platform.infrastructure.export.service.ExportService;
 import com.tiny.platform.infrastructure.export.service.ExportTaskService;
 import com.tiny.platform.infrastructure.export.service.ExportTaskStatus;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.http.ResponseEntity;
@@ -13,7 +14,11 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -24,7 +29,9 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -35,8 +42,11 @@ class ExportControllerTest {
         SecurityContextHolder.clearContext();
     }
 
+    @Nested
+    class SubmitAsync {
+
     @Test
-    void submitAsyncShouldReturnAcceptedLocationAndTaskId() {
+    void shouldReturnAcceptedLocationAndTaskId() {
         ExportService exportService = Mockito.mock(ExportService.class);
         ExportTaskService exportTaskService = Mockito.mock(ExportTaskService.class);
         ExportController controller = new ExportController(exportService, exportTaskService);
@@ -54,8 +64,89 @@ class ExportControllerTest {
         assertEquals("task-1", response.getBody().get("taskId"));
     }
 
+    }
+
+    @Nested
+    class ExportSync {
+
     @Test
-    void listTasksShouldUseAdminAndUserScope() {
+    void shouldCaptureAuthenticatedUserBeforeStreaming() throws Exception {
+        ExportService exportService = Mockito.mock(ExportService.class);
+        ExportTaskService exportTaskService = Mockito.mock(ExportTaskService.class);
+        ExportController controller = new ExportController(exportService, exportTaskService);
+        ExportRequest request = new ExportRequest();
+        request.setFileName("demo_file");
+        request.setSheets(List.of(new com.tiny.platform.infrastructure.export.core.SheetConfig()));
+        SecurityContextHolder.getContext().setAuthentication(
+            new UsernamePasswordAuthenticationToken("sync-user", "N/A", List.of())
+        );
+
+        ResponseEntity<StreamingResponseBody> response = controller.exportSync(request);
+        SecurityContextHolder.clearContext();
+
+        StreamingResponseBody body = response.getBody();
+        assertNotNull(body);
+        body.writeTo(new ByteArrayOutputStream());
+
+        verify(exportService).exportSync(eq(request), org.mockito.ArgumentMatchers.any(OutputStream.class), eq("sync-user"));
+    }
+
+    @Test
+    void shouldIgnoreClientAbortIOException() throws Exception {
+        ExportService exportService = Mockito.mock(ExportService.class);
+        ExportTaskService exportTaskService = Mockito.mock(ExportTaskService.class);
+        ExportController controller = new ExportController(exportService, exportTaskService);
+        ExportRequest request = new ExportRequest();
+        request.setFileName("demo_file");
+        request.setSheets(List.of(new com.tiny.platform.infrastructure.export.core.SheetConfig()));
+        SecurityContextHolder.getContext().setAuthentication(
+            new UsernamePasswordAuthenticationToken("sync-user", "N/A", List.of())
+        );
+        Mockito.doAnswer(invocation -> {
+                OutputStream outputStream = invocation.getArgument(1, OutputStream.class);
+                outputStream.write("xlsx-content".getBytes(StandardCharsets.UTF_8));
+                return null;
+            })
+            .when(exportService)
+            .exportSync(eq(request), org.mockito.ArgumentMatchers.any(OutputStream.class), eq("sync-user"));
+
+        ResponseEntity<StreamingResponseBody> response = controller.exportSync(request);
+
+        StreamingResponseBody body = response.getBody();
+        assertNotNull(body);
+        body.writeTo(new OutputStream() {
+            @Override
+            public void write(int b) throws IOException {
+                throw new IOException("Broken pipe");
+            }
+        });
+    }
+
+    @Test
+    void shouldUseAnonymousWhenNotAuthenticated() throws Exception {
+        ExportService exportService = Mockito.mock(ExportService.class);
+        ExportTaskService exportTaskService = Mockito.mock(ExportTaskService.class);
+        ExportController controller = new ExportController(exportService, exportTaskService);
+        ExportRequest request = new ExportRequest();
+        request.setFileName("demo_file");
+        request.setSheets(List.of(new com.tiny.platform.infrastructure.export.core.SheetConfig()));
+        SecurityContextHolder.clearContext();
+
+        ResponseEntity<StreamingResponseBody> response = controller.exportSync(request);
+        StreamingResponseBody body = response.getBody();
+        assertNotNull(body);
+        body.writeTo(new ByteArrayOutputStream());
+
+        verify(exportService).exportSync(eq(request), org.mockito.ArgumentMatchers.any(OutputStream.class), eq("anonymous"));
+    }
+
+    }
+
+    @Nested
+    class ListTasks {
+
+    @Test
+    void shouldUseAdminAndUserScope() {
         ExportService exportService = Mockito.mock(ExportService.class);
         ExportTaskService exportTaskService = Mockito.mock(ExportTaskService.class);
         ExportController controller = new ExportController(exportService, exportTaskService);
@@ -77,8 +168,13 @@ class ExportControllerTest {
         assertEquals(List.of(userTask), userResponse.getBody());
     }
 
+    }
+
+    @Nested
+    class GetTask {
+
     @Test
-    void getTaskShouldReturnNotFoundWhenTaskDoesNotExist() {
+    void shouldReturnNotFoundWhenTaskDoesNotExist() {
         ExportService exportService = Mockito.mock(ExportService.class);
         ExportTaskService exportTaskService = Mockito.mock(ExportTaskService.class);
         ExportController controller = new ExportController(exportService, exportTaskService);
@@ -90,8 +186,13 @@ class ExportControllerTest {
         assertFalse(response.hasBody());
     }
 
+    }
+
+    @Nested
+    class DownloadTaskResult {
+
     @Test
-    void downloadTaskResultShouldEnforceOwnershipAndStreamSuccessFile() throws Exception {
+    void shouldEnforceOwnershipAndStreamSuccessFile() throws Exception {
         ExportService exportService = Mockito.mock(ExportService.class);
         ExportTaskService exportTaskService = Mockito.mock(ExportTaskService.class);
         ExportController controller = new ExportController(exportService, exportTaskService);
@@ -126,7 +227,7 @@ class ExportControllerTest {
     }
 
     @Test
-    void downloadTaskResultShouldReturnConflictWhenTaskIsNotSuccessful() throws Exception {
+    void shouldReturnConflictWhenTaskIsNotSuccessful() throws Exception {
         ExportService exportService = Mockito.mock(ExportService.class);
         ExportTaskService exportTaskService = Mockito.mock(ExportTaskService.class);
         ExportController controller = new ExportController(exportService, exportTaskService);
@@ -145,7 +246,7 @@ class ExportControllerTest {
     }
 
     @Test
-    void downloadTaskResultShouldReturnNotFoundWhenTaskDoesNotExist() throws Exception {
+    void shouldReturnNotFoundWhenTaskDoesNotExist() throws Exception {
         ExportService exportService = Mockito.mock(ExportService.class);
         ExportTaskService exportTaskService = Mockito.mock(ExportTaskService.class);
         ExportController controller = new ExportController(exportService, exportTaskService);
@@ -161,7 +262,7 @@ class ExportControllerTest {
     }
 
     @Test
-    void downloadTaskResultShouldReturnNotFoundWhenFileIsMissing() throws Exception {
+    void shouldReturnNotFoundWhenFileIsMissing() throws Exception {
         ExportService exportService = Mockito.mock(ExportService.class);
         ExportTaskService exportTaskService = Mockito.mock(ExportTaskService.class);
         ExportController controller = new ExportController(exportService, exportTaskService);
@@ -177,6 +278,8 @@ class ExportControllerTest {
         controller.downloadTaskResult("task-3", response);
 
         assertEquals(404, response.getStatus());
+    }
+
     }
 
     private ExportTaskEntity task(String taskId, String userId, ExportTaskStatus status) {

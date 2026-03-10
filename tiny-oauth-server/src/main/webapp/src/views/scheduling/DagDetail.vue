@@ -7,11 +7,66 @@
     >
       <template #extra>
         <a-space>
-          <a-button @click="handleTrigger" :loading="triggering" :disabled="!dagInfo.enabled">触发执行</a-button>
-          <a-button @click="handleStop" :loading="stopping" :disabled="!dagInfo.enabled">停止</a-button>
-          <a-button @click="handleRetry" :loading="retrying" :disabled="!dagInfo.enabled">重试</a-button>
-          <a-button v-if="dagInfo.enabled" @click="handlePause">暂停</a-button>
-          <a-button v-else @click="handleResume">恢复</a-button>
+          <a-tooltip title="查看并操作单次运行记录">
+            <a-button @click="handleHistory">运行历史</a-button>
+          </a-tooltip>
+          <a-tooltip :title="triggerDisabledReason">
+            <span>
+              <a-popconfirm
+                title="确认立即按当前 ACTIVE 版本创建一条新的手动运行吗？"
+                ok-text="确认触发"
+                cancel-text="取消"
+                :disabled="!canTriggerDag"
+                @confirm="handleTrigger"
+              >
+                <a-button :loading="triggering" :disabled="!canTriggerDag">触发执行</a-button>
+              </a-popconfirm>
+            </span>
+          </a-tooltip>
+          <a-tooltip :title="stopDisabledReason">
+            <span>
+              <a-popconfirm
+                title="确认停止该 DAG 当前所有 RUNNING 运行，并暂停 Quartz 调度吗？如需只处理单次运行，请前往运行历史。"
+                ok-text="确认停止"
+                cancel-text="取消"
+                :disabled="!canStopDag"
+                @confirm="handleStop"
+              >
+                <a-button :loading="stopping" :disabled="!canStopDag">停止 DAG</a-button>
+              </a-popconfirm>
+            </span>
+          </a-tooltip>
+          <a-tooltip :title="retryDisabledReason">
+            <span>
+              <a-popconfirm
+                title="确认重试该 DAG 最近一次失败运行吗？系统会创建新的 Run。如需指定某次运行，请前往运行历史。"
+                ok-text="确认重试"
+                cancel-text="取消"
+                :disabled="!canRetryDag"
+                @confirm="handleRetry"
+              >
+                <a-button :loading="retrying" :disabled="!canRetryDag">重试最近失败运行</a-button>
+              </a-popconfirm>
+            </span>
+          </a-tooltip>
+          <a-popconfirm
+            v-if="dagInfo.enabled"
+            title="确认禁用该 DAG 并暂停后续定时调度吗？"
+            ok-text="确认暂停"
+            cancel-text="取消"
+            @confirm="handlePause"
+          >
+            <a-button>暂停 DAG</a-button>
+          </a-popconfirm>
+          <a-popconfirm
+            v-else
+            title="确认重新启用该 DAG 并恢复后续定时调度吗？"
+            ok-text="确认恢复"
+            cancel-text="取消"
+            @confirm="handleResume"
+          >
+            <a-button>恢复 DAG</a-button>
+          </a-popconfirm>
           <a-button @click="handleEdit">编辑</a-button>
         </a-space>
       </template>
@@ -465,6 +520,40 @@ const edgeColumns = [
   { title: '操作', key: 'action', width: 100, fixed: 'right' },
 ]
 
+const canTriggerDag = computed(() => Boolean(dagInfo.value.enabled && dagInfo.value.currentVersionId))
+const canStopDag = computed(() => Boolean(dagInfo.value.enabled && dagInfo.value.hasRunningRun))
+const canRetryDag = computed(() => Boolean(dagInfo.value.enabled && dagInfo.value.hasRetryableRun))
+
+const triggerDisabledReason = computed(() => {
+  if (dagInfo.value.enabled === false) {
+    return 'DAG 已禁用'
+  }
+  if (!dagInfo.value.currentVersionId) {
+    return '请先创建并激活版本'
+  }
+  return undefined
+})
+
+const stopDisabledReason = computed(() => {
+  if (dagInfo.value.enabled === false) {
+    return 'DAG 已禁用'
+  }
+  if (!dagInfo.value.hasRunningRun) {
+    return '当前没有运行中的 Run'
+  }
+  return undefined
+})
+
+const retryDisabledReason = computed(() => {
+  if (dagInfo.value.enabled === false) {
+    return 'DAG 已禁用'
+  }
+  if (!dagInfo.value.hasRetryableRun) {
+    return '当前没有可重试的失败运行'
+  }
+  return undefined
+})
+
 const getVersionStatusColor = (status: string) => {
   const map: Record<string, string> = {
     DRAFT: 'default',
@@ -547,6 +636,13 @@ const handleBack = () => {
   router.back()
 }
 
+const handleHistory = () => {
+  router.push({
+    path: '/scheduling/dag/history',
+    query: { dagId: String(dagId.value) },
+  })
+}
+
 const filterTimezoneOption = (input: string, option: any) => {
   return option.children[0].children.toLowerCase().includes(input.toLowerCase())
 }
@@ -581,10 +677,14 @@ const handleCancelDag = () => {
 }
 
 const handleTrigger = async () => {
+  if (!canTriggerDag.value) {
+    message.warning(triggerDisabledReason.value || '当前 DAG 不可触发')
+    return
+  }
   triggering.value = true
   try {
     await triggerDag(dagId.value)
-    message.success('触发成功')
+    message.success('已创建新的手动运行')
     loadDag()
   } catch (error: any) {
     message.error(error.message || '触发失败')
@@ -596,7 +696,7 @@ const handleTrigger = async () => {
 const handlePause = async () => {
   try {
     await pauseDag(dagId.value)
-    message.success('暂停成功')
+    message.success('已暂停 DAG 调度')
     loadDag()
   } catch (error: any) {
     message.error(error.message || '暂停失败')
@@ -606,7 +706,7 @@ const handlePause = async () => {
 const handleResume = async () => {
   try {
     await resumeDag(dagId.value)
-    message.success('恢复成功')
+    message.success('已恢复 DAG 调度')
     loadDag()
   } catch (error: any) {
     message.error(error.message || '恢复失败')
@@ -614,10 +714,14 @@ const handleResume = async () => {
 }
 
 const handleStop = async () => {
+  if (!canStopDag.value) {
+    message.warning(stopDisabledReason.value || '当前 DAG 不可停止')
+    return
+  }
   stopping.value = true
   try {
     await stopDag(dagId.value)
-    message.success('已停止')
+    message.success('已停止当前 DAG 的运行中任务')
     loadDag()
   } catch (error: any) {
     message.error(error.message || '停止失败')
@@ -627,10 +731,14 @@ const handleStop = async () => {
 }
 
 const handleRetry = async () => {
+  if (!canRetryDag.value) {
+    message.warning(retryDisabledReason.value || '当前 DAG 不可重试')
+    return
+  }
   retrying.value = true
   try {
     await retryDag(dagId.value)
-    message.success('已提交重试')
+    message.success('已提交最近失败运行的重试')
     loadDag()
   } catch (error: any) {
     message.error(error.message || '重试失败')
@@ -884,4 +992,3 @@ onMounted(() => {
   margin-bottom: 16px;
 }
 </style>
-

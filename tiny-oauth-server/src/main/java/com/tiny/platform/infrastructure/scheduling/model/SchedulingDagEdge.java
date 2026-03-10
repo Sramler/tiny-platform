@@ -24,7 +24,7 @@ public class SchedulingDagEdge implements Serializable {
     @Column(name = "to_node_code", nullable = false, length = 128)
     private String toNodeCode;
 
-    @Column(columnDefinition = "JSON")
+    @Column(name = "`condition`", columnDefinition = "JSON")
     private String condition;
 
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -84,5 +84,4 @@ public class SchedulingDagEdge implements Serializable {
         this.createdAt = createdAt;
     }
 }
-
 

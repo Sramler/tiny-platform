@@ -200,6 +200,8 @@ camunda:
 scheduling:
   worker:
     lock-timeout-sec: 300 # 抢占锁超时（秒），超时视为僵尸任务并回收为 PENDING
+    dispatch:
+      pool-size: 4 # 仅负责异步派发 executeTask，避免与真实任务执行线程池互相等待
     pool:
       core-size: 4
       max-size: 16
@@ -232,6 +234,8 @@ http:
       - /export
 
 export:
+  sync:
+    max-rows: 100000
   writer:
     type: fesod
   concurrent:
@@ -253,6 +257,20 @@ management:
   endpoint:
     health:
       show-details: when_authorized
+
+tiny:
+  idempotent:
+    ops:
+      # 平台级幂等治理指标默认仅对该租户下的平台管理员开放
+      platform-tenant-code: default
+      # database: 写入分钟聚合表，适用于多实例；memory: 仅单实例内存窗口
+      metrics-store: database
+      # 治理页默认展示最近 60 分钟内的指标窗口，而不是进程启动以来的累计值
+      metrics-window-minutes: 60
+      # DB 指标聚合默认保留 7 天
+      metrics-retention-days: 7
+      # DB 指标聚合历史清理默认每 10 分钟运行一次
+      metrics-cleanup-fixed-delay-ms: 600000
 
 # 前端页面配置
 # 默认配置为生产环境（forward 到打包后的静态文件）

@@ -15,6 +15,8 @@ import java.util.Map;
     @Index(name = "idx_dict_code", columnList = "dict_code"),
     @Index(name = "idx_category_id", columnList = "category_id"),
     @Index(name = "idx_enabled", columnList = "enabled")
+}, uniqueConstraints = {
+    @UniqueConstraint(name = "uk_dict_type_tenant_code", columnNames = {"tenant_id", "dict_code"})
 })
 public class DictType implements Serializable {
 
@@ -22,7 +24,7 @@ public class DictType implements Serializable {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "dict_code", nullable = false, unique = true, length = 64)
+    @Column(name = "dict_code", nullable = false, length = 64)
     private String dictCode;
 
     @Column(name = "dict_name", nullable = false, length = 128)
@@ -192,4 +194,3 @@ public class DictType implements Serializable {
         this.updatedBy = updatedBy;
     }
 }
-

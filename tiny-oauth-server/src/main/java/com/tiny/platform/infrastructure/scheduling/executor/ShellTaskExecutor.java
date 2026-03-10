@@ -1,5 +1,6 @@
 package com.tiny.platform.infrastructure.scheduling.executor;
 
+import com.tiny.platform.infrastructure.scheduling.service.SchedulingExecutionContext;
 import com.tiny.platform.infrastructure.scheduling.service.TaskExecutorService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,8 +19,11 @@ public class ShellTaskExecutor implements TaskExecutorService.TaskExecutor {
     private static final Logger logger = LoggerFactory.getLogger(ShellTaskExecutor.class);
 
     @Override
-    public Object execute(Map<String, Object> params) {
-        logger.info("[ShellTaskExecutor] Params={}", params);
+    public Object execute(SchedulingExecutionContext executionContext, Map<String, Object> params) {
+        logger.info("[ShellTaskExecutor] tenantId={}, runId={}, params={}",
+                executionContext != null ? executionContext.getTenantId() : null,
+                executionContext != null ? executionContext.getDagRunId() : null,
+                params);
         return Map.of(
                 "status", "OK",
                 "executor", "shellExecutor",

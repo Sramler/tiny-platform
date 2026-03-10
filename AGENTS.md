@@ -8,6 +8,9 @@
 
 - **规则唯一真相**：`.agent/src/**`
 - **Cursor 生效入口（生成物）**：`.cursor/rules/**`
+- **测试实施手册**：`docs/TINY_PLATFORM_TESTING_PLAYBOOK.md`
+- **AI 测试任务模板**：`docs/TINY_PLATFORM_AI_TEST_TASK_TEMPLATE.md`
+- **门禁豁免政策**：`docs/TINY_PLATFORM_CI_WAIVER_POLICY.md`
 - **构建**：`.agent/build/build.sh --target cursor`
 - **校验**：`.agent/build/validate.sh --target cursor --cursor-format mdc`
 

@@ -48,12 +48,60 @@
               {{ record.enabled ? '启用' : '禁用' }}
             </a-tag>
           </template>
+          <template v-if="column.key === 'runState'">
+            <a-space size="small">
+              <a-tag v-if="record.hasRunningRun" color="processing">运行中</a-tag>
+              <a-tag v-if="record.hasRetryableRun" color="orange">可重试</a-tag>
+              <span v-if="!record.hasRunningRun && !record.hasRetryableRun" style="color: #999;">-</span>
+            </a-space>
+          </template>
+          <template v-if="column.key === 'currentVersionId'">
+            {{ record.currentVersionId || '-' }}
+          </template>
           <template v-if="column.key === 'action'">
             <a-space>
               <a-button type="link" size="small" @click="handleEdit(record)">编辑</a-button>
               <a-button type="link" size="small" @click="handleDetail(record)">详情</a-button>
               <a-button type="link" size="small" @click="handleHistory(record)">历史</a-button>
-              <a-button type="link" size="small" @click="handleTrigger(record)" :disabled="!record.enabled">触发</a-button>
+              <a-tooltip :title="getTriggerDisabledReason(record)">
+                <span>
+                  <a-popconfirm
+                    title="确认立即按当前 ACTIVE 版本创建一条新的手动运行吗？"
+                    ok-text="确认触发"
+                    cancel-text="取消"
+                    :disabled="!canTriggerDag(record)"
+                    @confirm="handleTrigger(record)"
+                  >
+                    <a-button type="link" size="small" :disabled="!canTriggerDag(record)">触发</a-button>
+                  </a-popconfirm>
+                </span>
+              </a-tooltip>
+              <a-tooltip :title="getStopDisabledReason(record)">
+                <span>
+                  <a-popconfirm
+                    title="确认停止该 DAG 当前所有 RUNNING 运行，并暂停 Quartz 调度吗？如需只处理单次运行，请前往历史页。"
+                    ok-text="确认停止"
+                    cancel-text="取消"
+                    :disabled="!canStopDag(record)"
+                    @confirm="handleStop(record)"
+                  >
+                    <a-button type="link" size="small" :disabled="!canStopDag(record)">停止 DAG</a-button>
+                  </a-popconfirm>
+                </span>
+              </a-tooltip>
+              <a-tooltip :title="getRetryDisabledReason(record)">
+                <span>
+                  <a-popconfirm
+                    title="确认重试该 DAG 最近一次失败运行吗？系统会创建新的 Run。如需指定某次运行，请前往历史页。"
+                    ok-text="确认重试"
+                    cancel-text="取消"
+                    :disabled="!canRetryDag(record)"
+                    @confirm="handleRetry(record)"
+                  >
+                    <a-button type="link" size="small" :disabled="!canRetryDag(record)">重试最近失败运行</a-button>
+                  </a-popconfirm>
+                </span>
+              </a-tooltip>
               <a-popconfirm title="确定要删除吗？" @confirm="handleDelete(record.id)">
                 <a-button type="link" danger size="small">删除</a-button>
               </a-popconfirm>
@@ -136,7 +184,7 @@ import CronDesigner from '@/components/scheduling/CronDesigner.vue'
 import { message } from 'ant-design-vue'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import { useRouter } from 'vue-router'
-import { dagList, createDag, updateDag, deleteDag, triggerDag } from '@/api/scheduling'
+import { dagList, createDag, updateDag, deleteDag, triggerDag, stopDag, retryDag } from '@/api/scheduling'
 import { throttle } from '@/utils/debounce'
 
 const router = useRouter()
@@ -154,7 +202,6 @@ const query = reactive({
 
 const formData = reactive({
   id: undefined as number | undefined,
-  tenantId: undefined as number | undefined,
   code: '',
   name: '',
   description: '',
@@ -162,7 +209,6 @@ const formData = reactive({
   cronTimezone: undefined as string | undefined,
   cronEnabled: true,
   enabled: true,
-  createdBy: '',
 })
 
 const pagination = reactive({
@@ -190,6 +236,8 @@ const columns = [
   { title: '名称', dataIndex: 'name', key: 'name' },
   { title: '描述', dataIndex: 'description', key: 'description' },
   { title: '状态', key: 'enabled', width: 100 },
+  { title: '运行态', key: 'runState', width: 150 },
+  { title: '当前版本ID', key: 'currentVersionId', width: 120 },
   { title: '创建时间', dataIndex: 'createdAt', key: 'createdAt', width: 180 },
   { title: '操作', key: 'action', width: 350, fixed: 'right' },
 ]
@@ -249,7 +297,6 @@ const handleCreate = () => {
   formTitle.value = '新建 DAG'
   Object.assign(formData, {
     id: undefined,
-    tenantId: undefined,
     code: '',
     name: '',
     description: '',
@@ -257,7 +304,6 @@ const handleCreate = () => {
     cronTimezone: undefined,
     cronEnabled: true,
     enabled: true,
-    createdBy: '',
   })
   formVisible.value = true
 }
@@ -266,7 +312,6 @@ const handleEdit = (record: any) => {
   formTitle.value = '编辑 DAG'
   Object.assign(formData, {
     id: record.id,
-    tenantId: record.tenantId,
     code: record.code || '',
     name: record.name,
     description: record.description || '',
@@ -274,7 +319,6 @@ const handleEdit = (record: any) => {
     cronTimezone: record.cronTimezone || undefined,
     cronEnabled: record.cronEnabled !== undefined ? record.cronEnabled : true,
     enabled: record.enabled !== undefined ? record.enabled : true,
-    createdBy: record.createdBy || '',
   })
   formVisible.value = true
 }
@@ -293,15 +337,99 @@ const handleHistory = (record: any) => {
   })
 }
 
+const canTriggerDag = (record: { enabled?: boolean; currentVersionId?: number | null }) => {
+  return Boolean(record.enabled && record.currentVersionId)
+}
+
+const getTriggerDisabledReason = (record: { enabled?: boolean; currentVersionId?: number | null }) => {
+  if (record.enabled === false) {
+    return 'DAG 已禁用'
+  }
+  if (!record.currentVersionId) {
+    return '请先创建并激活版本'
+  }
+  return undefined
+}
+
+const canStopDag = (record: { enabled?: boolean; hasRunningRun?: boolean | null }) => {
+  return Boolean(record.enabled && record.hasRunningRun)
+}
+
+const getStopDisabledReason = (record: { enabled?: boolean; hasRunningRun?: boolean | null }) => {
+  if (record.enabled === false) {
+    return 'DAG 已禁用'
+  }
+  if (!record.hasRunningRun) {
+    return '当前没有运行中的 Run'
+  }
+  return undefined
+}
+
+const canRetryDag = (record: { enabled?: boolean; hasRetryableRun?: boolean | null }) => {
+  return Boolean(record.enabled && record.hasRetryableRun)
+}
+
+const getRetryDisabledReason = (record: { enabled?: boolean; hasRetryableRun?: boolean | null }) => {
+  if (record.enabled === false) {
+    return 'DAG 已禁用'
+  }
+  if (!record.hasRetryableRun) {
+    return '当前没有可重试的失败运行'
+  }
+  return undefined
+}
+
 const handleTrigger = async (record: any) => {
+  if (!canTriggerDag(record)) {
+    message.warning(getTriggerDisabledReason(record) || '当前 DAG 不可触发')
+    return
+  }
   try {
     await triggerDag(record.id)
-    message.success('触发成功')
+    message.success('已创建新的手动运行')
     loadData()
   } catch (error: any) {
     message.error(error.message || '触发失败')
   }
 }
+
+const handleStop = async (record: any) => {
+  if (!canStopDag(record)) {
+    message.warning(getStopDisabledReason(record) || '当前 DAG 不可停止')
+    return
+  }
+  try {
+    await stopDag(record.id)
+    message.success('已停止当前 DAG 的运行中任务')
+    loadData()
+  } catch (error: any) {
+    message.error(error.message || '停止失败')
+  }
+}
+
+const handleRetry = async (record: any) => {
+  if (!canRetryDag(record)) {
+    message.warning(getRetryDisabledReason(record) || '当前 DAG 不可重试')
+    return
+  }
+  try {
+    await retryDag(record.id)
+    message.success('已提交最近失败运行的重试')
+    loadData()
+  } catch (error: any) {
+    message.error(error.message || '重试失败')
+  }
+}
+
+const buildDagPayload = () => ({
+  code: String(formData.code ?? '').trim(),
+  name: String(formData.name ?? '').trim(),
+  description: formData.description ?? '',
+  cronExpression: formData.cronExpression ? String(formData.cronExpression).trim() : '',
+  cronTimezone: formData.cronTimezone,
+  cronEnabled: Boolean(formData.cronEnabled),
+  enabled: Boolean(formData.enabled),
+})
 
 const handleSubmit = async () => {
   if (!formData.name) {
@@ -309,11 +437,12 @@ const handleSubmit = async () => {
     return
   }
   try {
+    const payload = buildDagPayload()
     if (formData.id) {
-      await updateDag(formData.id, formData)
+      await updateDag(formData.id, payload)
       message.success('更新成功')
     } else {
-      await createDag(formData)
+      await createDag(payload)
       message.success('创建成功')
     }
     formVisible.value = false
@@ -394,5 +523,3 @@ onMounted(() => {
   margin-left: 8px;
 }
 </style>
-
-

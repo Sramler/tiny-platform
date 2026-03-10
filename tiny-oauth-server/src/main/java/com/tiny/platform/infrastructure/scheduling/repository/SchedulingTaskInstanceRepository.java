@@ -21,6 +21,18 @@ public interface SchedulingTaskInstanceRepository extends JpaRepository<Scheduli
     List<SchedulingTaskInstance> findByDagRunId(Long dagRunId);
     
     List<SchedulingTaskInstance> findByDagRunIdAndNodeCode(Long dagRunId, String nodeCode);
+
+    Optional<SchedulingTaskInstance> findTopByDagRunIdAndNodeCodeOrderByIdDesc(Long dagRunId, String nodeCode);
+
+    Optional<SchedulingTaskInstance> findTopByDagRunIdAndNodeCodeAndStatusOrderByIdDesc(
+            Long dagRunId,
+            String nodeCode,
+            String status);
+
+    Optional<SchedulingTaskInstance> findTopByDagRunIdAndNodeCodeAndStatusInOrderByIdDesc(
+            Long dagRunId,
+            String nodeCode,
+            Collection<String> statuses);
     
     List<SchedulingTaskInstance> findByStatusAndScheduledAtLessThanEqual(String status, LocalDateTime scheduledAt);
 
@@ -37,7 +49,11 @@ public interface SchedulingTaskInstanceRepository extends JpaRepository<Scheduli
             @Param("nextRetryAtLimit") LocalDateTime nextRetryAtLimit,
             Pageable pageable);
 
+    Optional<SchedulingTaskInstance> findByIdAndTenantId(Long id, Long tenantId);
+
     Optional<SchedulingTaskInstance> findByIdAndStatus(Long id, String status);
+
+    boolean existsByTaskId(Long taskId);
 
     boolean existsByDagRunIdAndNodeCodeAndStatusIn(Long dagRunId, String nodeCode, Iterable<String> statuses);
 
@@ -68,6 +84,68 @@ public interface SchedulingTaskInstanceRepository extends JpaRepository<Scheduli
     @Modifying
     @Query("UPDATE SchedulingTaskInstance ti SET ti.status = :status, ti.lockedBy = :lockedBy, ti.lockTime = :lockTime WHERE ti.id = :id AND ti.status = 'PENDING'")
     int reserveTaskInstance(@Param("id") Long id, @Param("status") String status, @Param("lockedBy") String lockedBy, @Param("lockTime") LocalDateTime lockTime);
+
+    @Modifying
+    @Query(value = """
+            UPDATE scheduling_task_instance ti
+            LEFT JOIN scheduling_task_instance blocker
+              ON blocker.dag_run_id = :dagRunId
+             AND blocker.node_code = :nodeCode
+             AND blocker.status IN ('RESERVED', 'RUNNING')
+               SET ti.status = :status,
+                   ti.locked_by = :lockedBy,
+                   ti.lock_time = :lockTime
+             WHERE ti.id = :id
+               AND ti.status = 'PENDING'
+               AND blocker.id IS NULL
+            """, nativeQuery = true)
+    int reserveSequentialTaskInstance(
+            @Param("id") Long id,
+            @Param("status") String status,
+            @Param("lockedBy") String lockedBy,
+            @Param("lockTime") LocalDateTime lockTime,
+            @Param("dagRunId") Long dagRunId,
+            @Param("nodeCode") String nodeCode);
+
+    @Modifying
+    @Query(value = """
+            UPDATE scheduling_task_instance ti
+            LEFT JOIN scheduling_task_instance blocker
+              ON blocker.task_id = :taskId
+             AND blocker.status IN ('RESERVED', 'RUNNING')
+               SET ti.status = :status,
+                   ti.locked_by = :lockedBy,
+                   ti.lock_time = :lockTime
+             WHERE ti.id = :id
+               AND ti.status = 'PENDING'
+               AND blocker.id IS NULL
+            """, nativeQuery = true)
+    int reserveSingletonTaskInstance(
+            @Param("id") Long id,
+            @Param("status") String status,
+            @Param("lockedBy") String lockedBy,
+            @Param("lockTime") LocalDateTime lockTime,
+            @Param("taskId") Long taskId);
+
+    @Modifying
+    @Query(value = """
+            UPDATE scheduling_task_instance ti
+            LEFT JOIN scheduling_task_instance blocker
+              ON blocker.task_id = :taskId
+             AND blocker.concurrency_key = :concurrencyKey
+             AND blocker.status IN ('RESERVED', 'RUNNING')
+               SET ti.status = :status,
+                   ti.locked_by = :lockedBy,
+                   ti.lock_time = :lockTime
+             WHERE ti.id = :id
+               AND ti.status = 'PENDING'
+               AND blocker.id IS NULL
+            """, nativeQuery = true)
+    int reserveKeyedTaskInstance(
+            @Param("id") Long id,
+            @Param("status") String status,
+            @Param("lockedBy") String lockedBy,
+            @Param("lockTime") LocalDateTime lockTime,
+            @Param("taskId") Long taskId,
+            @Param("concurrencyKey") String concurrencyKey);
 }
-
-

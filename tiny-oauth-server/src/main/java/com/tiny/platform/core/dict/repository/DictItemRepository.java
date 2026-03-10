@@ -1,6 +1,7 @@
 package com.tiny.platform.core.dict.repository;
 
 import com.tiny.platform.core.dict.model.DictItem;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -18,52 +19,59 @@ import java.util.Optional;
 public interface DictItemRepository extends JpaRepository<DictItem, Long> {
 
     /**
-     * 根据字典类型ID查找所有字典项
-     */
-    List<DictItem> findByDictTypeIdOrderBySortOrderAsc(Long dictTypeId);
-
-    /**
-     * 根据字典类型ID和启用状态查找
-     */
-    List<DictItem> findByDictTypeIdAndEnabledOrderBySortOrderAsc(Long dictTypeId, Boolean enabled);
-
-    /**
-     * 根据字典类型ID和租户ID查找
-     */
-    List<DictItem> findByDictTypeIdAndTenantIdOrderBySortOrderAsc(Long dictTypeId, Long tenantId);
-
-    /**
      * 根据字典类型ID、值和租户ID查找
      */
     Optional<DictItem> findByDictTypeIdAndValueAndTenantId(Long dictTypeId, String value, Long tenantId);
 
     /**
-     * 根据字典编码查找字典项（支持多租户：先查租户，再查平台）
+     * 查询当前租户在指定字典类型下可见的字典项。
      */
     @Query("SELECT di FROM DictItem di " +
            "JOIN di.dictType dt " +
-           "WHERE dt.dictCode = :dictCode " +
-           "AND (di.tenantId = :tenantId OR di.tenantId = 0) " +
-           "AND di.enabled = true " +
-           "ORDER BY di.tenantId DESC, di.sortOrder ASC")
-    List<DictItem> findByDictCodeAndTenantId(@Param("dictCode") String dictCode, @Param("tenantId") Long tenantId);
+           "WHERE di.dictTypeId = :dictTypeId " +
+           "AND ((dt.tenantId = 0 AND (di.tenantId = 0 OR di.tenantId = :tenantId)) " +
+           "  OR (dt.tenantId = :tenantId AND di.tenantId = :tenantId)) " +
+           "ORDER BY di.tenantId ASC, di.sortOrder ASC, di.id ASC")
+    List<DictItem> findVisibleByDictTypeId(@Param("dictTypeId") Long dictTypeId, @Param("tenantId") Long tenantId);
 
     /**
-     * 分页查询字典项
+     * 分页查询当前租户可见的字典项（平台 + 当前租户）
      */
-    @Query("SELECT di FROM DictItem di WHERE " +
+    @Query("SELECT di FROM DictItem di " +
+           "JOIN di.dictType dt " +
+           "WHERE ((dt.tenantId = 0 AND (di.tenantId = 0 OR di.tenantId = :tenantId)) " +
+           "   OR (dt.tenantId = :tenantId AND di.tenantId = :tenantId)) AND " +
            "(:dictTypeId IS NULL OR di.dictTypeId = :dictTypeId) AND " +
            "(:value IS NULL OR di.value LIKE %:value%) AND " +
            "(:label IS NULL OR di.label LIKE %:label%) AND " +
-           "(:tenantId IS NULL OR di.tenantId = :tenantId) AND " +
            "(:enabled IS NULL OR di.enabled = :enabled)")
-    Page<DictItem> findByConditions(
+    Page<DictItem> findVisibleByConditions(
+            @Param("tenantId") Long tenantId,
             @Param("dictTypeId") Long dictTypeId,
             @Param("value") String value,
             @Param("label") String label,
-            @Param("tenantId") Long tenantId,
             @Param("enabled") Boolean enabled,
             Pageable pageable
+    );
+
+    /**
+     * 查询当前租户可见的字典项列表（用于 overlay 合并后的内存分页）。
+     */
+    @Query("SELECT di FROM DictItem di " +
+           "JOIN di.dictType dt " +
+           "WHERE ((dt.tenantId = 0 AND (di.tenantId = 0 OR di.tenantId = :tenantId)) " +
+           "   OR (dt.tenantId = :tenantId AND di.tenantId = :tenantId)) AND " +
+           "(:dictTypeId IS NULL OR di.dictTypeId = :dictTypeId) AND " +
+           "(:value IS NULL OR di.value LIKE %:value%) AND " +
+           "(:label IS NULL OR di.label LIKE %:label%) AND " +
+           "(:enabled IS NULL OR di.enabled = :enabled)")
+    List<DictItem> findVisibleByConditions(
+            @Param("tenantId") Long tenantId,
+            @Param("dictTypeId") Long dictTypeId,
+            @Param("value") String value,
+            @Param("label") String label,
+            @Param("enabled") Boolean enabled,
+            Sort sort
     );
 
     /**
@@ -81,4 +89,3 @@ public interface DictItemRepository extends JpaRepository<DictItem, Long> {
      */
     void deleteByDictTypeId(Long dictTypeId);
 }
-

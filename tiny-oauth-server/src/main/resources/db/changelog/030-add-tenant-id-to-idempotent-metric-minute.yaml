@@ -1,0 +1,39 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-tenant-id-to-idempotent-metric-minute
+      author: tiny
+      comment: 为 sys_idempotent_metric_minute 增加 tenant_id 维度
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: MARK_RAN
+        - tableExists:
+            tableName: sys_idempotent_metric_minute
+        - not:
+            columnExists:
+              tableName: sys_idempotent_metric_minute
+              columnName: tenant_id
+      changes:
+        - addColumn:
+            tableName: sys_idempotent_metric_minute
+            columns:
+              - column:
+                  name: tenant_id
+                  type: BIGINT
+                  defaultValueNumeric: 0
+                  constraints:
+                    nullable: false
+        - dropPrimaryKey:
+            tableName: sys_idempotent_metric_minute
+            constraintName: pk_sys_idempotent_metric_minute
+        - addPrimaryKey:
+            tableName: sys_idempotent_metric_minute
+            columnNames: bucket_minute, tenant_id, scope
+            constraintName: pk_sys_idempotent_metric_minute
+        - createIndex:
+            tableName: sys_idempotent_metric_minute
+            indexName: idx_idempotent_metric_tenant_bucket
+            columns:
+              - column:
+                  name: tenant_id
+              - column:
+                  name: bucket_minute

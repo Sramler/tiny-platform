@@ -1,0 +1,119 @@
+databaseChangeLog:
+  - changeSet:
+      id: create-idempotent-rule-table
+      author: tiny
+      comment: 创建 sys_idempotent_rule 幂等规则表（平台级治理配置）
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: MARK_RAN
+        - not:
+            tableExists:
+              tableName: sys_idempotent_rule
+      changes:
+        - createTable:
+            tableName: sys_idempotent_rule
+            remarks: 幂等规则表，用于按 scope/scene 启用或禁用幂等保护
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_sys_idempotent_rule
+              - column:
+                  name: scope
+                  type: VARCHAR(256)
+                  remarks: 作用域，如 http:POST:/api/orders 或通配符
+                  constraints:
+                    nullable: false
+              - column:
+                  name: scene
+                  type: VARCHAR(64)
+                  remarks: 场景标识，可选
+              - column:
+                  name: biz_code
+                  type: VARCHAR(64)
+                  remarks: 业务编码，可选
+              - column:
+                  name: enabled
+                  type: TINYINT
+                  defaultValueNumeric: 1
+                  remarks: 是否启用 1=启用 0=禁用
+                  constraints:
+                    nullable: false
+              - column:
+                  name: ttl_seconds
+                  type: INT
+                  remarks: TTL 秒数，NULL 表示使用注解默认值
+              - column:
+                  name: created_time
+                  type: DATETIME
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_time
+                  type: DATETIME
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+        - createIndex:
+            tableName: sys_idempotent_rule
+            indexName: idx_idempotent_rule_scope
+            columns:
+              - column:
+                  name: scope
+        - createIndex:
+            tableName: sys_idempotent_rule
+            indexName: idx_idempotent_rule_enabled
+            columns:
+              - column:
+                  name: enabled
+
+  - changeSet:
+      id: create-idempotent-blacklist-table
+      author: tiny
+      comment: 创建 sys_idempotent_blacklist 幂等黑名单表
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: MARK_RAN
+        - not:
+            tableExists:
+              tableName: sys_idempotent_blacklist
+      changes:
+        - createTable:
+            tableName: sys_idempotent_blacklist
+            remarks: 幂等黑名单，匹配的 key 将被直接拒绝
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_sys_idempotent_blacklist
+              - column:
+                  name: key_pattern
+                  type: VARCHAR(512)
+                  remarks: Key 或前缀模式，支持 LIKE 匹配
+                  constraints:
+                    nullable: false
+              - column:
+                  name: reason
+                  type: VARCHAR(256)
+                  remarks: 加入黑名单原因
+              - column:
+                  name: created_time
+                  type: DATETIME
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+        - createIndex:
+            tableName: sys_idempotent_blacklist
+            indexName: idx_idempotent_blacklist_pattern
+            columns:
+              - column:
+                  name: key_pattern

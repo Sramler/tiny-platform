@@ -1,0 +1,66 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-scheduling-execution-snapshot-and-history-tenant
+      author: tiny
+      validCheckSum:
+        - ANY
+      comment: scheduling_task_instance 增加执行快照，scheduling_task_history 补 tenant_id 与租户索引
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'scheduling_task_instance'
+                      AND COLUMN_NAME = 'execution_snapshot'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `scheduling_task_instance` ADD COLUMN `execution_snapshot` JSON NULL COMMENT ''入队时固化的 task/taskType 执行配置快照'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'scheduling_task_history'
+                      AND COLUMN_NAME = 'tenant_id'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `scheduling_task_history` ADD COLUMN `tenant_id` BIGINT NULL COMMENT ''租户ID'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              UPDATE scheduling_task_history h
+              LEFT JOIN scheduling_task_instance i ON i.id = h.task_instance_id
+              LEFT JOIN scheduling_dag_run r ON r.id = h.dag_run_id
+              SET h.tenant_id = COALESCE(h.tenant_id, i.tenant_id, r.tenant_id)
+              WHERE h.tenant_id IS NULL;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'scheduling_task_history'
+                      AND INDEX_NAME = 'idx_scheduling_task_history_tenant_dagrun_created'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `scheduling_task_history` ADD KEY `idx_scheduling_task_history_tenant_dagrun_created` (`tenant_id`, `dag_run_id`, `created_at`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;

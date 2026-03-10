@@ -69,6 +69,7 @@ public class ExportService {
     private final int maxSystemConcurrent;
     private final int maxUserConcurrent;
     private final int maxPageSize;
+    private final long maxSyncRows;
     private final MeterRegistry meterRegistry;
     private final Counter exportSyncCounter;
     private final Counter exportAsyncSubmitCounter;
@@ -91,6 +92,7 @@ public class ExportService {
                          @Value("${export.concurrent.max-system:10}") int maxSystemConcurrent,
                          @Value("${export.concurrent.max-user:3}") int maxUserConcurrent,
                          @Value("${export.max-page-size:10000}") int maxPageSize,
+                         @Value("${export.sync.max-rows:100000}") long maxSyncRows,
                          MeterRegistry meterRegistry) {
         this.writerAdapter = writerAdapter;
         this.providers = providers;
@@ -103,6 +105,7 @@ public class ExportService {
         this.maxSystemConcurrent = Math.max(1, maxSystemConcurrent);
         this.maxUserConcurrent = Math.max(1, maxUserConcurrent);
         this.maxPageSize = Math.max(1000, maxPageSize);
+        this.maxSyncRows = Math.max(0, maxSyncRows);
         this.meterRegistry = meterRegistry;
         this.exportSyncCounter = Counter.builder("tiny.export.sync.total")
             .description("Number of synchronous export requests")
@@ -158,6 +161,20 @@ public class ExportService {
         Map<String, Object> extras = new HashMap<>();
         extras.put("sheetCount", request.getSheets() == null ? 0 : request.getSheets().size());
         logTrace("exportSync", null, currentUserId, durationMs, extras);
+    }
+
+    public void assertSyncExportWithinRowLimit(ExportRequest request) {
+        if (maxSyncRows <= 0) {
+            return;
+        }
+        long estimatedRows = estimateTotalRows(request);
+        if (estimatedRows < 0 || estimatedRows <= maxSyncRows) {
+            return;
+        }
+        throw new BusinessException(
+            ErrorCode.UNPROCESSABLE_ENTITY,
+            "同步导出预计数据量为" + estimatedRows + "行，超过限制" + maxSyncRows + "行，请改用异步导出"
+        );
     }
 
     /**

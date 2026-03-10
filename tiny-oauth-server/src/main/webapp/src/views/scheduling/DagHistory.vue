@@ -120,29 +120,49 @@
           <template v-if="column.key === 'triggerType'">
             <a-tag>{{ record.triggerType }}</a-tag>
           </template>
+          <template v-if="column.key === 'operability'">
+            <a-space size="small">
+              <a-tag v-if="canStopRun(record)" color="processing">可停止</a-tag>
+              <a-tag v-if="canRetryRun(record)" color="orange">可重试</a-tag>
+              <a-tag v-if="supportsNodeOperations(record)" color="blue">可看节点控制</a-tag>
+              <span v-if="!canStopRun(record) && !canRetryRun(record) && !supportsNodeOperations(record)" style="color: #999;">
+                -
+              </span>
+            </a-space>
+          </template>
           <template v-if="column.key === 'action'">
             <a-space>
               <a-button type="link" size="small" @click="handleView(record)">查看详情</a-button>
               <a-button type="link" size="small" @click="handleViewNodes(record)">节点记录</a-button>
-              <a-tooltip title="停止该 DAG 下所有运行中的任务（整 DAG 级别，非仅本行 Run）">
-                <a-button
-                  v-if="record.status === 'RUNNING'"
-                  type="link"
-                  size="small"
-                  @click="handleStopRun"
-                >
-                  停止 DAG
-                </a-button>
+              <a-tooltip :title="getStopRunDisabledReason(record)">
+                <span>
+                  <a-popconfirm
+                    title="确认停止当前这条运行吗？仅会取消本次 Run 及其未终态节点。"
+                    ok-text="确认停止"
+                    cancel-text="取消"
+                    :disabled="!canStopRun(record)"
+                    @confirm="handleStopRun(record)"
+                  >
+                    <a-button type="link" size="small" :disabled="!canStopRun(record)">
+                      停止本次
+                    </a-button>
+                  </a-popconfirm>
+                </span>
               </a-tooltip>
-              <a-tooltip title="对当前 DAG 整体重试（会创建新 Run，非仅本行）">
-                <a-button
-                  v-if="record.status === 'FAILED' || record.status === 'PARTIAL_FAILED'"
-                  type="link"
-                  size="small"
-                  @click="handleRetryRun"
-                >
-                  重试 DAG
-                </a-button>
+              <a-tooltip :title="getRetryRunDisabledReason(record)">
+                <span>
+                  <a-popconfirm
+                    title="确认重试当前这条失败运行吗？系统会创建新的 Run。"
+                    ok-text="确认重试"
+                    cancel-text="取消"
+                    :disabled="!canRetryRun(record)"
+                    @confirm="handleRetryRun(record)"
+                  >
+                    <a-button type="link" size="small" :disabled="!canRetryRun(record)">
+                      重试本次
+                    </a-button>
+                  </a-popconfirm>
+                </span>
               </a-tooltip>
             </a-space>
           </template>
@@ -197,10 +217,76 @@
               {{ record.status }}
             </a-tag>
           </template>
+          <template v-if="column.key === 'operability'">
+            <a-space size="small">
+              <a-tag v-if="canTriggerNode(record)" color="cyan">可触发</a-tag>
+              <a-tag v-if="canPauseNode(record)" color="warning">可暂停</a-tag>
+              <a-tag v-if="canResumeNode(record)" color="purple">可恢复</a-tag>
+              <a-tag v-if="canRetryNode(record)" color="orange">可重试</a-tag>
+              <span
+                v-if="!canTriggerNode(record) && !canPauseNode(record) && !canResumeNode(record) && !canRetryNode(record)"
+                style="color: #999;"
+              >
+                -
+              </span>
+            </a-space>
+          </template>
           <template v-if="column.key === 'action'">
             <a-space>
               <a-button type="link" size="small" @click="handleViewNodeDetail(record)">查看详情</a-button>
               <a-button type="link" size="small" @click="handleViewLog(record)">查看日志</a-button>
+              <a-tooltip :title="getTriggerNodeDisabledReason(record)">
+                <span>
+                  <a-popconfirm
+                    title="确认在当前这次运行里重新触发本节点吗？系统会直接重置当前节点实例并重新调度。"
+                    ok-text="确认触发"
+                    cancel-text="取消"
+                    :disabled="!canTriggerNode(record)"
+                    @confirm="handleTriggerNode(record)"
+                  >
+                    <a-button type="link" size="small" :disabled="!canTriggerNode(record)">触发本节点</a-button>
+                  </a-popconfirm>
+                </span>
+              </a-tooltip>
+              <a-tooltip :title="getPauseNodeDisabledReason(record)">
+                <span>
+                  <a-popconfirm
+                    title="确认暂停当前这次运行里的本节点吗？仅影响当前 Run。"
+                    ok-text="确认暂停"
+                    cancel-text="取消"
+                    :disabled="!canPauseNode(record)"
+                    @confirm="handlePauseNode(record)"
+                  >
+                    <a-button type="link" size="small" :disabled="!canPauseNode(record)">暂停本节点</a-button>
+                  </a-popconfirm>
+                </span>
+              </a-tooltip>
+              <a-tooltip :title="getResumeNodeDisabledReason(record)">
+                <span>
+                  <a-popconfirm
+                    title="确认恢复当前这次运行里的本节点吗？仅影响当前 Run。"
+                    ok-text="确认恢复"
+                    cancel-text="取消"
+                    :disabled="!canResumeNode(record)"
+                    @confirm="handleResumeNode(record)"
+                  >
+                    <a-button type="link" size="small" :disabled="!canResumeNode(record)">恢复本节点</a-button>
+                  </a-popconfirm>
+                </span>
+              </a-tooltip>
+              <a-tooltip :title="getRetryNodeDisabledReason(record)">
+                <span>
+                  <a-popconfirm
+                    title="确认重试当前这次运行里的失败节点吗？系统会在当前 Run 内创建新的节点实例。"
+                    ok-text="确认重试"
+                    cancel-text="取消"
+                    :disabled="!canRetryNode(record)"
+                    @confirm="handleRetryNode(record)"
+                  >
+                    <a-button type="link" size="small" :disabled="!canRetryNode(record)">重试本节点</a-button>
+                  </a-popconfirm>
+                </span>
+              </a-tooltip>
             </a-space>
           </template>
         </template>
@@ -263,11 +349,16 @@ import {
   getDagRuns,
   getDagRun,
   getDagRunNodes,
+  getDagNodes,
   getDagRunNode,
   getTaskInstanceLog,
   getDagStats,
-  stopDag,
-  retryDag,
+  stopDagRun,
+  retryDagRun,
+  triggerDagRunNode,
+  retryDagRunNode,
+  pauseDagRunNode,
+  resumeDagRunNode,
 } from '@/api/scheduling'
 
 const router = useRouter()
@@ -314,6 +405,8 @@ const nodesVisible = ref(false)
 const nodeRecords = ref<any[]>([])
 const nodesLoading = ref(false)
 const currentRunIdForNodes = ref<number | null>(null)
+const currentRunStatusForNodes = ref<string | null>(null)
+const dagNodeIdMap = ref<Record<string, number>>({})
 const nodeDetailVisible = ref(false)
 const currentNodeRecord = ref<any>(null)
 const logVisible = ref(false)
@@ -349,11 +442,12 @@ const columns = [
   { title: '运行编号', dataIndex: 'runNo', key: 'runNo', width: 200 },
   { title: '版本ID', dataIndex: 'dagVersionId', key: 'dagVersionId', width: 100 },
   { title: '状态', key: 'status', width: 120 },
+  { title: '可操作', key: 'operability', width: 200 },
   { title: '触发类型', key: 'triggerType', width: 120 },
   { title: '触发人', dataIndex: 'triggeredBy', key: 'triggeredBy', width: 120 },
   { title: '开始时间', dataIndex: 'startTime', key: 'startTime', width: 180 },
   { title: '结束时间', dataIndex: 'endTime', key: 'endTime', width: 180 },
-  { title: '操作', key: 'action', width: 200, fixed: 'right' },
+  { title: '操作', key: 'action', width: 260, fixed: 'right' },
 ]
 
 const nodeColumns = [
@@ -362,10 +456,11 @@ const nodeColumns = [
   { title: '任务ID', dataIndex: 'taskId', key: 'taskId', width: 100 },
   { title: '尝试次数', dataIndex: 'attemptNo', key: 'attemptNo', width: 100 },
   { title: '状态', key: 'status', width: 120 },
+  { title: '可操作', key: 'operability', width: 220 },
   { title: '调度时间', dataIndex: 'scheduledAt', key: 'scheduledAt', width: 180 },
   { title: '下一次重试', dataIndex: 'nextRetryAt', key: 'nextRetryAt', width: 180 },
   { title: '错误原因', dataIndex: 'errorMessage', key: 'errorMessage', width: 200, ellipsis: true },
-  { title: '操作', key: 'action', width: 200, fixed: 'right' },
+  { title: '操作', key: 'action', width: 470, fixed: 'right' },
 ]
 
 /** 将毫秒转为可读（如 1.2s、500ms） */
@@ -393,6 +488,26 @@ const getStatusColor = (status: string) => {
   return map[status] || 'default'
 }
 
+const canStopRun = (record: { status?: string }) => record.status === 'RUNNING'
+
+const getStopRunDisabledReason = (record: { status?: string }) => {
+  if (canStopRun(record)) return undefined
+  return '仅 RUNNING 的运行实例支持停止'
+}
+
+const canRetryRun = (record: { status?: string }) => {
+  return record.status === 'FAILED' || record.status === 'PARTIAL_FAILED'
+}
+
+const getRetryRunDisabledReason = (record: { status?: string }) => {
+  if (canRetryRun(record)) return undefined
+  return '仅失败或部分失败的运行实例支持重试'
+}
+
+const supportsNodeOperations = (record: { status?: string }) => {
+  return record.status === 'RUNNING' || canRetryRun(record)
+}
+
 const formatJson = (str: string | null | undefined) => {
   if (!str) return '-'
   try {
@@ -418,6 +533,104 @@ const filterDagOption = (input: string, option: any) => {
   return text.includes(input.toLowerCase())
 }
 
+const dagNodeCacheKey = (dagVersionId: number, nodeCode: string) => `${dagVersionId}:${nodeCode}`
+
+const resolveDagNodeId = (record: { dagVersionId?: number; nodeCode?: string }) => {
+  if (!record.dagVersionId || !record.nodeCode) return undefined
+  return dagNodeIdMap.value[dagNodeCacheKey(record.dagVersionId, record.nodeCode)]
+}
+
+const canTriggerNode = (record: { status?: string; dagVersionId?: number; nodeCode?: string }) => {
+  return currentRunStatusForNodes.value === 'RUNNING'
+    && ['PENDING', 'FAILED'].includes(record.status || '')
+    && resolveDagNodeId(record) != null
+}
+
+const canPauseNode = (record: { status?: string; dagVersionId?: number; nodeCode?: string }) => {
+  return ['PENDING', 'RESERVED'].includes(record.status || '') && resolveDagNodeId(record) != null
+}
+
+const canResumeNode = (record: { status?: string; dagVersionId?: number; nodeCode?: string }) => {
+  return record.status === 'PAUSED' && resolveDagNodeId(record) != null
+}
+
+const canRetryNode = (record: { status?: string; dagVersionId?: number; nodeCode?: string }) => {
+  return record.status === 'FAILED' && resolveDagNodeId(record) != null
+}
+
+const getTriggerNodeDisabledReason = (record: { status?: string; dagVersionId?: number; nodeCode?: string }) => {
+  if (resolveDagNodeId(record) == null) {
+    return '未找到对应 DAG 节点定义，请刷新后重试'
+  }
+  if (currentRunStatusForNodes.value !== 'RUNNING') {
+    return '仅 RUNNING 的运行实例支持手动触发节点'
+  }
+  if (canTriggerNode(record)) {
+    return undefined
+  }
+  return '仅 PENDING 或 FAILED 的节点实例支持手动触发'
+}
+
+const getPauseNodeDisabledReason = (record: { status?: string; dagVersionId?: number; nodeCode?: string }) => {
+  if (resolveDagNodeId(record) == null) {
+    return '未找到对应 DAG 节点定义，请刷新后重试'
+  }
+  if (canPauseNode(record)) {
+    return undefined
+  }
+  return '仅 PENDING 或 RESERVED 的节点实例支持暂停'
+}
+
+const getResumeNodeDisabledReason = (record: { status?: string; dagVersionId?: number; nodeCode?: string }) => {
+  if (resolveDagNodeId(record) == null) {
+    return '未找到对应 DAG 节点定义，请刷新后重试'
+  }
+  if (canResumeNode(record)) {
+    return undefined
+  }
+  return '仅 PAUSED 的节点实例支持恢复'
+}
+
+const getRetryNodeDisabledReason = (record: { status?: string; dagVersionId?: number; nodeCode?: string }) => {
+  if (resolveDagNodeId(record) == null) {
+    return '未找到对应 DAG 节点定义，请刷新后重试'
+  }
+  if (canRetryNode(record)) {
+    return undefined
+  }
+  return '仅 FAILED 的节点实例支持重试'
+}
+
+const ensureDagNodeMappings = async (records: Array<{ dagVersionId?: number; nodeCode?: string }>) => {
+  if (!effectiveDagId.value) return
+  const missingVersionIds = Array.from(new Set(
+    records
+      .map(record => record.dagVersionId)
+      .filter((versionId): versionId is number => Boolean(versionId))
+      .filter(versionId =>
+        records.some(record =>
+          record.dagVersionId === versionId
+          && record.nodeCode
+          && dagNodeIdMap.value[dagNodeCacheKey(versionId, record.nodeCode)] == null,
+        ),
+      ),
+  ))
+  if (!missingVersionIds.length) return
+
+  const nodeGroups = await Promise.all(
+    missingVersionIds.map(versionId => getDagNodes(effectiveDagId.value!, versionId)),
+  )
+  const nextMap = { ...dagNodeIdMap.value }
+  missingVersionIds.forEach((versionId, index) => {
+    for (const node of nodeGroups[index] || []) {
+      if (node?.nodeCode != null && node?.id != null) {
+        nextMap[dagNodeCacheKey(versionId, node.nodeCode)] = node.id
+      }
+    }
+  })
+  dagNodeIdMap.value = nextMap
+}
+
 const loadData = async () => {
   if (!effectiveDagId.value) return
   loading.value = true
@@ -437,6 +650,9 @@ const loadData = async () => {
       getDagStats(effectiveDagId.value).catch(() => null),
     ])
     dataSource.value = res.records
+    if (currentRunIdForNodes.value != null) {
+      currentRunStatusForNodes.value = res.records.find((record: any) => record.id === currentRunIdForNodes.value)?.status ?? null
+    }
     pagination.total = res.total
     dagStats.value = stats
   } catch (error: any) {
@@ -486,25 +702,33 @@ const handleTableChange = (pag: any) => {
   loadData()
 }
 
-const handleStopRun = async () => {
+const handleStopRun = async (record: { id: number; runNo?: string; status?: string }) => {
   if (!effectiveDagId.value) return
+  if (!canStopRun(record)) {
+    message.warning(getStopRunDisabledReason(record) || '当前运行不可停止')
+    return
+  }
   try {
-    await stopDag(effectiveDagId.value)
-    message.success('已停止')
+    await stopDagRun(effectiveDagId.value, record.id)
+    message.success(`已停止运行${record.runNo ? `: ${record.runNo}` : ''}`)
     loadData()
   } catch (error: any) {
-    message.error(error.message || '停止失败')
+    message.error(error.message || '停止运行失败')
   }
 }
 
-const handleRetryRun = async () => {
+const handleRetryRun = async (record: { id: number; runNo?: string; status?: string }) => {
   if (!effectiveDagId.value) return
+  if (!canRetryRun(record)) {
+    message.warning(getRetryRunDisabledReason(record) || '当前运行不可重试')
+    return
+  }
   try {
-    await retryDag(effectiveDagId.value)
-    message.success('已提交重试')
+    await retryDagRun(effectiveDagId.value, record.id)
+    message.success(`已提交运行重试${record.runNo ? `: ${record.runNo}` : ''}`)
     loadData()
   } catch (error: any) {
-    message.error(error.message || '重试失败')
+    message.error(error.message || '运行重试失败')
   }
 }
 
@@ -521,15 +745,25 @@ const handleView = async (record: any) => {
 const handleViewNodes = async (record: any) => {
   if (!effectiveDagId.value) return
   currentRunIdForNodes.value = record.id
+  currentRunStatusForNodes.value = record.status ?? null
   nodesLoading.value = true
   try {
-    nodeRecords.value = await getDagRunNodes(effectiveDagId.value, record.id)
+    const records = await getDagRunNodes(effectiveDagId.value, record.id)
+    await ensureDagNodeMappings(records)
+    nodeRecords.value = records
     nodesVisible.value = true
   } catch (error: any) {
     message.error(error.message || '获取节点记录失败')
   } finally {
     nodesLoading.value = false
   }
+}
+
+const refreshCurrentRunNodes = async () => {
+  if (!effectiveDagId.value || currentRunIdForNodes.value == null) return
+  const records = await getDagRunNodes(effectiveDagId.value, currentRunIdForNodes.value)
+  await ensureDagNodeMappings(records)
+  nodeRecords.value = records
 }
 
 const handleViewNodeDetail = async (record: any) => {
@@ -552,6 +786,74 @@ const handleViewLog = async (record: any) => {
     logVisible.value = true
   } catch (error: any) {
     message.error(error.message || '获取日志失败')
+  }
+}
+
+const requireDagNodeId = (record: { dagVersionId?: number; nodeCode?: string }) => {
+  const nodeId = resolveDagNodeId(record)
+  if (nodeId == null) {
+    throw new Error('未找到对应的 DAG 节点定义，请刷新后重试')
+  }
+  return nodeId
+}
+
+const handleTriggerNode = async (record: { dagVersionId?: number; nodeCode?: string }) => {
+  if (!effectiveDagId.value || currentRunIdForNodes.value == null) return
+  if (!canTriggerNode(record)) {
+    message.warning(getTriggerNodeDisabledReason(record) || '当前节点不可触发')
+    return
+  }
+  try {
+    await triggerDagRunNode(effectiveDagId.value, currentRunIdForNodes.value, requireDagNodeId(record))
+    message.success(`已触发节点${record.nodeCode ? `: ${record.nodeCode}` : ''}`)
+    await Promise.all([refreshCurrentRunNodes(), loadData()])
+  } catch (error: any) {
+    message.error(error.message || '触发节点失败')
+  }
+}
+
+const handlePauseNode = async (record: { dagVersionId?: number; nodeCode?: string }) => {
+  if (!effectiveDagId.value || currentRunIdForNodes.value == null) return
+  if (!canPauseNode(record)) {
+    message.warning(getPauseNodeDisabledReason(record) || '当前节点不可暂停')
+    return
+  }
+  try {
+    await pauseDagRunNode(effectiveDagId.value, currentRunIdForNodes.value, requireDagNodeId(record))
+    message.success(`已暂停节点${record.nodeCode ? `: ${record.nodeCode}` : ''}`)
+    await Promise.all([refreshCurrentRunNodes(), loadData()])
+  } catch (error: any) {
+    message.error(error.message || '暂停节点失败')
+  }
+}
+
+const handleResumeNode = async (record: { dagVersionId?: number; nodeCode?: string }) => {
+  if (!effectiveDagId.value || currentRunIdForNodes.value == null) return
+  if (!canResumeNode(record)) {
+    message.warning(getResumeNodeDisabledReason(record) || '当前节点不可恢复')
+    return
+  }
+  try {
+    await resumeDagRunNode(effectiveDagId.value, currentRunIdForNodes.value, requireDagNodeId(record))
+    message.success(`已恢复节点${record.nodeCode ? `: ${record.nodeCode}` : ''}`)
+    await Promise.all([refreshCurrentRunNodes(), loadData()])
+  } catch (error: any) {
+    message.error(error.message || '恢复节点失败')
+  }
+}
+
+const handleRetryNode = async (record: { dagVersionId?: number; nodeCode?: string }) => {
+  if (!effectiveDagId.value || currentRunIdForNodes.value == null) return
+  if (!canRetryNode(record)) {
+    message.warning(getRetryNodeDisabledReason(record) || '当前节点不可重试')
+    return
+  }
+  try {
+    await retryDagRunNode(effectiveDagId.value, currentRunIdForNodes.value, requireDagNodeId(record))
+    message.success(`已提交节点重试${record.nodeCode ? `: ${record.nodeCode}` : ''}`)
+    await Promise.all([refreshCurrentRunNodes(), loadData()])
+  } catch (error: any) {
+    message.error(error.message || '节点重试失败')
   }
 }
 

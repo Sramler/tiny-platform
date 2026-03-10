@@ -1,5 +1,8 @@
 package com.tiny.platform.infrastructure.idempotent.sdk.aspect;
 
+import com.tiny.platform.core.oauth.model.SecurityUser;
+import com.tiny.platform.core.oauth.tenant.TenantContext;
+import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
 import com.tiny.platform.infrastructure.idempotent.core.context.IdempotentContext;
 import com.tiny.platform.infrastructure.idempotent.core.engine.IdempotentEngine;
 import com.tiny.platform.infrastructure.idempotent.core.key.IdempotentKey;
@@ -10,6 +13,8 @@ import org.aspectj.lang.reflect.MethodSignature;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.web.context.request.RequestAttributes;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -34,6 +39,8 @@ class IdempotentAspectTest {
     @AfterEach
     void tearDown() {
         RequestContextHolder.resetRequestAttributes();
+        SecurityContextHolder.clearContext();
+        TenantContext.clear();
     }
 
     @Test
@@ -153,7 +160,7 @@ class IdempotentAspectTest {
         invalidSpelAspect.around(invalidSpelJoinPoint, invalidSpelMethod.getAnnotation(Idempotent.class));
         ArgumentCaptor<IdempotentContext> invalidSpelCaptor = ArgumentCaptor.forClass(IdempotentContext.class);
         verify(invalidSpelEngine).execute(invalidSpelCaptor.capture(), anySupplier());
-        assertThat(invalidSpelCaptor.getValue().getKey().getUniqueKey()).isEmpty();
+        assertThat(invalidSpelCaptor.getValue().getKey().getUniqueKey()).hasSize(32);
 
         IdempotentEngine duplicateEngine = mock(IdempotentEngine.class);
         IdempotentAspect duplicateAspect = new IdempotentAspect(duplicateEngine, List.of());
@@ -186,6 +193,52 @@ class IdempotentAspectTest {
 
         assertThatThrownBy(() -> runtimeAspect.around(runtimeJoinPoint, duplicateMethod.getAnnotation(Idempotent.class)))
             .isSameAs(bare);
+    }
+
+    @Test
+    void around_should_include_tenant_user_and_request_path_in_scope() throws Throwable {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/sys/users");
+        request.addHeader("X-Idempotency-Key", "scope-key");
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+        TenantContext.setTenantId(200L);
+        SecurityUser currentUser = new SecurityUser(8L, 200L, "alice", "",
+            List.of(), true, true, true, true);
+        SecurityContextHolder.getContext().setAuthentication(
+            new UsernamePasswordAuthenticationToken(currentUser, "N/A", List.of())
+        );
+
+        IdempotentEngine engine = mock(IdempotentEngine.class);
+        IdempotentAspect aspect = new IdempotentAspect(engine, List.of());
+        ProceedingJoinPoint joinPoint = joinPointFor("defaultMethod", new Object[]{"a", 1}, "OK");
+
+        doAnswer(invocation -> {
+            Supplier<?> supplier = invocation.getArgument(1);
+            return supplier.get();
+        }).when(engine).execute(any(IdempotentContext.class), anySupplier());
+
+        Method method = SampleService.class.getDeclaredMethod("defaultMethod", String.class, Integer.class);
+        aspect.around(joinPoint, method.getAnnotation(Idempotent.class));
+
+        ArgumentCaptor<IdempotentContext> captor = ArgumentCaptor.forClass(IdempotentContext.class);
+        verify(engine).execute(captor.capture(), anySupplier());
+        assertThat(captor.getValue().getKey().getScope()).isEqualTo("200|8|POST /sys/users");
+        assertThat(captor.getValue().getKey().getUniqueKey()).isEqualTo("scope-key");
+    }
+
+    @Test
+    void around_should_reject_invalid_header_key() throws Throwable {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/sys/users");
+        request.addHeader("X-Idempotency-Key", "invalid key!");
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+
+        IdempotentEngine engine = mock(IdempotentEngine.class);
+        IdempotentAspect aspect = new IdempotentAspect(engine, List.of());
+        ProceedingJoinPoint joinPoint = joinPointFor("spelMethod", new Object[]{"ignored"}, "OK");
+        Method method = SampleService.class.getDeclaredMethod("spelMethod", String.class);
+
+        assertThatThrownBy(() -> aspect.around(joinPoint, method.getAnnotation(Idempotent.class)))
+            .isInstanceOf(BusinessException.class)
+            .hasMessage("幂等键只允许字母、数字、点、短横线、下划线和冒号");
     }
 
     private static ProceedingJoinPoint joinPointFor(String methodName, Object[] args, Object proceedResultOrThrowable) throws Throwable {

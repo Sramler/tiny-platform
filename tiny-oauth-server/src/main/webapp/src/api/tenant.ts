@@ -41,13 +41,28 @@ export function getTenantById(id: string | number) {
 }
 
 export function createTenant(data: Partial<Tenant> & Record<string, unknown>) {
-  return request.post('/sys/tenants', data)
+  return request.post('/sys/tenants', data, {
+    idempotency: {
+      scope: 'sys-tenants:create',
+      payload: data,
+    },
+  })
 }
 
 export function updateTenant(id: string | number, data: Partial<Tenant> & Record<string, unknown>) {
-  return request.put(`/sys/tenants/${id}`, data)
+  return request.put(`/sys/tenants/${id}`, data, {
+    idempotency: {
+      scope: `sys-tenants:update:${id}`,
+      payload: data,
+    },
+  })
 }
 
 export function deleteTenant(id: string | number) {
-  return request.delete(`/sys/tenants/${id}`)
+  return request.delete(`/sys/tenants/${id}`, {
+    idempotency: {
+      scope: `sys-tenants:delete:${id}`,
+      payload: { id },
+    },
+  })
 }

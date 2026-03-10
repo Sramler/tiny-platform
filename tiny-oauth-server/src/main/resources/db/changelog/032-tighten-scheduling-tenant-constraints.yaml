@@ -1,0 +1,137 @@
+databaseChangeLog:
+  - changeSet:
+      id: tighten-scheduling-tenant-constraints
+      author: tiny
+      comment: scheduling 核心表回填 tenant_id、收紧非空约束并补租户索引
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT INTO `tenant` (`id`, `code`, `name`, `enabled`, `created_at`, `updated_at`)
+              SELECT 1, 'default', '默认租户', 1, NOW(), NOW()
+              WHERE NOT EXISTS (SELECT 1 FROM `tenant` WHERE `id` = 1);
+
+              INSERT INTO `tenant` (`id`, `code`, `name`, `enabled`, `created_at`, `updated_at`)
+              SELECT DISTINCT t.tenant_id,
+                              CONCAT('tenant-', t.tenant_id),
+                              CONCAT('Tenant ', t.tenant_id),
+                              1,
+                              NOW(),
+                              NOW()
+              FROM (
+                SELECT tenant_id FROM `scheduling_task_type`
+                UNION SELECT tenant_id FROM `scheduling_task`
+                UNION SELECT tenant_id FROM `scheduling_dag`
+                UNION SELECT tenant_id FROM `scheduling_dag_run`
+                UNION SELECT tenant_id FROM `scheduling_task_instance`
+                UNION SELECT tenant_id FROM `scheduling_task_history`
+                UNION SELECT tenant_id FROM `scheduling_audit`
+              ) t
+              WHERE t.tenant_id IS NOT NULL AND t.tenant_id > 0
+                AND NOT EXISTS (SELECT 1 FROM `tenant` WHERE `id` = t.tenant_id);
+
+              UPDATE `scheduling_task_type`
+              SET `tenant_id` = 1
+              WHERE `tenant_id` IS NULL;
+
+              UPDATE `scheduling_task`
+              SET `tenant_id` = 1
+              WHERE `tenant_id` IS NULL;
+
+              UPDATE `scheduling_dag`
+              SET `tenant_id` = 1
+              WHERE `tenant_id` IS NULL;
+
+              UPDATE `scheduling_dag_run` r
+              LEFT JOIN `scheduling_dag` d ON d.id = r.dag_id
+              SET r.tenant_id = COALESCE(r.tenant_id, d.tenant_id, 1)
+              WHERE r.tenant_id IS NULL;
+
+              UPDATE `scheduling_task_instance` i
+              LEFT JOIN `scheduling_dag_run` r ON r.id = i.dag_run_id
+              LEFT JOIN `scheduling_dag` d ON d.id = i.dag_id
+              LEFT JOIN `scheduling_task` t ON t.id = i.task_id
+              SET i.tenant_id = COALESCE(i.tenant_id, r.tenant_id, d.tenant_id, t.tenant_id, 1)
+              WHERE i.tenant_id IS NULL;
+
+              UPDATE `scheduling_task_history` h
+              LEFT JOIN `scheduling_task_instance` i ON i.id = h.task_instance_id
+              LEFT JOIN `scheduling_dag_run` r ON r.id = h.dag_run_id
+              LEFT JOIN `scheduling_task` t ON t.id = h.task_id
+              SET h.tenant_id = COALESCE(h.tenant_id, i.tenant_id, r.tenant_id, t.tenant_id, 1)
+              WHERE h.tenant_id IS NULL;
+
+              UPDATE `scheduling_audit`
+              SET `tenant_id` = 1
+              WHERE `tenant_id` IS NULL;
+
+              ALTER TABLE `scheduling_task_type`
+                MODIFY COLUMN `tenant_id` BIGINT NOT NULL COMMENT '租户ID';
+
+              ALTER TABLE `scheduling_task`
+                MODIFY COLUMN `tenant_id` BIGINT NOT NULL COMMENT '租户ID';
+
+              ALTER TABLE `scheduling_dag`
+                MODIFY COLUMN `tenant_id` BIGINT NOT NULL COMMENT '租户ID';
+
+              ALTER TABLE `scheduling_dag_run`
+                MODIFY COLUMN `tenant_id` BIGINT NOT NULL COMMENT '租户ID';
+
+              ALTER TABLE `scheduling_task_instance`
+                MODIFY COLUMN `tenant_id` BIGINT NOT NULL COMMENT '租户ID';
+
+              ALTER TABLE `scheduling_task_history`
+                MODIFY COLUMN `tenant_id` BIGINT NOT NULL COMMENT '租户ID';
+
+              ALTER TABLE `scheduling_audit`
+                MODIFY COLUMN `tenant_id` BIGINT NOT NULL COMMENT '租户ID';
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'scheduling_dag_run'
+                      AND INDEX_NAME = 'idx_scheduling_dag_run_tenant_dag_status_created'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `scheduling_dag_run` ADD KEY `idx_scheduling_dag_run_tenant_dag_status_created` (`tenant_id`, `dag_id`, `status`, `created_at`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'scheduling_task_instance'
+                      AND INDEX_NAME = 'idx_scheduling_task_instance_tenant_status_scheduled'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `scheduling_task_instance` ADD KEY `idx_scheduling_task_instance_tenant_status_scheduled` (`tenant_id`, `status`, `scheduled_at`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'scheduling_audit'
+                      AND INDEX_NAME = 'idx_scheduling_audit_tenant_created'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `scheduling_audit` ADD KEY `idx_scheduling_audit_tenant_created` (`tenant_id`, `created_at`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;

@@ -68,8 +68,7 @@
 import { ref, reactive, watch, onMounted } from 'vue'
 import type { FormInstance } from 'ant-design-vue'
 import type { DictItem, DictItemCreateUpdateDto, DictTypeItem } from '@/api/dict'
-import { getDictTypesByTenant } from '@/api/dict'
-import { getTenantId } from '@/utils/tenant'
+import { getVisibleDictTypes } from '@/api/dict'
 
 const props = defineProps<{
   formData?: DictItem | null
@@ -83,7 +82,6 @@ const formData = reactive<DictItemCreateUpdateDto>({
   value: '',
   label: '',
   description: '',
-  tenantId: undefined,
   sortOrder: 0,
   enabled: true,
 })
@@ -108,8 +106,7 @@ const rules = {
 // 加载字典类型选项
 async function loadDictTypeOptions() {
   try {
-    const tenantId = resolveTenantId()
-    const result = await getDictTypesByTenant(tenantId ?? 0)
+    const result = await getVisibleDictTypes()
     dictTypeOptions.value = result
   } catch (error) {
     console.error('加载字典类型选项失败:', error)
@@ -127,7 +124,6 @@ watch(
         value: newVal.value || '',
         label: newVal.label || '',
         description: newVal.description || '',
-        tenantId: newVal.tenantId ?? resolveTenantId(),
         sortOrder: newVal.sortOrder ?? 0,
         enabled: newVal.enabled ?? true,
       })
@@ -138,7 +134,6 @@ watch(
         value: '',
         label: '',
         description: '',
-        tenantId: resolveTenantId(),
         sortOrder: 0,
         enabled: true,
       })
@@ -146,13 +141,6 @@ watch(
   },
   { immediate: true, deep: true }
 )
-
-function resolveTenantId(): number | undefined {
-  const raw = getTenantId()
-  if (!raw) return undefined
-  const parsed = Number(raw)
-  return Number.isFinite(parsed) ? parsed : undefined
-}
 
 // 监听 dictTypeId 变化
 watch(
@@ -172,7 +160,7 @@ async function validate() {
 
 // 获取表单数据
 function getFormData(): DictItemCreateUpdateDto {
-  return { ...formData, tenantId: resolveTenantId() ?? formData.tenantId }
+  return { ...formData }
 }
 
 onMounted(() => {

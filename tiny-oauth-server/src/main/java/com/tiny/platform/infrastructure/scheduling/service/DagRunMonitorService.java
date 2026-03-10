@@ -129,7 +129,7 @@ public class DagRunMonitorService {
 
         // 终态判定：无 RUNNING/PENDING 时再判终态
         String newStatus;
-        if (running > 0 || pending > 0) {
+        if (running > 0 || pending > 0 || paused > 0) {
             newStatus = "RUNNING";
         } else if (success == total) {
             newStatus = "SUCCESS";
@@ -158,4 +158,3 @@ public class DagRunMonitorService {
         return instances.stream().filter(i -> status.equals(i.getStatus())).count();
     }
 }
-

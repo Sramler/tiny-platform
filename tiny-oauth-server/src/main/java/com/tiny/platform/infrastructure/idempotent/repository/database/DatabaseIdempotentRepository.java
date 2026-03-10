@@ -29,29 +29,6 @@ public class DatabaseIdempotentRepository implements IdempotentRepository {
     
     public DatabaseIdempotentRepository(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
-        initTable();
-    }
-    
-    /**
-     * 初始化幂等性表（如果不存在）
-     */
-    private void initTable() {
-        try {
-            String sql = String.format("""
-                CREATE TABLE IF NOT EXISTS %s (
-                    id VARCHAR(512) PRIMARY KEY,
-                    state VARCHAR(20) NOT NULL DEFAULT 'PENDING',
-                    expire_time DATETIME NOT NULL,
-                    created_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                    INDEX idx_expire_time (expire_time),
-                    INDEX idx_state (state)
-                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='幂等性token表'
-                """, TABLE_NAME);
-            jdbcTemplate.execute(sql);
-            log.info("幂等性表初始化成功");
-        } catch (Exception e) {
-            log.warn("幂等性表可能已存在，跳过初始化: {}", e.getMessage());
-        }
     }
     
     @Override

@@ -159,13 +159,34 @@ describe('ExportTask.vue', () => {
     await flushPromises()
 
     const rows = wrapper.findAll('.task-row')
-    await rows[0].findAll('button')[1].trigger('click')
+    expect(rows).toHaveLength(2)
+    const successfulRow = rows[0]
+    const runningRow = rows[1]
+    expect(successfulRow).toBeDefined()
+    expect(runningRow).toBeDefined()
+    if (!successfulRow || !runningRow) {
+      throw new Error('expected successful and running task rows')
+    }
+
+    const successfulButtons = successfulRow.findAll('button')
+    const runningButtons = runningRow.findAll('button')
+    expect(successfulButtons).toHaveLength(2)
+    expect(runningButtons).toHaveLength(2)
+
+    const downloadButton = successfulButtons[1]
+    const disabledDownloadButton = runningButtons[1]
+    expect(downloadButton).toBeDefined()
+    expect(disabledDownloadButton).toBeDefined()
+    if (!downloadButton || !disabledDownloadButton) {
+      throw new Error('expected download buttons for task rows')
+    }
+
+    await downloadButton.trigger('click')
     expect(openSpy).toHaveBeenCalledWith(
       'http://test-api.example.com/export/task/task-1/download',
       '_blank',
     )
 
-    const disabledDownloadButton = rows[1].findAll('button')[1]
     expect(disabledDownloadButton.attributes('disabled')).toBeDefined()
     await disabledDownloadButton.trigger('click')
     expect(openSpy).toHaveBeenCalledTimes(1)

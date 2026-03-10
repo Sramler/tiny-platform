@@ -121,7 +121,12 @@ export function createMenu(data: {
   type: number // 0-目录，1-菜单
   parentId?: number
 }) {
-  return request.post('/sys/menus', data)
+  return request.post('/sys/menus', data, {
+    idempotency: {
+      scope: 'sys-menus:create',
+      payload: data,
+    },
+  })
 }
 
 // 更新菜单
@@ -146,12 +151,22 @@ export function updateMenu(
     parentId?: number
   },
 ) {
-  return request.put(`/sys/menus/${id}`, data)
+  return request.put(`/sys/menus/${id}`, data, {
+    idempotency: {
+      scope: `sys-menus:update:${id}`,
+      payload: data,
+    },
+  })
 }
 
 // 删除菜单
 export function deleteMenu(id: string | number) {
-  return request.delete(`/sys/menus/${id}`)
+  return request.delete(`/sys/menus/${id}`, {
+    idempotency: {
+      scope: `sys-menus:delete:${id}`,
+      payload: { id },
+    },
+  })
 }
 
 // 获取菜单详情
@@ -161,12 +176,23 @@ export function getMenuDetail(id: number | string): Promise<MenuItem> {
 
 // 批量删除菜单
 export function batchDeleteMenus(ids: (string | number)[]) {
-  return request.post('/sys/resources/menus/batch/delete', ids)
+  return request.post('/sys/resources/menus/batch/delete', ids, {
+    idempotency: {
+      scope: 'sys-menus:batch-delete',
+      payload: ids,
+    },
+  })
 }
 
 // 更新菜单排序
 export function updateMenuSort(id: string | number, sort: number) {
-  return request.put(`/sys/resources/menus/${id}/sort`, null, { params: { sort } })
+  return request.put(`/sys/resources/menus/${id}/sort`, null, {
+    params: { sort },
+    idempotency: {
+      scope: `sys-menus:sort:${id}`,
+      payload: { id, sort },
+    },
+  })
 }
 
 // 批量更新菜单排序

@@ -1,0 +1,52 @@
+databaseChangeLog:
+  - changeSet:
+      id: create-idempotent-token-table
+      author: tiny
+      comment: 创建 sys_idempotent_token 幂等记录表
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: MARK_RAN
+        - not:
+            tableExists:
+              tableName: sys_idempotent_token
+      changes:
+        - createTable:
+            tableName: sys_idempotent_token
+            remarks: 幂等性 token 表
+            columns:
+              - column:
+                  name: id
+                  type: VARCHAR(512)
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    primaryKeyName: pk_sys_idempotent_token
+              - column:
+                  name: state
+                  type: VARCHAR(20)
+                  defaultValue: PENDING
+                  constraints:
+                    nullable: false
+              - column:
+                  name: expire_time
+                  type: DATETIME
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_time
+                  type: DATETIME
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+        - createIndex:
+            tableName: sys_idempotent_token
+            indexName: idx_idempotent_expire_time
+            columns:
+              - column:
+                  name: expire_time
+        - createIndex:
+            tableName: sys_idempotent_token
+            indexName: idx_idempotent_state
+            columns:
+              - column:
+                  name: state

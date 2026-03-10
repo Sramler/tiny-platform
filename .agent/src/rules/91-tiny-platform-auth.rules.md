@@ -10,6 +10,7 @@
 - ❌ 硬编码客户端配置（client_id, client_secret 必须从配置读取）。
 - ❌ 混用不同的认证方式（JWT vs Session）在同一请求中。
 - ❌ 跳过 MFA（多因素认证）验证（如配置了 TOTP 必须验证）。
+- ❌ 自动化测试使用开发者个人账号、共享人工管理员账号或生产身份进行认证验证。
 
 ## 必须（Must）
 
@@ -19,6 +20,13 @@
 - ✅ 多认证方式：支持 PASSWORD（密码）和 TOTP（时间戳一次性密码），从 `user_authentication_method` 表动态查询。
 - ✅ 安全策略：JWT 使用 RS256 算法，密钥使用 JWK Set；支持 MFA（TOTP）。
 - ✅ Token 过期：Access Token 短期（如 1 小时），Refresh Token 长期（如 7 天）；过期后必须重新授权。
+- ✅ 经过真实认证链路的自动化测试必须使用专用测试身份，至少区分：普通用户、租户管理员、无权限或拒绝身份；启用 MFA 时还必须具备 MFA 测试用户。
+- ✅ 测试身份必须与测试租户、测试 client、权限集合一起受控初始化，保证可重复执行与可回收。
+- ✅ 自动化认证测试所需密码、client secret、TOTP secret 必须从受控配置注入，不能写入测试代码和仓库明文。
+- ✅ 当 E2E 目标是验证登录、登出、MFA、OIDC 回调、Session/JWT 切换、租户 claim 注入、权限漂移时，必须覆盖真实认证步骤，不能用伪造 token、手写 cookie、手写 `storageState` 替代。
+- ✅ 如需在非认证主题的 real-link E2E 中复用登录态，`storageState` 或 session 预置必须来自单独的真实登录 setup 步骤，并明确标注生成来源与适用场景。
+- ✅ 认证相关 E2E 必须显式断言用户可观察结果和安全结果，例如登录成功后的身份状态、MFA 二次校验、拒绝页面、租户上下文、cookie/session 或 token 切换结果。
+- ✅ 认证 E2E 所使用的测试 client 必须最小权限化，并区分 Web Session、API JWT、OIDC 浏览器回调等测试目标；不得用一个超大权限 client 混测所有场景。
 
 ## 应该（Should）
 
@@ -26,11 +34,16 @@
 - ⚠️ 客户端配置：使用配置文件（`application.yaml`）管理客户端信息（client_id, redirect_uris, scopes, grant_types）。
 - ⚠️ 权限传递：Token Claims 中的 `authorities` 包含角色（ROLE_ADMIN）和资源权限（RESOURCE:user:read）。
 - ⚠️ 刷新策略：Refresh Token 使用后轮换（旧 Token 失效，返回新 Token）。
+- ⚠️ 建议维护认证自动化身份矩阵，明确每个测试身份的租户归属、权限级别、是否启用 MFA、适用的 Session / JWT / OIDC 场景。
+- ⚠️ 测试环境如需固定 TOTP secret 或固定 client secret，必须限定在隔离测试环境，并记录用途与轮换方式。
+- ⚠️ 认证相关 real-link E2E 建议将登录 setup、身份初始化、用例执行拆分，避免每条用例重复走全量初始化。
+- ⚠️ OIDC/MFA 场景建议保留至少一条浏览器级 E2E，而不是只用 controller/integration test 证明服务端逻辑正确。
 
 ## 可以（May）
 
 - 💡 认证上下文：记录认证方法（`amr`）、认证时间（`auth_time`）、设备信息（`device_id`）。
 - 💡 Token 黑名单：支持 Token 撤销（Redis 黑名单或数据库标记）。
+- 💡 为自动化测试提供一键初始化脚本，批量创建测试用户、测试租户、测试 client 与测试认证方式。
 
 ## 例外与裁决
 
@@ -58,6 +71,16 @@
   "scope": "openid profile email",
   "tenant_id": 1
 }
+```
+
+### ✅ 正例：认证自动化身份矩阵
+
+```text
+- auth-e2e-user: 当前租户普通用户，验证基础登录和受限访问
+- auth-e2e-tenant-admin: 当前租户管理员，验证管理能力
+- auth-e2e-deny: 已认证但缺少目标权限，验证 403 / 拒绝路径
+- auth-e2e-cross-tenant: 登录成功但访问其他租户资源应失败
+- auth-e2e-mfa: 启用 TOTP，验证二次认证流程
 ```
 
 ### ❌ 反例

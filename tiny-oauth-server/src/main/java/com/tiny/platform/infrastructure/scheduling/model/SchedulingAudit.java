@@ -15,7 +15,7 @@ public class SchedulingAudit implements Serializable {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "tenant_id")
+    @Column(name = "tenant_id", nullable = false)
     private Long tenantId;
 
     @Column(name = "object_type", nullable = false, length = 64)
@@ -106,5 +106,4 @@ public class SchedulingAudit implements Serializable {
         this.createdAt = createdAt;
     }
 }
-
 

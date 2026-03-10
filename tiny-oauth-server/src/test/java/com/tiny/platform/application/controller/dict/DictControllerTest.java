@@ -11,6 +11,7 @@ import com.tiny.platform.core.dict.model.DictType;
 import com.tiny.platform.core.dict.service.DictItemService;
 import com.tiny.platform.core.dict.service.DictTypeService;
 import com.tiny.platform.infrastructure.core.dto.PageResponse;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -21,113 +22,286 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/**
+ * Dict 控制器单元测试（参照 export 的 ExportControllerTest 结构）.
+ */
 class DictControllerTest {
 
-    @Test
-    void should_cover_all_dict_type_endpoints() {
-        DictTypeService dictTypeService = mock(DictTypeService.class);
-        DictItemService dictItemService = mock(DictItemService.class);
-        DictController controller = new DictController(dictTypeService, dictItemService);
-
-        DictTypeQueryDto query = new DictTypeQueryDto();
-        Pageable pageable = PageRequest.of(0, 10);
-        DictTypeResponseDto responseDto = new DictTypeResponseDto();
-        responseDto.setId(1L);
-        responseDto.setDictCode("STATUS");
-        DictType dictType = dictType(2L, "COLOR");
-        DictTypeCreateUpdateDto dto = new DictTypeCreateUpdateDto();
-
-        when(dictTypeService.query(query, pageable)).thenReturn(new PageImpl<>(List.of(responseDto), pageable, 1));
-        when(dictTypeService.findById(2L)).thenReturn(Optional.of(dictType));
-        when(dictTypeService.findById(99L)).thenReturn(Optional.empty());
-        when(dictTypeService.findByDictCode("COLOR")).thenReturn(Optional.of(dictType));
-        when(dictTypeService.findByDictCode("NONE")).thenReturn(Optional.empty());
-        when(dictTypeService.create(dto)).thenReturn(dictType);
-        when(dictTypeService.update(2L, dto)).thenReturn(dictType);
-        when(dictTypeService.findByTenantId(7L)).thenReturn(List.of(dictType));
-
-        PageResponse<DictTypeResponseDto> pageBody = controller.getDictTypes(query, pageable).getBody();
-        assertThat(pageBody).isNotNull();
-        assertThat(pageBody.getContent()).containsExactly(responseDto);
-
-        assertThat(controller.getDictType(2L).getBody()).isEqualTo(dictType);
-        assertThat(controller.getDictType(99L).getStatusCode().value()).isEqualTo(404);
-
-        assertThat(controller.getDictTypeByCode("COLOR").getBody()).isEqualTo(dictType);
-        assertThat(controller.getDictTypeByCode("NONE").getStatusCode().value()).isEqualTo(404);
-
-        assertThat(controller.createDictType(dto).getBody()).isEqualTo(dictType);
-        assertThat(controller.updateDictType(2L, dto).getBody()).isEqualTo(dictType);
-
-        assertThat(controller.deleteDictType(3L).getStatusCode().value()).isEqualTo(200);
-        verify(dictTypeService).delete(3L);
-        assertThat(controller.batchDeleteDictTypes(List.of(1L, 2L)).getStatusCode().value()).isEqualTo(200);
-        verify(dictTypeService).batchDelete(List.of(1L, 2L));
-
-        assertThat(controller.getDictTypesByTenant(7L).getBody()).containsExactly(dictType);
-    }
-
-    @Test
-    void should_cover_all_dict_item_endpoints() {
-        DictTypeService dictTypeService = mock(DictTypeService.class);
-        DictItemService dictItemService = mock(DictItemService.class);
-        DictController controller = new DictController(dictTypeService, dictItemService);
-
-        DictItemQueryDto query = new DictItemQueryDto();
-        Pageable pageable = PageRequest.of(1, 5);
-        DictItemResponseDto responseDto = new DictItemResponseDto();
-        responseDto.setId(1L);
-        responseDto.setValue("1");
-        DictItem dictItem = dictItem(2L, 10L, "A", "Alpha");
-        DictItemCreateUpdateDto dto = new DictItemCreateUpdateDto();
-
-        when(dictItemService.query(query, pageable)).thenReturn(new PageImpl<>(List.of(responseDto), pageable, 1));
-        when(dictItemService.findById(2L)).thenReturn(Optional.of(dictItem));
-        when(dictItemService.findById(99L)).thenReturn(Optional.empty());
-        when(dictItemService.findByDictTypeId(10L)).thenReturn(List.of(dictItem));
-        when(dictItemService.findByDictCode("STATUS", 0L)).thenReturn(List.of(dictItem));
-        when(dictItemService.getDictMap("STATUS", 0L)).thenReturn(Map.of("1", "启用"));
-        when(dictItemService.getLabel("STATUS", "1", 0L)).thenReturn("启用");
-        when(dictItemService.create(dto)).thenReturn(dictItem);
-        when(dictItemService.update(2L, dto)).thenReturn(dictItem);
-
-        PageResponse<DictItemResponseDto> pageBody = controller.getDictItems(query, pageable).getBody();
-        assertThat(pageBody).isNotNull();
-        assertThat(pageBody.getContent()).containsExactly(responseDto);
-
-        assertThat(controller.getDictItem(2L).getBody()).isEqualTo(dictItem);
-        assertThat(controller.getDictItem(99L).getStatusCode().value()).isEqualTo(404);
-        assertThat(controller.getDictItemsByType(10L).getBody()).containsExactly(dictItem);
-        assertThat(controller.getDictItemsByCode("STATUS", 0L).getBody()).containsExactly(dictItem);
-        assertThat(controller.getDictMap("STATUS", 0L).getBody()).containsEntry("1", "启用");
-        assertThat(controller.getLabel("STATUS", "1", 0L).getBody()).isEqualTo("启用");
-        assertThat(controller.createDictItem(dto).getBody()).isEqualTo(dictItem);
-        assertThat(controller.updateDictItem(2L, dto).getBody()).isEqualTo(dictItem);
-
-        assertThat(controller.deleteDictItem(3L).getStatusCode().value()).isEqualTo(200);
-        verify(dictItemService).delete(3L);
-        assertThat(controller.batchDeleteDictItems(List.of(1L, 2L)).getStatusCode().value()).isEqualTo(200);
-        verify(dictItemService).batchDelete(List.of(1L, 2L));
-    }
-
     private static DictType dictType(Long id, String code) {
-        DictType dictType = new DictType();
-        dictType.setId(id);
-        dictType.setDictCode(code);
-        dictType.setDictName(code + "-name");
-        return dictType;
+        DictType t = new DictType();
+        t.setId(id);
+        t.setDictCode(code);
+        t.setDictName(code + "-name");
+        return t;
     }
 
     private static DictItem dictItem(Long id, Long typeId, String value, String label) {
-        DictItem dictItem = new DictItem();
-        dictItem.setId(id);
-        dictItem.setDictTypeId(typeId);
-        dictItem.setValue(value);
-        dictItem.setLabel(label);
-        return dictItem;
+        DictItem i = new DictItem();
+        i.setId(id);
+        i.setDictTypeId(typeId);
+        i.setValue(value);
+        i.setLabel(label);
+        return i;
+    }
+
+    @Nested
+    class DictTypeEndpoints {
+
+        @Test
+        void getDictTypes_returnsPageFromService() {
+            DictTypeService typeService = mock(DictTypeService.class);
+            DictController controller = new DictController(typeService, mock(DictItemService.class));
+            DictTypeQueryDto query = new DictTypeQueryDto();
+            Pageable pageable = PageRequest.of(0, 10);
+            DictTypeResponseDto dto = new DictTypeResponseDto();
+            dto.setId(1L);
+            dto.setDictCode("STATUS");
+            when(typeService.query(any(DictTypeQueryDto.class), eq(pageable)))
+                    .thenReturn(new PageImpl<>(List.of(dto), pageable, 1));
+
+            PageResponse<DictTypeResponseDto> body = controller.getDictTypes(query, pageable).getBody();
+
+            assertThat(body).isNotNull();
+            assertThat(body.getContent()).containsExactly(dto);
+            verify(typeService).query(any(DictTypeQueryDto.class), eq(pageable));
+        }
+
+        @Test
+        void getDictType_whenFound_returns200AndBody() {
+            DictTypeService typeService = mock(DictTypeService.class);
+            DictController controller = new DictController(typeService, mock(DictItemService.class));
+            DictType type = dictType(2L, "COLOR");
+            when(typeService.findById(2L)).thenReturn(Optional.of(type));
+
+            assertThat(controller.getDictType(2L).getBody()).isEqualTo(type);
+            assertThat(controller.getDictType(2L).getStatusCode().value()).isEqualTo(200);
+        }
+
+        @Test
+        void getDictType_whenNotFound_returns404() {
+            DictTypeService typeService = mock(DictTypeService.class);
+            DictController controller = new DictController(typeService, mock(DictItemService.class));
+            when(typeService.findById(99L)).thenReturn(Optional.empty());
+
+            assertThat(controller.getDictType(99L).getStatusCode().value()).isEqualTo(404);
+            assertThat(controller.getDictType(99L).getBody()).isNull();
+        }
+
+        @Test
+        void getDictTypeByCode_whenFound_returns200AndBody() {
+            DictTypeService typeService = mock(DictTypeService.class);
+            DictController controller = new DictController(typeService, mock(DictItemService.class));
+            DictType type = dictType(2L, "COLOR");
+            when(typeService.findByDictCode("COLOR")).thenReturn(Optional.of(type));
+
+            assertThat(controller.getDictTypeByCode("COLOR").getBody()).isEqualTo(type);
+            assertThat(controller.getDictTypeByCode("COLOR").getStatusCode().value()).isEqualTo(200);
+        }
+
+        @Test
+        void getDictTypeByCode_whenNotFound_returns404() {
+            DictTypeService typeService = mock(DictTypeService.class);
+            DictController controller = new DictController(typeService, mock(DictItemService.class));
+            when(typeService.findByDictCode("NONE")).thenReturn(Optional.empty());
+
+            assertThat(controller.getDictTypeByCode("NONE").getStatusCode().value()).isEqualTo(404);
+        }
+
+        @Test
+        void createDictType_callsServiceAndReturns200WithBody() {
+            DictTypeService typeService = mock(DictTypeService.class);
+            DictController controller = new DictController(typeService, mock(DictItemService.class));
+            DictTypeCreateUpdateDto dto = new DictTypeCreateUpdateDto();
+            dto.setDictCode("CUSTOM");
+            dto.setDictName("自定义");
+            DictType created = dictType(1L, "CUSTOM");
+            when(typeService.create(dto)).thenReturn(created);
+
+            var response = controller.createDictType(dto);
+            assertThat(response.getBody()).isEqualTo(created);
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            verify(typeService).create(dto);
+        }
+
+        @Test
+        void updateDictType_callsServiceAndReturns200WithBody() {
+            DictTypeService typeService = mock(DictTypeService.class);
+            DictController controller = new DictController(typeService, mock(DictItemService.class));
+            DictTypeCreateUpdateDto dto = new DictTypeCreateUpdateDto();
+            dto.setDictCode("CUSTOM");
+            dto.setDictName("自定义");
+            DictType updated = dictType(2L, "CUSTOM");
+            when(typeService.update(2L, dto)).thenReturn(updated);
+
+            assertThat(controller.updateDictType(2L, dto).getBody()).isEqualTo(updated);
+            verify(typeService).update(2L, dto);
+        }
+
+        @Test
+        void deleteDictType_callsServiceDeleteAndReturns200() {
+            DictTypeService typeService = mock(DictTypeService.class);
+            DictController controller = new DictController(typeService, mock(DictItemService.class));
+
+            assertThat(controller.deleteDictType(3L).getStatusCode().value()).isEqualTo(200);
+            verify(typeService).delete(3L);
+        }
+
+        @Test
+        void batchDeleteDictTypes_callsServiceAndReturns200() {
+            DictTypeService typeService = mock(DictTypeService.class);
+            DictController controller = new DictController(typeService, mock(DictItemService.class));
+            List<Long> ids = List.of(1L, 2L);
+
+            assertThat(controller.batchDeleteDictTypes(ids).getStatusCode().value()).isEqualTo(200);
+            verify(typeService).batchDelete(ids);
+        }
+
+        @Test
+        void getVisibleDictTypes_returnsListFromService() {
+            DictTypeService typeService = mock(DictTypeService.class);
+            DictController controller = new DictController(typeService, mock(DictItemService.class));
+            DictType type = dictType(1L, "STATUS");
+            when(typeService.findVisibleTypes()).thenReturn(List.of(type));
+
+            assertThat(controller.getVisibleDictTypes().getBody()).containsExactly(type);
+        }
+
+    }
+
+    @Nested
+    class DictItemEndpoints {
+
+        @Test
+        void getDictItems_returnsPageFromService() {
+            DictItemService itemService = mock(DictItemService.class);
+            DictController controller = new DictController(mock(DictTypeService.class), itemService);
+            DictItemQueryDto query = new DictItemQueryDto();
+            Pageable pageable = PageRequest.of(0, 10);
+            DictItemResponseDto dto = new DictItemResponseDto();
+            dto.setId(1L);
+            dto.setValue("1");
+            when(itemService.query(any(DictItemQueryDto.class), eq(pageable)))
+                    .thenReturn(new PageImpl<>(List.of(dto), pageable, 1));
+
+            PageResponse<DictItemResponseDto> body = controller.getDictItems(query, pageable).getBody();
+
+            assertThat(body).isNotNull();
+            assertThat(body.getContent()).containsExactly(dto);
+            verify(itemService).query(any(DictItemQueryDto.class), eq(pageable));
+        }
+
+        @Test
+        void getDictItem_whenFound_returns200AndBody() {
+            DictItemService itemService = mock(DictItemService.class);
+            DictController controller = new DictController(mock(DictTypeService.class), itemService);
+            DictItem item = dictItem(2L, 10L, "A", "Alpha");
+            when(itemService.findById(2L)).thenReturn(Optional.of(item));
+
+            assertThat(controller.getDictItem(2L).getBody()).isEqualTo(item);
+            assertThat(controller.getDictItem(2L).getStatusCode().value()).isEqualTo(200);
+        }
+
+        @Test
+        void getDictItem_whenNotFound_returns404() {
+            DictItemService itemService = mock(DictItemService.class);
+            DictController controller = new DictController(mock(DictTypeService.class), itemService);
+            when(itemService.findById(99L)).thenReturn(Optional.empty());
+
+            assertThat(controller.getDictItem(99L).getStatusCode().value()).isEqualTo(404);
+            assertThat(controller.getDictItem(99L).getBody()).isNull();
+        }
+
+        @Test
+        void getDictItemsByType_returnsListFromService() {
+            DictItemService itemService = mock(DictItemService.class);
+            DictController controller = new DictController(mock(DictTypeService.class), itemService);
+            DictItem item = dictItem(1L, 10L, "A", "Alpha");
+            when(itemService.findByDictTypeId(10L)).thenReturn(List.of(item));
+
+            assertThat(controller.getDictItemsByType(10L).getBody()).containsExactly(item);
+        }
+
+        @Test
+        void getDictItemsByCode_returnsListFromService() {
+            DictItemService itemService = mock(DictItemService.class);
+            DictController controller = new DictController(mock(DictTypeService.class), itemService);
+            DictItem item = dictItem(1L, 10L, "1", "启用");
+            when(itemService.findByDictCode("STATUS")).thenReturn(List.of(item));
+
+            assertThat(controller.getDictItemsByCode("STATUS").getBody()).containsExactly(item);
+        }
+
+        @Test
+        void getDictMap_returnsMapFromService() {
+            DictItemService itemService = mock(DictItemService.class);
+            DictController controller = new DictController(mock(DictTypeService.class), itemService);
+            when(itemService.getDictMap("STATUS")).thenReturn(Map.of("1", "启用"));
+
+            assertThat(controller.getDictMap("STATUS").getBody()).containsEntry("1", "启用");
+        }
+
+        @Test
+        void getLabel_returnsLabelFromService() {
+            DictItemService itemService = mock(DictItemService.class);
+            DictController controller = new DictController(mock(DictTypeService.class), itemService);
+            when(itemService.getLabel("STATUS", "1")).thenReturn("启用");
+
+            assertThat(controller.getLabel("STATUS", "1").getBody()).isEqualTo("启用");
+        }
+
+        @Test
+        void createDictItem_callsServiceAndReturns200WithBody() {
+            DictItemService itemService = mock(DictItemService.class);
+            DictController controller = new DictController(mock(DictTypeService.class), itemService);
+            DictItemCreateUpdateDto dto = new DictItemCreateUpdateDto();
+            dto.setDictTypeId(10L);
+            dto.setValue("X");
+            dto.setLabel("项X");
+            DictItem created = dictItem(1L, 10L, "X", "项X");
+            when(itemService.create(dto)).thenReturn(created);
+
+            assertThat(controller.createDictItem(dto).getBody()).isEqualTo(created);
+            verify(itemService).create(dto);
+        }
+
+        @Test
+        void updateDictItem_callsServiceAndReturns200WithBody() {
+            DictItemService itemService = mock(DictItemService.class);
+            DictController controller = new DictController(mock(DictTypeService.class), itemService);
+            DictItemCreateUpdateDto dto = new DictItemCreateUpdateDto();
+            dto.setDictTypeId(10L);
+            dto.setValue("X");
+            dto.setLabel("项X");
+            DictItem updated = dictItem(2L, 10L, "X", "项X");
+            when(itemService.update(2L, dto)).thenReturn(updated);
+
+            assertThat(controller.updateDictItem(2L, dto).getBody()).isEqualTo(updated);
+            verify(itemService).update(2L, dto);
+        }
+
+        @Test
+        void deleteDictItem_callsServiceDeleteAndReturns200() {
+            DictItemService itemService = mock(DictItemService.class);
+            DictController controller = new DictController(mock(DictTypeService.class), itemService);
+
+            assertThat(controller.deleteDictItem(3L).getStatusCode().value()).isEqualTo(200);
+            verify(itemService).delete(3L);
+        }
+
+        @Test
+        void batchDeleteDictItems_callsServiceAndReturns200() {
+            DictItemService itemService = mock(DictItemService.class);
+            DictController controller = new DictController(mock(DictTypeService.class), itemService);
+            List<Long> ids = List.of(1L, 2L);
+
+            assertThat(controller.batchDeleteDictItems(ids).getStatusCode().value()).isEqualTo(200);
+            verify(itemService).batchDelete(ids);
+        }
     }
 }

@@ -20,6 +20,7 @@
 - ❌ 配置文件中硬编码敏感信息：密码、密钥、Token、私钥、连接串。
 - ❌ 将敏感配置提交到版本控制（应使用 `.env.local` 或配置中心）。
 - ❌ 生产配置提交到代码仓库（应使用配置中心或环境变量）。
+- ❌ 将自动化测试账号、测试密码、测试 client secret、TOTP secret 等真实值提交到版本控制。
 
 ### 2) 配置管理
 
@@ -57,6 +58,13 @@
 - ✅ 前端环境变量：使用 `.env`、`.env.development`、`.env.production` 管理环境配置。
 - ✅ 环境变量前缀：前端环境变量必须以 `VITE_` 开头（Vite 要求）。
 
+### 5) 测试与自动化配置
+
+- ✅ 自动化测试所需账号、密码、测试租户 ID、client_id、client_secret、TOTP secret 等必须通过环境变量、配置中心或测试环境种子配置注入。
+- ✅ 需要真实认证链路的测试必须提供配置模板（如 `.env.e2e.example`、`application-e2e.example.yaml`），但模板中只能包含占位符，不能包含真实值。
+- ✅ 自动化测试配置命名必须清晰稳定，如 `E2E_USERNAME`、`E2E_PASSWORD`、`E2E_TENANT_ID`、`E2E_TOTP_SECRET`、`E2E_CLIENT_ID`、`E2E_CLIENT_SECRET`。
+- ✅ 测试环境配置必须与开发、生产配置隔离，避免自动化测试误用真实账号或真实租户。
+
 ---
 
 ## 应该（Should）
@@ -79,6 +87,12 @@
 ### 4) 配置文档
 
 - ⚠️ 配置文档：关键配置项应有文档说明，包括默认值、可选值、影响范围。
+
+### 5) 自动化测试配置治理
+
+- ⚠️ 自动化测试配置建议按用途分组：认证、租户、前端 E2E、后端集成测试。
+- ⚠️ 测试账号相关环境变量建议在 README、CI 文档或 `.env.e2e.example` 中统一说明含义、初始化来源和轮换方式。
+- ⚠️ 测试凭证建议短周期轮换；失效后应支持自动重建或脚本化初始化。
 
 ---
 
@@ -178,6 +192,19 @@ VITE_APP_ENV=prod
 VITE_API_BASE_URL=https://api.example.com
 VITE_ENABLE_CONSOLE_DEBUG=false
 VITE_LOG_LEVEL=error
+```
+
+### ✅ 正例：自动化测试配置模板
+
+```bash
+# .env.e2e.example（仅模板，不提交真实值）
+E2E_BASE_URL=http://localhost:5173
+E2E_USERNAME=<automation-user>
+E2E_PASSWORD=<automation-password>
+E2E_TENANT_ID=<tenant-id>
+E2E_CLIENT_ID=<automation-client-id>
+E2E_CLIENT_SECRET=<automation-client-secret>
+E2E_TOTP_SECRET=<totp-secret-if-needed>
 ```
 
 ### ✅ 正例：配置验证（@ConfigurationProperties）

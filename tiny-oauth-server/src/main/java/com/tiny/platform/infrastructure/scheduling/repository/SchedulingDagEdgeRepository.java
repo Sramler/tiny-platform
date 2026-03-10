@@ -16,10 +16,33 @@ public interface SchedulingDagEdgeRepository extends JpaRepository<SchedulingDag
     List<SchedulingDagEdge> findByDagVersionIdAndFromNodeCode(Long dagVersionId, String fromNodeCode);
     
     List<SchedulingDagEdge> findByDagVersionIdAndToNodeCode(Long dagVersionId, String toNodeCode);
+
+    @Modifying
+    @Query("""
+            UPDATE SchedulingDagEdge de
+               SET de.fromNodeCode = :newNodeCode
+             WHERE de.dagVersionId = :dagVersionId
+               AND de.fromNodeCode = :oldNodeCode
+            """)
+    int updateFromNodeCode(
+            @Param("dagVersionId") Long dagVersionId,
+            @Param("oldNodeCode") String oldNodeCode,
+            @Param("newNodeCode") String newNodeCode);
+
+    @Modifying
+    @Query("""
+            UPDATE SchedulingDagEdge de
+               SET de.toNodeCode = :newNodeCode
+             WHERE de.dagVersionId = :dagVersionId
+               AND de.toNodeCode = :oldNodeCode
+            """)
+    int updateToNodeCode(
+            @Param("dagVersionId") Long dagVersionId,
+            @Param("oldNodeCode") String oldNodeCode,
+            @Param("newNodeCode") String newNodeCode);
     
     @Modifying
     @Query("DELETE FROM SchedulingDagEdge de WHERE de.dagVersionId = :dagVersionId")
     void deleteByDagVersionId(@Param("dagVersionId") Long dagVersionId);
 }
-
 

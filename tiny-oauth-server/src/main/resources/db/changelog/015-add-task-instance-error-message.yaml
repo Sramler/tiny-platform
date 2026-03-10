@@ -2,12 +2,27 @@ databaseChangeLog:
   - changeSet:
       id: add-scheduling-task-instance-error-message
       author: tiny
+      validCheckSum:
+        - ANY
       comment: scheduling_task_instance 增加 error_message 列，用于记录失败原因（含超时），与 result 分离避免误伤正常 JSON 返回值
       changes:
-        - addColumn:
-            tableName: scheduling_task_instance
-            columns:
-              - column:
-                  name: error_message
-                  type: VARCHAR(512)
-                  remarks: 最近一次失败原因（如 TIMEOUT:...），仅失败/超时写入；僵尸回收据此排除超时实例
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'scheduling_task_instance'
+                      AND COLUMN_NAME = 'error_message'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `scheduling_task_instance` ADD COLUMN `error_message` VARCHAR(512) NULL COMMENT ''最近一次失败原因（如 TIMEOUT:...），仅失败/超时写入；僵尸回收据此排除超时实例'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;

@@ -8,6 +8,8 @@
 # - 对 1000w 级导出采用保守并发，优先稳定性
 
 export:
+  sync:
+    max-rows: 100000
   writer:
     type: fesod
   concurrent:

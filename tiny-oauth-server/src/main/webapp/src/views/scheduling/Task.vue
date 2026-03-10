@@ -108,7 +108,7 @@
         <a-form-item label="最大重试">
           <a-input-number v-model:value="formData.maxRetry" :min="0" style="width: 100%" />
         </a-form-item>
-        <a-form-item label="重试策略" extra="当前仅支持 JSON 格式：{\"delaySec\": 60}，表示失败后延迟秒数再重试；不填或格式无效时默认 60 秒。">
+        <a-form-item label="重试策略" extra='当前仅支持 JSON 格式：{"delaySec": 60}，表示失败后延迟秒数再重试；不填或格式无效时默认 60 秒。'>
           <a-textarea v-model:value="formData.retryPolicy" :rows="2" placeholder='例如：{"delaySec":60}' />
         </a-form-item>
         <a-form-item label="并发策略">
@@ -183,7 +183,6 @@ const query = reactive({
 
 const formData = reactive({
   id: undefined as number | undefined,
-  tenantId: undefined as number | undefined,
   typeId: undefined as number | undefined,
   code: '',
   name: '',
@@ -194,7 +193,6 @@ const formData = reactive({
   retryPolicy: '',
   concurrencyPolicy: 'PARALLEL',
   enabled: true,
-  createdBy: '',
 })
 
 const pagination = reactive({
@@ -327,7 +325,6 @@ const handleCreate = () => {
   formTitle.value = '新建任务'
   Object.assign(formData, {
     id: undefined,
-    tenantId: undefined,
     typeId: undefined,
     code: '',
     name: '',
@@ -338,7 +335,6 @@ const handleCreate = () => {
     retryPolicy: '',
     concurrencyPolicy: 'PARALLEL',
     enabled: true,
-    createdBy: '',
   })
   formVisible.value = true
 }
@@ -347,7 +343,6 @@ const handleEdit = (record: any) => {
   formTitle.value = '编辑任务'
   Object.assign(formData, {
     id: record.id,
-    tenantId: record.tenantId,
     typeId: record.typeId,
     code: record.code || '',
     name: record.name || '',
@@ -358,7 +353,6 @@ const handleEdit = (record: any) => {
     retryPolicy: record.retryPolicy || '',
     concurrencyPolicy: record.concurrencyPolicy || 'PARALLEL',
     enabled: record.enabled !== undefined ? record.enabled : true,
-    createdBy: record.createdBy || '',
   })
   formVisible.value = true
 }
@@ -373,6 +367,19 @@ const handleView = async (record: any) => {
   }
 }
 
+const buildTaskPayload = () => ({
+  typeId: formData.typeId,
+  code: String(formData.code ?? '').trim(),
+  name: String(formData.name ?? '').trim(),
+  description: formData.description ?? '',
+  params: formData.params ?? '',
+  timeoutSec: formData.timeoutSec,
+  maxRetry: formData.maxRetry,
+  retryPolicy: formData.retryPolicy ?? '',
+  concurrencyPolicy: formData.concurrencyPolicy ?? 'PARALLEL',
+  enabled: Boolean(formData.enabled),
+})
+
 const handleSubmit = async () => {
   try {
     await formRef.value?.validate()
@@ -384,11 +391,12 @@ const handleSubmit = async () => {
     return
   }
   try {
+    const payload = buildTaskPayload()
     if (formData.id) {
-      await updateTask(formData.id, formData)
+      await updateTask(formData.id, payload)
       message.success('更新成功')
     } else {
-      await createTask(formData)
+      await createTask(payload)
       message.success('创建成功')
     }
     formVisible.value = false
@@ -470,5 +478,3 @@ onMounted(async () => {
   margin-left: 8px;
 }
 </style>
-
-

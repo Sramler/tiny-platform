@@ -11,9 +11,96 @@ import { useAuth, logout } from '@/auth/auth'
 import router from '@/router' // 引入路由实例
 // 引入 TRACE_ID 工具
 import { getOrCreateTraceId, generateRequestId, getCurrentTraceId } from '@/utils/traceId'
+import {
+  createIdempotencyFingerprint,
+  createIdempotencyHeaders,
+  createSubmitIdempotencyKey,
+} from '@/utils/idempotency'
 import { clearTenantContext, getTenantId, syncTenantContextFromAccessToken } from '@/utils/tenant'
 // 引入 Problem 响应解析工具
 import { extractErrorFromAxios, extractErrorInfo } from '@/utils/problemParser'
+
+export type RequestIdempotencyMode = 'deterministic' | 'submit'
+
+export type RequestIdempotencyOptions = {
+  scope: string
+  payload?: unknown
+  key?: string
+  mode?: RequestIdempotencyMode
+}
+
+export type TinyRequestConfig = AxiosRequestConfig & {
+  idempotency?: RequestIdempotencyOptions
+}
+
+type ManagedAxiosRequestConfig = InternalAxiosRequestConfig & {
+  __idempotencyFingerprint?: string
+}
+
+type SubmitIdempotencyEntry = {
+  key: string
+  references: number
+}
+
+const inflightSubmitIdempotency = new Map<string, SubmitIdempotencyEntry>()
+
+function buildSubmitIdempotencyFingerprint(
+  config: InternalAxiosRequestConfig,
+  idempotency: RequestIdempotencyOptions,
+): string {
+  return createIdempotencyFingerprint({
+    tenantId: getTenantId() ?? 'anonymous',
+    baseURL: config.baseURL ?? null,
+    method: (config.method ?? 'get').toUpperCase(),
+    url: config.url ?? '',
+    params: config.params ?? null,
+    scope: idempotency.scope,
+    payload: idempotency.payload ?? null,
+  })
+}
+
+function acquireSubmitIdempotency(
+  config: ManagedAxiosRequestConfig,
+  idempotency: RequestIdempotencyOptions,
+): string {
+  const fingerprint = buildSubmitIdempotencyFingerprint(config, idempotency)
+  const current = inflightSubmitIdempotency.get(fingerprint)
+  if (current) {
+    current.references += 1
+    config.__idempotencyFingerprint = fingerprint
+    return current.key
+  }
+
+  const key = createSubmitIdempotencyKey()
+  inflightSubmitIdempotency.set(fingerprint, {
+    key,
+    references: 1,
+  })
+  config.__idempotencyFingerprint = fingerprint
+  return key
+}
+
+function releaseSubmitIdempotency(config?: InternalAxiosRequestConfig) {
+  const managedConfig = config as ManagedAxiosRequestConfig | undefined
+  const fingerprint = managedConfig?.__idempotencyFingerprint
+  if (!fingerprint) {
+    return
+  }
+
+  const current = inflightSubmitIdempotency.get(fingerprint)
+  if (!current) {
+    delete managedConfig.__idempotencyFingerprint
+    return
+  }
+
+  if (current.references <= 1) {
+    inflightSubmitIdempotency.delete(fingerprint)
+  } else {
+    current.references -= 1
+  }
+
+  delete managedConfig.__idempotencyFingerprint
+}
 
 // 创建axios实例
 const service: AxiosInstance = axios.create({
@@ -65,6 +152,21 @@ service.interceptors.request.use(
       config.headers['X-Tenant-Id'] = tenantId
     }
 
+    const idempotency = (config as TinyRequestConfig).idempotency
+    if (idempotency) {
+      if (idempotency.key) {
+        config.headers['X-Idempotency-Key'] = idempotency.key
+      } else if (idempotency.mode === 'submit') {
+        config.headers['X-Idempotency-Key'] = acquireSubmitIdempotency(
+          config as ManagedAxiosRequestConfig,
+          idempotency,
+        )
+      } else {
+        const headers = createIdempotencyHeaders(idempotency.scope, idempotency.payload)
+        config.headers['X-Idempotency-Key'] = headers['X-Idempotency-Key']
+      }
+    }
+
     return config
   },
   (error) => {
@@ -77,6 +179,8 @@ service.interceptors.request.use(
 // 响应拦截器
 service.interceptors.response.use(
   (response: AxiosResponse) => {
+    releaseSubmitIdempotency(response.config)
+
     // 对响应数据做点什么
     const requestId = response.headers['x-request-id'] || response.headers['X-Request-Id']
     const traceId = response.headers['x-trace-id'] || response.headers['X-Trace-Id']
@@ -100,6 +204,8 @@ service.interceptors.response.use(
     return Promise.reject(new Error(data.message || '请求失败'))
   },
   async (error) => {
+    releaseSubmitIdempotency(error.config)
+
     // 对响应错误做点什么
     console.error('响应错误:', error)
 
@@ -354,23 +460,23 @@ service.interceptors.response.use(
 
 // 封装请求方法
 const request = {
-  get<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
+  get<T = any>(url: string, config?: TinyRequestConfig): Promise<T> {
     return service.get(url, config)
   },
 
-  post<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+  post<T = any>(url: string, data?: any, config?: TinyRequestConfig): Promise<T> {
     return service.post(url, data, config)
   },
 
-  put<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+  put<T = any>(url: string, data?: any, config?: TinyRequestConfig): Promise<T> {
     return service.put(url, data, config)
   },
 
-  delete<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
+  delete<T = any>(url: string, config?: TinyRequestConfig): Promise<T> {
     return service.delete(url, config)
   },
 
-  patch<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+  patch<T = any>(url: string, data?: any, config?: TinyRequestConfig): Promise<T> {
     return service.patch(url, data, config)
   },
 }

@@ -4,6 +4,7 @@ import com.tiny.platform.infrastructure.auth.resource.domain.Resource;
 import com.tiny.platform.infrastructure.auth.resource.dto.ResourceCreateUpdateDto;
 import com.tiny.platform.infrastructure.auth.resource.dto.ResourceRequestDto;
 import com.tiny.platform.infrastructure.auth.resource.dto.ResourceResponseDto;
+import com.tiny.platform.infrastructure.idempotent.sdk.annotation.Idempotent;
 import com.tiny.platform.infrastructure.menu.service.MenuService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -63,6 +64,7 @@ public class MenuController {
      * 创建菜单
      */
     @PostMapping
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Resource> createMenu(@Valid @RequestBody ResourceCreateUpdateDto resourceDto) {
         return ResponseEntity.ok(menuService.createMenu(resourceDto));
     }
@@ -71,6 +73,7 @@ public class MenuController {
      * 更新菜单
      */
     @PutMapping("/{id}")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<?> updateMenu(@PathVariable("id") Long id, @Valid @RequestBody ResourceCreateUpdateDto resourceDto) {
         resourceDto.setId(id);
         menuService.updateMenu(resourceDto);
@@ -81,6 +84,7 @@ public class MenuController {
      * 删除菜单
      */
     @DeleteMapping("/{id}")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Void> deleteMenu(@PathVariable("id") Long id) {
         menuService.deleteMenu(id);
         return ResponseEntity.noContent().build();
@@ -90,6 +94,7 @@ public class MenuController {
      * 批量删除菜单
      */
     @PostMapping("/batch/delete")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> batchDeleteMenus(@RequestBody List<Long> ids) {
         menuService.batchDeleteMenus(ids);
         return ResponseEntity.ok(Map.of("success", true, "message", "批量删除成功"));

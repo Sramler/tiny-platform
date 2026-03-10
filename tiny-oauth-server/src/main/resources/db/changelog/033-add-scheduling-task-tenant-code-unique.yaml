@@ -1,0 +1,67 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-scheduling-task-tenant-code-unique
+      author: tiny
+      comment: scheduling_task.code 收紧为租户内唯一（空白 code 归一化为 NULL）
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              UPDATE `scheduling_task`
+              SET `code` = NULL
+              WHERE `code` IS NOT NULL
+                AND TRIM(`code`) = '';
+
+              SET @duplicate_count := (
+                SELECT COUNT(*)
+                FROM (
+                  SELECT `tenant_id`, `code`
+                  FROM `scheduling_task`
+                  WHERE `code` IS NOT NULL
+                  GROUP BY `tenant_id`, `code`
+                  HAVING COUNT(*) > 1
+                ) dup
+              );
+
+              SET @sql := IF(
+                @duplicate_count > 0,
+                'SIGNAL SQLSTATE ''45000'' SET MESSAGE_TEXT = ''scheduling_task 存在租户内重复 code，请先清理后再升级''',
+                'SELECT 1'
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'scheduling_task'
+                      AND INDEX_NAME = 'uk_scheduling_task_tenant_code'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `scheduling_task` ADD UNIQUE KEY `uk_scheduling_task_tenant_code` (`tenant_id`, `code`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'scheduling_task'
+                      AND INDEX_NAME = 'idx_scheduling_task_tenant_code'
+                  ),
+                  'ALTER TABLE `scheduling_task` DROP INDEX `idx_scheduling_task_tenant_code`',
+                  'SELECT 1'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;

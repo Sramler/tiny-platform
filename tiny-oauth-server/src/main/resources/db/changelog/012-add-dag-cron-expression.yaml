@@ -2,40 +2,97 @@ databaseChangeLog:
   - changeSet:
       id: add-scheduling-dag-cron-expression
       author: tiny
+      validCheckSum:
+        - ANY
       comment: scheduling_dag 表增加 cron_expression 列，用于持久化 Cron 配置并支持重启恢复
       changes:
-        - addColumn:
-            tableName: scheduling_dag
-            columns:
-              - column:
-                  name: cron_expression
-                  type: VARCHAR(120)
-                  remarks: Cron 表达式，用于定时触发 DAG（与 Quartz 同步，重启时从本表恢复）
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'scheduling_dag'
+                      AND COLUMN_NAME = 'cron_expression'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `scheduling_dag` ADD COLUMN `cron_expression` VARCHAR(120) NULL COMMENT ''Cron 表达式，用于定时触发 DAG（与 Quartz 同步，重启时从本表恢复）'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
   - changeSet:
       id: add-scheduling-dag-cron-timezone-enabled
       author: tiny
+      validCheckSum:
+        - ANY
       comment: scheduling_dag 表增加 cron_timezone、cron_enabled 列，与 schema 一致
       changes:
-        - addColumn:
-            tableName: scheduling_dag
-            columns:
-              - column:
-                  name: cron_timezone
-                  type: VARCHAR(64)
-                  remarks: Cron 时区（如 Asia/Shanghai），为空则使用系统默认时区
-              - column:
-                  name: cron_enabled
-                  type: TINYINT(1)
-                  defaultValueNumeric: 1
-                  remarks: 是否启用 Cron 调度（1=启用，0=禁用），与 enabled 独立控制
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'scheduling_dag'
+                      AND COLUMN_NAME = 'cron_timezone'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `scheduling_dag` ADD COLUMN `cron_timezone` VARCHAR(64) NULL COMMENT ''Cron 时区（如 Asia/Shanghai），为空则使用系统默认时区'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'scheduling_dag'
+                      AND COLUMN_NAME = 'cron_enabled'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `scheduling_dag` ADD COLUMN `cron_enabled` TINYINT(1) NULL DEFAULT 1 COMMENT ''是否启用 Cron 调度（1=启用，0=禁用），与 enabled 独立控制'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
   - changeSet:
       id: add-scheduling-dag-cron-enabled-index
       author: tiny
+      validCheckSum:
+        - ANY
       comment: scheduling_dag 表增加 cron_enabled 索引，与 schema.sql 一致
       changes:
-        - createIndex:
-            indexName: idx_scheduling_dag_cron_enabled
-            tableName: scheduling_dag
-            columns:
-              - column:
-                  name: cron_enabled
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'scheduling_dag'
+                      AND INDEX_NAME = 'idx_scheduling_dag_cron_enabled'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `scheduling_dag` ADD KEY `idx_scheduling_dag_cron_enabled` (`cron_enabled`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;

@@ -1,10 +1,11 @@
 package com.tiny.platform.application.controller.idempotent.controller;
 
 import com.tiny.platform.infrastructure.core.exception.base.BaseExceptionHandler;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.tiny.platform.infrastructure.idempotent.metrics.IdempotentMetricsService;
+import com.tiny.platform.infrastructure.idempotent.metrics.IdempotentMetricsSnapshot;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -21,24 +22,40 @@ import java.util.Map;
 @RestController
 @RequestMapping("/metrics/idempotent")
 @ConditionalOnWebApplication
+@PreAuthorize("@idempotentMetricsAccessGuard.canAccess(authentication)")
 public class IdempotentMetricsController extends BaseExceptionHandler {
-    
-    // TODO: 注入指标服务
+
+    private final IdempotentMetricsService metricsService;
+
+    public IdempotentMetricsController(IdempotentMetricsService metricsService) {
+        this.metricsService = metricsService;
+    }
     
     /**
      * 获取幂等执行统计
      * GET /metrics/idempotent
      */
     @GetMapping
-    public ResponseEntity<Map<String, Object>> getMetrics() {
-        // TODO: 实现统计指标逻辑
+    public ResponseEntity<Map<String, Object>> getMetrics(
+            @RequestParam(required = false) Long tenantId) {
+        IdempotentMetricsSnapshot snapshot = metricsService.snapshot(tenantId);
         Map<String, Object> response = new HashMap<>();
         response.put("success", true);
-        response.put("message", "统计指标功能待实现");
-        response.put("hitCount", 0);
-        response.put("passCount", 0);
-        response.put("rejectCount", 0);
-        response.put("conflictRate", 0.0);
+        response.put("message", "OK");
+        response.put("tenantId", tenantId);
+        response.put("windowMinutes", snapshot.windowMinutes());
+        response.put("windowStartEpochMillis", snapshot.windowStartEpochMillis());
+        response.put("windowEndEpochMillis", snapshot.windowEndEpochMillis());
+        response.put("passCount", snapshot.passCount());
+        response.put("hitCount", snapshot.hitCount());
+        response.put("successCount", snapshot.successCount());
+        response.put("failureCount", snapshot.failureCount());
+        response.put("storeErrorCount", snapshot.storeErrorCount());
+        response.put("validationRejectCount", snapshot.validationRejectCount());
+        response.put("rejectCount", snapshot.rejectCount());
+        response.put("totalCheckCount", snapshot.totalCheckCount());
+        response.put("conflictRate", snapshot.conflictRate());
+        response.put("storageErrorRate", snapshot.storageErrorRate());
         return ResponseEntity.ok(response);
     }
     
@@ -48,12 +65,18 @@ public class IdempotentMetricsController extends BaseExceptionHandler {
      */
     @GetMapping("/top-keys")
     public ResponseEntity<Map<String, Object>> getTopKeys(
-            @RequestParam(defaultValue = "10") int limit) {
-        // TODO: 实现热点 Key 统计逻辑
+            @RequestParam(defaultValue = "10") int limit,
+            @RequestParam(required = false) Long tenantId) {
+        IdempotentMetricsSnapshot snapshot = metricsService.snapshot(tenantId);
         Map<String, Object> response = new HashMap<>();
         response.put("success", true);
-        response.put("message", "热点 Key 统计功能待实现");
-        response.put("limit", limit);
+        response.put("message", "OK");
+        response.put("tenantId", tenantId);
+        response.put("windowMinutes", snapshot.windowMinutes());
+        response.put("windowStartEpochMillis", snapshot.windowStartEpochMillis());
+        response.put("windowEndEpochMillis", snapshot.windowEndEpochMillis());
+        response.put("limit", Math.max(1, Math.min(limit, 100)));
+        response.put("topKeys", metricsService.topScopes(limit, tenantId));
         return ResponseEntity.ok(response);
     }
     
@@ -62,15 +85,19 @@ public class IdempotentMetricsController extends BaseExceptionHandler {
      * GET /metrics/idempotent/mq
      */
     @GetMapping("/mq")
-    public ResponseEntity<Map<String, Object>> getMqMetrics() {
-        // TODO: 实现 MQ 统计逻辑
+    public ResponseEntity<Map<String, Object>> getMqMetrics(
+            @RequestParam(required = false) Long tenantId) {
+        IdempotentMetricsSnapshot snapshot = metricsService.snapshot(tenantId);
         Map<String, Object> response = new HashMap<>();
         response.put("success", true);
-        response.put("message", "MQ 统计功能待实现");
-        response.put("successCount", 0);
-        response.put("failureCount", 0);
-        response.put("duplicateRate", 0.0);
+        response.put("message", "OK");
+        response.put("tenantId", tenantId);
+        response.put("windowMinutes", snapshot.windowMinutes());
+        response.put("windowStartEpochMillis", snapshot.windowStartEpochMillis());
+        response.put("windowEndEpochMillis", snapshot.windowEndEpochMillis());
+        response.put("successCount", snapshot.successCount());
+        response.put("failureCount", snapshot.failureCount());
+        response.put("duplicateRate", snapshot.conflictRate());
         return ResponseEntity.ok(response);
     }
 }
-

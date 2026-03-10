@@ -1,16 +1,42 @@
+# 测试环境配置：使用 H2 内存数据库，无需外部 MySQL
+# 适用：@ActiveProfiles("test") 或 spring.profiles.active=test
+# 目标：CI/本地 mvn test 可在无数据库环境下运行
+
 spring:
   datasource:
-    url: jdbc:mysql://localhost:3306/tiny_web?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&characterEncoding=utf8&serverTimezone=Asia/Shanghai
-    username: root
-    password: Tianye0903.
-    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:h2:mem:tiny_test;MODE=MySQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;CASE_INSENSITIVE_IDENTIFIERS=TRUE;NON_KEYWORDS=VALUE
+    username: sa
+    password: ""
+    driver-class-name: org.h2.Driver
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
   jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
     hibernate:
       ddl-auto: create-drop
-    show-sql: true
+    show-sql: false
     properties:
       hibernate:
-        format_sql: true
+        format_sql: false
+        jdbc:
+          time_zone: UTC
   sql:
     init:
-      mode: always
+      mode: never
+  liquibase:
+    enabled: false
+  quartz:
+    job-store-type: jdbc
+    jdbc:
+      initialize-schema: always
+    startup-delay: 0
+    properties:
+      org.quartz.jobStore.driverDelegateClass: org.quartz.impl.jdbcjobstore.StdJDBCDelegate
+      org.quartz.jobStore.isClustered: false
+
+camunda:
+  bpm:
+    database:
+      type: h2
+      schema-update: true

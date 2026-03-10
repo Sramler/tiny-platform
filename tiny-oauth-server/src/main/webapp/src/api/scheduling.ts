@@ -1,9 +1,38 @@
 // scheduling.ts 企业级 DAG 调度相关 API 封装
 import request from '@/utils/request'
 
+function withIdempotency(
+  scope: string,
+  payload?: unknown,
+  config: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    ...config,
+    idempotency: {
+      scope,
+      payload,
+    },
+  }
+}
+
+function withSubmitIdempotency(
+  scope: string,
+  payload?: unknown,
+  config: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    ...config,
+    idempotency: {
+      scope,
+      payload,
+      mode: 'submit',
+    },
+  }
+}
+
 // ==================== TaskType - 任务类型 ====================
 
-// 仅保留有值的查询参数，避免向后端传递 undefined 导致 500（如 tenantId=undefined）
+// 仅保留有值的查询参数，避免向后端传递 undefined / 空串。
 function cleanParams(p: Record<string, any>): Record<string, any> {
   const out: Record<string, any> = {}
   for (const k of Object.keys(p)) {
@@ -18,7 +47,6 @@ export function taskTypeList(params: any) {
   const apiParams = cleanParams({
     page: (params.current || 1) - 1,
     size: params.pageSize || 10,
-    tenantId: params.tenantId,
     code: params.code,
     name: params.name,
   })
@@ -32,17 +60,24 @@ export function taskTypeList(params: any) {
 
 // 创建任务类型
 export function createTaskType(data: any) {
-  return request.post('/scheduling/task-type', data)
+  return request.post('/scheduling/task-type', data, withIdempotency('scheduling-task-type:create', data))
 }
 
 // 更新任务类型
 export function updateTaskType(id: number, data: any) {
-  return request.put(`/scheduling/task-type/${id}`, data)
+  return request.put(
+    `/scheduling/task-type/${id}`,
+    data,
+    withIdempotency(`scheduling-task-type:update:${id}`, data),
+  )
 }
 
 // 删除任务类型
 export function deleteTaskType(id: number) {
-  return request.delete(`/scheduling/task-type/${id}`)
+  return request.delete(
+    `/scheduling/task-type/${id}`,
+    withIdempotency(`scheduling-task-type:delete:${id}`, { id }),
+  )
 }
 
 // 查看任务类型详情
@@ -59,14 +94,13 @@ export function getExecutors() {
 
 // 分页查询任务列表
 export function taskList(params: any) {
-  const apiParams: { [key: string]: any } = {
+  const apiParams = cleanParams({
     page: (params.current || 1) - 1,
     size: params.pageSize || 10,
-    tenantId: params.tenantId,
     typeId: params.typeId,
     code: params.code,
     name: params.name,
-  }
+  })
   return request.get('/scheduling/task/list', { params: apiParams }).then((res: any) => {
     return {
       records: res.content || [],
@@ -77,17 +111,17 @@ export function taskList(params: any) {
 
 // 创建任务实例
 export function createTask(data: any) {
-  return request.post('/scheduling/task', data)
+  return request.post('/scheduling/task', data, withIdempotency('scheduling-task:create', data))
 }
 
 // 更新任务
 export function updateTask(id: number, data: any) {
-  return request.put(`/scheduling/task/${id}`, data)
+  return request.put(`/scheduling/task/${id}`, data, withIdempotency(`scheduling-task:update:${id}`, data))
 }
 
 // 删除任务
 export function deleteTask(id: number) {
-  return request.delete(`/scheduling/task/${id}`)
+  return request.delete(`/scheduling/task/${id}`, withIdempotency(`scheduling-task:delete:${id}`, { id }))
 }
 
 // 查看任务详情
@@ -104,13 +138,12 @@ export function getTaskParam(taskId: number) {
 
 // 分页查询 DAG 列表
 export function dagList(params: any) {
-  const apiParams: { [key: string]: any } = {
+  const apiParams = cleanParams({
     page: (params.current || 1) - 1,
     size: params.pageSize || 10,
-    tenantId: params.tenantId,
     code: params.code,
     name: params.name,
-  }
+  })
   return request.get('/scheduling/dag/list', { params: apiParams }).then((res: any) => {
     return {
       records: res.content || [],
@@ -121,17 +154,17 @@ export function dagList(params: any) {
 
 // 创建 DAG
 export function createDag(data: any) {
-  return request.post('/scheduling/dag', data)
+  return request.post('/scheduling/dag', data, withIdempotency('scheduling-dag:create', data))
 }
 
 // 更新 DAG
 export function updateDag(id: number, data: any) {
-  return request.put(`/scheduling/dag/${id}`, data)
+  return request.put(`/scheduling/dag/${id}`, data, withIdempotency(`scheduling-dag:update:${id}`, data))
 }
 
 // 删除 DAG
 export function deleteDag(id: number) {
-  return request.delete(`/scheduling/dag/${id}`)
+  return request.delete(`/scheduling/dag/${id}`, withIdempotency(`scheduling-dag:delete:${id}`, { id }))
 }
 
 // 查看 DAG 详情
@@ -143,12 +176,20 @@ export function getDag(id: number) {
 
 // 创建 DAG 新版本
 export function createDagVersion(dagId: number, data: any) {
-  return request.post(`/scheduling/dag/${dagId}/version`, data)
+  return request.post(
+    `/scheduling/dag/${dagId}/version`,
+    data,
+    withIdempotency(`scheduling-dag-version:create:${dagId}`, { dagId, data }),
+  )
 }
 
 // 更新 DAG 版本
 export function updateDagVersion(dagId: number, versionId: number, data: any) {
-  return request.put(`/scheduling/dag/${dagId}/version/${versionId}`, data)
+  return request.put(
+    `/scheduling/dag/${dagId}/version/${versionId}`,
+    data,
+    withIdempotency(`scheduling-dag-version:update:${dagId}:${versionId}`, { dagId, versionId, data }),
+  )
 }
 
 // 查看 DAG 版本详情
@@ -165,17 +206,31 @@ export function listDagVersions(dagId: number) {
 
 // 添加 DAG 节点
 export function createDagNode(dagId: number, versionId: number, data: any) {
-  return request.post(`/scheduling/dag/${dagId}/version/${versionId}/node`, data)
+  return request.post(
+    `/scheduling/dag/${dagId}/version/${versionId}/node`,
+    data,
+    withIdempotency(`scheduling-dag-node:create:${dagId}:${versionId}`, { dagId, versionId, data }),
+  )
 }
 
 // 更新节点
 export function updateDagNode(dagId: number, versionId: number, nodeId: number, data: any) {
-  return request.put(`/scheduling/dag/${dagId}/version/${versionId}/node/${nodeId}`, data)
+  return request.put(
+    `/scheduling/dag/${dagId}/version/${versionId}/node/${nodeId}`,
+    data,
+    withIdempotency(
+      `scheduling-dag-node:update:${dagId}:${versionId}:${nodeId}`,
+      { dagId, versionId, nodeId, data },
+    ),
+  )
 }
 
 // 删除节点
 export function deleteDagNode(dagId: number, versionId: number, nodeId: number) {
-  return request.delete(`/scheduling/dag/${dagId}/version/${versionId}/node/${nodeId}`)
+  return request.delete(
+    `/scheduling/dag/${dagId}/version/${versionId}/node/${nodeId}`,
+    withIdempotency(`scheduling-dag-node:delete:${dagId}:${versionId}:${nodeId}`, { dagId, versionId, nodeId }),
+  )
 }
 
 // 查看节点详情
@@ -207,63 +262,153 @@ export function getDagEdges(dagId: number, versionId: number) {
 
 // 新增节点依赖
 export function createDagEdge(dagId: number, versionId: number, data: any) {
-  return request.post(`/scheduling/dag/${dagId}/version/${versionId}/edge`, data)
+  return request.post(
+    `/scheduling/dag/${dagId}/version/${versionId}/edge`,
+    data,
+    withIdempotency(`scheduling-dag-edge:create:${dagId}:${versionId}`, { dagId, versionId, data }),
+  )
 }
 
 // 删除节点依赖
 export function deleteDagEdge(dagId: number, versionId: number, edgeId: number) {
-  return request.delete(`/scheduling/dag/${dagId}/version/${versionId}/edge/${edgeId}`)
+  return request.delete(
+    `/scheduling/dag/${dagId}/version/${versionId}/edge/${edgeId}`,
+    withIdempotency(`scheduling-dag-edge:delete:${dagId}:${versionId}:${edgeId}`, { dagId, versionId, edgeId }),
+  )
 }
 
 // ==================== DAG 调度触发/控制 ====================
 
 // 触发整个 DAG 执行
-export function triggerDag(dagId: number, triggeredBy?: string) {
-  return request.post(`/scheduling/dag/${dagId}/trigger`, null, {
-    params: { triggeredBy: triggeredBy || 'system' },
-  })
+export function triggerDag(dagId: number) {
+  return request.post(
+    `/scheduling/dag/${dagId}/trigger`,
+    null,
+    withSubmitIdempotency(`scheduling-dag:trigger:${dagId}`, { dagId }),
+  )
 }
 
 // 暂停 DAG 执行
 export function pauseDag(dagId: number) {
-  return request.post(`/scheduling/dag/${dagId}/pause`)
+  return request.post(
+    `/scheduling/dag/${dagId}/pause`,
+    null,
+    withSubmitIdempotency(`scheduling-dag:pause:${dagId}`, { dagId }),
+  )
 }
 
 // 恢复 DAG 执行
 export function resumeDag(dagId: number) {
-  return request.post(`/scheduling/dag/${dagId}/resume`)
+  return request.post(
+    `/scheduling/dag/${dagId}/resume`,
+    null,
+    withSubmitIdempotency(`scheduling-dag:resume:${dagId}`, { dagId }),
+  )
 }
 
 // 强制停止 DAG 执行
 export function stopDag(dagId: number) {
-  return request.post(`/scheduling/dag/${dagId}/stop`)
+  return request.post(
+    `/scheduling/dag/${dagId}/stop`,
+    null,
+    withSubmitIdempotency(`scheduling-dag:stop:${dagId}`, { dagId }),
+  )
+}
+
+export function stopDagRun(dagId: number, runId: number) {
+  return request.post(
+    `/scheduling/dag/${dagId}/run/${runId}/stop`,
+    null,
+    withSubmitIdempotency(`scheduling-dag-run:stop:${dagId}:${runId}`, { dagId, runId }),
+  )
 }
 
 // 对失败的 DAG 进行整体重试
 export function retryDag(dagId: number) {
-  return request.post(`/scheduling/dag/${dagId}/retry`)
+  return request.post(
+    `/scheduling/dag/${dagId}/retry`,
+    null,
+    withSubmitIdempotency(`scheduling-dag:retry:${dagId}`, { dagId }),
+  )
+}
+
+// 对指定失败运行进行重试
+export function retryDagRun(dagId: number, runId: number) {
+  return request.post(
+    `/scheduling/dag/${dagId}/run/${runId}/retry`,
+    null,
+    withSubmitIdempotency(`scheduling-dag-run:retry:${dagId}:${runId}`, { dagId, runId }),
+  )
 }
 
 // ==================== DAG 节点调度 ====================
 
 // 单独触发节点执行
 export function triggerNode(dagId: number, nodeId: number) {
-  return request.post(`/scheduling/dag/${dagId}/node/${nodeId}/trigger`)
+  return request.post(
+    `/scheduling/dag/${dagId}/node/${nodeId}/trigger`,
+    null,
+    withSubmitIdempotency(`scheduling-dag-node:trigger:${dagId}:${nodeId}`, { dagId, nodeId }),
+  )
+}
+
+export function triggerDagRunNode(dagId: number, runId: number, nodeId: number) {
+  return request.post(
+    `/scheduling/dag/${dagId}/run/${runId}/node/${nodeId}/trigger`,
+    null,
+    withSubmitIdempotency(`scheduling-dag-run-node:trigger:${dagId}:${runId}:${nodeId}`, { dagId, runId, nodeId }),
+  )
 }
 
 // 对失败节点重试
 export function retryNode(dagId: number, nodeId: number) {
-  return request.post(`/scheduling/dag/${dagId}/node/${nodeId}/retry`)
+  return request.post(
+    `/scheduling/dag/${dagId}/node/${nodeId}/retry`,
+    null,
+    withSubmitIdempotency(`scheduling-dag-node:retry:${dagId}:${nodeId}`, { dagId, nodeId }),
+  )
+}
+
+export function retryDagRunNode(dagId: number, runId: number, nodeId: number) {
+  return request.post(
+    `/scheduling/dag/${dagId}/run/${runId}/node/${nodeId}/retry`,
+    null,
+    withSubmitIdempotency(`scheduling-dag-run-node:retry:${dagId}:${runId}:${nodeId}`, { dagId, runId, nodeId }),
+  )
 }
 
 // 暂停节点
 export function pauseNode(dagId: number, nodeId: number) {
-  return request.post(`/scheduling/dag/${dagId}/node/${nodeId}/pause`)
+  return request.post(
+    `/scheduling/dag/${dagId}/node/${nodeId}/pause`,
+    null,
+    withSubmitIdempotency(`scheduling-dag-node:pause:${dagId}:${nodeId}`, { dagId, nodeId }),
+  )
+}
+
+export function pauseDagRunNode(dagId: number, runId: number, nodeId: number) {
+  return request.post(
+    `/scheduling/dag/${dagId}/run/${runId}/node/${nodeId}/pause`,
+    null,
+    withSubmitIdempotency(`scheduling-dag-run-node:pause:${dagId}:${runId}:${nodeId}`, { dagId, runId, nodeId }),
+  )
 }
 
 // 恢复节点
 export function resumeNode(dagId: number, nodeId: number) {
-  return request.post(`/scheduling/dag/${dagId}/node/${nodeId}/resume`)
+  return request.post(
+    `/scheduling/dag/${dagId}/node/${nodeId}/resume`,
+    null,
+    withSubmitIdempotency(`scheduling-dag-node:resume:${dagId}:${nodeId}`, { dagId, nodeId }),
+  )
+}
+
+export function resumeDagRunNode(dagId: number, runId: number, nodeId: number) {
+  return request.post(
+    `/scheduling/dag/${dagId}/run/${runId}/node/${nodeId}/resume`,
+    null,
+    withSubmitIdempotency(`scheduling-dag-run-node:resume:${dagId}:${runId}:${nodeId}`, { dagId, runId, nodeId }),
+  )
 }
 
 // ==================== 运行历史 ====================
@@ -328,13 +473,12 @@ export function getTaskHistory(historyId: number) {
 
 // 分页查询操作审计记录
 export function auditList(params: any) {
-  const apiParams: { [key: string]: any } = {
+  const apiParams = cleanParams({
     page: (params.current || 1) - 1,
     size: params.pageSize || 10,
-    tenantId: params.tenantId,
     objectType: params.objectType,
     action: params.action,
-  }
+  })
   return request.get('/scheduling/audit/list', { params: apiParams }).then((res: any) => {
     return {
       records: res.content || [],

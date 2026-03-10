@@ -80,13 +80,21 @@
             </template>
             <template v-else-if="column && column.dataIndex === 'action'">
               <div class="action-buttons">
-                <a-button type="link" size="small" @click.stop="openEditDrawer(record)" class="action-btn">
+                <a-tooltip v-if="isReadonlyItemRecord(record)" :title="getItemReadonlyReason(record)">
+                  <a-button type="link" size="small" disabled class="action-btn">
+                    <template #icon>
+                      <EditOutlined />
+                    </template>
+                    编辑
+                  </a-button>
+                </a-tooltip>
+                <a-button v-else type="link" size="small" @click.stop="openEditDrawer(record)" class="action-btn">
                   <template #icon>
                     <EditOutlined />
                   </template>
                   编辑
                 </a-button>
-                <a-tooltip v-if="record.isBuiltin" title="内置字典项不允许删除">
+                <a-tooltip v-if="isReadonlyItemRecord(record)" :title="getItemReadonlyReason(record)">
                   <a-button type="link" size="small" danger disabled class="action-btn">
                     <template #icon>
                       <DeleteOutlined />
@@ -132,7 +140,7 @@
       :get-container="false" :style="{ position: 'absolute' }" @close="handleDrawerClose">
       <a-form :model="formState" layout="vertical">
         <a-form-item label="字典类型" name="dictTypeId">
-          <a-select v-model:value="formState.dictTypeId" :disabled="drawerMode === 'view'" placeholder="请选择字典类型"
+          <a-select v-model:value="formState.dictTypeId" :disabled="drawerMode !== 'create'" placeholder="请选择字典类型"
             style="width: 100%">
             <a-select-option v-for="type in dictTypeOptions" :key="type.id" :value="type.id">
               {{ type.dictName }} ({{ type.dictCode }})
@@ -140,28 +148,35 @@
           </a-select>
         </a-form-item>
         <a-form-item label="字典值" name="value">
-          <a-input v-model:value="formState.value" :disabled="drawerMode === 'view'" placeholder="请输入字典值" />
+          <a-input
+            v-model:value="formState.value"
+            :disabled="drawerMode === 'view' || isPlatformOverlayEdit"
+            placeholder="请输入字典值"
+          />
         </a-form-item>
         <a-form-item label="字典标签" name="label">
           <a-input v-model:value="formState.label" :disabled="drawerMode === 'view'" placeholder="请输入字典标签" />
         </a-form-item>
         <a-form-item label="描述" name="description">
-          <a-textarea v-model:value="formState.description" :rows="3" :disabled="drawerMode === 'view'"
+          <a-textarea v-model:value="formState.description" :rows="3" :disabled="drawerMode === 'view' || isLabelOnlyOverlayMode"
             placeholder="请输入描述信息" />
+        </a-form-item>
+        <a-form-item v-if="isLabelOnlyOverlayMode" label="覆盖规则">
+          <a-alert message="平台字典的租户覆盖仅允许修改 label，description / 排序 / 状态沿用平台定义。" type="info" show-icon />
         </a-form-item>
         <a-form-item label="租户ID" name="tenantId">
           <a-input :value="tenantIdDisplay" disabled />
         </a-form-item>
         <a-form-item label="排序" name="sortOrder">
           <a-input-number v-model:value="formState.sortOrder" :min="0" style="width: 100%"
-            :disabled="drawerMode === 'view'" placeholder="排序值，数字越小越靠前" />
+            :disabled="drawerMode === 'view' || isLabelOnlyOverlayMode" placeholder="排序值，数字越小越靠前" />
         </a-form-item>
         <a-form-item label="是否内置" name="isBuiltin">
           <a-switch v-model:checked="formState.isBuiltin" :disabled="drawerMode === 'view' || drawerMode === 'edit'" />
           <span style="margin-left: 8px; color: #999; font-size: 12px;">平台内置字典项，创建后不可修改</span>
         </a-form-item>
         <a-form-item label="状态" name="enabled">
-          <a-switch v-model:checked="formState.enabled" :disabled="drawerMode === 'view'" />
+          <a-switch v-model:checked="formState.enabled" :disabled="drawerMode === 'view' || isLabelOnlyOverlayMode" />
         </a-form-item>
       </a-form>
       <template #footer>
@@ -182,7 +197,7 @@ import { message, Modal } from 'ant-design-vue'
 import { useThrottle } from '@/utils/debounce'
 import { getTenantId } from '@/utils/tenant'
 import {
-  getDictTypesByTenant,
+  getVisibleDictTypes,
   getDictItemList,
   createDictItem,
   updateDictItem,
@@ -216,7 +231,7 @@ async function loadDictTypeOptions() {
       dictTypeOptions.value = []
       return
     }
-    const result = await getDictTypesByTenant(tenantId)
+    const result = await getVisibleDictTypes()
     dictTypeOptions.value = result
   } catch (error) {
     console.error('加载字典类型选项失败:', error)
@@ -428,6 +443,22 @@ const tenantIdDisplay = computed(() => {
   return tenantId != null ? String(tenantId) : '-'
 })
 
+const selectedDictType = computed(() =>
+  dictTypeOptions.value.find((type) => type.id === formState.value.dictTypeId),
+)
+
+const isPlatformOverlayCreate = computed(() =>
+  drawerMode.value === 'create' && Number(selectedDictType.value?.tenantId) === 0,
+)
+
+const isPlatformOverlayEdit = computed(() =>
+  drawerMode.value === 'edit' &&
+  Number(formState.value.tenantId) !== 0 &&
+  Number(selectedDictType.value?.tenantId) === 0,
+)
+
+const isLabelOnlyOverlayMode = computed(() => isPlatformOverlayCreate.value || isPlatformOverlayEdit.value)
+
 function resolveTenantId(): number | undefined {
   const raw = getTenantId()
   if (!raw) return undefined
@@ -508,10 +539,11 @@ async function handleSubmit() {
       dictTypeId: formState.value.dictTypeId,
       value: formState.value.value,
       label: formState.value.label,
-      description: formState.value.description,
-      tenantId,
-      enabled: formState.value.enabled ?? true,
-      sortOrder: formState.value.sortOrder ?? 0,
+    }
+    if (!isLabelOnlyOverlayMode.value) {
+      payload.description = formState.value.description
+      payload.enabled = formState.value.enabled ?? true
+      payload.sortOrder = formState.value.sortOrder ?? 0
     }
     if (drawerMode.value === 'create') {
       await createDictItem(payload)
@@ -528,8 +560,8 @@ async function handleSubmit() {
 }
 
 function handleDelete(record: any) {
-  if (record.isBuiltin) {
-    message.warning('内置字典项不允许删除')
+  if (isReadonlyItemRecord(record)) {
+    message.warning(getItemReadonlyReason(record))
     return
   }
   Modal.confirm({
@@ -549,6 +581,17 @@ function handleDelete(record: any) {
         })
     },
   })
+}
+
+function isReadonlyItemRecord(record: any) {
+  return Number(record?.tenantId) === 0
+}
+
+function getItemReadonlyReason(record: any) {
+  if (Number(record?.tenantId) === 0) {
+    return '平台字典项只读，不允许修改'
+  }
+  return '当前字典项不允许修改'
 }
 
 // 监听字典类型变化，自动加载数据

@@ -1,6 +1,60 @@
 import request from '@/utils/request'
 import type { UserSummary } from '@/api/user'
 
+function normalizeProcessPayload(payload: unknown): unknown {
+  if (typeof FormData !== 'undefined' && payload instanceof FormData) {
+    return Array.from(payload.entries())
+      .map<[string, string | { name: string; size: number; type: string; lastModified: number }]>(
+        ([key, value]) => {
+        if (typeof value === 'string') {
+          return [key, value]
+        }
+        return [
+          key,
+          {
+            name: (value as File).name ?? '',
+            size: (value as File).size ?? 0,
+            type: (value as File).type ?? '',
+            lastModified: (value as File).lastModified ?? 0,
+          },
+        ]
+        },
+      )
+      .sort((left, right) => left[0].localeCompare(right[0]))
+  }
+
+  return payload
+}
+
+function withIdempotency(
+  scope: string,
+  payload?: unknown,
+  config: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    ...config,
+    idempotency: {
+      scope,
+      payload: normalizeProcessPayload(payload),
+    },
+  }
+}
+
+function withSubmitIdempotency(
+  scope: string,
+  payload?: unknown,
+  config: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    ...config,
+    idempotency: {
+      scope,
+      payload: normalizeProcessPayload(payload),
+      mode: 'submit',
+    },
+  }
+}
+
 export interface ProcessDefinition {
   id: string
   key: string
@@ -90,7 +144,10 @@ export const processApi = {
 
   // 删除流程定义
   deleteProcessDefinition: (processDefinitionId: string) =>
-    request.delete<{ message: string }>(`/process/definition/${processDefinitionId}`),
+    request.delete<{ message: string }>(
+      `/process/definition/${processDefinitionId}`,
+      withIdempotency(`process-definition:delete:${processDefinitionId}`, { processDefinitionId }),
+    ),
 
   // 验证 BPMN XML
   validateBpmnXml: (bpmnXml: string) =>
@@ -107,13 +164,21 @@ export const deploymentApi = {
     return request.post<{ deploymentId: string; message: string }>(
       '/process/deploy',
       bpmnXml,
-      isFormData ? {} : { headers: { 'Content-Type': 'application/xml' } },
+      withSubmitIdempotency(
+        'process-deploy:create',
+        bpmnXml,
+        isFormData ? {} : { headers: { 'Content-Type': 'application/xml' } },
+      ),
     )
   },
 
   // 部署流程（带信息）
   deployProcessWithInfo: (data: { bpmnXml: string } & ProcessInfo) =>
-    request.post<{ deploymentId: string; message: string }>('/process/deploy-with-info', data),
+    request.post<{ deploymentId: string; message: string }>(
+      '/process/deploy-with-info',
+      data,
+      withSubmitIdempotency('process-deploy-with-info:create', data),
+    ),
 
   // 获取部署列表
   getDeployments: (tenantId?: string) =>
@@ -121,16 +186,23 @@ export const deploymentApi = {
 
   // 删除部署
   deleteDeployment: (deploymentId: string) =>
-    request.delete<{ message: string }>(`/process/deployment/${deploymentId}`),
+    request.delete<{ message: string }>(
+      `/process/deployment/${deploymentId}`,
+      withIdempotency(`process-deployment:delete:${deploymentId}`, { deploymentId }),
+    ),
 }
 
 // 流程实例管理
 export const instanceApi = {
   // 启动流程实例
   startProcess: (data: StartProcessRequest) =>
-    request.post<{ instanceId: string; message: string }>('/process/start', data.variables, {
-      params: { processKey: data.processKey },
-    }),
+    request.post<{ instanceId: string; message: string }>(
+      '/process/start',
+      data.variables,
+      withSubmitIdempotency(`process-instance:start:${data.processKey}`, data, {
+        params: { processKey: data.processKey },
+      }),
+    ),
 
   // 获取流程实例列表
   getProcessInstances: (tenantId?: string, state?: string) =>
@@ -138,15 +210,26 @@ export const instanceApi = {
 
   // 挂起流程实例
   suspendInstance: (instanceId: string) =>
-    request.post<{ message: string }>(`/process/instance/${instanceId}/suspend`),
+    request.post<{ message: string }>(
+      `/process/instance/${instanceId}/suspend`,
+      null,
+      withSubmitIdempotency(`process-instance:suspend:${instanceId}`, { instanceId }),
+    ),
 
   // 激活流程实例
   activateInstance: (instanceId: string) =>
-    request.post<{ message: string }>(`/process/instance/${instanceId}/activate`),
+    request.post<{ message: string }>(
+      `/process/instance/${instanceId}/activate`,
+      null,
+      withSubmitIdempotency(`process-instance:activate:${instanceId}`, { instanceId }),
+    ),
 
   // 删除流程实例
   deleteInstance: (instanceId: string) =>
-    request.delete<{ message: string }>(`/process/instance/${instanceId}`),
+    request.delete<{ message: string }>(
+      `/process/instance/${instanceId}`,
+      withIdempotency(`process-instance:delete:${instanceId}`, { instanceId }),
+    ),
 
   // 获取任务列表
   getTasks: (processInstanceId: string) =>
@@ -154,13 +237,21 @@ export const instanceApi = {
 
   // 领取任务
   claimTask: (taskId: string, userId: string) =>
-    request.post<{ message: string }>(`/process/task/${taskId}/claim`, null, {
-      params: { userId },
-    }),
+    request.post<{ message: string }>(
+      `/process/task/${taskId}/claim`,
+      null,
+      withSubmitIdempotency(`process-task:claim:${taskId}`, { taskId, userId }, {
+        params: { userId },
+      }),
+    ),
 
   // 完成任务
   completeTask: (taskId: string, variables: Record<string, unknown>) =>
-    request.post<{ message: string }>(`/process/task/${taskId}/complete`, variables),
+    request.post<{ message: string }>(
+      `/process/task/${taskId}/complete`,
+      variables,
+      withSubmitIdempotency(`process-task:complete:${taskId}`, { taskId, variables }),
+    ),
 }
 
 // 任务管理
@@ -171,13 +262,21 @@ export const taskApi = {
 
   // 领取任务
   claimTask: (taskId: string, userId: string) =>
-    request.post<{ message: string }>(`/process/task/${taskId}/claim`, null, {
-      params: { userId },
-    }),
+    request.post<{ message: string }>(
+      `/process/task/${taskId}/claim`,
+      null,
+      withSubmitIdempotency(`process-task:claim:${taskId}`, { taskId, userId }, {
+        params: { userId },
+      }),
+    ),
 
   // 完成任务
   completeTask: (data: CompleteTaskRequest) =>
-    request.post<{ message: string }>(`/process/task/${data.taskId}/complete`, data.variables),
+    request.post<{ message: string }>(
+      `/process/task/${data.taskId}/complete`,
+      data.variables,
+      withSubmitIdempotency(`process-task:complete:${data.taskId}`, data),
+    ),
 }
 
 // 历史数据查询
@@ -195,7 +294,11 @@ export const historyApi = {
 export const tenantApi = {
   // 创建租户
   createTenant: (tenantInfo: { id: string; name: string }) =>
-    request.post<{ tenantId: string; message: string }>('/process/tenant', tenantInfo),
+    request.post<{ tenantId: string; message: string }>(
+      '/process/tenant',
+      tenantInfo,
+      withIdempotency(`process-tenant:create:${tenantInfo.id}`, tenantInfo),
+    ),
 
   // 获取租户列表
   getTenants: () => request.get('/process/tenants'),

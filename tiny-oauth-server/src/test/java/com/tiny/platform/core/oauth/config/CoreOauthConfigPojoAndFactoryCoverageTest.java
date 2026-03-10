@@ -7,7 +7,6 @@ import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import org.junit.jupiter.api.Test;
-import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.authentication.WebAuthenticationDetails;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
@@ -84,8 +83,7 @@ class CoreOauthConfigPojoAndFactoryCoverageTest {
         assertThat(camundaConfig).isNotNull();
 
         CorsConfigurationSource corsSource = mock(CorsConfigurationSource.class);
-        UserDetailsService userDetailsService = mock(UserDetailsService.class);
-        DefaultSecurityConfig securityConfig = new DefaultSecurityConfig(corsSource, userDetailsService);
+        DefaultSecurityConfig securityConfig = new DefaultSecurityConfig(corsSource);
 
         PasswordEncoder passwordEncoder = securityConfig.passwordEncoder();
         String encoded = passwordEncoder.encode("p@ss");

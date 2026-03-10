@@ -1,0 +1,48 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-idempotent-ops-menu
+      author: tiny
+      comment: 为默认平台租户补充幂等治理菜单，并默认授予平台管理员
+      validCheckSum:
+        - ANY
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT IGNORE INTO `resource`
+              (`tenant_id`, `name`, `url`, `uri`, `method`, `icon`, `show_icon`, `sort`, `component`, `redirect`, `hidden`, `keep_alive`, `title`, `permission`, `type`, `parent_id`)
+              SELECT
+                1,
+                'idempotentOps',
+                '/ops/idempotent',
+                '/metrics/idempotent',
+                'GET',
+                'RadarChartOutlined',
+                0,
+                6,
+                '/views/idempotent/Overview.vue',
+                '',
+                0,
+                0,
+                '幂等治理',
+                'idempotent:ops:view',
+                1,
+                parent.id
+              FROM `resource` parent
+              WHERE parent.tenant_id = 1
+                AND parent.name = 'system'
+              LIMIT 1;
+
+              INSERT IGNORE INTO `role_resource` (`tenant_id`, `role_id`, `resource_id`)
+              SELECT
+                1,
+                role_entity.id,
+                resource_entity.id
+              FROM `role` role_entity
+              JOIN `resource` resource_entity
+                ON resource_entity.tenant_id = 1
+               AND resource_entity.name = 'idempotentOps'
+              WHERE role_entity.tenant_id = 1
+                AND role_entity.code = 'ROLE_ADMIN';

@@ -147,7 +147,8 @@ class UserServiceImplTest {
 
         TenantContext.setTenantId(1L);
 
-        LocalDateTime lastFailedAt = LocalDateTime.of(2026, 3, 4, 10, 15);
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime lastFailedAt = now.minusMinutes(2);
         User existingUser = new User();
         existingUser.setId(11L);
         existingUser.setTenantId(1L);
@@ -157,7 +158,7 @@ class UserServiceImplTest {
         existingUser.setAccountNonExpired(true);
         existingUser.setAccountNonLocked(false);
         existingUser.setCredentialsNonExpired(true);
-        existingUser.setLastLoginAt(LocalDateTime.of(2026, 3, 4, 10, 0));
+        existingUser.setLastLoginAt(now.minusMinutes(20));
         existingUser.setFailedLoginCount(5);
         existingUser.setLastFailedLoginAt(lastFailedAt);
 
@@ -172,7 +173,7 @@ class UserServiceImplTest {
         assertThat(dto.getUsername()).isEqualTo("carol");
         assertThat(dto.isAccountNonLocked()).isFalse();
         assertThat(dto.getFailedLoginCount()).isEqualTo(5);
-        assertThat(dto.getLastLoginAt()).isEqualTo(LocalDateTime.of(2026, 3, 4, 10, 0));
+        assertThat(dto.getLastLoginAt()).isEqualTo(now.minusMinutes(20));
         assertThat(dto.getLastFailedLoginAt()).isEqualTo(lastFailedAt);
         assertThat(dto.isTemporarilyLocked()).isTrue();
         assertThat(dto.getLockRemainingMinutes()).isBetween(1, 15);

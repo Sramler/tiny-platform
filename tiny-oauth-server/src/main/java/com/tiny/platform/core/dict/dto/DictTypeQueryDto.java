@@ -12,8 +12,6 @@ public class DictTypeQueryDto {
 
     private String dictName;
 
-    private Long tenantId;
-
     private Boolean enabled;
 
     @Min(value = 0, message = "页码不能小于0")
@@ -41,14 +39,6 @@ public class DictTypeQueryDto {
         this.dictName = dictName;
     }
 
-    public Long getTenantId() {
-        return tenantId;
-    }
-
-    public void setTenantId(Long tenantId) {
-        this.tenantId = tenantId;
-    }
-
     public Boolean getEnabled() {
         return enabled;
     }
@@ -73,4 +63,3 @@ public class DictTypeQueryDto {
         this.size = size;
     }
 }
-

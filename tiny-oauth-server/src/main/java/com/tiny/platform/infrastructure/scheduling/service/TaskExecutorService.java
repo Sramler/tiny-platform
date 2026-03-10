@@ -2,7 +2,9 @@ package com.tiny.platform.infrastructure.scheduling.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.scheduling.exception.SchedulingExceptions;
+import com.tiny.platform.infrastructure.scheduling.model.SchedulingTaskExecutionSnapshot;
 import com.tiny.platform.infrastructure.scheduling.model.SchedulingTask;
 import com.tiny.platform.infrastructure.scheduling.model.SchedulingTaskInstance;
 import com.tiny.platform.infrastructure.scheduling.model.SchedulingTaskType;
@@ -16,10 +18,12 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationContext;
 import org.springframework.stereotype.Service;
 import org.springframework.util.ClassUtils;
+import org.springframework.util.StringUtils;
 
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.Callable;
 
 /**
  * 任务执行器服务
@@ -60,34 +64,40 @@ public class TaskExecutorService {
      * 执行任务实例
      */
     public TaskExecutionResult execute(SchedulingTaskInstance instance) {
-        logger.info("开始执行任务实例, instanceId: {}, taskId: {}, nodeCode: {}", 
+        return execute(SchedulingExecutionContext.builder()
+                .tenantId(instance.getTenantId())
+                .dagId(instance.getDagId())
+                .dagRunId(instance.getDagRunId())
+                .dagVersionId(instance.getDagVersionId())
+                .build(), instance);
+    }
+
+    public TaskExecutionResult execute(SchedulingExecutionContext executionContext, SchedulingTaskInstance instance) {
+        logger.info("开始执行任务实例, tenantId: {}, runId: {}, instanceId: {}, taskId: {}, nodeCode: {}",
+                executionContext != null ? executionContext.getTenantId() : null,
+                executionContext != null ? executionContext.getDagRunId() : null,
                 instance.getId(), instance.getTaskId(), instance.getNodeCode());
 
         try {
-            // 1. 获取任务定义
-            SchedulingTask task = taskRepository.findById(instance.getTaskId())
-                    .orElseThrow(() -> SchedulingExceptions.notFound("任务不存在: %s", instance.getTaskId()));
+            Object result = runWithTenantContext(executionContext, () -> {
+                Long tenantId = executionContext != null ? executionContext.getTenantId() : null;
+                SchedulingTaskExecutionSnapshot snapshot = readExecutionSnapshot(instance);
+                ExecutionTaskConfig taskConfig = resolveTaskConfig(instance, snapshot, tenantId);
+                ExecutionTaskTypeConfig taskTypeConfig = resolveTaskTypeConfig(snapshot, taskConfig, tenantId);
 
-            // 2. 获取任务类型
-            SchedulingTaskType taskType = taskTypeRepository.findById(task.getTypeId())
-                    .orElseThrow(() -> SchedulingExceptions.notFound("任务类型不存在: %s", task.getTypeId()));
+                Map<String, Object> params = parseAndMergeParams(instance, taskConfig);
+                jsonSchemaValidationService.validate(taskTypeConfig.paramSchema(), params);
 
-            // 3. 验证参数（如果任务类型有 paramSchema）
-            Map<String, Object> params = parseAndMergeParams(instance, task);
-            jsonSchemaValidationService.validate(taskType.getParamSchema(), params);
+                String executor = taskTypeConfig.executor();
+                if (executor == null || executor.isEmpty()) {
+                    throw SchedulingExceptions.validation("任务类型未配置执行器: %s", taskConfig.taskId());
+                }
 
-            // 4. 获取执行器
-            String executor = taskType.getExecutor();
-            if (executor == null || executor.isEmpty()) {
-                throw SchedulingExceptions.validation("任务类型未配置执行器: %s", taskType.getCode());
-            }
+                TaskExecutor executorBean = getExecutor(executor)
+                        .orElseThrow(() -> SchedulingExceptions.notFound("找不到执行器: %s", executor));
 
-            // 5. 根据执行器类型执行任务
-            TaskExecutor executorBean = getExecutor(executor)
-                    .orElseThrow(() -> SchedulingExceptions.notFound("找不到执行器: %s", executor));
-
-            // 6. 执行任务
-            Object result = executorBean.execute(params);
+                return executorBean.execute(executionContext, params);
+            });
 
             logger.info("任务实例执行成功, instanceId: {}", instance.getId());
             return TaskExecutionResult.success(result);
@@ -95,6 +105,108 @@ public class TaskExecutorService {
         } catch (Exception e) {
             logger.error("任务实例执行失败, instanceId: {}", instance.getId(), e);
             return TaskExecutionResult.failure(e.getMessage(), e);
+        }
+    }
+
+    private SchedulingTask findTask(Long taskId, Long tenantId) {
+        if (tenantId != null && tenantId > 0) {
+            return taskRepository.findByIdAndTenantId(taskId, tenantId)
+                    .orElseThrow(() -> SchedulingExceptions.notFound("任务不存在: %s", taskId));
+        }
+        return taskRepository.findById(taskId)
+                .orElseThrow(() -> SchedulingExceptions.notFound("任务不存在: %s", taskId));
+    }
+
+    private SchedulingTaskType findTaskType(Long taskTypeId, Long tenantId) {
+        if (tenantId != null && tenantId > 0) {
+            return taskTypeRepository.findByIdAndTenantId(taskTypeId, tenantId)
+                    .orElseThrow(() -> SchedulingExceptions.notFound("任务类型不存在: %s", taskTypeId));
+        }
+        return taskTypeRepository.findById(taskTypeId)
+                .orElseThrow(() -> SchedulingExceptions.notFound("任务类型不存在: %s", taskTypeId));
+    }
+
+    private SchedulingTaskExecutionSnapshot readExecutionSnapshot(SchedulingTaskInstance instance) {
+        if (!StringUtils.hasText(instance.getExecutionSnapshot())) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(instance.getExecutionSnapshot(), SchedulingTaskExecutionSnapshot.class);
+        } catch (Exception e) {
+            throw SchedulingExceptions.validation("任务实例执行快照损坏: %s", instance.getId());
+        }
+    }
+
+    private ExecutionTaskConfig resolveTaskConfig(
+            SchedulingTaskInstance instance,
+            SchedulingTaskExecutionSnapshot snapshot,
+            Long tenantId) {
+        SchedulingTaskExecutionSnapshot.TaskSnapshot taskSnapshot = snapshot != null ? snapshot.getTask() : null;
+        if (taskSnapshot != null) {
+            return new ExecutionTaskConfig(
+                    instance.getTaskId(),
+                    taskSnapshot.getTaskTypeId(),
+                    taskSnapshot.getParams(),
+                    taskSnapshot.getTimeoutSec(),
+                    taskSnapshot.getMaxRetry(),
+                    taskSnapshot.getRetryPolicy());
+        }
+
+        SchedulingTask task = findTask(instance.getTaskId(), tenantId);
+        if (Boolean.FALSE.equals(task.getEnabled())) {
+            throw SchedulingExceptions.operationNotAllowed("任务已禁用，无法执行: %s", task.getId());
+        }
+        return new ExecutionTaskConfig(
+                task.getId(),
+                task.getTypeId(),
+                task.getParams(),
+                task.getTimeoutSec(),
+                task.getMaxRetry(),
+                task.getRetryPolicy());
+    }
+
+    private ExecutionTaskTypeConfig resolveTaskTypeConfig(
+            SchedulingTaskExecutionSnapshot snapshot,
+            ExecutionTaskConfig taskConfig,
+            Long tenantId) {
+        SchedulingTaskExecutionSnapshot.TaskTypeSnapshot taskTypeSnapshot = snapshot != null ? snapshot.getTaskType() : null;
+        if (taskTypeSnapshot != null) {
+            return new ExecutionTaskTypeConfig(
+                    taskTypeSnapshot.getExecutor(),
+                    taskTypeSnapshot.getParamSchema(),
+                    taskTypeSnapshot.getDefaultTimeoutSec(),
+                    taskTypeSnapshot.getDefaultMaxRetry());
+        }
+
+        SchedulingTaskType taskType = findTaskType(taskConfig.taskTypeId(), tenantId);
+        if (Boolean.FALSE.equals(taskType.getEnabled())) {
+            throw SchedulingExceptions.operationNotAllowed("任务类型已禁用，无法执行: %s", taskType.getId());
+        }
+        return new ExecutionTaskTypeConfig(
+                taskType.getExecutor(),
+                taskType.getParamSchema(),
+                taskType.getDefaultTimeoutSec(),
+                taskType.getDefaultMaxRetry());
+    }
+
+    private <T> T runWithTenantContext(SchedulingExecutionContext executionContext, Callable<T> callable) throws Exception {
+        Long previousTenantId = TenantContext.getTenantId();
+        String previousTenantSource = TenantContext.getTenantSource();
+        try {
+            TenantContext.clear();
+            if (executionContext != null && executionContext.getTenantId() != null) {
+                TenantContext.setTenantId(executionContext.getTenantId());
+                TenantContext.setTenantSource(TenantContext.SOURCE_UNKNOWN);
+            }
+            return callable.call();
+        } finally {
+            TenantContext.clear();
+            if (previousTenantId != null) {
+                TenantContext.setTenantId(previousTenantId);
+            }
+            if (previousTenantSource != null) {
+                TenantContext.setTenantSource(previousTenantSource);
+            }
         }
     }
 
@@ -144,12 +256,12 @@ public class TaskExecutorService {
      */
     private Map<String, Object> parseAndMergeParams(
             SchedulingTaskInstance instance,
-            SchedulingTask task) {
+            ExecutionTaskConfig taskConfig) {
 
         Map<String, Object> mergedParams = new HashMap<>();
 
         // 1. 任务默认参数
-        mergedParams.putAll(parseJsonToMap(task.getParams()));
+        mergedParams.putAll(parseJsonToMap(taskConfig.params()));
 
         // 2. 节点定义覆盖参数（最高优先级）
         if (instance.getDagVersionId() != null && instance.getNodeCode() != null) {
@@ -221,12 +333,31 @@ public class TaskExecutorService {
      * 任务执行器接口
      */
     public interface TaskExecutor {
+        default Object execute(SchedulingExecutionContext executionContext, Map<String, Object> params) throws Exception {
+            return execute(params);
+        }
+
         /**
          * 执行任务
          * @param params 任务参数
          * @return 执行结果
          */
-        Object execute(Map<String, Object> params) throws Exception;
+        default Object execute(Map<String, Object> params) throws Exception {
+            throw new UnsupportedOperationException("TaskExecutor must implement execute(context, params) or execute(params)");
+        }
     }
-}
 
+    private record ExecutionTaskConfig(
+            Long taskId,
+            Long taskTypeId,
+            String params,
+            Integer timeoutSec,
+            Integer maxRetry,
+            String retryPolicy) {}
+
+    private record ExecutionTaskTypeConfig(
+            String executor,
+            String paramSchema,
+            Integer defaultTimeoutSec,
+            Integer defaultMaxRetry) {}
+}

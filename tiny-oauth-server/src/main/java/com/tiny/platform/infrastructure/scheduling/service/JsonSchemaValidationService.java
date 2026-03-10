@@ -28,6 +28,25 @@ public class JsonSchemaValidationService {
         this.objectMapper = objectMapper;
     }
 
+    public void ensureValidSchema(String schemaJson) {
+        if (schemaJson == null || schemaJson.trim().isEmpty()) {
+            return;
+        }
+        try {
+            schemaCache.computeIfAbsent(schemaJson, key -> {
+                try {
+                    return objectMapper.readTree(key);
+                } catch (Exception e) {
+                    throw SchedulingExceptions.validation("解析 JSON Schema 失败: %s", e.getMessage());
+                }
+            });
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw SchedulingExceptions.validation("解析 JSON Schema 失败: %s", e.getMessage());
+        }
+    }
+
     public void validate(String schemaJson, Map<String, Object> params) {
         if (schemaJson == null || schemaJson.trim().isEmpty() || params == null) {
             return;
@@ -183,4 +202,3 @@ public class JsonSchemaValidationService {
         return node.toString();
     }
 }
-

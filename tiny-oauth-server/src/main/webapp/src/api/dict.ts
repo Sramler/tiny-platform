@@ -42,7 +42,6 @@ export interface DictItem {
 export interface DictTypeQuery {
   dictCode?: string
   dictName?: string
-  tenantId?: number
   enabled?: boolean
   page?: number
   size?: number
@@ -53,7 +52,6 @@ export interface DictItemQuery {
   dictTypeId?: number
   value?: string
   label?: string
-  tenantId?: number
   enabled?: boolean
   page?: number
   size?: number
@@ -65,7 +63,6 @@ export interface DictTypeCreateUpdateDto {
   dictCode: string
   dictName: string
   description?: string
-  tenantId?: number
   categoryId?: number
   enabled?: boolean
   sortOrder?: number
@@ -78,7 +75,6 @@ export interface DictItemCreateUpdateDto {
   value: string
   label: string
   description?: string
-  tenantId?: number
   enabled?: boolean
   sortOrder?: number
 }
@@ -111,7 +107,12 @@ export function getDictTypeByCode(dictCode: string): Promise<DictTypeItem> {
 
 // 创建字典类型
 export function createDictType(data: DictTypeCreateUpdateDto): Promise<DictTypeItem> {
-  return request.post('/dict/types', data)
+  return request.post('/dict/types', data, {
+    idempotency: {
+      scope: 'dict-types:create',
+      payload: data,
+    },
+  })
 }
 
 // 更新字典类型
@@ -119,22 +120,37 @@ export function updateDictType(
   id: number | string,
   data: DictTypeCreateUpdateDto,
 ): Promise<DictTypeItem> {
-  return request.put(`/dict/types/${id}`, data)
+  return request.put(`/dict/types/${id}`, data, {
+    idempotency: {
+      scope: `dict-types:update:${id}`,
+      payload: data,
+    },
+  })
 }
 
 // 删除字典类型
 export function deleteDictType(id: number | string): Promise<void> {
-  return request.delete(`/dict/types/${id}`)
+  return request.delete(`/dict/types/${id}`, {
+    idempotency: {
+      scope: `dict-types:delete:${id}`,
+      payload: { id },
+    },
+  })
 }
 
 // 批量删除字典类型
 export function batchDeleteDictTypes(ids: (number | string)[]): Promise<void> {
-  return request.post('/dict/types/batch/delete', ids)
+  return request.post('/dict/types/batch/delete', ids, {
+    idempotency: {
+      scope: 'dict-types:batch-delete',
+      payload: ids,
+    },
+  })
 }
 
-// 根据租户ID获取字典类型列表
-export function getDictTypesByTenant(tenantId: number): Promise<DictTypeItem[]> {
-  return request.get(`/dict/types/tenant/${tenantId}`)
+// 获取当前租户可见的字典类型列表（平台 + 当前租户）
+export function getVisibleDictTypes(): Promise<DictTypeItem[]> {
+  return request.get('/dict/types/current')
 }
 
 // ==================== 字典项 API ====================
@@ -154,30 +170,29 @@ export function getDictItemsByType(dictTypeId: number): Promise<DictItem[]> {
   return request.get(`/dict/items/type/${dictTypeId}`)
 }
 
-// 根据字典编码获取字典项列表（支持多租户）
-export function getDictItemsByCode(dictCode: string, tenantId?: number): Promise<DictItem[]> {
-  return request.get(`/dict/items/code/${dictCode}`, {
-    params: { tenantId: tenantId || 0 },
-  })
+// 根据字典编码获取字典项列表
+export function getDictItemsByCode(dictCode: string): Promise<DictItem[]> {
+  return request.get(`/dict/items/code/${dictCode}`)
 }
 
 // 根据字典编码获取字典映射（value -> label）
-export function getDictMap(dictCode: string, tenantId?: number): Promise<Record<string, string>> {
-  return request.get(`/dict/items/map/${dictCode}`, {
-    params: { tenantId: tenantId || 0 },
-  })
+export function getDictMap(dictCode: string): Promise<Record<string, string>> {
+  return request.get(`/dict/items/map/${dictCode}`)
 }
 
 // 根据字典编码和值获取标签
-export function getDictLabel(dictCode: string, value: string, tenantId?: number): Promise<string> {
-  return request.get(`/dict/items/label/${dictCode}/${value}`, {
-    params: { tenantId: tenantId || 0 },
-  })
+export function getDictLabel(dictCode: string, value: string): Promise<string> {
+  return request.get(`/dict/items/label/${dictCode}/${value}`)
 }
 
 // 创建字典项
 export function createDictItem(data: DictItemCreateUpdateDto): Promise<DictItem> {
-  return request.post('/dict/items', data)
+  return request.post('/dict/items', data, {
+    idempotency: {
+      scope: 'dict-items:create',
+      payload: data,
+    },
+  })
 }
 
 // 更新字典项
@@ -185,15 +200,30 @@ export function updateDictItem(
   id: number | string,
   data: DictItemCreateUpdateDto,
 ): Promise<DictItem> {
-  return request.put(`/dict/items/${id}`, data)
+  return request.put(`/dict/items/${id}`, data, {
+    idempotency: {
+      scope: `dict-items:update:${id}`,
+      payload: data,
+    },
+  })
 }
 
 // 删除字典项
 export function deleteDictItem(id: number | string): Promise<void> {
-  return request.delete(`/dict/items/${id}`)
+  return request.delete(`/dict/items/${id}`, {
+    idempotency: {
+      scope: `dict-items:delete:${id}`,
+      payload: { id },
+    },
+  })
 }
 
 // 批量删除字典项
 export function batchDeleteDictItems(ids: (number | string)[]): Promise<void> {
-  return request.post('/dict/items/batch/delete', ids)
+  return request.post('/dict/items/batch/delete', ids, {
+    idempotency: {
+      scope: 'dict-items:batch-delete',
+      payload: ids,
+    },
+  })
 }

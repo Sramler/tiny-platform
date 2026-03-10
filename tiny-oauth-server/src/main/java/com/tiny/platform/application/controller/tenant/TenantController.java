@@ -1,6 +1,7 @@
 package com.tiny.platform.application.controller.tenant;
 
 import com.tiny.platform.infrastructure.core.dto.PageResponse;
+import com.tiny.platform.infrastructure.idempotent.sdk.annotation.Idempotent;
 import com.tiny.platform.infrastructure.tenant.dto.TenantCreateUpdateDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantRequestDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantResponseDto;
@@ -50,16 +51,19 @@ public class TenantController {
     }
 
     @PostMapping
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<TenantResponseDto> create(@RequestBody TenantCreateUpdateDto dto) {
         return ResponseEntity.ok(tenantService.create(dto));
     }
 
     @PutMapping("/{id}")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<TenantResponseDto> update(@PathVariable("id") Long id, @RequestBody TenantCreateUpdateDto dto) {
         return ResponseEntity.ok(tenantService.update(id, dto));
     }
 
     @DeleteMapping("/{id}")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Void> delete(@PathVariable("id") Long id) {
         tenantService.delete(id);
         return ResponseEntity.noContent().build();

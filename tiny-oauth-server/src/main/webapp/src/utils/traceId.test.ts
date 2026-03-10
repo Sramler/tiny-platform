@@ -10,6 +10,9 @@ const mocks = vi.hoisted(() => ({
   routerReplace: vi.fn(),
 }))
 
+// This file tests the real implementation; undo the global mock from test setup.
+vi.unmock('@/utils/traceId')
+
 vi.mock('@/utils/csrf', () => ({
   ensureCsrfToken: mocks.ensureCsrfToken,
   isUnsafeHttpMethod: mocks.isUnsafeHttpMethod,
@@ -39,6 +42,7 @@ describe('traceId.ts', () => {
     vi.clearAllMocks()
     sessionStorage.clear()
     vi.useFakeTimers()
+    vi.unmock('@/utils/traceId')
     mocks.ensureCsrfToken.mockResolvedValue({
       token: 'csrf-token',
       parameterName: '_csrf',
@@ -54,7 +58,7 @@ describe('traceId.ts', () => {
   })
 
   it('should add trace headers to fetch options', async () => {
-    const traceIdModule = await import('@/utils/traceId')
+    const traceIdModule = await vi.importActual<any>('@/utils/traceId')
     const options = traceIdModule.addTraceIdToFetchOptions({
       headers: {
         Accept: 'application/json',
@@ -78,7 +82,7 @@ describe('traceId.ts', () => {
     )
     vi.stubGlobal('fetch', fetchMock)
 
-    const traceIdModule = await import('@/utils/traceId')
+    const traceIdModule = await vi.importActual<any>('@/utils/traceId')
     await traceIdModule.fetchWithTraceId('http://localhost:9000/api/secure', {
       method: 'POST',
       credentials: 'include',
@@ -100,7 +104,7 @@ describe('traceId.ts', () => {
   })
 
   it('should reuse session trace id once created', async () => {
-    const traceIdModule = await import('@/utils/traceId')
+    const traceIdModule = await vi.importActual<any>('@/utils/traceId')
 
     const first = traceIdModule.getOrCreateTraceId()
     const second = traceIdModule.getOrCreateTraceId()
@@ -126,7 +130,7 @@ describe('traceId.ts', () => {
       replace: vi.fn(),
     })
 
-    const traceIdModule = await import('@/utils/traceId')
+    const traceIdModule = await vi.importActual<any>('@/utils/traceId')
     const requestPromise = traceIdModule.fetchWithTraceId('http://localhost:9000/api/secure', {
       method: 'GET',
     })
@@ -155,7 +159,7 @@ describe('traceId.ts', () => {
       replace: vi.fn(),
     })
 
-    const traceIdModule = await import('@/utils/traceId')
+    const traceIdModule = await vi.importActual<any>('@/utils/traceId')
     const response = await traceIdModule.fetchWithTraceId('http://localhost:9000/api/secure', {
       method: 'GET',
       skipAuthError: true,

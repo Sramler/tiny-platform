@@ -11,14 +11,27 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Collection;
 
 @Repository
 public interface SchedulingDagRunRepository extends JpaRepository<SchedulingDagRun, Long>, JpaSpecificationExecutor<SchedulingDagRun> {
+    Optional<SchedulingDagRun> findByIdAndTenantId(Long id, Long tenantId);
+
     List<SchedulingDagRun> findByDagId(Long dagId);
+
+    List<SchedulingDagRun> findByDagIdInAndStatusInOrderByIdDesc(Collection<Long> dagIds, Collection<String> statuses);
+
+    List<SchedulingDagRun> findByDagIdOrderByIdDesc(Long dagId);
 
     Optional<SchedulingDagRun> findByRunNo(String runNo);
 
     List<SchedulingDagRun> findByDagIdAndStatus(Long dagId, String status);
+
+    Optional<SchedulingDagRun> findTopByDagIdAndStatusInOrderByIdDesc(Long dagId, Collection<String> statuses);
+
+    Optional<SchedulingDagRun> findTopByDagIdAndStatusOrderByIdDesc(Long dagId, String status);
+
+    long countByDagId(Long dagId);
 
     List<SchedulingDagRun> findByStatus(String status);
 
@@ -47,5 +60,3 @@ public interface SchedulingDagRunRepository extends JpaRepository<SchedulingDagR
             + ") t", nativeQuery = true)
     Double getDurationMsAtOffset(@Param("dagId") Long dagId, @Param("offset") int offset);
 }
-
-

@@ -64,7 +64,6 @@
 import { ref, reactive, watch } from 'vue'
 import type { FormInstance } from 'ant-design-vue'
 import type { DictTypeItem, DictTypeCreateUpdateDto } from '@/api/dict'
-import { getTenantId } from '@/utils/tenant'
 
 const props = defineProps<{
   formData?: DictTypeItem | null
@@ -76,7 +75,6 @@ const formData = reactive<DictTypeCreateUpdateDto>({
   dictCode: '',
   dictName: '',
   description: '',
-  tenantId: undefined,
   categoryId: undefined,
   sortOrder: 0,
   enabled: true,
@@ -105,7 +103,6 @@ watch(
         dictCode: newVal.dictCode || '',
         dictName: newVal.dictName || '',
         description: newVal.description || '',
-        tenantId: newVal.tenantId ?? resolveTenantId(),
         categoryId: newVal.categoryId,
         sortOrder: newVal.sortOrder ?? 0,
         enabled: newVal.enabled ?? true,
@@ -116,7 +113,6 @@ watch(
         dictCode: '',
         dictName: '',
         description: '',
-        tenantId: resolveTenantId(),
         categoryId: undefined,
         sortOrder: 0,
         enabled: true,
@@ -126,13 +122,6 @@ watch(
   { immediate: true, deep: true }
 )
 
-function resolveTenantId(): number | undefined {
-  const raw = getTenantId()
-  if (!raw) return undefined
-  const parsed = Number(raw)
-  return Number.isFinite(parsed) ? parsed : undefined
-}
-
 // 验证表单
 async function validate() {
   await formRef.value?.validate()
@@ -140,7 +129,7 @@ async function validate() {
 
 // 获取表单数据
 function getFormData(): DictTypeCreateUpdateDto {
-  return { ...formData, tenantId: resolveTenantId() ?? formData.tenantId }
+  return { ...formData }
 }
 
 defineExpose({

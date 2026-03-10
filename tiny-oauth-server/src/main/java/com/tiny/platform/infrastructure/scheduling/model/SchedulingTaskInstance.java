@@ -33,7 +33,7 @@ public class SchedulingTaskInstance implements Serializable {
     @Column(name = "task_id", nullable = false)
     private Long taskId;
 
-    @Column(name = "tenant_id")
+    @Column(name = "tenant_id", nullable = false)
     private Long tenantId;
 
     @Column(name = "attempt_no")
@@ -56,6 +56,9 @@ public class SchedulingTaskInstance implements Serializable {
 
     @Column(columnDefinition = "JSON")
     private String params;
+
+    @Column(name = "execution_snapshot", columnDefinition = "JSON")
+    private String executionSnapshot;
 
     @Column(columnDefinition = "JSON")
     private String result;
@@ -210,6 +213,14 @@ public class SchedulingTaskInstance implements Serializable {
         this.result = result;
     }
 
+    public String getExecutionSnapshot() {
+        return executionSnapshot;
+    }
+
+    public void setExecutionSnapshot(String executionSnapshot) {
+        this.executionSnapshot = executionSnapshot;
+    }
+
     public String getErrorMessage() {
         return errorMessage;
     }
@@ -234,5 +245,3 @@ public class SchedulingTaskInstance implements Serializable {
         this.updatedAt = updatedAt;
     }
 }
-
-

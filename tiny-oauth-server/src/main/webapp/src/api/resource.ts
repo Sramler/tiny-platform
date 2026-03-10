@@ -100,7 +100,12 @@ export function resourceList(params?: ResourceQuery): Promise<PageResponse<Resou
 
 // 创建资源
 export function createResource(data: ResourceCreateUpdateDto): Promise<ResourceItem> {
-  return request.post('/sys/resources', data)
+  return request.post('/sys/resources', data, {
+    idempotency: {
+      scope: 'sys-resources:create',
+      payload: data,
+    },
+  })
 }
 
 // 更新资源
@@ -108,12 +113,22 @@ export function updateResource(
   id: number | string,
   data: ResourceCreateUpdateDto,
 ): Promise<ResourceItem> {
-  return request.put(`/sys/resources/${id}`, data)
+  return request.put(`/sys/resources/${id}`, data, {
+    idempotency: {
+      scope: `sys-resources:update:${id}`,
+      payload: data,
+    },
+  })
 }
 
 // 删除资源
 export function deleteResource(id: number | string): Promise<void> {
-  return request.delete(`/sys/resources/${id}`)
+  return request.delete(`/sys/resources/${id}`, {
+    idempotency: {
+      scope: `sys-resources:delete:${id}`,
+      payload: { id },
+    },
+  })
 }
 
 // 获取资源详情
@@ -125,12 +140,23 @@ export function getResourceDetail(id: number | string): Promise<ResourceItem> {
 export function batchDeleteResources(
   ids: (number | string)[],
 ): Promise<{ success: boolean; message: string }> {
-  return request.post('/sys/resources/batch/delete', ids)
+  return request.post('/sys/resources/batch/delete', ids, {
+    idempotency: {
+      scope: 'sys-resources:batch-delete',
+      payload: ids,
+    },
+  })
 }
 
 // 更新资源排序
 export function updateResourceSort(id: number | string, sort: number): Promise<ResourceItem> {
-  return request.put(`/sys/resources/${id}/sort`, null, { params: { sort } })
+  return request.put(`/sys/resources/${id}/sort`, null, {
+    params: { sort },
+    idempotency: {
+      scope: `sys-resources:sort:${id}`,
+      payload: { id, sort },
+    },
+  })
 }
 
 // 获取资源树

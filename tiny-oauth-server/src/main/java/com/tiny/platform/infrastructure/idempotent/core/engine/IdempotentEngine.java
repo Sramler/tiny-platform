@@ -6,6 +6,7 @@ import com.tiny.platform.infrastructure.idempotent.core.key.IdempotentKey;
 import com.tiny.platform.infrastructure.idempotent.core.record.IdempotentState;
 import com.tiny.platform.infrastructure.idempotent.core.repository.IdempotentRepository;
 import com.tiny.platform.infrastructure.idempotent.core.strategy.IdempotentStrategy;
+import com.tiny.platform.infrastructure.idempotent.metrics.IdempotentMetricsService;
 
 import java.util.function.Supplier;
 
@@ -20,9 +21,15 @@ import java.util.function.Supplier;
 public class IdempotentEngine {
     
     private final IdempotentRepository repository;
+    private final IdempotentMetricsService metricsService;
     
     public IdempotentEngine(IdempotentRepository repository) {
+        this(repository, new IdempotentMetricsService(null));
+    }
+
+    public IdempotentEngine(IdempotentRepository repository, IdempotentMetricsService metricsService) {
         this.repository = repository;
+        this.metricsService = metricsService != null ? metricsService : new IdempotentMetricsService(null);
     }
     
     /**
@@ -44,8 +51,12 @@ public class IdempotentEngine {
                 if (existingState != null) {
                     context.setState(existingState);
                 }
+                metricsService.recordDuplicate(key, existingState);
+            } else {
+                metricsService.recordPass(key);
             }
         } catch (Exception e) {
+            metricsService.recordStoreError(key);
             if (!failOpen) {
                 throw new IdempotentException("幂等性服务不可用", e);
             }
@@ -87,6 +98,7 @@ public class IdempotentEngine {
         try {
             isFirstRequest = repository.checkAndSet(context.getKey(), context.getTtlSeconds());
         } catch (Exception e) {
+            metricsService.recordStoreError(context.getKey());
             // 存储服务异常处理
             if (context.getStrategy().isFailOpen()) {
                 // fail-open：继续执行业务逻辑
@@ -100,6 +112,7 @@ public class IdempotentEngine {
         // 如果是重复请求，抛出异常
         if (!isFirstRequest) {
             IdempotentState existingState = repository.getState(context.getKey());
+            metricsService.recordDuplicate(context.getKey(), existingState);
             if (existingState == IdempotentState.SUCCESS) {
                 // 之前已经成功，返回成功结果（可以根据需要返回缓存的结果）
                 throw new IdempotentException("重复请求，操作已成功");
@@ -108,6 +121,7 @@ public class IdempotentEngine {
                 throw new IdempotentException("请勿重复提交");
             }
         }
+        metricsService.recordPass(context.getKey());
         
         try {
             // 执行业务逻辑
@@ -115,14 +129,15 @@ public class IdempotentEngine {
             // 执行成功，更新状态
             repository.updateState(context.getKey(), IdempotentState.SUCCESS);
             context.setState(IdempotentState.SUCCESS);
+            metricsService.recordSuccess(context.getKey());
             return result;
         } catch (Throwable e) {
             // 执行失败，更新状态并删除 token，允许重试
             repository.updateState(context.getKey(), IdempotentState.FAILED);
             repository.delete(context.getKey());
             context.setState(IdempotentState.FAILED);
+            metricsService.recordFailure(context.getKey());
             throw e;
         }
     }
 }
-

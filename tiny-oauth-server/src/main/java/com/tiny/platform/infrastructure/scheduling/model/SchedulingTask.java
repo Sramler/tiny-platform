@@ -8,14 +8,19 @@ import java.time.LocalDateTime;
  * 任务定义实体（scheduling_task）
  */
 @Entity
-@Table(name = "scheduling_task")
+@Table(
+        name = "scheduling_task",
+        uniqueConstraints = {
+                @UniqueConstraint(name = "uk_scheduling_task_tenant_code", columnNames = {"tenant_id", "code"})
+        }
+)
 public class SchedulingTask implements Serializable {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "tenant_id")
+    @Column(name = "tenant_id", nullable = false)
     private Long tenantId;
 
     @Column(name = "type_id", nullable = false)
@@ -189,5 +194,3 @@ public class SchedulingTask implements Serializable {
         this.updatedAt = updatedAt;
     }
 }
-
-

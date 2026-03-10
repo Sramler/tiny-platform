@@ -2,27 +2,54 @@ databaseChangeLog:
   - changeSet:
       id: add-scheduling-task-instance-concurrency-key
       author: tiny
+      validCheckSum:
+        - ANY
       comment: scheduling_task_instance 增加 concurrency_key 列，用于 KEYED 并发策略
       changes:
-        - addColumn:
-            tableName: scheduling_task_instance
-            columns:
-              - column:
-                  name: concurrency_key
-                  type: VARCHAR(128)
-                  remarks: KEYED 并发键，parallelGroup 优先否则 nodeCode 否则 TASK-<taskId>
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'scheduling_task_instance'
+                      AND COLUMN_NAME = 'concurrency_key'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `scheduling_task_instance` ADD COLUMN `concurrency_key` VARCHAR(128) NULL COMMENT ''KEYED 并发键，parallelGroup 优先否则 nodeCode 否则 TASK-<taskId>'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
   - changeSet:
       id: add-scheduling-task-instance-concurrency-index
       author: tiny
+      validCheckSum:
+        - ANY
       comment: scheduling_task_instance 增加 (task_id, concurrency_key, status) 索引，用于 KEYED 并发查询
       changes:
-        - createIndex:
-            indexName: idx_scheduling_task_instance_task_concurrency_status
-            tableName: scheduling_task_instance
-            columns:
-              - column:
-                  name: task_id
-              - column:
-                  name: concurrency_key
-              - column:
-                  name: status
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'scheduling_task_instance'
+                      AND INDEX_NAME = 'idx_scheduling_task_instance_task_concurrency_status'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `scheduling_task_instance` ADD KEY `idx_scheduling_task_instance_task_concurrency_status` (`task_id`, `concurrency_key`, `status`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;

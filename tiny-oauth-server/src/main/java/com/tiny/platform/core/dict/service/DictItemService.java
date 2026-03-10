@@ -34,17 +34,17 @@ public interface DictItemService {
     /**
      * 根据字典编码查找字典项（支持多租户）
      */
-    List<DictItem> findByDictCode(String dictCode, Long tenantId);
+    List<DictItem> findByDictCode(String dictCode);
 
     /**
      * 根据字典编码获取字典映射（value -> label）
      */
-    Map<String, String> getDictMap(String dictCode, Long tenantId);
+    Map<String, String> getDictMap(String dictCode);
 
     /**
      * 根据字典编码和值获取标签
      */
-    String getLabel(String dictCode, String value, Long tenantId);
+    String getLabel(String dictCode, String value);
 
     /**
      * 创建字典项
@@ -71,4 +71,3 @@ public interface DictItemService {
      */
     void deleteByDictTypeId(Long dictTypeId);
 }
-

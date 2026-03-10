@@ -51,13 +51,12 @@ public interface DictTypeService {
     void batchDelete(List<Long> ids);
 
     /**
-     * 根据租户ID查找所有字典类型
+     * 查询当前租户可见的字典类型（平台 + 当前租户）
      */
-    List<DictType> findByTenantId(Long tenantId);
+    List<DictType> findVisibleTypes();
 
     /**
      * 检查字典编码是否存在
      */
     boolean existsByDictCode(String dictCode, Long excludeId);
 }
-

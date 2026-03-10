@@ -2,8 +2,7 @@ package com.tiny.platform.infrastructure.core.exception.handler;
 
 import com.tiny.platform.infrastructure.core.exception.base.BaseExceptionHandler;
 import com.tiny.platform.infrastructure.core.exception.code.ErrorCode;
-// TODO: 当 idempotent-starter 依赖可用时，取消注释以下 import 和方法
-// import com.tiny.idempotent.exception.IdempotentException;
+import com.tiny.platform.infrastructure.idempotent.sdk.exception.IdempotentException;
 import jakarta.annotation.Nonnull;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
@@ -106,19 +105,17 @@ public class OAuthServerExceptionHandler extends BaseExceptionHandler {
      * <p>注意：当前 idempotent 模块已合并到 tiny-oauth-server 内部，
      * 当 IdempotentException 可用时，取消注释此方法。</p>
      */
-    /*
     @ExceptionHandler(IdempotentException.class)
-    public ResponseEntity<Problem> handleIdempotentException(
+    public ResponseEntity<ProblemDetail> handleIdempotentException(
             @Nonnull IdempotentException ex, @Nonnull NativeWebRequest request) {
         log.warn("幂等性检查失败: {}", ex.getMessage());
-        
-        Problem problem = buildProblem(
+
+        ProblemDetail body = buildProblemDetail(
             ErrorCode.IDEMPOTENT_CONFLICT,
             ex.getMessage(),
-            "idempotent-conflict"
+            request
         );
-        
-        return create(ex, problem, request);
+
+        return ResponseEntity.of(body).build();
     }
-    */
 }

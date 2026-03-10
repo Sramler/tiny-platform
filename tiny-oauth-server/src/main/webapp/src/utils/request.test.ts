@@ -2,6 +2,7 @@ import type { InternalAxiosRequestConfig } from 'axios'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 type RequestFulfilled = (config: InternalAxiosRequestConfig) => Promise<InternalAxiosRequestConfig>
+type ResponseFulfilled = (response: any) => any
 type ResponseRejected = (error: any) => Promise<any>
 
 const axiosState = vi.hoisted(() => {
@@ -25,6 +26,7 @@ const axiosState = vi.hoisted(() => {
     service,
     create: vi.fn(() => service),
     requestFulfilled: undefined as RequestFulfilled | undefined,
+    responseFulfilled: undefined as ResponseFulfilled | undefined,
     responseRejected: undefined as ResponseRejected | undefined,
   }
 })
@@ -40,6 +42,9 @@ const mocks = vi.hoisted(() => ({
   clearTenantContext: vi.fn(),
   getTenantId: vi.fn(),
   syncTenantContextFromAccessToken: vi.fn(),
+  createIdempotencyHeaders: vi.fn(),
+  createIdempotencyFingerprint: vi.fn(),
+  createSubmitIdempotencyKey: vi.fn(),
   extractErrorFromAxios: vi.fn(),
   extractErrorInfo: vi.fn(),
   persistentWarn: vi.fn(),
@@ -51,6 +56,7 @@ vi.mock('axios', () => {
     return 0
   })
   axiosState.service.interceptors.response.use.mockImplementation((_fulfilled: unknown, rejected: ResponseRejected) => {
+    axiosState.responseFulfilled = _fulfilled as ResponseFulfilled
     axiosState.responseRejected = rejected
     return 0
   })
@@ -95,6 +101,12 @@ vi.mock('@/utils/tenant', () => ({
   syncTenantContextFromAccessToken: mocks.syncTenantContextFromAccessToken,
 }))
 
+vi.mock('@/utils/idempotency', () => ({
+  createIdempotencyHeaders: mocks.createIdempotencyHeaders,
+  createIdempotencyFingerprint: mocks.createIdempotencyFingerprint,
+  createSubmitIdempotencyKey: mocks.createSubmitIdempotencyKey,
+}))
+
 vi.mock('@/utils/problemParser', () => ({
   extractErrorFromAxios: mocks.extractErrorFromAxios,
   extractErrorInfo: mocks.extractErrorInfo,
@@ -111,12 +123,16 @@ describe('request.ts interceptors', () => {
     vi.resetModules()
     vi.clearAllMocks()
     axiosState.requestFulfilled = undefined
+    axiosState.responseFulfilled = undefined
     axiosState.responseRejected = undefined
     mocks.getAccessToken.mockResolvedValue('access-token')
     mocks.getOrCreateTraceId.mockReturnValue('trace-id')
     mocks.generateRequestId.mockReturnValue('request-id')
     mocks.getCurrentTraceId.mockReturnValue('trace-current')
     mocks.getTenantId.mockReturnValue('101')
+    mocks.createIdempotencyHeaders.mockReturnValue({ 'X-Idempotency-Key': 'idem-key' })
+    mocks.createIdempotencyFingerprint.mockImplementation((value: unknown) => JSON.stringify(value))
+    mocks.createSubmitIdempotencyKey.mockReturnValue('submit-key')
     mocks.extractErrorFromAxios.mockReturnValue('conflict')
     mocks.extractErrorInfo.mockReturnValue({ code: 40903, message: 'conflict', status: 409 })
 
@@ -145,6 +161,155 @@ describe('request.ts interceptors', () => {
     expect(config.headers.Authorization).toBe('Bearer access-token')
     expect(config.headers['X-Tenant-Id']).toBe('101')
     expect(mocks.syncTenantContextFromAccessToken).toHaveBeenCalledWith('access-token')
+  })
+
+  it('should inject idempotency header when config declares idempotency', async () => {
+    const fulfilled = axiosState.service.interceptors.request.use.mock.calls[0]?.[0] as
+      | RequestFulfilled
+      | undefined
+    expect(fulfilled).toBeTypeOf('function')
+
+    const config = await fulfilled!({
+      headers: {} as any,
+      url: '/sys/users',
+      method: 'post',
+      idempotency: {
+        scope: 'sys-users:create',
+        payload: { username: 'alice' },
+      },
+    } as InternalAxiosRequestConfig)
+
+    expect(mocks.createIdempotencyHeaders).toHaveBeenCalledWith('sys-users:create', { username: 'alice' })
+    expect(config.headers['X-Idempotency-Key']).toBe('idem-key')
+  })
+
+  it('should reuse submit-mode key while duplicate requests are in flight and rotate after completion', async () => {
+    const fulfilled = axiosState.service.interceptors.request.use.mock.calls[0]?.[0] as
+      | RequestFulfilled
+      | undefined
+    const responseFulfilled = axiosState.service.interceptors.response.use.mock.calls[0]?.[0] as
+      | ResponseFulfilled
+      | undefined
+    expect(fulfilled).toBeTypeOf('function')
+    expect(responseFulfilled).toBeTypeOf('function')
+
+    mocks.createSubmitIdempotencyKey
+      .mockReturnValueOnce('submit-key-1')
+      .mockReturnValueOnce('submit-key-2')
+
+    const firstConfig = await fulfilled!({
+      headers: {} as any,
+      url: '/process/start',
+      method: 'post',
+      params: { processKey: 'demo' },
+      idempotency: {
+        scope: 'process-instance:start:demo',
+        payload: { processKey: 'demo', variables: { orderId: 'A-1' } },
+        mode: 'submit',
+      },
+    } as InternalAxiosRequestConfig)
+
+    const secondConfig = await fulfilled!({
+      headers: {} as any,
+      url: '/process/start',
+      method: 'post',
+      params: { processKey: 'demo' },
+      idempotency: {
+        scope: 'process-instance:start:demo',
+        payload: { processKey: 'demo', variables: { orderId: 'A-1' } },
+        mode: 'submit',
+      },
+    } as InternalAxiosRequestConfig)
+
+    expect(mocks.createIdempotencyHeaders).not.toHaveBeenCalled()
+    expect(mocks.createSubmitIdempotencyKey).toHaveBeenCalledTimes(1)
+    expect(firstConfig.headers['X-Idempotency-Key']).toBe('submit-key-1')
+    expect(secondConfig.headers['X-Idempotency-Key']).toBe('submit-key-1')
+
+    responseFulfilled!({
+      status: 200,
+      data: { ok: true },
+      headers: {},
+      config: firstConfig,
+    })
+    responseFulfilled!({
+      status: 200,
+      data: { ok: true },
+      headers: {},
+      config: secondConfig,
+    })
+
+    const thirdConfig = await fulfilled!({
+      headers: {} as any,
+      url: '/process/start',
+      method: 'post',
+      params: { processKey: 'demo' },
+      idempotency: {
+        scope: 'process-instance:start:demo',
+        payload: { processKey: 'demo', variables: { orderId: 'A-1' } },
+        mode: 'submit',
+      },
+    } as InternalAxiosRequestConfig)
+
+    expect(mocks.createSubmitIdempotencyKey).toHaveBeenCalledTimes(2)
+    expect(thirdConfig.headers['X-Idempotency-Key']).toBe('submit-key-2')
+  })
+
+  it('should rotate submit-mode key after an error response releases the in-flight entry', async () => {
+    const fulfilled = axiosState.service.interceptors.request.use.mock.calls[0]?.[0] as
+      | RequestFulfilled
+      | undefined
+    const rejected = axiosState.service.interceptors.response.use.mock.calls[0]?.[1] as
+      | ResponseRejected
+      | undefined
+    expect(fulfilled).toBeTypeOf('function')
+    expect(rejected).toBeTypeOf('function')
+
+    mocks.createSubmitIdempotencyKey
+      .mockReturnValueOnce('submit-key-1')
+      .mockReturnValueOnce('submit-key-2')
+
+    const firstConfig = await fulfilled!({
+      headers: {} as any,
+      url: '/scheduling/dag/3/trigger',
+      method: 'post',
+      params: { triggeredBy: 'alice' },
+      idempotency: {
+        scope: 'scheduling-dag:trigger:3',
+        payload: { dagId: 3, triggeredBy: 'alice' },
+        mode: 'submit',
+      },
+    } as InternalAxiosRequestConfig)
+
+    const duplicateError = {
+      response: {
+        status: 409,
+        data: {
+          title: 'duplicate',
+        },
+        headers: {},
+      },
+      config: firstConfig,
+      message: 'original',
+    }
+
+    await expect(rejected!(duplicateError)).rejects.toBe(duplicateError)
+
+    const secondConfig = await fulfilled!({
+      headers: {} as any,
+      url: '/scheduling/dag/3/trigger',
+      method: 'post',
+      params: { triggeredBy: 'alice' },
+      idempotency: {
+        scope: 'scheduling-dag:trigger:3',
+        payload: { dagId: 3, triggeredBy: 'alice' },
+        mode: 'submit',
+      },
+    } as InternalAxiosRequestConfig)
+
+    expect(mocks.createSubmitIdempotencyKey).toHaveBeenCalledTimes(2)
+    expect(firstConfig.headers['X-Idempotency-Key']).toBe('submit-key-1')
+    expect(secondConfig.headers['X-Idempotency-Key']).toBe('submit-key-2')
   })
 
   it('should redirect to login and clear tenant context for missing_tenant 400 errors', async () => {

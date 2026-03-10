@@ -1,9 +1,15 @@
 package com.tiny.platform.infrastructure.idempotent.sdk.aspect;
 
+import com.tiny.platform.core.oauth.model.SecurityUser;
+import com.tiny.platform.core.oauth.security.AuthenticationFactorAuthorities;
+import com.tiny.platform.core.oauth.tenant.TenantContext;
+import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
+import com.tiny.platform.infrastructure.idempotent.console.IdempotentBlacklistChecker;
 import com.tiny.platform.infrastructure.idempotent.core.context.IdempotentContext;
 import com.tiny.platform.infrastructure.idempotent.core.engine.IdempotentEngine;
 import com.tiny.platform.infrastructure.idempotent.core.key.IdempotentKey;
 import com.tiny.platform.infrastructure.idempotent.core.strategy.IdempotentStrategy;
+import com.tiny.platform.infrastructure.idempotent.metrics.IdempotentMetricsService;
 import com.tiny.platform.infrastructure.idempotent.sdk.annotation.Idempotent;
 import com.tiny.platform.infrastructure.idempotent.sdk.resolver.IdempotentKeyResolver;
 import jakarta.servlet.http.HttpServletRequest;
@@ -20,7 +26,13 @@ import org.springframework.expression.Expression;
 import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.expression.spel.support.StandardEvaluationContext;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.util.DigestUtils;
+import org.springframework.util.StringUtils;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
@@ -28,6 +40,7 @@ import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -44,15 +57,33 @@ public class IdempotentAspect {
     private static final Logger log = LoggerFactory.getLogger(IdempotentAspect.class);
     
     private static final String IDEMPOTENCY_KEY_HEADER = "X-Idempotency-Key";
+    private static final int MIN_KEY_LENGTH = 8;
+    private static final int MAX_KEY_LENGTH = 128;
+    private static final Pattern IDEMPOTENCY_KEY_PATTERN = Pattern.compile("^[A-Za-z0-9._:-]+$");
     
     private final IdempotentEngine engine;
     private final List<IdempotentKeyResolver> keyResolvers;
+    private final IdempotentMetricsService metricsService;
+    private final IdempotentBlacklistChecker blacklistChecker;
     private final ExpressionParser parser = new SpelExpressionParser();
     private final ParameterNameDiscoverer parameterNameDiscoverer = new DefaultParameterNameDiscoverer();
     
     public IdempotentAspect(IdempotentEngine engine, List<IdempotentKeyResolver> keyResolvers) {
+        this(engine, keyResolvers, new IdempotentMetricsService(null), null);
+    }
+
+    public IdempotentAspect(IdempotentEngine engine, List<IdempotentKeyResolver> keyResolvers,
+                            IdempotentMetricsService metricsService) {
+        this(engine, keyResolvers, metricsService, null);
+    }
+
+    public IdempotentAspect(IdempotentEngine engine, List<IdempotentKeyResolver> keyResolvers,
+                            IdempotentMetricsService metricsService,
+                            IdempotentBlacklistChecker blacklistChecker) {
         this.engine = engine;
         this.keyResolvers = keyResolvers != null ? keyResolvers : List.of();
+        this.metricsService = metricsService != null ? metricsService : new IdempotentMetricsService(null);
+        this.blacklistChecker = blacklistChecker;
     }
     
     @Around("@annotation(idempotent)")
@@ -68,6 +99,12 @@ public class IdempotentAspect {
         
         // 生成幂等性 Key
         IdempotentKey key = generateKey(joinPoint, method, idempotent);
+        
+        // 黑名单检查
+        if (blacklistChecker != null && blacklistChecker.isBlacklisted(key.getFullKey())) {
+            metricsService.recordValidationRejected("blacklist");
+            throw new com.tiny.platform.infrastructure.idempotent.sdk.exception.IdempotentException("该幂等键已被加入黑名单");
+        }
         
         // 构建上下文
         IdempotentContext context = new IdempotentContext(key, strategy);
@@ -102,7 +139,11 @@ public class IdempotentAspect {
         // 如果指定了 key 表达式，使用 SpEL 解析
         if (!keyExpression.isEmpty()) {
             String uniqueKey = parseKeyExpression(joinPoint, method, keyExpression);
-            return IdempotentKey.of("http", getScope(method), uniqueKey);
+            if (StringUtils.hasText(uniqueKey)) {
+                return buildHttpKey(method, uniqueKey);
+            }
+            log.debug("幂等性key表达式结果为空，回退默认策略: method={}, expression={}",
+                method.toGenericString(), keyExpression);
         }
         
         // 尝试使用 KeyResolver
@@ -120,14 +161,46 @@ public class IdempotentAspect {
         // 使用默认策略
         return generateDefaultKey(joinPoint, method);
     }
+
+    private IdempotentKey buildHttpKey(Method method, String uniqueKey) {
+        String validatedKey = validateUniqueKey(uniqueKey);
+        return IdempotentKey.of("http", getScope(method), validatedKey);
+    }
     
     /**
      * 获取作用域（方法路径）
      */
     private String getScope(Method method) {
-        // 简化版本：使用类名+方法名
-        // 实际应该从 HTTP 请求中获取 path
-        return method.getDeclaringClass().getSimpleName() + "." + method.getName();
+        HttpServletRequest request = getRequest();
+        if (request != null && StringUtils.hasText(request.getMethod()) && StringUtils.hasText(request.getRequestURI())) {
+            return withTenantScope(request.getMethod() + " " + request.getRequestURI(), request);
+        }
+        return withTenantScope(method.getDeclaringClass().getSimpleName() + "." + method.getName(), request);
+    }
+
+    private String withTenantScope(String baseScope, HttpServletRequest request) {
+        String scope = baseScope;
+
+        String currentUserId = resolveCurrentUserId();
+        if (StringUtils.hasText(currentUserId)) {
+            scope = currentUserId + "|" + scope;
+        }
+
+        Long tenantId = TenantContext.getTenantId();
+        if ((tenantId == null || tenantId <= 0) && request != null) {
+            String tenantHeader = request.getHeader("X-Tenant-Id");
+            if (StringUtils.hasText(tenantHeader)) {
+                try {
+                    tenantId = Long.parseLong(tenantHeader);
+                } catch (NumberFormatException e) {
+                    log.debug("幂等性租户头格式非法，忽略: {}", tenantHeader);
+                }
+            }
+        }
+        if (tenantId != null && tenantId > 0) {
+            return tenantId + "|" + scope;
+        }
+        return scope;
     }
     
     /**
@@ -202,7 +275,7 @@ public class IdempotentAspect {
             uniqueKey = DigestUtils.md5DigestAsHex(key.getBytes(StandardCharsets.UTF_8));
         }
         
-        return IdempotentKey.of("http", getScope(method), uniqueKey);
+        return buildHttpKey(method, uniqueKey);
     }
     
     /**
@@ -216,5 +289,74 @@ public class IdempotentAspect {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private String resolveCurrentUserId() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null) {
+            return null;
+        }
+        if (!authentication.isAuthenticated() && !AuthenticationFactorAuthorities.hasAnyFactor(authentication)) {
+            return null;
+        }
+
+        Object principal = authentication.getPrincipal();
+        if (principal instanceof SecurityUser securityUser) {
+            if (securityUser.getUserId() != null) {
+                return securityUser.getUserId().toString();
+            }
+            return StringUtils.hasText(securityUser.getUsername()) ? securityUser.getUsername() : null;
+        }
+        if (principal instanceof UserDetails userDetails) {
+            return StringUtils.hasText(userDetails.getUsername()) ? userDetails.getUsername() : null;
+        }
+        if (authentication instanceof JwtAuthenticationToken jwtAuthenticationToken) {
+            return extractUserId(jwtAuthenticationToken.getToken());
+        }
+        if (principal instanceof String principalName && !"anonymousUser".equalsIgnoreCase(principalName)
+            && StringUtils.hasText(principalName)) {
+            return principalName;
+        }
+        return null;
+    }
+
+    private String extractUserId(Jwt jwt) {
+        if (jwt == null) {
+            return null;
+        }
+
+        String userId = jwt.getClaimAsString("user_id");
+        if (!StringUtils.hasText(userId)) {
+            userId = jwt.getClaimAsString("uid");
+        }
+        if (!StringUtils.hasText(userId)) {
+            userId = jwt.getClaimAsString("username");
+        }
+        if (!StringUtils.hasText(userId)) {
+            userId = jwt.getSubject();
+        }
+        return StringUtils.hasText(userId) ? userId : null;
+    }
+
+    private String validateUniqueKey(String uniqueKey) {
+        if (!StringUtils.hasText(uniqueKey)) {
+            metricsService.recordValidationRejected("blank");
+            throw BusinessException.validationError("幂等键不能为空");
+        }
+        if (!uniqueKey.equals(uniqueKey.trim())) {
+            metricsService.recordValidationRejected("surrounding_whitespace");
+            throw BusinessException.validationError("幂等键不能包含前后空白字符");
+        }
+        if (uniqueKey.length() < MIN_KEY_LENGTH || uniqueKey.length() > MAX_KEY_LENGTH) {
+            metricsService.recordValidationRejected("length");
+            throw BusinessException.validationError(
+                String.format("幂等键长度必须在 %d 到 %d 个字符之间", MIN_KEY_LENGTH, MAX_KEY_LENGTH)
+            );
+        }
+        if (!IDEMPOTENCY_KEY_PATTERN.matcher(uniqueKey).matches()) {
+            metricsService.recordValidationRejected("format");
+            throw BusinessException.validationError("幂等键只允许字母、数字、点、短横线、下划线和冒号");
+        }
+        return uniqueKey;
     }
 }

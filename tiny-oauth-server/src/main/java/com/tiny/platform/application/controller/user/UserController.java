@@ -8,6 +8,7 @@ import com.tiny.platform.infrastructure.auth.user.service.UserService;
 import com.tiny.platform.infrastructure.core.dto.PageResponse;
 import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationAuditRepository;
 import com.tiny.platform.infrastructure.auth.user.service.AvatarService;
+import com.tiny.platform.infrastructure.idempotent.sdk.annotation.Idempotent;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
@@ -25,6 +26,7 @@ import java.io.ByteArrayInputStream;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @RestController
@@ -114,12 +116,14 @@ public class UserController {
     }
 
     @PostMapping
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<User> create(@Valid @RequestBody UserCreateUpdateDto userDto) {
         User user = userService.createFromDto(userDto);
         return ResponseEntity.ok(user);
     }
 
     @PutMapping("/{id}")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<User> update(@PathVariable("id") Long id, @Valid @RequestBody UserCreateUpdateDto userDto) {
         // 设置ID
         userDto.setId(id);
@@ -129,6 +133,7 @@ public class UserController {
     }
 
     @DeleteMapping("/{id}")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Void> delete(@PathVariable("id") Long id) {
         userService.delete(id);
         return ResponseEntity.noContent().build();
@@ -138,6 +143,7 @@ public class UserController {
      * 批量启用用户
      */
     @PostMapping("/batch/enable")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> batchEnable(@RequestBody List<Long> ids) {
         userService.batchEnable(ids);
         return ResponseEntity.ok(Map.of("success", true, "message", "批量启用成功"));
@@ -147,6 +153,7 @@ public class UserController {
      * 批量禁用用户
      */
     @PostMapping("/batch/disable")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> batchDisable(@RequestBody List<Long> ids) {
         userService.batchDisable(ids);
         return ResponseEntity.ok(Map.of("success", true, "message", "批量禁用成功"));
@@ -156,6 +163,7 @@ public class UserController {
      * 批量删除用户
      */
     @PostMapping("/batch/delete")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> batchDelete(@RequestBody List<Long> ids) {
         userService.batchDelete(ids);
         return ResponseEntity.ok(Map.of("success", true, "message", "批量删除成功"));
@@ -175,6 +183,7 @@ public class UserController {
      * 保存用户角色绑定
      */
     @PostMapping("/{id}/roles")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<?> updateUserRoles(@PathVariable("id") Long id, @RequestBody List<Long> roleIds) {
         try {
             userService.updateUserRoles(id, roleIds);
@@ -340,9 +349,10 @@ public class UserController {
             }
 
             // 设置ETag（使用content_hash）
-            String etag = "\"" + metadata.getContentHash() + "\"";
+            String contentHash = metadata.getContentHash();
+            String etag = contentHash != null ? "\"" + contentHash + "\"" : null;
             String ifNoneMatch = request.getHeader("If-None-Match");
-            if (ifNoneMatch != null && ifNoneMatch.equals(etag)) {
+            if (etag != null && etag.equals(ifNoneMatch)) {
                 // 304 Not Modified
                 return ResponseEntity.status(HttpStatus.NOT_MODIFIED)
                     .eTag(etag)
@@ -351,11 +361,14 @@ public class UserController {
 
             // 构建响应头
             HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.parseMediaType(metadata.getContentType()));
+            String contentType = metadata.getContentType();
+            headers.setContentType(MediaType.parseMediaType(contentType != null ? contentType : "application/octet-stream"));
             headers.setContentLength(metadata.getFileSize());
-            headers.setETag(etag);
+            if (etag != null) {
+                headers.setETag(etag);
+            }
             // 缓存控制：public，最大缓存7天
-            headers.setCacheControl(CacheControl.maxAge(Duration.ofDays(7))
+            headers.setCacheControl(CacheControl.maxAge(Objects.requireNonNull(Duration.ofDays(7)))
                 .cachePublic()
                 .mustRevalidate()
                 .getHeaderValue());

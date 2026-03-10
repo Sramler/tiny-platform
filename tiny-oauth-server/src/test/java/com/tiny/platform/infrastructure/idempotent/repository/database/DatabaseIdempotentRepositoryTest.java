@@ -18,23 +18,20 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.startsWith;
-import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class DatabaseIdempotentRepositoryTest {
 
     @Test
-    void constructor_should_initialize_table_and_swallow_init_exception() {
+    void constructor_should_not_execute_runtime_ddl() {
         JdbcTemplate jdbcTemplate = mock(JdbcTemplate.class);
         DatabaseIdempotentRepository repository = new DatabaseIdempotentRepository(jdbcTemplate);
-        assertThat(repository).isNotNull();
-        verify(jdbcTemplate).execute(anyString());
 
-        JdbcTemplate failedJdbc = mock(JdbcTemplate.class);
-        doThrow(new RuntimeException("init-fail")).when(failedJdbc).execute(anyString());
-        assertThatCode(() -> new DatabaseIdempotentRepository(failedJdbc)).doesNotThrowAnyException();
+        assertThat(repository).isNotNull();
+        verify(jdbcTemplate, never()).execute(anyString());
     }
 
     @Test

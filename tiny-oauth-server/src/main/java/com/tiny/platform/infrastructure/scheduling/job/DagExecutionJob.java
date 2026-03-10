@@ -1,6 +1,7 @@
 package com.tiny.platform.infrastructure.scheduling.job;
 
 import com.tiny.platform.infrastructure.scheduling.service.SchedulingService;
+import com.tiny.platform.infrastructure.scheduling.service.SchedulingExecutionContext;
 import org.quartz.Job;
 import org.quartz.JobDataMap;
 import org.quartz.JobExecutionContext;
@@ -22,10 +23,10 @@ public class DagExecutionJob implements Job {
     @Override
     public void execute(JobExecutionContext context) throws JobExecutionException {
         JobDataMap jobDataMap = context.getJobDetail().getJobDataMap();
-        Long dagId = jobDataMap.getLong("dagId");
-        Long dagRunId = jobDataMap.containsKey("dagRunId") ? jobDataMap.getLong("dagRunId") : null;
-        Long dagVersionId = jobDataMap.containsKey("dagVersionId") ? jobDataMap.getLong("dagVersionId") : null;
-        
+        SchedulingExecutionContext executionContext = SchedulingExecutionContext.fromJobDataMap(jobDataMap);
+        Long dagId = executionContext.getDagId();
+        Long dagRunId = executionContext.getDagRunId();
+
         boolean isManualTrigger = (dagRunId != null && dagRunId > 0);
         logger.info("开始执行 DAG, dagId: {}, dagRunId: {}, isManualTrigger: {}", dagId, dagRunId, isManualTrigger);
 
@@ -46,7 +47,7 @@ public class DagExecutionJob implements Job {
 
         try {
             // 调用 Service 方法，确保事务一致性
-            schedulingService.executeDag(dagId, dagRunId, dagVersionId);
+            schedulingService.executeDag(executionContext);
             logger.info("DAG执行完成, dagId: {}, dagRunId: {}", dagId, dagRunId);
         } catch (Exception e) {
             logger.error("DAG执行失败, dagId: {}, dagRunId: {}", dagId, dagRunId, e);
@@ -54,4 +55,3 @@ public class DagExecutionJob implements Job {
         }
     }
 }
-

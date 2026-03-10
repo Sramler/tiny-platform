@@ -2,6 +2,7 @@ package com.tiny.platform.core.oauth.config;
 
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 import java.util.List;
 import java.util.Set;
@@ -62,5 +63,34 @@ class DefaultSecurityConfigAccessPolicyTest {
         assertThat(DefaultSecurityConfig.hasChallengeFlowAccess(null)).isFalse();
         assertThat(DefaultSecurityConfig.hasSensitiveSecurityAccess(null)).isFalse();
         assertThat(DefaultSecurityConfig.hasTotpSensitiveAccess(null)).isFalse();
+    }
+
+    @Test
+    void schedulingAdminShouldRequireFullAuthenticationAndRoleAdmin() {
+        MultiFactorAuthenticationToken admin = new MultiFactorAuthenticationToken(
+                "admin",
+                null,
+                MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL,
+                Set.of(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD),
+                List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
+        );
+        MultiFactorAuthenticationToken user = new MultiFactorAuthenticationToken(
+                "user",
+                null,
+                MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL,
+                Set.of(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD),
+                List.of(new SimpleGrantedAuthority("ROLE_USER"))
+        );
+        MultiFactorAuthenticationToken partialAdmin = MultiFactorAuthenticationToken.partiallyAuthenticated(
+                "admin",
+                null,
+                MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL,
+                Set.of(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD),
+                List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
+        );
+
+        assertThat(DefaultSecurityConfig.hasSchedulingAdminAccess(admin)).isTrue();
+        assertThat(DefaultSecurityConfig.hasSchedulingAdminAccess(user)).isFalse();
+        assertThat(DefaultSecurityConfig.hasSchedulingAdminAccess(partialAdmin)).isFalse();
     }
 }

@@ -1,10 +1,12 @@
 package com.tiny.platform.core.dict.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.validation.constraints.*;
 
 /**
  * 字典项创建和更新DTO
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class DictItemCreateUpdateDto {
 
     private Long id;
@@ -22,8 +24,6 @@ public class DictItemCreateUpdateDto {
 
     @Size(max = 255, message = "字典项描述长度不能超过255个字符")
     private String description;
-
-    private Long tenantId = 0L;
 
     private Boolean enabled = true;
 
@@ -73,14 +73,6 @@ public class DictItemCreateUpdateDto {
         this.description = description;
     }
 
-    public Long getTenantId() {
-        return tenantId;
-    }
-
-    public void setTenantId(Long tenantId) {
-        this.tenantId = tenantId;
-    }
-
     public Boolean getEnabled() {
         return enabled;
     }
@@ -97,4 +89,3 @@ public class DictItemCreateUpdateDto {
         this.sortOrder = sortOrder;
     }
 }
-

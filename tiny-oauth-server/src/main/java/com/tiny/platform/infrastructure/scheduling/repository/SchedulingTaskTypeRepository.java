@@ -9,7 +9,8 @@ import java.util.Optional;
 
 @Repository
 public interface SchedulingTaskTypeRepository extends JpaRepository<SchedulingTaskType, Long>, JpaSpecificationExecutor<SchedulingTaskType> {
+    Optional<SchedulingTaskType> findByIdAndTenantId(Long id, Long tenantId);
+
     Optional<SchedulingTaskType> findByTenantIdAndCode(Long tenantId, String code);
 }
-
 

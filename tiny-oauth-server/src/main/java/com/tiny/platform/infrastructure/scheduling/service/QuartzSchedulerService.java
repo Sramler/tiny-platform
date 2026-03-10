@@ -9,6 +9,10 @@ import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Objects;
+import java.util.TimeZone;
+import java.util.UUID;
+
 /**
  * Quartz 调度器服务
  * 负责管理 Quartz Job 和 Trigger
@@ -43,17 +47,34 @@ public class QuartzSchedulerService {
         String triggerKey = "dag-trigger-" + dag.getId();
         JobKey jobKeyObj = JobKey.jobKey(jobKey, "dag-group");
         TriggerKey triggerKeyObj = TriggerKey.triggerKey(triggerKey, "dag-trigger-group");
+        boolean jobExists = scheduler.checkExists(jobKeyObj);
+        boolean triggerExists = scheduler.checkExists(triggerKeyObj);
+
+        if (jobExists && triggerExists && isDagJobInSync(jobKeyObj, triggerKeyObj, dag, cronExpression, cronTimezone)) {
+            logger.debug("DAG Cron 配置已同步，跳过重复更新, dagId: {}, cron: {}, timezone: {}",
+                    dag.getId(), cronExpression, cronTimezone != null ? cronTimezone : "系统默认");
+            return;
+        }
 
         // 如果 Job 已存在，先删除
-        if (scheduler.checkExists(jobKeyObj)) {
+        if (jobExists) {
             scheduler.deleteJob(jobKeyObj);
             logger.debug("删除已存在的 DAG Job, dagId: {}, jobKey: {}", dag.getId(), jobKey);
+        } else if (triggerExists) {
+            scheduler.unscheduleJob(triggerKeyObj);
+            logger.debug("删除残留的 DAG Trigger, dagId: {}, triggerKey: {}", dag.getId(), triggerKey);
         }
 
         // 创建新的 JobDetail
+        SchedulingExecutionContext executionContext = SchedulingExecutionContext.builder()
+                .dagId(dag.getId())
+                .tenantId(dag.getTenantId())
+                .username("Quartz Scheduler")
+                .triggerType("SCHEDULE")
+                .build();
         JobDetail jobDetail = JobBuilder.newJob(DagExecutionJob.class)
                 .withIdentity(jobKeyObj)
-                .usingJobData("dagId", dag.getId())
+                .usingJobData(executionContext.toJobDataMap())
                 .storeDurably(true)
                 .build();
 
@@ -74,9 +95,65 @@ public class QuartzSchedulerService {
                 .withSchedule(scheduleBuilder)
                 .build();
 
-        scheduler.scheduleJob(jobDetail, trigger);
+        try {
+            scheduler.scheduleJob(jobDetail, trigger);
+        } catch (ObjectAlreadyExistsException e) {
+            if (isDagJobInSync(jobKeyObj, triggerKeyObj, dag, cronExpression, cronTimezone)) {
+                logger.info("DAG Cron 已被其他节点同步，跳过重复创建, dagId: {}, jobKey: {}", dag.getId(), jobKey);
+                return;
+            }
+            throw e;
+        }
         logger.info("创建/更新 DAG 定时调度 Job, dagId: {}, jobKey: {}, cron: {}, timezone: {}", 
                 dag.getId(), jobKey, cronExpression, cronTimezone != null ? cronTimezone : "系统默认");
+    }
+
+    private boolean isDagJobInSync(
+            JobKey jobKey,
+            TriggerKey triggerKey,
+            SchedulingDag dag,
+            String cronExpression,
+            String cronTimezone) throws SchedulerException {
+        Trigger existingTrigger = scheduler.getTrigger(triggerKey);
+        if (!(existingTrigger instanceof CronTrigger cronTrigger)) {
+            return false;
+        }
+        JobDetail existingJob = scheduler.getJobDetail(jobKey);
+        if (existingJob == null) {
+            return false;
+        }
+
+        String expectedCron = cronExpression.trim();
+        String expectedTimezoneId = normalizeTimezoneId(cronTimezone);
+        String actualTimezoneId = cronTrigger.getTimeZone() != null
+                ? cronTrigger.getTimeZone().getID()
+                : TimeZone.getDefault().getID();
+
+        JobDataMap jobDataMap = existingJob.getJobDataMap();
+        Long existingDagId = asLong(jobDataMap != null ? jobDataMap.get(SchedulingExecutionContext.JOB_DATA_DAG_ID) : null);
+        Long existingTenantId = asLong(jobDataMap != null ? jobDataMap.get(SchedulingExecutionContext.JOB_DATA_TENANT_ID) : null);
+
+        return Objects.equals(cronTrigger.getCronExpression(), expectedCron)
+                && Objects.equals(actualTimezoneId, expectedTimezoneId)
+                && Objects.equals(existingDagId, dag.getId())
+                && Objects.equals(existingTenantId, dag.getTenantId());
+    }
+
+    private String normalizeTimezoneId(String cronTimezone) {
+        if (cronTimezone == null || cronTimezone.trim().isEmpty()) {
+            return TimeZone.getDefault().getID();
+        }
+        return TimeZone.getTimeZone(cronTimezone.trim()).getID();
+    }
+
+    private Long asLong(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value instanceof String text && !text.isBlank()) {
+            return Long.parseLong(text);
+        }
+        return null;
     }
 
     /**
@@ -89,23 +166,16 @@ public class QuartzSchedulerService {
 
     /**
      * 立即触发 DAG 执行（创建一次性 Job）
-     * @param dag DAG 对象
-     * @param dagRunId DAG 运行实例 ID（手动触发时传递，定时触发时为 null）
-     * @param dagVersionId DAG 版本 ID（手动触发时传递，定时触发时为 null）
      */
     @Transactional
-    public void triggerDagNow(SchedulingDag dag, Long dagRunId, Long dagVersionId) throws SchedulerException {
-        String jobKey = "dag-trigger-now-" + dag.getId() + "-" + System.currentTimeMillis();
-        
-        JobDataMap jobDataMap = new JobDataMap();
-        jobDataMap.put("dagId", dag.getId());
-        if (dagRunId != null && dagRunId > 0) {
-            jobDataMap.put("dagRunId", dagRunId);
-        }
-        if (dagVersionId != null && dagVersionId > 0) {
-            jobDataMap.put("dagVersionId", dagVersionId);
-        }
-        
+    public void triggerDagNow(SchedulingDag dag, SchedulingExecutionContext executionContext) throws SchedulerException {
+        String jobKey = "dag-trigger-now-" + dag.getId() + "-" + UUID.randomUUID();
+
+        SchedulingExecutionContext jobExecutionContext = executionContext != null
+                ? executionContext
+                : SchedulingExecutionContext.builder().dagId(dag.getId()).tenantId(dag.getTenantId()).build();
+        JobDataMap jobDataMap = jobExecutionContext.toJobDataMap();
+
         JobDetail jobDetail = JobBuilder.newJob(DagExecutionJob.class)
                 .withIdentity(jobKey, "dag-trigger-group")
                 .usingJobData(jobDataMap)
@@ -119,7 +189,19 @@ public class QuartzSchedulerService {
 
         scheduler.scheduleJob(jobDetail, trigger);
         logger.info("立即触发 DAG 执行, dagId: {}, dagRunId: {}, dagVersionId: {}, jobKey: {}", 
-                dag.getId(), dagRunId, dagVersionId, jobKey);
+                dag.getId(), jobExecutionContext.getDagRunId(), jobExecutionContext.getDagVersionId(), jobKey);
+    }
+
+    @Transactional
+    public void triggerDagNow(SchedulingDag dag, Long dagRunId, Long dagVersionId) throws SchedulerException {
+        triggerDagNow(dag, SchedulingExecutionContext.builder()
+                .dagId(dag.getId())
+                .dagRunId(dagRunId)
+                .dagVersionId(dagVersionId)
+                .tenantId(dag.getTenantId())
+                .username("Quartz Scheduler")
+                .triggerType(dagRunId != null && dagRunId > 0 ? "MANUAL" : "SCHEDULE")
+                .build());
     }
 
     /**
@@ -307,4 +389,3 @@ public class QuartzSchedulerService {
         }
     }
 }
-

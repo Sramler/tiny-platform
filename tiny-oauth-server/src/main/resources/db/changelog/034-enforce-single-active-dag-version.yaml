@@ -1,0 +1,67 @@
+databaseChangeLog:
+  - changeSet:
+      id: enforce-single-active-dag-version
+      author: tiny
+      comment: 规范 dag_version.status 并通过生成列约束单 DAG 单 ACTIVE 版本
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              UPDATE `scheduling_dag_version`
+              SET `status` = 'DRAFT'
+              WHERE `status` IS NULL
+                 OR TRIM(`status`) = '';
+
+              UPDATE `scheduling_dag_version`
+              SET `status` = UPPER(TRIM(`status`))
+              WHERE `status` IS NOT NULL
+                AND `status` <> UPPER(TRIM(`status`));
+
+              UPDATE `scheduling_dag_version` dv
+              JOIN `scheduling_dag_version` keeper
+                ON keeper.`dag_id` = dv.`dag_id`
+               AND keeper.`status` = 'ACTIVE'
+               AND dv.`status` = 'ACTIVE'
+               AND (
+                    COALESCE(keeper.`activated_at`, keeper.`created_at`) > COALESCE(dv.`activated_at`, dv.`created_at`)
+                    OR (
+                        COALESCE(keeper.`activated_at`, keeper.`created_at`) = COALESCE(dv.`activated_at`, dv.`created_at`)
+                        AND keeper.`id` > dv.`id`
+                    )
+               )
+              SET dv.`status` = 'ARCHIVED',
+                  dv.`activated_at` = NULL;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'scheduling_dag_version'
+                      AND COLUMN_NAME = 'active_dag_id'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `scheduling_dag_version` ADD COLUMN `active_dag_id` BIGINT GENERATED ALWAYS AS (CASE WHEN `status` = ''ACTIVE'' THEN `dag_id` ELSE NULL END) STORED COMMENT ''ACTIVE 状态下的 dag_id，用于单活唯一约束'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'scheduling_dag_version'
+                      AND INDEX_NAME = 'uk_scheduling_dag_version_active_dag'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `scheduling_dag_version` ADD UNIQUE KEY `uk_scheduling_dag_version_active_dag` (`active_dag_id`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;

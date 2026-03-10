@@ -1,0 +1,109 @@
+name: CI gate waiver request
+description: 申请临时豁免某项 CI / PR / 测试门禁
+title: "[Waiver] "
+labels:
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        使用前请先阅读：
+        - [tiny-platform CI Gate Waiver Policy](../../docs/TINY_PLATFORM_CI_WAIVER_POLICY.md)
+        - [tiny-platform Testing Playbook](../../docs/TINY_PLATFORM_TESTING_PLAYBOOK.md)
+
+        说明：
+        - 这不是常规流程
+        - 豁免必须有补跑计划
+        - 安全 / 权限 / 多租户 / 破坏性 migration 风险默认不豁免
+        - 获批后，请在 PR 的“门禁豁免”里关联本 issue，并由 reviewer 在 PR 评论或 APPROVED review 中写 `Waiver-Approved: #issue`
+
+  - type: input
+    id: pr_link
+    attributes:
+      label: 关联 PR
+      description: 填写 PR 链接或编号
+      placeholder: https://github.com/.../pull/123
+    validations:
+      required: true
+
+  - type: input
+    id: waiver_item
+    attributes:
+      label: 申请豁免项
+      description: 哪一项门禁或验证需要豁免
+      placeholder: real-link OIDC E2E / PR description gate / migration smoke
+    validations:
+      required: true
+
+  - type: textarea
+    id: reason
+    attributes:
+      label: 豁免原因
+      description: 说明为什么现在客观上跑不了，而不是为什么不想跑
+      placeholder: CI 测试身份轮换中，OIDC 回调链路暂不可用
+    validations:
+      required: true
+
+  - type: textarea
+    id: compensating_controls
+    attributes:
+      label: 当前替代验证
+      description: 已经完成的低层测试、手动验证或替代控制
+      placeholder: |
+        - backend integration test 已通过
+        - webapp unit test 已通过
+        - 手工验证登录主路径恢复
+    validations:
+      required: true
+
+  - type: textarea
+    id: backfill_plan
+    attributes:
+      label: 补跑计划
+      description: 写清时间、负责人和补跑内容
+      placeholder: 24 小时内由 PR 作者补跑 verify-webapp-auth 与 OIDC real-link E2E
+    validations:
+      required: true
+
+  - type: dropdown
+    id: risk_level
+    attributes:
+      label: 风险等级
+      options:
+        - low
+        - medium
+        - high
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: risk_scope
+    attributes:
+      label: 风险范围
+      options:
+        - label: 安全 / 权限 / 多租户
+        - label: 认证 / OIDC / MFA
+        - label: 数据库 / migration
+        - label: 前端关键主路径
+        - label: 编排 / 工作流 / 调度
+
+  - type: textarea
+    id: reviewer_basis
+    attributes:
+      label: 批准依据
+      description: reviewer / owner 为什么认为这个豁免可接受
+      placeholder: auth 模块 reviewer 已确认这是紧急线上修复，且替代验证足够
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: 申请人确认
+      options:
+        - label: 我确认这不是为了省事跳过本地可运行测试
+          required: true
+        - label: 我确认已阅读 CI Gate Waiver Policy
+          required: true
+        - label: 我确认会按补跑计划补齐验证
+          required: true

@@ -84,7 +84,7 @@
             </template>
             <template v-else-if="column && column.dataIndex === 'action'">
               <div class="action-buttons">
-                <a-tooltip v-if="record.builtinLocked" title="内置字典已锁定，不允许编辑">
+                <a-tooltip v-if="isReadonlyTypeRecord(record)" :title="getTypeReadonlyReason(record)">
                   <a-button type="link" size="small" disabled class="action-btn">
                     <template #icon>
                       <EditOutlined />
@@ -98,7 +98,7 @@
                   </template>
                   编辑
                 </a-button>
-                <a-tooltip v-if="record.builtinLocked" title="内置字典已锁定，不允许删除">
+                <a-tooltip v-if="isReadonlyTypeRecord(record)" :title="getTypeReadonlyReason(record)">
                   <a-button type="link" size="small" danger disabled class="action-btn">
                     <template #icon>
                       <DeleteOutlined />
@@ -505,7 +505,6 @@ async function handleSubmit() {
       dictCode: formState.value.dictCode,
       dictName: formState.value.dictName,
       description: formState.value.description,
-      tenantId,
       categoryId: formState.value.categoryId,
       enabled: formState.value.enabled ?? true,
       sortOrder: formState.value.sortOrder ?? 0,
@@ -525,8 +524,8 @@ async function handleSubmit() {
 }
 
 function handleDelete(record: any) {
-  if (record.builtinLocked) {
-    message.warning('内置字典已锁定，不允许删除')
+  if (isReadonlyTypeRecord(record)) {
+    message.warning(getTypeReadonlyReason(record))
     return
   }
   Modal.confirm({
@@ -546,6 +545,20 @@ function handleDelete(record: any) {
         })
     },
   })
+}
+
+function isReadonlyTypeRecord(record: any) {
+  return Number(record?.tenantId) === 0 || Boolean(record?.builtinLocked)
+}
+
+function getTypeReadonlyReason(record: any) {
+  if (Number(record?.tenantId) === 0) {
+    return '平台字典只读，不允许修改'
+  }
+  if (record?.builtinLocked) {
+    return '内置字典已锁定，不允许修改'
+  }
+  return '当前字典不允许修改'
 }
 
 function handleViewItems(record: any) {

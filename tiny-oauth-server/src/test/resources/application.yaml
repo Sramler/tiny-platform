@@ -1,0 +1,4 @@
+# 测试默认配置：激活 test profile，使 mvn test 自动使用 H2 内存库
+spring:
+  profiles:
+    active: test

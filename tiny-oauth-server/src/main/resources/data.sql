@@ -44,6 +44,10 @@ INSERT IGNORE INTO `resource` (`tenant_id`, `name`, `url`, `uri`, `method`, `ico
 INSERT IGNORE INTO `resource` (`tenant_id`, `name`, `url`, `uri`, `method`, `icon`, `show_icon`, `sort`, `component`, `redirect`, `hidden`, `keep_alive`, `title`, `permission`, `type`, `parent_id`) VALUES
 (1, 'tenant', '/system/tenant', '/sys/tenants', 'GET', 'ApartmentOutlined', 1, 5, '/views/tenant/Tenant.vue', '', 0, 0, '租户管理', 'tenant:list', 1, 1);
 
+-- 幂等治理菜单（平台管理员）
+INSERT IGNORE INTO `resource` (`tenant_id`, `name`, `url`, `uri`, `method`, `icon`, `show_icon`, `sort`, `component`, `redirect`, `hidden`, `keep_alive`, `title`, `permission`, `type`, `parent_id`) VALUES
+(1, 'idempotentOps', '/ops/idempotent', '/metrics/idempotent', 'GET', 'RadarChartOutlined', 0, 6, '/views/idempotent/Overview.vue', '', 0, 0, '幂等治理', 'idempotent:ops:view', 1, 1);
+
 -- 调度中心目录
 INSERT IGNORE INTO `resource`
 (`tenant_id`, `name`, `url`, `uri`, `method`, `icon`, `show_icon`, `sort`, `component`, `redirect`, `hidden`, `keep_alive`, `title`, `permission`, `type`, `parent_id`)
@@ -100,6 +104,11 @@ SELECT 1, 1, r.id FROM `resource` r WHERE r.name IN ('scheduling', 'schedulingDa
 -- ADMIN 拥有租户管理菜单
 INSERT IGNORE INTO `role_resource` (`tenant_id`, `role_id`, `resource_id`)
 SELECT 1, 1, r.id FROM `resource` r WHERE r.name = 'tenant'
+  AND NOT EXISTS (SELECT 1 FROM `role_resource` rr WHERE rr.role_id = 1 AND rr.resource_id = r.id);
+
+-- ADMIN 拥有幂等治理菜单
+INSERT IGNORE INTO `role_resource` (`tenant_id`, `role_id`, `resource_id`)
+SELECT 1, 1, r.id FROM `resource` r WHERE r.name = 'idempotentOps'
   AND NOT EXISTS (SELECT 1 FROM `role_resource` rr WHERE rr.role_id = 1 AND rr.resource_id = r.id);
 
 -- 插入用户认证方法数据
@@ -206,7 +215,7 @@ VALUES
 
 -- 9) 任务执行历史（与实例对应，便于节点记录/日志查看）
 INSERT IGNORE INTO `scheduling_task_history`
-(`id`, `task_instance_id`, `dag_run_id`, `dag_id`, `node_code`, `task_id`, `attempt_no`, `status`, `start_time`, `end_time`, `duration_ms`, `created_at`)
+(`id`, `task_instance_id`, `dag_run_id`, `dag_id`, `node_code`, `task_id`, `tenant_id`, `attempt_no`, `status`, `start_time`, `end_time`, `duration_ms`, `created_at`)
 VALUES
-(1, 1, 1, 1, 'node_a', 1, 1, 'SUCCESS', NOW() - INTERVAL 1 HOUR, NOW() - INTERVAL 1 HOUR + INTERVAL 1 MINUTE, 60000, NOW()),
-(2, 2, 1, 1, 'node_b', 2, 1, 'SUCCESS', NOW() - INTERVAL 1 HOUR + INTERVAL 2 MINUTE, NOW() - INTERVAL 1 HOUR + INTERVAL 5 MINUTE, 180000, NOW());
+(1, 1, 1, 1, 'node_a', 1, 1, 1, 'SUCCESS', NOW() - INTERVAL 1 HOUR, NOW() - INTERVAL 1 HOUR + INTERVAL 1 MINUTE, 60000, NOW()),
+(2, 2, 1, 1, 'node_b', 2, 1, 1, 'SUCCESS', NOW() - INTERVAL 1 HOUR + INTERVAL 2 MINUTE, NOW() - INTERVAL 1 HOUR + INTERVAL 5 MINUTE, 180000, NOW());

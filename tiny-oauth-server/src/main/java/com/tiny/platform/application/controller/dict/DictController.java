@@ -6,6 +6,7 @@ import com.tiny.platform.core.dict.model.DictType;
 import com.tiny.platform.core.dict.service.DictItemService;
 import com.tiny.platform.core.dict.service.DictTypeService;
 import com.tiny.platform.infrastructure.core.dto.PageResponse;
+import com.tiny.platform.infrastructure.idempotent.sdk.annotation.Idempotent;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -70,6 +71,7 @@ public class DictController {
      * 创建字典类型
      */
     @PostMapping("/types")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<DictType> createDictType(@Valid @RequestBody DictTypeCreateUpdateDto dto) {
         DictType dictType = dictTypeService.create(dto);
         return ResponseEntity.ok(dictType);
@@ -79,6 +81,7 @@ public class DictController {
      * 更新字典类型
      */
     @PutMapping("/types/{id}")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<DictType> updateDictType(
             @PathVariable("id") Long id,
             @Valid @RequestBody DictTypeCreateUpdateDto dto
@@ -91,6 +94,7 @@ public class DictController {
      * 删除字典类型
      */
     @DeleteMapping("/types/{id}")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Void> deleteDictType(@PathVariable("id") Long id) {
         dictTypeService.delete(id);
         return ResponseEntity.ok().build();
@@ -100,17 +104,18 @@ public class DictController {
      * 批量删除字典类型
      */
     @PostMapping("/types/batch/delete")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Void> batchDeleteDictTypes(@RequestBody List<Long> ids) {
         dictTypeService.batchDelete(ids);
         return ResponseEntity.ok().build();
     }
 
     /**
-     * 根据租户ID获取字典类型列表
+     * 查询当前租户可见的字典类型（平台 + 当前租户）
      */
-    @GetMapping("/types/tenant/{tenantId}")
-    public ResponseEntity<List<DictType>> getDictTypesByTenant(@PathVariable("tenantId") Long tenantId) {
-        List<DictType> dictTypes = dictTypeService.findByTenantId(tenantId);
+    @GetMapping("/types/current")
+    public ResponseEntity<List<DictType>> getVisibleDictTypes() {
+        List<DictType> dictTypes = dictTypeService.findVisibleTypes();
         return ResponseEntity.ok(dictTypes);
     }
 
@@ -151,11 +156,8 @@ public class DictController {
      * 根据字典编码获取字典项列表（支持多租户）
      */
     @GetMapping("/items/code/{dictCode}")
-    public ResponseEntity<List<DictItem>> getDictItemsByCode(
-            @PathVariable("dictCode") String dictCode,
-            @RequestParam(value = "tenantId", required = false, defaultValue = "0") Long tenantId
-    ) {
-        List<DictItem> items = dictItemService.findByDictCode(dictCode, tenantId);
+    public ResponseEntity<List<DictItem>> getDictItemsByCode(@PathVariable("dictCode") String dictCode) {
+        List<DictItem> items = dictItemService.findByDictCode(dictCode);
         return ResponseEntity.ok(items);
     }
 
@@ -163,11 +165,8 @@ public class DictController {
      * 根据字典编码获取字典映射（value -> label）
      */
     @GetMapping("/items/map/{dictCode}")
-    public ResponseEntity<Map<String, String>> getDictMap(
-            @PathVariable("dictCode") String dictCode,
-            @RequestParam(value = "tenantId", required = false, defaultValue = "0") Long tenantId
-    ) {
-        Map<String, String> map = dictItemService.getDictMap(dictCode, tenantId);
+    public ResponseEntity<Map<String, String>> getDictMap(@PathVariable("dictCode") String dictCode) {
+        Map<String, String> map = dictItemService.getDictMap(dictCode);
         return ResponseEntity.ok(map);
     }
 
@@ -177,10 +176,9 @@ public class DictController {
     @GetMapping("/items/label/{dictCode}/{value}")
     public ResponseEntity<String> getLabel(
             @PathVariable("dictCode") String dictCode,
-            @PathVariable("value") String value,
-            @RequestParam(value = "tenantId", required = false, defaultValue = "0") Long tenantId
+            @PathVariable("value") String value
     ) {
-        String label = dictItemService.getLabel(dictCode, value, tenantId);
+        String label = dictItemService.getLabel(dictCode, value);
         return ResponseEntity.ok(label);
     }
 
@@ -188,6 +186,7 @@ public class DictController {
      * 创建字典项
      */
     @PostMapping("/items")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<DictItem> createDictItem(@Valid @RequestBody DictItemCreateUpdateDto dto) {
         DictItem dictItem = dictItemService.create(dto);
         return ResponseEntity.ok(dictItem);
@@ -197,6 +196,7 @@ public class DictController {
      * 更新字典项
      */
     @PutMapping("/items/{id}")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<DictItem> updateDictItem(
             @PathVariable("id") Long id,
             @Valid @RequestBody DictItemCreateUpdateDto dto
@@ -209,6 +209,7 @@ public class DictController {
      * 删除字典项
      */
     @DeleteMapping("/items/{id}")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Void> deleteDictItem(@PathVariable("id") Long id) {
         dictItemService.delete(id);
         return ResponseEntity.ok().build();
@@ -218,9 +219,9 @@ public class DictController {
      * 批量删除字典项
      */
     @PostMapping("/items/batch/delete")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Void> batchDeleteDictItems(@RequestBody List<Long> ids) {
         dictItemService.batchDelete(ids);
         return ResponseEntity.ok().build();
     }
 }
-

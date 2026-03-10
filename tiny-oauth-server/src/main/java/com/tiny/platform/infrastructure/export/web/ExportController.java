@@ -1,5 +1,6 @@
 package com.tiny.platform.infrastructure.export.web;
 
+import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
 import com.tiny.platform.infrastructure.export.core.ExportRequest;
 import com.tiny.platform.infrastructure.export.persistence.ExportTaskEntity;
 import com.tiny.platform.infrastructure.export.service.ExportService;
@@ -9,6 +10,9 @@ import com.tiny.platform.core.oauth.model.SecurityUser;
 import jakarta.servlet.AsyncContext;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -24,17 +28,22 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
 @RestController
 @RequestMapping("/export")
 public class ExportController {
+
+    private static final Logger log = LoggerFactory.getLogger(ExportController.class);
 
     private final ExportService exportService;
     private final ExportTaskService exportTaskService;
@@ -44,29 +53,35 @@ public class ExportController {
         this.exportTaskService = exportTaskService;
     }
 
-    /** 同步导出（阻塞，使用 StreamingResponseBody 避免错误状态下写入 Excel 头） */
+    /** 同步导出（阻塞，先生成临时文件，成功后再回传响应流） */
     @PostMapping("/sync")
     public ResponseEntity<StreamingResponseBody> exportSync(@RequestBody ExportRequest request) {
-        // 先做轻量级参数校验，确保 4xx 在构造响应头之前就返回
-        if (request == null || request.getSheets() == null || request.getSheets().isEmpty()) {
-            throw new IllegalArgumentException("sheets 不能为空，至少包含一个 sheet");
-        }
-
-        String filename = (request.getFileName() == null || request.getFileName().isBlank())
-            ? "export.xlsx" : request.getFileName() + ".xlsx";
+        validateSyncRequest(request);
+        exportService.assertSyncExportWithinRowLimit(request);
+        String currentUserId = currentUserId();
+        String filename = resolveDownloadFilename(request.getFileName());
+        Path tempFile = prepareSyncExportTempFile(request, currentUserId);
 
         StreamingResponseBody body = out -> {
-            try {
-            exportService.exportSync(request, out, currentUserId());
-            } catch (Exception ex) {
-                // 让全局异常处理接管，避免在流中吞掉错误
-                throw new RuntimeException("exportSync failed", ex);
+            try (InputStream inputStream = Files.newInputStream(tempFile)) {
+                try {
+                    inputStream.transferTo(out);
+                    out.flush();
+                } catch (Exception ex) {
+                    if (isClientAbort(ex)) {
+                        log.info("sync export aborted by client userId={} fileName={}", currentUserId, filename);
+                        return;
+                    }
+                    throw new RuntimeException("sync export response stream failed", ex);
+                }
+            } finally {
+                Files.deleteIfExists(tempFile);
             }
         };
 
         return ResponseEntity
             .ok()
-            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+            .header(HttpHeaders.CONTENT_DISPOSITION, buildAttachmentHeader(filename))
             .contentType(MediaType.parseMediaType(
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
             .body(body);
@@ -133,7 +148,7 @@ public class ExportController {
             return;
         }
         response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-        response.setHeader("Content-Disposition", "attachment; filename=\"" + file.getFileName() + "\"");
+        response.setHeader(HttpHeaders.CONTENT_DISPOSITION, buildAttachmentHeader(file.getFileName().toString()));
         try (InputStream is = Files.newInputStream(file); OutputStream os = response.getOutputStream()) {
             is.transferTo(os);
             os.flush();
@@ -151,7 +166,7 @@ public class ExportController {
         async.start(() -> {
             try (OutputStream os = response.getOutputStream()) {
                 response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-                response.setHeader("Content-Disposition", "attachment; filename=\"export-asyncservlet.xlsx\"");
+                response.setHeader(HttpHeaders.CONTENT_DISPOSITION, buildAttachmentHeader("export-asyncservlet.xlsx"));
                 exportService.exportSync(request, os, uid);
                 os.flush();
             } catch (Exception ex) {
@@ -169,6 +184,87 @@ public class ExportController {
 
     private Authentication currentAuthentication() {
         return SecurityContextHolder.getContext().getAuthentication();
+    }
+
+    private void validateSyncRequest(ExportRequest request) {
+        if (request == null || request.getSheets() == null || request.getSheets().isEmpty()) {
+            throw BusinessException.validationError("sheets 不能为空，至少包含一个 sheet");
+        }
+    }
+
+    private String resolveDownloadFilename(String rawFileName) {
+        String normalized = rawFileName == null ? "" : rawFileName
+            .replace("\r", "")
+            .replace("\n", "")
+            .replace("\"", "")
+            .replace("/", "_")
+            .replace("\\", "_")
+            .trim();
+        if (normalized.isEmpty()) {
+            normalized = "export";
+        }
+        if (!normalized.toLowerCase(Locale.ROOT).endsWith(".xlsx")) {
+            normalized = normalized + ".xlsx";
+        }
+        return normalized;
+    }
+
+    private String buildAttachmentHeader(String filename) {
+        return ContentDisposition.attachment()
+            .filename(filename, StandardCharsets.UTF_8)
+            .build()
+            .toString();
+    }
+
+    private boolean isClientAbort(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof IOException) {
+                String message = current.getMessage();
+                if (message == null) {
+                    return true;
+                }
+                String lower = message.toLowerCase(Locale.ROOT);
+                if (lower.contains("broken pipe")
+                    || lower.contains("connection reset")
+                    || lower.contains("connection aborted")
+                    || lower.contains("clientabort")) {
+                    return true;
+                }
+            }
+            String className = current.getClass().getName();
+            if (className.endsWith("ClientAbortException")
+                || className.endsWith("AsyncRequestNotUsableException")
+                || className.endsWith("EofException")) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private Path prepareSyncExportTempFile(ExportRequest request, String currentUserId) {
+        Path tempFile = null;
+        try {
+            tempFile = Files.createTempFile("export-sync-", ".xlsx");
+            try (OutputStream outputStream = Files.newOutputStream(tempFile)) {
+                exportService.exportSync(request, outputStream, currentUserId);
+                outputStream.flush();
+            }
+            return tempFile;
+        } catch (Exception ex) {
+            if (tempFile != null) {
+                try {
+                    Files.deleteIfExists(tempFile);
+                } catch (IOException cleanupEx) {
+                    log.warn("failed to cleanup sync export temp file {}", tempFile, cleanupEx);
+                }
+            }
+            if (ex instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new RuntimeException("sync export generation failed", ex);
+        }
     }
 
     private String currentUserId() {

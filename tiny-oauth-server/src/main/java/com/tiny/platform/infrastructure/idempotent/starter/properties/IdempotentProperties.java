@@ -36,6 +36,11 @@ public class IdempotentProperties {
      * HTTP API 配置
      */
     private HttpApi httpApi = new HttpApi();
+
+    /**
+     * 治理与运维配置
+     */
+    private Ops ops = new Ops();
     
     public static class HttpApi {
         /**
@@ -51,6 +56,79 @@ public class IdempotentProperties {
             this.enabled = enabled;
         }
     }
+
+    public static class Ops {
+        /**
+         * 平台租户编码。
+         *
+         * <p>幂等治理入口默认仅允许该租户下的管理员访问。</p>
+         */
+        private String platformTenantCode = "default";
+
+        /**
+         * 治理接口统计窗口大小（分钟）。
+         *
+         * <p>治理页默认只展示最近一段时间内的幂等事件，避免全局累计数据持续膨胀。</p>
+         */
+        private long metricsWindowMinutes = 60;
+
+        /**
+         * 治理指标存储模式。
+         *
+         * <p>database 表示写入分钟聚合表，多实例可共享；memory 表示仅保留单实例内存快照。</p>
+         */
+        private String metricsStore = "database";
+
+        /**
+         * 治理指标保留天数。
+         */
+        private long metricsRetentionDays = 7;
+
+        /**
+         * 治理指标清理固定间隔（毫秒）。
+         */
+        private long metricsCleanupFixedDelayMs = 600_000;
+
+        public String getPlatformTenantCode() {
+            return platformTenantCode;
+        }
+
+        public void setPlatformTenantCode(String platformTenantCode) {
+            this.platformTenantCode = platformTenantCode;
+        }
+
+        public long getMetricsWindowMinutes() {
+            return metricsWindowMinutes;
+        }
+
+        public void setMetricsWindowMinutes(long metricsWindowMinutes) {
+            this.metricsWindowMinutes = metricsWindowMinutes;
+        }
+
+        public String getMetricsStore() {
+            return metricsStore;
+        }
+
+        public void setMetricsStore(String metricsStore) {
+            this.metricsStore = metricsStore;
+        }
+
+        public long getMetricsRetentionDays() {
+            return metricsRetentionDays;
+        }
+
+        public void setMetricsRetentionDays(long metricsRetentionDays) {
+            this.metricsRetentionDays = metricsRetentionDays;
+        }
+
+        public long getMetricsCleanupFixedDelayMs() {
+            return metricsCleanupFixedDelayMs;
+        }
+
+        public void setMetricsCleanupFixedDelayMs(long metricsCleanupFixedDelayMs) {
+            this.metricsCleanupFixedDelayMs = metricsCleanupFixedDelayMs;
+        }
+    }
     
     public HttpApi getHttpApi() {
         return httpApi;
@@ -58,6 +136,14 @@ public class IdempotentProperties {
     
     public void setHttpApi(HttpApi httpApi) {
         this.httpApi = httpApi;
+    }
+
+    public Ops getOps() {
+        return ops;
+    }
+
+    public void setOps(Ops ops) {
+        this.ops = ops;
     }
     
     public boolean isEnabled() {

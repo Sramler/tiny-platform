@@ -15,15 +15,22 @@ import com.tiny.platform.infrastructure.auth.role.dto.RoleRequestDto;
 import com.tiny.platform.infrastructure.auth.role.dto.RoleResponseDto;
 import com.tiny.platform.infrastructure.auth.role.service.RoleService;
 import com.tiny.platform.infrastructure.core.dto.PageResponse;
+import com.tiny.platform.infrastructure.idempotent.console.IdempotentConsoleService;
+import com.tiny.platform.infrastructure.idempotent.console.dto.IdempotentBlacklistDto;
+import com.tiny.platform.infrastructure.idempotent.console.dto.IdempotentRecordDto;
+import com.tiny.platform.infrastructure.idempotent.console.dto.IdempotentRuleDto;
+import com.tiny.platform.infrastructure.idempotent.metrics.IdempotentMetricsService;
 import com.tiny.platform.infrastructure.menu.service.MenuService;
 import com.tiny.platform.infrastructure.tenant.domain.Tenant;
 import com.tiny.platform.infrastructure.tenant.dto.TenantCreateUpdateDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantRequestDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantResponseDto;
 import com.tiny.platform.infrastructure.tenant.service.TenantService;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
 
@@ -35,7 +42,6 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -200,53 +206,89 @@ class ApplicationControllerCoverageTest {
     }
 
     @Test
-    void idempotent_controllers_should_cover_stub_endpoints() {
-        IdempotentConsoleController consoleController = new IdempotentConsoleController();
-        IdempotentMetricsController metricsController = new IdempotentMetricsController();
+    void idempotent_metrics_controller_should_cover_endpoints() {
+        IdempotentMetricsController metricsController =
+            new IdempotentMetricsController(new IdempotentMetricsService(new SimpleMeterRegistry()));
 
-        assertThat(consoleController.getRules("sceneA", "bizA", 2, 20).getBody())
+        assertThat(metricsController.getMetrics(null).getBody())
             .containsEntry("success", true)
-            .containsEntry("message", "规则查询功能待实现")
-            .containsEntry("page", 2)
-            .containsEntry("size", 20);
-        assertThat(consoleController.createRule(Map.of("k", "v")).getBody()).containsEntry("message", "规则创建功能待实现");
-        assertThat(consoleController.updateRule(5L, Map.of("k", "v")).getBody())
-            .containsEntry("message", "规则更新功能待实现")
-            .containsEntry("id", 5L);
-        assertThat(consoleController.deleteRule(6L).getBody())
-            .containsEntry("message", "规则删除功能待实现")
-            .containsEntry("id", 6L);
-        assertThat(consoleController.enableRules(Map.of("ids", List.of(1))).getBody()).containsEntry("message", "批量启用功能待实现");
-        assertThat(consoleController.disableRules(Map.of("ids", List.of(1))).getBody()).containsEntry("message", "批量禁用功能待实现");
-        assertThat(consoleController.getRecords("key1", "SUCCESS", 1, 10).getBody())
-            .containsEntry("message", "记录查询功能待实现")
-            .containsEntry("page", 1)
-            .containsEntry("size", 10);
-        assertThat(consoleController.retryRecord(Map.of("id", 1)).getBody()).containsEntry("message", "重试功能待实现");
-        assertThat(consoleController.getMetrics("2026-03-03", "sceneA").getBody()).containsEntry("message", "统计指标查询功能待实现");
-        assertThat(consoleController.getBlacklist(3, 30).getBody())
-            .containsEntry("success", true)
-            .containsEntry("message", "黑名单查询功能待实现");
-        assertThat(consoleController.addBlacklist(Map.of("key", "v")).getBody()).containsEntry("message", "黑名单添加功能待实现");
-        assertThat(consoleController.deleteBlacklist(8L).getBody())
-            .containsEntry("message", "黑名单删除功能待实现")
-            .containsEntry("id", 8L);
-
-        assertThat(metricsController.getMetrics().getBody())
-            .containsEntry("success", true)
-            .containsEntry("message", "统计指标功能待实现")
-            .containsEntry("hitCount", 0)
-            .containsEntry("passCount", 0)
-            .containsEntry("rejectCount", 0)
+            .containsEntry("message", "OK")
+            .containsEntry("hitCount", 0L)
+            .containsEntry("passCount", 0L)
+            .containsEntry("rejectCount", 0L)
             .containsEntry("conflictRate", 0.0);
-        assertThat(metricsController.getTopKeys(15).getBody())
-            .containsEntry("message", "热点 Key 统计功能待实现")
-            .containsEntry("limit", 15);
-        assertThat(metricsController.getMqMetrics().getBody())
-            .containsEntry("message", "MQ 统计功能待实现")
-            .containsEntry("successCount", 0)
-            .containsEntry("failureCount", 0)
+        assertThat(metricsController.getTopKeys(15, null).getBody())
+            .containsEntry("message", "OK")
+            .containsEntry("limit", 15)
+            .containsEntry("topKeys", List.of());
+        assertThat(metricsController.getMqMetrics(null).getBody())
+            .containsEntry("message", "OK")
+            .containsEntry("successCount", 0L)
+            .containsEntry("failureCount", 0L)
             .containsEntry("duplicateRate", 0.0);
+    }
+
+    @Test
+    void idempotent_console_controller_should_cover_endpoints() {
+        IdempotentConsoleService consoleService = mock(IdempotentConsoleService.class);
+        IdempotentConsoleController controller = new IdempotentConsoleController(consoleService);
+
+        IdempotentRuleDto ruleDto = new IdempotentRuleDto();
+        ruleDto.setId(1L);
+        ruleDto.setScope("http:POST:/api/orders");
+        ruleDto.setEnabled(true);
+        PageResponse<IdempotentRuleDto> rulePage = new PageResponse<>(new PageImpl<>(List.of(ruleDto), PageRequest.of(0, 10), 1));
+        PageResponse<IdempotentRecordDto> recordPage = new PageResponse<>(new PageImpl<>(List.of(), PageRequest.of(0, 10), 0));
+        PageResponse<IdempotentBlacklistDto> blacklistPage = new PageResponse<>(new PageImpl<>(List.of(), PageRequest.of(0, 10), 0));
+
+        when(consoleService.getRules(null, null, 0, 10)).thenReturn(rulePage);
+        when(consoleService.createRule(any())).thenReturn(ruleDto);
+        when(consoleService.updateRule(eq(5L), any())).thenReturn(ruleDto);
+        when(consoleService.getRecords(null, null, 0, 10)).thenReturn(recordPage);
+        when(consoleService.getRecords("key1", "FAILED", 1, 10)).thenReturn(recordPage);
+        when(consoleService.getMetricsMap(null, null, null)).thenReturn(Map.of("success", true, "message", "OK", "passCount", 0L));
+        when(consoleService.getBlacklist(0, 10)).thenReturn(blacklistPage);
+
+        assertThat(controller.getRules(null, null, 0, 10).getBody()).isNotNull();
+        assertThat(controller.getRules(null, null, 0, 10).getBody().getContent()).hasSize(1);
+
+        IdempotentRuleDto createDto = new IdempotentRuleDto();
+        createDto.setScope("http:POST:/api/orders");
+        createDto.setEnabled(true);
+        assertThat(controller.createRule(createDto).getBody().getId()).isEqualTo(1L);
+
+        IdempotentRuleDto updateDto = new IdempotentRuleDto();
+        updateDto.setScope("http:POST:/api/orders");
+        updateDto.setEnabled(false);
+        assertThat(controller.updateRule(5L, updateDto).getBody().getId()).isEqualTo(1L);
+
+        controller.deleteRule(1L);
+        verify(consoleService).deleteRule(1L);
+
+        controller.enableRules(Map.of("ids", List.of(1L, 2L)));
+        verify(consoleService).enableRules(List.of(1L, 2L));
+
+        controller.disableRules(Map.of("ids", List.of(1L)));
+        verify(consoleService).disableRules(List.of(1L));
+
+        assertThat(controller.getRecords(null, null, 0, 10).getBody()).isNotNull();
+        assertThat(controller.getRecords("key1", "FAILED", 1, 10).getBody()).isNotNull();
+
+        controller.retryRecord(Map.of("key", "http:order:123"));
+        verify(consoleService).retryRecord("http:order:123");
+
+        assertThat(controller.getMetrics(null, null, null).getBody()).containsEntry("success", true);
+        assertThat(controller.getBlacklist(0, 10).getBody()).isNotNull();
+
+        IdempotentBlacklistDto blacklistDto = new IdempotentBlacklistDto();
+        blacklistDto.setId(1L);
+        blacklistDto.setKeyPattern("http:malicious:*");
+        blacklistDto.setReason("恶意 key");
+        when(consoleService.addBlacklist(any())).thenReturn(blacklistDto);
+        assertThat(controller.addBlacklist(blacklistDto).getBody().getId()).isEqualTo(1L);
+
+        controller.deleteBlacklist(1L);
+        verify(consoleService).deleteBlacklist(1L);
     }
 
     private static ResourceResponseDto resourceResponse(Long id, String name) {

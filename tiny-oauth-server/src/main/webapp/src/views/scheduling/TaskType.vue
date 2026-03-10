@@ -127,7 +127,6 @@ const query = reactive({
 
 const formData = reactive({
   id: undefined as number | undefined,
-  tenantId: undefined as number | undefined,
   code: '',
   name: '',
   description: '',
@@ -136,7 +135,6 @@ const formData = reactive({
   defaultTimeoutSec: 0,
   defaultMaxRetry: 0,
   enabled: true,
-  createdBy: '',
 })
 
 const pagination = reactive({
@@ -220,7 +218,6 @@ const handleCreate = () => {
   formTitle.value = '新建任务类型'
   Object.assign(formData, {
     id: undefined,
-    tenantId: undefined,
     code: '',
     name: '',
     description: '',
@@ -229,7 +226,6 @@ const handleCreate = () => {
     defaultTimeoutSec: 0,
     defaultMaxRetry: 0,
     enabled: true,
-    createdBy: '',
   })
   formVisible.value = true
 }
@@ -244,7 +240,6 @@ const handleEdit = (record: any) => {
   }
   Object.assign(formData, {
     id: record.id != null ? Number(record.id) : undefined,
-    tenantId: record.tenantId != null ? Number(record.tenantId) : undefined,
     code: record.code ?? record['code'] ?? '',
     name: record.name ?? record['name'] ?? '',
     description: record.description ?? record['description'] ?? '',
@@ -253,7 +248,6 @@ const handleEdit = (record: any) => {
     defaultTimeoutSec: numOr(record.defaultTimeoutSec ?? record['default_timeout_sec'], 0),
     defaultMaxRetry: numOr(record.defaultMaxRetry ?? record['default_max_retry'], 0),
     enabled: record.enabled !== undefined ? Boolean(record.enabled) : true,
-    createdBy: record.createdBy ?? record['created_by'] ?? '',
   })
   formVisible.value = true
 }
@@ -263,7 +257,6 @@ function buildTaskTypePayload() {
   const sec = Number(formData.defaultTimeoutSec)
   const retry = Number(formData.defaultMaxRetry)
   return {
-    tenantId: formData.tenantId,
     code: String(formData.code ?? '').trim(),
     name: String(formData.name ?? '').trim(),
     description: formData.description ?? '',
@@ -272,7 +265,6 @@ function buildTaskTypePayload() {
     defaultTimeoutSec: Number.isNaN(sec) || sec < 0 ? 0 : sec,
     defaultMaxRetry: Number.isNaN(retry) || retry < 0 ? 0 : retry,
     enabled: Boolean(formData.enabled),
-    createdBy: formData.createdBy ?? '',
   }
 }
 
@@ -375,4 +367,3 @@ onMounted(async () => {
   margin-left: 8px;
 }
 </style>
-

@@ -144,6 +144,12 @@ const routes = [
         component: HomeView,
         meta: { requiresAuth: true, title: '工作台' },
       },
+      {
+        path: 'ops/idempotent',
+        name: 'IdempotentOverview',
+        component: () => import('@/views/idempotent/Overview.vue'),
+        meta: { requiresAuth: true, title: '幂等治理' },
+      },
       // {
       //   path: 'about',
       //   name: 'About',

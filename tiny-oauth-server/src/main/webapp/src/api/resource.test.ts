@@ -1,0 +1,122 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const requestMocks = vi.hoisted(() => ({
+  get: vi.fn(),
+  post: vi.fn(),
+  put: vi.fn(),
+  delete: vi.fn(),
+}))
+
+vi.mock('@/utils/request', () => ({
+  default: {
+    get: requestMocks.get,
+    post: requestMocks.post,
+    put: requestMocks.put,
+    delete: requestMocks.delete,
+  },
+}))
+
+describe('resource API', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('should request resource list with params', async () => {
+    requestMocks.get.mockResolvedValue({
+      content: [{ id: 1, name: 'res1', title: 'Resource 1', type: 1 }],
+      totalElements: 1,
+      totalPages: 1,
+      size: 10,
+      number: 0,
+      first: true,
+      last: true,
+      numberOfElements: 1,
+    })
+    const { resourceList } = await import('@/api/resource')
+
+    const result = await resourceList({ name: 'res1', type: 1 })
+
+    expect(requestMocks.get).toHaveBeenCalledWith('/sys/resources', { params: { name: 'res1', type: 1 } })
+    expect(result.content).toHaveLength(1)
+    expect(result.content[0]?.name).toBe('res1')
+  })
+
+  it('should request resource detail', async () => {
+    requestMocks.get.mockResolvedValue({ id: 2, name: 'res2', type: 2 })
+    const { getResourceDetail } = await import('@/api/resource')
+
+    const result = await getResourceDetail(2)
+
+    expect(requestMocks.get).toHaveBeenCalledWith('/sys/resources/2')
+    expect(result.name).toBe('res2')
+  })
+
+  it('should create resource with idempotency', async () => {
+    requestMocks.post.mockResolvedValue({ id: 10, name: 'new-res' })
+    const { createResource } = await import('@/api/resource')
+    const data = { name: 'new-res', title: 'New Resource', type: 2 }
+
+    await createResource(data)
+
+    expect(requestMocks.post).toHaveBeenCalledWith('/sys/resources', data, {
+      idempotency: {
+        scope: 'sys-resources:create',
+        payload: data,
+      },
+    })
+  })
+
+  it('should update resource with idempotency', async () => {
+    requestMocks.put.mockResolvedValue({ id: 11, name: 'updated' })
+    const { updateResource } = await import('@/api/resource')
+    const data = { name: 'updated', title: 'Updated', type: 2 }
+
+    await updateResource(11, data)
+
+    expect(requestMocks.put).toHaveBeenCalledWith('/sys/resources/11', data, {
+      idempotency: {
+        scope: 'sys-resources:update:11',
+        payload: data,
+      },
+    })
+  })
+
+  it('should delete resource with idempotency', async () => {
+    requestMocks.delete.mockResolvedValue(undefined)
+    const { deleteResource } = await import('@/api/resource')
+
+    await deleteResource(12)
+
+    expect(requestMocks.delete).toHaveBeenCalledWith('/sys/resources/12', {
+      idempotency: {
+        scope: 'sys-resources:delete:12',
+        payload: { id: 12 },
+      },
+    })
+  })
+
+  it('should batch delete resources with idempotency', async () => {
+    requestMocks.post.mockResolvedValue({ success: true, message: 'ok' })
+    const { batchDeleteResources } = await import('@/api/resource')
+    const ids = [1, 2, 3]
+
+    await batchDeleteResources(ids)
+
+    expect(requestMocks.post).toHaveBeenCalledWith('/sys/resources/batch/delete', ids, {
+      idempotency: {
+        scope: 'sys-resources:batch-delete',
+        payload: ids,
+      },
+    })
+  })
+
+  it('should request resource tree', async () => {
+    requestMocks.get.mockResolvedValue([{ id: 1, children: [] }])
+    const { getResourceTree } = await import('@/api/resource')
+
+    const result = await getResourceTree()
+
+    expect(requestMocks.get).toHaveBeenCalledWith('/sys/resources/tree')
+    expect(result).toHaveLength(1)
+  })
+})

@@ -1,0 +1,48 @@
+databaseChangeLog:
+  - changeSet:
+      id: scope-dict-code-by-tenant
+      author: tiny
+      comment: 将 dict_type.dict_code 唯一约束调整为租户作用域唯一
+      changes:
+        - sql:
+            dbms: mysql
+            sql: |
+              SET @dict_type_unique_idx := (
+                SELECT INDEX_NAME
+                FROM INFORMATION_SCHEMA.STATISTICS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'dict_type'
+                  AND NON_UNIQUE = 0
+                GROUP BY INDEX_NAME
+                HAVING COUNT(*) = 1
+                   AND SUM(CASE WHEN COLUMN_NAME = 'dict_code' THEN 1 ELSE 0 END) = 1
+                LIMIT 1
+              );
+
+              SET @drop_sql := IF(
+                @dict_type_unique_idx IS NOT NULL,
+                CONCAT('ALTER TABLE dict_type DROP INDEX `', @dict_type_unique_idx, '`'),
+                'SELECT 1'
+              );
+
+              PREPARE stmt FROM @drop_sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @tenant_scoped_unique_exists := (
+                SELECT COUNT(*)
+                FROM INFORMATION_SCHEMA.STATISTICS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'dict_type'
+                  AND INDEX_NAME = 'uk_dict_type_tenant_code'
+              );
+
+              SET @add_sql := IF(
+                @tenant_scoped_unique_exists = 0,
+                'ALTER TABLE dict_type ADD CONSTRAINT uk_dict_type_tenant_code UNIQUE (tenant_id, dict_code)',
+                'SELECT 1'
+              );
+
+              PREPARE stmt2 FROM @add_sql;
+              EXECUTE stmt2;
+              DEALLOCATE PREPARE stmt2;

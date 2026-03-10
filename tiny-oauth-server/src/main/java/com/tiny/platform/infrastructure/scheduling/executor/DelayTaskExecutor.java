@@ -1,5 +1,6 @@
 package com.tiny.platform.infrastructure.scheduling.executor;
 
+import com.tiny.platform.infrastructure.scheduling.service.SchedulingExecutionContext;
 import com.tiny.platform.infrastructure.scheduling.service.TaskExecutorService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,9 +17,12 @@ public class DelayTaskExecutor implements TaskExecutorService.TaskExecutor {
     private static final Logger logger = LoggerFactory.getLogger(DelayTaskExecutor.class);
 
     @Override
-    public Object execute(Map<String, Object> params) throws Exception {
+    public Object execute(SchedulingExecutionContext executionContext, Map<String, Object> params) throws Exception {
         long delayMs = ((Number) params.getOrDefault("delayMs", 1000)).longValue();
-        logger.info("[DelayTaskExecutor] 延迟 {} ms 执行", delayMs);
+        logger.info("[DelayTaskExecutor] tenantId={}, runId={}, 延迟 {} ms 执行",
+                executionContext != null ? executionContext.getTenantId() : null,
+                executionContext != null ? executionContext.getDagRunId() : null,
+                delayMs);
         Thread.sleep(delayMs);
         boolean fail = Boolean.parseBoolean(String.valueOf(params.getOrDefault("fail", false)));
         if (fail) {
@@ -31,4 +35,3 @@ public class DelayTaskExecutor implements TaskExecutorService.TaskExecutor {
         );
     }
 }
-

@@ -1,6 +1,7 @@
 package com.tiny.platform.infrastructure.scheduling.controller;
 
 import com.tiny.platform.infrastructure.core.dto.PageResponse;
+import com.tiny.platform.infrastructure.idempotent.sdk.annotation.Idempotent;
 import com.tiny.platform.infrastructure.scheduling.dto.*;
 import com.tiny.platform.infrastructure.scheduling.model.*;
 import com.tiny.platform.infrastructure.scheduling.service.QuartzSchedulerService;
@@ -42,6 +43,7 @@ public class SchedulingController {
      * 创建任务类型
      */
     @PostMapping("/task-type")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<SchedulingTaskType> createTaskType(@Valid @RequestBody SchedulingTaskTypeCreateUpdateDto dto) {
         return ResponseEntity.ok(schedulingService.createTaskType(dto));
     }
@@ -50,6 +52,7 @@ public class SchedulingController {
      * 更新任务类型
      */
     @PutMapping("/task-type/{id}")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<SchedulingTaskType> updateTaskType(
             @PathVariable Long id,
             @Valid @RequestBody SchedulingTaskTypeCreateUpdateDto dto) {
@@ -60,6 +63,7 @@ public class SchedulingController {
      * 删除任务类型
      */
     @DeleteMapping("/task-type/{id}")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Void> deleteTaskType(@PathVariable Long id) {
         schedulingService.deleteTaskType(id);
         return ResponseEntity.ok().build();
@@ -88,11 +92,10 @@ public class SchedulingController {
      */
     @GetMapping("/task-type/list")
     public ResponseEntity<PageResponse<SchedulingTaskType>> listTaskTypes(
-            @RequestParam(required = false) Long tenantId,
             @RequestParam(required = false) String code,
             @RequestParam(required = false) String name,
             @PageableDefault(size = 10, sort = "id", direction = Sort.Direction.DESC) Pageable pageable) {
-        return ResponseEntity.ok(new PageResponse<>(schedulingService.listTaskTypes(tenantId, code, name, pageable)));
+        return ResponseEntity.ok(new PageResponse<>(schedulingService.listTaskTypes(code, name, pageable)));
     }
 
     // ==================== Task - 任务实例定义 ====================
@@ -101,6 +104,7 @@ public class SchedulingController {
      * 创建任务实例
      */
     @PostMapping("/task")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<SchedulingTask> createTask(@Valid @RequestBody SchedulingTaskCreateUpdateDto dto) {
         return ResponseEntity.ok(schedulingService.createTask(dto));
     }
@@ -109,6 +113,7 @@ public class SchedulingController {
      * 更新任务
      */
     @PutMapping("/task/{id}")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<SchedulingTask> updateTask(
             @PathVariable Long id,
             @Valid @RequestBody SchedulingTaskCreateUpdateDto dto) {
@@ -119,6 +124,7 @@ public class SchedulingController {
      * 删除任务
      */
     @DeleteMapping("/task/{id}")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Void> deleteTask(@PathVariable Long id) {
         schedulingService.deleteTask(id);
         return ResponseEntity.ok().build();
@@ -139,12 +145,11 @@ public class SchedulingController {
      */
     @GetMapping("/task/list")
     public ResponseEntity<PageResponse<SchedulingTask>> listTasks(
-            @RequestParam(required = false) Long tenantId,
             @RequestParam(required = false) Long typeId,
             @RequestParam(required = false) String code,
             @RequestParam(required = false) String name,
             @PageableDefault(size = 10, sort = "id", direction = Sort.Direction.DESC) Pageable pageable) {
-        return ResponseEntity.ok(new PageResponse<>(schedulingService.listTasks(tenantId, typeId, code, name, pageable)));
+        return ResponseEntity.ok(new PageResponse<>(schedulingService.listTasks(typeId, code, name, pageable)));
     }
 
     // ==================== DAG（编排流程） ====================
@@ -153,6 +158,7 @@ public class SchedulingController {
      * 创建 DAG
      */
     @PostMapping("/dag")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<SchedulingDag> createDag(@Valid @RequestBody SchedulingDagCreateUpdateDto dto) {
         return ResponseEntity.ok(schedulingService.createDag(dto));
     }
@@ -161,6 +167,7 @@ public class SchedulingController {
      * 更新 DAG
      */
     @PutMapping("/dag/{id}")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<SchedulingDag> updateDag(
             @PathVariable Long id,
             @Valid @RequestBody SchedulingDagCreateUpdateDto dto) {
@@ -171,6 +178,7 @@ public class SchedulingController {
      * 删除 DAG
      */
     @DeleteMapping("/dag/{id}")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Void> deleteDag(@PathVariable Long id) {
         schedulingService.deleteDag(id);
         return ResponseEntity.ok().build();
@@ -191,11 +199,10 @@ public class SchedulingController {
      */
     @GetMapping("/dag/list")
     public ResponseEntity<PageResponse<SchedulingDag>> listDags(
-            @RequestParam(required = false) Long tenantId,
             @RequestParam(required = false) String code,
             @RequestParam(required = false) String name,
             @PageableDefault(size = 10, sort = "id", direction = Sort.Direction.DESC) Pageable pageable) {
-        return ResponseEntity.ok(new PageResponse<>(schedulingService.listDags(tenantId, code, name, pageable)));
+        return ResponseEntity.ok(new PageResponse<>(schedulingService.listDags(code, name, pageable)));
     }
 
     // ==================== DAG Version ====================
@@ -204,6 +211,7 @@ public class SchedulingController {
      * 创建 DAG 新版本
      */
     @PostMapping("/dag/{dagId}/version")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<SchedulingDagVersion> createDagVersion(
             @PathVariable Long dagId,
             @Valid @RequestBody SchedulingDagVersionCreateUpdateDto dto) {
@@ -215,6 +223,7 @@ public class SchedulingController {
      * 更新 DAG 版本
      */
     @PutMapping("/dag/{dagId}/version/{versionId}")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<SchedulingDagVersion> updateDagVersion(
             @PathVariable Long dagId,
             @PathVariable Long versionId,
@@ -248,6 +257,7 @@ public class SchedulingController {
      * 添加 DAG 节点
      */
     @PostMapping("/dag/{dagId}/version/{versionId}/node")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<SchedulingDagTask> createDagNode(
             @PathVariable Long dagId,
             @PathVariable Long versionId,
@@ -260,6 +270,7 @@ public class SchedulingController {
      * 更新节点
      */
     @PutMapping("/dag/{dagId}/version/{versionId}/node/{nodeId}")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<SchedulingDagTask> updateDagNode(
             @PathVariable Long dagId,
             @PathVariable Long versionId,
@@ -272,6 +283,7 @@ public class SchedulingController {
      * 删除节点
      */
     @DeleteMapping("/dag/{dagId}/version/{versionId}/node/{nodeId}")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Void> deleteDagNode(
             @PathVariable Long dagId,
             @PathVariable Long versionId,
@@ -331,6 +343,7 @@ public class SchedulingController {
      * 新增节点依赖
      */
     @PostMapping("/dag/{dagId}/version/{versionId}/edge")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<SchedulingDagEdge> createDagEdge(
             @PathVariable Long dagId,
             @PathVariable Long versionId,
@@ -343,6 +356,7 @@ public class SchedulingController {
      * 删除节点依赖
      */
     @DeleteMapping("/dag/{dagId}/version/{versionId}/edge/{edgeId}")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Void> deleteDagEdge(
             @PathVariable Long dagId,
             @PathVariable Long versionId,
@@ -375,16 +389,16 @@ public class SchedulingController {
      * 触发整个 DAG 执行
      */
     @PostMapping("/dag/{dagId}/trigger")
-    public ResponseEntity<SchedulingDagRun> triggerDag(
-            @PathVariable Long dagId,
-            @RequestParam(required = false, defaultValue = "system") String triggeredBy) {
-        return ResponseEntity.ok(schedulingService.triggerDag(dagId, triggeredBy));
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    public ResponseEntity<SchedulingDagRun> triggerDag(@PathVariable Long dagId) {
+        return ResponseEntity.ok(schedulingService.triggerDag(dagId));
     }
 
     /**
      * 暂停 DAG 执行
      */
     @PostMapping("/dag/{dagId}/pause")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Void> pauseDag(@PathVariable Long dagId) {
         schedulingService.pauseDag(dagId);
         return ResponseEntity.ok().build();
@@ -394,6 +408,7 @@ public class SchedulingController {
      * 恢复 DAG 执行
      */
     @PostMapping("/dag/{dagId}/resume")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Void> resumeDag(@PathVariable Long dagId) {
         schedulingService.resumeDag(dagId);
         return ResponseEntity.ok().build();
@@ -403,8 +418,21 @@ public class SchedulingController {
      * 强制停止 DAG 执行
      */
     @PostMapping("/dag/{dagId}/stop")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Void> stopDag(@PathVariable Long dagId) {
         schedulingService.stopDag(dagId);
+        return ResponseEntity.ok().build();
+    }
+
+    /**
+     * 强制停止指定运行
+     */
+    @PostMapping("/dag/{dagId}/run/{runId}/stop")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    public ResponseEntity<Void> stopDagRun(
+            @PathVariable Long dagId,
+            @PathVariable Long runId) {
+        schedulingService.stopDagRun(dagId, runId);
         return ResponseEntity.ok().build();
     }
 
@@ -412,8 +440,21 @@ public class SchedulingController {
      * 对失败的 DAG 进行整体重试
      */
     @PostMapping("/dag/{dagId}/retry")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Void> retryDag(@PathVariable Long dagId) {
         schedulingService.retryDag(dagId);
+        return ResponseEntity.ok().build();
+    }
+
+    /**
+     * 对指定失败运行进行重试
+     */
+    @PostMapping("/dag/{dagId}/run/{runId}/retry")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    public ResponseEntity<Void> retryDagRun(
+            @PathVariable Long dagId,
+            @PathVariable Long runId) {
+        schedulingService.retryDagRun(dagId, runId);
         return ResponseEntity.ok().build();
     }
 
@@ -423,6 +464,7 @@ public class SchedulingController {
      * 单独触发节点执行
      */
     @PostMapping("/dag/{dagId}/node/{nodeId}/trigger")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Void> triggerNode(
             @PathVariable Long dagId,
             @PathVariable Long nodeId) {
@@ -431,9 +473,23 @@ public class SchedulingController {
     }
 
     /**
+     * 在指定运行中单独触发节点执行
+     */
+    @PostMapping("/dag/{dagId}/run/{runId}/node/{nodeId}/trigger")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    public ResponseEntity<Void> triggerNodeInRun(
+            @PathVariable Long dagId,
+            @PathVariable Long runId,
+            @PathVariable Long nodeId) {
+        schedulingService.triggerNode(dagId, runId, nodeId);
+        return ResponseEntity.ok().build();
+    }
+
+    /**
      * 对失败节点重试
      */
     @PostMapping("/dag/{dagId}/node/{nodeId}/retry")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Void> retryNode(
             @PathVariable Long dagId,
             @PathVariable Long nodeId) {
@@ -442,9 +498,23 @@ public class SchedulingController {
     }
 
     /**
+     * 在指定运行中重试失败节点
+     */
+    @PostMapping("/dag/{dagId}/run/{runId}/node/{nodeId}/retry")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    public ResponseEntity<Void> retryNodeInRun(
+            @PathVariable Long dagId,
+            @PathVariable Long runId,
+            @PathVariable Long nodeId) {
+        schedulingService.retryNode(dagId, runId, nodeId);
+        return ResponseEntity.ok().build();
+    }
+
+    /**
      * 暂停节点
      */
     @PostMapping("/dag/{dagId}/node/{nodeId}/pause")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Void> pauseNode(
             @PathVariable Long dagId,
             @PathVariable Long nodeId) {
@@ -452,14 +522,35 @@ public class SchedulingController {
         return ResponseEntity.ok().build();
     }
 
+    @PostMapping("/dag/{dagId}/run/{runId}/node/{nodeId}/pause")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    public ResponseEntity<Void> pauseNodeInRun(
+            @PathVariable Long dagId,
+            @PathVariable Long runId,
+            @PathVariable Long nodeId) {
+        schedulingService.pauseNode(dagId, runId, nodeId);
+        return ResponseEntity.ok().build();
+    }
+
     /**
      * 恢复节点
      */
     @PostMapping("/dag/{dagId}/node/{nodeId}/resume")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Void> resumeNode(
             @PathVariable Long dagId,
             @PathVariable Long nodeId) {
         schedulingService.resumeNode(dagId, nodeId);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/dag/{dagId}/run/{runId}/node/{nodeId}/resume")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    public ResponseEntity<Void> resumeNodeInRun(
+            @PathVariable Long dagId,
+            @PathVariable Long runId,
+            @PathVariable Long nodeId) {
+        schedulingService.resumeNode(dagId, runId, nodeId);
         return ResponseEntity.ok().build();
     }
 
@@ -541,7 +632,9 @@ public class SchedulingController {
      */
     @GetMapping("/task-instance/{instanceId}/log")
     public ResponseEntity<String> getTaskInstanceLog(@PathVariable Long instanceId) {
-        return ResponseEntity.ok(schedulingService.getTaskInstanceLog(instanceId));
+        return schedulingService.getTaskInstanceLog(instanceId)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
     }
 
     /**
@@ -561,11 +654,10 @@ public class SchedulingController {
      */
     @GetMapping("/audit/list")
     public ResponseEntity<PageResponse<SchedulingAudit>> listAudits(
-            @RequestParam(required = false) Long tenantId,
             @RequestParam(required = false) String objectType,
             @RequestParam(required = false) String action,
             @PageableDefault(size = 10, sort = "id", direction = Sort.Direction.DESC) Pageable pageable) {
-        return ResponseEntity.ok(new PageResponse<>(schedulingService.listAudits(tenantId, objectType, action, pageable)));
+        return ResponseEntity.ok(new PageResponse<>(schedulingService.listAudits(objectType, action, pageable)));
     }
 
     /**
@@ -602,4 +694,3 @@ public class SchedulingController {
         return ResponseEntity.ok(result);
     }
 }
-

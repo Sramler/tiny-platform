@@ -30,6 +30,9 @@ public class SchedulingTaskHistory implements Serializable {
     @Column(name = "task_id")
     private Long taskId;
 
+    @Column(name = "tenant_id", nullable = false)
+    private Long tenantId;
+
     @Column(name = "attempt_no")
     private Integer attemptNo = 1;
 
@@ -118,6 +121,14 @@ public class SchedulingTaskHistory implements Serializable {
 
     public void setTaskId(Long taskId) {
         this.taskId = taskId;
+    }
+
+    public Long getTenantId() {
+        return tenantId;
+    }
+
+    public void setTenantId(Long tenantId) {
+        this.tenantId = tenantId;
     }
 
     public Integer getAttemptNo() {
@@ -216,5 +227,3 @@ public class SchedulingTaskHistory implements Serializable {
         this.createdAt = createdAt;
     }
 }
-
-

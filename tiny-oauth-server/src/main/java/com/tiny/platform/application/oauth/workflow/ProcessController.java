@@ -1,5 +1,6 @@
 package com.tiny.platform.application.oauth.workflow;
 
+import com.tiny.platform.infrastructure.idempotent.sdk.annotation.Idempotent;
 import org.springframework.beans.factory.annotation.Autowired;
 import java.security.Principal;
 import org.springframework.http.ResponseEntity;
@@ -28,6 +29,7 @@ public class ProcessController {
      * 部署流程（传入 BPMN XML 字符串）
      */
     @PostMapping("/deploy")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> deploy(@RequestBody String bpmnXml) {
         try {
             String tenantId = TenantContext.getCurrentTenant();
@@ -49,6 +51,7 @@ public class ProcessController {
      * 部署流程（传入 BPMN XML 字符串和流程信息）
      */
     @PostMapping("/deploy-with-info")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> deployWithInfo(@RequestBody Map<String, Object> request, Principal principal) {
         try {
             String tenantId = TenantContext.getCurrentTenant();
@@ -96,6 +99,7 @@ public class ProcessController {
      * 删除部署（默认级联删除历史数据）
      */
     @DeleteMapping("/deployment/{deploymentId}")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> deleteDeployment(@PathVariable String deploymentId) {
         try {
             processEngineService.deleteDeployment(deploymentId, true);
@@ -117,6 +121,7 @@ public class ProcessController {
      * 启动流程实例
      */
     @PostMapping("/start")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> start(@RequestParam(value = "processKey") String processKey,
                         @RequestBody(required = false) Map<String, Object> variables) {
         try {
@@ -156,6 +161,7 @@ public class ProcessController {
      * 挂起 / 激活 流程实例
      */
     @PostMapping("/instance/{instanceId}/suspend")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> suspendInstance(@PathVariable String instanceId) {
         try {
             processEngineService.suspendInstance(instanceId);
@@ -172,6 +178,7 @@ public class ProcessController {
     }
 
     @PostMapping("/instance/{instanceId}/activate")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> activateInstance(@PathVariable String instanceId) {
         try {
             processEngineService.activateInstance(instanceId);
@@ -191,6 +198,7 @@ public class ProcessController {
      * 删除流程实例
      */
     @DeleteMapping("/instance/{instanceId}")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> deleteInstance(@PathVariable String instanceId) {
         try {
             processEngineService.deleteInstance(instanceId);
@@ -245,6 +253,7 @@ public class ProcessController {
      * 领取任务
      */
     @PostMapping("/task/{taskId}/claim")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> claimTask(@PathVariable String taskId, @RequestParam(value = "userId") String userId) {
         try {
             processEngineService.claimTask(taskId, userId);
@@ -264,6 +273,7 @@ public class ProcessController {
      * 完成任务
      */
     @PostMapping("/task/{taskId}/complete")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> completeTask(@PathVariable String taskId,
                                @RequestBody(required = false) Map<String, Object> variables) {
         try {
@@ -320,6 +330,7 @@ public class ProcessController {
      * 注册新租户
      */
     @PostMapping("/tenant")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> createTenant(@RequestBody Map<String, Object> tenantInfo) {
         try {
             String tenantId = processEngineService.createTenant(tenantInfo);
@@ -423,6 +434,7 @@ public class ProcessController {
      * 删除流程定义（通过部署ID删除整个部署）
      */
     @DeleteMapping("/definition/{processDefinitionId}")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> deleteProcessDefinition(@PathVariable String processDefinitionId) {
         try {
             // 通过流程定义ID获取部署ID，然后删除整个部署

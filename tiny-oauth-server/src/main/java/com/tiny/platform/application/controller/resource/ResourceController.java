@@ -5,9 +5,9 @@ import com.tiny.platform.infrastructure.auth.resource.enums.ResourceType;
 import com.tiny.platform.infrastructure.auth.resource.dto.ResourceCreateUpdateDto;
 import com.tiny.platform.infrastructure.auth.resource.dto.ResourceRequestDto;
 import com.tiny.platform.infrastructure.auth.resource.dto.ResourceResponseDto;
-import com.tiny.platform.infrastructure.auth.resource.dto.ResourceSortDto;
 import com.tiny.platform.infrastructure.auth.resource.service.ResourceService;
 import com.tiny.platform.infrastructure.core.dto.PageResponse;
+import com.tiny.platform.infrastructure.idempotent.sdk.annotation.Idempotent;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
@@ -66,6 +66,7 @@ public class ResourceController {
      * @return 创建的资源
      */
     @PostMapping
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Resource> create(@Valid @RequestBody ResourceCreateUpdateDto resourceDto) {
         Resource resource = resourceService.createFromDto(resourceDto);
         return ResponseEntity.ok(resource);
@@ -78,6 +79,7 @@ public class ResourceController {
      * @return 更新后的资源
      */
     @PutMapping("/{id}")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Resource> update(@PathVariable("id") Long id, @Valid @RequestBody ResourceCreateUpdateDto resourceDto) {
         resourceDto.setId(id);
         Resource resource = resourceService.updateFromDto(resourceDto);
@@ -90,6 +92,7 @@ public class ResourceController {
      * @return 删除结果
      */
     @DeleteMapping("/{id}")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Void> delete(@PathVariable("id") Long id) {
         resourceService.delete(id);
         return ResponseEntity.noContent().build();
@@ -101,6 +104,7 @@ public class ResourceController {
      * @return 删除结果
      */
     @PostMapping("/batch/delete")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> batchDelete(@RequestBody List<Long> ids) {
         resourceService.batchDelete(ids);
         return ResponseEntity.ok(Map.of("success", true, "message", "批量删除成功"));
@@ -149,6 +153,7 @@ public class ResourceController {
      * @return 创建的菜单
      */
     @PostMapping("/menus")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Resource> createMenu(@Valid @RequestBody ResourceCreateUpdateDto resourceDto) {
         // 确保类型为目录或菜单
         if (resourceDto.getType() == null || (resourceDto.getType() != ResourceType.DIRECTORY.getCode() && resourceDto.getType() != ResourceType.MENU.getCode())) {
@@ -166,6 +171,7 @@ public class ResourceController {
      * @return 更新后的菜单
      */
     @PutMapping("/menus/{id}")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Resource> updateMenu(@PathVariable("id") Long id, @Valid @RequestBody ResourceCreateUpdateDto resourceDto) {
         // 设置ID
         resourceDto.setId(id);
@@ -185,6 +191,7 @@ public class ResourceController {
      * @return 删除结果
      */
     @DeleteMapping("/menus/{id}")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Void> deleteMenu(@PathVariable("id") Long id) {
         resourceService.delete(id);
         return ResponseEntity.noContent().build();
@@ -196,6 +203,7 @@ public class ResourceController {
      * @return 删除结果
      */
     @PostMapping("/menus/batch/delete")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> batchDeleteMenus(@RequestBody List<Long> ids) {
         resourceService.batchDelete(ids);
         return ResponseEntity.ok(Map.of("success", true, "message", "批量删除成功"));
@@ -208,6 +216,7 @@ public class ResourceController {
      * @return 更新后的菜单
      */
     @PutMapping("/menus/{id}/sort")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Resource> updateMenuSort(@PathVariable("id") Long id, @RequestParam("sort") Integer sort) {
         Resource resource = resourceService.updateSort(id, sort);
         return ResponseEntity.ok(resource);
@@ -268,6 +277,7 @@ public class ResourceController {
      * @return 更新后的资源
      */
     @PutMapping("/{id}/sort")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Resource> updateSort(@PathVariable("id") Long id, @RequestParam("sort") Integer sort) {
         Resource resource = resourceService.updateSort(id, sort);
         return ResponseEntity.ok(resource);

@@ -75,23 +75,43 @@ export function getUserById(id: string) {
 
 // 创建用户
 export function createUser(data: Partial<UserSummary> & Record<string, unknown>) {
-  return request.post('/sys/users', data)
+  return request.post('/sys/users', data, {
+    idempotency: {
+      scope: 'sys-users:create',
+      payload: data,
+    },
+  })
 }
 
 // 更新用户信息
 export function updateUser(id: string, data: Partial<UserSummary> & Record<string, unknown>) {
-  return request.put(`/sys/users/${id}`, data)
+  return request.put(`/sys/users/${id}`, data, {
+    idempotency: {
+      scope: `sys-users:update:${id}`,
+      payload: data,
+    },
+  })
 }
 
 // 删除用户
 export function deleteUser(id: string) {
-  return request.delete(`/sys/users/${id}`)
+  return request.delete(`/sys/users/${id}`, {
+    idempotency: {
+      scope: `sys-users:delete:${id}`,
+      payload: { id },
+    },
+  })
 }
 
 // 批量删除用户（使用真正的批量删除接口）
 export function batchDeleteUsers(ids: string[]) {
   // 使用真正的批量删除接口，确保事务一致性
-  return request.post<{ message?: string }>('/sys/users/batch/delete', ids).then((res) => {
+  return request.post<{ message?: string }>('/sys/users/batch/delete', ids, {
+    idempotency: {
+      scope: 'sys-users:batch-delete',
+      payload: ids,
+    },
+  }).then((res) => {
     return { success: true, message: res.message || '批量删除成功' }
   })
 }
@@ -99,7 +119,12 @@ export function batchDeleteUsers(ids: string[]) {
 // 批量启用用户（使用真正的批量启用接口）
 export function batchEnableUsers(ids: string[]) {
   // 使用真正的批量启用接口，确保事务一致性
-  return request.post<{ message?: string }>('/sys/users/batch/enable', ids).then((res) => {
+  return request.post<{ message?: string }>('/sys/users/batch/enable', ids, {
+    idempotency: {
+      scope: 'sys-users:batch-enable',
+      payload: ids,
+    },
+  }).then((res) => {
     return { success: true, message: res.message || '批量启用成功' }
   })
 }
@@ -107,7 +132,12 @@ export function batchEnableUsers(ids: string[]) {
 // 批量禁用用户（使用真正的批量禁用接口）
 export function batchDisableUsers(ids: string[]) {
   // 使用真正的批量禁用接口，确保事务一致性
-  return request.post<{ message?: string }>('/sys/users/batch/disable', ids).then((res) => {
+  return request.post<{ message?: string }>('/sys/users/batch/disable', ids, {
+    idempotency: {
+      scope: 'sys-users:batch-disable',
+      payload: ids,
+    },
+  }).then((res) => {
     return { success: true, message: res.message || '批量禁用成功' }
   })
 }
@@ -133,5 +163,10 @@ export function getUserRoles(userId: number) {
 
 // 保存用户角色绑定
 export function updateUserRoles(userId: number, roleIds: number[]) {
-  return request.post(`/sys/users/${userId}/roles`, roleIds)
+  return request.post(`/sys/users/${userId}/roles`, roleIds, {
+    idempotency: {
+      scope: `sys-users:roles:update:${userId}`,
+      payload: roleIds,
+    },
+  })
 }

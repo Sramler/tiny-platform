@@ -16,9 +16,10 @@ public interface SchedulingDagVersionRepository extends JpaRepository<Scheduling
     Optional<SchedulingDagVersion> findByDagIdAndVersionNo(Long dagId, Integer versionNo);
     
     Optional<SchedulingDagVersion> findByDagIdAndStatus(Long dagId, String status);
+
+    List<SchedulingDagVersion> findByDagIdInAndStatus(List<Long> dagIds, String status);
     
     @Query("SELECT MAX(dv.versionNo) FROM SchedulingDagVersion dv WHERE dv.dagId = :dagId")
     Integer findMaxVersionNoByDagId(@Param("dagId") Long dagId);
 }
-
 

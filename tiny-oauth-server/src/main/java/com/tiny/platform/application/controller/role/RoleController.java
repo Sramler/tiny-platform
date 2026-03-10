@@ -5,6 +5,7 @@ import com.tiny.platform.infrastructure.auth.role.dto.RoleRequestDto;
 import com.tiny.platform.infrastructure.auth.role.dto.RoleResponseDto;
 import com.tiny.platform.infrastructure.auth.role.service.RoleService;
 import com.tiny.platform.infrastructure.core.dto.PageResponse;
+import com.tiny.platform.infrastructure.idempotent.sdk.annotation.Idempotent;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
@@ -40,16 +41,19 @@ public class RoleController {
     }
 
     @PostMapping
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<RoleResponseDto> create(@RequestBody RoleCreateUpdateDto dto) {
         return ResponseEntity.ok(roleService.create(dto));
     }
 
     @PutMapping("/{id}")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<RoleResponseDto> update(@PathVariable("id") Long id, @RequestBody RoleCreateUpdateDto dto) {
         return ResponseEntity.ok(roleService.update(id, dto));
     }
 
     @DeleteMapping("/{id}")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Void> delete(@PathVariable("id") Long id) {
         roleService.delete(id);
         return ResponseEntity.noContent().build();
@@ -76,6 +80,7 @@ public class RoleController {
      * 保存角色与用户的分配关系
      */
     @PostMapping("/{id}/users")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<?> updateRoleUsers(@PathVariable("id") Long id, @RequestBody List<Long> userIds) {
         roleService.updateRoleUsers(id, userIds);
         return ResponseEntity.ok().build();
@@ -101,6 +106,7 @@ public class RoleController {
      * @return 响应结果
      */
     @PostMapping("/{id}/resources")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<?> updateRoleResources(@PathVariable("id") Long id, @RequestBody List<Long> resourceIds) {
         roleService.updateRoleResources(id, resourceIds);
         return ResponseEntity.ok().build();

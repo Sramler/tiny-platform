@@ -1,5 +1,6 @@
 package com.tiny.platform.infrastructure.scheduling.executor;
 
+import com.tiny.platform.infrastructure.scheduling.service.SchedulingExecutionContext;
 import com.tiny.platform.infrastructure.scheduling.service.TaskExecutorService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,12 +18,16 @@ public class UpperCaseExecutor implements TaskExecutorService.TaskExecutor {
     private static final Logger logger = LoggerFactory.getLogger(UpperCaseExecutor.class);
 
     @Override
-    public Object execute(Map<String, Object> params) throws Exception {
+    public Object execute(SchedulingExecutionContext executionContext, Map<String, Object> params) {
         String message = params != null && params.containsKey("message")
                 ? String.valueOf(params.get("message"))
                 : "";
         String result = message.toUpperCase();
-        logger.info("[UpperCaseExecutor] in={}, out={}", message, result);
+        logger.info("[UpperCaseExecutor] tenantId={}, runId={}, in={}, out={}",
+                executionContext != null ? executionContext.getTenantId() : null,
+                executionContext != null ? executionContext.getDagRunId() : null,
+                message,
+                result);
         return Map.of(
                 "status", "OK",
                 "original", message,

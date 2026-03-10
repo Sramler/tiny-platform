@@ -12,6 +12,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * UserDataProvider —— 基于 user 表的导出 DataProvider 实现
@@ -110,7 +111,7 @@ public class UserDataProvider implements FilterAwareDataProvider<Map<String, Obj
             pageParams.add(pageSizeForPage);
             pageParams.add(offset);
 
-            List<Map<String, Object>> list = jdbcTemplate.query(sql, pageParams.toArray(), this::mapRowToMap);
+            List<Map<String, Object>> list = jdbcTemplate.query(sql, this::mapRowToMap, pageParams.toArray());
             return list.iterator();
         }
 
@@ -179,7 +180,8 @@ public class UserDataProvider implements FilterAwareDataProvider<Map<String, Obj
             sqlBuilder.append(" ORDER BY id DESC LIMIT ?");
             params.add(batchSize);
 
-            currentBatch = jdbcTemplate.query(sqlBuilder.toString(), params.toArray(), UserDataProvider.this::mapRowToMap);
+            String sql = Objects.requireNonNull(sqlBuilder.toString(), "sql");
+            currentBatch = jdbcTemplate.query(sql, UserDataProvider.this::mapRowToMap, params.toArray());
             currentBatchIndex = 0;
 
             if (currentBatch.isEmpty()) {

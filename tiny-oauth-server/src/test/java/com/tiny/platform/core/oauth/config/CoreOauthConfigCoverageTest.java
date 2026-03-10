@@ -46,7 +46,7 @@ class CoreOauthConfigCoverageTest {
             assertThat(executor.getMaxPoolSize()).isEqualTo(4);
             assertThat(executor.getThreadNamePrefix()).isEqualTo("trace-");
             assertThat(executor.getThreadPoolExecutor().getRejectedExecutionHandler())
-                    .isInstanceOf(ThreadPoolExecutor.CallerRunsPolicy.class);
+                    .isInstanceOf(ThreadPoolExecutor.AbortPolicy.class);
             assertThat(ReflectionTestUtils.getField(executor, "taskDecorator")).isSameAs(decorator);
         } finally {
             executor.shutdown();

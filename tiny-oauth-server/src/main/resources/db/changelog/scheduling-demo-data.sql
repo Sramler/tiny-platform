@@ -45,7 +45,7 @@ VALUES
 (2, 1, 1, 1, 'node_b', 2, 1, 1, 'SUCCESS', NOW() - INTERVAL 1 HOUR + INTERVAL 2 MINUTE, NULL, '{"ok":true}', NOW() - INTERVAL 1 HOUR, NOW());
 
 INSERT IGNORE INTO `scheduling_task_history`
-(`id`, `task_instance_id`, `dag_run_id`, `dag_id`, `node_code`, `task_id`, `attempt_no`, `status`, `start_time`, `end_time`, `duration_ms`, `created_at`)
+(`id`, `task_instance_id`, `dag_run_id`, `dag_id`, `node_code`, `task_id`, `tenant_id`, `attempt_no`, `status`, `start_time`, `end_time`, `duration_ms`, `created_at`)
 VALUES
-(1, 1, 1, 1, 'node_a', 1, 1, 'SUCCESS', NOW() - INTERVAL 1 HOUR, NOW() - INTERVAL 1 HOUR + INTERVAL 1 MINUTE, 60000, NOW()),
-(2, 2, 1, 1, 'node_b', 2, 1, 'SUCCESS', NOW() - INTERVAL 1 HOUR + INTERVAL 2 MINUTE, NOW() - INTERVAL 1 HOUR + INTERVAL 5 MINUTE, 180000, NOW());
+(1, 1, 1, 1, 'node_a', 1, 1, 1, 'SUCCESS', NOW() - INTERVAL 1 HOUR, NOW() - INTERVAL 1 HOUR + INTERVAL 1 MINUTE, 60000, NOW()),
+(2, 2, 1, 1, 'node_b', 2, 1, 1, 'SUCCESS', NOW() - INTERVAL 1 HOUR + INTERVAL 2 MINUTE, NOW() - INTERVAL 1 HOUR + INTERVAL 5 MINUTE, 180000, NOW());

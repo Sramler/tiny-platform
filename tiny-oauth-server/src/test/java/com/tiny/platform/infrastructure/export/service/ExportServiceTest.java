@@ -13,6 +13,7 @@ import com.tiny.platform.infrastructure.export.writer.WriterAdapter;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mockito;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
@@ -34,11 +35,13 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -78,6 +81,7 @@ class ExportServiceTest {
             3,
             2,
             5000,
+            100000,
             new SimpleMeterRegistry()
         );
 
@@ -130,6 +134,7 @@ class ExportServiceTest {
             3,
             2,
             5000,
+            100000,
             new SimpleMeterRegistry()
         );
 
@@ -144,6 +149,117 @@ class ExportServiceTest {
         assertTrue(ex.getMessage().contains("任务排队过多"));
         verify(taskService, never()).createPendingTask(anyString(), anyString(), anyString(), anyInt(), any(), any());
         threadPool.shutdownNow();
+    }
+
+    @Test
+    void assertSyncExportWithinRowLimitShouldRejectLargeSyncRequest() {
+        TrackingFilterAwareProvider provider = new TrackingFilterAwareProvider();
+        provider.rows.add(Map.of("id", 1L, "name", "A"));
+        provider.rows.add(Map.of("id", 2L, "name", "B"));
+        WriterAdapter writer = (out, sheets) -> {};
+        ExportTaskService taskService = Mockito.mock(ExportTaskService.class);
+
+        ExportService service = new ExportService(
+            writer,
+            Map.of("user", provider),
+            (request, exportType) -> List.of(),
+            Map.of(),
+            newExecutor(),
+            taskService,
+            new ObjectMapper(),
+            10,
+            3,
+            2,
+            5000,
+            1,
+            new SimpleMeterRegistry()
+        );
+
+        ExportRequest request = new ExportRequest();
+        SheetConfig sheet = new SheetConfig();
+        sheet.setSheetName("用户列表");
+        sheet.setExportType("user");
+        sheet.setColumns(List.of(
+            new ColumnNode("ID", "id", null),
+            new ColumnNode("姓名", "name", null)
+        ));
+        request.setSheets(List.of(sheet));
+
+        BusinessException ex = assertThrows(BusinessException.class,
+            () -> service.assertSyncExportWithinRowLimit(request));
+        assertTrue(ex.getMessage().contains("请改用异步导出"));
+    }
+
+    @Test
+    void assertSyncExportWithinRowLimitShouldPassWhenWithinLimit() {
+        TrackingFilterAwareProvider provider = new TrackingFilterAwareProvider();
+        provider.rows.add(Map.of("id", 1L, "name", "A"));
+        WriterAdapter writer = (out, sheets) -> {};
+        ExportTaskService taskService = Mockito.mock(ExportTaskService.class);
+
+        ExportService service = new ExportService(
+            writer,
+            Map.of("user", provider),
+            (request, exportType) -> List.of(),
+            Map.of(),
+            newExecutor(),
+            taskService,
+            new ObjectMapper(),
+            10,
+            3,
+            2,
+            5000,
+            100_000,
+            new SimpleMeterRegistry()
+        );
+
+        ExportRequest request = new ExportRequest();
+        SheetConfig sheet = new SheetConfig();
+        sheet.setSheetName("用户列表");
+        sheet.setExportType("user");
+        sheet.setColumns(List.of(
+            new ColumnNode("ID", "id", null),
+            new ColumnNode("姓名", "name", null)
+        ));
+        request.setSheets(List.of(sheet));
+
+        service.assertSyncExportWithinRowLimit(request);
+    }
+
+    @Test
+    void submitAsyncShouldReturnTaskIdAndCreatePendingTaskWhenQueueAccepts() {
+        TrackingFilterAwareProvider provider = new TrackingFilterAwareProvider();
+        provider.rows.add(Map.of("id", 1L, "name", "A"));
+        WriterAdapter writer = (out, sheets) -> {};
+        ExportTaskService taskService = Mockito.mock(ExportTaskService.class);
+
+        ExportService service = new ExportService(
+            writer,
+            Map.of("user", provider),
+            (request, exportType) -> List.of(),
+            Map.of(),
+            newExecutor(),
+            taskService,
+            new ObjectMapper(),
+            10,
+            3,
+            2,
+            5000,
+            100_000,
+            new SimpleMeterRegistry()
+        );
+
+        ExportRequest request = new ExportRequest();
+        SheetConfig sheet = new SheetConfig();
+        sheet.setSheetName("用户列表");
+        sheet.setExportType("user");
+        sheet.setColumns(List.of(new ColumnNode("ID", "id", null)));
+        request.setSheets(List.of(sheet));
+
+        String taskId = service.submitAsync(request, "u-1");
+        assertNotNull(taskId);
+        assertTrue(taskId.length() > 0);
+        verify(taskService).createPendingTask(anyString(), ArgumentMatchers.eq("u-1"), ArgumentMatchers.eq("u-1"), ArgumentMatchers.eq(1), any(), any());
     }
 
     private ThreadPoolTaskExecutor newExecutor() {

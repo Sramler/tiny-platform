@@ -1,5 +1,6 @@
 package com.tiny.platform.infrastructure.scheduling.config;
 
+import com.tiny.platform.core.oauth.tenant.TenantContext;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -27,24 +28,78 @@ public class SchedulingWorkerConfig {
     @Value("${scheduling.worker.pool.queue-capacity:200}")
     private int queueCapacity;
 
+    @Value("${scheduling.worker.dispatch.pool-size:4}")
+    private int dispatchPoolSize;
+
     @Bean(name = "schedulingTaskExecutor")
     public ExecutorService schedulingTaskExecutor(@Qualifier("mdcTaskDecorator") TaskDecorator mdcTaskDecorator) {
-        AtomicInteger counter = new AtomicInteger(0);
-        return new ThreadPoolExecutor(
+        return createTenantAwareExecutor(
+                "scheduling-worker-",
                 coreSize,
                 maxSize,
+                queueCapacity,
+                mdcTaskDecorator);
+    }
+
+    @Bean(name = "schedulingDispatchExecutor")
+    public ExecutorService schedulingDispatchExecutor(@Qualifier("mdcTaskDecorator") TaskDecorator mdcTaskDecorator) {
+        return createTenantAwareExecutor(
+                "scheduling-dispatch-",
+                dispatchPoolSize,
+                dispatchPoolSize,
+                queueCapacity,
+                mdcTaskDecorator);
+    }
+
+    private ExecutorService createTenantAwareExecutor(
+            String threadNamePrefix,
+            int corePoolSize,
+            int maximumPoolSize,
+            int taskQueueCapacity,
+            TaskDecorator mdcTaskDecorator) {
+        TaskDecorator tenantAwareTaskDecorator = command -> {
+            Long capturedTenantId = TenantContext.getTenantId();
+            String capturedTenantSource = TenantContext.getTenantSource();
+            Runnable mdcDecorated = mdcTaskDecorator.decorate(command);
+            return () -> {
+                Long previousTenantId = TenantContext.getTenantId();
+                String previousTenantSource = TenantContext.getTenantSource();
+                try {
+                    TenantContext.clear();
+                    if (capturedTenantId != null) {
+                        TenantContext.setTenantId(capturedTenantId);
+                    }
+                    if (capturedTenantSource != null) {
+                        TenantContext.setTenantSource(capturedTenantSource);
+                    }
+                    mdcDecorated.run();
+                } finally {
+                    TenantContext.clear();
+                    if (previousTenantId != null) {
+                        TenantContext.setTenantId(previousTenantId);
+                    }
+                    if (previousTenantSource != null) {
+                        TenantContext.setTenantSource(previousTenantSource);
+                    }
+                }
+            };
+        };
+        AtomicInteger counter = new AtomicInteger(0);
+        return new ThreadPoolExecutor(
+                corePoolSize,
+                maximumPoolSize,
                 60L,
                 TimeUnit.SECONDS,
-                new LinkedBlockingQueue<>(queueCapacity),
+                new LinkedBlockingQueue<>(taskQueueCapacity),
                 r -> {
-                    Thread t = new Thread(r, "scheduling-worker-" + counter.incrementAndGet());
+                    Thread t = new Thread(r, threadNamePrefix + counter.incrementAndGet());
                     t.setDaemon(true);
                     return t;
                 },
                 new ThreadPoolExecutor.CallerRunsPolicy()) {
             @Override
             public void execute(Runnable command) {
-                super.execute(mdcTaskDecorator.decorate(command));
+                super.execute(tenantAwareTaskDecorator.decorate(command));
             }
         };
     }

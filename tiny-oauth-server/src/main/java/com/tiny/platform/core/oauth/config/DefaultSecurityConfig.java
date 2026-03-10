@@ -12,7 +12,7 @@ import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
@@ -46,12 +46,8 @@ public class DefaultSecurityConfig {
 
     private final CorsConfigurationSource corsConfigurationSource;
 
-    private final UserDetailsService userDetailsService;
-
-    public DefaultSecurityConfig(@Qualifier("corsConfigurationSource")CorsConfigurationSource corsConfigurationSource,
-                                UserDetailsService userDetailsService) {
+    public DefaultSecurityConfig(@Qualifier("corsConfigurationSource")CorsConfigurationSource corsConfigurationSource) {
         this.corsConfigurationSource = corsConfigurationSource;
-        this.userDetailsService = userDetailsService;
     }
 
     @Bean
@@ -92,6 +88,11 @@ public class DefaultSecurityConfig {
                                 "/self/security/totp/check"
                         ).access((authentication, context) ->
                                 new AuthorizationDecision(hasSensitiveSecurityAccess(authentication.get())))
+                        .requestMatchers(
+                                "/scheduling/executors",
+                                "/scheduling/quartz/cluster-status"
+                        ).access((authentication, context) ->
+                                new AuthorizationDecision(hasSchedulingAdminAccess(authentication.get())))
                         // 高敏操作：必须完整登录且已完成 TOTP。
                         .requestMatchers("/self/security/totp/unbind").access((authentication, context) ->
                                 new AuthorizationDecision(hasTotpSensitiveAccess(authentication.get())))
@@ -115,8 +116,7 @@ public class DefaultSecurityConfig {
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(Customizer.withDefaults()))
-                .authenticationProvider(authenticationProvider)
-                .userDetailsService(userDetailsService);
+                .authenticationProvider(authenticationProvider);
         return http.build();
     }
 
@@ -189,5 +189,20 @@ public class DefaultSecurityConfig {
                 authentication,
                 com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken.AuthenticationFactorType.TOTP
         );
+    }
+
+    public static boolean hasSchedulingAdminAccess(Authentication authentication) {
+        if (!hasSensitiveSecurityAccess(authentication)) {
+            return false;
+        }
+        if (authentication.getAuthorities() == null) {
+            return false;
+        }
+        for (GrantedAuthority authority : authentication.getAuthorities()) {
+            if ("ROLE_ADMIN".equals(authority.getAuthority())) {
+                return true;
+            }
+        }
+        return false;
     }
 }

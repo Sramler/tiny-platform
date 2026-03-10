@@ -18,34 +18,27 @@ import java.util.Optional;
 public interface DictTypeRepository extends JpaRepository<DictType, Long> {
 
     /**
-     * 根据字典编码查找
-     */
-    Optional<DictType> findByDictCode(String dictCode);
-
-    /**
      * 根据字典编码和租户ID查找
      */
     Optional<DictType> findByDictCodeAndTenantId(String dictCode, Long tenantId);
 
     /**
-     * 根据租户ID查找所有字典类型
+     * 查询当前租户可见的字典类型（平台 + 当前租户）
      */
-    List<DictType> findByTenantIdOrderBySortOrderAsc(Long tenantId);
+    @Query("SELECT d FROM DictType d " +
+           "WHERE d.tenantId = 0 OR d.tenantId = :tenantId " +
+           "ORDER BY d.tenantId ASC, d.sortOrder ASC, d.id ASC")
+    List<DictType> findVisibleByTenantId(@Param("tenantId") Long tenantId);
 
     /**
-     * 根据租户ID和启用状态查找
-     */
-    List<DictType> findByTenantIdAndEnabledOrderBySortOrderAsc(Long tenantId, Boolean enabled);
-
-    /**
-     * 分页查询字典类型
+     * 分页查询当前租户可见的字典类型（平台 + 当前租户）
      */
     @Query("SELECT d FROM DictType d WHERE " +
+           "(d.tenantId = 0 OR d.tenantId = :tenantId) AND " +
            "(:dictCode IS NULL OR d.dictCode LIKE %:dictCode%) AND " +
            "(:dictName IS NULL OR d.dictName LIKE %:dictName%) AND " +
-           "(:tenantId IS NULL OR d.tenantId = :tenantId) AND " +
            "(:enabled IS NULL OR d.enabled = :enabled)")
-    Page<DictType> findByConditions(
+    Page<DictType> findVisibleByConditions(
             @Param("dictCode") String dictCode,
             @Param("dictName") String dictName,
             @Param("tenantId") Long tenantId,
@@ -54,13 +47,12 @@ public interface DictTypeRepository extends JpaRepository<DictType, Long> {
     );
 
     /**
-     * 检查字典编码是否存在（排除指定ID）
+     * 检查当前租户内的字典编码是否存在（排除指定ID）
      */
-    boolean existsByDictCodeAndIdNot(String dictCode, Long id);
+    boolean existsByDictCodeAndTenantIdAndIdNot(String dictCode, Long tenantId, Long id);
 
     /**
-     * 检查字典编码是否存在
+     * 检查当前租户内的字典编码是否存在
      */
-    boolean existsByDictCode(String dictCode);
+    boolean existsByDictCodeAndTenantId(String dictCode, Long tenantId);
 }
-

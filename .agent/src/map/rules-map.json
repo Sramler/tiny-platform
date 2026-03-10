@@ -58,10 +58,20 @@
             "globs": [
               "**/*Test.java",
               "**/*Tests.java",
+              "**/*IT.java",
+              "**/__tests__/**",
+              "**/*.spec.js",
+              "**/*.test.js",
+              "**/*.spec.jsx",
+              "**/*.test.jsx",
               "**/*.spec.ts",
               "**/*.test.ts",
               "**/*.spec.tsx",
-              "**/*.test.tsx"
+              "**/*.test.tsx",
+              "**/*.cy.ts",
+              "**/*.cy.tsx",
+              "**/*.e2e.ts",
+              "**/*.e2e.tsx"
             ]
           }
         }
@@ -70,6 +80,12 @@
         "cursor": {
           "id": "55-code-review",
           "frontmatter": { "description": "代码审查规范（流程与检查清单）", "alwaysApply": true }
+        }
+      },
+      "58-cicd.rules.md": {
+        "cursor": {
+          "id": "58-cicd",
+          "frontmatter": { "description": "CI/CD 规范（质量门禁与发布流程，始终应用）", "alwaysApply": true }
         }
       },
       "70-database.rules.md": {
@@ -176,6 +192,7 @@
         "30-antdv.rules.md",
         "50-testing.rules.md",
         "55-code-review.rules.md",
+        "58-cicd.rules.md",
         "65-performance.rules.md",
         "70-database.rules.md",
         "75-exception.rules.md",

@@ -7,6 +7,7 @@ import com.tiny.platform.core.dict.model.DictType;
 import com.tiny.platform.core.dict.repository.DictItemRepository;
 import com.tiny.platform.core.dict.repository.DictTypeRepository;
 import com.tiny.platform.core.dict.service.DictTypeService;
+import com.tiny.platform.core.dict.support.DictTenantScope;
 import com.tiny.platform.infrastructure.core.exception.code.ErrorCode;
 import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
 import com.tiny.platform.infrastructure.core.exception.exception.NotFoundException;
@@ -35,11 +36,14 @@ public class DictTypeServiceImpl implements DictTypeService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Page<DictTypeResponseDto> query(DictTypeQueryDto query, Pageable pageable) {
-        Page<DictType> page = dictTypeRepository.findByConditions(
+        // 租户隔离仅以 TenantContext 为准，不使用 query 中的 tenantId
+        Long currentTenantId = DictTenantScope.requireCurrentTenantId();
+        Page<DictType> page = dictTypeRepository.findVisibleByConditions(
                 StringUtils.hasText(query.getDictCode()) ? query.getDictCode() : null,
                 StringUtils.hasText(query.getDictName()) ? query.getDictName() : null,
-                query.getTenantId(),
+                currentTenantId,
                 query.getEnabled(),
                 pageable
         );
@@ -47,28 +51,35 @@ public class DictTypeServiceImpl implements DictTypeService {
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Optional<DictType> findById(Long id) {
-        return dictTypeRepository.findById(id);
+        Long currentTenantId = DictTenantScope.requireCurrentTenantId();
+        return dictTypeRepository.findById(id)
+                .filter(dictType -> DictTenantScope.isVisibleTenant(dictType.getTenantId(), currentTenantId));
     }
 
     @Override
+    @Transactional(readOnly = true)
     public Optional<DictType> findByDictCode(String dictCode) {
-        return dictTypeRepository.findByDictCode(dictCode);
+        Long currentTenantId = DictTenantScope.requireCurrentTenantId();
+        Optional<DictType> tenantType = dictTypeRepository.findByDictCodeAndTenantId(dictCode, currentTenantId);
+        if (tenantType.isPresent()) {
+            return tenantType;
+        }
+        return dictTypeRepository.findByDictCodeAndTenantId(dictCode, DictTenantScope.PLATFORM_TENANT_ID);
     }
 
     @Override
     @Transactional
     public DictType create(DictTypeCreateUpdateDto dto) {
-        // 检查字典编码是否已存在
-        if (dictTypeRepository.existsByDictCode(dto.getDictCode())) {
-            throw new BusinessException(ErrorCode.RESOURCE_ALREADY_EXISTS, "字典编码已存在: " + dto.getDictCode());
-        }
+        Long currentTenantId = DictTenantScope.requireCurrentTenantId();
+        validateDictCodeAvailability(dto.getDictCode(), currentTenantId, null);
 
         DictType dictType = new DictType();
         dictType.setDictCode(dto.getDictCode());
         dictType.setDictName(dto.getDictName());
         dictType.setDescription(dto.getDescription());
-        dictType.setTenantId(dto.getTenantId() != null ? dto.getTenantId() : 0L);
+        dictType.setTenantId(currentTenantId);
         dictType.setCategoryId(dto.getCategoryId());
         dictType.setEnabled(dto.getEnabled() != null ? dto.getEnabled() : true);
         dictType.setSortOrder(dto.getSortOrder() != null ? dto.getSortOrder() : 0);
@@ -81,29 +92,19 @@ public class DictTypeServiceImpl implements DictTypeService {
     @Override
     @Transactional
     public DictType update(Long id, DictTypeCreateUpdateDto dto) {
-        DictType dictType = dictTypeRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("字典类型不存在: " + id));
+        Long currentTenantId = DictTenantScope.requireCurrentTenantId();
+        DictType dictType = findMutableType(id, currentTenantId);
 
-        // 检查是否为锁定的内置字典，锁定后不允许修改关键字段
-        if (Boolean.TRUE.equals(dictType.getBuiltinLocked())) {
-            // 锁定后不允许修改字典编码
-            if (!dictType.getDictCode().equals(dto.getDictCode())) {
-                throw new BusinessException(ErrorCode.RESOURCE_STATE_INVALID, "内置字典已锁定，不允许修改字典编码");
-            }
-        }
-
-        // 检查字典编码是否已被其他字典类型使用
-        if (!dictType.getDictCode().equals(dto.getDictCode()) &&
-            dictTypeRepository.existsByDictCodeAndIdNot(dto.getDictCode(), id)) {
-            throw new BusinessException(ErrorCode.RESOURCE_ALREADY_EXISTS, "字典编码已被使用: " + dto.getDictCode());
+        if (!dictType.getDictCode().equals(dto.getDictCode())) {
+            validateDictCodeAvailability(dto.getDictCode(), currentTenantId, id);
         }
 
         dictType.setDictCode(dto.getDictCode());
         dictType.setDictName(dto.getDictName());
         dictType.setDescription(dto.getDescription());
         dictType.setCategoryId(dto.getCategoryId());
-        dictType.setEnabled(dto.getEnabled());
-        dictType.setSortOrder(dto.getSortOrder());
+        dictType.setEnabled(dto.getEnabled() != null ? dto.getEnabled() : true);
+        dictType.setSortOrder(dto.getSortOrder() != null ? dto.getSortOrder() : 0);
         dictType.setUpdatedAt(LocalDateTime.now());
 
         return dictTypeRepository.save(dictType);
@@ -112,18 +113,10 @@ public class DictTypeServiceImpl implements DictTypeService {
     @Override
     @Transactional
     public void delete(Long id) {
-        DictType dictType = dictTypeRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("字典类型不存在: " + id));
+        Long currentTenantId = DictTenantScope.requireCurrentTenantId();
+        DictType dictType = findMutableType(id, currentTenantId);
 
-        // 检查是否为锁定的内置字典
-        if (Boolean.TRUE.equals(dictType.getBuiltinLocked())) {
-            throw new BusinessException(ErrorCode.RESOURCE_STATE_INVALID, "内置字典已锁定，不允许删除");
-        }
-
-        // 删除关联的字典项（级联删除）
         dictItemRepository.deleteByDictTypeId(id);
-
-        // 删除字典类型
         dictTypeRepository.delete(dictType);
     }
 
@@ -136,16 +129,64 @@ public class DictTypeServiceImpl implements DictTypeService {
     }
 
     @Override
-    public List<DictType> findByTenantId(Long tenantId) {
-        return dictTypeRepository.findByTenantIdOrderBySortOrderAsc(tenantId);
+    @Transactional(readOnly = true)
+    public List<DictType> findVisibleTypes() {
+        Long currentTenantId = DictTenantScope.requireCurrentTenantId();
+        return dictTypeRepository.findVisibleByTenantId(currentTenantId);
     }
 
     @Override
     public boolean existsByDictCode(String dictCode, Long excludeId) {
+        Long currentTenantId = DictTenantScope.requireCurrentTenantId();
         if (excludeId == null) {
-            return dictTypeRepository.existsByDictCode(dictCode);
+            return dictTypeRepository.existsByDictCodeAndTenantId(dictCode, currentTenantId)
+                    || dictTypeRepository.existsByDictCodeAndTenantId(dictCode, DictTenantScope.PLATFORM_TENANT_ID);
         }
-        return dictTypeRepository.existsByDictCodeAndIdNot(dictCode, excludeId);
+        return dictTypeRepository.existsByDictCodeAndTenantIdAndIdNot(dictCode, currentTenantId, excludeId)
+                || dictTypeRepository.existsByDictCodeAndTenantIdAndIdNot(
+                        dictCode,
+                        DictTenantScope.PLATFORM_TENANT_ID,
+                        excludeId
+                );
+    }
+
+    private DictType findMutableType(Long id, Long currentTenantId) {
+        DictType dictType = findAccessibleType(id, currentTenantId);
+        if (DictTenantScope.isPlatformTenant(dictType.getTenantId())) {
+            throw new BusinessException(ErrorCode.RESOURCE_STATE_INVALID, "平台字典只读，不允许修改");
+        }
+        if (Boolean.TRUE.equals(dictType.getBuiltinLocked())) {
+            throw new BusinessException(ErrorCode.RESOURCE_STATE_INVALID, "内置字典已锁定，不允许修改");
+        }
+        return dictType;
+    }
+
+    private DictType findAccessibleType(Long id, Long currentTenantId) {
+        DictType dictType = dictTypeRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("字典类型不存在: " + id));
+        if (!DictTenantScope.isVisibleTenant(dictType.getTenantId(), currentTenantId)) {
+            throw new NotFoundException("字典类型不存在: " + id);
+        }
+        return dictType;
+    }
+
+    private void validateDictCodeAvailability(String dictCode, Long currentTenantId, Long excludeId) {
+        boolean currentTenantConflict = excludeId == null
+                ? dictTypeRepository.existsByDictCodeAndTenantId(dictCode, currentTenantId)
+                : dictTypeRepository.existsByDictCodeAndTenantIdAndIdNot(dictCode, currentTenantId, excludeId);
+        if (currentTenantConflict) {
+            throw new BusinessException(ErrorCode.RESOURCE_ALREADY_EXISTS, "字典编码已存在: " + dictCode);
+        }
+
+        boolean platformConflict = excludeId == null
+                ? dictTypeRepository.existsByDictCodeAndTenantId(dictCode, DictTenantScope.PLATFORM_TENANT_ID)
+                : dictTypeRepository.existsByDictCodeAndTenantIdAndIdNot(
+                        dictCode,
+                        DictTenantScope.PLATFORM_TENANT_ID,
+                        excludeId
+                );
+        if (platformConflict) {
+            throw new BusinessException(ErrorCode.RESOURCE_ALREADY_EXISTS, "字典编码已被平台字典保留: " + dictCode);
+        }
     }
 }
-

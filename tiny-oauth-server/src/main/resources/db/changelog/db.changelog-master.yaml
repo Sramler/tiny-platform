@@ -74,6 +74,56 @@ databaseChangeLog:
       file: 024-http-request-log-trace-hardening.yaml
       relativeToChangelogFile: true
 
+  # 幂等表迁移到 Liquibase 管理，避免运行时建表
+  - include:
+      file: 025-create-idempotent-token-table.yaml
+      relativeToChangelogFile: true
+
+  # dict_type.dict_code 唯一约束调整为租户作用域唯一
+  - include:
+      file: 026-scope-dict-code-by-tenant.yaml
+      relativeToChangelogFile: true
+
+  # 为默认平台租户补充幂等治理菜单与授权
+  - include:
+      file: 027-add-idempotent-ops-menu.yaml
+      relativeToChangelogFile: true
+
+  # 幂等治理控制台：规则表与黑名单表
+  - include:
+      file: 028-create-idempotent-console-tables.yaml
+      relativeToChangelogFile: true
+
+  # 幂等治理指标分钟聚合表
+  - include:
+      file: 029-create-idempotent-metric-minute-table.yaml
+      relativeToChangelogFile: true
+
+  # 幂等治理指标分钟聚合补充 tenant 维度
+  - include:
+      file: 030-add-tenant-id-to-idempotent-metric-minute.yaml
+      relativeToChangelogFile: true
+
+  # 调度实例执行快照 + task_history 补 tenant 维度
+  - include:
+      file: 031-scheduling-execution-snapshot-and-history-tenant.yaml
+      relativeToChangelogFile: true
+
+  # 调度核心表 tenant_id 非空化与租户索引补齐
+  - include:
+      file: 032-tighten-scheduling-tenant-constraints.yaml
+      relativeToChangelogFile: true
+
+  # scheduling_task.code 收紧为租户内唯一
+  - include:
+      file: 033-add-scheduling-task-tenant-code-unique.yaml
+      relativeToChangelogFile: true
+
+  # 约束单 DAG 仅允许一个 ACTIVE 版本
+  - include:
+      file: 034-enforce-single-active-dag-version.yaml
+      relativeToChangelogFile: true
+
   # 数据修复：修复资源 URL 格式
   - include:
       file: 004-fix-resource-url-format.yaml

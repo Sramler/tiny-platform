@@ -16,7 +16,8 @@
       { "title": "角色管理", "url": "/system/role", "showIcon": false, "component": "/views/role/role.vue" },
       { "title": "菜单管理", "url": "/system/menu", "showIcon": false, "component": "/views/menu/Menu.vue" },
       { "title": "资源管理", "url": "/system/resource", "showIcon": false, "component": "/views/resource/resource.vue" },
-      { "title": "用户管理", "url": "/system/user", "showIcon": false, "component": "/views/user/User.vue" }
+      { "title": "用户管理", "url": "/system/user", "showIcon": false, "component": "/views/user/User.vue" },
+      { "title": "幂等治理", "url": "/ops/idempotent", "showIcon": false, "component": "/views/idempotent/Overview.vue" }
     ]
   },
   {

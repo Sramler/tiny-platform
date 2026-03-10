@@ -55,6 +55,8 @@ public class CorsConfig {
                 "x-trace-id",
                 "x-b3-spanid",
                 "span-id",
+                "X-Idempotency-Key",
+                "x-idempotency-key",
                 "X-XSRF-TOKEN",
                 "x-xsrf-token"
         ));
