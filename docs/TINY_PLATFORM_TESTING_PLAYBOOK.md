@@ -182,6 +182,11 @@
 - 租户拒绝或跨租户拒绝
 - Session / JWT / OIDC 相关真实链路中的至少一种
 
+如果 real-link 依赖 setup helper 组装多身份环境变量或 auth-state，还必须补对应的单元回归测试，锁住：
+- 身份切换时的环境变量覆盖顺序
+- 主身份与次身份之间的 secret / one-time code 不串用
+- storageState 输出路径与身份绑定关系
+
 ### 5.3 禁止做法
 
 - 手写 JWT 冒充真实登录
@@ -319,6 +324,7 @@
 
 不应：
 - 把 full-chain 全量 E2E 全塞进 PR 必跑
+- 把需要专用测试身份、专用数据库、MFA secret 的 real-link 套件直接混进默认快速链路
 
 ### 9.3 Nightly / main
 
@@ -327,6 +333,11 @@
 - 较慢的集成/契约/安全扫描
 - real-link 或 full-chain E2E
 - trace / screenshot / 视频 / seed 日志
+
+建议：
+- real-link E2E 使用独立 workflow，入口至少包含 `workflow_dispatch` 和 `schedule`
+- workflow 开始时显式检查必需 secrets/自动化身份，缺失时快速失败并输出修复提示
+- setup helper 的纯逻辑回归仍然留在普通 unit test 中，和 PR 一起跑
 
 ### 9.4 失败输出
 

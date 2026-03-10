@@ -57,6 +57,11 @@
     - 运行 `e2e/setup/generate-auth-state.mjs` 生成：
       - `e2e/.auth/scheduling-user.json`（主自动化身份）
       - `e2e/.auth/tenant-b-user.json`（仅在配置第二租户身份时生成）
+  - **相关回归测试**
+    - `src/e2e/realGlobalSetup.test.ts`
+      - 锁住第二租户 auth-state 的环境覆盖顺序
+      - 明确要求：tenant B 未显式提供 `E2E_TOTP_CODE_B` 时，不能继承 tenant A 的 `E2E_TOTP_CODE`
+      - 该回归属于“real-link setup helper 的单元测试”，用于防止 review 中出现过的 TOTP 覆盖回退
 
 - **测试身份**
   - `chromium` / `chromium-cross-tenant-a`
