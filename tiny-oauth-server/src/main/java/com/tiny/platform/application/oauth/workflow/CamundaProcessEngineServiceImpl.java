@@ -1,6 +1,7 @@
 package com.tiny.platform.application.oauth.workflow;
 
 import org.camunda.bpm.engine.*;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.camunda.bpm.engine.repository.Deployment;
 import org.camunda.bpm.engine.runtime.ProcessInstance;
 import org.camunda.bpm.engine.task.Task;
@@ -19,6 +20,7 @@ import java.util.stream.Collectors;
  * Camunda 7 嵌入式引擎实现
  */
 @Service
+@ConditionalOnBean(ProcessEngine.class)
 public class CamundaProcessEngineServiceImpl implements ProcessEngineService {
 
     @Autowired

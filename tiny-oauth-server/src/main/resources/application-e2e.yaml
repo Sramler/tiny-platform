@@ -9,6 +9,9 @@ server:
     include-binding-errors: always
 
 spring:
+  autoconfigure:
+    exclude:
+      - org.camunda.bpm.spring.boot.starter.rest.CamundaBpmRestJerseyAutoConfiguration
   datasource:
     url: >-
       jdbc:mysql://${E2E_DB_HOST:127.0.0.1}:${E2E_DB_PORT:3306}/${E2E_DB_NAME:tiny_web}
@@ -26,6 +29,12 @@ spring:
       ddl-auto: none
   liquibase:
     enabled: true
+
+camunda:
+  bpm:
+    enabled: false
+    database:
+      schema-update: create-drop
 
 frontend:
   login-url: redirect:${E2E_FRONTEND_BASE_URL:http://localhost:5173}/login

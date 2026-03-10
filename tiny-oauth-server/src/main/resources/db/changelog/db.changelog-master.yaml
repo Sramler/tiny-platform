@@ -79,6 +79,16 @@ databaseChangeLog:
       file: 025-create-idempotent-token-table.yaml
       relativeToChangelogFile: true
 
+  # dict 核心表（fresh install 基础表，供后续字典迁移和初始化复用）
+  - include:
+      file: 025a-create-dict-core-tables.yaml
+      relativeToChangelogFile: true
+
+  # OAuth2 Authorization Server JDBC 基础表（fresh install 基础表）
+  - include:
+      file: 025b-create-oauth2-authorization-tables.yaml
+      relativeToChangelogFile: true
+
   # dict_type.dict_code 唯一约束调整为租户作用域唯一
   - include:
       file: 026-scope-dict-code-by-tenant.yaml

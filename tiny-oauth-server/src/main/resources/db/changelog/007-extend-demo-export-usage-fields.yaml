@@ -3,6 +3,13 @@ databaseChangeLog:
       id: extend-demo-export-usage-fields
       author: tiny
       comment: 扩展 demo_export_usage 表，添加更多字段以覆盖所有表单组件类型，作为 SaaS 平台展示示例
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            - columnExists:
+                tableName: demo_export_usage
+                columnName: description
       changes:
         - addColumn:
             tableName: demo_export_usage
@@ -77,4 +84,3 @@ databaseChangeLog:
               - column:
                   name: attachment_info
                   type: JSON
-

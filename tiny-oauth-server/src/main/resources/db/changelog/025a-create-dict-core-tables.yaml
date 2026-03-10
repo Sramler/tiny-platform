@@ -1,0 +1,51 @@
+databaseChangeLog:
+  - changeSet:
+      id: create-dict-core-tables
+      author: tiny
+      comment: 为 fresh install 创建 dict_type 与 dict_item 基础表，供后续字典迁移复用
+      changes:
+        - sql:
+            dbms: mysql
+            sql: |
+              CREATE TABLE IF NOT EXISTS dict_type (
+                id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+                dict_code VARCHAR(64) NOT NULL UNIQUE COMMENT '字典编码，唯一标识',
+                dict_name VARCHAR(128) NOT NULL COMMENT '字典名称',
+                description VARCHAR(255) COMMENT '字典描述',
+                tenant_id BIGINT DEFAULT 0 COMMENT '租户ID，0表示平台字典',
+                category_id BIGINT COMMENT '分类ID，用于字典分组',
+                enabled BOOLEAN DEFAULT TRUE COMMENT '是否启用',
+                sort_order INT DEFAULT 0 COMMENT '排序顺序',
+                ext_attrs JSON COMMENT '扩展属性，JSON格式',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+                created_by VARCHAR(64) COMMENT '创建人',
+                updated_by VARCHAR(64) COMMENT '更新人',
+                INDEX idx_tenant_id (tenant_id),
+                INDEX idx_dict_code (dict_code),
+                INDEX idx_category_id (category_id),
+                INDEX idx_enabled (enabled)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='字典类型表';
+
+              CREATE TABLE IF NOT EXISTS dict_item (
+                id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+                dict_type_id BIGINT NOT NULL COMMENT '字典类型ID，关联dict_type.id',
+                value VARCHAR(64) NOT NULL COMMENT '字典值',
+                label VARCHAR(128) NOT NULL COMMENT '字典标签',
+                description VARCHAR(255) COMMENT '字典项描述',
+                tenant_id BIGINT DEFAULT 0 COMMENT '租户ID，0表示平台字典项',
+                enabled BOOLEAN DEFAULT TRUE COMMENT '是否启用',
+                sort_order INT DEFAULT 0 COMMENT '排序顺序',
+                ext_attrs JSON COMMENT '扩展属性，JSON格式',
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+                created_by VARCHAR(64) COMMENT '创建人',
+                updated_by VARCHAR(64) COMMENT '更新人',
+                UNIQUE KEY uk_dict_type_value_tenant (dict_type_id, value, tenant_id),
+                INDEX idx_dict_type_id (dict_type_id),
+                INDEX idx_tenant_id (tenant_id),
+                INDEX idx_value (value),
+                INDEX idx_enabled (enabled),
+                INDEX idx_sort_order (sort_order),
+                FOREIGN KEY (dict_type_id) REFERENCES dict_type(id) ON DELETE CASCADE
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='字典项表';

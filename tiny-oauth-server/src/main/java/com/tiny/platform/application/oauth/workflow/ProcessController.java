@@ -1,6 +1,7 @@
 package com.tiny.platform.application.oauth.workflow;
 
 import com.tiny.platform.infrastructure.idempotent.sdk.annotation.Idempotent;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.beans.factory.annotation.Autowired;
 import java.security.Principal;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +16,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/process")
 //@CrossOrigin(origins = "*") // 允许跨域访问
+@ConditionalOnBean(ProcessEngineService.class)
 public class ProcessController {
 
     @Autowired

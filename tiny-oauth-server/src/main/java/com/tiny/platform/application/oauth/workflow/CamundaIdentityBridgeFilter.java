@@ -1,6 +1,7 @@
 package com.tiny.platform.application.oauth.workflow;
 
 import org.camunda.bpm.engine.IdentityService;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -16,6 +17,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 @Component
+@ConditionalOnBean(IdentityService.class)
 public class CamundaIdentityBridgeFilter extends OncePerRequestFilter {
 
     private final IdentityService identityService;
@@ -48,5 +50,4 @@ public class CamundaIdentityBridgeFilter extends OncePerRequestFilter {
         }
     }
 }
-
 
