@@ -120,6 +120,13 @@ jobs:
       - name: Run real-link setup regression
         run: npm run test:unit -- src/e2e/realGlobalSetup.test.ts
 
+      - name: Prime backend Maven dependencies
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          mvn -pl tiny-oauth-server -DskipTests test-compile
+
       - name: Start backend
         env:
           SPRING_PROFILES_ACTIVE: ${{ env.E2E_BACKEND_PROFILE }}
