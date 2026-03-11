@@ -43,9 +43,6 @@ public class IssuerDelegatingRegisteredClientRepository implements RegisteredCli
             return defaultDelegate;
         }
         RegisteredClientRepository delegate = registry.get(tenantCode, RegisteredClientRepository.class);
-        if (delegate == null) {
-            throw new IllegalStateException("No RegisteredClientRepository found for issuer tenantCode=" + tenantCode);
-        }
-        return delegate;
+        return delegate != null ? delegate : defaultDelegate;
     }
 }

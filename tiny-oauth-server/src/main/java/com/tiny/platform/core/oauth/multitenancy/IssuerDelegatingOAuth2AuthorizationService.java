@@ -49,9 +49,6 @@ public class IssuerDelegatingOAuth2AuthorizationService implements OAuth2Authori
             return defaultDelegate;
         }
         OAuth2AuthorizationService delegate = registry.get(tenantCode, OAuth2AuthorizationService.class);
-        if (delegate == null) {
-            throw new IllegalStateException("No OAuth2AuthorizationService found for issuer tenantCode=" + tenantCode);
-        }
-        return delegate;
+        return delegate != null ? delegate : defaultDelegate;
     }
 }

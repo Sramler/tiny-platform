@@ -82,6 +82,7 @@ mvn -pl tiny-oauth-server -q dependency:build-classpath \
 jshell --class-path "$(cat "${CLASSPATH_FILE}")" <<EOF
 import java.sql.*;
 import java.time.*;
+import java.util.Locale;
 
 String dbHost = System.getenv("E2E_EFFECTIVE_DB_HOST");
 String dbPort = System.getenv("E2E_EFFECTIVE_DB_PORT");
@@ -93,6 +94,50 @@ String username = System.getenv("E2E_EFFECTIVE_USERNAME");
 String rawPassword = System.getenv("E2E_EFFECTIVE_PASSWORD");
 String totpSecret = System.getenv("E2E_EFFECTIVE_TOTP_SECRET");
 String jdbcUrl = "jdbc:mysql://" + dbHost + ":" + dbPort + "/" + dbName + "?useSSL=false&allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai";
+
+Long ensureTenant(Connection connection, String rawTenantCode, String displayName) throws SQLException {
+    if (rawTenantCode == null || rawTenantCode.isBlank()) {
+        throw new IllegalStateException("缺少租户编码");
+    }
+    String tenantCode = rawTenantCode.trim().toLowerCase(Locale.ROOT);
+
+    Long tenantId = null;
+    try (PreparedStatement ps = connection.prepareStatement("SELECT id FROM tenant WHERE code = ? LIMIT 1")) {
+        ps.setString(1, tenantCode);
+        try (ResultSet rs = ps.executeQuery()) {
+            if (rs.next()) {
+                tenantId = rs.getLong(1);
+            }
+        }
+    }
+
+    if (tenantId == null) {
+        try (PreparedStatement ps = connection.prepareStatement(
+                "INSERT INTO tenant (code, name, enabled, expires_at, created_at, updated_at, deleted_at) VALUES (?, ?, true, NULL, NOW(), NOW(), NULL)",
+                Statement.RETURN_GENERATED_KEYS)) {
+            ps.setString(1, tenantCode);
+            ps.setString(2, displayName);
+            ps.executeUpdate();
+            try (ResultSet rs = ps.getGeneratedKeys()) {
+                if (rs.next()) {
+                    tenantId = rs.getLong(1);
+                }
+            }
+        }
+    }
+
+    if (tenantId == null) {
+        throw new IllegalStateException("创建租户失败: " + tenantCode);
+    }
+
+    try (PreparedStatement ps = connection.prepareStatement(
+            "UPDATE tenant SET enabled = true, expires_at = NULL, deleted_at = NULL, updated_at = NOW() WHERE id = ?")) {
+        ps.setLong(1, tenantId);
+        ps.executeUpdate();
+    }
+
+    return tenantId;
+}
 
 try (Connection connection = DriverManager.getConnection(jdbcUrl, dbUser, dbPassword)) {
     connection.setAutoCommit(false);
@@ -141,18 +186,11 @@ try (Connection connection = DriverManager.getConnection(jdbcUrl, dbUser, dbPass
         }
     }
 
-    Long tenantId = null;
-    try (PreparedStatement ps = connection.prepareStatement("SELECT id FROM tenant WHERE code = ? LIMIT 1")) {
-        ps.setString(1, tenantCode);
-        try (ResultSet rs = ps.executeQuery()) {
-            if (rs.next()) {
-                tenantId = rs.getLong(1);
-            }
-        }
-    }
-    if (tenantId == null) {
-        throw new IllegalStateException("未找到租户: " + tenantCode);
-    }
+    String normalizedTenantCode = tenantCode.trim().toLowerCase(Locale.ROOT);
+    String tenantDisplayName = "default".equals(normalizedTenantCode)
+            ? "默认租户"
+            : "E2E租户(" + normalizedTenantCode + ")";
+    Long tenantId = ensureTenant(connection, normalizedTenantCode, tenantDisplayName);
 
     Long userId = null;
     try (PreparedStatement ps = connection.prepareStatement(
@@ -266,18 +304,11 @@ try (Connection connection = DriverManager.getConnection(jdbcUrl, dbUser, dbPass
                 ? bindTenantCode
                 : tenantCode;
 
-        Long bindTenantId = null;
-        try (PreparedStatement ps = connection.prepareStatement("SELECT id FROM tenant WHERE code = ? LIMIT 1")) {
-            ps.setString(1, effectiveBindTenantCode);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) {
-                    bindTenantId = rs.getLong(1);
-                }
-            }
-        }
-        if (bindTenantId == null) {
-            throw new IllegalStateException("未找到首绑用户租户: " + effectiveBindTenantCode);
-        }
+        String normalizedBindTenantCode = effectiveBindTenantCode.trim().toLowerCase(Locale.ROOT);
+        String bindTenantDisplayName = "default".equals(normalizedBindTenantCode)
+                ? "默认租户"
+                : "E2E租户(" + normalizedBindTenantCode + ")";
+        Long bindTenantId = ensureTenant(connection, normalizedBindTenantCode, bindTenantDisplayName);
 
         Long bindUserId = null;
         try (PreparedStatement ps = connection.prepareStatement(
