@@ -115,6 +115,7 @@ export E2E_BACKEND_PROFILE=e2e
 当前仓库已提供独立的 real-link workflow：
 
 - [verify-webapp-real-e2e.yml](../../.github/workflows/verify-webapp-real-e2e.yml)
+- [GITHUB_ACTIONS_REAL_E2E_GUIDE.md](../../docs/GITHUB_ACTIONS_REAL_E2E_GUIDE.md)
 
 该 workflow 的定位是：
 
