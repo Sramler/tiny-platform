@@ -3,13 +3,16 @@ package com.tiny.platform.core.oauth.config;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.core.oauth.security.AuthenticationFactorAuthorities;
+import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationSessionManager;
 import com.tiny.platform.core.oauth.security.RedirectPathSanitizer;
 import com.tiny.platform.core.oauth.service.AuthenticationAuditService;
 import com.tiny.platform.core.oauth.service.SecurityService;
+import com.tiny.platform.core.oauth.tenant.ActiveTenantResponseSupport;
 import com.tiny.platform.core.oauth.tenant.IssuerTenantSupport;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
+import com.tiny.platform.core.oauth.tenant.TenantContextContract;
 import com.tiny.platform.infrastructure.core.util.IpUtils;
 import com.tiny.platform.infrastructure.core.util.DeviceUtils;
 import jakarta.servlet.RequestDispatcher;
@@ -33,10 +36,11 @@ import java.util.Map;
 public class CustomLoginSuccessHandler implements AuthenticationSuccessHandler {
     
     private static final Logger logger = LoggerFactory.getLogger(CustomLoginSuccessHandler.class);
-    private static final String SESSION_TENANT_ID_KEY = "AUTH_TENANT_ID";
+    private static final String SESSION_ACTIVE_TENANT_ID_KEY = TenantContextContract.SESSION_ACTIVE_TENANT_ID_KEY;
 
     private final SecurityService securityService;
     private final UserRepository userRepository;
+    private final AuthUserResolutionService authUserResolutionService;
     private final FrontendProperties frontendProperties;
     private final MultiFactorAuthenticationSessionManager sessionManager;
     private final AuthenticationAuditService auditService;
@@ -46,9 +50,11 @@ public class CustomLoginSuccessHandler implements AuthenticationSuccessHandler {
                                     UserRepository userRepository,
                                     FrontendProperties frontendProperties,
                                     MultiFactorAuthenticationSessionManager sessionManager,
+                                    AuthUserResolutionService authUserResolutionService,
                                     AuthenticationAuditService auditService) {
         this.securityService = securityService;
         this.userRepository = userRepository;
+        this.authUserResolutionService = authUserResolutionService;
         this.frontendProperties = frontendProperties;
         this.sessionManager = sessionManager;
         this.auditService = auditService;
@@ -70,14 +76,14 @@ public class CustomLoginSuccessHandler implements AuthenticationSuccessHandler {
      */
     public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response, Authentication authentication) throws IOException, ServletException {
         String username = authentication.getName();
-        Long tenantId = TenantContext.getTenantId();
-        User user = tenantId != null ? userRepository.findUserByUsernameAndTenantId(username, tenantId).orElse(null) : null;
+        Long activeTenantId = ActiveTenantResponseSupport.resolveActiveTenantId(authentication);
+        User user = resolveUserInActiveTenant(username, activeTenantId);
         if (user == null) {
             response.sendRedirect("/");
             return;
         }
 
-        freezeTenantId(request, user.getTenantId());
+        freezeActiveTenantId(request, activeTenantId);
         
         Map<String, Object> status = securityService.getSecurityStatus(user);
         boolean totpBound = Boolean.TRUE.equals(status.get("totpBound"));
@@ -296,11 +302,26 @@ public class CustomLoginSuccessHandler implements AuthenticationSuccessHandler {
         }
     }
 
-    private void freezeTenantId(HttpServletRequest request, Long tenantId) {
-        if (request == null || tenantId == null || tenantId <= 0) {
+    private void freezeActiveTenantId(HttpServletRequest request, Long activeTenantId) {
+        if (request == null || activeTenantId == null || activeTenantId <= 0) {
             return;
         }
         var session = request.getSession(true);
-        session.setAttribute(SESSION_TENANT_ID_KEY, tenantId);
+        session.setAttribute(SESSION_ACTIVE_TENANT_ID_KEY, activeTenantId);
+        session.setAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_TYPE_KEY, TenantContextContract.SCOPE_TYPE_TENANT);
+    }
+
+    private User resolveUserInActiveTenant(String username, Long activeTenantId) {
+        if (activeTenantId == null || username == null || username.isBlank()) {
+            return null;
+        }
+        return requireAuthUserResolutionService().resolveUserRecordInActiveTenant(username, activeTenantId).orElse(null);
+    }
+
+    private AuthUserResolutionService requireAuthUserResolutionService() {
+        if (authUserResolutionService == null) {
+            throw new IllegalStateException("AuthUserResolutionService 未配置");
+        }
+        return authUserResolutionService;
     }
 }

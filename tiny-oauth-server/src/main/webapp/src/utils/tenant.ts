@@ -1,10 +1,15 @@
-const TENANT_ID_STORAGE_KEY = 'app_tenant_id'
+const ACTIVE_TENANT_ID_STORAGE_KEY = 'app_active_tenant_id'
 const TENANT_CODE_STORAGE_KEY = 'app_tenant_code'
 const TENANT_CODE_PATTERN = /^[a-z0-9][a-z0-9-]{1,31}$/
 
 type TenantClaims = {
-  tenantId?: unknown
+  activeTenantId?: unknown
   iss?: unknown
+}
+
+type TenantQueryLike = {
+  activeTenantId?: unknown
+  [key: string]: unknown
 }
 
 function getStorageValue(key: string): string | null {
@@ -41,6 +46,24 @@ function normalizeTenantId(value: unknown): string | null {
     return Number(normalized) > 0 ? normalized : null
   }
   return null
+}
+
+export function resolveActiveTenantQueryValue(query: TenantQueryLike | null | undefined): string | null {
+  return normalizeTenantId(query?.activeTenantId)
+}
+
+export function withActiveTenantQuery<T extends TenantQueryLike>(query: T, activeTenantId: string | number | null | undefined): T {
+  const normalizedTenantId = normalizeTenantId(activeTenantId)
+  const nextQuery = { ...query } as Record<string, unknown>
+  delete nextQuery.tenantId
+
+  if (!normalizedTenantId) {
+    delete nextQuery.activeTenantId
+    return nextQuery as T
+  }
+
+  nextQuery.activeTenantId = normalizedTenantId
+  return nextQuery as T
 }
 
 function extractTenantCodeFromIssuer(issuer: unknown): string | null {
@@ -89,28 +112,28 @@ export function clearTenantCode(): void {
   setStorageValue(TENANT_CODE_STORAGE_KEY, null)
 }
 
-export function getTenantId(): string | null {
-  const tenantId = getStorageValue(TENANT_ID_STORAGE_KEY)
-  const normalized = normalizeTenantId(tenantId)
+export function getActiveTenantId(): string | null {
+  const storedActiveTenantId = getStorageValue(ACTIVE_TENANT_ID_STORAGE_KEY)
+  const normalized = normalizeTenantId(storedActiveTenantId)
   if (!normalized) {
-    clearTenantId()
+    clearActiveTenantId()
     return null
   }
   return normalized
 }
 
-export function setTenantId(value: string | number): void {
+export function setActiveTenantId(value: string | number): void {
   const normalized = normalizeTenantId(value)
   if (!normalized) return
-  setStorageValue(TENANT_ID_STORAGE_KEY, normalized)
+  setStorageValue(ACTIVE_TENANT_ID_STORAGE_KEY, normalized)
 }
 
-export function clearTenantId(): void {
-  setStorageValue(TENANT_ID_STORAGE_KEY, null)
+export function clearActiveTenantId(): void {
+  setStorageValue(ACTIVE_TENANT_ID_STORAGE_KEY, null)
 }
 
 export function clearTenantContext(): void {
-  clearTenantId()
+  clearActiveTenantId()
   clearTenantCode()
 }
 
@@ -149,21 +172,21 @@ export function syncTenantContextFromAccessToken(token: string | null | undefine
 }
 
 export function syncTenantContextFromClaims(claims: TenantClaims | null | undefined): void {
-  const tokenTenantId = normalizeTenantId(claims?.tenantId)
+  const tokenActiveTenantId = normalizeTenantId(claims?.activeTenantId)
   const tenantCodeFromIssuer = extractTenantCodeFromIssuer(claims?.iss)
-  if (tenantCodeFromIssuer) {
-    setTenantCode(tenantCodeFromIssuer)
-  }
-  if (!tokenTenantId) {
-    clearTenantId()
-    return
-  }
-
-  const localTenantId = getTenantId()
-  if (localTenantId && localTenantId !== tokenTenantId) {
+  const localActiveTenantId = getActiveTenantId()
+  if (localActiveTenantId && localActiveTenantId !== tokenActiveTenantId) {
     // 本地租户与 token 租户冲突时，清理历史上下文后按 token 回填。
     clearTenantContext()
   }
 
-  setTenantId(tokenTenantId)
+  if (tenantCodeFromIssuer) {
+    setTenantCode(tenantCodeFromIssuer)
+  }
+  if (!tokenActiveTenantId) {
+    clearActiveTenantId()
+    return
+  }
+
+  setActiveTenantId(tokenActiveTenantId)
 }

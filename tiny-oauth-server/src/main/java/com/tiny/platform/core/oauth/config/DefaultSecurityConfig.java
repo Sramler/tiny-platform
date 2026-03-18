@@ -8,7 +8,6 @@ import org.springframework.core.annotation.Order;
 import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.authentication.AuthenticationDetailsSource;
 import org.springframework.security.authentication.AuthenticationProvider;
-import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.core.Authentication;
@@ -24,15 +23,19 @@ import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 import org.springframework.security.web.util.matcher.OrRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 import jakarta.servlet.http.HttpServletRequest;
 
+import com.tiny.platform.core.oauth.security.LegacyAuthConstants;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationSessionManager;
+import com.tiny.platform.core.oauth.security.PermissionVersionService;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.core.oauth.tenant.TenantContextFilter;
+import org.springframework.beans.factory.ObjectProvider;
 
 @Configuration
 @Order(2)
@@ -97,7 +100,6 @@ public class DefaultSecurityConfig {
                         .requestMatchers("/self/security/totp/unbind").access((authentication, context) ->
                                 new AuthorizationDecision(hasTotpSensitiveAccess(authentication.get())))
                         .requestMatchers("/self/security/**").denyAll()
-                        .requestMatchers("/sys/users/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(tenantContextFilter, UsernamePasswordAuthenticationFilter.class)
@@ -115,9 +117,16 @@ public class DefaultSecurityConfig {
                         .requireCsrfProtectionMatcher(CSRF_PROTECTED_PATHS)
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2
-                        .jwt(Customizer.withDefaults()))
+                        .jwt(jwt -> jwt.jwtAuthenticationConverter(tinyPlatformJwtAuthenticationConverter())))
                 .authenticationProvider(authenticationProvider);
         return http.build();
+    }
+
+    @Bean
+    public JwtAuthenticationConverter tinyPlatformJwtAuthenticationConverter() {
+        JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
+        converter.setJwtGrantedAuthoritiesConverter(new TinyPlatformJwtGrantedAuthoritiesConverter());
+        return converter;
     }
 
     @Bean
@@ -154,8 +163,9 @@ public class DefaultSecurityConfig {
     }
 
     @Bean
-    public TenantContextFilter tenantContextFilter(TenantRepository tenantRepository) {
-        return new TenantContextFilter(tenantRepository);
+    public TenantContextFilter tenantContextFilter(TenantRepository tenantRepository,
+                                                   ObjectProvider<PermissionVersionService> permissionVersionServiceProvider) {
+        return new TenantContextFilter(tenantRepository, permissionVersionServiceProvider.getIfAvailable());
     }
 
     @Bean
@@ -163,15 +173,24 @@ public class DefaultSecurityConfig {
                                                                UserRepository userRepository,
                                                                FrontendProperties frontendProperties,
                                                                MultiFactorAuthenticationSessionManager sessionManager,
+                                                               com.tiny.platform.core.oauth.security.AuthUserResolutionService authUserResolutionService,
                                                                com.tiny.platform.core.oauth.service.AuthenticationAuditService auditService) {
-        return new CustomLoginSuccessHandler(securityService, userRepository, frontendProperties, sessionManager, auditService);
+        return new CustomLoginSuccessHandler(
+                securityService,
+                userRepository,
+                frontendProperties,
+                sessionManager,
+                authUserResolutionService,
+                auditService
+        );
     }
 
     @Bean
     public CustomLoginFailureHandler customLoginFailureHandler(UserRepository userRepository,
+                                                               com.tiny.platform.core.oauth.security.AuthUserResolutionService authUserResolutionService,
                                                                com.tiny.platform.core.oauth.service.AuthenticationAuditService auditService,
                                                                com.tiny.platform.core.oauth.security.LoginFailurePolicy loginFailurePolicy) {
-        return new CustomLoginFailureHandler(userRepository, auditService, loginFailurePolicy);
+        return new CustomLoginFailureHandler(userRepository, authUserResolutionService, auditService, loginFailurePolicy);
     }
 
     public static boolean hasChallengeFlowAccess(Authentication authentication) {
@@ -199,7 +218,7 @@ public class DefaultSecurityConfig {
             return false;
         }
         for (GrantedAuthority authority : authentication.getAuthorities()) {
-            if ("ROLE_ADMIN".equals(authority.getAuthority())) {
+            if (LegacyAuthConstants.isAdminAuthority(authority.getAuthority())) {
                 return true;
             }
         }

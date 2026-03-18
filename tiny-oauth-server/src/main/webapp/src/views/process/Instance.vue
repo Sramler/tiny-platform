@@ -18,8 +18,8 @@
                             <a-select-option value="completed">已完成</a-select-option>
                         </a-select>
                     </a-form-item>
-                    <a-form-item label="租户">
-                        <a-select v-model:value="query.tenantId" placeholder="选择租户" allow-clear style="width: 150px">
+                    <a-form-item label="记录租户筛选">
+                        <a-select v-model:value="query.recordTenantId" placeholder="默认当前活动租户" allow-clear style="width: 150px">
                             <a-select-option value="">全部租户</a-select-option>
                             <a-select-option v-for="tenant in tenants" :key="tenant.id" :value="tenant.id">
                                 {{ tenant.name }}
@@ -141,8 +141,8 @@
                             <template v-else-if="column.dataIndex === 'duration'">
                                 {{ getDuration(record.startTime, record.endTime) }}
                             </template>
-                            <template v-else-if="column.dataIndex === 'tenantId'">
-                                <a-tag v-if="record.tenantId" color="green">{{ record.tenantId }}</a-tag>
+                            <template v-else-if="column.dataIndex === 'recordTenantId'">
+                                <a-tag v-if="record.recordTenantId" color="green">{{ record.recordTenantId }}</a-tag>
                                 <a-tag v-else color="default">默认</a-tag>
                             </template>
                             <template v-else-if="column.dataIndex === 'action'">
@@ -223,8 +223,8 @@
                 <a-descriptions-item label="持续时间">
                     {{ getDuration(selectedInstance.startTime, selectedInstance.endTime) }}
                 </a-descriptions-item>
-                <a-descriptions-item label="租户">
-                    <a-tag v-if="selectedInstance.tenantId" color="green">{{ selectedInstance.tenantId }}</a-tag>
+                <a-descriptions-item label="记录所属租户ID">
+                    <a-tag v-if="selectedInstance.recordTenantId" color="green">{{ selectedInstance.recordTenantId }}</a-tag>
                     <a-tag v-else color="default">默认</a-tag>
                 </a-descriptions-item>
                 <a-descriptions-item label="流程变量" :span="2">
@@ -287,7 +287,7 @@
 <!-- eslint-disable vue/multi-word-component-names -->
 <script setup lang="ts" name="ProcessInstancePage">
 import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import {
     PlusOutlined,
@@ -308,15 +308,44 @@ import VueDraggable from 'vuedraggable'
 import { instanceApi, tenantApi, historyApi } from '@/api/process'
 import type { ProcessInstance, Task } from '@/api/process'
 import { useThrottle } from '@/utils/debounce'
+import { getActiveTenantId, resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
 
+const route = useRoute()
 const router = useRouter()
+
+function resolveActiveTenantFilter() {
+    return getActiveTenantId() ?? ''
+}
+
+function resolveInitialRecordTenantFilter() {
+    return resolveActiveTenantQueryValue(route.query) ?? resolveActiveTenantFilter()
+}
+
+function resolveCurrentActiveTenant() {
+    return resolveActiveTenantQueryValue(route.query) ?? resolveActiveTenantFilter()
+}
+
+function buildNavigationQuery() {
+    return withActiveTenantQuery({}, resolveCurrentActiveTenant())
+}
+
+async function syncActiveTenantContextToRoute(activeTenantId: string | null | undefined) {
+    const currentTenant = resolveActiveTenantQueryValue(route.query) ?? ''
+    const nextTenant = activeTenantId || ''
+    if (currentTenant === nextTenant) {
+        return
+    }
+    await router.replace({
+        query: withActiveTenantQuery({ ...route.query }, nextTenant || null),
+    })
+}
 
 // 查询条件
 const query = ref({
     instanceId: '',
     processKey: '',
     state: 'active',
-    tenantId: ''
+    recordTenantId: resolveInitialRecordTenantFilter()
 })
 
 const tableData = ref<ProcessInstance[]>([])
@@ -363,7 +392,7 @@ const INITIAL_COLUMNS = [
     { title: '开始时间', dataIndex: 'startTime', sorter: true, width: 150 },
     { title: '结束时间', dataIndex: 'endTime', sorter: true, width: 150 },
     { title: '持续时间', dataIndex: 'duration', width: 120 },
-    { title: '租户', dataIndex: 'tenantId', width: 100 },
+    { title: '记录所属租户ID', dataIndex: 'recordTenantId', width: 120 },
     {
         title: '操作',
         dataIndex: 'action',
@@ -497,12 +526,12 @@ async function loadData() {
             instanceId: query.value.instanceId.trim(),
             processKey: query.value.processKey.trim(),
             state: query.value.state || 'active',
-            tenantId: query.value.tenantId || undefined,
+            recordTenantId: query.value.recordTenantId || undefined,
             current: Number(pagination.value.current) || 1,
             pageSize: Number(pagination.value.pageSize) || 10
         }
         if (params.state === 'completed') {
-            const hist = await historyApi.getHistoricInstances(params.tenantId)
+            const hist = await historyApi.getHistoricInstances(params.recordTenantId)
             const normalized = Array.isArray(hist)
                 ? hist.map((h: unknown) => {
                     const item = h as Record<string, any>
@@ -515,14 +544,14 @@ async function loadData() {
                     state: 'completed',
                     startTime: item.startTime ?? item.start_time ?? item.start_date ?? '',
                     endTime: item.endTime ?? item.end_time ?? item.end_date ?? '',
-                    tenantId: item.tenantId ?? item.tenant_id ?? undefined,
+                    recordTenantId: item.recordTenantId ?? undefined,
                     variables: item.variables ?? {}
                 }
                 })
                 : []
             tableData.value = normalized
         } else {
-            const result = await instanceApi.getProcessInstances(params.tenantId, params.state)
+            const result = await instanceApi.getProcessInstances(params.recordTenantId, params.state)
             tableData.value = Array.isArray(result) ? result : []
         }
         pagination.value.total = tableData.value.length
@@ -547,18 +576,18 @@ const loadTenants = async () => {
     }
 }
 
-function handleSearch() {
+async function handleSearch() {
     pagination.value.current = 1
     loadData()
 }
 
 const throttledSearch = useThrottle(handleSearch, 1000)
 
-function handleReset() {
+async function handleReset() {
     query.value.instanceId = ''
     query.value.processKey = ''
     query.value.state = 'active'
-    query.value.tenantId = ''
+    query.value.recordTenantId = resolveActiveTenantFilter()
     pagination.value.current = 1
     loadData()
 }
@@ -897,7 +926,10 @@ const getDuration = (startTime: string | Date, endTime?: string | Date) => {
 }
 
 const goToModeling = () => {
-    router.push('/modeling')
+    router.push({
+        path: '/modeling',
+        query: buildNavigationQuery(),
+    })
 }
 
 /**
@@ -916,7 +948,10 @@ function updateTableBodyHeight() {
     });
 }
 
-onMounted(() => {
+onMounted(async () => {
+    const initialRecordTenantId = resolveInitialRecordTenantFilter()
+    query.value.recordTenantId = initialRecordTenantId
+    await syncActiveTenantContextToRoute(initialRecordTenantId)
     loadData()
     loadTenants()
     updateTableBodyHeight()
@@ -930,6 +965,7 @@ onBeforeUnmount(() => {
 watch(() => pagination.value.pageSize, () => {
     updateTableBodyHeight()
 })
+
 </script>
 
 <style scoped>

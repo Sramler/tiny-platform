@@ -35,7 +35,7 @@ class MultiFactorAuthenticationTokenJacksonDeserializerTest {
                   "details":{
                     "@type":"securityUser",
                     "userId":"123",
-                    "tenantId":"9",
+                    "activeTenantId":"9",
                     "username":"alice",
                     "password":"",
                     "authorities":[],
@@ -69,7 +69,39 @@ class MultiFactorAuthenticationTokenJacksonDeserializerTest {
         assertThat(token.getDetails()).isInstanceOf(SecurityUser.class);
         SecurityUser details = (SecurityUser) token.getDetails();
         assertThat(details.getUserId()).isEqualTo(123L);
-        assertThat(details.getTenantId()).isEqualTo(9L);
+        assertThat(details.getActiveTenantId()).isEqualTo(9L);
+    }
+
+    @Test
+    void shouldDeserializeSecurityUserDetailsWithActiveTenantOnly() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        JsonParser parser = new JsonFactory().createParser("""
+                {
+                  "username":"alice",
+                  "provider":"LOCAL",
+                  "completedFactors":["PASSWORD"],
+                  "authenticated":false,
+                  "details":{
+                    "@type":"securityUser",
+                    "userId":"123",
+                    "activeTenantId":"9",
+                    "username":"alice",
+                    "password":"",
+                    "authorities":[],
+                    "accountNonExpired":true,
+                    "accountNonLocked":true,
+                    "credentialsNonExpired":true,
+                    "enabled":true
+                  }
+                }
+                """);
+        parser.setCodec(mapper);
+
+        MultiFactorAuthenticationToken token = deserializer.deserialize(parser, mapper.getDeserializationContext());
+
+        assertThat(token.getDetails()).isInstanceOf(SecurityUser.class);
+        SecurityUser details = (SecurityUser) token.getDetails();
+        assertThat(details.getActiveTenantId()).isEqualTo(9L);
     }
 
     @Test

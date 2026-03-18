@@ -4,12 +4,13 @@ import com.tiny.platform.core.oauth.config.CustomWebAuthenticationDetailsSource;
 import com.tiny.platform.core.oauth.config.MfaProperties;
 import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.service.SecurityService;
+import com.tiny.platform.core.oauth.tenant.TenantContextContract;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
-import com.tiny.platform.infrastructure.auth.role.domain.Role;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationMethod;
 import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
+import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -37,6 +38,8 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class MultiAuthenticationProviderTest {
+
+    private final AuthUserResolutionService authUserResolutionService = mock(AuthUserResolutionService.class);
 
     @AfterEach
     void tearDown() {
@@ -66,7 +69,8 @@ class MultiAuthenticationProviderTest {
     void should_reject_when_tenant_missing_user_missing_or_method_invalid() {
         UserRepository userRepository = mock(UserRepository.class);
         UserAuthenticationMethodRepository methodRepository = mock(UserAuthenticationMethodRepository.class);
-        MultiAuthenticationProvider provider = newProvider(userRepository, methodRepository, mock(PasswordEncoder.class),
+        TenantRepository tenantRepository = mock(TenantRepository.class);
+        MultiAuthenticationProvider provider = newProvider(userRepository, tenantRepository, methodRepository, mock(PasswordEncoder.class),
             mock(UserDetailsService.class), mock(TotpService.class), mock(SecurityService.class));
 
         UsernamePasswordAuthenticationToken auth = auth("alice", "raw", "LOCAL", "PASSWORD");
@@ -76,14 +80,15 @@ class MultiAuthenticationProviderTest {
             .isInstanceOf(BadCredentialsException.class)
             .hasMessageContaining("缺少租户信息");
 
-        TenantContext.setTenantId(1L);
-        when(userRepository.findUserByUsernameAndTenantId("alice", 1L)).thenReturn(Optional.empty());
+        TenantContext.setActiveTenantId(1L);
+        when(tenantRepository.isTenantFrozen(1L)).thenReturn(false);
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("alice", 1L)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> provider.authenticate(auth))
             .isInstanceOf(BadCredentialsException.class)
             .hasMessageContaining("用户不存在");
 
         User user = user(1L, "alice");
-        when(userRepository.findUserByUsernameAndTenantId("alice", 1L)).thenReturn(Optional.of(user));
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("alice", 1L)).thenReturn(Optional.of(user));
         when(methodRepository.findEnabledMethodsByUserId(1L, 1L)).thenReturn(List.of());
         UsernamePasswordAuthenticationToken noSelection = UsernamePasswordAuthenticationToken.unauthenticated("alice", "raw");
         assertThatThrownBy(() -> provider.authenticate(noSelection))
@@ -103,15 +108,43 @@ class MultiAuthenticationProviderTest {
     }
 
     @Test
+    void should_fallback_to_session_active_tenant_when_context_missing() {
+        UserRepository userRepository = mock(UserRepository.class);
+        UserAuthenticationMethodRepository methodRepository = mock(UserAuthenticationMethodRepository.class);
+        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
+        UserDetailsService userDetailsService = mock(UserDetailsService.class);
+        MultiAuthenticationProvider provider = newProvider(userRepository, mock(TenantRepository.class), methodRepository, passwordEncoder,
+            userDetailsService, mock(TotpService.class), mock(SecurityService.class));
+
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.getSession(true).setAttribute(TenantContextContract.SESSION_ACTIVE_TENANT_ID_KEY, 6L);
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+
+        User user = user(1L, "alice");
+        UserAuthenticationMethod passwordMethod = method(11L, "LOCAL", "PASSWORD", Map.of("password", "{bcrypt}encoded"));
+        SecurityUser securityUser = securityUser(user);
+
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("alice", 6L)).thenReturn(Optional.of(user));
+        when(methodRepository.findEnabledMethodsByUserId(1L, 6L)).thenReturn(List.of(passwordMethod));
+        when(passwordEncoder.matches("raw", "{bcrypt}encoded")).thenReturn(true);
+        when(userDetailsService.loadUserByUsername("alice")).thenReturn(securityUser);
+
+        Authentication result = provider.authenticate(UsernamePasswordAuthenticationToken.unauthenticated("alice", "raw"));
+
+        assertThat(result).isInstanceOf(MultiFactorAuthenticationToken.class);
+        verify(authUserResolutionService).resolveUserRecordInActiveTenant("alice", 6L);
+    }
+
+    @Test
     void should_auto_select_single_password_method_and_record_verification() {
         UserRepository userRepository = mock(UserRepository.class);
         UserAuthenticationMethodRepository methodRepository = mock(UserAuthenticationMethodRepository.class);
         PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
         UserDetailsService userDetailsService = mock(UserDetailsService.class);
-        MultiAuthenticationProvider provider = newProvider(userRepository, methodRepository, passwordEncoder,
+        MultiAuthenticationProvider provider = newProvider(userRepository, mock(TenantRepository.class), methodRepository, passwordEncoder,
             userDetailsService, mock(TotpService.class), mock(SecurityService.class));
 
-        TenantContext.setTenantId(1L);
+        TenantContext.setActiveTenantId(1L);
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setRemoteAddr("127.0.0.1");
         RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
@@ -120,7 +153,7 @@ class MultiAuthenticationProviderTest {
         UserAuthenticationMethod passwordMethod = method(11L, "LOCAL", "PASSWORD", Map.of("password", "{bcrypt}encoded"));
         SecurityUser securityUser = securityUser(user);
 
-        when(userRepository.findUserByUsernameAndTenantId("alice", 1L)).thenReturn(Optional.of(user));
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("alice", 1L)).thenReturn(Optional.of(user));
         when(methodRepository.findEnabledMethodsByUserId(1L, 1L)).thenReturn(List.of(passwordMethod));
         when(passwordEncoder.matches("raw", "{bcrypt}encoded")).thenReturn(true);
         when(userDetailsService.loadUserByUsername("alice")).thenReturn(securityUser);
@@ -150,15 +183,15 @@ class MultiAuthenticationProviderTest {
         UserDetailsService userDetailsService = mock(UserDetailsService.class);
         TotpService totpService = mock(TotpService.class);
         SecurityService securityService = mock(SecurityService.class);
-        MultiAuthenticationProvider provider = newProvider(userRepository, methodRepository, passwordEncoder,
+        MultiAuthenticationProvider provider = newProvider(userRepository, mock(TenantRepository.class), methodRepository, passwordEncoder,
             userDetailsService, totpService, securityService);
 
-        TenantContext.setTenantId(1L);
+        TenantContext.setActiveTenantId(1L);
         User user = user(1L, "alice");
         UserAuthenticationMethod passwordMethod = method(21L, "LOCAL", "PASSWORD", Map.of("password", "{bcrypt}encoded"));
         UserAuthenticationMethod totpMethod = method(22L, "LOCAL", "TOTP", Map.of("secret", "BASE32SECRET"));
         SecurityUser securityUser = securityUser(user);
-        when(userRepository.findUserByUsernameAndTenantId("alice", 1L)).thenReturn(Optional.of(user));
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("alice", 1L)).thenReturn(Optional.of(user));
         when(methodRepository.findEnabledMethodsByUserId(1L, 1L)).thenReturn(List.of(passwordMethod, totpMethod));
         when(passwordEncoder.matches("raw", "{bcrypt}encoded")).thenReturn(true);
         when(userDetailsService.loadUserByUsername("alice")).thenReturn(securityUser);
@@ -220,15 +253,15 @@ class MultiAuthenticationProviderTest {
         UserDetailsService userDetailsService = mock(UserDetailsService.class);
         TotpService totpService = mock(TotpService.class);
         SecurityService securityService = mock(SecurityService.class);
-        MultiAuthenticationProvider provider = newProvider(userRepository, methodRepository, passwordEncoder,
+        MultiAuthenticationProvider provider = newProvider(userRepository, mock(TenantRepository.class), methodRepository, passwordEncoder,
             userDetailsService, totpService, securityService);
 
-        TenantContext.setTenantId(1L);
+        TenantContext.setActiveTenantId(1L);
         User user = user(1L, "alice");
         UserAuthenticationMethod passwordMethod = method(21L, "LOCAL", "PASSWORD", Map.of("password", "{bcrypt}encoded"));
         UserAuthenticationMethod totpMethod = method(22L, "LOCAL", "TOTP", new java.util.HashMap<>(Map.of("secret", "BASE32SECRET")));
         SecurityUser securityUser = securityUser(user);
-        when(userRepository.findUserByUsernameAndTenantId("alice", 1L)).thenReturn(Optional.of(user));
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("alice", 1L)).thenReturn(Optional.of(user));
         when(methodRepository.findEnabledMethodsByUserId(1L, 1L)).thenReturn(List.of(passwordMethod, totpMethod));
         when(passwordEncoder.matches("raw", "{bcrypt}encoded")).thenReturn(true);
         when(userDetailsService.loadUserByUsername("alice")).thenReturn(securityUser);
@@ -258,13 +291,13 @@ class MultiAuthenticationProviderTest {
         UserRepository userRepository = mock(UserRepository.class);
         UserAuthenticationMethodRepository methodRepository = mock(UserAuthenticationMethodRepository.class);
         PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
-        MultiAuthenticationProvider provider = newProvider(userRepository, methodRepository, passwordEncoder,
+        MultiAuthenticationProvider provider = newProvider(userRepository, mock(TenantRepository.class), methodRepository, passwordEncoder,
             mock(UserDetailsService.class), mock(TotpService.class), mock(SecurityService.class));
 
-        TenantContext.setTenantId(1L);
+        TenantContext.setActiveTenantId(1L);
         User user = user(1L, "alice");
         user.setAccountNonLocked(false);
-        when(userRepository.findUserByUsernameAndTenantId("alice", 1L)).thenReturn(Optional.of(user));
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("alice", 1L)).thenReturn(Optional.of(user));
 
         assertThatThrownBy(() -> provider.authenticate(auth("alice", "raw", "LOCAL", "PASSWORD")))
             .isInstanceOf(LockedException.class)
@@ -278,14 +311,14 @@ class MultiAuthenticationProviderTest {
         UserAuthenticationMethodRepository methodRepository = mock(UserAuthenticationMethodRepository.class);
         PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
         UserDetailsService userDetailsService = mock(UserDetailsService.class);
-        MultiAuthenticationProvider provider = newProvider(userRepository, methodRepository, passwordEncoder,
+        MultiAuthenticationProvider provider = newProvider(userRepository, mock(TenantRepository.class), methodRepository, passwordEncoder,
             userDetailsService, mock(TotpService.class), mock(SecurityService.class));
 
-        TenantContext.setTenantId(1L);
+        TenantContext.setActiveTenantId(1L);
         User temporarilyLocked = user(1L, "alice");
         temporarilyLocked.setFailedLoginCount(5);
         temporarilyLocked.setLastFailedLoginAt(java.time.LocalDateTime.now());
-        when(userRepository.findUserByUsernameAndTenantId("alice", 1L)).thenReturn(Optional.of(temporarilyLocked));
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("alice", 1L)).thenReturn(Optional.of(temporarilyLocked));
 
         assertThatThrownBy(() -> provider.authenticate(auth("alice", "raw", "LOCAL", "PASSWORD")))
             .isInstanceOf(LockedException.class)
@@ -297,7 +330,7 @@ class MultiAuthenticationProviderTest {
         expiredLocked.setLastFailedLoginAt(java.time.LocalDateTime.now().minusMinutes(30));
         UserAuthenticationMethod passwordMethod = method(31L, "LOCAL", "PASSWORD", Map.of("password", "{bcrypt}encoded"));
         SecurityUser securityUser = securityUser(expiredLocked);
-        when(userRepository.findUserByUsernameAndTenantId("bob", 1L)).thenReturn(Optional.of(expiredLocked));
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("bob", 1L)).thenReturn(Optional.of(expiredLocked));
         when(methodRepository.findEnabledMethodsByUserId(1L, 1L)).thenReturn(List.of(passwordMethod));
         when(passwordEncoder.matches("raw", "{bcrypt}encoded")).thenReturn(true);
         when(userDetailsService.loadUserByUsername("bob")).thenReturn(securityUser);
@@ -309,23 +342,85 @@ class MultiAuthenticationProviderTest {
         verify(userRepository).save(expiredLocked);
     }
 
-    private static MultiAuthenticationProvider newProvider() {
-        return newProvider(mock(UserRepository.class), mock(UserAuthenticationMethodRepository.class), mock(PasswordEncoder.class),
+    @Test
+    void should_authenticate_membership_user_via_resolution_service() {
+        UserRepository userRepository = mock(UserRepository.class);
+        TenantRepository tenantRepository = mock(TenantRepository.class);
+        UserAuthenticationMethodRepository methodRepository = mock(UserAuthenticationMethodRepository.class);
+        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
+        UserDetailsService userDetailsService = mock(UserDetailsService.class);
+        SecurityService securityService = mock(SecurityService.class);
+        AuthUserResolutionService authUserResolutionService = mock(AuthUserResolutionService.class);
+        TotpService totpService = mock(TotpService.class);
+        MfaProperties mfaProperties = new MfaProperties();
+        TotpVerificationGuard guard = new TotpVerificationGuard(methodRepository, mfaProperties, totpService);
+        com.tiny.platform.core.oauth.config.LoginProtectionProperties loginProtectionProperties =
+                new com.tiny.platform.core.oauth.config.LoginProtectionProperties();
+        LoginFailurePolicy loginFailurePolicy = new LoginFailurePolicy(loginProtectionProperties);
+        MultiAuthenticationProvider provider = new MultiAuthenticationProvider(
+                userRepository,
+                tenantRepository,
+                methodRepository,
+                passwordEncoder,
+                userDetailsService,
+                securityService,
+                authUserResolutionService,
+                guard,
+                loginFailurePolicy
+        );
+
+        TenantContext.setActiveTenantId(1L);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("127.0.0.1");
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+
+        User user = user(3L, "shared.alice");
+        user.setTenantId(99L);
+        UserAuthenticationMethod passwordMethod = method(13L, "LOCAL", "PASSWORD", Map.of("password", "{bcrypt}encoded"));
+        SecurityUser securityUser = new SecurityUser(user, "", 1L, Set.of());
+
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("shared.alice", 1L)).thenReturn(Optional.of(user));
+        when(tenantRepository.isTenantFrozen(1L)).thenReturn(false);
+        when(methodRepository.findEnabledMethodsByUserId(3L, 1L)).thenReturn(List.of(passwordMethod));
+        when(passwordEncoder.matches("raw", "{bcrypt}encoded")).thenReturn(true);
+        when(userDetailsService.loadUserByUsername("shared.alice")).thenReturn(securityUser);
+
+        Authentication result = provider.authenticate(
+                UsernamePasswordAuthenticationToken.unauthenticated("shared.alice", "raw")
+        );
+
+        assertThat(result.isAuthenticated()).isTrue();
+        verify(authUserResolutionService).resolveUserRecordInActiveTenant("shared.alice", 1L);
+    }
+
+    private MultiAuthenticationProvider newProvider() {
+        return newProvider(mock(UserRepository.class), mock(TenantRepository.class), mock(UserAuthenticationMethodRepository.class), mock(PasswordEncoder.class),
             mock(UserDetailsService.class), mock(TotpService.class), mock(SecurityService.class));
     }
 
-    private static MultiAuthenticationProvider newProvider(UserRepository userRepository,
-                                                           UserAuthenticationMethodRepository methodRepository,
-                                                           PasswordEncoder passwordEncoder,
-                                                           UserDetailsService userDetailsService,
-                                                           TotpService totpService,
-                                                           SecurityService securityService) {
+    private MultiAuthenticationProvider newProvider(UserRepository userRepository,
+                                                    TenantRepository tenantRepository,
+                                                    UserAuthenticationMethodRepository methodRepository,
+                                                    PasswordEncoder passwordEncoder,
+                                                    UserDetailsService userDetailsService,
+                                                    TotpService totpService,
+                                                    SecurityService securityService) {
         MfaProperties mfaProperties = new MfaProperties();
         TotpVerificationGuard guard = new TotpVerificationGuard(methodRepository, mfaProperties, totpService);
         com.tiny.platform.core.oauth.config.LoginProtectionProperties loginProtectionProperties =
             new com.tiny.platform.core.oauth.config.LoginProtectionProperties();
         LoginFailurePolicy loginFailurePolicy = new LoginFailurePolicy(loginProtectionProperties);
-        return new MultiAuthenticationProvider(userRepository, methodRepository, passwordEncoder, userDetailsService, securityService, guard, loginFailurePolicy);
+        return new MultiAuthenticationProvider(
+                userRepository,
+                tenantRepository,
+                methodRepository,
+                passwordEncoder,
+                userDetailsService,
+                securityService,
+                authUserResolutionService,
+                guard,
+                loginFailurePolicy
+        );
     }
 
     private static UsernamePasswordAuthenticationToken auth(String username, String credential, String provider, String type) {
@@ -354,9 +449,6 @@ class MultiAuthenticationProviderTest {
         user.setId(id);
         user.setTenantId(1L);
         user.setUsername(username);
-        Role role = new Role();
-        role.setName("ROLE_USER");
-        user.setRoles(Set.of(role));
         return user;
     }
 

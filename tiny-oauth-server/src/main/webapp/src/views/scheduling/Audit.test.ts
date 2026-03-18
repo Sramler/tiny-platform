@@ -6,8 +6,13 @@ const apiMocks = vi.hoisted(() => ({
   auditList: vi.fn(),
 }))
 
+const authMocks = vi.hoisted(() => ({
+  authUser: { value: null as { access_token?: string | null } | null },
+}))
+
 const uiMocks = vi.hoisted(() => ({
   messageError: vi.fn(),
+  messageWarning: vi.fn(),
 }))
 
 vi.mock('@/api/scheduling', () => ({
@@ -18,9 +23,16 @@ vi.mock('@/utils/debounce', () => ({
   throttle: (fn: (...args: unknown[]) => unknown) => fn,
 }))
 
+vi.mock('@/auth/auth', () => ({
+  useAuth: () => ({
+    user: authMocks.authUser,
+  }),
+}))
+
 vi.mock('ant-design-vue', () => ({
   message: {
     error: uiMocks.messageError,
+    warning: uiMocks.messageWarning,
   },
 }))
 
@@ -112,14 +124,23 @@ function findButtonByText(wrapper: ReturnType<typeof mountView> | ReturnType<typ
   return wrapper.findAll('button').find((button) => button.text().includes(text))
 }
 
+function createToken(authorities: string[]) {
+  const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')
+  const payload = Buffer.from(JSON.stringify({ authorities })).toString('base64url')
+  return `${header}.${payload}.signature`
+}
+
 describe('Audit.vue', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    authMocks.authUser.value = {
+      access_token: createToken(['scheduling:audit:view']),
+    }
     apiMocks.auditList.mockResolvedValue({
       records: [
         {
           id: 1,
-          tenantId: 88,
+          recordTenantId: 88,
           objectType: 'dag',
           objectId: '10',
           action: 'TRIGGER',

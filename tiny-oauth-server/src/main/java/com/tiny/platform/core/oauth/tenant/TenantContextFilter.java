@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.security.AuthenticationFactorAuthorities;
+import com.tiny.platform.core.oauth.security.PermissionVersionService;
 import com.tiny.platform.infrastructure.tenant.domain.Tenant;
 import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import jakarta.servlet.FilterChain;
@@ -24,14 +25,16 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.Base64;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.net.URLEncoder;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
  * TenantContextFilter
- * - 认证后只信任 SecurityContext / Session 中冻结的 tenantId
+ * - 认证后只信任 SecurityContext / Session 中冻结的 activeTenantId
  * - 未认证阶段只允许：
  *   1) POST /login 参数解析 tenant（兼容 tenantCode）
  *   2) issuer path (`/{tenantCode}/oauth2/**`) 解析 tenant
@@ -42,12 +45,15 @@ public class TenantContextFilter extends OncePerRequestFilter {
     private static final Logger logger = LoggerFactory.getLogger(TenantContextFilter.class);
     public static final String TENANT_SOURCE_REQUEST_ATTRIBUTE = "tenantSource";
 
-    private static final String TENANT_ID_HEADER = "X-Tenant-Id";
+    private static final String TENANT_ID_HEADER = TenantContextContract.ACTIVE_TENANT_ID_HEADER;
     private static final String AUTHORIZATION_HEADER = "Authorization";
     private static final String BEARER_PREFIX = "Bearer ";
-    private static final String TENANT_ID_CLAIM = "tenantId";
-    private static final String SESSION_TENANT_ID_KEY = "AUTH_TENANT_ID";
-    private static final String TENANT_ID_PARAM = "tenantId";
+    private static final String ACTIVE_TENANT_ID_CLAIM = TenantContextContract.ACTIVE_TENANT_ID_CLAIM;
+    private static final String USER_ID_CLAIM = "userId";
+    private static final String AUTHORITIES_CLAIM = "authorities";
+    private static final String PERMISSIONS_CLAIM = "permissions";
+    private static final String PERMISSIONS_VERSION_CLAIM = "permissionsVersion";
+    private static final String SESSION_ACTIVE_TENANT_ID_KEY = TenantContextContract.SESSION_ACTIVE_TENANT_ID_KEY;
     private static final String TENANT_CODE_PARAM = "tenantCode";
     private static final Pattern TENANT_CODE_PATTERN = Pattern.compile("^[a-z0-9][a-z0-9-]{1,31}$");
     private static final AntPathMatcher PATH_MATCHER = new AntPathMatcher();
@@ -64,9 +70,15 @@ public class TenantContextFilter extends OncePerRequestFilter {
     );
 
     private final TenantRepository tenantRepository;
+    private final PermissionVersionService permissionVersionService;
 
     public TenantContextFilter(TenantRepository tenantRepository) {
+        this(tenantRepository, null);
+    }
+
+    public TenantContextFilter(TenantRepository tenantRepository, PermissionVersionService permissionVersionService) {
         this.tenantRepository = tenantRepository;
+        this.permissionVersionService = permissionVersionService;
     }
 
     @Override
@@ -90,71 +102,82 @@ public class TenantContextFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
-        ResolvedTenant authTenant = resolveTenantFromAuthentication();
-        Long authTenantId = authTenant.tenantId();
-        Long issuerTenantId = resolveTenantIdFromIssuerPath(request);
-        Long sessionTenantId = resolveTenantIdFromSession(request);
-        Long headerTenantId = parseTenantId(request.getHeader(TENANT_ID_HEADER));
-        Long bearerTokenTenantId = resolveTenantIdFromAuthorizationHeader(request);
-        Long tenantId;
+        ResolvedTenant authenticatedTenant = resolveTenantFromAuthentication();
+        Long authenticatedActiveTenantId = authenticatedTenant.activeTenantId();
+        Long issuerActiveTenantId = resolveActiveTenantIdFromIssuerPath(request);
+        Long sessionActiveTenantId = resolveActiveTenantIdFromSession(request);
+        Long headerActiveTenantId = parseActiveTenantId(request.getHeader(TENANT_ID_HEADER));
+        Long bearerTokenActiveTenantId = resolveActiveTenantIdFromAuthorizationHeader(request);
+        Long activeTenantId;
         String tenantSource;
 
-        if (authTenantId != null) {
-            if (isMismatch(authTenantId, issuerTenantId) || isMismatch(authTenantId, sessionTenantId) || isMismatch(authTenantId, headerTenantId)) {
+        if (authenticatedActiveTenantId != null) {
+            if (isMismatch(authenticatedActiveTenantId, issuerActiveTenantId)
+                    || isMismatch(authenticatedActiveTenantId, sessionActiveTenantId)
+                    || isMismatch(authenticatedActiveTenantId, headerActiveTenantId)) {
                 rejectTenantMismatch(response);
                 return;
             }
-            tenantId = authTenantId;
-            tenantSource = authTenant.source();
-            freezeTenantIdInSession(request, tenantId);
-        } else if (bearerTokenTenantId != null) {
-            if (isMismatch(bearerTokenTenantId, issuerTenantId) || isMismatch(bearerTokenTenantId, sessionTenantId) || isMismatch(bearerTokenTenantId, headerTenantId)) {
+            activeTenantId = authenticatedActiveTenantId;
+            tenantSource = authenticatedTenant.source();
+            freezeActiveTenantIdInSession(request, activeTenantId);
+        } else if (bearerTokenActiveTenantId != null) {
+            if (isMismatch(bearerTokenActiveTenantId, issuerActiveTenantId)
+                    || isMismatch(bearerTokenActiveTenantId, sessionActiveTenantId)
+                    || isMismatch(bearerTokenActiveTenantId, headerActiveTenantId)) {
                 rejectTenantMismatch(response);
                 return;
             }
-            tenantId = bearerTokenTenantId;
+            activeTenantId = bearerTokenActiveTenantId;
             tenantSource = TenantContext.SOURCE_TOKEN;
-            freezeTenantIdInSession(request, tenantId);
-        } else if (issuerTenantId != null) {
-            if (isMismatch(issuerTenantId, sessionTenantId) || isMismatch(issuerTenantId, headerTenantId)) {
+            freezeActiveTenantIdInSession(request, activeTenantId);
+        } else if (issuerActiveTenantId != null) {
+            if (isMismatch(issuerActiveTenantId, sessionActiveTenantId) || isMismatch(issuerActiveTenantId, headerActiveTenantId)) {
                 rejectTenantMismatch(response);
                 return;
             }
-            tenantId = issuerTenantId;
+            activeTenantId = issuerActiveTenantId;
             tenantSource = TenantContext.SOURCE_ISSUER;
-            freezeTenantIdInSession(request, tenantId);
-        } else if (sessionTenantId != null) {
-            if (isMismatch(sessionTenantId, headerTenantId)) {
+            freezeActiveTenantIdInSession(request, activeTenantId);
+        } else if (sessionActiveTenantId != null) {
+            if (isMismatch(sessionActiveTenantId, headerActiveTenantId)) {
                 rejectTenantMismatch(response);
                 return;
             }
-            tenantId = sessionTenantId;
+            activeTenantId = sessionActiveTenantId;
             tenantSource = TenantContext.SOURCE_SESSION;
         } else {
-            ResolvedTenant unauthTenant = resolveTenantIdForUnauthenticatedRequest(request, headerTenantId);
-            tenantId = unauthTenant.tenantId();
-            tenantSource = unauthTenant.source();
+            ResolvedTenant unauthenticatedTenant = resolveActiveTenantIdForUnauthenticatedRequest(request, headerActiveTenantId);
+            activeTenantId = unauthenticatedTenant.activeTenantId();
+            tenantSource = unauthenticatedTenant.source();
         }
 
-        if (tenantId == null || tenantId <= 0) {
+        if (activeTenantId == null || activeTenantId <= 0) {
             logger.warn(
-                    "缺少有效租户上下文，拒绝请求: method={}, uri={}, authTenantId={}, bearerTenantId={}, issuerTenantId={}, sessionTenantId={}, headerTenantId={}, paramTenantId={}, paramTenantCode={}",
+                    "缺少有效活动租户上下文，拒绝请求: method={}, uri={}, authenticatedActiveTenantId={}, bearerActiveTenantId={}, issuerActiveTenantId={}, sessionActiveTenantId={}, headerActiveTenantId={}, paramTenantCode={}",
                     request.getMethod(),
                     request.getRequestURI(),
-                    authTenantId,
-                    bearerTokenTenantId,
-                    issuerTenantId,
-                    sessionTenantId,
-                    headerTenantId,
-                    parseTenantId(request.getParameter(TENANT_ID_PARAM)),
+                    authenticatedActiveTenantId,
+                    bearerTokenActiveTenantId,
+                    issuerActiveTenantId,
+                    sessionActiveTenantId,
+                    headerActiveTenantId,
                     request.getParameter(TENANT_CODE_PARAM)
             );
             rejectMissingTenant(request, response);
             return;
         }
 
+        if (!validateSessionPermissionsVersion(request, response, activeTenantId)) {
+            return;
+        }
+
+        if (!validateBearerPermissionsVersion(request, response, activeTenantId)) {
+            return;
+        }
+
         String normalizedTenantSource = normalizeTenantSource(tenantSource);
-        TenantContext.setTenantId(tenantId);
+        TenantContext.setActiveTenantId(activeTenantId);
         TenantContext.setTenantSource(normalizedTenantSource);
         request.setAttribute(TENANT_SOURCE_REQUEST_ATTRIBUTE, normalizedTenantSource);
         try {
@@ -168,7 +191,7 @@ public class TenantContextFilter extends OncePerRequestFilter {
         return left != null && right != null && !left.equals(right);
     }
 
-    private ResolvedTenant resolveTenantIdForUnauthenticatedRequest(HttpServletRequest request, Long headerTenantId) {
+    private ResolvedTenant resolveActiveTenantIdForUnauthenticatedRequest(HttpServletRequest request, Long headerActiveTenantId) {
         String uri = request.getRequestURI();
         boolean isLoginPost = "/login".equals(uri) && "POST".equalsIgnoreCase(request.getMethod());
         boolean canReadTenantFromParams = isLoginPost;
@@ -176,24 +199,37 @@ public class TenantContextFilter extends OncePerRequestFilter {
             return new ResolvedTenant(null, null);
         }
 
-        if (headerTenantId != null) {
-            return new ResolvedTenant(headerTenantId, TenantContext.SOURCE_LOGIN_PARAM);
+        if (headerActiveTenantId != null) {
+            if (logger.isDebugEnabled()) {
+                logger.debug(
+                        "[tenant-login] 解析未认证请求的活动租户: method={}, uri={}, headerActiveTenantId={}, paramTenantCode={}",
+                        request.getMethod(),
+                        uri,
+                        headerActiveTenantId,
+                        request.getParameter(TENANT_CODE_PARAM)
+                );
+            }
+            return new ResolvedTenant(headerActiveTenantId, TenantContext.SOURCE_LOGIN_PARAM);
         }
 
-        Long paramTenantId = parseTenantId(request.getParameter(TENANT_ID_PARAM));
-        if (paramTenantId != null) {
-            return new ResolvedTenant(paramTenantId, TenantContext.SOURCE_LOGIN_PARAM);
+        String rawTenantCode = request.getParameter(TENANT_CODE_PARAM);
+        Long activeTenantIdByCode = resolveActiveTenantIdByCode(rawTenantCode);
+        if (logger.isDebugEnabled()) {
+            logger.debug(
+                    "[tenant-login] 解析未认证请求的活动租户: method={}, uri={}, paramTenantCode={}, resolvedActiveTenantId={}",
+                    request.getMethod(),
+                    uri,
+                    rawTenantCode,
+                    activeTenantIdByCode
+            );
         }
-
-        // 登录入口兼容 tenantCode，统一在过滤器内转换为 tenantId
-        Long paramTenantIdByCode = resolveTenantIdByCode(request.getParameter(TENANT_CODE_PARAM));
-        if (paramTenantIdByCode != null) {
-            return new ResolvedTenant(paramTenantIdByCode, TenantContext.SOURCE_LOGIN_PARAM);
+        if (activeTenantIdByCode != null) {
+            return new ResolvedTenant(activeTenantIdByCode, TenantContext.SOURCE_LOGIN_PARAM);
         }
         return new ResolvedTenant(null, null);
     }
 
-    private Long resolveTenantIdFromIssuerPath(HttpServletRequest request) {
+    private Long resolveActiveTenantIdFromIssuerPath(HttpServletRequest request) {
         String tenantCode = IssuerTenantSupport.extractTenantCodeFromRequestPath(request.getRequestURI());
         if (tenantCode == null) {
             return null;
@@ -204,19 +240,19 @@ public class TenantContextFilter extends OncePerRequestFilter {
                 .orElse(null);
     }
 
-    private Long parseTenantId(String raw) {
+    private Long parseActiveTenantId(String raw) {
         if (raw == null || raw.isBlank()) {
             return null;
         }
         try {
             return Long.parseLong(raw.trim());
         } catch (NumberFormatException e) {
-            logger.warn("非法 tenantId: {}", raw);
+            logger.warn("非法 activeTenantId: {}", raw);
             return null;
         }
     }
 
-    private Long resolveTenantIdByCode(String rawCode) {
+    private Long resolveActiveTenantIdByCode(String rawCode) {
         String normalizedCode = normalizeTenantCode(rawCode);
         if (normalizedCode == null) {
             return null;
@@ -243,65 +279,59 @@ public class TenantContextFilter extends OncePerRequestFilter {
         return normalized;
     }
 
-    private Long resolveTenantIdFromSession(HttpServletRequest request) {
+    private Long resolveActiveTenantIdFromSession(HttpServletRequest request) {
         HttpSession session = request.getSession(false);
         if (session == null) {
             return null;
         }
-        Object raw = session.getAttribute(SESSION_TENANT_ID_KEY);
+        Object raw = session.getAttribute(SESSION_ACTIVE_TENANT_ID_KEY);
         if (raw instanceof Number number) {
             return number.longValue();
         }
         if (raw instanceof String str) {
-            return parseTenantId(str);
+            return parseActiveTenantId(str);
         }
         return null;
     }
 
-    private Long resolveTenantIdFromAuthorizationHeader(HttpServletRequest request) {
-        String authorization = request.getHeader(AUTHORIZATION_HEADER);
-        if (authorization == null || authorization.isBlank()
-                || !authorization.regionMatches(true, 0, BEARER_PREFIX, 0, BEARER_PREFIX.length())) {
-            return null;
-        }
-        String token = authorization.substring(BEARER_PREFIX.length()).trim();
-        if (token.isEmpty()) {
-            return null;
-        }
-        return parseTenantIdFromJwtPayload(token);
+    private Long resolveActiveTenantIdFromAuthorizationHeader(HttpServletRequest request) {
+        JsonNode payload = resolveJwtPayloadNode(request);
+        return parseTenantIdFromPayload(payload);
     }
 
-    private Long parseTenantIdFromJwtPayload(String token) {
-        String[] segments = token.split("\\.");
-        if (segments.length < 2) {
+    private JsonNode resolveJwtPayloadNode(HttpServletRequest request) {
+        String token = resolveBearerToken(request);
+        if (token == null) {
             return null;
         }
         try {
-            byte[] payloadBytes = Base64.getUrlDecoder().decode(segments[1]);
-            JsonNode payload = OBJECT_MAPPER.readTree(payloadBytes);
-            JsonNode tenantNode = payload.get(TENANT_ID_CLAIM);
-            if (tenantNode == null || tenantNode.isNull()) {
+            String[] segments = token.split("\\.");
+            if (segments.length < 2) {
                 return null;
             }
-            if (tenantNode.isIntegralNumber()) {
-                return tenantNode.longValue();
-            }
-            if (tenantNode.isTextual()) {
-                return parseTenantId(tenantNode.asText());
-            }
+            byte[] payloadBytes = Base64.getUrlDecoder().decode(segments[1]);
+            return OBJECT_MAPPER.readTree(payloadBytes);
         } catch (Exception ex) {
-            logger.debug("无法从 Bearer Token 解析 tenantId", ex);
+            logger.debug("无法从 Bearer Token 解析 payload", ex);
         }
         return null;
     }
 
-    private void freezeTenantIdInSession(HttpServletRequest request, Long tenantId) {
-        if (tenantId == null || tenantId <= 0) {
+    private Long parseTenantIdFromPayload(JsonNode payload) {
+        if (payload == null) {
+            return null;
+        }
+        JsonNode tenantNode = payload.get(ACTIVE_TENANT_ID_CLAIM);
+        return parseLongClaim(tenantNode);
+    }
+
+    private void freezeActiveTenantIdInSession(HttpServletRequest request, Long activeTenantId) {
+        if (activeTenantId == null || activeTenantId <= 0) {
             return;
         }
         HttpSession session = request.getSession(false);
         if (session != null) {
-            session.setAttribute(SESSION_TENANT_ID_KEY, tenantId);
+            session.setAttribute(SESSION_ACTIVE_TENANT_ID_KEY, activeTenantId);
         }
     }
 
@@ -331,14 +361,14 @@ public class TenantContextFilter extends OncePerRequestFilter {
 
         Object principal = authentication.getPrincipal();
         if (principal instanceof SecurityUser securityUser) {
-            return new ResolvedTenant(securityUser.getTenantId(), TenantContext.SOURCE_SESSION);
+            return new ResolvedTenant(securityUser.getActiveTenantId(), TenantContext.SOURCE_SESSION);
         }
         Object details = authentication.getDetails();
         if (details instanceof SecurityUser securityUser) {
-            return new ResolvedTenant(securityUser.getTenantId(), TenantContext.SOURCE_SESSION);
+            return new ResolvedTenant(securityUser.getActiveTenantId(), TenantContext.SOURCE_SESSION);
         }
         if (authentication instanceof JwtAuthenticationToken jwtAuthenticationToken) {
-            Object claim = jwtAuthenticationToken.getToken().getClaims().get(TENANT_ID_CLAIM);
+            Object claim = resolveTenantClaim(jwtAuthenticationToken);
             if (claim instanceof Number number) {
                 return new ResolvedTenant(number.longValue(), TenantContext.SOURCE_TOKEN);
             }
@@ -351,6 +381,10 @@ public class TenantContextFilter extends OncePerRequestFilter {
             }
         }
         return new ResolvedTenant(null, null);
+    }
+
+    private Object resolveTenantClaim(JwtAuthenticationToken jwtAuthenticationToken) {
+        return jwtAuthenticationToken.getToken().getClaims().get(ACTIVE_TENANT_ID_CLAIM);
     }
 
     private String normalizeTenantSource(String tenantSource) {
@@ -376,7 +410,7 @@ public class TenantContextFilter extends OncePerRequestFilter {
         response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setContentType("application/json;charset=UTF-8");
-        response.getWriter().write("{\"error\":\"missing_tenant\",\"error_description\":\"valid tenantId is required\"}");
+        response.getWriter().write("{\"error\":\"missing_tenant\",\"error_description\":\"valid active tenant is required\"}");
     }
 
     private boolean shouldRedirectToLogin(HttpServletRequest request) {
@@ -405,5 +439,270 @@ public class TenantContextFilter extends OncePerRequestFilter {
         response.getWriter().write("{\"error\":\"tenant_mismatch\",\"error_description\":\"tenant does not match token\"}");
     }
 
-    private record ResolvedTenant(Long tenantId, String source) {}
+    private boolean validateBearerPermissionsVersion(HttpServletRequest request,
+                                                     HttpServletResponse response,
+                                                     Long activeTenantId) throws IOException {
+        if (permissionVersionService == null) {
+            return true;
+        }
+        ResolvedBearerClaims bearerClaims = resolveBearerClaims(request);
+        if (bearerClaims == null || bearerClaims.permissionsVersion() == null || bearerClaims.permissionsVersion().isBlank()) {
+            return true;
+        }
+        if (bearerClaims.userId() == null || bearerClaims.authorities().isEmpty()) {
+            rejectStalePermissions(response);
+            return false;
+        }
+
+        String currentPermissionsVersion = permissionVersionService.resolvePermissionsVersion(
+            bearerClaims.userId(),
+            activeTenantId
+        );
+        if (currentPermissionsVersion == null || !currentPermissionsVersion.equals(bearerClaims.permissionsVersion())) {
+            rejectStalePermissions(response);
+            return false;
+        }
+        return true;
+    }
+
+    private boolean validateSessionPermissionsVersion(HttpServletRequest request,
+                                                      HttpServletResponse response,
+                                                      Long activeTenantId) throws IOException {
+        if (permissionVersionService == null) {
+            return true;
+        }
+
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        SecurityUser securityUser = resolveSessionSecurityUser(authentication);
+        if (securityUser == null) {
+            return true;
+        }
+
+        String storedPermissionsVersion = securityUser.getPermissionsVersion();
+        if (storedPermissionsVersion == null || storedPermissionsVersion.isBlank()) {
+            return true;
+        }
+
+        Long userId = securityUser.getUserId();
+        if (userId == null) {
+            invalidateAuthenticatedSession(request);
+            rejectStaleSessionPermissions(request, response);
+            return false;
+        }
+
+        String currentPermissionsVersion = permissionVersionService.resolvePermissionsVersion(userId, activeTenantId);
+        if (currentPermissionsVersion == null || !currentPermissionsVersion.equals(storedPermissionsVersion)) {
+            invalidateAuthenticatedSession(request);
+            rejectStaleSessionPermissions(request, response);
+            return false;
+        }
+        return true;
+    }
+
+    private ResolvedBearerClaims resolveBearerClaims(HttpServletRequest request) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication instanceof JwtAuthenticationToken jwtAuthenticationToken) {
+            return resolveBearerClaims(jwtAuthenticationToken.getToken().getClaims());
+        }
+        JsonNode payload = resolveJwtPayloadNode(request);
+        if (payload == null) {
+            return null;
+        }
+        return resolveBearerClaims(payload);
+    }
+
+    private ResolvedBearerClaims resolveBearerClaims(java.util.Map<String, Object> claims) {
+        if (claims == null || claims.isEmpty()) {
+            return null;
+        }
+        Long userId = parseLongClaim(claims.get(USER_ID_CLAIM));
+        String permissionsVersion = parseStringClaim(claims.get(PERMISSIONS_VERSION_CLAIM));
+        Set<String> authorities = parseAuthoritiesClaim(claims.get(AUTHORITIES_CLAIM));
+        if (authorities.isEmpty()) {
+            authorities = parseAuthoritiesClaim(claims.get(PERMISSIONS_CLAIM));
+        }
+        return new ResolvedBearerClaims(userId, permissionsVersion, authorities);
+    }
+
+    private ResolvedBearerClaims resolveBearerClaims(JsonNode payload) {
+        if (payload == null || payload.isMissingNode()) {
+            return null;
+        }
+        Long userId = parseLongClaim(payload.get(USER_ID_CLAIM));
+        String permissionsVersion = parseStringClaim(payload.get(PERMISSIONS_VERSION_CLAIM));
+        Set<String> authorities = parseAuthoritiesClaim(payload.get(AUTHORITIES_CLAIM));
+        if (authorities.isEmpty()) {
+            authorities = parseAuthoritiesClaim(payload.get(PERMISSIONS_CLAIM));
+        }
+        return new ResolvedBearerClaims(userId, permissionsVersion, authorities);
+    }
+
+    private SecurityUser resolveSessionSecurityUser(Authentication authentication) {
+        if (authentication == null || authentication instanceof AnonymousAuthenticationToken) {
+            return null;
+        }
+        if (authentication instanceof JwtAuthenticationToken) {
+            return null;
+        }
+        Object principal = authentication.getPrincipal();
+        if (principal instanceof SecurityUser securityUser) {
+            return securityUser;
+        }
+        Object details = authentication.getDetails();
+        if (details instanceof SecurityUser securityUser) {
+            return securityUser;
+        }
+        return null;
+    }
+
+    private Set<String> parseAuthoritiesClaim(Object rawClaim) {
+        if (rawClaim instanceof Iterable<?> iterable) {
+            LinkedHashSet<String> values = new LinkedHashSet<>();
+            for (Object item : iterable) {
+                String normalized = parseStringClaim(item);
+                if (normalized != null && !normalized.isBlank()) {
+                    values.add(normalized);
+                }
+            }
+            return values;
+        }
+        String normalized = parseStringClaim(rawClaim);
+        if (normalized == null || normalized.isBlank()) {
+            return Set.of();
+        }
+        LinkedHashSet<String> values = new LinkedHashSet<>();
+        for (String item : normalized.split("[\\s,]+")) {
+            String candidate = item.trim();
+            if (!candidate.isEmpty()) {
+                values.add(candidate);
+            }
+        }
+        return values;
+    }
+
+    private Set<String> parseAuthoritiesClaim(JsonNode rawClaim) {
+        if (rawClaim == null || rawClaim.isNull()) {
+            return Set.of();
+        }
+        if (rawClaim.isArray()) {
+            LinkedHashSet<String> values = new LinkedHashSet<>();
+            rawClaim.forEach(item -> {
+                String normalized = parseStringClaim(item);
+                if (normalized != null && !normalized.isBlank()) {
+                    values.add(normalized);
+                }
+            });
+            return values;
+        }
+        String normalized = parseStringClaim(rawClaim);
+        if (normalized == null || normalized.isBlank()) {
+            return Set.of();
+        }
+        LinkedHashSet<String> values = new LinkedHashSet<>();
+        for (String item : normalized.split("[\\s,]+")) {
+            String candidate = item.trim();
+            if (!candidate.isEmpty()) {
+                values.add(candidate);
+            }
+        }
+        return values;
+    }
+
+    private Long parseLongClaim(Object rawClaim) {
+        if (rawClaim instanceof Number number) {
+            return number.longValue();
+        }
+        if (rawClaim instanceof String text) {
+            return parseActiveTenantId(text);
+        }
+        return null;
+    }
+
+    private Long parseLongClaim(JsonNode rawClaim) {
+        if (rawClaim == null || rawClaim.isNull()) {
+            return null;
+        }
+        if (rawClaim.isIntegralNumber()) {
+            return rawClaim.longValue();
+        }
+        if (rawClaim.isTextual()) {
+            return parseActiveTenantId(rawClaim.asText());
+        }
+        return null;
+    }
+
+    private String parseStringClaim(Object rawClaim) {
+        if (rawClaim instanceof String text) {
+            String normalized = text.trim();
+            return normalized.isEmpty() ? null : normalized;
+        }
+        return rawClaim != null ? String.valueOf(rawClaim) : null;
+    }
+
+    private String parseStringClaim(JsonNode rawClaim) {
+        if (rawClaim == null || rawClaim.isNull()) {
+            return null;
+        }
+        if (rawClaim.isTextual()) {
+            String normalized = rawClaim.asText().trim();
+            return normalized.isEmpty() ? null : normalized;
+        }
+        if (rawClaim.isNumber() || rawClaim.isBoolean()) {
+            return rawClaim.asText();
+        }
+        return null;
+    }
+
+    private String resolveBearerToken(HttpServletRequest request) {
+        String authorization = request.getHeader(AUTHORIZATION_HEADER);
+        if (authorization == null || authorization.isBlank()
+            || !authorization.regionMatches(true, 0, BEARER_PREFIX, 0, BEARER_PREFIX.length())) {
+            return null;
+        }
+        String token = authorization.substring(BEARER_PREFIX.length()).trim();
+        return token.isEmpty() ? null : token;
+    }
+
+    private void rejectStalePermissions(HttpServletResponse response) throws IOException {
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.setContentType("application/json;charset=UTF-8");
+        response.setHeader("WWW-Authenticate", "Bearer error=\"invalid_token\"");
+        response.getWriter().write("{\"error\":\"stale_permissions\",\"error_description\":\"token permissions are outdated\"}");
+    }
+
+    private void rejectStaleSessionPermissions(HttpServletRequest request, HttpServletResponse response) throws IOException {
+        if (shouldRedirectToLogin(request)) {
+            String currentPath = request.getRequestURI();
+            String query = request.getQueryString();
+            String redirectTarget = currentPath;
+            if (query != null && !query.isBlank()) {
+                redirectTarget = redirectTarget + "?" + query;
+            }
+            String encodedRedirect = URLEncoder.encode(redirectTarget, StandardCharsets.UTF_8);
+            response.sendRedirect("/login?redirect=" + encodedRedirect + "&error=stale_permissions");
+            return;
+        }
+
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.setContentType("application/json;charset=UTF-8");
+        response.getWriter().write("{\"error\":\"stale_permissions\",\"error_description\":\"session permissions are outdated\"}");
+    }
+
+    private void invalidateAuthenticatedSession(HttpServletRequest request) {
+        SecurityContextHolder.clearContext();
+        HttpSession session = request.getSession(false);
+        if (session != null) {
+            try {
+                session.invalidate();
+            } catch (IllegalStateException ex) {
+                logger.debug("session already invalidated while clearing stale permissions", ex);
+            }
+        }
+    }
+
+    private record ResolvedTenant(Long activeTenantId, String source) {}
+
+    private record ResolvedBearerClaims(Long userId, String permissionsVersion, Set<String> authorities) {}
 }

@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class SchedulingExecutorsTest {
 
     private static final SchedulingExecutionContext EXECUTION_CONTEXT = SchedulingExecutionContext.builder()
-            .tenantId(88L)
+            .executionTenantId(88L)
             .dagRunId(99L)
             .build();
 

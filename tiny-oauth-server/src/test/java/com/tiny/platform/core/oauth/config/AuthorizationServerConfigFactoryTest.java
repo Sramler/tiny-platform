@@ -4,7 +4,9 @@ import com.nimbusds.jose.jwk.JWKMatcher;
 import com.nimbusds.jose.jwk.JWKSelector;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jose.jwk.source.JWKSource;
+import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
 import com.tiny.platform.core.oauth.security.MfaAuthorizationEndpointFilter;
+import com.tiny.platform.core.oauth.security.PermissionVersionService;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
@@ -45,7 +47,13 @@ class AuthorizationServerConfigFactoryTest {
         assertThat(settings.isMultipleIssuersAllowed()).isTrue();
 
         UserRepository userRepository = mock(UserRepository.class);
-        JwtTokenCustomizer customizer = config.jwtTokenCustomizer(userRepository);
+        AuthUserResolutionService authUserResolutionService = mock(AuthUserResolutionService.class);
+        PermissionVersionService permissionVersionService = mock(PermissionVersionService.class);
+        JwtTokenCustomizer customizer = config.jwtTokenCustomizer(
+                userRepository,
+                authUserResolutionService,
+                permissionVersionService
+        );
         assertThat(customizer).isNotNull();
 
         JwtEncoder jwtEncoder = config.jwtEncoder(jwkSource);
@@ -61,7 +69,11 @@ class AuthorizationServerConfigFactoryTest {
         frontendProperties.setTotpBindUrl("/totp-bind");
         frontendProperties.setTotpVerifyUrl("/totp-verify");
         MfaAuthorizationEndpointFilter filter =
-                config.mfaAuthorizationEndpointFilter(securityService, userRepository, frontendProperties);
+                config.mfaAuthorizationEndpointFilter(
+                        securityService,
+                        authUserResolutionService,
+                        frontendProperties
+                );
         assertThat(filter).isNotNull();
     }
 

@@ -1,6 +1,7 @@
 package com.tiny.platform.application.controller.user;
 
-import com.tiny.platform.infrastructure.auth.role.domain.Role;
+import com.tiny.platform.core.oauth.model.SecurityUser;
+import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationAudit;
 import com.tiny.platform.infrastructure.auth.user.dto.UserCreateUpdateDto;
@@ -22,6 +23,7 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
@@ -31,7 +33,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -45,9 +46,14 @@ import static org.mockito.Mockito.when;
 
 class UserControllerTest {
 
+    private static void assertActiveTenantResponse(Map<String, Object> payload, long expectedTenantId) {
+        assertThat(payload).containsEntry("activeTenantId", expectedTenantId);
+    }
+
     @AfterEach
     void tearDown() {
         SecurityContextHolder.clearContext();
+        TenantContext.clear();
     }
 
     @Test
@@ -104,11 +110,8 @@ class UserControllerTest {
             .containsEntry("message", "批量删除成功");
         verify(userService).batchDelete(List.of(1L, 2L));
 
-        Role role1 = new Role();
-        role1.setId(10L);
-        Role role2 = new Role();
-        role2.setId(11L);
-        user.setRoles(Set.of(role1, role2));
+        when(userService.getRoleIdsByUserId(2L)).thenReturn(List.of(10L, 11L));
+        when(userService.getRoleIdsByUserId(99L)).thenThrow(new RuntimeException("missing"));
         assertThat(controller.getUserRoles(2L).getBody()).containsExactlyInAnyOrder(10L, 11L);
         assertThat(controller.getUserRoles(99L).getStatusCode().value()).isEqualTo(404);
 
@@ -135,9 +138,11 @@ class UserControllerTest {
         when(auth.isAuthenticated()).thenReturn(true);
         when(auth.getName()).thenReturn("alice");
         SecurityContextHolder.getContext().setAuthentication(auth);
+        TenantContext.setActiveTenantId(9L);
 
         when(userService.findByUsername("alice")).thenReturn(Optional.of(user(1L, "alice")));
         Map<String, Object> successBody = controller.getCurrentUser().getBody();
+        assertActiveTenantResponse(successBody, 9L);
         assertThat(successBody)
             .containsEntry("id", "1")
             .containsEntry("username", "alice")
@@ -161,6 +166,33 @@ class UserControllerTest {
         ResponseEntity<Map<String, Object>> error = controller.getCurrentUser();
         assertThat(error.getStatusCode().value()).isEqualTo(500);
         assertThat(error.getBody()).containsEntry("success", false).containsEntry("error", "boom");
+    }
+
+    @Test
+    void should_prefer_active_tenant_from_authentication_when_context_is_absent() {
+        UserService userService = mock(UserService.class);
+        UserController controller = new UserController(userService, mock(UserAuthenticationAuditRepository.class), mock(AvatarService.class));
+
+        User user = user(1L, "alice");
+        user.setTenantId(3L);
+        when(userService.findByUsername("alice")).thenReturn(Optional.of(user));
+
+        SecurityUser securityUser = new SecurityUser(
+            1L,
+            12L,
+            "alice",
+            "",
+            List.of(),
+            true,
+            true,
+            true,
+            true
+        );
+        Authentication authentication = UsernamePasswordAuthenticationToken.authenticated(securityUser, null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        Map<String, Object> body = controller.getCurrentUser().getBody();
+        assertActiveTenantResponse(body, 12L);
     }
 
     @Test

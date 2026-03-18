@@ -1,19 +1,20 @@
 package com.tiny.platform.infrastructure.auth.user.domain;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.tiny.platform.infrastructure.auth.role.domain.Role;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 
 import java.io.Serializable;
 import java.time.LocalDateTime;
-import java.util.HashSet;
-import java.util.Set;
 
+/**
+ * 用户实体。授权与可见性以 tenant_user + activeTenantId 为准；
+ * username 全局唯一（uk_user_username）；tenant_id 仅保留为展示/审计用（可空）。
+ * 见 docs/TINY_PLATFORM_AUTHORIZATION_LEGACY_REMOVAL_PLAN.md §3。
+ */
 @Entity
 @Table(name = "user",
-    uniqueConstraints = {
-        @UniqueConstraint(name = "uk_user_tenant_username", columnNames = {"tenant_id", "username"})
-    }
+    uniqueConstraints = @UniqueConstraint(name = "uk_user_username", columnNames = {"username"})
 )
 public class User implements Serializable {
 
@@ -21,7 +22,8 @@ public class User implements Serializable {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "tenant_id", nullable = false)
+    /** 兼容/展示用，可空；授权与 membership 以 tenant_user 为准。 */
+    @Column(name = "tenant_id", nullable = true)
     private Long tenantId;
 
     @Column(nullable = false, length = 50)
@@ -41,13 +43,6 @@ public class User implements Serializable {
     @Column(name = "credentials_non_expired", nullable = false)
     private boolean credentialsNonExpired = true; // 密码是否过期
 
-    @ManyToMany(fetch = FetchType.LAZY)
-    @JoinTable(name = "user_role",
-        joinColumns = @JoinColumn(name = "user_id"),
-        inverseJoinColumns = @JoinColumn(name = "role_id"))
-    @JsonIgnore
-    private Set<Role> roles = new HashSet<>();
-    
     @Column(name = "last_login_at")
     private LocalDateTime lastLoginAt;
     
@@ -92,6 +87,7 @@ public class User implements Serializable {
         this.id = id;
     }
 
+    @JsonProperty("recordTenantId")
     public Long getTenantId() {
         return tenantId;
     }
@@ -146,14 +142,6 @@ public class User implements Serializable {
 
     public void setCredentialsNonExpired(boolean credentialsNonExpired) {
         this.credentialsNonExpired = credentialsNonExpired;
-    }
-
-    public Set<Role> getRoles() {
-        return roles;
-    }
-
-    public void setRoles(Set<Role> roles) {
-        this.roles = roles;
     }
 
     public LocalDateTime getLastLoginAt() {

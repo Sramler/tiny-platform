@@ -15,7 +15,7 @@ public class DictItemResponseDto {
     private String value;
     private String label;
     private String description;
-    private Long tenantId;
+    private Long recordTenantId;
     private Boolean isBuiltin;
     private Boolean enabled;
     private Integer sortOrder;
@@ -38,7 +38,7 @@ public class DictItemResponseDto {
         this.value = dictItem.getValue();
         this.label = dictItem.getLabel();
         this.description = dictItem.getDescription();
-        this.tenantId = dictItem.getTenantId();
+        this.recordTenantId = dictItem.getTenantId();
         this.isBuiltin = dictItem.getIsBuiltin();
         this.enabled = dictItem.getEnabled();
         this.sortOrder = dictItem.getSortOrder();
@@ -99,12 +99,12 @@ public class DictItemResponseDto {
         this.description = description;
     }
 
-    public Long getTenantId() {
-        return tenantId;
+    public Long getRecordTenantId() {
+        return recordTenantId;
     }
 
-    public void setTenantId(Long tenantId) {
-        this.tenantId = tenantId;
+    public void setRecordTenantId(Long recordTenantId) {
+        this.recordTenantId = recordTenantId;
     }
 
     public Boolean getIsBuiltin() {
@@ -171,4 +171,3 @@ public class DictItemResponseDto {
         this.updatedBy = updatedBy;
     }
 }
-

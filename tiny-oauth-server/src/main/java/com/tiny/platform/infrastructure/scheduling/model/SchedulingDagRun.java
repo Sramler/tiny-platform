@@ -1,5 +1,6 @@
 package com.tiny.platform.infrastructure.scheduling.model;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import java.io.Serializable;
 import java.time.LocalDateTime;
@@ -86,6 +87,7 @@ public class SchedulingDagRun implements Serializable {
         this.runNo = runNo;
     }
 
+    @JsonProperty("recordTenantId")
     public Long getTenantId() {
         return tenantId;
     }
@@ -150,4 +152,3 @@ public class SchedulingDagRun implements Serializable {
         this.createdAt = createdAt;
     }
 }
-

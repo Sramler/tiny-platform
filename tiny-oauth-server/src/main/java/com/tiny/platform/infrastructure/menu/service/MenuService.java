@@ -67,6 +67,14 @@ public interface MenuService {
     void batchDeleteMenus(List<Long> ids);
 
     /**
+     * 更新菜单排序
+     * @param id 菜单ID
+     * @param sort 新的排序值
+     * @return 更新后的菜单
+     */
+    Resource updateMenuSort(Long id, Integer sort);
+
+    /**
      * 按条件查询菜单（type=0/1），返回list结构
      */
     List<ResourceResponseDto> list(ResourceRequestDto query);

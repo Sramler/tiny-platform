@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -30,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -51,7 +53,7 @@ class ExportControllerTest {
         ExportTaskService exportTaskService = Mockito.mock(ExportTaskService.class);
         ExportController controller = new ExportController(exportService, exportTaskService);
         SecurityContextHolder.getContext().setAuthentication(
-            new UsernamePasswordAuthenticationToken("u-1", "N/A", List.of())
+            new UsernamePasswordAuthenticationToken("u-1", "N/A", List.of(new SimpleGrantedAuthority("system:export:view")))
         );
         ExportRequest request = new ExportRequest();
         request.setSheets(List.of(new com.tiny.platform.infrastructure.export.core.SheetConfig()));
@@ -78,7 +80,7 @@ class ExportControllerTest {
         request.setFileName("demo_file");
         request.setSheets(List.of(new com.tiny.platform.infrastructure.export.core.SheetConfig()));
         SecurityContextHolder.getContext().setAuthentication(
-            new UsernamePasswordAuthenticationToken("sync-user", "N/A", List.of())
+            new UsernamePasswordAuthenticationToken("sync-user", "N/A", List.of(new SimpleGrantedAuthority("system:export:view")))
         );
 
         ResponseEntity<StreamingResponseBody> response = controller.exportSync(request);
@@ -100,7 +102,7 @@ class ExportControllerTest {
         request.setFileName("demo_file");
         request.setSheets(List.of(new com.tiny.platform.infrastructure.export.core.SheetConfig()));
         SecurityContextHolder.getContext().setAuthentication(
-            new UsernamePasswordAuthenticationToken("sync-user", "N/A", List.of())
+            new UsernamePasswordAuthenticationToken("sync-user", "N/A", List.of(new SimpleGrantedAuthority("system:export:view")))
         );
         Mockito.doAnswer(invocation -> {
                 OutputStream outputStream = invocation.getArgument(1, OutputStream.class);
@@ -123,7 +125,7 @@ class ExportControllerTest {
     }
 
     @Test
-    void shouldUseAnonymousWhenNotAuthenticated() throws Exception {
+    void shouldDenyExportWhenNotAuthenticated() {
         ExportService exportService = Mockito.mock(ExportService.class);
         ExportTaskService exportTaskService = Mockito.mock(ExportTaskService.class);
         ExportController controller = new ExportController(exportService, exportTaskService);
@@ -132,12 +134,8 @@ class ExportControllerTest {
         request.setSheets(List.of(new com.tiny.platform.infrastructure.export.core.SheetConfig()));
         SecurityContextHolder.clearContext();
 
-        ResponseEntity<StreamingResponseBody> response = controller.exportSync(request);
-        StreamingResponseBody body = response.getBody();
-        assertNotNull(body);
-        body.writeTo(new ByteArrayOutputStream());
-
-        verify(exportService).exportSync(eq(request), org.mockito.ArgumentMatchers.any(OutputStream.class), eq("anonymous"));
+        assertThrows(AccessDeniedException.class, () -> controller.exportSync(request));
+        Mockito.verifyNoInteractions(exportService);
     }
 
     }

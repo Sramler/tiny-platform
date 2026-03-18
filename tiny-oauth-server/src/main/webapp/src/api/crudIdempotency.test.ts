@@ -160,13 +160,13 @@ describe('role/resource/menu API idempotency', () => {
         payload: { id: 5 },
       },
     })
-    expect(mocks.post).toHaveBeenCalledWith('/sys/resources/menus/batch/delete', ids, {
+    expect(mocks.post).toHaveBeenCalledWith('/sys/menus/batch/delete', ids, {
       idempotency: {
         scope: 'sys-menus:batch-delete',
         payload: ids,
       },
     })
-    expect(mocks.put).toHaveBeenCalledWith('/sys/resources/menus/5/sort', null, {
+    expect(mocks.put).toHaveBeenCalledWith('/sys/menus/5/sort', null, {
       params: { sort: 8 },
       idempotency: {
         scope: 'sys-menus:sort:5',

@@ -106,16 +106,16 @@ public class IdempotentConsoleService {
 
     // ---------- Metrics ----------
 
-    public IdempotentMetricsSnapshot getMetrics(String date, String scene, Long tenantId) {
-        return metricsService.snapshot(tenantId);
+    public IdempotentMetricsSnapshot getMetrics(String date, String scene, Long activeTenantId) {
+        return metricsService.snapshot(activeTenantId);
     }
 
-    public Map<String, Object> getMetricsMap(String date, String scene, Long tenantId) {
-        IdempotentMetricsSnapshot s = metricsService.snapshot(tenantId);
+    public Map<String, Object> getMetricsMap(String date, String scene, Long activeTenantId) {
+        IdempotentMetricsSnapshot s = metricsService.snapshot(activeTenantId);
         Map<String, Object> map = new HashMap<>();
         map.put("success", true);
         map.put("message", "OK");
-        map.put("tenantId", tenantId);
+        map.put("activeTenantId", activeTenantId);
         map.put("windowMinutes", s.windowMinutes());
         map.put("windowStartEpochMillis", s.windowStartEpochMillis());
         map.put("windowEndEpochMillis", s.windowEndEpochMillis());

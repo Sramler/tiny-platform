@@ -45,9 +45,11 @@ public class DependencyCheckerService {
             return false;
         }
 
-        // 1. 查找所有上游节点（依赖的节点）
-        List<String> upstreamNodeCodes = dagEdgeRepository
-                .findByDagVersionIdAndToNodeCode(instance.getDagVersionId(), instance.getNodeCode())
+        // 1. 查找所有上游节点（依赖的节点）；无请求上下文时按租户过滤
+        List<String> upstreamNodeCodes = (instance.getTenantId() != null
+                ? dagEdgeRepository.findByDagVersionIdAndToNodeCodeAndTenantId(
+                        instance.getDagVersionId(), instance.getNodeCode(), instance.getTenantId())
+                : dagEdgeRepository.findByDagVersionIdAndToNodeCode(instance.getDagVersionId(), instance.getNodeCode()))
                 .stream()
                 .map(edge -> edge.getFromNodeCode())
                 .collect(Collectors.toList());
@@ -93,8 +95,10 @@ public class DependencyCheckerService {
         if (instance.getDagVersionId() == null || instance.getNodeCode() == null) {
             return false;
         }
-        List<String> upstreamNodeCodes = dagEdgeRepository
-                .findByDagVersionIdAndToNodeCode(instance.getDagVersionId(), instance.getNodeCode())
+        List<String> upstreamNodeCodes = (instance.getTenantId() != null
+                ? dagEdgeRepository.findByDagVersionIdAndToNodeCodeAndTenantId(
+                        instance.getDagVersionId(), instance.getNodeCode(), instance.getTenantId())
+                : dagEdgeRepository.findByDagVersionIdAndToNodeCode(instance.getDagVersionId(), instance.getNodeCode()))
                 .stream()
                 .map(edge -> edge.getFromNodeCode())
                 .collect(Collectors.toList());

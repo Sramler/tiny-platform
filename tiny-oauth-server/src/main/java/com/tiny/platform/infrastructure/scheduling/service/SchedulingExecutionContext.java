@@ -9,12 +9,12 @@ public final class SchedulingExecutionContext implements Serializable {
     public static final String JOB_DATA_DAG_ID = "dagId";
     public static final String JOB_DATA_DAG_RUN_ID = "dagRunId";
     public static final String JOB_DATA_DAG_VERSION_ID = "dagVersionId";
-    public static final String JOB_DATA_TENANT_ID = "tenantId";
+    public static final String JOB_DATA_EXECUTION_TENANT_ID = "executionTenantId";
     public static final String JOB_DATA_USER_ID = "userId";
     public static final String JOB_DATA_USERNAME = "username";
     public static final String JOB_DATA_TRIGGER_TYPE = "triggerType";
 
-    private final Long tenantId;
+    private final Long executionTenantId;
     private final String userId;
     private final String username;
     private final Long dagId;
@@ -23,7 +23,7 @@ public final class SchedulingExecutionContext implements Serializable {
     private final String triggerType;
 
     private SchedulingExecutionContext(Builder builder) {
-        this.tenantId = builder.tenantId;
+        this.executionTenantId = builder.executionTenantId;
         this.userId = builder.userId;
         this.username = builder.username;
         this.dagId = builder.dagId;
@@ -41,7 +41,7 @@ public final class SchedulingExecutionContext implements Serializable {
                 .dagId(getLong(jobDataMap, JOB_DATA_DAG_ID))
                 .dagRunId(getLong(jobDataMap, JOB_DATA_DAG_RUN_ID))
                 .dagVersionId(getLong(jobDataMap, JOB_DATA_DAG_VERSION_ID))
-                .tenantId(getLong(jobDataMap, JOB_DATA_TENANT_ID))
+                .executionTenantId(getLong(jobDataMap, JOB_DATA_EXECUTION_TENANT_ID))
                 .userId(getString(jobDataMap, JOB_DATA_USER_ID))
                 .username(getString(jobDataMap, JOB_DATA_USERNAME))
                 .triggerType(getString(jobDataMap, JOB_DATA_TRIGGER_TYPE))
@@ -53,15 +53,15 @@ public final class SchedulingExecutionContext implements Serializable {
         put(jobDataMap, JOB_DATA_DAG_ID, dagId);
         put(jobDataMap, JOB_DATA_DAG_RUN_ID, dagRunId);
         put(jobDataMap, JOB_DATA_DAG_VERSION_ID, dagVersionId);
-        put(jobDataMap, JOB_DATA_TENANT_ID, tenantId);
+        put(jobDataMap, JOB_DATA_EXECUTION_TENANT_ID, executionTenantId);
         put(jobDataMap, JOB_DATA_USER_ID, userId);
         put(jobDataMap, JOB_DATA_USERNAME, username);
         put(jobDataMap, JOB_DATA_TRIGGER_TYPE, triggerType);
         return jobDataMap;
     }
 
-    public Long getTenantId() {
-        return tenantId;
+    public Long getExecutionTenantId() {
+        return executionTenantId;
     }
 
     public String getUserId() {
@@ -117,7 +117,7 @@ public final class SchedulingExecutionContext implements Serializable {
     }
 
     public static final class Builder {
-        private Long tenantId;
+        private Long executionTenantId;
         private String userId;
         private String username;
         private Long dagId;
@@ -127,8 +127,8 @@ public final class SchedulingExecutionContext implements Serializable {
 
         private Builder() {}
 
-        public Builder tenantId(Long tenantId) {
-            this.tenantId = tenantId;
+        public Builder executionTenantId(Long executionTenantId) {
+            this.executionTenantId = executionTenantId;
             return this;
         }
 

@@ -93,11 +93,11 @@ class TaskExecutorServiceExecutionContextTest {
         TaskExecutorService.TaskExecutor executor = new TaskExecutorService.TaskExecutor() {
             @Override
             public Object execute(SchedulingExecutionContext executionContext, Map<String, Object> params) {
-                tenantInsideExecutor.set(TenantContext.getTenantId());
+                tenantInsideExecutor.set(TenantContext.getActiveTenantId());
                 executionContextRef.set(executionContext);
                 paramsRef.set(params);
                 return Map.of(
-                        "tenantId", TenantContext.getTenantId(),
+                        "executionTenantId", TenantContext.getActiveTenantId(),
                         "username", executionContext.getUsername(),
                         "prefix", params.get("prefix"),
                         "name", params.get("name"));
@@ -105,11 +105,11 @@ class TaskExecutorServiceExecutionContextTest {
         };
         when(taskExecutorRegistry.find("demoExecutor")).thenReturn(Optional.of(executor));
 
-        TenantContext.setTenantId(999L);
+        TenantContext.setActiveTenantId(999L);
         TenantContext.setTenantSource(TenantContext.SOURCE_SESSION);
 
         SchedulingExecutionContext executionContext = SchedulingExecutionContext.builder()
-                .tenantId(88L)
+                .executionTenantId(88L)
                 .userId("8")
                 .username("alice")
                 .dagId(5L)
@@ -123,16 +123,16 @@ class TaskExecutorServiceExecutionContextTest {
         assertThat(result.isSuccess()).isTrue();
         assertThat(tenantInsideExecutor.get()).isEqualTo(88L);
         assertThat(executionContextRef.get()).isNotNull();
-        assertThat(executionContextRef.get().getTenantId()).isEqualTo(88L);
+        assertThat(executionContextRef.get().getExecutionTenantId()).isEqualTo(88L);
         assertThat(executionContextRef.get().getUsername()).isEqualTo("alice");
         assertThat(paramsRef.get()).containsEntry("prefix", "hello");
         assertThat(paramsRef.get()).containsEntry("name", "tenant");
         assertThat(result.getResult()).isEqualTo(Map.of(
-                "tenantId", 88L,
+                "executionTenantId", 88L,
                 "username", "alice",
                 "prefix", "hello",
                 "name", "tenant"));
-        assertThat(TenantContext.getTenantId()).isEqualTo(999L);
+        assertThat(TenantContext.getActiveTenantId()).isEqualTo(999L);
         assertThat(TenantContext.getTenantSource()).isEqualTo(TenantContext.SOURCE_SESSION);
 
         verify(taskRepository).findByIdAndTenantId(2L, 88L);
@@ -175,7 +175,7 @@ class TaskExecutorServiceExecutionContextTest {
         when(taskExecutorRegistry.find("demoExecutor")).thenReturn(Optional.of(executor));
 
         TaskExecutorService.TaskExecutionResult result = taskExecutorService.execute(
-                SchedulingExecutionContext.builder().tenantId(88L).build(),
+                SchedulingExecutionContext.builder().executionTenantId(88L).build(),
                 instance);
 
         assertThat(result.isSuccess()).isTrue();
@@ -204,7 +204,7 @@ class TaskExecutorServiceExecutionContextTest {
         when(taskRepository.findByIdAndTenantId(22L, 88L)).thenReturn(Optional.of(task));
 
         TaskExecutorService.TaskExecutionResult result = taskExecutorService.execute(
-                SchedulingExecutionContext.builder().tenantId(88L).build(),
+                SchedulingExecutionContext.builder().executionTenantId(88L).build(),
                 instance);
 
         assertThat(result.isSuccess()).isFalse();
@@ -236,7 +236,7 @@ class TaskExecutorServiceExecutionContextTest {
         when(taskTypeRepository.findByIdAndTenantId(33L, 88L)).thenReturn(Optional.of(taskType));
 
         TaskExecutorService.TaskExecutionResult result = taskExecutorService.execute(
-                SchedulingExecutionContext.builder().tenantId(88L).build(),
+                SchedulingExecutionContext.builder().executionTenantId(88L).build(),
                 instance);
 
         assertThat(result.isSuccess()).isFalse();

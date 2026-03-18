@@ -186,19 +186,19 @@ public class IdempotentAspect {
             scope = currentUserId + "|" + scope;
         }
 
-        Long tenantId = TenantContext.getTenantId();
-        if ((tenantId == null || tenantId <= 0) && request != null) {
-            String tenantHeader = request.getHeader("X-Tenant-Id");
-            if (StringUtils.hasText(tenantHeader)) {
+        Long activeTenantId = TenantContext.getActiveTenantId();
+        if ((activeTenantId == null || activeTenantId <= 0) && request != null) {
+            String activeTenantHeader = request.getHeader(com.tiny.platform.core.oauth.tenant.TenantContextContract.ACTIVE_TENANT_ID_HEADER);
+            if (StringUtils.hasText(activeTenantHeader)) {
                 try {
-                    tenantId = Long.parseLong(tenantHeader);
+                    activeTenantId = Long.parseLong(activeTenantHeader);
                 } catch (NumberFormatException e) {
-                    log.debug("幂等性租户头格式非法，忽略: {}", tenantHeader);
+                    log.debug("幂等性活动租户头格式非法，忽略: {}", activeTenantHeader);
                 }
             }
         }
-        if (tenantId != null && tenantId > 0) {
-            return tenantId + "|" + scope;
+        if (activeTenantId != null && activeTenantId > 0) {
+            return activeTenantId + "|" + scope;
         }
         return scope;
     }

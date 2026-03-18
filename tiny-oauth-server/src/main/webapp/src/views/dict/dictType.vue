@@ -159,8 +159,8 @@
           <a-textarea v-model:value="formState.description" :rows="3" :disabled="drawerMode === 'view'"
             placeholder="请输入描述信息" />
         </a-form-item>
-        <a-form-item label="租户ID" name="tenantId">
-          <a-input :value="tenantIdDisplay" disabled />
+        <a-form-item label="记录所属租户ID" name="recordTenantId">
+          <a-input :value="recordTenantIdDisplay" disabled />
         </a-form-item>
         <a-form-item label="分类ID" name="categoryId">
           <a-input-number v-model:value="formState.categoryId" :min="0" style="width: 100%"
@@ -199,7 +199,7 @@ import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
 import { useThrottle } from '@/utils/debounce'
-import { getTenantId } from '@/utils/tenant'
+import { getActiveTenantId } from '@/utils/tenant'
 import {
   getDictTypeList,
   createDictType,
@@ -305,7 +305,7 @@ const INITIAL_COLUMNS: Array<Record<string, any>> = [
   { title: '字典编码', dataIndex: 'dictCode', width: 150 },
   { title: '字典名称', dataIndex: 'dictName', width: 150 },
   { title: '描述', dataIndex: 'description', width: 200 },
-  { title: '租户ID', dataIndex: 'tenantId', width: 100 },
+  { title: '记录所属租户ID', dataIndex: 'recordTenantId', width: 120 },
   { title: '分类ID', dataIndex: 'categoryId', width: 100 },
   { title: '是否内置', dataIndex: 'isBuiltin', width: 100 },
   { title: '是否锁定', dataIndex: 'builtinLocked', width: 100 },
@@ -407,7 +407,7 @@ interface DictTypeFormState {
   dictCode: string
   dictName: string
   description?: string
-  tenantId?: number
+  recordTenantId?: number
   categoryId?: number
   isBuiltin?: boolean
   builtinLocked?: boolean
@@ -419,19 +419,19 @@ const formState = ref<DictTypeFormState>({
   dictCode: '',
   dictName: '',
   description: '',
-  tenantId: undefined,
+  recordTenantId: undefined,
   categoryId: undefined,
   enabled: true,
   sortOrder: 0,
 })
 
-const tenantIdDisplay = computed(() => {
-  const tenantId = formState.value.tenantId ?? resolveTenantId()
-  return tenantId != null ? String(tenantId) : '-'
+const recordTenantIdDisplay = computed(() => {
+  const recordTenantId = formState.value.recordTenantId ?? resolveActiveTenantId()
+  return recordTenantId != null ? String(recordTenantId) : '-'
 })
 
-function resolveTenantId(): number | undefined {
-  const raw = getTenantId()
+function resolveActiveTenantId(): number | undefined {
+  const raw = getActiveTenantId()
   if (!raw) return undefined
   const parsed = Number(raw)
   return Number.isFinite(parsed) ? parsed : undefined
@@ -444,7 +444,7 @@ function openCreateDrawer() {
     dictCode: '',
     dictName: '',
     description: '',
-    tenantId: resolveTenantId(),
+    recordTenantId: resolveActiveTenantId(),
     categoryId: undefined,
     isBuiltin: false,
     builtinLocked: false,
@@ -461,7 +461,7 @@ function openEditDrawer(record: any) {
     dictCode: record.dictCode || '',
     dictName: record.dictName || '',
     description: record.description || '',
-    tenantId: record.tenantId ?? resolveTenantId(),
+    recordTenantId: record.recordTenantId ?? resolveActiveTenantId(),
     categoryId: record.categoryId,
     isBuiltin: record.isBuiltin ?? false,
     builtinLocked: record.builtinLocked ?? false,
@@ -478,7 +478,7 @@ function handleView(record: any) {
     dictCode: record.dictCode || '',
     dictName: record.dictName || '',
     description: record.description || '',
-    tenantId: record.tenantId ?? resolveTenantId(),
+    recordTenantId: record.recordTenantId ?? resolveActiveTenantId(),
     categoryId: record.categoryId,
     isBuiltin: record.isBuiltin ?? false,
     builtinLocked: record.builtinLocked ?? false,
@@ -496,9 +496,9 @@ function handleDrawerClose() {
 
 async function handleSubmit() {
   try {
-    const tenantId = resolveTenantId()
-    if (tenantId == null) {
-      message.error('请先选择租户')
+    const activeTenantId = resolveActiveTenantId()
+    if (activeTenantId == null) {
+      message.error('请先确定当前活动租户')
       return
     }
     const payload: DictTypeCreateUpdateDto = {
@@ -548,11 +548,11 @@ function handleDelete(record: any) {
 }
 
 function isReadonlyTypeRecord(record: any) {
-  return Number(record?.tenantId) === 0 || Boolean(record?.builtinLocked)
+  return Number(record?.recordTenantId) === 0 || Boolean(record?.builtinLocked)
 }
 
 function getTypeReadonlyReason(record: any) {
-  if (Number(record?.tenantId) === 0) {
+  if (Number(record?.recordTenantId) === 0) {
     return '平台字典只读，不允许修改'
   }
   if (record?.builtinLocked) {

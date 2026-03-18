@@ -13,7 +13,7 @@ const uiMocks = vi.hoisted(() => ({
 }))
 
 const tenantMocks = vi.hoisted(() => ({
-  getTenantId: vi.fn(),
+  getActiveTenantId: vi.fn(),
 }))
 
 vi.mock('@/utils/request', () => ({
@@ -23,7 +23,7 @@ vi.mock('@/utils/request', () => ({
 }))
 
 vi.mock('@/utils/tenant', () => ({
-  getTenantId: tenantMocks.getTenantId,
+  getActiveTenantId: tenantMocks.getActiveTenantId,
 }))
 
 vi.mock('ant-design-vue', () => ({
@@ -55,7 +55,7 @@ async function flushPromises() {
 describe('ExportTaskExamples.vue', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    tenantMocks.getTenantId.mockReturnValue('1')
+    tenantMocks.getActiveTenantId.mockReturnValue('1')
   })
 
   function mountView() {
@@ -114,7 +114,7 @@ describe('ExportTaskExamples.vue', () => {
             exportType: 'demo_export_usage',
             filters: expect.objectContaining({
               is_billable: true,
-              tenantId: '1',
+              activeTenantId: '1',
             }),
           }),
         ],
@@ -202,6 +202,7 @@ describe('ExportTaskExamples.vue', () => {
 
     const modalConfig = uiMocks.modalInfo.mock.calls[0]?.[0]
     const contentVNode = modalConfig.content()
-    expect(String(contentVNode.children)).toContain('"tenantId": "1"')
+    expect(String(contentVNode.children)).toContain('"activeTenantId": "1"')
+    expect(String(contentVNode.children)).toContain('"recordTenantId"')
   })
 })

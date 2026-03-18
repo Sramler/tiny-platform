@@ -1,7 +1,9 @@
 package com.tiny.platform.core.oauth.config;
 
+import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationSessionManager;
 import com.tiny.platform.core.oauth.security.LoginFailurePolicy;
+import com.tiny.platform.core.oauth.security.PermissionVersionService;
 import com.tiny.platform.core.oauth.service.AuthenticationAuditService;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
@@ -11,6 +13,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.authentication.WebAuthenticationDetails;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 import java.time.Duration;
@@ -97,12 +100,15 @@ class CoreOauthConfigPojoAndFactoryCoverageTest {
         assertThat(repository).isInstanceOf(HttpSessionSecurityContextRepository.class);
 
         TenantRepository tenantRepository = mock(TenantRepository.class);
-        assertThat(securityConfig.tenantContextFilter(tenantRepository)).isNotNull();
+        @SuppressWarnings("unchecked")
+        ObjectProvider<PermissionVersionService> permissionVersionProvider = mock(ObjectProvider.class);
+        assertThat(securityConfig.tenantContextFilter(tenantRepository, permissionVersionProvider)).isNotNull();
 
         UserRepository userRepository = mock(UserRepository.class);
+        AuthUserResolutionService authUserResolutionService = mock(AuthUserResolutionService.class);
         AuthenticationAuditService auditService = mock(AuthenticationAuditService.class);
         LoginFailurePolicy loginFailurePolicy = new LoginFailurePolicy(new LoginProtectionProperties());
-        assertThat(securityConfig.customLoginFailureHandler(userRepository, auditService, loginFailurePolicy))
+        assertThat(securityConfig.customLoginFailureHandler(userRepository, authUserResolutionService, auditService, loginFailurePolicy))
                 .isInstanceOf(CustomLoginFailureHandler.class);
 
         SecurityService securityService = mock(SecurityService.class);
@@ -111,7 +117,7 @@ class CoreOauthConfigPojoAndFactoryCoverageTest {
         frontendProperties.setTotpVerifyUrl("/totp-verify");
         MultiFactorAuthenticationSessionManager sessionManager = mock(MultiFactorAuthenticationSessionManager.class);
         assertThat(securityConfig.customLoginSuccessHandler(
-                securityService, userRepository, frontendProperties, sessionManager, auditService))
+                securityService, userRepository, frontendProperties, sessionManager, authUserResolutionService, auditService))
                 .isInstanceOf(CustomLoginSuccessHandler.class);
     }
 }

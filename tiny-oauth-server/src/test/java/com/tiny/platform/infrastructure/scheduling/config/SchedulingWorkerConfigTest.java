@@ -32,14 +32,14 @@ class SchedulingWorkerConfigTest {
         TaskDecorator decorator = runnable -> runnable;
         ExecutorService executor = config.schedulingTaskExecutor(decorator);
         try {
-            TenantContext.setTenantId(88L);
+            TenantContext.setActiveTenantId(88L);
             TenantContext.setTenantSource("request");
             AtomicLong childTenantId = new AtomicLong(-1L);
             AtomicReference<String> childSource = new AtomicReference<>();
             CountDownLatch latch = new CountDownLatch(1);
 
             executor.execute(() -> {
-                childTenantId.set(TenantContext.getTenantId());
+                childTenantId.set(TenantContext.getActiveTenantId());
                 childSource.set(TenantContext.getTenantSource());
                 latch.countDown();
             });
@@ -47,7 +47,7 @@ class SchedulingWorkerConfigTest {
             assertThat(latch.await(2, TimeUnit.SECONDS)).isTrue();
             assertThat(childTenantId.get()).isEqualTo(88L);
             assertThat(childSource.get()).isEqualTo("request");
-            assertThat(TenantContext.getTenantId()).isEqualTo(88L);
+            assertThat(TenantContext.getActiveTenantId()).isEqualTo(88L);
             assertThat(TenantContext.getTenantSource()).isEqualTo("request");
         } finally {
             executor.shutdownNow();
@@ -64,19 +64,19 @@ class SchedulingWorkerConfigTest {
 
         ExecutorService executor = config.schedulingDispatchExecutor(runnable -> runnable);
         try {
-            TenantContext.setTenantId(99L);
+            TenantContext.setActiveTenantId(99L);
             TenantContext.setTenantSource("dispatch");
             AtomicLong childTenantId = new AtomicLong(-1L);
             CountDownLatch latch = new CountDownLatch(1);
 
             executor.execute(() -> {
-                childTenantId.set(TenantContext.getTenantId());
+                childTenantId.set(TenantContext.getActiveTenantId());
                 latch.countDown();
             });
 
             assertThat(latch.await(2, TimeUnit.SECONDS)).isTrue();
             assertThat(childTenantId.get()).isEqualTo(99L);
-            assertThat(TenantContext.getTenantId()).isEqualTo(99L);
+            assertThat(TenantContext.getActiveTenantId()).isEqualTo(99L);
             assertThat(TenantContext.getTenantSource()).isEqualTo("dispatch");
         } finally {
             executor.shutdownNow();

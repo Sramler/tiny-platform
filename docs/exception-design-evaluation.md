@@ -53,8 +53,8 @@ com.tiny.platform.infrastructure.core.exception/
 
 **建议**:
 ```java
-// 可在 Problem 中添加租户上下文（可选）
-.with("tenantId", getCurrentTenantId(request))
+// 可在 Problem 中添加当前活动租户上下文（可选）
+.with("activeTenantId", getCurrentActiveTenantId(request))
 ```
 
 ### 2.2 可扩展性 ⭐⭐⭐⭐⭐
@@ -196,8 +196,8 @@ public class OrderServiceExceptionHandler extends BaseExceptionHandler {
 
 #### 6.1.1 多租户支持增强
 ```java
-// 可选：在 Problem 中添加租户上下文
-.with("tenantId", getCurrentTenantId(request))
+// 可选：在 Problem 中添加当前活动租户上下文
+.with("activeTenantId", getCurrentActiveTenantId(request))
 ```
 
 #### 6.1.2 国际化支持（如果需要）
@@ -271,4 +271,3 @@ public class OrderServiceExceptionHandler extends BaseExceptionHandler {
 3. 逐步将 `ErrorResponse` 迁移到 Problem 格式
 
 **总体评价**: 该异常处理设计**完全符合** SaaS 平台演进预期和 RFC 7807 标准，**具有高度的轻量级和通用性**，是一个**优秀的设计**。
-

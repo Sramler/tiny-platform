@@ -1,21 +1,28 @@
 package com.tiny.platform.application.controller.dict.security;
 
+import com.tiny.platform.core.oauth.security.LegacyAuthConstants;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Component;
 
+import java.util.Set;
+
 /**
  * 平台字典管理权限守卫。
+ * 规范权限码：dict:platform:manage；兼容期管理员角色收口到 {@link LegacyAuthConstants#ROLE_ADMIN}。
  */
 @Component("dictPlatformAccessGuard")
 public class DictPlatformAccessGuard {
 
+    private static final Set<String> PLATFORM_DICT_AUTHORITIES = Set.of("dict:platform:manage");
+
     public boolean canManagePlatformDict(Authentication authentication) {
-        if (authentication == null) {
+        if (authentication == null || !authentication.isAuthenticated()) {
             return false;
         }
         return authentication.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
-                .anyMatch(authority -> "ROLE_ADMIN".equalsIgnoreCase(authority) || "ADMIN".equalsIgnoreCase(authority));
+                .anyMatch(authority -> PLATFORM_DICT_AUTHORITIES.contains(authority)
+                    || LegacyAuthConstants.ADMIN_AUTHORITIES.contains(authority));
     }
 }

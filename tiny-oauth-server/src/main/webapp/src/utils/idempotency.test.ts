@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-  getTenantId: vi.fn(),
+  getActiveTenantId: vi.fn(),
 }))
 
 vi.mock('@/utils/tenant', () => ({
-  getTenantId: mocks.getTenantId,
+  getActiveTenantId: mocks.getActiveTenantId,
 }))
 
 import {
@@ -18,7 +18,7 @@ import {
 describe('idempotency.ts', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mocks.getTenantId.mockReturnValue('101')
+    mocks.getActiveTenantId.mockReturnValue('101')
   })
 
   it('should generate stable keys for the same semantic payload', () => {
@@ -43,7 +43,7 @@ describe('idempotency.ts', () => {
   it('should change key when tenant or scope changes', () => {
     const tenant101 = createIdempotencyKey('sys-users:create', { username: 'alice' })
 
-    mocks.getTenantId.mockReturnValue('102')
+    mocks.getActiveTenantId.mockReturnValue('102')
     const tenant102 = createIdempotencyKey('sys-users:create', { username: 'alice' })
     const updateKey = createIdempotencyKey('sys-users:update:1', { username: 'alice' })
 

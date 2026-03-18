@@ -8,9 +8,8 @@ import com.tiny.platform.infrastructure.auth.resource.dto.ResourceRequestDto;
 import com.tiny.platform.infrastructure.auth.resource.dto.ResourceResponseDto;
 import com.tiny.platform.infrastructure.auth.resource.enums.ResourceType;
 import com.tiny.platform.infrastructure.auth.resource.repository.ResourceRepository;
-import com.tiny.platform.infrastructure.auth.role.domain.Role;
 import com.tiny.platform.infrastructure.auth.role.repository.RoleRepository;
-import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
+import com.tiny.platform.infrastructure.auth.role.service.EffectiveRoleResolutionService;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -19,22 +18,25 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
- * 资源服务实现类
+ * 资源服务实现类。
+ * <p>租户范围以 {@link TenantContext#getActiveTenantId()} 为准，不以 user.tenant_id 为依据。
+ * 见 docs/TINY_PLATFORM_AUTHORIZATION_LEGACY_REMOVAL_PLAN.md §3。
  */
 @Service
 public class ResourceServiceImpl implements ResourceService {
 
     private final ResourceRepository resourceRepository;
-    private final UserRepository userRepository;
     private final RoleRepository roleRepository;
+    private final EffectiveRoleResolutionService effectiveRoleResolutionService;
 
-    public ResourceServiceImpl(ResourceRepository resourceRepository, UserRepository userRepository, RoleRepository roleRepository) {
+    public ResourceServiceImpl(ResourceRepository resourceRepository,
+                               RoleRepository roleRepository,
+                               EffectiveRoleResolutionService effectiveRoleResolutionService) {
         this.resourceRepository = resourceRepository;
-        this.userRepository = userRepository;
         this.roleRepository = roleRepository;
+        this.effectiveRoleResolutionService = effectiveRoleResolutionService;
     }
 
     @Override
@@ -478,36 +480,27 @@ public class ResourceServiceImpl implements ResourceService {
     @Override
     public List<Resource> findByUserId(Long userId) {
         Long tenantId = requireTenantId();
-        return userRepository.findByIdAndTenantId(userId, tenantId)
-                .map(user -> {
-                    // 收集用户的角色ID
-                    Set<Long> roleIds = user.getRoles().stream()
-                            .filter(Objects::nonNull)
-                            .map(Role::getId)
-                            .filter(Objects::nonNull)
-                            .collect(Collectors.toSet());
-                    if (roleIds.isEmpty()) {
-                        return Collections.<Resource>emptyList();
-                    }
+        Set<Long> roleIds = new LinkedHashSet<>(effectiveRoleResolutionService.findEffectiveRoleIdsForUserInTenant(userId, tenantId));
+        if (roleIds.isEmpty()) {
+            return Collections.emptyList();
+        }
 
-                    // 通过角色ID查询关联的资源ID
-                    Set<Long> resourceIds = new HashSet<>();
-                    for (Long roleId : roleIds) {
-                        List<Long> ids = roleRepository.findResourceIdsByRoleId(roleId);
-                        if (ids != null && !ids.isEmpty()) {
-                            resourceIds.addAll(ids);
-                        }
-                    }
-                    if (resourceIds.isEmpty()) {
-                        return Collections.<Resource>emptyList();
-                    }
+        Set<Long> resourceIds = new HashSet<>();
+        for (Long roleId : roleIds) {
+            List<Long> ids = roleRepository.findResourceIdsByRoleId(roleId);
+            if (ids != null && !ids.isEmpty()) {
+                resourceIds.addAll(ids);
+            }
+        }
+        if (resourceIds.isEmpty()) {
+            return Collections.emptyList();
+        }
 
-                    // 查询资源实体并按 sort 升序返回
-                    List<Resource> resources = resourceRepository.findByIdInAndTenantId(new ArrayList<>(resourceIds), tenantId);
-                    resources.sort(Comparator.comparing(Resource::getSort, Comparator.nullsLast(Integer::compareTo)));
-                    return resources;
-                })
-                .orElse(Collections.emptyList());
+        List<Resource> resources = new ArrayList<>(
+                resourceRepository.findByIdInAndTenantId(new ArrayList<>(resourceIds), tenantId)
+        );
+        resources.sort(Comparator.comparing(Resource::getSort, Comparator.nullsLast(Integer::compareTo)));
+        return resources;
     }
 
     /**
@@ -515,6 +508,7 @@ public class ResourceServiceImpl implements ResourceService {
      */
     private ResourceResponseDto toDto(Resource resource) {
         ResourceResponseDto dto = new ResourceResponseDto();
+        dto.setRecordTenantId(resource.getTenantId());
         dto.setId(resource.getId());
         dto.setName(resource.getName());
         dto.setTitle(resource.getTitle());
@@ -553,7 +547,7 @@ public class ResourceServiceImpl implements ResourceService {
     }
 
     private Long requireTenantId() {
-        Long tenantId = TenantContext.getTenantId();
+        Long tenantId = TenantContext.getActiveTenantId();
         if (tenantId == null) {
             throw new BusinessException(ErrorCode.MISSING_PARAMETER, "缺少租户信息");
         }

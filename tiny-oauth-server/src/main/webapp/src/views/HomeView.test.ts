@@ -108,7 +108,7 @@ describe('HomeView.vue', () => {
 
   it('should load overview and show governance entry for platform metrics operators', async () => {
     mocks.authUser.value = {
-      access_token: createToken(['ROLE_ADMIN', 'idempotentOps']),
+      access_token: createToken(['ROLE_ADMIN', 'idempotent:ops:view']),
     }
 
     const wrapper = mountView()
@@ -125,9 +125,9 @@ describe('HomeView.vue', () => {
 
   it('should preserve current tenant scope when opening governance page', async () => {
     mocks.authUser.value = {
-      access_token: createToken(['ROLE_ADMIN', 'idempotentOps']),
+      access_token: createToken(['ROLE_ADMIN', 'idempotent:ops:view']),
     }
-    window.localStorage.setItem('app_tenant_id', '7')
+    window.localStorage.setItem('app_active_tenant_id', '7')
 
     const wrapper = mountView()
     await flushPromises()
@@ -136,7 +136,7 @@ describe('HomeView.vue', () => {
     await wrapper.find('button').trigger('click')
     expect(mocks.routerPush).toHaveBeenCalledWith({
       path: '/ops/idempotent',
-      query: { tenantId: '7' },
+      query: { activeTenantId: '7' },
     })
   })
 

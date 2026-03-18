@@ -12,6 +12,7 @@ import {
   type IdempotentTopKey,
 } from '@/api/idempotent'
 import { tenantList, type Tenant } from '@/api/tenant'
+import { resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
 
 const router = useRouter()
 const route = useRoute()
@@ -68,10 +69,14 @@ const metrics = ref<IdempotentMetricsSnapshot>(emptyMetrics)
 const mqMetrics = ref<IdempotentMqMetricsSnapshot>(emptyMqMetrics)
 const topKeys = ref<IdempotentTopKey[]>([])
 const tenantOptions = ref<Tenant[]>([])
-const selectedTenantFilter = ref<number | string>(normalizeTenantFilterValue(route.query.tenantId))
+function getRouteTenantFilterSource() {
+  return resolveActiveTenantQueryValue(route.query)
+}
+
+const selectedTenantFilter = ref<number | string>(normalizeTenantFilterValue(getRouteTenantFilterSource()))
 const lastUpdatedAt = ref('')
 
-const selectedTenantId = computed(() =>
+const selectedActiveTenantId = computed(() =>
   typeof selectedTenantFilter.value === 'number' && selectedTenantFilter.value > 0
     ? selectedTenantFilter.value
     : undefined,
@@ -86,14 +91,14 @@ const tenantFilterOptions = computed(() => [
 ])
 
 const selectedTenantLabel = computed(() => {
-  if (selectedTenantId.value == null) {
+  if (selectedActiveTenantId.value == null) {
     return '平台汇总'
   }
-  const tenant = tenantOptions.value.find((item) => item.id === selectedTenantId.value)
+  const tenant = tenantOptions.value.find((item) => item.id === selectedActiveTenantId.value)
   if (tenant) {
     return `${tenant.name} (${tenant.code})`
   }
-  return `租户 #${selectedTenantId.value}`
+  return `租户 #${selectedActiveTenantId.value}`
 })
 
 const successRate = computed(() => {
@@ -181,7 +186,10 @@ function updateTimestamp() {
 }
 
 function goBack() {
-  void router.push('/')
+  void router.push({
+    path: '/',
+    query: withActiveTenantQuery({}, resolveActiveTenantQueryValue(route.query)),
+  })
 }
 
 function normalizeTenantFilterValue(value: unknown): number | string {
@@ -190,26 +198,21 @@ function normalizeTenantFilterValue(value: unknown): number | string {
     return candidate
   }
   if (typeof candidate === 'string' && /^\d+$/.test(candidate.trim())) {
-    const tenantId = Number(candidate.trim())
-    return tenantId > 0 ? tenantId : ALL_TENANT_FILTER
+    const activeTenantId = Number(candidate.trim())
+    return activeTenantId > 0 ? activeTenantId : ALL_TENANT_FILTER
   }
   return ALL_TENANT_FILTER
 }
 
-async function syncTenantFilterToRoute(value: number | string) {
+async function syncActiveTenantQuery(value: number | string) {
   const normalized = normalizeTenantFilterValue(value)
-  const current = normalizeTenantFilterValue(route.query.tenantId)
+  const current = normalizeTenantFilterValue(getRouteTenantFilterSource())
   if (normalized === current) {
     return
   }
 
   const nextQuery = { ...route.query }
-  if (normalized === ALL_TENANT_FILTER) {
-    delete nextQuery.tenantId
-  } else {
-    nextQuery.tenantId = String(normalized)
-  }
-  await router.replace({ query: nextQuery })
+  await router.replace({ query: withActiveTenantQuery(nextQuery, normalized === ALL_TENANT_FILTER ? null : normalized) })
 }
 
 async function loadTenantOptions() {
@@ -249,7 +252,7 @@ async function loadTenantOptions() {
 
 async function handleTenantFilterChange(value: number | string | undefined) {
   selectedTenantFilter.value = normalizeTenantFilterValue(value)
-  await syncTenantFilterToRoute(selectedTenantFilter.value)
+  await syncActiveTenantQuery(selectedTenantFilter.value)
   void loadOverview()
 }
 
@@ -257,11 +260,11 @@ async function loadOverview() {
   loading.value = true
   accessDenied.value = false
   try {
-    const tenantId = selectedTenantId.value
+    const activeTenantId = selectedActiveTenantId.value
     const [metricsSnapshot, hotScopes, mqSnapshot] = await Promise.all([
-      getIdempotentMetrics(tenantId),
-      getIdempotentTopKeys(10, tenantId),
-      getIdempotentMqMetrics(tenantId),
+      getIdempotentMetrics(activeTenantId),
+      getIdempotentTopKeys(10, activeTenantId),
+      getIdempotentMqMetrics(activeTenantId),
     ])
     metrics.value = metricsSnapshot
     topKeys.value = hotScopes
@@ -288,7 +291,7 @@ onMounted(() => {
 })
 
 watch(
-  () => route.query.tenantId,
+  () => getRouteTenantFilterSource(),
   (value) => {
     const normalized = normalizeTenantFilterValue(value)
     if (normalized === selectedTenantFilter.value) {
@@ -363,7 +366,7 @@ watch(
     <a-card v-if="accessDenied" class="panel-card restricted-card" :bordered="false">
       <p class="restricted-title">无权查看平台级幂等治理指标</p>
       <p class="restricted-copy">
-        当前页面承载的是平台级汇总指标，后端已限制为默认平台租户下具备 `ROLE_ADMIN + idempotentOps` 权限的管理员访问。
+        当前页面承载的是平台级汇总指标，后端已限制为默认平台租户下具备 `ROLE_ADMIN + idempotent:ops:view` 权限的管理员访问。
       </p>
     </a-card>
 

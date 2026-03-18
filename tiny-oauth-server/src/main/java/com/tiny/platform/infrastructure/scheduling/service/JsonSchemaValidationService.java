@@ -37,13 +37,13 @@ public class JsonSchemaValidationService {
                 try {
                     return objectMapper.readTree(key);
                 } catch (Exception e) {
-                    throw SchedulingExceptions.validation("解析 JSON Schema 失败: %s", e.getMessage());
+                    throw SchedulingExceptions.validation("解析 JSON Schema 失败，请检查 Schema 格式");
                 }
             });
         } catch (RuntimeException e) {
             throw e;
         } catch (Exception e) {
-            throw SchedulingExceptions.validation("解析 JSON Schema 失败: %s", e.getMessage());
+            throw SchedulingExceptions.validation("解析 JSON Schema 失败，请检查 Schema 格式");
         }
     }
 
@@ -56,14 +56,14 @@ public class JsonSchemaValidationService {
                 try {
                     return objectMapper.readTree(key);
                 } catch (Exception e) {
-                throw SchedulingExceptions.validation("解析 JSON Schema 失败: %s", e.getMessage());
+                    throw SchedulingExceptions.validation("解析 JSON Schema 失败，请检查 Schema 格式");
                 }
             });
             doValidate(schemaNode, params, "$");
         } catch (RuntimeException e) {
             throw e;
         } catch (Exception e) {
-            throw SchedulingExceptions.validation("参数校验失败: %s", e.getMessage());
+            throw SchedulingExceptions.validation("参数校验失败，请检查参数格式");
         }
     }
 

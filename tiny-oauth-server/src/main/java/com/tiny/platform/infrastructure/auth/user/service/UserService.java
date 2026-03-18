@@ -31,4 +31,9 @@ public interface UserService {
      * @param roleIds 角色ID列表
      */
     void updateUserRoles(Long userId, List<Long> roleIds);
+
+    /**
+     * 查询用户当前绑定的角色ID列表。
+     */
+    List<Long> getRoleIdsByUserId(Long userId);
 }

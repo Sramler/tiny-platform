@@ -9,10 +9,12 @@ import com.tiny.platform.infrastructure.tenant.service.TenantService;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/sys/tenants")
+@PreAuthorize("@tenantManagementAccessGuard.canManage(authentication)")
 public class TenantController {
     private final TenantService tenantService;
 

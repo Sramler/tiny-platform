@@ -52,6 +52,7 @@ describe('TotpBind.vue', () => {
     routeState.query = {}
     mocks.ensureCsrfToken.mockReset()
     mocks.fetch.mockReset()
+    window.localStorage.clear()
 
     mocks.ensureCsrfToken.mockResolvedValue({
       token: 'csrf-token',
@@ -61,7 +62,7 @@ describe('TotpBind.vue', () => {
     mocks.fetch.mockImplementation(async (input: string | URL | Request) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
       if (url.includes('/self/security/status')) {
-        return new Response(JSON.stringify({ disableMfa: false, forceMfa: false }), {
+        return new Response(JSON.stringify({ activeTenantId: 9, disableMfa: false, forceMfa: false }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         })
@@ -101,6 +102,7 @@ describe('TotpBind.vue', () => {
     expect((csrfInput.element as HTMLInputElement).value).toBe('csrf-token')
     expect(qrImage.exists()).toBe(true)
     expect(qrImage.attributes('src')).toBe('data:image/png;base64,totp')
+    expect(window.localStorage.getItem('app_active_tenant_id')).toBe('9')
   })
 
   it('should show load error and disable bind submit when status request fails', async () => {

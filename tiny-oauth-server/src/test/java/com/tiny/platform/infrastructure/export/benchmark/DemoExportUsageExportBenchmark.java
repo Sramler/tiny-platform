@@ -186,11 +186,11 @@ public final class DemoExportUsageExportBenchmark {
         sheet.setSheetName("demo_export_usage");
         sheet.setExportType("demo_export_usage");
         Map<String, Object> filters = new HashMap<>();
-        filters.put("tenantId", TENANT_ID);
+        filters.put("activeTenantId", TENANT_ID);
         sheet.setFilters(filters);
         sheet.setColumns(List.of(
             leaf("ID", "id"),
-            leaf("TenantID", "tenantId"),
+            leaf("RecordTenantID", "recordTenantId"),
             leaf("UsageDate", "usageDate"),
             leaf("ProductCode", "productCode"),
             leaf("ProductName", "productName"),

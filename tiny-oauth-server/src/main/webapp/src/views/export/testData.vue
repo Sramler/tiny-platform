@@ -3,8 +3,8 @@
     <div class="content-card">
       <div class="form-container">
         <a-form layout="inline" :model="query">
-          <a-form-item label="租户ID">
-            <a-input :value="tenantIdDisplay" disabled />
+          <a-form-item label="当前活动租户ID">
+            <a-input :value="activeTenantIdDisplay" disabled />
           </a-form-item>
           <a-form-item label="产品编码">
             <a-input v-model:value="query.productCode" placeholder="请输入产品编码" allow-clear />
@@ -283,8 +283,8 @@
       :title="drawerMode === 'create' ? '新建测试数据' : drawerMode === 'edit' ? '编辑测试数据' : '查看测试数据'" width="50%"
       :get-container="false" :style="{ position: 'absolute' }" @close="handleDrawerClose">
       <a-form :model="formState" layout="vertical">
-        <a-form-item label="租户ID">
-          <a-input :value="tenantIdDisplay" disabled />
+        <a-form-item label="记录所属租户ID">
+          <a-input :value="activeTenantIdDisplay" disabled />
         </a-form-item>
         <a-form-item label="用量日期">
           <a-date-picker v-model:value="formState.usageDate" style="width: 100%" :disabled="drawerMode === 'view'" />
@@ -534,13 +534,13 @@ import {
 } from '@/api/demoExportUsage'
 import { useThrottle } from '@/utils/debounce'
 import request from '@/utils/request'
-import { getTenantId } from '@/utils/tenant'
+import { getActiveTenantId } from '@/utils/tenant'
 
 const router = useRouter()
 
 interface DemoUsageFormState {
   id?: number
-  tenantId: number
+  recordTenantId: number
   usageDate: Dayjs | null
   productCode: string
   productName: string
@@ -584,18 +584,17 @@ const statusColorMap: Record<string, string> = {
 }
 
 const query = ref({
-  tenantId: '',
   productCode: '',
   status: undefined as string | undefined,
 })
 
-const tenantIdDisplay = computed(() => {
-  const tenantId = resolveTenantId()
-  return tenantId != null ? String(tenantId) : '-'
+const activeTenantIdDisplay = computed(() => {
+  const activeTenantId = resolveActiveTenantId()
+  return activeTenantId != null ? String(activeTenantId) : '-'
 })
 
-function resolveTenantId(): number | undefined {
-  const raw = getTenantId()
+function resolveActiveTenantId(): number | undefined {
+  const raw = getActiveTenantId()
   if (!raw) return undefined
   const parsed = Number(raw)
   return Number.isFinite(parsed) ? parsed : undefined
@@ -633,7 +632,7 @@ const paginationConfig = computed(() => {
 
 const INITIAL_COLUMNS = [
   { title: 'ID', dataIndex: 'id', width: 80, sorter: true },
-  { title: '租户ID', dataIndex: 'tenantId', width: 140 },
+  { title: '记录所属租户ID', dataIndex: 'recordTenantId', width: 160 },
   { title: '用量日期', dataIndex: 'usageDate', width: 120, sorter: true },
   { title: '产品编码', dataIndex: 'productCode', width: 120 },
   { title: '产品名称', dataIndex: 'productName', width: 160 },
@@ -671,7 +670,7 @@ const INITIAL_COLUMNS = [
 
 // 默认显示的列（基础字段 + 部分重要新字段）
 const DEFAULT_VISIBLE_COLUMNS = [
-  'id', 'tenantId', 'usageDate', 'productCode', 'productName',
+  'id', 'recordTenantId', 'usageDate', 'productCode', 'productName',
   'usageQty', 'unit', 'amount', 'currency', 'billable', 'status',
   'priority', 'qualityScore', 'customerName', 'action'
 ]
@@ -721,9 +720,9 @@ const tableLocale = computed(() => {
 })
 
 async function loadData() {
-  const tenantId = resolveTenantId()
-  if (!tenantId) {
-    message.error('请先选择租户')
+  const activeTenantId = resolveActiveTenantId()
+  if (!activeTenantId) {
+    message.error('请先确定当前活动租户')
     tableData.value = []
     pagination.value.total = 0
     return
@@ -731,7 +730,7 @@ async function loadData() {
   loading.value = true
   try {
     const params = {
-      tenantId,
+      activeTenantId,
       productCode: query.value.productCode.trim(),
       status: query.value.status,
       current: pagination.value.current,
@@ -755,7 +754,6 @@ function handleSearch() {
 const throttledSearch = useThrottle(handleSearch, 800)
 
 function handleReset() {
-  query.value.tenantId = resolveTenantId() ? String(resolveTenantId()) : ''
   query.value.productCode = ''
   query.value.status = undefined
   pagination.value.current = 1
@@ -790,7 +788,7 @@ function handlePageSizeChange(_current: number, size: number) {
 const drawerVisible = ref(false)
 const drawerMode = ref<'create' | 'edit' | 'view'>('create')
 const formState = ref<DemoUsageFormState>({
-  tenantId: 0,
+  recordTenantId: 0,
   usageDate: null,
   productCode: '',
   productName: '',
@@ -967,14 +965,14 @@ const generateFormState = ref({
 })
 
 function openCreateDrawer() {
-  const tenantId = resolveTenantId()
-  if (!tenantId) {
-    message.error('请先选择租户')
+  const activeTenantId = resolveActiveTenantId()
+  if (!activeTenantId) {
+    message.error('请先确定当前活动租户')
     return
   }
   drawerMode.value = 'create'
   formState.value = {
-    tenantId,
+    recordTenantId: activeTenantId,
     usageDate: dayjs(),
     productCode: '',
     productName: '',
@@ -1016,7 +1014,7 @@ function openEditDrawer(record: any) {
   drawerMode.value = 'edit'
   formState.value = {
     id: record.id,
-    tenantId: record.tenantId ?? resolveTenantId() ?? 0,
+    recordTenantId: record.recordTenantId ?? resolveActiveTenantId() ?? 0,
     usageDate: record.usageDate ? dayjs(record.usageDate) : null,
     productCode: record.productCode || '',
     productName: record.productName || '',
@@ -1058,7 +1056,7 @@ function handleView(record: any) {
   drawerMode.value = 'view'
   formState.value = {
     id: record.id,
-    tenantId: record.tenantId ?? resolveTenantId() ?? 0,
+    recordTenantId: record.recordTenantId ?? resolveActiveTenantId() ?? 0,
     usageDate: record.usageDate ? dayjs(record.usageDate) : null,
     productCode: record.productCode || '',
     productName: record.productName || '',
@@ -1103,13 +1101,13 @@ function handleDrawerClose() {
 }
 
 async function handleSubmit() {
-  const tenantId = resolveTenantId()
-  if (!tenantId) {
-    message.error('请先选择租户')
+  const activeTenantId = resolveActiveTenantId()
+  if (!activeTenantId) {
+    message.error('请先确定当前活动租户')
     return
   }
   const payload: any = {
-    tenantId,
+    recordTenantId: formState.value.recordTenantId || activeTenantId,
     usageDate: formState.value.usageDate ? formState.value.usageDate.format('YYYY-MM-DD') : null,
     productCode: formState.value.productCode,
     productName: formState.value.productName,
@@ -1197,9 +1195,9 @@ function handleGenerateDrawerClose() {
 }
 
 async function handleGenerateSubmit() {
-  const tenantId = resolveTenantId()
-  if (!tenantId) {
-    message.error('请先选择租户')
+  const activeTenantId = resolveActiveTenantId()
+  if (!activeTenantId) {
+    message.error('请先确定当前活动租户')
     return
   }
   if (!generateFormState.value.days || generateFormState.value.days <= 0) {
@@ -1215,7 +1213,7 @@ async function handleGenerateSubmit() {
   try {
     await generateDemoExportUsage(
       {
-        tenantId,
+        activeTenantId,
         days: generateFormState.value.days,
         rowsPerDay: generateFormState.value.rowsPerDay,
         targetRows: generateFormState.value.targetRows || 0,
@@ -1285,9 +1283,9 @@ function parseCategoryPath(categoryPath: any): string[] {
 }
 
 async function handleClearDemo() {
-  const tenantId = resolveTenantId()
-  if (!tenantId) {
-    message.error('请先选择租户')
+  const activeTenantId = resolveActiveTenantId()
+  if (!activeTenantId) {
+    message.error('请先确定当前活动租户')
     return
   }
   Modal.confirm({
@@ -1298,7 +1296,7 @@ async function handleClearDemo() {
     cancelText: '取消',
     onOk: async () => {
       try {
-        await clearDemoExportUsage({ tenantId })
+        await clearDemoExportUsage({ activeTenantId })
         message.success('已清空测试数据')
         loadData()
       } catch (error: any) {
@@ -1723,9 +1721,9 @@ const getExportColumns = () => {
 // 构建导出请求的过滤条件
 const getExportFilters = () => {
   const filters: Record<string, any> = {}
-  const tenantId = resolveTenantId()
-  if (tenantId) {
-    filters.tenantId = tenantId
+  const activeTenantId = resolveActiveTenantId()
+  if (activeTenantId) {
+    filters.activeTenantId = activeTenantId
   }
   if (query.value.productCode?.trim()) {
     filters.productCode = query.value.productCode.trim()
@@ -1738,9 +1736,9 @@ const getExportFilters = () => {
 
 // 同步导出当前页数据
 async function handleExportSync() {
-  const tenantId = resolveTenantId()
-  if (!tenantId) {
-    message.error('请先选择租户')
+  const activeTenantId = resolveActiveTenantId()
+  if (!activeTenantId) {
+    message.error('请先确定当前活动租户')
     return
   }
   exporting.value = true
@@ -1788,9 +1786,9 @@ async function handleExportSync() {
 
 // 异步导出全部数据
 async function handleExportAsync() {
-  const tenantId = resolveTenantId()
-  if (!tenantId) {
-    message.error('请先选择租户')
+  const activeTenantId = resolveActiveTenantId()
+  if (!activeTenantId) {
+    message.error('请先确定当前活动租户')
     return
   }
   exportingAsync.value = true

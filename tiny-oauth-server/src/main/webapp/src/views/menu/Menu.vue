@@ -2,6 +2,16 @@
   <!-- 外层内容容器，统一风格 -->
   <div class="content-container" style="position: relative;">
     <div class="content-card">
+      <div v-if="!canReadMenuManagement" class="platform-guard-card">
+        <div class="platform-guard-kicker">Permission Required</div>
+        <h3>菜单管理需要额外授权</h3>
+        <p>
+          当前页面属于后台配置面。只有具备 <code>system:menu:list</code> 或管理员权限的用户，才会请求
+          <code>/sys/menus</code> 并展示菜单管理数据。
+        </p>
+      </div>
+
+      <div v-if="canReadMenuManagement">
       <!-- 查询表单，风格与用户管理一致 -->
       <div class="form-container">
         <a-form layout="inline" :model="query">
@@ -31,13 +41,13 @@
       <div class="toolbar-container">
         <div class="table-title">菜单列表</div>
         <div class="table-actions">
-          <div v-if="selectedRowKeys.length > 0" class="batch-actions">
+          <div v-if="canDeleteMenuManagement && selectedRowKeys.length > 0" class="batch-actions">
             <a-button type="primary" danger @click="throttledBatchDelete" class="toolbar-btn">
               批量删除 ({{ selectedRowKeys.length }})
             </a-button>
             <a-button @click="clearSelection" class="toolbar-btn">取消选择</a-button>
           </div>
-          <a-button type="link" @click="throttledCreate" class="toolbar-btn">
+          <a-button v-if="canCreateMenuManagement" type="link" @click="throttledCreate" class="toolbar-btn">
             <template #icon>
               <PlusOutlined />
             </template>
@@ -128,13 +138,13 @@
               </template>
               <template v-else-if="column.dataIndex === 'action'">
                 <div class="action-buttons">
-                  <a-button type="link" size="small" @click.stop="throttledEdit(record)" class="action-btn">
+                  <a-button v-if="canUpdateMenuManagement" type="link" size="small" @click.stop="throttledEdit(record)" class="action-btn">
                     <template #icon>
                       <EditOutlined />
                     </template>
                     编辑
                   </a-button>
-                  <a-tooltip v-if="record.leaf" title="叶子节点不可添加子菜单">
+                  <a-tooltip v-if="canCreateMenuManagement && record.leaf" title="叶子节点不可添加子菜单">
                     <a-button type="link" size="small" :disabled="true" class="action-btn">
                       <template #icon>
                         <PlusOutlined />
@@ -142,13 +152,13 @@
                       子菜单
                     </a-button>
                   </a-tooltip>
-                  <a-button v-else type="link" size="small" @click.stop="throttledAddChild(record)" class="action-btn">
+                  <a-button v-else-if="canCreateMenuManagement" type="link" size="small" @click.stop="throttledAddChild(record)" class="action-btn">
                     <template #icon>
                       <PlusOutlined />
                     </template>
                     子菜单
                   </a-button>
-                  <a-button type="link" size="small" danger @click.stop="throttledDelete(record)" class="action-btn">
+                  <a-button v-if="canDeleteMenuManagement" type="link" size="small" danger @click.stop="throttledDelete(record)" class="action-btn">
                     <template #icon>
                       <DeleteOutlined />
                     </template>
@@ -163,17 +173,19 @@
     </div>
 
     <!-- 抽屉表单，编辑/新建菜单 -->
-    <a-drawer v-model:open="drawerVisible" :title="drawerMode === 'create' ? '新建菜单' : '编辑菜单'" width="600px"
-      :get-container="false" :style="{ position: 'absolute' }" @close="handleDrawerClose">
-      <MenuForm v-if="drawerVisible" :mode="drawerMode" :menu-data="currentMenu" :parent-menu="parentMenu"
-        @submit="handleFormSubmit" @cancel="handleDrawerClose" />
-    </a-drawer>
-  </div>
+		    <a-drawer v-model:open="drawerVisible" :title="drawerMode === 'create' ? '新建菜单' : '编辑菜单'" width="600px"
+		      :get-container="false" :style="{ position: 'absolute' }" @close="handleDrawerClose">
+		      <MenuForm v-if="drawerVisible" :mode="drawerMode" :menu-data="currentMenu" :parent-menu="parentMenu"
+		        @submit="handleFormSubmit" @cancel="handleDrawerClose" />
+		    </a-drawer>
+	      </div>
+	    </div>
 </template>
 
 <script setup lang="ts">
 // 引入Vue相关API
 import { ref, computed, onMounted, watch, nextTick, onBeforeUnmount } from 'vue'
+import { useAuth } from '@/auth/auth'
 // 引入菜单API
 import { getMenusByParentId, createMenu, updateMenu, deleteMenu, batchDeleteMenus, type MenuItem, type MenuQuery, menuList } from '@/api/menu'
 // 引入Antd组件和图标
@@ -190,6 +202,7 @@ import {
 import VueDraggable from 'vuedraggable'
 import MenuForm from './MenuForm.vue'
 import Icon from '@/components/Icon.vue' // 通用图标回显组件
+import { extractAuthoritiesFromJwt } from '@/utils/jwt'
 
 // MenuItem 类型补充 expanded 和 _childrenLoaded 字段，消除TS报错
 type MenuItemEx = MenuItem & {
@@ -210,6 +223,23 @@ const query = ref<MenuQuery & { parentId: number | null }>({
 
 // 表格数据
 const tableData = ref<MenuItemEx[]>([])
+const { user } = useAuth()
+const menuAuthorities = computed(() => new Set(extractAuthoritiesFromJwt(user.value?.access_token)))
+
+// 与后端 MenuManagementAccessGuard + LegacyAuthConstants 一致，勿扩散硬编码；规范码见 TINY_PLATFORM_PERMISSION_IDENTIFIER_SPEC
+const MENU_MANAGEMENT_READ_AUTHORITIES = ['ROLE_ADMIN', 'system:menu:list']
+const MENU_MANAGEMENT_CREATE_AUTHORITIES = ['ROLE_ADMIN', 'system:menu:create']
+const MENU_MANAGEMENT_UPDATE_AUTHORITIES = ['ROLE_ADMIN', 'system:menu:edit']
+const MENU_MANAGEMENT_DELETE_AUTHORITIES = ['ROLE_ADMIN', 'system:menu:delete', 'system:menu:batch-delete']
+
+function hasAnyMenuAuthority(requiredAuthorities: string[]) {
+  return requiredAuthorities.some((authority) => menuAuthorities.value.has(authority))
+}
+
+const canReadMenuManagement = computed(() => hasAnyMenuAuthority(MENU_MANAGEMENT_READ_AUTHORITIES))
+const canCreateMenuManagement = computed(() => hasAnyMenuAuthority(MENU_MANAGEMENT_CREATE_AUTHORITIES))
+const canUpdateMenuManagement = computed(() => hasAnyMenuAuthority(MENU_MANAGEMENT_UPDATE_AUTHORITIES))
+const canDeleteMenuManagement = computed(() => hasAnyMenuAuthority(MENU_MANAGEMENT_DELETE_AUTHORITIES))
 
 // 加载状态
 const loading = ref(false)
@@ -441,6 +471,12 @@ function updateTableBodyHeight() {
 
 // 加载数据 - 使用list结构加载
 async function loadData() {
+  if (!canReadMenuManagement.value) {
+    tableData.value = []
+    loading.value = false
+    expandedRowKeys.value = []
+    return
+  }
   try {
     loading.value = true
     const params: any = {
@@ -486,6 +522,7 @@ async function loadData() {
 // 查询
 function handleSearch() {
   try {
+    if (!canReadMenuManagement.value) return
     loadData()
   } catch (error) {
     console.warn('handleSearch error:', error)
@@ -496,6 +533,7 @@ const throttledSearch = handleSearch
 // 重置
 function handleReset() {
   try {
+    if (!canReadMenuManagement.value) return
     query.value = { name: '', title: '', permission: '', enabled: undefined, parentId: null }
     loadData()
   } catch (error) {
@@ -507,6 +545,10 @@ const throttledReset = handleReset
 // 新建
 function handleCreate() {
   try {
+    if (!canCreateMenuManagement.value) {
+      message.warning('缺少菜单创建权限')
+      return
+    }
     drawerMode.value = 'create'
     currentMenu.value = {
       name: '',
@@ -534,6 +576,7 @@ const throttledCreate = handleCreate
 const refreshing = ref(false)
 async function handleRefresh() {
   try {
+    if (!canReadMenuManagement.value) return
     refreshing.value = true
     loading.value = true
     await loadData().catch((error) => {
@@ -564,6 +607,10 @@ function clearSelection() {
 // 批量删除
 function handleBatchDelete() {
   try {
+    if (!canDeleteMenuManagement.value) {
+      message.warning('缺少菜单删除权限')
+      return
+    }
     if (selectedRowKeys.value.length === 0) {
       message.warning('请先选择要删除的菜单')
       return
@@ -597,6 +644,10 @@ const throttledBatchDelete = handleBatchDelete
 // 单条删除
 function handleDelete(record: any) {
   try {
+    if (!canDeleteMenuManagement.value) {
+      message.warning('缺少菜单删除权限')
+      return
+    }
     if (!record || !record.title) {
       message.warning('无效的菜单数据')
       return
@@ -626,6 +677,10 @@ const throttledDelete = handleDelete
 // 编辑
 function handleEdit(record: any) {
   try {
+    if (!canUpdateMenuManagement.value) {
+      message.warning('缺少菜单更新权限')
+      return
+    }
     if (!record || !record.id) {
       message.warning('无效的菜单数据')
       return
@@ -669,6 +724,10 @@ const throttledEdit = handleEdit
 // 添加子菜单
 function handleAddChild(record: any) {
   try {
+    if (!canCreateMenuManagement.value) {
+      message.warning('缺少菜单创建权限')
+      return
+    }
     if (!record || !record.id) {
       message.warning('无效的父级菜单数据')
       return
@@ -748,9 +807,17 @@ async function handleFormSubmit(formData: any) {
     }
 
     if (drawerMode.value === 'edit' && formData.id) {
+      if (!canUpdateMenuManagement.value) {
+        message.warning('缺少菜单更新权限')
+        return
+      }
       await updateMenu(formData.id, submitData)
       message.success('更新成功')
     } else {
+      if (!canCreateMenuManagement.value) {
+        message.warning('缺少菜单创建权限')
+        return
+      }
       await createMenu(submitData)
       message.success('创建成功')
     }

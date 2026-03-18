@@ -1,7 +1,17 @@
 <template>
   <!-- 外层内容容器，统一风格 -->
   <div class="content-container" style="position: relative;">
-    <div class="content-card">
+    <div v-if="!canReadRoleManagement" class="content-card">
+      <div class="platform-guard-card">
+        <div class="platform-guard-kicker">Permission Required</div>
+        <h3>角色管理需要额外授权</h3>
+        <p>
+          当前页面属于后台配置面。只有具备 <code>system:role:list</code> 或管理员权限的用户，才会请求
+          <code>/sys/roles</code> 并展示角色管理数据。
+        </p>
+      </div>
+    </div>
+    <div v-else class="content-card">
       <!-- 查询表单，风格与用户管理一致 -->
       <div class="form-container">
         <a-form layout="inline" :model="query">
@@ -23,7 +33,7 @@
         <div class="table-actions">
           <div v-if="selectedRowKeys.length > 0" class="batch-actions">
             <a-tooltip
-              v-if="hasBuiltinSelected && selectedRowKeys.length > 0"
+              v-if="canDeleteRoleManagement && hasBuiltinSelected && selectedRowKeys.length > 0"
               title="选中项包含内置角色，无法批量删除"
             >
               <span>
@@ -42,7 +52,7 @@
               </span>
             </a-tooltip>
             <a-button
-              v-else
+              v-else-if="canDeleteRoleManagement"
               type="primary"
               danger
               @click="throttledBatchDelete"
@@ -54,7 +64,7 @@
               批量删除 ({{ selectedRowKeys.length }})
             </a-button>
             <a-button @click="clearSelection" class="toolbar-btn">取消选择</a-button>
-            <a-tooltip v-if="selectedRowKeys.length !== 1" title="请仅选择一个角色进行用户配置">
+            <a-tooltip v-if="canAssignRoleUsers && selectedRowKeys.length !== 1" title="请仅选择一个角色进行用户配置">
               <span>
                 <a-button type="primary" class="toolbar-btn" disabled style="pointer-events: auto;">
                   <template #icon>
@@ -64,14 +74,14 @@
                 </a-button>
               </span>
             </a-tooltip>
-            <a-button v-else type="primary" class="toolbar-btn" @click="openBatchUserTransfer">
+            <a-button v-else-if="canAssignRoleUsers" type="primary" class="toolbar-btn" @click="openBatchUserTransfer">
               <template #icon>
                 <SettingOutlined />
               </template>
               配置用户
             </a-button>
             <!-- 新增：配置资源按钮 -->
-            <a-tooltip v-if="selectedRowKeys.length !== 1" title="请仅选择一个角色进行资源配置">
+            <a-tooltip v-if="canAssignRolePermissions && selectedRowKeys.length !== 1" title="请仅选择一个角色进行资源配置">
               <span>
                 <a-button type="primary" class="toolbar-btn" disabled style="pointer-events: auto;">
                   <template #icon>
@@ -81,14 +91,14 @@
                 </a-button>
               </span>
             </a-tooltip>
-            <a-button v-else type="primary" class="toolbar-btn" @click="openResourceTransfer">
+            <a-button v-else-if="canAssignRolePermissions" type="primary" class="toolbar-btn" @click="openResourceTransfer">
               <template #icon>
                 <SettingOutlined />
               </template>
               配置资源
             </a-button>
           </div>
-          <a-button type="link" @click="throttledCreate" class="toolbar-btn">
+          <a-button v-if="canCreateRoleManagement" type="link" @click="throttledCreate" class="toolbar-btn">
             <template #icon>
               <PlusOutlined />
             </template>
@@ -181,6 +191,7 @@
               <template v-else-if="column.dataIndex === 'action'">
                 <div class="action-buttons">
                   <a-button
+                    v-if="canUpdateRoleManagement"
                     type="link"
                     size="small"
                     @click.stop="throttledEdit(record)"
@@ -191,7 +202,7 @@
                     </template>
                     编辑
                   </a-button>
-                  <a-tooltip v-if="record.builtin" title="内置角色不允许删除">
+                  <a-tooltip v-if="canDeleteRoleManagement && record.builtin" title="内置角色不允许删除">
                     <span>
                       <a-button
                         type="link"
@@ -209,7 +220,7 @@
                     </span>
                   </a-tooltip>
                   <a-button
-                    v-else
+                    v-else-if="canDeleteRoleManagement"
                     type="link"
                     size="small"
                     danger
@@ -284,6 +295,7 @@
 <script setup lang="ts">
 // 引入Vue相关API
 import { ref, computed, onMounted, watch, nextTick, onBeforeUnmount } from 'vue'
+import { useAuth } from '@/auth/auth'
 // 引入角色API
 import { roleList, createRole, updateRole, deleteRole } from '@/api/role'
 // 引入Antd组件和图标
@@ -294,9 +306,29 @@ import RoleForm from './RoleForm.vue'
 import UserTransfer from './UserTransfer.vue' // 引入用户分配弹窗组件
 import { userList } from '@/api/user' // 引入用户API
 import ResourceTransfer from './ResourceTransfer.vue' // 资源分配弹窗组件
+import { extractAuthoritiesFromJwt } from '@/utils/jwt'
 
 // 查询条件
 const query = ref({ name: '', code: '' })
+const { user } = useAuth()
+const roleAuthorities = computed(() => new Set(extractAuthoritiesFromJwt(user.value?.access_token)))
+const ROLE_MANAGEMENT_READ_AUTHORITIES = ['ROLE_ADMIN', 'system:role:list']
+const ROLE_MANAGEMENT_CREATE_AUTHORITIES = ['ROLE_ADMIN', 'system:role:create']
+const ROLE_MANAGEMENT_UPDATE_AUTHORITIES = ['ROLE_ADMIN', 'system:role:edit']
+const ROLE_MANAGEMENT_DELETE_AUTHORITIES = ['ROLE_ADMIN', 'system:role:delete', 'system:role:batch-delete']
+const ROLE_ASSIGN_USER_AUTHORITIES = ['ROLE_ADMIN', 'system:user:assign-role', 'system:user:role:assign']
+const ROLE_ASSIGN_PERMISSION_AUTHORITIES = ['ROLE_ADMIN', 'system:role:assign-permission', 'system:role:permission:assign']
+
+function hasAnyRoleAuthority(requiredAuthorities: string[]) {
+  return requiredAuthorities.some((authority) => roleAuthorities.value.has(authority))
+}
+
+const canReadRoleManagement = computed(() => hasAnyRoleAuthority(ROLE_MANAGEMENT_READ_AUTHORITIES))
+const canCreateRoleManagement = computed(() => hasAnyRoleAuthority(ROLE_MANAGEMENT_CREATE_AUTHORITIES))
+const canUpdateRoleManagement = computed(() => hasAnyRoleAuthority(ROLE_MANAGEMENT_UPDATE_AUTHORITIES))
+const canDeleteRoleManagement = computed(() => hasAnyRoleAuthority(ROLE_MANAGEMENT_DELETE_AUTHORITIES))
+const canAssignRoleUsers = computed(() => hasAnyRoleAuthority(ROLE_ASSIGN_USER_AUTHORITIES))
+const canAssignRolePermissions = computed(() => hasAnyRoleAuthority(ROLE_ASSIGN_PERMISSION_AUTHORITIES))
 // 表格数据
 const tableData = ref<any[]>([])
 // 加载状态
@@ -421,6 +453,11 @@ function updateTableBodyHeight() {
 }
 // 加载数据
 async function loadData() {
+  if (!canReadRoleManagement.value) {
+    tableData.value = []
+    pagination.value.total = 0
+    return
+  }
   loading.value = true
   try {
     const params = {
@@ -456,6 +493,10 @@ function handleReset() {
 const throttledReset = handleReset
 // 新建
 function handleCreate() {
+  if (!canCreateRoleManagement.value) {
+    message.warning('缺少角色创建权限')
+    return
+  }
   drawerMode.value = 'create'
   currentRole.value = { id: '', name: '', code: '', description: '', builtin: false, enabled: true }
   drawerVisible.value = true
@@ -490,6 +531,10 @@ function handlePageSizeChange(current: number, size: number) {
 }
 // 批量删除
 function handleBatchDelete() {
+  if (!canDeleteRoleManagement.value) {
+    message.warning('缺少角色删除权限')
+    return
+  }
   if (selectedRowKeys.value.length === 0) {
     message.warning('请先选择要删除的角色')
     return
@@ -518,6 +563,10 @@ function handleBatchDelete() {
 const throttledBatchDelete = handleBatchDelete
 // 单条删除
 function handleDelete(record: any) {
+  if (!canDeleteRoleManagement.value) {
+    message.warning('缺少角色删除权限')
+    return
+  }
   Modal.confirm({
     title: '确认删除',
     content: `确定要删除角色 ${record.name} 吗？`,
@@ -537,6 +586,10 @@ function handleDelete(record: any) {
 const throttledDelete = handleDelete
 // 编辑
 function handleEdit(record: any) {
+  if (!canUpdateRoleManagement.value) {
+    message.warning('缺少角色更新权限')
+    return
+  }
   drawerMode.value = 'edit'
   currentRole.value = { ...record }
   drawerVisible.value = true
@@ -549,6 +602,14 @@ function handleDrawerClose() {
 }
 // 保存（新建/编辑）
 async function handleFormSubmit(formData: any) {
+  if (drawerMode.value === 'edit' && !canUpdateRoleManagement.value) {
+    message.warning('缺少角色更新权限')
+    return
+  }
+  if (drawerMode.value === 'create' && !canCreateRoleManagement.value) {
+    message.warning('缺少角色创建权限')
+    return
+  }
   console.log('handleFormSubmit收到', formData) // 这里应有 userIds
   try {
     if (drawerMode.value === 'edit' && formData.id) {
@@ -584,7 +645,9 @@ function formatDateTime(dateTime: string | null | undefined): string {
 
 // 生命周期钩子
 onMounted(() => {
-  loadData()
+  if (canReadRoleManagement.value) {
+    loadData()
+  }
   updateTableBodyHeight()
   window.addEventListener('resize', updateTableBodyHeight)
 })
@@ -593,6 +656,15 @@ onBeforeUnmount(() => {
 })
 watch(() => pagination.value.pageSize, () => {
   updateTableBodyHeight()
+})
+watch(canReadRoleManagement, (enabled) => {
+  if (enabled) {
+    loadData()
+    return
+  }
+  tableData.value = []
+  selectedRowKeys.value = []
+  pagination.value.total = 0
 })
 // 抽屉相关
 const drawerVisible = ref(false)
@@ -639,6 +711,10 @@ const batchSelectedUserIds = ref<string[]>([]) // 已分配用户ID
 
 // 打开批量配置用户弹窗
 async function openBatchUserTransfer() {
+  if (!canAssignRoleUsers.value) {
+    message.warning('缺少角色用户分配权限')
+    return
+  }
   // 查询所有用户（假设不超过1000条）
   const res = await userList({ current: 1, pageSize: 1000 })
   allUsers.value = (res.records || []).map((u: any) => ({
@@ -661,6 +737,10 @@ async function openBatchUserTransfer() {
 }
 // 批量保存分配用户
 async function handleBatchUserAssign(newUserIds: string[]) {
+  if (!canAssignRoleUsers.value) {
+    message.warning('缺少角色用户分配权限')
+    return
+  }
   // 对每个选中角色调用 updateRoleUsers
   const { updateRoleUsers } = await import('@/api/role')
   for (const roleIdStr of selectedRowKeys.value) {
@@ -683,6 +763,10 @@ const batchSelectedResourceIds = ref<string[]>([])
 
 // 打开资源分配弹窗
 async function openResourceTransfer() {
+  if (!canAssignRolePermissions.value) {
+    message.warning('缺少角色权限分配权限')
+    return
+  }
   // 设置当前角色ID
   if (selectedRowKeys.value.length > 0) {
     currentRoleId.value = Number(selectedRowKeys.value[0])
@@ -691,6 +775,10 @@ async function openResourceTransfer() {
 }
 // 保存分配资源
 async function handleResourceAssign(newResourceIds: number[]) {
+  if (!canAssignRolePermissions.value) {
+    message.warning('缺少角色权限分配权限')
+    return
+  }
   try {
     // 调用 updateRoleResources 保存角色资源分配
     const { updateRoleResources } = await import('@/api/role')

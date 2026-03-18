@@ -10,19 +10,19 @@ function createToken(payload: Record<string, unknown>) {
 describe('jwt utils', () => {
   it('should decode payload and extract authorities from arrays or strings', () => {
     const arrayToken = createToken({
-      tenantId: 1,
-      authorities: ['ROLE_ADMIN', 'idempotentOps'],
+      activeTenantId: 2,
+      authorities: ['ROLE_ADMIN', 'idempotent:ops:view'],
     })
     const stringToken = createToken({
-      authorities: 'ROLE_ADMIN idempotentOps',
+      authorities: 'ROLE_ADMIN idempotent:ops:view',
     })
 
-    expect(decodeJwtPayload<{ tenantId: number }>(arrayToken)).toEqual({
-      tenantId: 1,
-      authorities: ['ROLE_ADMIN', 'idempotentOps'],
+    expect(decodeJwtPayload<{ activeTenantId: number }>(arrayToken)).toEqual({
+      activeTenantId: 2,
+      authorities: ['ROLE_ADMIN', 'idempotent:ops:view'],
     })
-    expect(extractAuthoritiesFromJwt(arrayToken)).toEqual(['ROLE_ADMIN', 'idempotentOps'])
-    expect(extractAuthoritiesFromJwt(stringToken)).toEqual(['ROLE_ADMIN', 'idempotentOps'])
+    expect(extractAuthoritiesFromJwt(arrayToken)).toEqual(['ROLE_ADMIN', 'idempotent:ops:view'])
+    expect(extractAuthoritiesFromJwt(stringToken)).toEqual(['ROLE_ADMIN', 'idempotent:ops:view'])
     expect(extractAuthoritiesFromJwt('bad-token')).toEqual([])
   })
 })

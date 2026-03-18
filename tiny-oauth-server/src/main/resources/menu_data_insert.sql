@@ -1,3 +1,7 @@
+-- 参考脚本：历史菜单初始化示例。
+-- 注意：该文件不参与默认 Liquibase 初始化，仅保留为人工排查/回顾用示例；
+-- URI 与 permission 需尽量对齐当前真实控制器和规范码，避免继续扩散旧契约。
+
 -- 菜单数据插入脚本
 -- 基于 menu.json 的菜单结构数据
 -- 执行时间：2024-06-27
@@ -8,16 +12,16 @@
 -- 插入顶级菜单（目录类型）
 INSERT INTO resource (name, title, url, uri, method, icon, show_icon, sort, component, redirect, hidden, keep_alive, permission, type, parent_id, created_at, updated_at) VALUES
 -- 工作台
-('dashboard', '工作台', '/', '', '', 'HomeOutlined', true, 1, '/views/Dashboard.vue', '', false, false, 'dashboard:view', 1, NULL, NOW(), NOW()),
+('dashboard', '工作台', '/', '', '', 'HomeOutlined', true, 1, '/views/Dashboard.vue', '', false, false, 'dashboard:entry:view', 1, NULL, NOW(), NOW()),
 
 -- 系统管理（目录）
-('system', '系统管理', '/system', '', '', 'SettingOutlined', true, 2, '', '/system/role', false, false, 'system:view', 0, NULL, NOW(), NOW()),
+('system', '系统管理', '/system', '', '', 'SettingOutlined', true, 2, '', '/system/role', false, false, 'system:entry:view', 0, NULL, NOW(), NOW()),
 
 -- 个人页（目录）
-('profile', '个人页', '/profile', '', '', 'UserOutlined', true, 3, '', '/profile/center', false, false, 'profile:view', 0, NULL, NOW(), NOW()),
+('profile', '个人页', '/profile', '', '', 'UserOutlined', true, 3, '', '/profile/center', false, false, 'profile:entry:view', 0, NULL, NOW(), NOW()),
 
 -- 异常页（目录）
-('exception', '异常页', '/exception', '', '', 'WarningOutlined', true, 4, '', '/exception/403', false, false, 'exception:view', 0, NULL, NOW(), NOW());
+('exception', '异常页', '/exception', '', '', 'WarningOutlined', true, 4, '', '/exception/403', false, false, 'exception:entry:view', 0, NULL, NOW(), NOW());
 
 -- 获取父级菜单ID
 SET @system_id = (SELECT id FROM resource WHERE name = 'system' LIMIT 1);
@@ -27,35 +31,35 @@ SET @exception_id = (SELECT id FROM resource WHERE name = 'exception' LIMIT 1);
 -- 插入系统管理子菜单
 INSERT INTO resource (name, title, url, uri, method, icon, show_icon, sort, component, redirect, hidden, keep_alive, permission, type, parent_id, created_at, updated_at) VALUES
 -- 角色管理
-('role', '角色管理', '/system/role', '/api/sys/roles', 'GET', '', false, 1, '/views/role/role.vue', '', false, false, 'role:view', 1, @system_id, NOW(), NOW()),
+('role', '角色管理', '/system/role', '/sys/roles', 'GET', '', false, 1, '/views/role/role.vue', '', false, false, 'system:role:list', 1, @system_id, NOW(), NOW()),
 
 -- 菜单管理
-('menu', '菜单管理', '/system/menu', '/api/sys/menus', 'GET', '', false, 2, '/views/menu/Menu.vue', '', false, false, 'menu:view', 1, @system_id, NOW(), NOW()),
+('menu', '菜单管理', '/system/menu', '/sys/menus', 'GET', '', false, 2, '/views/menu/Menu.vue', '', false, false, 'system:menu:list', 1, @system_id, NOW(), NOW()),
 
 -- 资源管理
-('resource', '资源管理', '/system/resource', '/api/sys/resources', 'GET', '', false, 3, '/views/resource/resource.vue', '', false, false, 'resource:view', 1, @system_id, NOW(), NOW()),
+('resource', '资源管理', '/system/resource', '/sys/resources', 'GET', '', false, 3, '/views/resource/resource.vue', '', false, false, 'system:resource:list', 1, @system_id, NOW(), NOW()),
 
 -- 用户管理
-('user', '用户管理', '/system/user', '/api/sys/users', 'GET', '', false, 4, '/views/user/User.vue', '', false, false, 'user:view', 1, @system_id, NOW(), NOW());
+('user', '用户管理', '/system/user', '/sys/users', 'GET', '', false, 4, '/views/user/User.vue', '', false, false, 'system:user:list', 1, @system_id, NOW(), NOW());
 
 -- 插入个人页子菜单
 INSERT INTO resource (name, title, url, uri, method, icon, show_icon, sort, component, redirect, hidden, keep_alive, permission, type, parent_id, created_at, updated_at) VALUES
 -- 个人中心
-('profile-center', '个人中心', '/profile/center', '/api/profile/center', 'GET', '', false, 1, '/views/Profile.vue', '', false, false, 'profile:center', 1, @profile_id, NOW(), NOW()),
+('profile-center', '个人中心', '/profile/center', '/api/profile/center', 'GET', '', false, 1, '/views/Profile.vue', '', false, false, 'profile:center:view', 1, @profile_id, NOW(), NOW()),
 
 -- 个人设置
-('profile-setting', '个人设置', '/profile/setting', '/api/profile/setting', 'GET', '', false, 2, '/views/Setting.vue', '', false, false, 'profile:setting', 1, @profile_id, NOW(), NOW());
+('profile-setting', '个人设置', '/profile/setting', '/api/profile/setting', 'GET', '', false, 2, '/views/Setting.vue', '', false, false, 'profile:setting:view', 1, @profile_id, NOW(), NOW());
 
 -- 插入异常页子菜单
 INSERT INTO resource (name, title, url, uri, method, icon, show_icon, sort, component, redirect, hidden, keep_alive, permission, type, parent_id, created_at, updated_at) VALUES
 -- 403页面
-('exception-403', '403', '/exception/403', '', '', '', false, 1, '/views/403.vue', '', false, false, 'exception:403', 1, @exception_id, NOW(), NOW()),
+('exception-403', '403', '/exception/403', '', '', '', false, 1, '/views/403.vue', '', false, false, 'exception:page-403:view', 1, @exception_id, NOW(), NOW()),
 
 -- 404页面
-('exception-404', '404', '/exception/404', '', '', '', false, 2, '/views/404.vue', '', false, false, 'exception:404', 1, @exception_id, NOW(), NOW()),
+('exception-404', '404', '/exception/404', '', '', '', false, 2, '/views/404.vue', '', false, false, 'exception:page-404:view', 1, @exception_id, NOW(), NOW()),
 
 -- 500页面
-('exception-500', '500', '/exception/500', '', '', '', false, 3, '/views/500.vue', '', false, false, 'exception:500', 1, @exception_id, NOW(), NOW());
+('exception-500', '500', '/exception/500', '', '', '', false, 3, '/views/500.vue', '', false, false, 'exception:page-500:view', 1, @exception_id, NOW(), NOW());
 
 -- 验证插入结果
 SELECT 

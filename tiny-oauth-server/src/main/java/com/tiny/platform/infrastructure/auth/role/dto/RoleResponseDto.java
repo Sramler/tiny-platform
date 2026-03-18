@@ -6,6 +6,7 @@ import java.time.LocalDateTime;
 
 public class RoleResponseDto {
     private Long id;
+    private Long recordTenantId;
     private String name;
     private String code; // 角色标识
     private String description; // 描述
@@ -30,6 +31,9 @@ public class RoleResponseDto {
     // getter和setter方法
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
+
+    public Long getRecordTenantId() { return recordTenantId; }
+    public void setRecordTenantId(Long recordTenantId) { this.recordTenantId = recordTenantId; }
     
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }

@@ -54,6 +54,7 @@
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ThunderboltOutlined, HomeOutlined, ArrowLeftOutlined, InfoCircleOutlined } from '@ant-design/icons-vue'
+import { getActiveTenantId, resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
 
 const router = useRouter()
 const route = useRoute()
@@ -69,11 +70,14 @@ const errorInfo = computed(() => {
   }
 })
 
+const resolveNavigationTenantQuery = () =>
+  withActiveTenantQuery({}, resolveActiveTenantQueryValue(route.query) ?? getActiveTenantId())
+
 const goHome = () => {
   // 触发关闭当前标签页事件
   window.dispatchEvent(new CustomEvent('close-current-tab'))
   // 跳转到首页
-  router.push('/')
+  router.push({ path: '/', query: resolveNavigationTenantQuery() })
 }
 
 const goBack = () => {
@@ -206,4 +210,3 @@ const goBack = () => {
   }
 }
 </style>
-

@@ -179,6 +179,45 @@
             "globs": ["**/oauth2/**", "**/auth/**", "**/security/**"]
           }
         }
+      },
+      "92-tiny-platform-permission.rules.md": {
+        "cursor": {
+          "id": "92-tiny-platform-permission",
+          "frontmatter": {
+            "description": "tiny-platform 权限标识规范（平台特定）",
+            "globs": [
+              "**/auth/**",
+              "**/security/**",
+              "**/resource/**",
+              "**/menu/**",
+              "**/*AccessGuard.java",
+              "**/*Controller.java",
+              "**/*.sql",
+              "**/*.vue"
+            ]
+          }
+        }
+      },
+      "93-tiny-platform-authorization-model.rules.md": {
+        "cursor": {
+          "id": "93-tiny-platform-authorization-model",
+          "frontmatter": {
+            "description": "tiny-platform 授权模型规范（平台特定）",
+            "globs": [
+              "**/auth/**",
+              "**/oauth/**",
+              "**/security/**",
+              "**/tenant/**",
+              "**/role/**",
+              "**/resource/**",
+              "**/menu/**",
+              "**/*AccessGuard.java",
+              "**/*.sql",
+              "**/*.yaml",
+              "**/*.md"
+            ]
+          }
+        }
       }
     },
     "cursor": {
@@ -202,7 +241,9 @@
         "80-api.rules.md",
         "85-documentation.rules.md",
         "90-tiny-platform.rules.md",
-        "91-tiny-platform-auth.rules.md"
+        "91-tiny-platform-auth.rules.md",
+        "92-tiny-platform-permission.rules.md",
+        "93-tiny-platform-authorization-model.rules.md"
       ]
     }
   }

@@ -9,10 +9,13 @@ import com.tiny.platform.infrastructure.core.dto.PageResponse;
 import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationAuditRepository;
 import com.tiny.platform.infrastructure.auth.user.service.AvatarService;
 import com.tiny.platform.infrastructure.idempotent.sdk.annotation.Idempotent;
+import com.tiny.platform.core.oauth.tenant.ActiveTenantResponseSupport;
+import com.tiny.platform.core.oauth.tenant.TenantContext;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.*;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
@@ -46,6 +49,7 @@ public class UserController {
     }
 
     @GetMapping
+    @PreAuthorize("@userManagementAccessGuard.canRead(authentication)")
     public ResponseEntity<PageResponse<UserResponseDto>> getUsers(
             @Valid UserRequestDto query,
             @PageableDefault(size = 10, sort = "id", direction = Sort.Direction.DESC) Pageable pageable
@@ -54,6 +58,7 @@ public class UserController {
     }
 
     @GetMapping("/{id}")
+    @PreAuthorize("@userManagementAccessGuard.canRead(authentication)")
     public ResponseEntity<com.tiny.platform.infrastructure.auth.user.domain.User> getUser(@PathVariable("id") Long id) {
         return userService.findById(id)
             .map(ResponseEntity::ok)
@@ -81,6 +86,10 @@ public class UserController {
                     Map<String, Object> userInfo = new java.util.HashMap<>();
                     userInfo.put("id", user.getId().toString());
                     userInfo.put("username", user.getUsername());
+                    ActiveTenantResponseSupport.putTenantFields(
+                        userInfo,
+                        ActiveTenantResponseSupport.resolveActiveTenantId(authentication)
+                    );
                     userInfo.put("nickname", user.getNickname() != null ? user.getNickname() : "");
                     userInfo.put("enabled", user.isEnabled());
                     userInfo.put("accountNonExpired", user.isAccountNonExpired());
@@ -117,6 +126,7 @@ public class UserController {
 
     @PostMapping
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@userManagementAccessGuard.canCreate(authentication)")
     public ResponseEntity<User> create(@Valid @RequestBody UserCreateUpdateDto userDto) {
         User user = userService.createFromDto(userDto);
         return ResponseEntity.ok(user);
@@ -124,6 +134,7 @@ public class UserController {
 
     @PutMapping("/{id}")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@userManagementAccessGuard.canUpdate(authentication)")
     public ResponseEntity<User> update(@PathVariable("id") Long id, @Valid @RequestBody UserCreateUpdateDto userDto) {
         // 设置ID
         userDto.setId(id);
@@ -134,6 +145,7 @@ public class UserController {
 
     @DeleteMapping("/{id}")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@userManagementAccessGuard.canDelete(authentication)")
     public ResponseEntity<Void> delete(@PathVariable("id") Long id) {
         userService.delete(id);
         return ResponseEntity.noContent().build();
@@ -144,6 +156,7 @@ public class UserController {
      */
     @PostMapping("/batch/enable")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@userManagementAccessGuard.canEnable(authentication)")
     public ResponseEntity<Map<String, Object>> batchEnable(@RequestBody List<Long> ids) {
         userService.batchEnable(ids);
         return ResponseEntity.ok(Map.of("success", true, "message", "批量启用成功"));
@@ -154,6 +167,7 @@ public class UserController {
      */
     @PostMapping("/batch/disable")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@userManagementAccessGuard.canDisable(authentication)")
     public ResponseEntity<Map<String, Object>> batchDisable(@RequestBody List<Long> ids) {
         userService.batchDisable(ids);
         return ResponseEntity.ok(Map.of("success", true, "message", "批量禁用成功"));
@@ -164,6 +178,7 @@ public class UserController {
      */
     @PostMapping("/batch/delete")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@userManagementAccessGuard.canDelete(authentication)")
     public ResponseEntity<Map<String, Object>> batchDelete(@RequestBody List<Long> ids) {
         userService.batchDelete(ids);
         return ResponseEntity.ok(Map.of("success", true, "message", "批量删除成功"));
@@ -173,10 +188,13 @@ public class UserController {
      * 查询指定用户已绑定的角色ID列表
      */
     @GetMapping("/{id}/roles")
+    @PreAuthorize("@userManagementAccessGuard.canUpdate(authentication)")
     public ResponseEntity<List<Long>> getUserRoles(@PathVariable("id") Long id) {
-        return userService.findById(id)
-            .map(user -> ResponseEntity.ok(user.getRoles().stream().map(role -> role.getId()).toList()))
-            .orElse(ResponseEntity.notFound().build());
+        try {
+            return ResponseEntity.ok(userService.getRoleIdsByUserId(id));
+        } catch (RuntimeException ex) {
+            return ResponseEntity.notFound().build();
+        }
     }
 
     /**
@@ -184,6 +202,7 @@ public class UserController {
      */
     @PostMapping("/{id}/roles")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@userManagementAccessGuard.canUpdate(authentication)")
     public ResponseEntity<?> updateUserRoles(@PathVariable("id") Long id, @RequestBody List<Long> roleIds) {
         try {
             userService.updateUserRoles(id, roleIds);

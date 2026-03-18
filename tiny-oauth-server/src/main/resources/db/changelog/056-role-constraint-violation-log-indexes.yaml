@@ -1,0 +1,20 @@
+databaseChangeLog:
+  - changeSet:
+      id: 056-role-constraint-violation-log-indexes
+      author: tiny
+      comment: "RBAC3 violation log: add composite indexes for query"
+      preConditions:
+        - onFail: CONTINUE
+        - onError: HALT
+        - dbms:
+            type: mysql
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              -- tenant + violation_type + created_at is a common query pattern for control-plane observability.
+              CREATE INDEX `idx_role_constraint_violation_log_tenant_type_created`
+                ON `role_constraint_violation_log` (`tenant_id`, `violation_type`, `created_at`);
+

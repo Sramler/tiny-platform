@@ -24,7 +24,7 @@ vi.mock('@/utils/tenant', async (importOriginal) => {
   const actual = await importOriginal<any>()
   return {
     ...actual,
-    getTenantId: () => '1',
+    getActiveTenantId: () => '1',
     getTenantCode: () => 't1',
   }
 })
@@ -81,4 +81,3 @@ describe('export testData.vue', () => {
     expect(apiMocks.demoExportUsageList).toHaveBeenCalled()
   })
 })
-

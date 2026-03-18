@@ -200,7 +200,7 @@ class IdempotentAspectTest {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/sys/users");
         request.addHeader("X-Idempotency-Key", "scope-key");
         RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
-        TenantContext.setTenantId(200L);
+        TenantContext.setActiveTenantId(200L);
         SecurityUser currentUser = new SecurityUser(8L, 200L, "alice", "",
             List.of(), true, true, true, true);
         SecurityContextHolder.getContext().setAuthentication(

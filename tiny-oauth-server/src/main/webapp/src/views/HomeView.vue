@@ -11,7 +11,7 @@ import {
   type IdempotentTopKey,
 } from '@/api/idempotent'
 import { extractAuthoritiesFromJwt } from '@/utils/jwt'
-import { getTenantId } from '@/utils/tenant'
+import { getActiveTenantId, withActiveTenantQuery } from '@/utils/tenant'
 
 const router = useRouter()
 const { user } = useAuth()
@@ -36,7 +36,7 @@ const metrics = ref<IdempotentMetricsSnapshot>(emptyMetrics)
 const topKeys = ref<IdempotentTopKey[]>([])
 
 const canViewIdempotentOps = computed(() =>
-  extractAuthoritiesFromJwt(user.value?.access_token).includes('idempotentOps'),
+  extractAuthoritiesFromJwt(user.value?.access_token).includes('idempotent:ops:view'),
 )
 
 const successRate = computed(() => {
@@ -66,11 +66,11 @@ function openIdempotentOps() {
   if (!canViewIdempotentOps.value) {
     return
   }
-  const tenantId = getTenantId()
-  if (tenantId) {
+  const activeTenantId = getActiveTenantId()
+  if (activeTenantId) {
     void router.push({
       path: '/ops/idempotent',
-      query: { tenantId },
+      query: withActiveTenantQuery({}, activeTenantId),
     })
     return
   }
@@ -224,7 +224,7 @@ watch(canViewIdempotentOps, (enabled) => {
     <a-card v-else class="restricted-card" :bordered="false">
       <p class="restricted-title">指标已按权限收口</p>
       <p class="restricted-copy">
-        你当前没有平台级幂等治理权限，因此工作台不会主动请求 `/metrics/idempotent`。如需查看，请使用默认平台租户下具备 `idempotentOps` 资源授权的管理员账号。
+        你当前没有平台级幂等治理权限，因此工作台不会主动请求 `/metrics/idempotent`。如需查看，请使用默认平台租户下具备 `idempotent:ops:view` 权限的管理员账号。
       </p>
     </a-card>
   </div>

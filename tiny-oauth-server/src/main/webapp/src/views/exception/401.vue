@@ -62,6 +62,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { LockOutlined, LoginOutlined, HomeOutlined, InfoCircleOutlined } from '@ant-design/icons-vue'
+import { getActiveTenantId, resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
 
 const router = useRouter()
 const route = useRoute()
@@ -76,6 +77,9 @@ const errorInfo = computed(() => {
     traceId: (query.traceId as string) || null,
   }
 })
+
+const resolveNavigationTenantQuery = () =>
+  withActiveTenantQuery({}, resolveActiveTenantQueryValue(route.query) ?? getActiveTenantId())
 
 // 倒计时相关
 const countdown = ref(5) // 5秒倒计时
@@ -132,7 +136,8 @@ const goLogin = async () => {
   // 停止倒计时
   stopCountdown()
 
-  // 跳转到登录页（认证状态已在 onMounted 中清理）
+  // 跳转到登录页（认证状态已在 onMounted 中清理）。
+  // 登录页继续通过 tenantCode 输入与认证前置解析恢复租户，不通过 activeTenantId query 传递上下文。
   router.push('/login')
 }
 
@@ -143,7 +148,7 @@ const goHome = () => {
   // 触发关闭当前标签页事件
   window.dispatchEvent(new CustomEvent('close-current-tab'))
   // 跳转到首页
-  router.push('/')
+  router.push({ path: '/', query: resolveNavigationTenantQuery() })
 }
 </script>
 

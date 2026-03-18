@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   ensureCsrfToken: vi.fn(),
   isUnsafeHttpMethod: vi.fn(),
+  getActiveTenantId: vi.fn(),
   getTenantId: vi.fn(),
   persistentWarn: vi.fn(),
   persistentDebug: vi.fn(),
@@ -19,6 +20,7 @@ vi.mock('@/utils/csrf', () => ({
 }))
 
 vi.mock('@/utils/tenant', () => ({
+  getActiveTenantId: mocks.getActiveTenantId,
   getTenantId: mocks.getTenantId,
 }))
 
@@ -49,6 +51,7 @@ describe('traceId.ts', () => {
       headerName: 'X-XSRF-TOKEN',
     })
     mocks.isUnsafeHttpMethod.mockReturnValue(false)
+    mocks.getActiveTenantId.mockReturnValue(null)
     mocks.getTenantId.mockReturnValue(null)
   })
 
@@ -73,6 +76,7 @@ describe('traceId.ts', () => {
 
   it('should attach tenant and csrf headers for unsafe credentialed requests', async () => {
     mocks.isUnsafeHttpMethod.mockReturnValue(true)
+    mocks.getActiveTenantId.mockReturnValue('102')
     mocks.getTenantId.mockReturnValue('102')
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ success: true }), {
@@ -96,7 +100,7 @@ describe('traceId.ts', () => {
     const requestInit = requestCall![1] as RequestInit
     const headers = new Headers(requestInit.headers)
     expect(headers.get('Accept')).toBe('application/json')
-    expect(headers.get('X-Tenant-Id')).toBe('102')
+    expect(headers.get('X-Active-Tenant-Id')).toBe('102')
     expect(headers.get('X-XSRF-TOKEN')).toBe('csrf-token')
     expect(headers.get('X-Trace-Id')).toMatch(/^[0-9a-f]{32}$/)
     expect(headers.get('X-Request-Id')).toMatch(/^[0-9a-f]{16}$/)

@@ -6,22 +6,41 @@ const userApiMocks = vi.hoisted(() => ({
   getCurrentUser: vi.fn(),
 }))
 
-vi.mock('@/api/process', () => ({
-  userApi: {
-    getCurrentUser: userApiMocks.getCurrentUser,
-  },
+const securityApiMocks = vi.hoisted(() => ({
+  getSecurityStatus: vi.fn(),
+}))
+
+const routerMocks = vi.hoisted(() => ({
+  routeQuery: {} as Record<string, unknown>,
+  routerPush: vi.fn(),
+}))
+
+const tenantContextMocks = vi.hoisted(() => ({
+  getActiveTenantId: vi.fn(),
+}))
+
+vi.mock('@/api/security', () => ({
+  getSecurityStatus: securityApiMocks.getSecurityStatus,
 }))
 
 vi.mock('@/api/user', () => ({
-  updateUser: vi.fn(),
+  getCurrentUser: userApiMocks.getCurrentUser,
 }))
 
 vi.mock('vue-router', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-router')>()
   return {
     ...actual,
-    useRouter: () => ({ push: vi.fn() }),
-    useRoute: () => ({ path: '/profile', query: {}, meta: {} }),
+    useRouter: () => ({ push: routerMocks.routerPush }),
+    useRoute: () => ({ path: '/profile', query: routerMocks.routeQuery, meta: {} }),
+  }
+})
+
+vi.mock('@/utils/tenant', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/utils/tenant')>()
+  return {
+    ...actual,
+    getActiveTenantId: tenantContextMocks.getActiveTenantId,
   }
 })
 
@@ -30,6 +49,10 @@ vi.mock('ant-design-vue', () => ({
 }))
 
 const PassThrough = defineComponent({ template: '<div><slot /></div>' })
+const ButtonStub = defineComponent({
+  emits: ['click'],
+  template: '<button @click="$emit(\'click\')"><slot /></button>',
+})
 
 import Profile from '@/views/Profile.vue'
 
@@ -45,7 +68,12 @@ async function flushPromises() {
 describe('Profile.vue', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    Object.keys(routerMocks.routeQuery).forEach((key) => {
+      delete routerMocks.routeQuery[key]
+    })
+    tenantContextMocks.getActiveTenantId.mockReturnValue('9')
     userApiMocks.getCurrentUser.mockResolvedValue({ username: 'alice', nickname: 'Alice', enabled: true })
+    securityApiMocks.getSecurityStatus.mockResolvedValue({ activeTenantId: 9, disableMfa: false, forceMfa: false })
   })
 
   it('should render profile shell', async () => {
@@ -66,7 +94,7 @@ describe('Profile.vue', () => {
           'a-form-item': PassThrough,
           'a-input': PassThrough,
           'a-input-password': PassThrough,
-          'a-button': PassThrough,
+          'a-button': ButtonStub,
           'a-upload': PassThrough,
           'a-space': PassThrough,
           'a-spin': PassThrough,
@@ -88,5 +116,54 @@ describe('Profile.vue', () => {
     expect(wrapper.exists()).toBe(true)
     expect(userApiMocks.getCurrentUser).toHaveBeenCalled()
   })
-})
 
+  it('should preserve activeTenantId when navigating to setting and totp bind', async () => {
+    routerMocks.routeQuery.activeTenantId = '11'
+
+    const wrapper = mount(Profile, {
+      global: {
+        stubs: {
+          'a-row': PassThrough,
+          'a-col': PassThrough,
+          'a-card': PassThrough,
+          'a-avatar': PassThrough,
+          'a-divider': PassThrough,
+          'a-tag': PassThrough,
+          'a-tabs': PassThrough,
+          'a-tab-pane': PassThrough,
+          'a-descriptions': PassThrough,
+          'a-descriptions-item': PassThrough,
+          'a-form': PassThrough,
+          'a-form-item': PassThrough,
+          'a-input': PassThrough,
+          'a-input-password': PassThrough,
+          'a-button': ButtonStub,
+          'a-upload': PassThrough,
+          'a-space': PassThrough,
+          'a-spin': PassThrough,
+          'a-alert': PassThrough,
+          'a-list': PassThrough,
+          'a-list-item': PassThrough,
+          'a-list-item-meta': PassThrough,
+          'a-empty': PassThrough,
+          'a-table': PassThrough,
+          'a-tooltip': PassThrough,
+          UserOutlined: PassThrough,
+          SettingOutlined: PassThrough,
+          CheckCircleOutlined: PassThrough,
+          ClockCircleOutlined: PassThrough,
+        },
+      },
+    })
+    await flushPromises()
+
+    const settingButton = wrapper.findAll('button').find((button) => button.text().includes('编辑个人设置'))
+    expect(settingButton).toBeDefined()
+    await settingButton!.trigger('click')
+
+    expect(routerMocks.routerPush).toHaveBeenCalledWith({
+      path: '/profile/setting',
+      query: { activeTenantId: '11' },
+    })
+  })
+})

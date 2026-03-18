@@ -58,7 +58,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ensureCsrfToken } from '@/utils/csrf'
 import { sanitizeInternalRedirect } from '@/utils/redirect'
-import { clearTenantId, getTenantCode, isValidTenantCode, setTenantCode } from '@/utils/tenant'
+import { clearActiveTenantId, getTenantCode, isValidTenantCode, setTenantCode } from '@/utils/tenant'
 
 defineOptions({
   name: 'LoginPage',
@@ -126,7 +126,7 @@ const handleSubmit = async (event: Event) => {
   if (tenantRef.value) tenantRef.value.value = normalizedTenantCode
   setTenantCode(normalizedTenantCode)
   // 登录前清理旧租户ID，避免沿用上一会话租户导致后续链路冲突
-  clearTenantId()
+  clearActiveTenantId()
 
   if (!csrfToken.value) {
     try {

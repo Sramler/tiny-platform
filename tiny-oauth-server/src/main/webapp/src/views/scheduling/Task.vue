@@ -157,12 +157,23 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { message } from 'ant-design-vue'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import Ajv from 'ajv'
 import { taskList, createTask, updateTask, deleteTask, getTask, taskTypeList } from '@/api/scheduling'
 import { throttle } from '@/utils/debounce'
+import { useAuth } from '@/auth/auth'
+import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+
+const { user } = useAuth()
+const schedulingAuthorities = computed(() =>
+  extractAuthoritiesFromJwt(user.value?.access_token).filter((a) => a.startsWith('scheduling:')),
+)
+const canManageSchedulingConfig = computed(() =>
+  schedulingAuthorities.value.includes('scheduling:console:config') ||
+  schedulingAuthorities.value.includes('scheduling:*'),
+)
 
 const loading = ref(false)
 const refreshing = ref(false)
@@ -322,6 +333,10 @@ const handleTypeChange = () => {
 }
 
 const handleCreate = () => {
+  if (!canManageSchedulingConfig.value) {
+    message.warning('当前账户没有调度配置管理权限')
+    return
+  }
   formTitle.value = '新建任务'
   Object.assign(formData, {
     id: undefined,
@@ -340,6 +355,10 @@ const handleCreate = () => {
 }
 
 const handleEdit = (record: any) => {
+  if (!canManageSchedulingConfig.value) {
+    message.warning('当前账户没有调度配置管理权限')
+    return
+  }
   formTitle.value = '编辑任务'
   Object.assign(formData, {
     id: record.id,
@@ -381,6 +400,10 @@ const buildTaskPayload = () => ({
 })
 
 const handleSubmit = async () => {
+  if (!canManageSchedulingConfig.value) {
+    message.error('当前账户没有调度配置管理权限')
+    return
+  }
   try {
     await formRef.value?.validate()
   } catch {
@@ -412,6 +435,10 @@ const handleCancel = () => {
 
 const handleDelete = async (id: number) => {
   try {
+    if (!canManageSchedulingConfig.value) {
+      message.error('当前账户没有调度配置管理权限')
+      return
+    }
     await deleteTask(id)
     message.success('删除成功')
     loadData()

@@ -259,15 +259,21 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { UserOutlined, SettingOutlined, CheckCircleOutlined, ClockCircleOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
-import { userApi } from '@/api/process'
+import { getSecurityStatus } from '@/api/security'
+import { getCurrentUser } from '@/api/user'
 import type { TableColumnsType } from 'ant-design-vue'
 import { generateAvatarStyleObject } from '@/utils/avatar'
+import { getActiveTenantId, resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
 
 // 路由
+const route = useRoute()
 const router = useRouter()
+
+const buildNavigationQuery = () =>
+  withActiveTenantQuery({}, resolveActiveTenantQueryValue(route.query) ?? getActiveTenantId())
 
 // 当前激活的标签页
 const activeKey = ref('base')
@@ -370,7 +376,7 @@ const userInfo = ref<any>({
 // 加载用户信息
 const loadUserInfo = async () => {
   try {
-    const data = await userApi.getCurrentUser()
+    const data = await getCurrentUser()
     userInfo.value = data
     // 更新头像URL
     updateAvatarUrl()
@@ -399,18 +405,8 @@ const handleAvatarUploaded = (event: Event) => {
 // 加载安全状态
 const loadSecurityStatus = async () => {
   try {
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000'
-    const baseUrl = apiBaseUrl.endsWith('/') ? apiBaseUrl.slice(0, -1) : apiBaseUrl
-    const { fetchWithTraceId } = await import('@/utils/traceId')
-    const response = await fetchWithTraceId(`${baseUrl}/self/security/status`, {
-      method: 'GET',
-      credentials: 'include',
-      headers: { Accept: 'application/json' }
-    })
-    if (response.ok) {
-      const data = await response.json()
-      totpBound.value = Boolean(data.totpBound)
-    }
+    const data = await getSecurityStatus()
+    totpBound.value = Boolean(data.totpBound)
   } catch (error) {
     console.error('加载安全状态失败:', error)
   }
@@ -481,12 +477,18 @@ const formatDateTime = (dateTime: string | null | undefined): string => {
 
 // 跳转到个人设置
 const goToSettings = () => {
-  router.push('/profile/setting')
+  router.push({
+    path: '/profile/setting',
+    query: buildNavigationQuery(),
+  })
 }
 
 // 绑定两步验证
 const handleBindTotp = () => {
-  router.push('/self/security/totp-bind')
+  router.push({
+    path: '/self/security/totp-bind',
+    query: buildNavigationQuery(),
+  })
 }
 
 // 处理标签页切换

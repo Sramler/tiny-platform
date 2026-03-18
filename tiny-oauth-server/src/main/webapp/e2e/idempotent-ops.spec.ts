@@ -18,7 +18,7 @@ function buildFakeAccessToken(authorities: string[]) {
   const header = encodeBase64Url(JSON.stringify({ alg: 'none', typ: 'JWT' }))
   const payload = encodeBase64Url(
     JSON.stringify({
-      tenantId: 1,
+      activeTenantId: 1,
       iss: AUTHORITY,
       authorities,
     }),
@@ -37,7 +37,7 @@ function buildOidcUser(authorities: string[]) {
     profile: {
       sub: 'user-1',
       preferred_username: 'alice',
-      tenantId: 1,
+      activeTenantId: 1,
       iss: AUTHORITY,
     },
     expires_at: Math.floor(Date.now() / 1000) + 3600,
@@ -90,7 +90,7 @@ async function seedAuthenticatedSession(page: Page, authorities: string[]) {
         window.sessionStorage.setItem(key, JSON.stringify(oidcUser))
       }
       window.localStorage.setItem('app_tenant_code', tenantCode)
-      window.localStorage.setItem('app_tenant_id', '1')
+      window.localStorage.setItem('app_active_tenant_id', '1')
       window.localStorage.setItem('sider-collapsed', 'false')
     },
     {
@@ -194,7 +194,7 @@ async function mockAuthenticatedApis(
 
 test.describe('idempotent ops access', () => {
   test('platform metrics operator can open governance page from home', async ({ page }) => {
-    await seedAuthenticatedSession(page, ['ROLE_ADMIN', 'idempotentOps'])
+    await seedAuthenticatedSession(page, ['ROLE_ADMIN', 'idempotent:ops:view'])
     await mockAuthenticatedApis(page)
 
     await page.goto('/')
@@ -202,15 +202,15 @@ test.describe('idempotent ops access', () => {
     await expect(page.getByText('通过请求')).toBeVisible()
 
     await page.getByRole('button', { name: '进入治理页' }).click()
-    await page.waitForURL('**/ops/idempotent?tenantId=1')
+    await page.waitForURL('**/ops/idempotent?activeTenantId=1')
 
     await expect(page.getByRole('heading', { name: '幂等治理页' })).toBeVisible()
-    await expect(page).toHaveURL(/tenantId=1/)
+    await expect(page).toHaveURL(/activeTenantId=1/)
     await expect(page.getByText('POST /sys/users')).toBeVisible()
     await expect(page.getByText('消费成功')).toBeVisible()
   })
 
-  test('users without idempotentOps authority should not fetch or show governance entry', async ({
+  test('users without idempotent:ops:view authority should not fetch or show governance entry', async ({
     page,
   }) => {
     const metricsRequestCounter = { count: 0 }
@@ -226,7 +226,7 @@ test.describe('idempotent ops access', () => {
 
   test('platform metrics operator can switch governance metrics to a tenant scope', async ({ page }) => {
     const metricsRequestUrls: string[] = []
-    await seedAuthenticatedSession(page, ['ROLE_ADMIN', 'idempotentOps'])
+    await seedAuthenticatedSession(page, ['ROLE_ADMIN', 'idempotent:ops:view'])
     await mockAuthenticatedApis(page, undefined, metricsRequestUrls)
 
     await page.goto('/ops/idempotent')
@@ -235,24 +235,24 @@ test.describe('idempotent ops access', () => {
     await page.locator('[data-testid="idempotent-tenant-filter"]').click()
     await page.getByText('演示租户 (demo)', { exact: true }).click()
 
-    await expect(page).toHaveURL(/tenantId=7/)
+    await expect(page).toHaveURL(/activeTenantId=7/)
     await expect.poll(() =>
-      metricsRequestUrls.filter((url) => url.includes('tenantId=7')).length,
+      metricsRequestUrls.filter((url) => url.includes('activeTenantId=7')).length,
     ).toBeGreaterThanOrEqual(3)
   })
 
   test('platform metrics operator can open governance page from a tenant-scoped URL', async ({ page }) => {
     const metricsRequestUrls: string[] = []
-    await seedAuthenticatedSession(page, ['ROLE_ADMIN', 'idempotentOps'])
+    await seedAuthenticatedSession(page, ['ROLE_ADMIN', 'idempotent:ops:view'])
     await mockAuthenticatedApis(page, undefined, metricsRequestUrls)
 
-    await page.goto('/ops/idempotent?tenantId=7')
+    await page.goto('/ops/idempotent?activeTenantId=7')
     await expect(page.getByRole('heading', { name: '幂等治理页' })).toBeVisible()
-    await expect(page).toHaveURL(/tenantId=7/)
+    await expect(page).toHaveURL(/activeTenantId=7/)
     await expect(page.locator('.ops-filter-copy strong')).toHaveText('演示租户 (demo)')
 
     await expect.poll(() =>
-      metricsRequestUrls.filter((url) => url.includes('tenantId=7')).length,
+      metricsRequestUrls.filter((url) => url.includes('activeTenantId=7')).length,
     ).toBeGreaterThanOrEqual(3)
   })
 })

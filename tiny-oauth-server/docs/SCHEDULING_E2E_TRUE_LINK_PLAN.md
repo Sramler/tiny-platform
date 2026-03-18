@@ -119,7 +119,7 @@
 前端请求会主动附带：
 
 - `Authorization: Bearer <token>`
-- `X-Tenant-Id`
+- `X-Active-Tenant-Id`
 
 因此推荐做法是：
 

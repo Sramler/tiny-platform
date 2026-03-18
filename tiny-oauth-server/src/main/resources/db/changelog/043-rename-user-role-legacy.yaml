@@ -1,0 +1,20 @@
+databaseChangeLog:
+  - changeSet:
+      id: 043-rename-user-role-legacy
+      author: tiny
+      comment: 将 user_role 表重命名为 user_role_legacy（停止运行时使用，保留只读观察期）
+      preConditions:
+        - onFail: CONTINUE
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - tableExists:
+            tableName: user_role
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: false
+            stripComments: false
+            sql: |
+              ALTER TABLE `user_role` RENAME TO `user_role_legacy`;
+

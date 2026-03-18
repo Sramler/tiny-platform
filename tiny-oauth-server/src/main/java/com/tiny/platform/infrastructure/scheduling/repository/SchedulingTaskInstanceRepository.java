@@ -19,6 +19,8 @@ import java.util.Set;
 @Repository
 public interface SchedulingTaskInstanceRepository extends JpaRepository<SchedulingTaskInstance, Long>, JpaSpecificationExecutor<SchedulingTaskInstance> {
     List<SchedulingTaskInstance> findByDagRunId(Long dagRunId);
+
+    List<SchedulingTaskInstance> findByDagRunIdAndTenantId(Long dagRunId, Long tenantId);
     
     List<SchedulingTaskInstance> findByDagRunIdAndNodeCode(Long dagRunId, String nodeCode);
 

@@ -34,8 +34,8 @@ public class ProcessController {
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> deploy(@RequestBody String bpmnXml) {
         try {
-            String tenantId = TenantContext.getCurrentTenant();
-            String deploymentId = processEngineService.deployProcess(bpmnXml, tenantId);
+            String activeTenantId = TenantContext.getCurrentTenant();
+            String deploymentId = processEngineService.deployProcess(bpmnXml, activeTenantId);
             return ResponseEntity.ok(Map.of(
                 "success", true,
                 "deploymentId", deploymentId,
@@ -56,7 +56,7 @@ public class ProcessController {
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> deployWithInfo(@RequestBody Map<String, Object> request, Principal principal) {
         try {
-            String tenantId = TenantContext.getCurrentTenant();
+            String activeTenantId = TenantContext.getCurrentTenant();
             String bpmnXml = (String) request.get("bpmnXml");
             String deploymentName = (String) request.get("deploymentName");
             String source = (String) request.get("source");
@@ -65,7 +65,7 @@ public class ProcessController {
                 deployer = principal != null ? principal.getName() : null;
             }
 
-            String deploymentId = processEngineService.deployProcess(bpmnXml, tenantId, deploymentName, deployer,source);
+            String deploymentId = processEngineService.deployProcess(bpmnXml, activeTenantId, deploymentName, deployer,source);
             return ResponseEntity.ok(Map.of(
                 "  ", true,
                 "deploymentId", deploymentId != null ? deploymentId : "",
@@ -85,9 +85,9 @@ public class ProcessController {
      * 查询部署列表（分页 + 按租户过滤）
      */
     @GetMapping("/deployments")
-    public ResponseEntity<Object> listDeployments(@RequestParam(value = "tenantId", required = false) String tenantId) {
+    public ResponseEntity<Object> listDeployments(@RequestParam(value = "recordTenantId", required = false) String recordTenantId) {
         try {
-            Object result = processEngineService.listDeployments(tenantId);
+            Object result = processEngineService.listDeployments(recordTenantId);
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of(
@@ -127,8 +127,8 @@ public class ProcessController {
     public ResponseEntity<Map<String, Object>> start(@RequestParam(value = "processKey") String processKey,
                         @RequestBody(required = false) Map<String, Object> variables) {
         try {
-            String tenantId = TenantContext.getCurrentTenant();
-            String instanceId = processEngineService.startProcessInstance(processKey, tenantId, variables);
+            String activeTenantId = TenantContext.getCurrentTenant();
+            String instanceId = processEngineService.startProcessInstance(processKey, activeTenantId, variables);
             return ResponseEntity.ok(Map.of(
                 "success", true,
                 "instanceId", instanceId,
@@ -146,10 +146,10 @@ public class ProcessController {
      * 查询流程实例列表
      */
     @GetMapping("/instances")
-    public ResponseEntity<Object> listInstances(@RequestParam(value = "tenantId", required = false) String tenantId,
+    public ResponseEntity<Object> listInstances(@RequestParam(value = "recordTenantId", required = false) String recordTenantId,
                                 @RequestParam(value = "state", required = false) String state) {
         try {
-            Object result = processEngineService.listProcessInstances(tenantId, state);
+            Object result = processEngineService.listProcessInstances(recordTenantId, state);
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of(
@@ -240,8 +240,8 @@ public class ProcessController {
     @GetMapping("/tasks")
     public ResponseEntity<Object> tasks(@RequestParam(value = "assignee", required = false) String assignee) {
         try {
-            String tenantId = TenantContext.getCurrentTenant();
-            Object result = processEngineService.getTasks(assignee, tenantId);
+            String activeTenantId = TenantContext.getCurrentTenant();
+            Object result = processEngineService.getTasks(assignee, activeTenantId);
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of(
@@ -298,9 +298,9 @@ public class ProcessController {
      * 查询历史流程实例
      */
     @GetMapping("/history/instances")
-    public ResponseEntity<Object> historyInstances(@RequestParam(value = "tenantId", required = false) String tenantId) {
+    public ResponseEntity<Object> historyInstances(@RequestParam(value = "recordTenantId", required = false) String recordTenantId) {
         try {
-            Object result = processEngineService.listHistoricInstances(tenantId);
+            Object result = processEngineService.listHistoricInstances(recordTenantId);
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of(
@@ -335,10 +335,10 @@ public class ProcessController {
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> createTenant(@RequestBody Map<String, Object> tenantInfo) {
         try {
-            String tenantId = processEngineService.createTenant(tenantInfo);
+            String createdTenantId = processEngineService.createTenant(tenantInfo);
             return ResponseEntity.ok(Map.of(
                 "success", true,
-                "tenantId", tenantId,
+                "createdTenantId", createdTenantId,
                 "message", "租户创建成功"
             ));
         } catch (Exception e) {
@@ -401,9 +401,9 @@ public class ProcessController {
      * 获取流程定义列表
      */
     @GetMapping("/definitions")
-    public ResponseEntity<Object> listProcessDefinitions(@RequestParam(value = "tenantId", required = false) String tenantId) {
+    public ResponseEntity<Object> listProcessDefinitions(@RequestParam(value = "recordTenantId", required = false) String recordTenantId) {
         try {
-            Object result = processEngineService.listProcessDefinitions(tenantId);
+            Object result = processEngineService.listProcessDefinitions(recordTenantId);
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of(

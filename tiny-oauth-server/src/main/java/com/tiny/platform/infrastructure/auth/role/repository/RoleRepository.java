@@ -1,6 +1,7 @@
 package com.tiny.platform.infrastructure.auth.role.repository;
 
 import com.tiny.platform.infrastructure.auth.role.domain.Role;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
@@ -12,8 +13,10 @@ import java.util.Optional;
 
 public interface RoleRepository extends JpaRepository<Role, Long>, JpaSpecificationExecutor<Role> {
 
-    @Query("select r from Role r left join fetch r.users where r.id = :id")
-    Optional<Role> findByIdFetchUsers(@Param("id") Long id);
+    List<Role> findByTenantIdOrderByIdAsc(Long tenantId);
+
+    /** 平台模板：tenant_id IS NULL，见 §4 平台模板与 default 解耦 */
+    List<Role> findByTenantIdIsNullOrderByIdAsc();
 
     Optional<Role> findByIdAndTenantId(Long id, Long tenantId);
 
@@ -22,6 +25,9 @@ public interface RoleRepository extends JpaRepository<Role, Long>, JpaSpecificat
     Optional<Role> findByNameAndTenantId(String name, Long tenantId);
 
     List<Role> findByIdInAndTenantId(List<Long> ids, Long tenantId);
+
+    @EntityGraph(attributePaths = {"resources"})
+    List<Role> findWithResourcesByIdInAndTenantIdOrderByIdAsc(List<Long> ids, Long tenantId);
 
     /**
      * 查询角色已经分配的所有资源ID
@@ -36,4 +42,11 @@ public interface RoleRepository extends JpaRepository<Role, Long>, JpaSpecificat
     @Modifying
     @Query(value = "INSERT INTO role_resource (tenant_id, role_id, resource_id) VALUES (:tenantId, :roleId, :resourceId)", nativeQuery = true)
     void addRoleResourceRelation(@Param("tenantId") Long tenantId, @Param("roleId") Long roleId, @Param("resourceId") Long resourceId);
+
+    @Query(value = "SELECT role_id AS roleId, resource_id AS resourceId FROM role_resource WHERE tenant_id = :tenantId ORDER BY role_id ASC, resource_id ASC", nativeQuery = true)
+    List<RoleResourceRelationProjection> findRoleResourceRelationsByTenantId(@Param("tenantId") Long tenantId);
+
+    /** 平台模板关联：tenant_id IS NULL */
+    @Query(value = "SELECT role_id AS roleId, resource_id AS resourceId FROM role_resource WHERE tenant_id IS NULL ORDER BY role_id ASC, resource_id ASC", nativeQuery = true)
+    List<RoleResourceRelationProjection> findRoleResourceRelationsByTenantIdIsNull();
 }

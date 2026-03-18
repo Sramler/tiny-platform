@@ -35,6 +35,10 @@ const routeState = vi.hoisted(() => ({
   query: { id: '10' } as Record<string, string>,
 }))
 
+const authMocks = vi.hoisted(() => ({
+  authUser: { value: null as { access_token?: string | null } | null },
+}))
+
 const uiMocks = vi.hoisted(() => ({
   messageError: vi.fn(),
   messageSuccess: vi.fn(),
@@ -68,6 +72,12 @@ vi.mock('@/api/scheduling', () => ({
 vi.mock('vue-router', () => ({
   useRouter: () => routerMocks,
   useRoute: () => routeState,
+}))
+
+vi.mock('@/auth/auth', () => ({
+  useAuth: () => ({
+    user: authMocks.authUser,
+  }),
 }))
 
 vi.mock('ant-design-vue', () => ({
@@ -290,10 +300,19 @@ function findButtonByText(wrapper: ReturnType<typeof mountView>, text: string) {
   return wrapper.findAll('button').find((button) => button.text().includes(text))
 }
 
+function createToken(authorities: string[]) {
+  const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')
+  const payload = Buffer.from(JSON.stringify({ authorities })).toString('base64url')
+  return `${header}.${payload}.signature`
+}
+
 describe('DagDetail.vue', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    routeState.query = { id: '10' }
+    authMocks.authUser.value = {
+      access_token: createToken(['scheduling:console:view', 'scheduling:console:config', 'scheduling:run:control']),
+    }
+    routeState.query = { id: '10', activeTenantId: '9' }
     apiMocks.getDag.mockResolvedValue(buildDagResponse())
     apiMocks.listDagVersions.mockResolvedValue([
       { id: 5, versionNo: 1, status: 'ACTIVE', createdAt: '2026-03-10 10:00:00' },
@@ -328,11 +347,24 @@ describe('DagDetail.vue', () => {
 
     expect(routerMocks.push).toHaveBeenCalledWith({
       path: '/scheduling/dag/history',
-      query: { dagId: '10' },
+      query: { dagId: '10', activeTenantId: '9' },
     })
     expect(apiMocks.triggerDag).toHaveBeenCalledWith(10)
     expect(apiMocks.stopDag).toHaveBeenCalledWith(10)
     expect(apiMocks.retryDag).toHaveBeenCalledWith(10)
+    expect(wrapper.text()).toContain('生效')
+  })
+
+  it('should preserve activeTenantId when redirecting back to dag list without dag id', async () => {
+    routeState.query = { activeTenantId: '9' }
+
+    mountView()
+    await flushPromises()
+
+    expect(routerMocks.replace).toHaveBeenCalledWith({
+      path: '/scheduling/dag',
+      query: { activeTenantId: '9' },
+    })
   })
 
   it('should disable dag-level actions with explicit reasons when dag is not runnable', async () => {
@@ -360,6 +392,8 @@ describe('DagDetail.vue', () => {
     expect(wrapper.text()).toContain('请先创建并激活版本')
     expect(wrapper.text()).toContain('当前没有运行中的 Run')
     expect(wrapper.text()).toContain('当前没有可重试的失败运行')
+    expect(wrapper.text()).toContain('未生效')
+    expect(wrapper.text()).toContain('Cron 已禁用')
   })
 
   it('should edit dag and handle pause-resume flow', async () => {
@@ -589,7 +623,10 @@ describe('DagDetail.vue', () => {
     mountView()
     await flushPromises()
 
-    expect(routerMocks.replace).toHaveBeenCalledWith('/scheduling/dag')
+    expect(routerMocks.replace).toHaveBeenCalledWith({
+      path: '/scheduling/dag',
+      query: {},
+    })
     expect(uiMocks.messageWarning).toHaveBeenCalled()
     expect(apiMocks.getDag).not.toHaveBeenCalled()
   })

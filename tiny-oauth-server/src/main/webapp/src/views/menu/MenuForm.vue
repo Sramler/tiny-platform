@@ -39,7 +39,7 @@
       </a-form-item>
 
       <a-form-item label="权限标识" name="permission">
-        <a-input v-model:value="formData.permission" placeholder="请输入权限标识，如：user:list" maxlength="100" show-count />
+        <a-input v-model:value="formData.permission" placeholder="请输入权限标识，如：system:user:list" maxlength="100" show-count />
       </a-form-item>
 
       <!-- 显示配置 -->

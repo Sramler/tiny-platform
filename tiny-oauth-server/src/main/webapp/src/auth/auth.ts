@@ -8,9 +8,9 @@ import { logger, persistentLogger } from '@/utils/logger'
 import { sanitizeInternalRedirect } from '@/utils/redirect'
 import { clearTraceId, createNewTraceId } from '@/utils/traceId'
 import {
-  clearTenantId,
+  clearActiveTenantId,
   getTenantCode,
-  getTenantId,
+  getActiveTenantId,
   syncTenantContextFromAccessToken,
   syncTenantContextFromClaims,
 } from '@/utils/tenant'
@@ -98,9 +98,9 @@ let lastLoginAttempt = 0
 const LOGIN_COOLDOWN = 2000 // 2秒冷却时间
 
 const appendTenantHeader = (headers: Headers): void => {
-  const tenantId = getTenantId()
-  if (tenantId) {
-    headers.set('X-Tenant-Id', tenantId)
+  const activeTenantId = getActiveTenantId()
+  if (activeTenantId) {
+    headers.set('X-Active-Tenant-Id', activeTenantId)
   }
 }
 
@@ -195,7 +195,7 @@ export const logout = async () => {
 
   await userManager.removeUser()
   user.value = null
-  clearTenantId()
+  clearActiveTenantId()
   clearTraceId()
   loginInProgress = false
   // 本地回退：使用与后端注册值一致的固定跳转地址，避免 OIDC 校验失败
@@ -266,13 +266,13 @@ export async function initAuth() {
     } else {
       oidcTrace('initAuth.noState')
       user.value = null
-      clearTenantId()
+      clearActiveTenantId()
     }
   } catch (error) {
     logger.error('[OIDC] 初始化认证状态失败', error)
     oidcTrace('initAuth.error', error)
     user.value = null
-    clearTenantId()
+    clearActiveTenantId()
   }
 }
 
@@ -366,7 +366,7 @@ userManager.events.addUserLoaded((u) => {
 userManager.events.addUserUnloaded(() => {
   oidcTrace('event.userUnloaded')
   user.value = null
-  clearTenantId()
+  clearActiveTenantId()
   loginInProgress = false // 重置登录状态
 })
 
@@ -377,7 +377,7 @@ userManager.events.addSilentRenewError((err) => {
 userManager.events.addUserSignedOut(() => {
   oidcTrace('event.userSignedOut')
   user.value = null
-  clearTenantId()
+  clearActiveTenantId()
   loginInProgress = false // 重置登录状态
   // 可选：跳转登录页
   window.location.href = '/login'

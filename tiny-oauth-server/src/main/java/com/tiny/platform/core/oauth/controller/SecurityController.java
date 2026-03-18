@@ -3,16 +3,18 @@ package com.tiny.platform.core.oauth.controller;
 import com.tiny.platform.core.oauth.config.CustomWebAuthenticationDetailsSource;
 import com.tiny.platform.core.oauth.config.FrontendProperties;
 import com.tiny.platform.core.oauth.tenant.IssuerTenantSupport;
+import com.tiny.platform.core.oauth.tenant.ActiveTenantResponseSupport;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
-import com.tiny.platform.infrastructure.auth.user.domain.User;
-import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
-import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
 import com.tiny.platform.core.oauth.security.RedirectPathSanitizer;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationSessionManager;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
 import com.tiny.platform.core.oauth.security.AuthenticationFactorAuthorities;
+import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
 import com.tiny.platform.core.oauth.service.AuthenticationAuditService;
 import com.tiny.platform.core.oauth.service.SecurityService;
+import com.tiny.platform.infrastructure.auth.user.domain.User;
+import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
+import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.infrastructure.core.util.IpUtils;
 import com.tiny.platform.infrastructure.core.util.DeviceUtils;
 import com.tiny.platform.infrastructure.core.util.QrCodeUtil;
@@ -25,6 +27,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.Map;
 import jakarta.servlet.http.HttpServletRequest;
 
@@ -44,6 +47,7 @@ public class SecurityController {
     private final FrontendProperties frontendProperties;
     private final MultiFactorAuthenticationSessionManager sessionManager;
     private final AuthenticationAuditService auditService;
+    private final AuthUserResolutionService authUserResolutionService;
 
     @Autowired
     public SecurityController(UserRepository userRepository,
@@ -51,12 +55,14 @@ public class SecurityController {
                              UserAuthenticationMethodRepository authenticationMethodRepository,
                              FrontendProperties frontendProperties,
                              MultiFactorAuthenticationSessionManager sessionManager,
+                             AuthUserResolutionService authUserResolutionService,
                              AuthenticationAuditService auditService) {
         this.userRepository = userRepository;
         this.securityService = securityService;
         this.authenticationMethodRepository = authenticationMethodRepository;
         this.frontendProperties = frontendProperties;
         this.sessionManager = sessionManager;
+        this.authUserResolutionService = authUserResolutionService;
         this.auditService = auditService;
     }
 
@@ -66,7 +72,12 @@ public class SecurityController {
     public ResponseEntity<Map<String, Object>> status() {
         User user = getCurrentUser();
         if (user == null) return ResponseEntity.status(401).body(Map.of("success", false, "error", "未登录"));
-        return ResponseEntity.ok(securityService.getSecurityStatus(user));
+        Map<String, Object> status = new HashMap<>(securityService.getSecurityStatus(user));
+        ActiveTenantResponseSupport.putTenantFields(
+                status,
+                ActiveTenantResponseSupport.resolveActiveTenantId(SecurityContextHolder.getContext().getAuthentication())
+        );
+        return ResponseEntity.ok(status);
     }
 
     /**
@@ -87,11 +98,11 @@ public class SecurityController {
         // 用户已登录，不需要再次验证密码，仅需要 TOTP 码
         String totpCode = req.get("totpCode");
         if (totpCode == null || totpCode.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "error", "缺少TOTP验证码"));
+            return ResponseEntity.badRequest().body(withActiveTenant(Map.of("success", false, "error", "缺少TOTP验证码"), user));
         }
 
         // 传递 null 作为密码，表示不需要密码验证
-        return ResponseEntity.ok(securityService.bindTotp(user, null, totpCode));
+        return ResponseEntity.ok(withActiveTenant(securityService.bindTotp(user, null, totpCode), user));
     }
 
     /**
@@ -121,8 +132,11 @@ public class SecurityController {
         String plainPassword = null;
         if ("LOCAL".equals(provider) && "PASSWORD".equals(type)) {
             // 检查用户是否有本地密码记录
+            Long activeTenantId = ActiveTenantResponseSupport.resolveActiveTenantId(
+                    SecurityContextHolder.getContext().getAuthentication()
+            );
             boolean hasLocalPassword = authenticationMethodRepository
-                    .existsByUserIdAndTenantIdAndAuthenticationProviderAndAuthenticationType(user.getId(), TenantContext.getTenantId(), "LOCAL", "PASSWORD");
+                    .existsByUserIdAndTenantIdAndAuthenticationProviderAndAuthenticationType(user.getId(), activeTenantId, "LOCAL", "PASSWORD");
             if (hasLocalPassword) {
                 // 推荐提供密码，但不强制（为了兼容性）
                 plainPassword = req.get("password");
@@ -132,10 +146,10 @@ public class SecurityController {
 
         String totpCode = req.get("totpCode");
         if (totpCode == null || totpCode.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "error", "缺少TOTP验证码"));
+            return ResponseEntity.badRequest().body(withActiveTenant(Map.of("success", false, "error", "缺少TOTP验证码"), user));
         }
         
-        Map<String, Object> result = securityService.unbindTotp(user, plainPassword, totpCode);
+        Map<String, Object> result = withActiveTenant(securityService.unbindTotp(user, plainPassword, totpCode), user);
         if (Boolean.TRUE.equals(result.get("success"))) {
             // 记录MFA解绑审计
             auditService.recordMfaUnbind(user.getUsername(), user.getId(), "TOTP", request);
@@ -151,8 +165,8 @@ public class SecurityController {
         if (user == null) return ResponseEntity.status(401).body(Map.of("success", false, "error", "未登录"));
         String totpCode = req.get("totpCode");
         if (totpCode == null)
-            return ResponseEntity.badRequest().body(Map.of("success", false, "error", "缺少参数"));
-        return ResponseEntity.ok(securityService.checkTotp(user, totpCode));
+            return ResponseEntity.badRequest().body(withActiveTenant(Map.of("success", false, "error", "缺少参数"), user));
+        return ResponseEntity.ok(withActiveTenant(securityService.checkTotp(user, totpCode), user));
     }
 
     /**
@@ -166,10 +180,10 @@ public class SecurityController {
         User user = getCurrentUser();
         if (user == null) return ResponseEntity.status(401).body(Map.of("success", false, "error", "未登录"));
         if (!canSkipMfaRemind(user)) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "error", "当前状态不允许跳过二次验证绑定提醒"));
+            return ResponseEntity.badRequest().body(withActiveTenant(Map.of("success", false, "error", "当前状态不允许跳过二次验证绑定提醒"), user));
         }
         boolean skip = Boolean.TRUE.equals(req.get("skipMfaRemind"));
-        return ResponseEntity.ok(securityService.skipMfaRemind(user, skip));
+        return ResponseEntity.ok(withActiveTenant(securityService.skipMfaRemind(user, skip), user));
     }
 
     /**
@@ -190,6 +204,10 @@ public class SecurityController {
                 }
             }
         }
+        ActiveTenantResponseSupport.putTenantFields(
+                result,
+                ActiveTenantResponseSupport.resolveActiveTenantId(SecurityContextHolder.getContext().getAuthentication())
+        );
         return ResponseEntity.ok(result);
     }
 
@@ -324,8 +342,8 @@ public class SecurityController {
         if (authentication == null) {
             return null;
         }
-        Long tenantId = TenantContext.getTenantId();
-        if (tenantId == null) {
+        Long activeTenantId = ActiveTenantResponseSupport.resolveActiveTenantId(authentication);
+        if (activeTenantId == null) {
             return null;
         }
 
@@ -334,17 +352,21 @@ public class SecurityController {
         if (authentication instanceof com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken mfaToken) {
             if (AuthenticationFactorAuthorities.hasAnyFactor(mfaToken) || mfaToken.isAuthenticated()) {
                 String username = mfaToken.getUsername();
-                return userRepository.findUserByUsernameAndTenantId(username, tenantId).orElse(null);
+                return resolveUserInActiveTenant(username, activeTenantId);
             }
         }
 
         // 完全认证的 Token
         if (authentication.isAuthenticated()) {
             String username = authentication.getName();
-            return userRepository.findUserByUsernameAndTenantId(username, tenantId).orElse(null);
+            return resolveUserInActiveTenant(username, activeTenantId);
         }
 
         return null;
+    }
+
+    private User resolveUserInActiveTenant(String username, Long activeTenantId) {
+        return requireAuthUserResolutionService().resolveUserRecordInActiveTenant(username, activeTenantId).orElse(null);
     }
 
     private boolean canSkipMfaRemind(User user) {
@@ -353,6 +375,22 @@ public class SecurityController {
         boolean forceMfa = Boolean.TRUE.equals(status.get("forceMfa"));
         boolean totpActivated = Boolean.TRUE.equals(status.get("totpActivated"));
         return !disableMfa && !forceMfa && !totpActivated;
+    }
+
+    private Map<String, Object> withActiveTenant(Map<String, Object> source, User user) {
+        Map<String, Object> result = new HashMap<>(source);
+        ActiveTenantResponseSupport.putTenantFields(
+                result,
+                ActiveTenantResponseSupport.resolveActiveTenantId(SecurityContextHolder.getContext().getAuthentication())
+        );
+        return result;
+    }
+
+    private AuthUserResolutionService requireAuthUserResolutionService() {
+        if (authUserResolutionService == null) {
+            throw new IllegalStateException("AuthUserResolutionService 未配置");
+        }
+        return authUserResolutionService;
     }
 
     /**

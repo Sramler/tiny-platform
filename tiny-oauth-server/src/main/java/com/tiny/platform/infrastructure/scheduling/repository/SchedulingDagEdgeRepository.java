@@ -17,6 +17,15 @@ public interface SchedulingDagEdgeRepository extends JpaRepository<SchedulingDag
     
     List<SchedulingDagEdge> findByDagVersionIdAndToNodeCode(Long dagVersionId, String toNodeCode);
 
+    /** 租户维度：按版本 + 租户查边，无请求上下文时使用（如 DependencyChecker） */
+    List<SchedulingDagEdge> findByDagVersionIdAndTenantId(Long dagVersionId, Long tenantId);
+
+    /** 租户维度：按版本 + 上游节点 + 租户查边 */
+    List<SchedulingDagEdge> findByDagVersionIdAndFromNodeCodeAndTenantId(Long dagVersionId, String fromNodeCode, Long tenantId);
+
+    /** 租户维度：按版本 + 下游节点 + 租户查边 */
+    List<SchedulingDagEdge> findByDagVersionIdAndToNodeCodeAndTenantId(Long dagVersionId, String toNodeCode, Long tenantId);
+
     @Modifying
     @Query("""
             UPDATE SchedulingDagEdge de

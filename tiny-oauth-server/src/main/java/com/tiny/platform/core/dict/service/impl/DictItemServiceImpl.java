@@ -379,7 +379,7 @@ public class DictItemServiceImpl implements DictItemService {
             case "value" -> DictItem::getValue;
             case "label" -> DictItem::getLabel;
             case "description" -> DictItem::getDescription;
-            case "tenantId" -> DictItem::getTenantId;
+            case "recordTenantId" -> DictItem::getTenantId;
             case "isBuiltin" -> DictItem::getIsBuiltin;
             case "enabled" -> DictItem::getEnabled;
             case "sortOrder" -> DictItem::getSortOrder;

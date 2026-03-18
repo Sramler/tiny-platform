@@ -2,6 +2,7 @@ package com.tiny.platform.application.controller.user;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
+import com.tiny.platform.core.oauth.tenant.TenantContextContract;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationAuditRepository;
 import com.tiny.platform.infrastructure.auth.user.service.AvatarService;
@@ -49,14 +50,14 @@ class UserControllerIdempotencyIntegrationTest {
 
         mockMvc.perform(post("/sys/users")
                 .contentType(MediaType.APPLICATION_JSON)
-                .header("X-Tenant-Id", "200")
+                .header(TenantContextContract.ACTIVE_TENANT_ID_HEADER, "200")
                 .header("X-Idempotency-Key", "same-key")
                 .content(body))
             .andExpect(status().isOk());
 
         mockMvc.perform(post("/sys/users")
                 .contentType(MediaType.APPLICATION_JSON)
-                .header("X-Tenant-Id", "200")
+                .header(TenantContextContract.ACTIVE_TENANT_ID_HEADER, "200")
                 .header("X-Idempotency-Key", "same-key")
                 .content(body))
             .andExpect(status().isConflict())
@@ -78,14 +79,14 @@ class UserControllerIdempotencyIntegrationTest {
 
         mockMvc.perform(post("/sys/users")
                 .contentType(MediaType.APPLICATION_JSON)
-                .header("X-Tenant-Id", "200")
+                .header(TenantContextContract.ACTIVE_TENANT_ID_HEADER, "200")
                 .header("X-Idempotency-Key", "same-key")
                 .content(body))
             .andExpect(status().isOk());
 
         mockMvc.perform(post("/sys/users")
                 .contentType(MediaType.APPLICATION_JSON)
-                .header("X-Tenant-Id", "201")
+                .header(TenantContextContract.ACTIVE_TENANT_ID_HEADER, "201")
                 .header("X-Idempotency-Key", "same-key")
                 .content(body))
             .andExpect(status().isOk());
@@ -156,9 +157,9 @@ class UserControllerIdempotencyIntegrationTest {
         @Override
         protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
                 throws ServletException, IOException {
-            String tenantId = request.getHeader("X-Tenant-Id");
-            if (tenantId != null && !tenantId.isBlank()) {
-                TenantContext.setTenantId(Long.parseLong(tenantId));
+            String activeTenantId = request.getHeader(TenantContextContract.ACTIVE_TENANT_ID_HEADER);
+            if (activeTenantId != null && !activeTenantId.isBlank()) {
+                TenantContext.setActiveTenantId(Long.parseLong(activeTenantId));
             }
             try {
                 filterChain.doFilter(request, response);

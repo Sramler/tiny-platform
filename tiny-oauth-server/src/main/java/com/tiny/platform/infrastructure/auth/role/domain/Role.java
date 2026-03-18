@@ -1,6 +1,6 @@
 package com.tiny.platform.infrastructure.auth.role.domain;
 
-import com.tiny.platform.infrastructure.auth.user.domain.User;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.tiny.platform.infrastructure.auth.resource.domain.Resource;
 import jakarta.persistence.*;
 
@@ -21,8 +21,11 @@ public class Role implements Serializable {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "tenant_id", nullable = false)
+    @Column(name = "tenant_id", nullable = true)
     private Long tenantId;
+
+    @Column(name = "role_level", nullable = false, length = 16)
+    private String roleLevel = "TENANT"; // 模板层级：PLATFORM/TENANT，见 Phase1 技术设计 §4.4
 
     @Column(nullable = false, length = 50)
     private String code; // 权限标识：ROLE_ADMIN
@@ -44,9 +47,6 @@ public class Role implements Serializable {
 
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
-
-    @ManyToMany(mappedBy = "roles", fetch = FetchType.LAZY)
-    private Set<User> users = new HashSet<>();
 
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(name = "role_resource",
@@ -73,12 +73,21 @@ public class Role implements Serializable {
         this.id = id;
     }
 
+    @JsonProperty("recordTenantId")
     public Long getTenantId() {
         return tenantId;
     }
 
     public void setTenantId(Long tenantId) {
         this.tenantId = tenantId;
+    }
+
+    public String getRoleLevel() {
+        return roleLevel;
+    }
+
+    public void setRoleLevel(String roleLevel) {
+        this.roleLevel = roleLevel;
     }
 
     public String getCode() {
@@ -135,14 +144,6 @@ public class Role implements Serializable {
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
-    }
-
-    public Set<User> getUsers() {
-        return users;
-    }
-
-    public void setUsers(Set<User> users) {
-        this.users = users;
     }
 
     public Set<Resource> getResources() {

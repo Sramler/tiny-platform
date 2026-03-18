@@ -134,6 +134,96 @@ databaseChangeLog:
       file: 034-enforce-single-active-dag-version.yaml
       relativeToChangelogFile: true
 
+  # 确保 scheduling_dag_version 在 Liquibase 链路下也具备 (dag_id, version_no) 唯一约束
+  - include:
+      file: 035-enforce-dag-version-no-unique.yaml
+      relativeToChangelogFile: true
+
+  # 为 DAG 版本/节点/边补充 tenant_id 并回填收紧约束
+  - include:
+      file: 036-add-tenant-id-to-scheduling-dag-metadata.yaml
+      relativeToChangelogFile: true
+
+  # 为默认租户补充调度 RBAC authority 资源，并授予 ROLE_ADMIN 调度全权限
+  - include:
+      file: 037-add-scheduling-rbac-authorities.yaml
+      relativeToChangelogFile: true
+
+  # 清理历史上被复制到非默认租户的平台级菜单与角色绑定
+  - include:
+      file: 038-cleanup-platform-only-menus-from-non-default-tenants.yaml
+      relativeToChangelogFile: true
+
+  # 统一历史权限标识到规范码
+  - include:
+      file: 039-normalize-permission-codes.yaml
+      relativeToChangelogFile: true
+
+  # 统一历史控制面菜单资源 URI 到当前 /sys/* 控制器路径
+  - include:
+      file: 040-normalize-control-plane-resource-uris.yaml
+      relativeToChangelogFile: true
+
+  # 新增 tenant_user membership 与 role_assignment，并回填旧 user/user_role 数据
+  - include:
+      file: 041-add-tenant-user-and-role-assignment.yaml
+      relativeToChangelogFile: true
+
+  # 校验 041 回填一致性：role_assignment 与 user_role 不得有差异
+  - include:
+      file: 042-validate-role-assignment-backfill.yaml
+      relativeToChangelogFile: true
+
+  # 将 user_role 重命名为 user_role_legacy（停止运行时使用，仅保留观察期）
+  - include:
+      file: 043-rename-user-role-legacy.yaml
+      relativeToChangelogFile: true
+
+  # user.tenant_id 可空并删除 uk_user_tenant_username，停双写，授权以 tenant_user 为准
+  - include:
+      file: 044-user-tenant-id-nullable-stop-dual-write.yaml
+      relativeToChangelogFile: true
+
+  # 全局 username 唯一（需先清理跨租户重名）
+  - include:
+      file: 045-user-username-global-unique.yaml
+      relativeToChangelogFile: true
+
+  # role/resource 增加 level、tenant_id 可空；平台模板与 default 解耦准备
+  - include:
+      file: 046-role-resource-level-platform-template.yaml
+      relativeToChangelogFile: true
+
+  # Phase 2 (RBAC3) - role governance tables
+  - include:
+      file: 051-role-hierarchy.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: 052-role-mutex.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: 053-role-prerequisite.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: 054-role-cardinality.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: 055-role-constraint-violation-log.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: 056-role-constraint-violation-log-indexes.yaml
+      relativeToChangelogFile: true
+
+  # 删除 user_role_legacy 表，结束兼容观察期（运行态仅依赖 role_assignment）
+  - include:
+      file: 047-drop-user-role-legacy.yaml
+      relativeToChangelogFile: true
+
+  # 为 tenant 表增加 lifecycle_status 字段，用于冻结/下线治理（ACTIVE/FROZEN/DECOMMISSIONED）
+  - include:
+      file: 048-tenant-lifecycle-status.yaml
+      relativeToChangelogFile: true
+
   # 数据修复：修复资源 URL 格式
   - include:
       file: 004-fix-resource-url-format.yaml

@@ -78,6 +78,54 @@ CREATE TABLE IF NOT EXISTS `user_role` (
     CONSTRAINT `fk_user_role_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户-角色关联表';
 
+-- 创建用户-租户 membership 表
+CREATE TABLE IF NOT EXISTS `tenant_user` (
+    `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    `tenant_id` BIGINT NOT NULL COMMENT '租户ID',
+    `user_id` BIGINT NOT NULL COMMENT '用户ID',
+    `status` VARCHAR(16) NOT NULL DEFAULT 'ACTIVE' COMMENT '成员状态：ACTIVE/INVITED/SUSPENDED/LEFT',
+    `is_default` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否默认租户上下文',
+    `joined_at` DATETIME NOT NULL COMMENT '加入租户时间',
+    `left_at` DATETIME NULL COMMENT '离开租户时间',
+    `last_activated_at` DATETIME NULL COMMENT '最近一次激活为当前租户的时间',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY `uk_tenant_user_tenant_user` (`tenant_id`, `user_id`),
+    KEY `idx_tenant_user_user_status` (`user_id`, `status`),
+    KEY `idx_tenant_user_tenant_status` (`tenant_id`, `status`),
+    CONSTRAINT `fk_tenant_user_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`),
+    CONSTRAINT `fk_tenant_user_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户-租户 membership 表';
+
+-- 创建角色授权关系表
+CREATE TABLE IF NOT EXISTS `role_assignment` (
+    `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    `principal_type` VARCHAR(16) NOT NULL COMMENT '主体类型：USER',
+    `principal_id` BIGINT NOT NULL COMMENT '主体ID，第一阶段固定指向 user.id',
+    `role_id` BIGINT NOT NULL COMMENT '角色模板ID',
+    `tenant_id` BIGINT NULL COMMENT '租户ID，PLATFORM 作用域下为空',
+    `scope_type` VARCHAR(16) NOT NULL COMMENT '授权作用域：PLATFORM/TENANT',
+    `scope_id` BIGINT NULL COMMENT '作用域ID，TENANT 作用域下等于 tenant_id',
+    `status` VARCHAR(16) NOT NULL DEFAULT 'ACTIVE' COMMENT '状态：ACTIVE/DISABLED/EXPIRED',
+    `start_time` DATETIME NOT NULL COMMENT '生效开始时间',
+    `end_time` DATETIME NULL COMMENT '生效结束时间',
+    `granted_by` BIGINT NULL COMMENT '授权人ID',
+    `granted_at` DATETIME NOT NULL COMMENT '授权时间',
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    `normalized_tenant_id` BIGINT GENERATED ALWAYS AS (IFNULL(`tenant_id`, 0)) STORED COMMENT '用于唯一约束的归一化 tenant 键',
+    `normalized_scope_id` BIGINT GENERATED ALWAYS AS (IFNULL(`scope_id`, 0)) STORED COMMENT '用于唯一约束的归一化 scope 键',
+    UNIQUE KEY `uk_role_assignment_scope` (`principal_type`, `principal_id`, `role_id`, `normalized_tenant_id`, `scope_type`, `normalized_scope_id`),
+    KEY `idx_role_assignment_principal_active` (`principal_type`, `principal_id`, `status`, `start_time`, `end_time`),
+    KEY `idx_role_assignment_role_scope` (`role_id`, `scope_type`, `tenant_id`),
+    KEY `idx_role_assignment_tenant_scope` (`tenant_id`, `scope_type`, `status`),
+    CONSTRAINT `fk_role_assignment_user` FOREIGN KEY (`principal_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_role_assignment_role` FOREIGN KEY (`role_id`) REFERENCES `role` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `fk_role_assignment_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`),
+    CONSTRAINT `chk_role_assignment_scope_platform` CHECK (`scope_type` <> 'PLATFORM' OR (`tenant_id` IS NULL AND `scope_id` IS NULL)),
+    CONSTRAINT `chk_role_assignment_scope_tenant` CHECK (`scope_type` <> 'TENANT' OR (`tenant_id` IS NOT NULL AND `scope_id` = `tenant_id`)),
+    CONSTRAINT `chk_role_assignment_effective_time` CHECK (`end_time` IS NULL OR `end_time` > `start_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='角色授权关系表';
+
 -- 创建资源表（统一的权限资源表，包含菜单和API）
 CREATE TABLE IF NOT EXISTS `resource` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键',

@@ -3,6 +3,10 @@ import request from '@/utils/request'
 // 资源接口类型定义
 export interface ResourceItem {
   id?: number
+  /**
+   * 资源记录所属租户ID，不是当前活动租户上下文。
+   */
+  recordTenantId?: number
   name: string
   title?: string
   url?: string

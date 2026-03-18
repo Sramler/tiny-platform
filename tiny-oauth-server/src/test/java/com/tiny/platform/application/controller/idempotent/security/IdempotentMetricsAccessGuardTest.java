@@ -127,11 +127,31 @@ class IdempotentMetricsAccessGuardTest {
     void should_allow_platform_admin_from_jwt_claims_when_tenant_context_exists() {
         when(tenantRepository.findByCode(properties.getOps().getPlatformTenantCode()))
                 .thenReturn(Optional.of(platformTenant(1L)));
-        TenantContext.setTenantId(1L);
+        TenantContext.setActiveTenantId(1L);
 
         Jwt jwt = Jwt.withTokenValue("token")
                 .header("alg", "none")
-                .claim("tenantId", "1")
+                .claim("activeTenantId", "1")
+                .build();
+        JwtAuthenticationToken authentication = new JwtAuthenticationToken(
+                jwt,
+                List.of(
+                        new SimpleGrantedAuthority("ROLE_ADMIN"),
+                        new SimpleGrantedAuthority(IdempotentMetricsAccessGuard.PLATFORM_METRICS_AUTHORITY)
+                )
+        );
+
+        assertThat(guard.canAccess(authentication)).isTrue();
+    }
+
+    @Test
+    void should_allow_platform_admin_from_active_tenant_claim_when_context_missing() {
+        when(tenantRepository.findByCode(properties.getOps().getPlatformTenantCode()))
+                .thenReturn(Optional.of(platformTenant(1L)));
+
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "none")
+                .claim("activeTenantId", "1")
                 .build();
         JwtAuthenticationToken authentication = new JwtAuthenticationToken(
                 jwt,

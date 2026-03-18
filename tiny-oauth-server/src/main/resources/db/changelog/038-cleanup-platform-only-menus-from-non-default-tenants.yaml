@@ -1,0 +1,39 @@
+databaseChangeLog:
+  - changeSet:
+      id: cleanup-platform-only-menus-from-non-default-tenants
+      author: tiny
+      comment: 清理历史上被复制到非默认租户的平台级菜单与角色绑定
+      validCheckSum:
+        - ANY
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              DELETE role_resource_entity
+              FROM `role_resource` role_resource_entity
+              JOIN `resource` resource_entity
+                ON resource_entity.id = role_resource_entity.resource_id
+               AND resource_entity.tenant_id = role_resource_entity.tenant_id
+              JOIN `tenant` tenant_entity
+                ON tenant_entity.id = resource_entity.tenant_id
+              WHERE tenant_entity.code <> 'default'
+                AND (
+                  resource_entity.name IN ('tenant', 'idempotentOps')
+                  OR resource_entity.permission IN ('system:tenant:list', 'idempotent:ops:view')
+                  OR resource_entity.url IN ('/system/tenant', '/ops/idempotent')
+                  OR resource_entity.uri IN ('/sys/tenants', '/metrics/idempotent')
+                );
+
+              DELETE resource_entity
+              FROM `resource` resource_entity
+              JOIN `tenant` tenant_entity
+                ON tenant_entity.id = resource_entity.tenant_id
+              WHERE tenant_entity.code <> 'default'
+                AND (
+                  resource_entity.name IN ('tenant', 'idempotentOps')
+                  OR resource_entity.permission IN ('system:tenant:list', 'idempotent:ops:view')
+                  OR resource_entity.url IN ('/system/tenant', '/ops/idempotent')
+                  OR resource_entity.uri IN ('/sys/tenants', '/metrics/idempotent')
+                );

@@ -40,6 +40,7 @@ const mocks = vi.hoisted(() => ({
   generateRequestId: vi.fn(),
   getCurrentTraceId: vi.fn(),
   clearTenantContext: vi.fn(),
+  getActiveTenantId: vi.fn(),
   getTenantId: vi.fn(),
   syncTenantContextFromAccessToken: vi.fn(),
   createIdempotencyHeaders: vi.fn(),
@@ -97,6 +98,7 @@ vi.mock('@/utils/traceId', () => ({
 
 vi.mock('@/utils/tenant', () => ({
   clearTenantContext: mocks.clearTenantContext,
+  getActiveTenantId: mocks.getActiveTenantId,
   getTenantId: mocks.getTenantId,
   syncTenantContextFromAccessToken: mocks.syncTenantContextFromAccessToken,
 }))
@@ -129,6 +131,7 @@ describe('request.ts interceptors', () => {
     mocks.getOrCreateTraceId.mockReturnValue('trace-id')
     mocks.generateRequestId.mockReturnValue('request-id')
     mocks.getCurrentTraceId.mockReturnValue('trace-current')
+    mocks.getActiveTenantId.mockReturnValue('101')
     mocks.getTenantId.mockReturnValue('101')
     mocks.createIdempotencyHeaders.mockReturnValue({ 'X-Idempotency-Key': 'idem-key' })
     mocks.createIdempotencyFingerprint.mockImplementation((value: unknown) => JSON.stringify(value))
@@ -159,7 +162,7 @@ describe('request.ts interceptors', () => {
     expect(config.headers['X-Trace-Id']).toBe('trace-id')
     expect(config.headers['X-Request-Id']).toBe('request-id')
     expect(config.headers.Authorization).toBe('Bearer access-token')
-    expect(config.headers['X-Tenant-Id']).toBe('101')
+    expect(config.headers['X-Active-Tenant-Id']).toBe('101')
     expect(mocks.syncTenantContextFromAccessToken).toHaveBeenCalledWith('access-token')
   })
 

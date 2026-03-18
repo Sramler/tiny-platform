@@ -56,15 +56,15 @@
     <!-- 部署结果弹窗（本页展示，让用户选择跳转） -->
     <ProcessDeployResultModal v-model:open="saveResultOpen"
       :result="{ deploymentId: lastSaveResult.deploymentId, deploymentName: lastSaveResult.deploymentName, description: lastSaveResult.description }"
-      :actions="nextActions" @run-action="onRunAction" @go-deployment="() => router.push('/deployment')"
-      @go-definition="() => router.push('/process/definition')" />
+      :actions="nextActions" @run-action="onRunAction" @go-deployment="goToDeployment"
+      @go-definition="goToDefinition" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, onUnmounted, reactive } from 'vue'
 import { message } from 'ant-design-vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   RocketOutlined,
   DownloadOutlined,
@@ -85,6 +85,7 @@ import camundaModdleDescriptor from 'camunda-bpmn-moddle/resources/camunda.json'
 // i18n - 使用简化的翻译模块
 import { getTranslateModule, translateUtils } from '@/utils/bpmn/utils/translateUtils'
 import ProcessDeployResultModal from '@/components/process/ProcessDeployResultModal.vue'
+import { getActiveTenantId, resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
 
 // 声明全局变量类型
 declare global {
@@ -121,7 +122,30 @@ const propertiesPanel = ref<HTMLDivElement | null>(null)
 const modeler = ref<BpmnModeler | null>(null)
 
 // 初始化路由
+const route = useRoute()
 const router = useRouter()
+
+function resolveNavigationTenantId() {
+  return resolveActiveTenantQueryValue(route.query) ?? getActiveTenantId()
+}
+
+function buildNavigationQuery() {
+  return withActiveTenantQuery({}, resolveNavigationTenantId())
+}
+
+function goToDeployment() {
+  router.push({
+    path: '/deployment',
+    query: buildNavigationQuery(),
+  })
+}
+
+function goToDefinition() {
+  router.push({
+    path: '/process/definition',
+    query: buildNavigationQuery(),
+  })
+}
 
 // 保存对话框相关
 const saveDialogVisible = ref(false)

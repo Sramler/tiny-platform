@@ -1,5 +1,6 @@
 package com.tiny.platform.infrastructure.scheduling.model;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import java.io.Serializable;
 import java.time.LocalDateTime;
@@ -17,6 +18,9 @@ public class SchedulingDagEdge implements Serializable {
 
     @Column(name = "dag_version_id", nullable = false)
     private Long dagVersionId;
+
+    @Column(name = "tenant_id", nullable = false)
+    private Long tenantId;
 
     @Column(name = "from_node_code", nullable = false, length = 128)
     private String fromNodeCode;
@@ -52,6 +56,15 @@ public class SchedulingDagEdge implements Serializable {
         this.dagVersionId = dagVersionId;
     }
 
+    @JsonProperty("recordTenantId")
+    public Long getTenantId() {
+        return tenantId;
+    }
+
+    public void setTenantId(Long tenantId) {
+        this.tenantId = tenantId;
+    }
+
     public String getFromNodeCode() {
         return fromNodeCode;
     }
@@ -84,4 +97,3 @@ public class SchedulingDagEdge implements Serializable {
         this.createdAt = createdAt;
     }
 }
-

@@ -227,10 +227,10 @@ could not execute batch [...]
 
 | 类别 | 项 | 优先级 | 说明 |
 |------|----|--------|------|
-| **多租户** | 列表/详情租户校验 | 高 | `listTaskTypes` / `listTasks` 的 `tenantId` 为可选，未传时可能跨租户；`getTaskType(id)` / `getTask(id)` 未校验当前用户租户，存在越权风险。建议：从请求头/Token 取当前租户，列表默认按当前租户过滤；详情校验资源归属当前租户。 |
-| **多租户** | 创建时租户来源 | 高 | 当前 `tenantId` 来自 DTO（前端传入），若前端未传或传错会导致数据落错租户。建议：创建时忽略 DTO 的 `tenantId`，由后端从 SecurityContext/`X-Tenant-Id` 写入。 |
+| **多租户** | 列表/详情租户校验 | 高 | `listTaskTypes` / `listTasks` 的当前上下文筛选曾使用可选 `tenantId`，未传时可能跨租户；`getTaskType(id)` / `getTask(id)` 未校验当前用户租户，存在越权风险。建议：从请求头/Token 取 `activeTenantId`，列表默认按当前活动租户过滤；详情校验资源 `recordTenantId` 归属当前租户。 |
+| **多租户** | 创建时租户来源 | 高 | 历史上租户上下文曾来自 DTO 中的 `tenantId`（前端传入），若前端未传或传错会导致数据落错租户。建议：创建时忽略 DTO 的当前上下文字段，由后端从 SecurityContext/`X-Active-Tenant-Id` 写入运行时租户。 |
 | **校验** | 任务名称必填 | 中 | ✅ 已实现：DTO 增加 `@NotBlank`；createTask/updateTask 内校验非空并 trim；前端 Task.vue 表单名称项必填校验。 |
-| **校验** | typeId 对应任务类型存在且同租户 | 中 | ✅ 已实现：创建任务时必填 `typeId` 并校验任务类型存在且 `tenantId` 一致（`SchedulingService.createTask`）；更新任务时若传入 `typeId` 则校验存在且同租户后更新（`SchedulingService.updateTask`）。 |
+| **校验** | typeId 对应任务类型存在且同租户 | 中 | ✅ 已实现：创建任务时必填 `typeId` 并校验任务类型存在且 `recordTenantId` 一致（`SchedulingService.createTask`）；更新任务时若传入 `typeId` 则校验存在且同租户后更新（`SchedulingService.updateTask`）。 |
 | **体验** | 执行器下拉/列表接口 | 中 | ✅ 已实现：`GET /scheduling/executors` 返回已注册执行器标识（bean 名）；TaskType.vue 执行器改为下拉选择，选项来自该接口。 |
 | **体验** | 任务类型名称展示 | 低 | ✅ 已实现：前端在 Task.vue 中根据已加载的 taskTypes 用 typeId 解析并展示类型名称，列表列与详情均显示名称。 |
 | **数据与文档** | scheduling_task_param 表 | 低 | ✅ 已说明。见本文档「五、文档与体验」：当前参数以 `task.params` 为准，`scheduling_task_param` 表预留未用。 |
@@ -496,4 +496,3 @@ instance.setResult(resultJson);
 4. **性能问题**: 查询优化、扫描效率等
 
 建议按照优先级逐步修复这些问题，确保系统的稳定性和安全性。
-

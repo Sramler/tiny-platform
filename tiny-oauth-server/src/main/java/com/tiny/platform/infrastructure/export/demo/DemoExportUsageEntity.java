@@ -1,5 +1,7 @@
 package com.tiny.platform.infrastructure.export.demo;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 
 import java.math.BigDecimal;
@@ -147,12 +149,24 @@ public class DemoExportUsageEntity {
         this.id = id;
     }
 
+    @JsonIgnore
     public Long getTenantId() {
         return tenantId;
     }
 
+    @JsonIgnore
     public void setTenantId(Long tenantId) {
         this.tenantId = tenantId;
+    }
+
+    @JsonProperty("recordTenantId")
+    public Long getRecordTenantId() {
+        return tenantId;
+    }
+
+    @JsonProperty("recordTenantId")
+    public void setRecordTenantId(Long recordTenantId) {
+        this.tenantId = recordTenantId;
     }
 
     public LocalDate getUsageDate() {
@@ -451,4 +465,3 @@ public class DemoExportUsageEntity {
         this.attachmentInfo = attachmentInfo;
     }
 }
-

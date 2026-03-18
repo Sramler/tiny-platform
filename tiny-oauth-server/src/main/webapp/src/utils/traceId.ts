@@ -248,11 +248,11 @@ export async function fetchWithTraceId(
 ): Promise<Response> {
   const { timeout = 5000, skipAuthError = false, ...fetchOptions } = options // 默认 5 秒超时
   const optionsWithTraceId = addTraceIdToFetchOptions(fetchOptions)
-  const { getTenantId } = await import('@/utils/tenant')
+  const { getActiveTenantId } = await import('@/utils/tenant')
   const headers = new Headers(optionsWithTraceId.headers)
-  const tenantId = getTenantId()
-  if (tenantId) {
-    headers.set('X-Tenant-Id', tenantId)
+  const activeTenantId = getActiveTenantId()
+  if (activeTenantId) {
+    headers.set('X-Active-Tenant-Id', activeTenantId)
   }
   if (isUnsafeHttpMethod(fetchOptions.method) && fetchOptions.credentials === 'include') {
     const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000'

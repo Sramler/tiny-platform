@@ -6,7 +6,7 @@ export interface DictTypeItem {
   dictCode: string
   dictName: string
   description?: string
-  tenantId?: number
+  recordTenantId?: number
   categoryId?: number
   isBuiltin?: boolean
   builtinLocked?: boolean
@@ -27,7 +27,7 @@ export interface DictItem {
   value: string
   label: string
   description?: string
-  tenantId?: number
+  recordTenantId?: number
   isBuiltin?: boolean
   enabled?: boolean
   sortOrder?: number

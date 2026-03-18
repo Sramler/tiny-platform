@@ -1,5 +1,6 @@
 package com.tiny.platform.core.dict.model;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.tiny.platform.infrastructure.core.converter.JsonStringConverter;
 import jakarta.persistence.*;
 import java.io.Serializable;
@@ -124,6 +125,7 @@ public class DictItem implements Serializable {
         this.description = description;
     }
 
+    @JsonProperty("recordTenantId")
     public Long getTenantId() {
         return tenantId;
     }
@@ -196,4 +198,3 @@ public class DictItem implements Serializable {
         this.updatedBy = updatedBy;
     }
 }
-

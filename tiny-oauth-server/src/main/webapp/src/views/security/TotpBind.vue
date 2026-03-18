@@ -91,6 +91,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { getSecurityStatus } from '@/api/security'
 import { ensureCsrfToken } from '@/utils/csrf'
 import { sanitizeInternalRedirect } from '@/utils/redirect'
 
@@ -181,16 +182,7 @@ onMounted(async () => {
 
 async function fetchSecurityStatus() {
   try {
-    const { fetchWithTraceId } = await import('@/utils/traceId')
-    const response = await fetchWithTraceId(`${baseUrl}/self/security/status`, {
-      method: 'GET',
-      credentials: 'include',
-      headers: { Accept: 'application/json' },
-    })
-    if (!response.ok) {
-      throw new Error('无法获取安全状态')
-    }
-    const data = await response.json()
+    const data = await getSecurityStatus()
     disableMfa.value = Boolean(data.disableMfa)
     forceMfa.value = Boolean(data.forceMfa)
   } catch (error) {

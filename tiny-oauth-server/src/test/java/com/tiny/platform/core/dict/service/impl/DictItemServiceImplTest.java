@@ -35,7 +35,7 @@ class DictItemServiceImplTest {
 
     @Test
     void should_create_platform_overlay_using_current_tenant_context() {
-        TenantContext.setTenantId(7L);
+        TenantContext.setActiveTenantId(7L);
 
         DictType platformType = dictType(10L, 0L, "ENABLE_STATUS");
         DictItem platformItem = dictItem(1L, 10L, 0L, "ENABLED", "启用", platformType);
@@ -60,7 +60,7 @@ class DictItemServiceImplTest {
 
     @Test
     void should_reject_unknown_platform_overlay_value() {
-        TenantContext.setTenantId(7L);
+        TenantContext.setActiveTenantId(7L);
 
         DictType platformType = dictType(10L, 0L, "ENABLE_STATUS");
         DictItemCreateUpdateDto dto = new DictItemCreateUpdateDto();
@@ -80,7 +80,7 @@ class DictItemServiceImplTest {
 
     @Test
     void should_keep_platform_metadata_when_updating_platform_overlay() {
-        TenantContext.setTenantId(7L);
+        TenantContext.setActiveTenantId(7L);
 
         DictType platformType = dictType(10L, 0L, "ENABLE_STATUS");
         DictItem platformItem = dictItem(1L, 10L, 0L, "ENABLED", "启用", platformType);
@@ -113,7 +113,7 @@ class DictItemServiceImplTest {
 
     @Test
     void should_prefer_tenant_overlay_when_building_dict_map() {
-        TenantContext.setTenantId(7L);
+        TenantContext.setActiveTenantId(7L);
 
         DictType platformType = dictType(10L, 0L, "ENABLE_STATUS");
         DictItem platformItem = dictItem(1L, 10L, 0L, "ENABLED", "启用", platformType);
@@ -130,7 +130,7 @@ class DictItemServiceImplTest {
 
     @Test
     void getLabel_returns_tenant_overlay_when_same_value_exists_in_platform_and_tenant() {
-        TenantContext.setTenantId(7L);
+        TenantContext.setActiveTenantId(7L);
         DictType platformType = dictType(10L, 0L, "ENABLE_STATUS");
         DictItem platformItem = dictItem(1L, 10L, 0L, "ENABLED", "启用", platformType);
         DictItem tenantOverlay = dictItem(2L, 10L, 7L, "ENABLED", "可用", platformType);
@@ -146,7 +146,7 @@ class DictItemServiceImplTest {
 
     @Test
     void findByDictCode_returns_merged_platform_and_tenant_items_with_tenant_override() {
-        TenantContext.setTenantId(7L);
+        TenantContext.setActiveTenantId(7L);
         DictType platformType = dictType(10L, 0L, "ENABLE_STATUS");
         DictItem platformA = dictItem(1L, 10L, 0L, "A", "平台A", platformType);
         DictItem platformB = dictItem(2L, 10L, 0L, "B", "平台B", platformType);
@@ -175,7 +175,7 @@ class DictItemServiceImplTest {
 
     @Test
     void should_reject_deleting_platform_item() {
-        TenantContext.setTenantId(7L);
+        TenantContext.setActiveTenantId(7L);
 
         DictType platformType = dictType(10L, 0L, "ENABLE_STATUS");
         DictItem platformItem = dictItem(1L, 10L, 0L, "ENABLED", "启用", platformType);
@@ -191,7 +191,7 @@ class DictItemServiceImplTest {
 
     @Test
     void should_reject_access_to_other_tenant_custom_type() {
-        TenantContext.setTenantId(7L);
+        TenantContext.setActiveTenantId(7L);
 
         DictType otherTenantType = dictType(20L, 8L, "PRIVATE_STATUS");
         DictItemCreateUpdateDto dto = new DictItemCreateUpdateDto();
@@ -207,7 +207,7 @@ class DictItemServiceImplTest {
 
     @Test
     void findById_whenItemBelongsToOtherTenant_returnsEmpty() {
-        TenantContext.setTenantId(7L);
+        TenantContext.setActiveTenantId(7L);
         DictType otherTenantType = dictType(20L, 8L, "PRIVATE_STATUS");
         DictItem otherTenantItem = dictItem(100L, 20L, 8L, "X", "其他租户项", otherTenantType);
         when(dictItemRepository.findById(100L)).thenReturn(Optional.of(otherTenantItem));
@@ -218,7 +218,7 @@ class DictItemServiceImplTest {
 
     @Test
     void update_whenItemBelongsToOtherTenant_throwsNotFound() {
-        TenantContext.setTenantId(7L);
+        TenantContext.setActiveTenantId(7L);
         DictType otherTenantType = dictType(20L, 8L, "PRIVATE_STATUS");
         DictItem otherTenantItem = dictItem(100L, 20L, 8L, "X", "其他租户项", otherTenantType);
         DictItemCreateUpdateDto dto = new DictItemCreateUpdateDto();
@@ -235,7 +235,7 @@ class DictItemServiceImplTest {
 
     @Test
     void delete_whenItemBelongsToOtherTenant_throwsNotFound() {
-        TenantContext.setTenantId(7L);
+        TenantContext.setActiveTenantId(7L);
         DictType otherTenantType = dictType(20L, 8L, "PRIVATE_STATUS");
         DictItem otherTenantItem = dictItem(100L, 20L, 8L, "X", "其他租户项", otherTenantType);
         when(dictItemRepository.findById(100L)).thenReturn(Optional.of(otherTenantItem));

@@ -22,14 +22,6 @@
                             <a-select-option value="completed">已完成</a-select-option>
                         </a-select>
                     </a-form-item>
-                    <a-form-item label="租户">
-                        <a-select v-model:value="query.tenantId" placeholder="选择租户" allow-clear style="width: 150px">
-                            <a-select-option value="">全部租户</a-select-option>
-                            <a-select-option v-for="tenant in tenants" :key="tenant.id" :value="tenant.id">
-                                {{ tenant.name }}
-                            </a-select-option>
-                        </a-select>
-                    </a-form-item>
                     <a-form-item>
                         <a-button type="primary" @click="throttledSearch">搜索</a-button>
                         <a-button class="ml-2" @click="throttledReset">重置</a-button>
@@ -172,7 +164,7 @@
                     <a-descriptions-item label="流程实例ID">{{ currentTask.processInstanceId }}</a-descriptions-item>
                     <a-descriptions-item label="指派人">{{ currentTask.assignee || '未分配' }}</a-descriptions-item>
                     <a-descriptions-item label="创建时间">{{ formatDateTime(currentTask.createTime) }}</a-descriptions-item>
-                    <a-descriptions-item label="租户ID">{{ currentTask.tenantId || '-' }}</a-descriptions-item>
+                    <a-descriptions-item label="记录所属租户ID">{{ currentTask.recordTenantId || '-' }}</a-descriptions-item>
                 </a-descriptions>
 
                 <!-- 任务表单 -->
@@ -205,6 +197,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, onBeforeUnmount, nextTick, watch, computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import {
     UserAddOutlined,
@@ -214,8 +207,13 @@ import {
     PlusOutlined
 } from '@ant-design/icons-vue'
 import { useThrottle } from '@/utils/debounce'
-import { taskApi, userApi, type Task } from '@/api/process'
+import { taskApi, type Task } from '@/api/process'
+import { getCurrentUser } from '@/api/user'
 import { useAuth } from '@/auth/auth'
+import { getActiveTenantId, resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
+
+const route = useRoute()
+const router = useRouter()
 
 // 响应式数据
 const loading = ref(false)
@@ -224,18 +222,36 @@ const selectedRowKeys = ref<string[]>([])
 const showTaskDetail = ref(false)
 const currentTask = ref<Task | null>(null)
 const refreshing = ref(false)
-const tenants = ref([
-    { id: 'tenant1', name: '租户1' },
-    { id: 'tenant2', name: '租户2' }
-])
+
+function resolveLocalActiveTenantId() {
+    return getActiveTenantId() ?? ''
+}
+
+function resolveInitialActiveTenantId() {
+    return resolveActiveTenantQueryValue(route.query) ?? resolveLocalActiveTenantId()
+}
+
+async function syncActiveTenantContextToRoute(activeTenantId: string | null | undefined) {
+    const currentTenant = resolveActiveTenantQueryValue(route.query) ?? ''
+    const nextTenant = activeTenantId || ''
+    if (currentTenant === nextTenant) {
+        return
+    }
+    await router.replace({
+        query: withActiveTenantQuery({ ...route.query }, nextTenant || null),
+    })
+}
+
+function resolveCurrentActiveTenant() {
+    return resolveActiveTenantQueryValue(route.query) ?? resolveLocalActiveTenantId()
+}
 
 // 查询参数
 const query = reactive({
     name: '',
     processInstanceId: '',
     assignee: '',
-    status: '',
-    tenantId: ''
+    status: ''
 })
 
 // 任务表单
@@ -277,7 +293,7 @@ const currentUser = computed(() => {
 // 获取当前用户信息
 async function fetchCurrentUser() {
     try {
-        const userInfo = await userApi.getCurrentUser()
+        const userInfo = await getCurrentUser()
         currentUserInfo.value = userInfo
         console.log('获取当前用户信息成功:', userInfo)
     } catch (error) {
@@ -361,9 +377,9 @@ const columns = [
         width: 160
     },
     {
-        title: '租户ID',
-        dataIndex: 'tenantId',
-        key: 'tenantId',
+        title: '记录所属租户ID',
+        dataIndex: 'recordTenantId',
+        key: 'recordTenantId',
         width: 120
     },
     {
@@ -406,25 +422,24 @@ async function fetchTasks() {
         console.log('开始获取任务数据...')
         console.log('查询参数:', {
             status: query.status,
-            assignee: currentUser.value,
-            tenantId: query.tenantId
+            assignee: currentUser.value
         })
 
         try {
             if (query.status === 'unassigned') {
                 // 获取未分配的任务
                 console.log('尝试获取未分配的任务...')
-                result = await taskApi.getTasks(undefined, query.tenantId)
+                result = await taskApi.getTasks(undefined)
                 console.log('未分配任务API调用成功:', result)
             } else if (query.status === 'assigned') {
                 // 获取已分配的任务
                 console.log('尝试获取已分配的任务...')
-                result = await taskApi.getTasks(currentUser.value, query.tenantId)
+                result = await taskApi.getTasks(currentUser.value)
                 console.log('已分配任务API调用成功:', result)
             } else {
                 // 获取所有任务
                 console.log('尝试获取所有任务...')
-                result = await taskApi.getTasks('*', query.tenantId)
+                result = await taskApi.getTasks('*')
                 console.log('所有任务API调用成功:', result)
             }
         } catch (apiError) {
@@ -445,7 +460,7 @@ async function fetchTasks() {
         // 调试信息
         console.log('API返回结果:', result)
         console.log('解析后的任务数组:', tasks)
-        console.log('查询参数:', { assignee, tenantId: query.tenantId, status: query.status })
+        console.log('查询参数:', { assignee, activeTenantId: resolveCurrentActiveTenant(), status: query.status })
 
         // 客户端筛选
         if (query.name) {
@@ -537,8 +552,17 @@ function viewTaskDetail(task: Task) {
 
 // 查看流程实例
 function viewProcessInstance(task: Task) {
-    // 跳转到流程实例页面
-    window.open(`/process/instance?instanceId=${task.processInstanceId}`, '_blank')
+    const queryParams = withActiveTenantQuery(
+        { instanceId: task.processInstanceId },
+        resolveCurrentActiveTenant(),
+    )
+    const search = new URLSearchParams()
+    Object.entries(queryParams).forEach(([key, value]) => {
+        if (value != null && value !== '') {
+            search.append(key, String(value))
+        }
+    })
+    window.open(`/process/instance?${search.toString()}`, '_blank')
 }
 
 // 批量领取
@@ -601,7 +625,17 @@ function clearSelection() {
 
 // 跳转到流程建模
 function goToModeling() {
-    window.open('/process/modeling', '_blank')
+    const queryParams = withActiveTenantQuery(
+        {},
+        resolveCurrentActiveTenant(),
+    )
+    const search = new URLSearchParams()
+    Object.entries(queryParams).forEach(([key, value]) => {
+        if (value != null && value !== '') {
+            search.append(key, String(value))
+        }
+    })
+    window.open(`/process/modeling?${search.toString()}`, '_blank')
 }
 
 // 表格行选择处理
@@ -774,6 +808,7 @@ function stopAutoRefresh() {
 // 组件挂载
 onMounted(async () => {
     console.log('任务页面组件挂载，开始获取任务数据')
+    await syncActiveTenantContextToRoute(resolveInitialActiveTenantId())
 
     // 先获取用户信息，再获取任务数据
     await fetchCurrentUser()
@@ -795,6 +830,7 @@ onBeforeUnmount(() => {
 watch(() => pagination.value.pageSize, () => {
     updateTableBodyHeight()
 })
+
 </script>
 
 <style scoped>

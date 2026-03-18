@@ -5,9 +5,7 @@ import jakarta.validation.constraints.Size;
 
 public class SchedulingTaskTypeCreateUpdateDto {
     private Long id;
-    
-    private Long tenantId;
-    
+
     @NotBlank(message = "任务类型编码不能为空")
     @Size(max = 128, message = "编码长度不能超过128")
     private String code;
@@ -38,14 +36,6 @@ public class SchedulingTaskTypeCreateUpdateDto {
 
     public void setId(Long id) {
         this.id = id;
-    }
-
-    public Long getTenantId() {
-        return tenantId;
-    }
-
-    public void setTenantId(Long tenantId) {
-        this.tenantId = tenantId;
     }
 
     public String getCode() {
@@ -120,5 +110,4 @@ public class SchedulingTaskTypeCreateUpdateDto {
         this.createdBy = createdBy;
     }
 }
-
 

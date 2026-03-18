@@ -10,12 +10,18 @@ import com.tiny.platform.infrastructure.auth.resource.dto.ResourceRequestDto;
 import com.tiny.platform.infrastructure.auth.resource.dto.ResourceResponseDto;
 import com.tiny.platform.infrastructure.auth.resource.enums.ResourceType;
 import com.tiny.platform.infrastructure.auth.resource.repository.ResourceRepository;
+import com.tiny.platform.infrastructure.auth.resource.support.PlatformControlPlaneResourcePolicy;
+import com.tiny.platform.core.oauth.security.LegacyAuthConstants;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
+import com.tiny.platform.infrastructure.tenant.config.PlatformTenantProperties;
+import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 
 import org.springframework.stereotype.Service;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
@@ -27,24 +33,36 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.HashMap;
 import java.util.ArrayList;
+import java.util.stream.Stream;
 
 
 /**
- * 菜单业务实现类，专注于 type=0/1 的菜单和目录
+ * 菜单业务实现类，专注于 type=0/1 的菜单和目录。
+ * <p>租户范围以 {@link TenantContext#getActiveTenantId()} 为准，不以 user.tenant_id 为依据。
+ * 见 docs/TINY_PLATFORM_AUTHORIZATION_LEGACY_REMOVAL_PLAN.md §3。
  */
 @Service
 public class MenuServiceImpl implements MenuService {
     private final ResourceRepository resourceRepository;
-    
+    private final TenantRepository tenantRepository;
+    private final PlatformTenantProperties platformTenantProperties;
+
     @PersistenceContext
     private EntityManager entityManager; // 注入 EntityManager 用于原生 Hibernate 查询
 
-    public MenuServiceImpl(ResourceRepository resourceRepository) {
+    public MenuServiceImpl(ResourceRepository resourceRepository,
+                           TenantRepository tenantRepository,
+                           PlatformTenantProperties platformTenantProperties) {
         this.resourceRepository = resourceRepository;
+        this.tenantRepository = tenantRepository;
+        this.platformTenantProperties = platformTenantProperties;
     }
 
     private Long normalizeParentId(Long parentId) {
@@ -205,6 +223,7 @@ public class MenuServiceImpl implements MenuService {
      */
     private ResourceResponseDto mapToResourceResponseDto(Object[] row) {
         ResourceResponseDto dto = new ResourceResponseDto();
+        dto.setRecordTenantId(requireTenantId());
         
         // 按查询字段顺序映射（与 SQL SELECT 字段顺序一致）
         dto.setId(((Number) row[0]).longValue()); // id
@@ -289,8 +308,7 @@ public class MenuServiceImpl implements MenuService {
      */
     @Override
     public List<ResourceResponseDto> menuTree() {
-        List<Resource> menus = resourceRepository.findByTypeInAndTenantIdOrderBySortAsc(
-                List.of(ResourceType.DIRECTORY, ResourceType.MENU), requireTenantId());
+        List<Resource> menus = findTreeMenusForCurrentUser(requireTenantId());
         List<ResourceResponseDto> fullTree = buildResourceTree(menus);
 
         // 1. 获取所有节点的扁平化列表，用于后续查找 redirect 目标
@@ -316,6 +334,7 @@ public class MenuServiceImpl implements MenuService {
     public List<ResourceResponseDto> menuTreeAll() {
         List<Resource> menus = resourceRepository.findByTypeInAndTenantIdOrderBySortAsc(
                 List.of(ResourceType.DIRECTORY, ResourceType.MENU), requireTenantId());
+        menus = filterPlatformOnlyMenus(menus);
         return buildResourceTree(menus);
     }
 
@@ -384,16 +403,7 @@ public class MenuServiceImpl implements MenuService {
      */
     @Override
     public List<ResourceResponseDto> getMenusByParentId(Long parentId) {
-        List<Resource> menus;
-        if (parentId == null || parentId == 0) {
-            // 查询顶级菜单（parentId为null或0）
-            menus = resourceRepository.findByTypeInAndParentIdIsNullAndTenantIdOrderBySortAsc(
-                    List.of(ResourceType.DIRECTORY, ResourceType.MENU), requireTenantId());
-        } else {
-            // 查询指定父级ID的子菜单
-            menus = resourceRepository.findByTypeInAndParentIdAndTenantIdOrderBySortAsc(
-                    List.of(ResourceType.DIRECTORY, ResourceType.MENU), parentId, requireTenantId());
-        }
+        List<Resource> menus = findChildMenusForCurrentUser(normalizeParentId(parentId), requireTenantId());
         return menus.stream().map(this::toDto).collect(Collectors.toList());
     }
 
@@ -611,6 +621,17 @@ public class MenuServiceImpl implements MenuService {
         }
     }
 
+    @Override
+    @Transactional
+    public Resource updateMenuSort(Long id, Integer sort) {
+        Long tenantId = requireTenantId();
+        Resource resource = resourceRepository.findById(id)
+            .filter(existing -> Objects.equals(existing.getTenantId(), tenantId))
+            .orElseThrow(() -> new RuntimeException("菜单不存在"));
+        resource.setSort(sort);
+        return resourceRepository.save(resource);
+    }
+
     /**
      * 构建菜单树结构
      */
@@ -662,6 +683,7 @@ public class MenuServiceImpl implements MenuService {
             }
             
             ResourceResponseDto dto = new ResourceResponseDto();
+            dto.setRecordTenantId(resource.getTenantId());
             dto.setId(resource.getId());
             dto.setName(resource.getName());
             dto.setTitle(resource.getTitle());
@@ -727,6 +749,7 @@ public class MenuServiceImpl implements MenuService {
         
         return page.map(proj -> {
             ResourceResponseDto dto = new ResourceResponseDto();
+            dto.setRecordTenantId(tenantId);
             dto.setId(proj.getId());
             dto.setName(proj.getName());
             dto.setTitle(proj.getTitle());
@@ -847,14 +870,225 @@ public class MenuServiceImpl implements MenuService {
         List<Object[]> results = sqlQuery.getResultList();
         return results.stream()
                 .map(this::mapToResourceResponseDto)
+                .filter(this::canAccessTreeMenu)
                 .collect(Collectors.toList());
     }
 
     private Long requireTenantId() {
-        Long tenantId = TenantContext.getTenantId();
+        Long tenantId = TenantContext.getActiveTenantId();
         if (tenantId == null) {
             throw new BusinessException(ErrorCode.MISSING_PARAMETER, "缺少租户信息");
         }
         return tenantId;
+    }
+
+    private List<Resource> filterPlatformOnlyMenus(List<Resource> menus) {
+        if (menus == null || menus.isEmpty()) {
+            return List.of();
+        }
+        return menus.stream()
+            .filter(this::canAccessPlatformMenu)
+            .toList();
+    }
+
+    private List<Resource> filterMenusForCurrentUser(List<Resource> menus) {
+        if (menus == null || menus.isEmpty()) {
+            return List.of();
+        }
+        return menus.stream()
+            .filter(this::canAccessTreeMenu)
+            .toList();
+    }
+
+    private List<Resource> findTreeMenusForCurrentUser(Long tenantId) {
+        List<ResourceType> menuTypes = List.of(ResourceType.DIRECTORY, ResourceType.MENU);
+        if (hasAnyOfAuthorities(LegacyAuthConstants.ADMIN_AUTHORITIES)) {
+            return filterPlatformOnlyMenus(resourceRepository.findByTypeInAndTenantIdOrderBySortAsc(menuTypes, tenantId));
+        }
+
+        String username = resolveCurrentUsername();
+        if (!StringUtils.hasText(username)) {
+            return filterMenusForCurrentUser(resourceRepository.findByTypeInAndTenantIdOrderBySortAsc(menuTypes, tenantId));
+        }
+
+        List<Integer> menuTypeCodes = List.of(ResourceType.MENU.getCode());
+        List<Resource> directories = resourceRepository.findByTypeAndTenantIdOrderBySortAsc(ResourceType.DIRECTORY, tenantId);
+        List<Resource> grantedMenus = resourceRepository.findGrantedResourcesByUsernameAndTenantId(
+            username,
+            tenantId,
+            menuTypeCodes
+        );
+        return mergeTreeMenus(directories, grantedMenus);
+    }
+
+    private List<Resource> findChildMenusForCurrentUser(Long parentId, Long tenantId) {
+        if (hasAnyOfAuthorities(LegacyAuthConstants.ADMIN_AUTHORITIES)) {
+            List<Resource> menus;
+            if (parentId == null) {
+                menus = resourceRepository.findByTypeInAndParentIdIsNullAndTenantIdOrderBySortAsc(
+                    List.of(ResourceType.DIRECTORY, ResourceType.MENU),
+                    tenantId
+                );
+            } else {
+                menus = resourceRepository.findByTypeInAndParentIdAndTenantIdOrderBySortAsc(
+                    List.of(ResourceType.DIRECTORY, ResourceType.MENU),
+                    parentId,
+                    tenantId
+                );
+            }
+            return filterPlatformOnlyMenus(menus);
+        }
+
+        String username = resolveCurrentUsername();
+        if (!StringUtils.hasText(username)) {
+            List<Resource> menus;
+            if (parentId == null) {
+                menus = resourceRepository.findByTypeInAndParentIdIsNullAndTenantIdOrderBySortAsc(
+                    List.of(ResourceType.DIRECTORY, ResourceType.MENU),
+                    tenantId
+                );
+            } else {
+                menus = resourceRepository.findByTypeInAndParentIdAndTenantIdOrderBySortAsc(
+                    List.of(ResourceType.DIRECTORY, ResourceType.MENU),
+                    parentId,
+                    tenantId
+                );
+            }
+            return filterMenusForCurrentUser(menus);
+        }
+
+        List<Resource> directories;
+        if (parentId == null) {
+            directories = resourceRepository.findByTypeInAndParentIdIsNullAndTenantIdOrderBySortAsc(
+                List.of(ResourceType.DIRECTORY),
+                tenantId
+            );
+        } else {
+            directories = resourceRepository.findByTypeInAndParentIdAndTenantIdOrderBySortAsc(
+                List.of(ResourceType.DIRECTORY),
+                parentId,
+                tenantId
+            );
+        }
+        List<Integer> menuTypeCodes = List.of(ResourceType.MENU.getCode());
+        List<Resource> grantedMenus = resourceRepository.findGrantedResourcesByUsernameAndTenantIdAndParentId(
+            username,
+            tenantId,
+            menuTypeCodes,
+            parentId
+        );
+        return mergeTreeMenus(directories, grantedMenus);
+    }
+
+    private List<Resource> mergeTreeMenus(List<Resource> directories, List<Resource> grantedMenus) {
+        Map<Long, Resource> merged = new LinkedHashMap<>();
+        Stream.concat(
+                directories == null ? Stream.empty() : directories.stream(),
+                grantedMenus == null ? Stream.empty() : grantedMenus.stream()
+            )
+            .filter(Objects::nonNull)
+            .filter(this::canAccessPlatformMenu)
+            .sorted(Comparator
+                .comparing(Resource::getSort, Comparator.nullsLast(Integer::compareTo))
+                .thenComparing(Resource::getId, Comparator.nullsLast(Long::compareTo)))
+            .forEach(resource -> merged.putIfAbsent(resource.getId(), resource));
+        return new ArrayList<>(merged.values());
+    }
+
+    private boolean canAccessPlatformMenu(Resource resource) {
+        if (resource == null) {
+            return false;
+        }
+        if (PlatformControlPlaneResourcePolicy.isTenantManagementResource(resource)) {
+            return hasPlatformAdminAccess();
+        }
+        if (PlatformControlPlaneResourcePolicy.isIdempotentOpsResource(resource)) {
+            return hasPlatformAdminAccess() && hasAuthority("idempotent:ops:view");
+        }
+        return true;
+    }
+
+    private boolean canAccessPlatformMenu(ResourceResponseDto resource) {
+        if (resource == null) {
+            return false;
+        }
+        if (PlatformControlPlaneResourcePolicy.isTenantManagementResource(resource)) {
+            return hasPlatformAdminAccess();
+        }
+        if (PlatformControlPlaneResourcePolicy.isIdempotentOpsResource(resource)) {
+            return hasPlatformAdminAccess() && hasAuthority("idempotent:ops:view");
+        }
+        return true;
+    }
+
+    private boolean canAccessTreeMenu(Resource resource) {
+        if (!canAccessPlatformMenu(resource)) {
+            return false;
+        }
+        if (resource == null || resource.getType() == null) {
+            return false;
+        }
+        if (resource.getType() == ResourceType.DIRECTORY) {
+            return true;
+        }
+        return hasMenuAuthority(resource.getPermission());
+    }
+
+    private boolean canAccessTreeMenu(ResourceResponseDto resource) {
+        if (!canAccessPlatformMenu(resource)) {
+            return false;
+        }
+        if (resource == null || resource.getType() == null) {
+            return false;
+        }
+        if (resource.getType() == ResourceType.DIRECTORY.getCode()) {
+            return true;
+        }
+        return hasMenuAuthority(resource.getPermission());
+    }
+
+    private boolean hasMenuAuthority(String permission) {
+        if (hasAnyOfAuthorities(LegacyAuthConstants.ADMIN_AUTHORITIES)) {
+            return true;
+        }
+        if (!StringUtils.hasText(permission)) {
+            return true;
+        }
+        return hasAuthority(permission.trim());
+    }
+
+    private boolean hasPlatformAdminAccess() {
+        Long platformTenantId = tenantRepository.findByCode(platformTenantProperties.getPlatformTenantCode())
+            .map(tenant -> tenant.getId())
+            .orElse(null);
+        return platformTenantId != null
+            && Objects.equals(platformTenantId, requireTenantId())
+            && hasAnyOfAuthorities(LegacyAuthConstants.ADMIN_AUTHORITIES);
+    }
+
+    private String resolveCurrentUsername() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return null;
+        }
+        String username = authentication.getName();
+        if (!StringUtils.hasText(username) || "anonymousUser".equalsIgnoreCase(username)) {
+            return null;
+        }
+        return username.trim();
+    }
+
+    private boolean hasAuthority(String... authorities) {
+        return hasAnyOfAuthorities(Set.of(authorities));
+    }
+
+    private boolean hasAnyOfAuthorities(Set<String> expected) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated() || expected == null || expected.isEmpty()) {
+            return false;
+        }
+        return authentication.getAuthorities().stream()
+            .map(grantedAuthority -> grantedAuthority.getAuthority())
+            .anyMatch(expected::contains);
     }
 } 

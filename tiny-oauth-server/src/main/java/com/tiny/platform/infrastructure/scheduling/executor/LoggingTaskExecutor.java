@@ -1,5 +1,6 @@
 package com.tiny.platform.infrastructure.scheduling.executor;
 
+import com.tiny.platform.infrastructure.scheduling.security.SchedulingLogSanitizer;
 import com.tiny.platform.infrastructure.scheduling.service.SchedulingExecutionContext;
 import com.tiny.platform.infrastructure.scheduling.service.TaskExecutorService;
 import org.slf4j.Logger;
@@ -18,10 +19,10 @@ public class LoggingTaskExecutor implements TaskExecutorService.TaskExecutor {
 
     @Override
     public Object execute(SchedulingExecutionContext executionContext, Map<String, Object> params) {
-        logger.info("[LoggingTaskExecutor] tenantId={}, runId={}, params={}",
-                executionContext != null ? executionContext.getTenantId() : null,
+        logger.info("[LoggingTaskExecutor] executionTenantId={}, runId={}, {}",
+                executionContext != null ? executionContext.getExecutionTenantId() : null,
                 executionContext != null ? executionContext.getDagRunId() : null,
-                params);
+                SchedulingLogSanitizer.maskParamsForLog(params));
         return Map.of(
                 "status", "OK",
                 "echo", params

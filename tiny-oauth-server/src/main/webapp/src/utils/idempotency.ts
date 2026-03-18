@@ -1,4 +1,4 @@
-import { getTenantId } from '@/utils/tenant'
+import { getActiveTenantId } from '@/utils/tenant'
 
 function normalizeValue(value: unknown): unknown {
   if (value === null || value === undefined) {
@@ -43,8 +43,8 @@ function fnv1a64(input: string): string {
 }
 
 export function createIdempotencyKey(scope: string, payload?: unknown): string {
-  const tenantId = getTenantId() ?? 'anonymous'
-  return fnv1a64(`${tenantId}|${scope}|${stableStringify(payload)}`)
+  const activeTenantId = getActiveTenantId() ?? 'anonymous'
+  return fnv1a64(`${activeTenantId}|${scope}|${stableStringify(payload)}`)
 }
 
 export function createIdempotencyFingerprint(value: unknown): string {

@@ -1,0 +1,42 @@
+databaseChangeLog:
+  # 第一步：在所有环境中显式检查是否存在重复 (dag_id, version_no)
+  # - 如果存在重复，则直接中止迁移并给出明确错误信息
+  - changeSet:
+      id: check-scheduling-dag-version-duplicates
+      author: tiny
+      comment: 检查 scheduling_dag_version 是否存在重复 (dag_id, version_no)，防止后续唯一约束迁移静默丢数据
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - sqlCheck:
+            expectedResult: 0
+            sql: |
+              SELECT COUNT(*) FROM (
+                SELECT dag_id, version_no, COUNT(*) AS cnt
+                FROM scheduling_dag_version
+                GROUP BY dag_id, version_no
+                HAVING COUNT(*) > 1
+              ) t
+      changes:
+        # 使用一个无副作用的 SQL，确保 changeSet 在 changelog 中有记录
+        - sql:
+            dbms: mysql
+            sql: "SELECT 1"
+
+  # 第二步：仅在当前库尚未存在唯一键时创建 (dag_id, version_no) 唯一约束
+  - changeSet:
+      id: enforce-scheduling-dag-version-versionno-unique
+      author: tiny
+      comment: 确保 (dag_id, version_no) 唯一约束在 Liquibase 链路下也落库，防止并发创建版本时静默撞号
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            indexExists:
+              indexName: uk_scheduling_dag_version_dag_version
+              tableName: scheduling_dag_version
+      changes:
+        - addUniqueConstraint:
+            tableName: scheduling_dag_version
+            columnNames: dag_id, version_no
+            constraintName: uk_scheduling_dag_version_dag_version

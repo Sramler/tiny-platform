@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.scheduling.exception.SchedulingExceptions;
+import com.tiny.platform.infrastructure.scheduling.security.SchedulingErrorSanitizer;
 import com.tiny.platform.infrastructure.scheduling.model.SchedulingTaskExecutionSnapshot;
 import com.tiny.platform.infrastructure.scheduling.model.SchedulingTask;
 import com.tiny.platform.infrastructure.scheduling.model.SchedulingTaskInstance;
@@ -65,7 +66,7 @@ public class TaskExecutorService {
      */
     public TaskExecutionResult execute(SchedulingTaskInstance instance) {
         return execute(SchedulingExecutionContext.builder()
-                .tenantId(instance.getTenantId())
+                .executionTenantId(instance.getTenantId())
                 .dagId(instance.getDagId())
                 .dagRunId(instance.getDagRunId())
                 .dagVersionId(instance.getDagVersionId())
@@ -73,17 +74,17 @@ public class TaskExecutorService {
     }
 
     public TaskExecutionResult execute(SchedulingExecutionContext executionContext, SchedulingTaskInstance instance) {
-        logger.info("开始执行任务实例, tenantId: {}, runId: {}, instanceId: {}, taskId: {}, nodeCode: {}",
-                executionContext != null ? executionContext.getTenantId() : null,
+        logger.info("开始执行任务实例, executionTenantId: {}, runId: {}, instanceId: {}, taskId: {}, nodeCode: {}",
+                executionContext != null ? executionContext.getExecutionTenantId() : null,
                 executionContext != null ? executionContext.getDagRunId() : null,
                 instance.getId(), instance.getTaskId(), instance.getNodeCode());
 
         try {
             Object result = runWithTenantContext(executionContext, () -> {
-                Long tenantId = executionContext != null ? executionContext.getTenantId() : null;
+                Long executionTenantId = executionContext != null ? executionContext.getExecutionTenantId() : null;
                 SchedulingTaskExecutionSnapshot snapshot = readExecutionSnapshot(instance);
-                ExecutionTaskConfig taskConfig = resolveTaskConfig(instance, snapshot, tenantId);
-                ExecutionTaskTypeConfig taskTypeConfig = resolveTaskTypeConfig(snapshot, taskConfig, tenantId);
+                ExecutionTaskConfig taskConfig = resolveTaskConfig(instance, snapshot, executionTenantId);
+                ExecutionTaskTypeConfig taskTypeConfig = resolveTaskTypeConfig(snapshot, taskConfig, executionTenantId);
 
                 Map<String, Object> params = parseAndMergeParams(instance, taskConfig);
                 jsonSchemaValidationService.validate(taskTypeConfig.paramSchema(), params);
@@ -104,7 +105,7 @@ public class TaskExecutorService {
 
         } catch (Exception e) {
             logger.error("任务实例执行失败, instanceId: {}", instance.getId(), e);
-            return TaskExecutionResult.failure(e.getMessage(), e);
+            return TaskExecutionResult.failure(SchedulingErrorSanitizer.sanitizeForPersistence(e.getMessage()), e);
         }
     }
 
@@ -190,19 +191,19 @@ public class TaskExecutorService {
     }
 
     private <T> T runWithTenantContext(SchedulingExecutionContext executionContext, Callable<T> callable) throws Exception {
-        Long previousTenantId = TenantContext.getTenantId();
+        Long previousTenantId = TenantContext.getActiveTenantId();
         String previousTenantSource = TenantContext.getTenantSource();
         try {
             TenantContext.clear();
-            if (executionContext != null && executionContext.getTenantId() != null) {
-                TenantContext.setTenantId(executionContext.getTenantId());
+            if (executionContext != null && executionContext.getExecutionTenantId() != null) {
+                TenantContext.setActiveTenantId(executionContext.getExecutionTenantId());
                 TenantContext.setTenantSource(TenantContext.SOURCE_UNKNOWN);
             }
             return callable.call();
         } finally {
             TenantContext.clear();
             if (previousTenantId != null) {
-                TenantContext.setTenantId(previousTenantId);
+                TenantContext.setActiveTenantId(previousTenantId);
             }
             if (previousTenantSource != null) {
                 TenantContext.setTenantSource(previousTenantSource);
@@ -263,9 +264,12 @@ public class TaskExecutorService {
         // 1. 任务默认参数
         mergedParams.putAll(parseJsonToMap(taskConfig.params()));
 
-        // 2. 节点定义覆盖参数（最高优先级）
+        // 2. 节点定义覆盖参数（最高优先级）；无请求上下文时按租户过滤
         if (instance.getDagVersionId() != null && instance.getNodeCode() != null) {
-            dagTaskRepository.findByDagVersionIdAndNodeCode(instance.getDagVersionId(), instance.getNodeCode())
+            (instance.getTenantId() != null
+                    ? dagTaskRepository.findByDagVersionIdAndNodeCodeAndTenantId(
+                            instance.getDagVersionId(), instance.getNodeCode(), instance.getTenantId())
+                    : dagTaskRepository.findByDagVersionIdAndNodeCode(instance.getDagVersionId(), instance.getNodeCode()))
                     .map(SchedulingDagTask::getOverrideParams)
                     .ifPresent(json -> mergedParams.putAll(parseJsonToMap(json)));
         }
@@ -283,8 +287,8 @@ public class TaskExecutorService {
         try {
             return objectMapper.readValue(json, new TypeReference<Map<String, Object>>() {});
         } catch (Exception e) {
-            logger.warn("解析 JSON 参数失败: {}", json, e);
-            throw SchedulingExceptions.validation("解析参数失败: %s", e.getMessage());
+            logger.warn("解析 JSON 参数失败", e);
+            throw SchedulingExceptions.validation("解析参数失败，请检查参数格式");
         }
     }
 

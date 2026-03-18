@@ -7,6 +7,7 @@ import com.tiny.platform.core.oauth.model.HttpRequestLog;
 import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.security.AuthenticationFactorAuthorities;
 import com.tiny.platform.core.oauth.service.HttpRequestLogService;
+import com.tiny.platform.core.oauth.tenant.ActiveTenantResponseSupport;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.core.util.IpUtils;
 import jakarta.servlet.http.HttpServletRequest;
@@ -58,9 +59,9 @@ public class HttpRequestLoggingInterceptor implements HandlerInterceptor {
             if (userId != null) {
                 MDC.put("userId", userId);
             }
-            Long tenantId = TenantContext.getTenantId();
-            if (tenantId != null) {
-                MDC.put("tenantId", String.valueOf(tenantId));
+            Long activeTenantId = resolveCurrentActiveTenantId();
+            if (activeTenantId != null) {
+                MDC.put("activeTenantId", String.valueOf(activeTenantId));
             }
         }
         return true;
@@ -95,7 +96,7 @@ public class HttpRequestLoggingInterceptor implements HandlerInterceptor {
             userId = resolveCurrentUserId();
         }
         log.setUserId(userId);
-        log.setTenantId(TenantContext.getTenantId());
+        log.setActiveTenantId(resolveCurrentActiveTenantId());
         log.setIssuer(truncate(resolveCurrentIssuer(), 255));
         log.setClientIp(IpUtils.getClientIp(request));
         log.setHost(truncate(HttpLogSanitizer.sanitizeHeaderValue(HttpHeaders.HOST, request.getHeader(HttpHeaders.HOST)), 128));
@@ -171,6 +172,12 @@ public class HttpRequestLoggingInterceptor implements HandlerInterceptor {
             return strPrincipal;
         }
         return null;
+    }
+
+    private Long resolveCurrentActiveTenantId() {
+        return ActiveTenantResponseSupport.resolveActiveTenantId(
+                SecurityContextHolder.getContext().getAuthentication()
+        );
     }
 
     private String extractUserIdFromJwt(Jwt jwt) {

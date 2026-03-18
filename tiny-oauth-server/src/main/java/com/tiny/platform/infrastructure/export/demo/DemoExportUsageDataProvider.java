@@ -36,7 +36,7 @@ public class DemoExportUsageDataProvider implements FilterAwareDataProvider<Map<
 
     private static final List<String> EXPORT_FIELDS = List.of(
             "id",
-            "tenantId",
+            "recordTenantId",
             "usageDate",
             "productCode",
             "productName",
@@ -171,12 +171,12 @@ public class DemoExportUsageDataProvider implements FilterAwareDataProvider<Map<
             List<Predicate> predicates = new ArrayList<>();
             
             if (filters != null) {
-                if (filters.containsKey("tenantId") && filters.get("tenantId") != null) {
-                    String tenantIdRaw = filters.get("tenantId").toString().trim();
-                    if (!tenantIdRaw.isEmpty()) {
+                if (filters.containsKey("activeTenantId") && filters.get("activeTenantId") != null) {
+                    String activeTenantIdRaw = filters.get("activeTenantId").toString().trim();
+                    if (!activeTenantIdRaw.isEmpty()) {
                         try {
-                            Long tenantId = Long.parseLong(tenantIdRaw);
-                            predicates.add(cb.equal(root.get("tenantId"), tenantId));
+                            Long activeTenantId = Long.parseLong(activeTenantIdRaw);
+                            predicates.add(cb.equal(root.get("tenantId"), activeTenantId));
                         } catch (NumberFormatException ignored) {
                         }
                     }
@@ -332,6 +332,10 @@ public class DemoExportUsageDataProvider implements FilterAwareDataProvider<Map<
     private List<Selection<?>> buildSelections(Root<DemoExportUsageEntity> root, List<String> selectedFields) {
         List<Selection<?>> selections = new ArrayList<>(selectedFields.size());
         for (String field : selectedFields) {
+            if ("recordTenantId".equals(field)) {
+                selections.add(root.get("tenantId").alias(field));
+                continue;
+            }
             selections.add(root.get(field).alias(field));
         }
         return selections;

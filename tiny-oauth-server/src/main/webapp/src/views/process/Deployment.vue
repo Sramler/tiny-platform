@@ -6,8 +6,8 @@
                     <a-form-item label="部署名称">
                         <a-input v-model:value="query.name" placeholder="请输入部署名称" />
                     </a-form-item>
-                    <a-form-item label="租户">
-                        <a-select v-model:value="query.tenantId" placeholder="选择租户" allow-clear style="width: 150px">
+                    <a-form-item label="记录租户筛选">
+                        <a-select v-model:value="query.recordTenantId" placeholder="默认当前活动租户" allow-clear style="width: 150px">
                             <a-select-option value="">全部租户</a-select-option>
                             <a-select-option v-for="tenant in tenants" :key="tenant.id" :value="tenant.id">
                                 {{ tenant.name }}
@@ -117,8 +117,8 @@
                                     <a-typography-text>个流程</a-typography-text>
                                 </a-badge>
                             </template>
-                            <template v-else-if="column.dataIndex === 'tenantId'">
-                                <a-tag v-if="record.tenantId" color="green">{{ record.tenantId }}</a-tag>
+                            <template v-else-if="column.dataIndex === 'recordTenantId'">
+                                <a-tag v-if="record.recordTenantId" color="green">{{ record.recordTenantId }}</a-tag>
                                 <a-tag v-else color="default">默认</a-tag>
                             </template>
                             <template v-else-if="column.dataIndex === 'status'">
@@ -179,8 +179,8 @@
                 <a-descriptions-item label="部署人">
                     {{ selectedDeployment.deployer || '-' }}
                 </a-descriptions-item>
-                <a-descriptions-item label="租户">
-                    <a-tag v-if="selectedDeployment.tenantId" color="green">{{ selectedDeployment.tenantId }}</a-tag>
+                <a-descriptions-item label="记录所属租户ID">
+                    <a-tag v-if="selectedDeployment.recordTenantId" color="green">{{ selectedDeployment.recordTenantId }}</a-tag>
                     <a-tag v-else color="default">默认</a-tag>
                 </a-descriptions-item>
                 <a-descriptions-item label="状态">
@@ -218,6 +218,7 @@
 
 <script setup lang="ts" name="Deployment">
 import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import {
     UploadOutlined,
@@ -234,11 +235,34 @@ import VueDraggable from 'vuedraggable'
 import { deploymentApi, tenantApi } from '@/api/process'
 import type { Deployment } from '@/api/process'
 import { useThrottle } from '@/utils/debounce'
+import { getActiveTenantId, resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
+
+const route = useRoute()
+const router = useRouter()
+
+function resolveActiveTenantFilter() {
+    return getActiveTenantId() ?? ''
+}
+
+function resolveInitialRecordTenantFilter() {
+    return resolveActiveTenantQueryValue(route.query) ?? resolveActiveTenantFilter()
+}
+
+async function syncActiveTenantContextToRoute(activeTenantId: string | null | undefined) {
+    const currentTenant = resolveActiveTenantQueryValue(route.query) ?? ''
+    const nextTenant = activeTenantId || ''
+    if (currentTenant === nextTenant) {
+        return
+    }
+    await router.replace({
+        query: withActiveTenantQuery({ ...route.query }, nextTenant || null),
+    })
+}
 
 // 查询条件
 const query = ref({
     name: '',
-    tenantId: ''
+    recordTenantId: resolveInitialRecordTenantFilter()
 })
 
 const tableData = ref<Deployment[]>([])
@@ -283,7 +307,7 @@ const INITIAL_COLUMNS = [
     { title: '部署人', dataIndex: 'deployer', width: 120 },
     { title: '部署来源', dataIndex: 'source', width: 120 },
     { title: '包含流程数', dataIndex: 'processDefinitionCount', width: 120 },
-    { title: '租户', dataIndex: 'tenantId', width: 100 },
+    { title: '记录所属租户ID', dataIndex: 'recordTenantId', width: 120 },
     { title: '状态', dataIndex: 'status', width: 80 },
     {
         title: '操作',
@@ -407,11 +431,11 @@ async function loadData() {
     try {
         const params = {
             name: query.value.name.trim(),
-            tenantId: query.value.tenantId || undefined,
+            recordTenantId: query.value.recordTenantId || undefined,
             current: Number(pagination.value.current) || 1,
             pageSize: Number(pagination.value.pageSize) || 10
         }
-        const result = await deploymentApi.getDeployments(params.tenantId)
+        const result = await deploymentApi.getDeployments(params.recordTenantId)
         tableData.value = Array.isArray(result) ? result : []
         pagination.value.total = tableData.value.length
     } catch (error: unknown) {
@@ -435,16 +459,16 @@ const loadTenants = async () => {
     }
 }
 
-function handleSearch() {
+async function handleSearch() {
     pagination.value.current = 1
     loadData()
 }
 
 const throttledSearch = useThrottle(handleSearch, 1000)
 
-function handleReset() {
+async function handleReset() {
     query.value.name = ''
-    query.value.tenantId = ''
+    query.value.recordTenantId = resolveActiveTenantFilter()
     pagination.value.current = 1
     loadData()
 }
@@ -619,10 +643,6 @@ const handleUpload = async (options: { file: File }) => {
         const formData = new FormData()
         formData.append('file', file)
         formData.append('name', file.name || 'process.bpmn')
-        if (query.value.tenantId) {
-            formData.append('tenantId', query.value.tenantId)
-        }
-
         const result = await deploymentApi.deployProcess(formData)
         message.success('流程部署成功!')
         loadData()
@@ -667,7 +687,10 @@ function updateTableBodyHeight() {
     });
 }
 
-onMounted(() => {
+onMounted(async () => {
+    const initialRecordTenantId = resolveInitialRecordTenantFilter()
+    query.value.recordTenantId = initialRecordTenantId
+    await syncActiveTenantContextToRoute(initialRecordTenantId)
     loadData()
     loadTenants()
     updateTableBodyHeight()
@@ -681,6 +704,7 @@ onBeforeUnmount(() => {
 watch(() => pagination.value.pageSize, () => {
     updateTableBodyHeight()
 })
+
 </script>
 
 <style scoped>

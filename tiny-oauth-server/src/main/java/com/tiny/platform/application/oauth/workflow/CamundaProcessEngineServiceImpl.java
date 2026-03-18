@@ -41,21 +41,21 @@ public class CamundaProcessEngineServiceImpl implements ProcessEngineService {
 
     // ------------------- 部署管理 -------------------
     @Override
-    public String deployProcess(String bpmnXml, String tenantId) throws Exception {
-        return deployProcess(bpmnXml, tenantId, "手动上传");
+    public String deployProcess(String bpmnXml, String activeTenantId) throws Exception {
+        return deployProcess(bpmnXml, activeTenantId, "手动上传");
     }
 
     @Override
-    public String deployProcess(String bpmnXml, String tenantId, String source) {
-        return deployProcess(bpmnXml, tenantId, source, null,source);
+    public String deployProcess(String bpmnXml, String activeTenantId, String source) {
+        return deployProcess(bpmnXml, activeTenantId, source, null,source);
     }
 
-    public String deployProcess(String bpmnXml, String tenantId, String deploymentName, String explicitDeployer,String source) {
+    public String deployProcess(String bpmnXml, String activeTenantId, String deploymentName, String explicitDeployer,String source) {
         // 先尝试修复 BPMN 验证错误
         String fixedBpmnXml = bpmnValidationHelper.fixBpmnValidationErrors(bpmnXml);
 
         Deployment deployment = repositoryService.createDeployment()
-                .tenantId(tenantId)
+                .tenantId(activeTenantId)
                 .name(deploymentName)
                 .addInputStream("process.bpmn",
                         new ByteArrayInputStream(fixedBpmnXml.getBytes(StandardCharsets.UTF_8)))
@@ -65,10 +65,10 @@ public class CamundaProcessEngineServiceImpl implements ProcessEngineService {
     }
 
     @Override
-    public Object listDeployments(String tenantId) {
+    public Object listDeployments(String recordTenantId) {
         var query = repositoryService.createDeploymentQuery();
-        if (tenantId != null && !tenantId.trim().isEmpty()) {
-            query = query.tenantIdIn(tenantId);
+        if (recordTenantId != null && !recordTenantId.trim().isEmpty()) {
+            query = query.tenantIdIn(recordTenantId);
         }
         List<Deployment> deployments = query.list();
         return deployments.stream()
@@ -113,7 +113,7 @@ public class CamundaProcessEngineServiceImpl implements ProcessEngineService {
                     deploymentInfo.put("id", d.getId());
                     deploymentInfo.put("name", d.getName() != null ? d.getName() : "");
                     deploymentInfo.put("deploymentTime", d.getDeploymentTime() != null ? d.getDeploymentTime().toString() : "");
-                    deploymentInfo.put("tenantId", d.getTenantId() != null ? d.getTenantId() : "");
+                    deploymentInfo.put("recordTenantId", d.getTenantId() != null ? d.getTenantId() : "");
 
                     // 状态和来源
                     deploymentInfo.put("status", "success"); // Camunda 部署成功即表示成功
@@ -150,7 +150,7 @@ public class CamundaProcessEngineServiceImpl implements ProcessEngineService {
                                     "suspended", pd.isSuspended(),
                                     "resourceName", pd.getResourceName(),
                                     "deploymentId", pd.getDeploymentId(),
-                                    "tenantId", pd.getTenantId() != null ? pd.getTenantId() : ""
+                                    "recordTenantId", pd.getTenantId() != null ? pd.getTenantId() : ""
                             ))
                             .collect(Collectors.toList()));
 
@@ -328,16 +328,16 @@ public class CamundaProcessEngineServiceImpl implements ProcessEngineService {
 
     // ------------------- 流程实例 -------------------
     @Override
-    public String startProcessInstance(String processKey, String tenantId, Map<String, Object> variables) {
-        ProcessInstance instance = runtimeService.startProcessInstanceByKey(processKey, tenantId, variables);
+    public String startProcessInstance(String processKey, String activeTenantId, Map<String, Object> variables) {
+        ProcessInstance instance = runtimeService.startProcessInstanceByKey(processKey, activeTenantId, variables);
         return instance.getId();
     }
 
     @Override
-    public Object listProcessInstances(String tenantId, String state) {
+    public Object listProcessInstances(String recordTenantId, String state) {
         var query = runtimeService.createProcessInstanceQuery();
-        if (tenantId != null && !tenantId.trim().isEmpty()) {
-            query = query.tenantIdIn(tenantId);
+        if (recordTenantId != null && !recordTenantId.trim().isEmpty()) {
+            query = query.tenantIdIn(recordTenantId);
         }
         if ("active".equalsIgnoreCase(state)) {
             query = query.active();
@@ -363,7 +363,7 @@ public class CamundaProcessEngineServiceImpl implements ProcessEngineService {
         result.put("suspended", instance.isSuspended());
         result.put("startTime", ""); // ProcessInstance 没有 getStartTime() 方法
         result.put("endTime", ""); // ProcessInstance 没有 getEndTime() 方法
-        result.put("tenantId", instance.getTenantId() != null ? instance.getTenantId() : "");
+        result.put("recordTenantId", instance.getTenantId() != null ? instance.getTenantId() : "");
         result.put("state", instance.isSuspended() ? "suspended" : "active");
 
         // 添加流程变量
@@ -404,14 +404,14 @@ public class CamundaProcessEngineServiceImpl implements ProcessEngineService {
                         "assignee", t.getAssignee() != null ? t.getAssignee() : "",
                         "createTime", t.getCreateTime() != null ? t.getCreateTime().toString() : "",
                         "processInstanceId", t.getProcessInstanceId(),
-                        "tenantId", t.getTenantId() != null ? t.getTenantId() : ""
+                        "recordTenantId", t.getTenantId() != null ? t.getTenantId() : ""
                 ))
                 .collect(Collectors.toList());
     }
 
     // ------------------- 任务管理 -------------------
     @Override
-    public Object getTasks(String assignee, String tenantId) {
+    public Object getTasks(String assignee, String activeTenantId) {
         var query = taskService.createTaskQuery();
 
         // 根据assignee参数决定查询类型
@@ -426,8 +426,8 @@ public class CamundaProcessEngineServiceImpl implements ProcessEngineService {
             query = query.taskAssignee(assignee);
         }
 
-        if (tenantId != null && !tenantId.trim().isEmpty()) {
-            query = query.tenantIdIn(tenantId);
+        if (activeTenantId != null && !activeTenantId.trim().isEmpty()) {
+            query = query.tenantIdIn(activeTenantId);
         }
 
         List<Task> tasks = query.list();
@@ -441,7 +441,7 @@ public class CamundaProcessEngineServiceImpl implements ProcessEngineService {
                     map.put("dueDate", t.getDueDate() != null ? t.getDueDate().toString() : "");
                     map.put("priority", t.getPriority());
                     map.put("processInstanceId", t.getProcessInstanceId());
-                    map.put("tenantId", t.getTenantId() != null ? t.getTenantId() : "");
+                    map.put("recordTenantId", t.getTenantId() != null ? t.getTenantId() : "");
                     return map;
                 })
                 .collect(Collectors.toList());
@@ -459,10 +459,10 @@ public class CamundaProcessEngineServiceImpl implements ProcessEngineService {
 
     // ------------------- 历史数据 -------------------
     @Override
-    public Object listHistoricInstances(String tenantId) {
+    public Object listHistoricInstances(String recordTenantId) {
         var query = historyService.createHistoricProcessInstanceQuery();
-        if (tenantId != null && !tenantId.trim().isEmpty()) {
-            query = query.tenantIdIn(tenantId);
+        if (recordTenantId != null && !recordTenantId.trim().isEmpty()) {
+            query = query.tenantIdIn(recordTenantId);
         }
         List<org.camunda.bpm.engine.history.HistoricProcessInstance> instances = query.list();
         return instances.stream()
@@ -481,7 +481,7 @@ public class CamundaProcessEngineServiceImpl implements ProcessEngineService {
         result.put("processDefinitionName", instance.getProcessDefinitionName());
         result.put("startTime", instance.getStartTime() != null ? instance.getStartTime().toString() : "");
         result.put("endTime", instance.getEndTime() != null ? instance.getEndTime().toString() : "");
-        result.put("tenantId", instance.getTenantId() != null ? instance.getTenantId() : "");
+        result.put("recordTenantId", instance.getTenantId() != null ? instance.getTenantId() : "");
         result.put("state", instance.getEndTime() != null ? "completed" : "active");
         result.put("duration", instance.getDurationInMillis() != null ? instance.getDurationInMillis() : 0);
         return result;
@@ -508,7 +508,7 @@ public class CamundaProcessEngineServiceImpl implements ProcessEngineService {
         result.put("createTime", task.getStartTime() != null ? task.getStartTime().toString() : ""); // 使用 getStartTime()
         result.put("endTime", task.getEndTime() != null ? task.getEndTime().toString() : "");
         result.put("processInstanceId", task.getProcessInstanceId());
-        result.put("tenantId", task.getTenantId() != null ? task.getTenantId() : "");
+        result.put("recordTenantId", task.getTenantId() != null ? task.getTenantId() : "");
         result.put("duration", task.getDurationInMillis() != null ? task.getDurationInMillis() : 0);
         result.put("state", task.getEndTime() != null ? "completed" : "active");
         return result;
@@ -517,12 +517,12 @@ public class CamundaProcessEngineServiceImpl implements ProcessEngineService {
     // ------------------- 租户管理 -------------------
     @Override
     public String createTenant(Map<String, Object> tenantInfo) {
-        String tenantId = (String) tenantInfo.get("id");
+        String createdTenantId = (String) tenantInfo.get("id");
         String name = (String) tenantInfo.get("name");
-        var tenant = identityService.newTenant(tenantId);
+        var tenant = identityService.newTenant(createdTenantId);
         tenant.setName(name);
         identityService.saveTenant(tenant);
-        return tenantId;
+        return createdTenantId;
     }
 
     @Override
@@ -538,10 +538,10 @@ public class CamundaProcessEngineServiceImpl implements ProcessEngineService {
 
     // ------------------- 流程定义管理 -------------------
     @Override
-    public Object listProcessDefinitions(String tenantId) {
+    public Object listProcessDefinitions(String recordTenantId) {
         var query = repositoryService.createProcessDefinitionQuery();
-        if (tenantId != null && !tenantId.trim().isEmpty()) {
-            query = query.tenantIdIn(tenantId);
+        if (recordTenantId != null && !recordTenantId.trim().isEmpty()) {
+            query = query.tenantIdIn(recordTenantId);
         }
         List<org.camunda.bpm.engine.repository.ProcessDefinition> definitions = query.list();
         return definitions.stream()
@@ -551,7 +551,7 @@ public class CamundaProcessEngineServiceImpl implements ProcessEngineService {
                         "name", pd.getName() != null ? pd.getName() : "",
                         "version", pd.getVersion(),
                         "deploymentId", pd.getDeploymentId(),
-                        "tenantId", pd.getTenantId() != null ? pd.getTenantId() : "",
+                        "recordTenantId", pd.getTenantId() != null ? pd.getTenantId() : "",
                         // 使用部署时间作为流程定义的创建时间
                         "created", resolveDeploymentTime(pd.getDeploymentId())
                 ))

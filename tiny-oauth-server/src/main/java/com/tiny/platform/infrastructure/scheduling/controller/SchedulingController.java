@@ -10,6 +10,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
@@ -44,6 +45,7 @@ public class SchedulingController {
      */
     @PostMapping("/task-type")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canManageConfig(authentication)")
     public ResponseEntity<SchedulingTaskType> createTaskType(@Valid @RequestBody SchedulingTaskTypeCreateUpdateDto dto) {
         return ResponseEntity.ok(schedulingService.createTaskType(dto));
     }
@@ -53,6 +55,7 @@ public class SchedulingController {
      */
     @PutMapping("/task-type/{id}")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canManageConfig(authentication)")
     public ResponseEntity<SchedulingTaskType> updateTaskType(
             @PathVariable Long id,
             @Valid @RequestBody SchedulingTaskTypeCreateUpdateDto dto) {
@@ -64,6 +67,7 @@ public class SchedulingController {
      */
     @DeleteMapping("/task-type/{id}")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canManageConfig(authentication)")
     public ResponseEntity<Void> deleteTaskType(@PathVariable Long id) {
         schedulingService.deleteTaskType(id);
         return ResponseEntity.ok().build();
@@ -73,6 +77,7 @@ public class SchedulingController {
      * 查看任务类型详情
      */
     @GetMapping("/task-type/{id}")
+    @PreAuthorize("@schedulingAccessGuard.canRead(authentication)")
     public ResponseEntity<SchedulingTaskType> getTaskType(@PathVariable Long id) {
         return schedulingService.getTaskType(id)
                 .map(ResponseEntity::ok)
@@ -83,6 +88,7 @@ public class SchedulingController {
      * 获取已注册执行器标识列表，供任务类型表单下拉选择。
      */
     @GetMapping("/executors")
+    @PreAuthorize("@schedulingAccessGuard.canRead(authentication)")
     public ResponseEntity<List<String>> listExecutors() {
         return ResponseEntity.ok(schedulingService.listExecutors());
     }
@@ -91,6 +97,7 @@ public class SchedulingController {
      * 分页查询任务类型列表
      */
     @GetMapping("/task-type/list")
+    @PreAuthorize("@schedulingAccessGuard.canRead(authentication)")
     public ResponseEntity<PageResponse<SchedulingTaskType>> listTaskTypes(
             @RequestParam(required = false) String code,
             @RequestParam(required = false) String name,
@@ -105,6 +112,7 @@ public class SchedulingController {
      */
     @PostMapping("/task")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canManageConfig(authentication)")
     public ResponseEntity<SchedulingTask> createTask(@Valid @RequestBody SchedulingTaskCreateUpdateDto dto) {
         return ResponseEntity.ok(schedulingService.createTask(dto));
     }
@@ -114,6 +122,7 @@ public class SchedulingController {
      */
     @PutMapping("/task/{id}")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canManageConfig(authentication)")
     public ResponseEntity<SchedulingTask> updateTask(
             @PathVariable Long id,
             @Valid @RequestBody SchedulingTaskCreateUpdateDto dto) {
@@ -125,6 +134,7 @@ public class SchedulingController {
      */
     @DeleteMapping("/task/{id}")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canManageConfig(authentication)")
     public ResponseEntity<Void> deleteTask(@PathVariable Long id) {
         schedulingService.deleteTask(id);
         return ResponseEntity.ok().build();
@@ -134,6 +144,7 @@ public class SchedulingController {
      * 查看任务详情
      */
     @GetMapping("/task/{id}")
+    @PreAuthorize("@schedulingAccessGuard.canRead(authentication)")
     public ResponseEntity<SchedulingTask> getTask(@PathVariable Long id) {
         return schedulingService.getTask(id)
                 .map(ResponseEntity::ok)
@@ -144,6 +155,7 @@ public class SchedulingController {
      * 分页查询任务列表
      */
     @GetMapping("/task/list")
+    @PreAuthorize("@schedulingAccessGuard.canRead(authentication)")
     public ResponseEntity<PageResponse<SchedulingTask>> listTasks(
             @RequestParam(required = false) Long typeId,
             @RequestParam(required = false) String code,
@@ -159,6 +171,7 @@ public class SchedulingController {
      */
     @PostMapping("/dag")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canManageConfig(authentication)")
     public ResponseEntity<SchedulingDag> createDag(@Valid @RequestBody SchedulingDagCreateUpdateDto dto) {
         return ResponseEntity.ok(schedulingService.createDag(dto));
     }
@@ -168,6 +181,7 @@ public class SchedulingController {
      */
     @PutMapping("/dag/{id}")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canManageConfig(authentication)")
     public ResponseEntity<SchedulingDag> updateDag(
             @PathVariable Long id,
             @Valid @RequestBody SchedulingDagCreateUpdateDto dto) {
@@ -179,6 +193,7 @@ public class SchedulingController {
      */
     @DeleteMapping("/dag/{id}")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canManageConfig(authentication)")
     public ResponseEntity<Void> deleteDag(@PathVariable Long id) {
         schedulingService.deleteDag(id);
         return ResponseEntity.ok().build();
@@ -188,6 +203,7 @@ public class SchedulingController {
      * 查看 DAG 详情
      */
     @GetMapping("/dag/{id}")
+    @PreAuthorize("@schedulingAccessGuard.canRead(authentication)")
     public ResponseEntity<SchedulingDag> getDag(@PathVariable Long id) {
         return schedulingService.getDag(id)
                 .map(ResponseEntity::ok)
@@ -198,6 +214,7 @@ public class SchedulingController {
      * 分页查询 DAG 列表
      */
     @GetMapping("/dag/list")
+    @PreAuthorize("@schedulingAccessGuard.canRead(authentication)")
     public ResponseEntity<PageResponse<SchedulingDag>> listDags(
             @RequestParam(required = false) String code,
             @RequestParam(required = false) String name,
@@ -212,6 +229,7 @@ public class SchedulingController {
      */
     @PostMapping("/dag/{dagId}/version")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canManageConfig(authentication)")
     public ResponseEntity<SchedulingDagVersion> createDagVersion(
             @PathVariable Long dagId,
             @Valid @RequestBody SchedulingDagVersionCreateUpdateDto dto) {
@@ -224,6 +242,7 @@ public class SchedulingController {
      */
     @PutMapping("/dag/{dagId}/version/{versionId}")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canManageConfig(authentication)")
     public ResponseEntity<SchedulingDagVersion> updateDagVersion(
             @PathVariable Long dagId,
             @PathVariable Long versionId,
@@ -235,6 +254,7 @@ public class SchedulingController {
      * 查看 DAG 版本详情
      */
     @GetMapping("/dag/{dagId}/version/{versionId}")
+    @PreAuthorize("@schedulingAccessGuard.canRead(authentication)")
     public ResponseEntity<SchedulingDagVersion> getDagVersion(
             @PathVariable Long dagId,
             @PathVariable Long versionId) {
@@ -247,6 +267,7 @@ public class SchedulingController {
      * 查询 DAG 所有版本
      */
     @GetMapping("/dag/{dagId}/version/list")
+    @PreAuthorize("@schedulingAccessGuard.canRead(authentication)")
     public ResponseEntity<List<SchedulingDagVersion>> listDagVersions(@PathVariable Long dagId) {
         return ResponseEntity.ok(schedulingService.listDagVersions(dagId));
     }
@@ -258,6 +279,7 @@ public class SchedulingController {
      */
     @PostMapping("/dag/{dagId}/version/{versionId}/node")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canManageConfig(authentication)")
     public ResponseEntity<SchedulingDagTask> createDagNode(
             @PathVariable Long dagId,
             @PathVariable Long versionId,
@@ -271,6 +293,7 @@ public class SchedulingController {
      */
     @PutMapping("/dag/{dagId}/version/{versionId}/node/{nodeId}")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canManageConfig(authentication)")
     public ResponseEntity<SchedulingDagTask> updateDagNode(
             @PathVariable Long dagId,
             @PathVariable Long versionId,
@@ -284,6 +307,7 @@ public class SchedulingController {
      */
     @DeleteMapping("/dag/{dagId}/version/{versionId}/node/{nodeId}")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canManageConfig(authentication)")
     public ResponseEntity<Void> deleteDagNode(
             @PathVariable Long dagId,
             @PathVariable Long versionId,
@@ -296,6 +320,7 @@ public class SchedulingController {
      * 查看节点详情
      */
     @GetMapping("/dag/{dagId}/version/{versionId}/node/{nodeId}")
+    @PreAuthorize("@schedulingAccessGuard.canRead(authentication)")
     public ResponseEntity<SchedulingDagTask> getDagNode(
             @PathVariable Long dagId,
             @PathVariable Long versionId,
@@ -309,6 +334,7 @@ public class SchedulingController {
      * 查询版本下的所有节点
      */
     @GetMapping("/dag/{dagId}/version/{versionId}/nodes")
+    @PreAuthorize("@schedulingAccessGuard.canRead(authentication)")
     public ResponseEntity<List<SchedulingDagTask>> getDagNodes(
             @PathVariable Long dagId,
             @PathVariable Long versionId) {
@@ -319,6 +345,7 @@ public class SchedulingController {
      * 查询上游节点
      */
     @GetMapping("/dag/{dagId}/version/{versionId}/node/{nodeId}/up")
+    @PreAuthorize("@schedulingAccessGuard.canRead(authentication)")
     public ResponseEntity<List<SchedulingDagTask>> getUpstreamNodes(
             @PathVariable Long dagId,
             @PathVariable Long versionId,
@@ -330,6 +357,7 @@ public class SchedulingController {
      * 查询下游节点
      */
     @GetMapping("/dag/{dagId}/version/{versionId}/node/{nodeId}/down")
+    @PreAuthorize("@schedulingAccessGuard.canRead(authentication)")
     public ResponseEntity<List<SchedulingDagTask>> getDownstreamNodes(
             @PathVariable Long dagId,
             @PathVariable Long versionId,
@@ -344,6 +372,7 @@ public class SchedulingController {
      */
     @PostMapping("/dag/{dagId}/version/{versionId}/edge")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canManageConfig(authentication)")
     public ResponseEntity<SchedulingDagEdge> createDagEdge(
             @PathVariable Long dagId,
             @PathVariable Long versionId,
@@ -357,6 +386,7 @@ public class SchedulingController {
      */
     @DeleteMapping("/dag/{dagId}/version/{versionId}/edge/{edgeId}")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canManageConfig(authentication)")
     public ResponseEntity<Void> deleteDagEdge(
             @PathVariable Long dagId,
             @PathVariable Long versionId,
@@ -369,6 +399,7 @@ public class SchedulingController {
      * 查询版本下的所有依赖
      */
     @GetMapping("/dag/{dagId}/version/{versionId}/edges")
+    @PreAuthorize("@schedulingAccessGuard.canRead(authentication)")
     public ResponseEntity<List<SchedulingDagEdge>> getDagEdges(
             @PathVariable Long dagId,
             @PathVariable Long versionId) {
@@ -379,6 +410,7 @@ public class SchedulingController {
      * DAG 运行统计（Run 级别）：total/success/failed/avgDurationMs/p95DurationMs/p99DurationMs
      */
     @GetMapping("/dag/{dagId}/stats")
+    @PreAuthorize("@schedulingAccessGuard.canRead(authentication)")
     public ResponseEntity<SchedulingDagStatsDto> getDagStats(@PathVariable Long dagId) {
         return ResponseEntity.ok(schedulingService.getDagStats(dagId));
     }
@@ -390,6 +422,7 @@ public class SchedulingController {
      */
     @PostMapping("/dag/{dagId}/trigger")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canOperateRun(authentication)")
     public ResponseEntity<SchedulingDagRun> triggerDag(@PathVariable Long dagId) {
         return ResponseEntity.ok(schedulingService.triggerDag(dagId));
     }
@@ -399,6 +432,7 @@ public class SchedulingController {
      */
     @PostMapping("/dag/{dagId}/pause")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canOperateRun(authentication)")
     public ResponseEntity<Void> pauseDag(@PathVariable Long dagId) {
         schedulingService.pauseDag(dagId);
         return ResponseEntity.ok().build();
@@ -409,6 +443,7 @@ public class SchedulingController {
      */
     @PostMapping("/dag/{dagId}/resume")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canOperateRun(authentication)")
     public ResponseEntity<Void> resumeDag(@PathVariable Long dagId) {
         schedulingService.resumeDag(dagId);
         return ResponseEntity.ok().build();
@@ -419,6 +454,7 @@ public class SchedulingController {
      */
     @PostMapping("/dag/{dagId}/stop")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canOperateRun(authentication)")
     public ResponseEntity<Void> stopDag(@PathVariable Long dagId) {
         schedulingService.stopDag(dagId);
         return ResponseEntity.ok().build();
@@ -429,6 +465,7 @@ public class SchedulingController {
      */
     @PostMapping("/dag/{dagId}/run/{runId}/stop")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canOperateRun(authentication)")
     public ResponseEntity<Void> stopDagRun(
             @PathVariable Long dagId,
             @PathVariable Long runId) {
@@ -441,6 +478,7 @@ public class SchedulingController {
      */
     @PostMapping("/dag/{dagId}/retry")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canOperateRun(authentication)")
     public ResponseEntity<Void> retryDag(@PathVariable Long dagId) {
         schedulingService.retryDag(dagId);
         return ResponseEntity.ok().build();
@@ -451,6 +489,7 @@ public class SchedulingController {
      */
     @PostMapping("/dag/{dagId}/run/{runId}/retry")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canOperateRun(authentication)")
     public ResponseEntity<Void> retryDagRun(
             @PathVariable Long dagId,
             @PathVariable Long runId) {
@@ -465,6 +504,7 @@ public class SchedulingController {
      */
     @PostMapping("/dag/{dagId}/node/{nodeId}/trigger")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canOperateRun(authentication)")
     public ResponseEntity<Void> triggerNode(
             @PathVariable Long dagId,
             @PathVariable Long nodeId) {
@@ -477,6 +517,7 @@ public class SchedulingController {
      */
     @PostMapping("/dag/{dagId}/run/{runId}/node/{nodeId}/trigger")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canOperateRun(authentication)")
     public ResponseEntity<Void> triggerNodeInRun(
             @PathVariable Long dagId,
             @PathVariable Long runId,
@@ -490,6 +531,7 @@ public class SchedulingController {
      */
     @PostMapping("/dag/{dagId}/node/{nodeId}/retry")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canOperateRun(authentication)")
     public ResponseEntity<Void> retryNode(
             @PathVariable Long dagId,
             @PathVariable Long nodeId) {
@@ -502,6 +544,7 @@ public class SchedulingController {
      */
     @PostMapping("/dag/{dagId}/run/{runId}/node/{nodeId}/retry")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canOperateRun(authentication)")
     public ResponseEntity<Void> retryNodeInRun(
             @PathVariable Long dagId,
             @PathVariable Long runId,
@@ -515,6 +558,7 @@ public class SchedulingController {
      */
     @PostMapping("/dag/{dagId}/node/{nodeId}/pause")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canOperateRun(authentication)")
     public ResponseEntity<Void> pauseNode(
             @PathVariable Long dagId,
             @PathVariable Long nodeId) {
@@ -524,6 +568,7 @@ public class SchedulingController {
 
     @PostMapping("/dag/{dagId}/run/{runId}/node/{nodeId}/pause")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canOperateRun(authentication)")
     public ResponseEntity<Void> pauseNodeInRun(
             @PathVariable Long dagId,
             @PathVariable Long runId,
@@ -537,6 +582,7 @@ public class SchedulingController {
      */
     @PostMapping("/dag/{dagId}/node/{nodeId}/resume")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canOperateRun(authentication)")
     public ResponseEntity<Void> resumeNode(
             @PathVariable Long dagId,
             @PathVariable Long nodeId) {
@@ -546,6 +592,7 @@ public class SchedulingController {
 
     @PostMapping("/dag/{dagId}/run/{runId}/node/{nodeId}/resume")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@schedulingAccessGuard.canOperateRun(authentication)")
     public ResponseEntity<Void> resumeNodeInRun(
             @PathVariable Long dagId,
             @PathVariable Long runId,
@@ -560,6 +607,7 @@ public class SchedulingController {
      * 查询 DAG 运行历史，支持按状态、触发类型、运行编号、开始时间范围筛选。
      */
     @GetMapping("/dag/{dagId}/runs")
+    @PreAuthorize("@schedulingAccessGuard.canRead(authentication)")
     public ResponseEntity<PageResponse<SchedulingDagRun>> getDagRuns(
             @PathVariable Long dagId,
             @PageableDefault(size = 10, sort = "id", direction = Sort.Direction.DESC) Pageable pageable,
@@ -596,6 +644,7 @@ public class SchedulingController {
      * 查看 DAG 单次运行详情
      */
     @GetMapping("/dag/{dagId}/run/{runId}")
+    @PreAuthorize("@schedulingAccessGuard.canRead(authentication)")
     public ResponseEntity<SchedulingDagRun> getDagRun(
             @PathVariable Long dagId,
             @PathVariable Long runId) {
@@ -608,6 +657,7 @@ public class SchedulingController {
      * 查看该次运行的所有节点执行记录
      */
     @GetMapping("/dag/{dagId}/run/{runId}/nodes")
+    @PreAuthorize("@schedulingAccessGuard.canRead(authentication)")
     public ResponseEntity<List<SchedulingTaskInstance>> getDagRunNodes(
             @PathVariable Long dagId,
             @PathVariable Long runId) {
@@ -618,6 +668,7 @@ public class SchedulingController {
      * 查看单节点执行详情
      */
     @GetMapping("/dag/{dagId}/run/{runId}/node/{nodeId}")
+    @PreAuthorize("@schedulingAccessGuard.canRead(authentication)")
     public ResponseEntity<SchedulingTaskInstance> getDagRunNode(
             @PathVariable Long dagId,
             @PathVariable Long runId,
@@ -631,6 +682,7 @@ public class SchedulingController {
      * 查看任务实例执行日志
      */
     @GetMapping("/task-instance/{instanceId}/log")
+    @PreAuthorize("@schedulingAccessGuard.canRead(authentication)")
     public ResponseEntity<String> getTaskInstanceLog(@PathVariable Long instanceId) {
         return schedulingService.getTaskInstanceLog(instanceId)
                 .map(ResponseEntity::ok)
@@ -641,6 +693,7 @@ public class SchedulingController {
      * 查看任务执行历史
      */
     @GetMapping("/task-history/{historyId}")
+    @PreAuthorize("@schedulingAccessGuard.canRead(authentication)")
     public ResponseEntity<SchedulingTaskHistory> getTaskHistory(@PathVariable Long historyId) {
         return schedulingService.getTaskHistory(historyId)
                 .map(ResponseEntity::ok)
@@ -653,6 +706,7 @@ public class SchedulingController {
      * 分页查询操作审计记录
      */
     @GetMapping("/audit/list")
+    @PreAuthorize("@schedulingAccessGuard.canViewAudit(authentication)")
     public ResponseEntity<PageResponse<SchedulingAudit>> listAudits(
             @RequestParam(required = false) String objectType,
             @RequestParam(required = false) String action,
@@ -664,6 +718,7 @@ public class SchedulingController {
      * 查询任务默认参数
      */
     @GetMapping("/task-param/{taskId}")
+    @PreAuthorize("@schedulingAccessGuard.canRead(authentication)")
     public ResponseEntity<String> getTaskParam(@PathVariable Long taskId) {
         return schedulingService.getTask(taskId)
                 .map(task -> ResponseEntity.ok(task.getParams() != null ? task.getParams() : "{}"))
@@ -677,6 +732,7 @@ public class SchedulingController {
      * 用于确认当前 Quartz 是以集群模式还是单机模式运行
      */
     @GetMapping("/quartz/cluster-status")
+    @PreAuthorize("@schedulingAccessGuard.canViewClusterStatus(authentication)")
     public ResponseEntity<Map<String, Object>> getQuartzClusterStatus() {
         QuartzSchedulerService.ClusterStatusInfo status = quartzSchedulerService.getClusterStatus();
 

@@ -6,6 +6,7 @@ import com.tiny.platform.infrastructure.idempotent.sdk.exception.IdempotentExcep
 import jakarta.annotation.Nonnull;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authorization.AuthorizationDeniedException;
 import org.springframework.security.oauth2.core.OAuth2AuthorizationException;
 import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -116,6 +117,29 @@ public class OAuthServerExceptionHandler extends BaseExceptionHandler {
             request
         );
 
+        return ResponseEntity.of(body).build();
+    }
+
+    /**
+     * 处理方法级权限拒绝异常（如 @PreAuthorize 触发的 AuthorizationDeniedException）
+     *
+     * <p><strong>必要性：</strong>Spring Security 6 在方法安全中使用 {@link AuthorizationDeniedException}
+     * 表示权限拒绝，如果不单独处理，将会被作为通用运行时异常返回 500，影响前端与监控对 403 的识别。</p>
+     *
+     * @param ex      权限拒绝异常
+     * @param request 请求
+     * @return 权限拒绝的 ProblemDetail 响应（403）
+     */
+    @ExceptionHandler(AuthorizationDeniedException.class)
+    public ResponseEntity<ProblemDetail> handleAuthorizationDeniedException(
+            @Nonnull AuthorizationDeniedException ex, @Nonnull NativeWebRequest request) {
+        log.warn("权限拒绝: {}", ex.getMessage(), ex);
+
+        ProblemDetail body = buildProblemDetail(
+                ErrorCode.ACCESS_DENIED,
+                "拒绝访问: " + ex.getMessage(),
+                request
+        );
         return ResponseEntity.of(body).build();
     }
 }

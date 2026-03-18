@@ -3,6 +3,7 @@ package com.tiny.platform.infrastructure.scheduling.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.scheduling.exception.SchedulingExceptions;
+import com.tiny.platform.infrastructure.scheduling.security.SchedulingErrorSanitizer;
 import com.tiny.platform.infrastructure.scheduling.model.SchedulingDagRun;
 import com.tiny.platform.infrastructure.scheduling.model.SchedulingTaskInstance;
 import com.tiny.platform.infrastructure.scheduling.model.SchedulingTaskHistory;
@@ -66,6 +67,13 @@ public class TaskWorkerService {
     private static final int MAX_TASKS_PER_CYCLE = 500;
     private static final int DEFAULT_RETRY_DELAY_SEC = 60;
 
+    /**
+     * 单次扫描周期内，每个租户最多可被拾取的任务数。
+     * 用于防止高负载租户在高并发场景下长时间吃满 Worker 容量，饿死其它租户。
+     */
+    @Value("${scheduling.worker.max-tasks-per-tenant-per-cycle:100}")
+    private int maxTasksPerTenantPerCycle;
+
     @Value("${scheduling.worker.lock-timeout-sec:300}")
     private int lockTimeoutSec;
 
@@ -116,6 +124,7 @@ public class TaskWorkerService {
     public void processPendingTasks() {
         int processed = 0;
         int pageIndex = 0;
+        java.util.Map<Long, Integer> processedPerTenant = new java.util.HashMap<>();
         try {
             while (processed < MAX_TASKS_PER_CYCLE) {
                 LocalDateTime now = LocalDateTime.now();
@@ -131,6 +140,14 @@ public class TaskWorkerService {
                         return;
                     }
 
+                    Long tenantId = instance.getTenantId() != null ? instance.getTenantId() : 0L;
+                    int usedForTenant = processedPerTenant.getOrDefault(tenantId, 0);
+                    if (usedForTenant >= maxTasksPerTenantPerCycle) {
+                        logger.debug("本轮已为租户 {} 处理 {} 个任务，超过上限 {}，跳过实例 {}",
+                                tenantId, usedForTenant, maxTasksPerTenantPerCycle, instance.getId());
+                        continue;
+                    }
+
                     if (!dependencyCheckerService.checkDependencies(instance)) {
                         logger.debug("任务实例 {} 的依赖未满足，跳过", instance.getId());
                         continue;
@@ -139,6 +156,7 @@ public class TaskWorkerService {
                     if (self.reserveTask(instance)) {
                         dispatchTask(instance);
                         processed++;
+                        processedPerTenant.put(tenantId, usedForTenant + 1);
                     }
                 }
 
@@ -263,9 +281,12 @@ public class TaskWorkerService {
         if (StringUtils.hasText(instance.getConcurrencyKey())) {
             return instance.getConcurrencyKey();
         }
-        if (instance.getNodeCode() != null) {
-            return dagTaskRepository.findByDagVersionIdAndNodeCode(
-                    instance.getDagVersionId(), instance.getNodeCode())
+        if (instance.getNodeCode() != null && instance.getDagVersionId() != null) {
+            Optional<SchedulingDagTask> dagTask = instance.getTenantId() != null
+                    ? dagTaskRepository.findByDagVersionIdAndNodeCodeAndTenantId(
+                            instance.getDagVersionId(), instance.getNodeCode(), instance.getTenantId())
+                    : dagTaskRepository.findByDagVersionIdAndNodeCode(instance.getDagVersionId(), instance.getNodeCode());
+            return dagTask
                     .map(task -> {
                         if (task.getParallelGroup() != null && !task.getParallelGroup().isBlank()) {
                             return task.getParallelGroup();
@@ -331,7 +352,8 @@ public class TaskWorkerService {
                 return;
             }
             self.handleTaskFailure(runningInstance, history.getId(),
-                    TaskExecutorService.TaskExecutionResult.failure(e.getMessage(), e),
+                    TaskExecutorService.TaskExecutionResult.failure(
+                            SchedulingErrorSanitizer.sanitizeForPersistence(e.getMessage()), e),
                     endTime, durationMs);
         }
     }
@@ -373,7 +395,7 @@ public class TaskWorkerService {
 
     private SchedulingExecutionContext buildExecutionContext(SchedulingTaskInstance instance) {
         SchedulingExecutionContext.Builder builder = SchedulingExecutionContext.builder()
-                .tenantId(instance.getTenantId())
+                .executionTenantId(instance.getTenantId())
                 .dagId(instance.getDagId())
                 .dagRunId(instance.getDagRunId())
                 .dagVersionId(instance.getDagVersionId());
@@ -479,7 +501,7 @@ public class TaskWorkerService {
     private <T> Future<T> submitWithExecutionContext(
             SchedulingExecutionContext executionContext,
             Callable<T> callable) {
-        Long previousTenantId = TenantContext.getTenantId();
+        Long previousTenantId = TenantContext.getActiveTenantId();
         String previousTenantSource = TenantContext.getTenantSource();
         try {
             applyExecutionContextTenant(executionContext);
@@ -569,8 +591,8 @@ public class TaskWorkerService {
 
     private void applyExecutionContextTenant(SchedulingExecutionContext executionContext) {
         TenantContext.clear();
-        if (executionContext != null && executionContext.getTenantId() != null) {
-            TenantContext.setTenantId(executionContext.getTenantId());
+        if (executionContext != null && executionContext.getExecutionTenantId() != null) {
+            TenantContext.setActiveTenantId(executionContext.getExecutionTenantId());
             TenantContext.setTenantSource(TenantContext.SOURCE_UNKNOWN);
         }
     }
@@ -578,7 +600,7 @@ public class TaskWorkerService {
     private void restoreTenantContext(Long previousTenantId, String previousTenantSource) {
         TenantContext.clear();
         if (previousTenantId != null) {
-            TenantContext.setTenantId(previousTenantId);
+            TenantContext.setActiveTenantId(previousTenantId);
         }
         if (previousTenantSource != null) {
             TenantContext.setTenantSource(previousTenantSource);

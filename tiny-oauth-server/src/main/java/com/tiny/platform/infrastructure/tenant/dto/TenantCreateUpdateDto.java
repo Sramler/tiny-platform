@@ -5,6 +5,11 @@ public class TenantCreateUpdateDto {
     private String name;
     private String domain;
     private Boolean enabled;
+    /**
+     * 可选：租户生命周期状态（仅平台控制面可修改）：ACTIVE/FROZEN/DECOMMISSIONED。
+     * 当前阶段若为空则保持现状或默认 ACTIVE。
+     */
+    private String lifecycleStatus;
     private String planCode;
     private String expiresAt;
     private Integer maxUsers;
@@ -44,6 +49,14 @@ public class TenantCreateUpdateDto {
 
     public void setEnabled(Boolean enabled) {
         this.enabled = enabled;
+    }
+
+    public String getLifecycleStatus() {
+        return lifecycleStatus;
+    }
+
+    public void setLifecycleStatus(String lifecycleStatus) {
+        this.lifecycleStatus = lifecycleStatus;
     }
 
     public String getPlanCode() {

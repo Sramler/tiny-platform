@@ -32,7 +32,7 @@ class DagExecutionJobTest {
 
         JobDetail jobDetail = mock(JobDetail.class);
         JobDataMap jobDataMap = SchedulingExecutionContext.builder()
-                .tenantId(88L)
+                .executionTenantId(88L)
                 .userId("8")
                 .username("alice")
                 .dagId(10L)
@@ -53,7 +53,7 @@ class DagExecutionJobTest {
                 ArgumentCaptor.forClass(SchedulingExecutionContext.class);
         verify(schedulingService).executeDag(executionContextCaptor.capture());
         SchedulingExecutionContext executionContext = executionContextCaptor.getValue();
-        assertThat(executionContext.getTenantId()).isEqualTo(88L);
+        assertThat(executionContext.getExecutionTenantId()).isEqualTo(88L);
         assertThat(executionContext.getUserId()).isEqualTo("8");
         assertThat(executionContext.getUsername()).isEqualTo("alice");
         assertThat(executionContext.getDagId()).isEqualTo(10L);

@@ -1,0 +1,17 @@
+databaseChangeLog:
+  - changeSet:
+      id: 047-drop-user-role-legacy
+      author: tiny
+      comment: 删除 user_role_legacy 表，结束兼容观察期（见 TINY_PLATFORM_AUTHORIZATION_LEGACY_REMOVAL_PLAN §2.3）
+      preConditions:
+        - onFail: CONTINUE
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - tableExists:
+            tableName: user_role_legacy
+      changes:
+        - dropTable:
+            tableName: user_role_legacy
+            cascadeConstraints: true
+

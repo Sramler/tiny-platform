@@ -1,0 +1,135 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-tenant-id-to-scheduling-dag-metadata
+      author: tiny
+      comment: 为 scheduling_dag_version / scheduling_dag_task / scheduling_dag_edge 补充 tenant_id 并回填与收紧约束
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              -- 为 DAG 版本/节点/边表增加 tenant_id 列（若不存在）
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'scheduling_dag_version'
+                      AND COLUMN_NAME = 'tenant_id'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `scheduling_dag_version` ADD COLUMN `tenant_id` BIGINT NULL COMMENT ''租户ID'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'scheduling_dag_task'
+                      AND COLUMN_NAME = 'tenant_id'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `scheduling_dag_task` ADD COLUMN `tenant_id` BIGINT NULL COMMENT ''租户ID'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'scheduling_dag_edge'
+                      AND COLUMN_NAME = 'tenant_id'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `scheduling_dag_edge` ADD COLUMN `tenant_id` BIGINT NULL COMMENT ''租户ID'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              -- 回填 DAG 版本/节点/边的 tenant_id（优先使用上游表中的租户信息）
+              UPDATE `scheduling_dag_version` v
+              LEFT JOIN `scheduling_dag` d ON d.id = v.dag_id
+              SET v.tenant_id = COALESCE(v.tenant_id, d.tenant_id)
+              WHERE v.tenant_id IS NULL;
+
+              UPDATE `scheduling_dag_task` t
+              LEFT JOIN `scheduling_dag_version` v ON v.id = t.dag_version_id
+              SET t.tenant_id = COALESCE(t.tenant_id, v.tenant_id)
+              WHERE t.tenant_id IS NULL;
+
+              UPDATE `scheduling_dag_edge` e
+              LEFT JOIN `scheduling_dag_version` v ON v.id = e.dag_version_id
+              SET e.tenant_id = COALESCE(e.tenant_id, v.tenant_id)
+              WHERE e.tenant_id IS NULL;
+
+              -- 收紧为非空约束
+              ALTER TABLE `scheduling_dag_version`
+                MODIFY COLUMN `tenant_id` BIGINT NOT NULL COMMENT '租户ID';
+
+              ALTER TABLE `scheduling_dag_task`
+                MODIFY COLUMN `tenant_id` BIGINT NOT NULL COMMENT '租户ID';
+
+              ALTER TABLE `scheduling_dag_edge`
+                MODIFY COLUMN `tenant_id` BIGINT NOT NULL COMMENT '租户ID';
+
+              -- 补充常用查询维度上的租户索引，便于后续基于 tenant_id 过滤与巡检
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'scheduling_dag_version'
+                      AND INDEX_NAME = 'idx_scheduling_dag_version_tenant_dag'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `scheduling_dag_version` ADD KEY `idx_scheduling_dag_version_tenant_dag` (`tenant_id`, `dag_id`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'scheduling_dag_task'
+                      AND INDEX_NAME = 'idx_scheduling_dag_task_tenant_version_node'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `scheduling_dag_task` ADD KEY `idx_scheduling_dag_task_tenant_version_node` (`tenant_id`, `dag_version_id`, `node_code`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'scheduling_dag_edge'
+                      AND INDEX_NAME = 'idx_scheduling_dag_edge_tenant_version_from_to'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `scheduling_dag_edge` ADD KEY `idx_scheduling_dag_edge_tenant_version_from_to` (`tenant_id`, `dag_version_id`, `from_node_code`, `to_node_code`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+

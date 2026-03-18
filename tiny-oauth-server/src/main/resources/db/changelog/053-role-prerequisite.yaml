@@ -1,0 +1,28 @@
+databaseChangeLog:
+  - changeSet:
+      id: 053-role-prerequisite
+      author: tiny
+      comment: Phase2 草案：新增 role_prerequisite 表（角色先决条件）
+      preConditions:
+        - onFail: CONTINUE
+        - onError: HALT
+        - dbms:
+            type: mysql
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              CREATE TABLE IF NOT EXISTS `role_prerequisite` (
+                `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+                `tenant_id` BIGINT NOT NULL COMMENT '租户ID；平台模板可用 tenant_id IS NULL 表示平台层',
+                `role_id` BIGINT NOT NULL COMMENT '目标角色模板ID',
+                `required_role_id` BIGINT NOT NULL COMMENT '先决条件角色模板ID',
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                `created_by` BIGINT NULL COMMENT '创建人ID',
+                `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uk_role_prerequisite` (`tenant_id`, `role_id`, `required_role_id`)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='角色先决条件关系表（Phase2 草案）';
+

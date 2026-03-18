@@ -1,0 +1,147 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-tenant-user-and-role-assignment
+      author: tiny
+      comment: 新增 tenant_user 与 role_assignment，并从 user/user_role 回填兼容数据
+      validCheckSum:
+        - ANY
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              CREATE TABLE IF NOT EXISTS `tenant_user` (
+                `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+                `tenant_id` BIGINT NOT NULL COMMENT '租户ID',
+                `user_id` BIGINT NOT NULL COMMENT '用户ID',
+                `status` VARCHAR(16) NOT NULL DEFAULT 'ACTIVE' COMMENT '成员状态：ACTIVE/INVITED/SUSPENDED/LEFT',
+                `is_default` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否默认租户上下文',
+                `joined_at` DATETIME NOT NULL COMMENT '加入租户时间',
+                `left_at` DATETIME NULL COMMENT '离开租户时间',
+                `last_activated_at` DATETIME NULL COMMENT '最近一次激活为当前租户的时间',
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uk_tenant_user_tenant_user` (`tenant_id`, `user_id`),
+                KEY `idx_tenant_user_user_status` (`user_id`, `status`),
+                KEY `idx_tenant_user_tenant_status` (`tenant_id`, `status`),
+                CONSTRAINT `fk_tenant_user_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`),
+                CONSTRAINT `fk_tenant_user_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户-租户 membership 表';
+
+              INSERT INTO `tenant_user` (
+                `tenant_id`,
+                `user_id`,
+                `status`,
+                `is_default`,
+                `joined_at`,
+                `left_at`,
+                `last_activated_at`,
+                `created_at`,
+                `updated_at`
+              )
+              SELECT
+                u.`tenant_id`,
+                u.`id`,
+                'ACTIVE',
+                1,
+                COALESCE(u.`create_time`, NOW()),
+                NULL,
+                COALESCE(u.`last_login_at`, u.`create_time`, NOW()),
+                COALESCE(u.`create_time`, NOW()),
+                COALESCE(u.`update_time`, u.`create_time`, NOW())
+              FROM `user` u
+              WHERE NOT EXISTS (
+                SELECT 1
+                FROM `tenant_user` tu
+                WHERE tu.`tenant_id` = u.`tenant_id`
+                  AND tu.`user_id` = u.`id`
+              );
+
+              CREATE TABLE IF NOT EXISTS `role_assignment` (
+                `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+                `principal_type` VARCHAR(16) NOT NULL COMMENT '主体类型：USER',
+                `principal_id` BIGINT NOT NULL COMMENT '主体ID，第一阶段固定指向 user.id',
+                `role_id` BIGINT NOT NULL COMMENT '角色模板ID',
+                `tenant_id` BIGINT NULL COMMENT '租户ID，PLATFORM 作用域下为空',
+                `scope_type` VARCHAR(16) NOT NULL COMMENT '授权作用域：PLATFORM/TENANT',
+                `scope_id` BIGINT NULL COMMENT '作用域ID，TENANT 作用域下等于 tenant_id',
+                `status` VARCHAR(16) NOT NULL DEFAULT 'ACTIVE' COMMENT '状态：ACTIVE/DISABLED/EXPIRED',
+                `start_time` DATETIME NOT NULL COMMENT '生效开始时间',
+                `end_time` DATETIME NULL COMMENT '生效结束时间',
+                `granted_by` BIGINT NULL COMMENT '授权人ID',
+                `granted_at` DATETIME NOT NULL COMMENT '授权时间',
+                `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+                `normalized_tenant_id` BIGINT GENERATED ALWAYS AS (IFNULL(`tenant_id`, 0)) STORED COMMENT '用于唯一约束的归一化 tenant 键',
+                `normalized_scope_id` BIGINT GENERATED ALWAYS AS (IFNULL(`scope_id`, 0)) STORED COMMENT '用于唯一约束的归一化 scope 键',
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uk_role_assignment_scope` (
+                  `principal_type`,
+                  `principal_id`,
+                  `role_id`,
+                  `normalized_tenant_id`,
+                  `scope_type`,
+                  `normalized_scope_id`
+                ),
+                KEY `idx_role_assignment_principal_active` (
+                  `principal_type`,
+                  `principal_id`,
+                  `status`,
+                  `start_time`,
+                  `end_time`
+                ),
+                KEY `idx_role_assignment_role_scope` (`role_id`, `scope_type`, `tenant_id`),
+                KEY `idx_role_assignment_tenant_scope` (`tenant_id`, `scope_type`, `status`),
+                CONSTRAINT `fk_role_assignment_user` FOREIGN KEY (`principal_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
+                CONSTRAINT `fk_role_assignment_role` FOREIGN KEY (`role_id`) REFERENCES `role` (`id`) ON DELETE CASCADE,
+                CONSTRAINT `fk_role_assignment_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`),
+                CONSTRAINT `chk_role_assignment_scope_platform` CHECK (
+                  `scope_type` <> 'PLATFORM' OR (`tenant_id` IS NULL AND `scope_id` IS NULL)
+                ),
+                CONSTRAINT `chk_role_assignment_scope_tenant` CHECK (
+                  `scope_type` <> 'TENANT' OR (`tenant_id` IS NOT NULL AND `scope_id` = `tenant_id`)
+                ),
+                CONSTRAINT `chk_role_assignment_effective_time` CHECK (
+                  `end_time` IS NULL OR `end_time` > `start_time`
+                )
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='角色授权关系表';
+
+              INSERT INTO `role_assignment` (
+                `principal_type`,
+                `principal_id`,
+                `role_id`,
+                `tenant_id`,
+                `scope_type`,
+                `scope_id`,
+                `status`,
+                `start_time`,
+                `end_time`,
+                `granted_by`,
+                `granted_at`,
+                `updated_at`
+              )
+              SELECT
+                'USER',
+                ur.`user_id`,
+                ur.`role_id`,
+                ur.`tenant_id`,
+                'TENANT',
+                ur.`tenant_id`,
+                'ACTIVE',
+                NOW(),
+                NULL,
+                NULL,
+                NOW(),
+                NOW()
+              FROM `user_role` ur
+              WHERE NOT EXISTS (
+                SELECT 1
+                FROM `role_assignment` ra
+                WHERE ra.`principal_type` = 'USER'
+                  AND ra.`principal_id` = ur.`user_id`
+                  AND ra.`role_id` = ur.`role_id`
+                  AND ra.`scope_type` = 'TENANT'
+                  AND ra.`tenant_id` = ur.`tenant_id`
+                  AND ra.`scope_id` = ur.`tenant_id`
+              );

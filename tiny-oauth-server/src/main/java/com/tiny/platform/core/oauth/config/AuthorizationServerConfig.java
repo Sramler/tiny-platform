@@ -5,6 +5,7 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.tiny.platform.infrastructure.core.util.PemUtils;
+import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
 import com.tiny.platform.core.oauth.security.MfaAuthorizationEndpointFilter;
 import com.tiny.platform.core.oauth.tenant.IssuerTenantSupport;
 import com.tiny.platform.core.oauth.tenant.TenantContextFilter;
@@ -26,6 +27,7 @@ import org.springframework.security.oauth2.server.authorization.config.annotatio
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
 import org.springframework.security.oauth2.server.authorization.token.*;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
@@ -62,7 +64,8 @@ public class AuthorizationServerConfig {
                                                                      @Qualifier("oauth2AuthorizationService") OAuth2AuthorizationService oauth2AuthorizationService,
                                                                      @Qualifier("customOAuth2AuthorizationConsentService") OAuth2AuthorizationConsentService oauth2AuthorizationConsentService,
                                                                      MfaAuthorizationEndpointFilter mfaAuthorizationEndpointFilter,
-                                                                     TenantContextFilter tenantContextFilter)
+                                                                     TenantContextFilter tenantContextFilter,
+                                                                     JwtAuthenticationConverter tinyPlatformJwtAuthenticationConverter)
             throws Exception {
         // SAS 1.5.x 在部分配置阶段会直接从 ApplicationContext 按类型查 Bean（忽略 @Primary），
         // 这里提前设置 shared object，避免 default/delegating 双 Bean 导致 NoUniqueBeanDefinitionException。
@@ -127,9 +130,9 @@ public class AuthorizationServerConfig {
                 .headers(headers -> headers.frameOptions(frame -> frame.disable()))
                 .cors(cors -> cors.configurationSource(corsConfigurationSource)) // 启用并设置 CORS
                 .csrf(csrf -> csrf.disable()) // 前后端分离建议关闭 CSRF，或使用 Token 保护
-                // 使用jwt处理接收到的access token
+                // 使用 JWT 处理 Bearer token，与 DefaultSecurityConfig 共用同一 converter，使 authorities/permissions 正确映射
                 .oauth2ResourceServer((resourceServer) -> resourceServer
-                        .jwt(Customizer.withDefaults()));
+                        .jwt(jwt -> jwt.jwtAuthenticationConverter(tinyPlatformJwtAuthenticationConverter)));
 
 
         return http.build();
@@ -243,8 +246,10 @@ public class AuthorizationServerConfig {
      */
     @Bean
     public JwtTokenCustomizer jwtTokenCustomizer(
-            com.tiny.platform.infrastructure.auth.user.repository.UserRepository userRepository) {
-        return new JwtTokenCustomizer(userRepository);
+            com.tiny.platform.infrastructure.auth.user.repository.UserRepository userRepository,
+            AuthUserResolutionService authUserResolutionService,
+            com.tiny.platform.core.oauth.security.PermissionVersionService permissionVersionService) {
+        return new JwtTokenCustomizer(userRepository, authUserResolutionService, permissionVersionService);
     }
 
     /**
@@ -301,9 +306,13 @@ public class AuthorizationServerConfig {
     @Bean
     public MfaAuthorizationEndpointFilter mfaAuthorizationEndpointFilter(
             com.tiny.platform.core.oauth.service.SecurityService securityService,
-            com.tiny.platform.infrastructure.auth.user.repository.UserRepository userRepository,
+            com.tiny.platform.core.oauth.security.AuthUserResolutionService authUserResolutionService,
             FrontendProperties frontendProperties) {
-        return new MfaAuthorizationEndpointFilter(securityService, userRepository, frontendProperties);
+        return new MfaAuthorizationEndpointFilter(
+                securityService,
+                authUserResolutionService,
+                frontendProperties
+        );
     }
 
 }

@@ -2,6 +2,7 @@ package com.tiny.platform.core.oauth.controller;
 
 import com.tiny.platform.core.oauth.config.FrontendProperties;
 import com.tiny.platform.core.oauth.model.SecurityUser;
+import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationSessionManager;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
 import com.tiny.platform.core.oauth.service.AuthenticationAuditService;
@@ -33,6 +34,8 @@ import static org.mockito.Mockito.when;
 
 class SecurityControllerRedirectTest {
 
+    private final AuthUserResolutionService authUserResolutionService = mock(AuthUserResolutionService.class);
+
     @AfterEach
     void tearDown() {
         SecurityContextHolder.clearContext();
@@ -49,18 +52,19 @@ class SecurityControllerRedirectTest {
                 mock(UserAuthenticationMethodRepository.class),
                 frontendProperties(),
                 mock(MultiFactorAuthenticationSessionManager.class),
+                authUserResolutionService,
                 mock(AuthenticationAuditService.class)
         );
 
         User user = user();
-        when(userRepository.findUserByUsernameAndTenantId("admin", 1L)).thenReturn(Optional.of(user));
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("admin", 1L)).thenReturn(Optional.of(user));
         when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
                 "disableMfa", false,
                 "forceMfa", false,
                 "totpActivated", false
         ));
 
-        TenantContext.setTenantId(1L);
+        TenantContext.setActiveTenantId(1L);
         SecurityContextHolder.getContext().setAuthentication(partialAuthentication());
 
         MockHttpServletRequest request = request();
@@ -80,18 +84,19 @@ class SecurityControllerRedirectTest {
                 mock(UserAuthenticationMethodRepository.class),
                 frontendProperties(),
                 mock(MultiFactorAuthenticationSessionManager.class),
+                authUserResolutionService,
                 mock(AuthenticationAuditService.class)
         );
 
         User user = user();
-        when(userRepository.findUserByUsernameAndTenantId("admin", 1L)).thenReturn(Optional.of(user));
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("admin", 1L)).thenReturn(Optional.of(user));
         when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
                 "disableMfa", false,
                 "forceMfa", false,
                 "totpActivated", true
         ));
 
-        TenantContext.setTenantId(1L);
+        TenantContext.setActiveTenantId(1L);
         SecurityContextHolder.getContext().setAuthentication(partialAuthentication());
 
         MockHttpServletRequest request = request();
@@ -113,11 +118,12 @@ class SecurityControllerRedirectTest {
                 mock(UserAuthenticationMethodRepository.class),
                 frontendProperties(),
                 sessionManager,
+                authUserResolutionService,
                 auditService
         );
 
         User user = user();
-        when(userRepository.findUserByUsernameAndTenantId("admin", 1L)).thenReturn(Optional.of(user));
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("admin", 1L)).thenReturn(Optional.of(user));
         when(userRepository.save(user)).thenReturn(user);
         when(securityService.checkTotp(user, "123456")).thenReturn(Map.of("success", true));
         when(sessionManager.tryPromoteToFullyAuthenticated(
@@ -127,7 +133,7 @@ class SecurityControllerRedirectTest {
                 eq(MultiFactorAuthenticationToken.AuthenticationFactorType.TOTP)
         )).thenReturn(true);
 
-        TenantContext.setTenantId(1L);
+        TenantContext.setActiveTenantId(1L);
         SecurityContextHolder.getContext().setAuthentication(partialAuthentication());
 
         MockHttpServletRequest request = request();
@@ -156,18 +162,19 @@ class SecurityControllerRedirectTest {
                 mock(UserAuthenticationMethodRepository.class),
                 frontendProperties(),
                 mock(MultiFactorAuthenticationSessionManager.class),
+                authUserResolutionService,
                 mock(AuthenticationAuditService.class)
         );
 
         User user = user();
-        when(userRepository.findUserByUsernameAndTenantId("admin", 1L)).thenReturn(Optional.of(user));
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("admin", 1L)).thenReturn(Optional.of(user));
         when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
                 "disableMfa", false,
                 "forceMfa", false,
                 "totpActivated", true
         ));
 
-        TenantContext.setTenantId(1L);
+        TenantContext.setActiveTenantId(1L);
         SecurityContextHolder.getContext().setAuthentication(partialAuthentication());
 
         ResponseEntity<Map<String, Object>> response = controller.skipMfaRemind(Map.of("skipMfaRemind", true));
@@ -189,14 +196,15 @@ class SecurityControllerRedirectTest {
                 mock(UserAuthenticationMethodRepository.class),
                 frontendProperties(),
                 sessionManager,
+                authUserResolutionService,
                 mock(AuthenticationAuditService.class)
         );
 
         User user = user();
-        when(userRepository.findUserByUsernameAndTenantId("admin", 1L)).thenReturn(Optional.of(user));
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("admin", 1L)).thenReturn(Optional.of(user));
         when(securityService.checkTotp(user, "000000")).thenReturn(Map.of("success", false, "error", "验证码错误"));
 
-        TenantContext.setTenantId(1L);
+        TenantContext.setActiveTenantId(1L);
         SecurityContextHolder.getContext().setAuthentication(partialAuthentication());
 
         MockHttpServletRequest request = request();
@@ -219,11 +227,12 @@ class SecurityControllerRedirectTest {
                 mock(UserAuthenticationMethodRepository.class),
                 frontendProperties(),
                 sessionManager,
+                authUserResolutionService,
                 auditService
         );
 
         User user = user();
-        when(userRepository.findUserByUsernameAndTenantId("admin", 1L)).thenReturn(Optional.of(user));
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("admin", 1L)).thenReturn(Optional.of(user));
         when(securityService.checkTotp(user, "123456")).thenReturn(Map.of("success", true));
         when(sessionManager.tryPromoteToFullyAuthenticated(
                 eq(user),
@@ -232,7 +241,7 @@ class SecurityControllerRedirectTest {
                 eq(MultiFactorAuthenticationToken.AuthenticationFactorType.TOTP)
         )).thenReturn(false);
 
-        TenantContext.setTenantId(1L);
+        TenantContext.setActiveTenantId(1L);
         SecurityContextHolder.getContext().setAuthentication(partialAuthentication());
 
         MockHttpServletRequest request = request();

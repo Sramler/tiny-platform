@@ -8,10 +8,28 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 const authStatePath = path.resolve(__dirname, '../.auth/scheduling-user.json')
 
-const tenantCode = process.env.E2E_TENANT_CODE ?? 'default'
-const username = process.env.E2E_USERNAME ?? 'admin'
-const password = process.env.E2E_PASSWORD ?? 'admin'
-const totpSecret = process.env.E2E_TOTP_SECRET ?? 'JBSWY3DPEHPK3PXP'
+function requireEnv(name: string) {
+  const value = process.env[name]
+  if (!value || value.trim() === '') {
+    throw new Error(`缺少 ${name}，请通过环境变量或 .env.e2e.local 提供真实测试值`)
+  }
+  const trimmed = value.trim()
+  if (trimmed.startsWith('<') && trimmed.endsWith('>')) {
+    throw new Error(`缺少 ${name}，当前仍为占位符值: ${trimmed}`)
+  }
+  return trimmed
+}
+
+const tenantCode = requireEnv('E2E_TENANT_CODE')
+const username = requireEnv('E2E_USERNAME')
+const password = requireEnv('E2E_PASSWORD')
+const totpSecret = requireEnv('E2E_TOTP_SECRET')
+
+if (tenantCode.trim().toLowerCase() === 'default') {
+  throw new Error(
+    'E2E_TENANT_CODE 不允许使用 default：当前环境 default 租户可能处于 FROZEN 状态，会导致 /login 被拒绝。请使用专用未冻结测试租户编码。'
+  )
+}
 const landingPath = '/OIDCDebug'
 
 function decodeBase32(secret: string) {
@@ -71,7 +89,7 @@ setup('authenticate real scheduling e2e user', async ({ page }) => {
   await page.addInitScript(
     ({ seedTenantCode }) => {
       window.localStorage.setItem('app_tenant_code', seedTenantCode)
-      window.localStorage.removeItem('app_tenant_id')
+      window.localStorage.removeItem('app_active_tenant_id')
       window.localStorage.setItem('sider-collapsed', 'false')
     },
     { seedTenantCode: tenantCode }

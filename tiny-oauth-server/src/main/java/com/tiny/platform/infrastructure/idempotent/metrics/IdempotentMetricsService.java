@@ -93,10 +93,10 @@ public class IdempotentMetricsService {
     }
 
     public void recordPass(@Nullable IdempotentKey key) {
-        Long tenantId = resolveTenantId(key);
+        Long activeTenantId = resolveActiveTenantId(key);
         String normalizedScope = normalizeScope(key);
         if (databaseRepository != null) {
-            databaseRepository.recordPass(currentBucketMinute(), tenantId, normalizedScope);
+            databaseRepository.recordPass(currentBucketMinute(), activeTenantId, normalizedScope);
         } else {
             MetricsBucket bucket = currentBucket();
             bucket.passCount.increment();
@@ -106,10 +106,10 @@ public class IdempotentMetricsService {
     }
 
     public void recordDuplicate(@Nullable IdempotentKey key, @Nullable IdempotentState existingState) {
-        Long tenantId = resolveTenantId(key);
+        Long activeTenantId = resolveActiveTenantId(key);
         String normalizedScope = normalizeScope(key);
         if (databaseRepository != null) {
-            databaseRepository.recordDuplicate(currentBucketMinute(), tenantId, normalizedScope);
+            databaseRepository.recordDuplicate(currentBucketMinute(), activeTenantId, normalizedScope);
         } else {
             MetricsBucket bucket = currentBucket();
             bucket.hitCount.increment();
@@ -119,10 +119,10 @@ public class IdempotentMetricsService {
     }
 
     public void recordSuccess(@Nullable IdempotentKey key) {
-        Long tenantId = resolveTenantId(key);
+        Long activeTenantId = resolveActiveTenantId(key);
         String normalizedScope = normalizeScope(key);
         if (databaseRepository != null) {
-            databaseRepository.recordSuccess(currentBucketMinute(), tenantId, normalizedScope);
+            databaseRepository.recordSuccess(currentBucketMinute(), activeTenantId, normalizedScope);
         } else {
             currentBucket().successCount.increment();
         }
@@ -130,10 +130,10 @@ public class IdempotentMetricsService {
     }
 
     public void recordFailure(@Nullable IdempotentKey key) {
-        Long tenantId = resolveTenantId(key);
+        Long activeTenantId = resolveActiveTenantId(key);
         String normalizedScope = normalizeScope(key);
         if (databaseRepository != null) {
-            databaseRepository.recordFailure(currentBucketMinute(), tenantId, normalizedScope);
+            databaseRepository.recordFailure(currentBucketMinute(), activeTenantId, normalizedScope);
         } else {
             currentBucket().failureCount.increment();
         }
@@ -141,10 +141,10 @@ public class IdempotentMetricsService {
     }
 
     public void recordStoreError(@Nullable IdempotentKey key) {
-        Long tenantId = resolveTenantId(key);
+        Long activeTenantId = resolveActiveTenantId(key);
         String normalizedScope = normalizeScope(key);
         if (databaseRepository != null) {
-            databaseRepository.recordStoreError(currentBucketMinute(), tenantId, normalizedScope);
+            databaseRepository.recordStoreError(currentBucketMinute(), activeTenantId, normalizedScope);
         } else {
             MetricsBucket bucket = currentBucket();
             bucket.storeErrorCount.increment();
@@ -155,7 +155,7 @@ public class IdempotentMetricsService {
 
     public void recordValidationRejected(String reason) {
         if (databaseRepository != null) {
-            databaseRepository.recordValidationRejected(currentBucketMinute(), resolveCurrentTenantId());
+            databaseRepository.recordValidationRejected(currentBucketMinute(), resolveCurrentActiveTenantId());
         } else {
             currentBucket().validationRejectCount.increment();
         }
@@ -166,9 +166,9 @@ public class IdempotentMetricsService {
         return snapshot(null);
     }
 
-    public IdempotentMetricsSnapshot snapshot(@Nullable Long tenantId) {
+    public IdempotentMetricsSnapshot snapshot(@Nullable Long activeTenantId) {
         WindowBounds bounds = currentWindowBounds();
-        IdempotentMetricsAggregate aggregate = aggregateWindow(bounds, tenantId);
+        IdempotentMetricsAggregate aggregate = aggregateWindow(bounds, activeTenantId);
         long pass = aggregate.passCount();
         long hit = aggregate.hitCount();
         long success = aggregate.successCount();
@@ -199,11 +199,11 @@ public class IdempotentMetricsService {
         return topScopes(limit, null);
     }
 
-    public List<Map<String, Object>> topScopes(int limit, @Nullable Long tenantId) {
+    public List<Map<String, Object>> topScopes(int limit, @Nullable Long activeTenantId) {
         int safeLimit = Math.max(1, Math.min(limit, 100));
         if (databaseRepository != null) {
             WindowBounds bounds = currentWindowBounds();
-            return databaseRepository.topScopes(tenantId, bounds.windowStartInclusive(), bounds.windowEndExclusive(), safeLimit);
+            return databaseRepository.topScopes(activeTenantId, bounds.windowStartInclusive(), bounds.windowEndExclusive(), safeLimit);
         }
         return aggregateHotScopes().entrySet().stream()
             .map(entry -> Map.<String, Object>of("key", entry.getKey(), "count", entry.getValue()))
@@ -220,9 +220,9 @@ public class IdempotentMetricsService {
         return buckets.computeIfAbsent(currentMinute, ignored -> new MetricsBucket());
     }
 
-    private IdempotentMetricsAggregate aggregateWindow(WindowBounds bounds, @Nullable Long tenantId) {
+    private IdempotentMetricsAggregate aggregateWindow(WindowBounds bounds, @Nullable Long activeTenantId) {
         if (databaseRepository != null) {
-            return databaseRepository.aggregateWindow(tenantId, bounds.windowStartInclusive(), bounds.windowEndExclusive());
+            return databaseRepository.aggregateWindow(activeTenantId, bounds.windowStartInclusive(), bounds.windowEndExclusive());
         }
         long endMinuteInclusive = currentEpochMinute();
         cleanupBuckets(endMinuteInclusive);
@@ -299,10 +299,10 @@ public class IdempotentMetricsService {
     }
 
     @Nullable
-    private Long resolveTenantId(@Nullable IdempotentKey key) {
-        Long currentTenantId = resolveCurrentTenantId();
-        if (currentTenantId != null && currentTenantId > 0) {
-            return currentTenantId;
+    private Long resolveActiveTenantId(@Nullable IdempotentKey key) {
+        Long currentActiveTenantId = resolveCurrentActiveTenantId();
+        if (currentActiveTenantId != null && currentActiveTenantId > 0) {
+            return currentActiveTenantId;
         }
         if (key == null || !StringUtils.hasText(key.getScope())) {
             return null;
@@ -313,17 +313,17 @@ public class IdempotentMetricsService {
         }
         String tenantPrefix = key.getScope().substring(0, separatorIndex);
         try {
-            long tenantId = Long.parseLong(tenantPrefix);
-            return tenantId > 0 ? tenantId : null;
+            long activeTenantId = Long.parseLong(tenantPrefix);
+            return activeTenantId > 0 ? activeTenantId : null;
         } catch (NumberFormatException ignored) {
             return null;
         }
     }
 
     @Nullable
-    private Long resolveCurrentTenantId() {
-        Long tenantId = TenantContext.getTenantId();
-        return tenantId != null && tenantId > 0 ? tenantId : null;
+    private Long resolveCurrentActiveTenantId() {
+        Long activeTenantId = TenantContext.getActiveTenantId();
+        return activeTenantId != null && activeTenantId > 0 ? activeTenantId : null;
     }
 
     private void mergeScopes(ConcurrentMap<String, LongAdder> aggregate,

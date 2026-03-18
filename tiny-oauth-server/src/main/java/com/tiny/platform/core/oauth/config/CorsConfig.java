@@ -1,5 +1,6 @@
 package com.tiny.platform.core.oauth.config;
 
+import com.tiny.platform.core.oauth.tenant.TenantContextContract;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -44,8 +45,8 @@ public class CorsConfig {
                 "Access-Control-Request-Method",
                 "Access-Control-Request-Headers",
                 // 多租户请求头
-                "X-Tenant-Id",
-                "x-tenant-id",
+                TenantContextContract.ACTIVE_TENANT_ID_HEADER,
+                "x-active-tenant-id",
                 // TRACE_ID 相关 headers
                 "X-Trace-Id",
                 "X-Request-Id",

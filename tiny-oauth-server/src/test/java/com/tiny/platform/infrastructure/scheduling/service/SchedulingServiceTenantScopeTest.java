@@ -31,6 +31,8 @@ import com.tiny.platform.infrastructure.scheduling.repository.SchedulingTaskHist
 import com.tiny.platform.infrastructure.scheduling.repository.SchedulingTaskInstanceRepository;
 import com.tiny.platform.infrastructure.scheduling.repository.SchedulingTaskRepository;
 import com.tiny.platform.infrastructure.scheduling.repository.SchedulingTaskTypeRepository;
+import com.tiny.platform.infrastructure.tenant.guard.TenantLifecycleGuard;
+import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -47,7 +49,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -92,6 +93,8 @@ class SchedulingServiceTenantScopeTest {
         auditRepository = mock(SchedulingAuditRepository.class);
         quartzSchedulerService = mock(QuartzSchedulerService.class);
         taskExecutorRegistry = mock(TaskExecutorRegistry.class);
+        TenantRepository tenantRepository = mock(TenantRepository.class);
+        TenantLifecycleGuard tenantLifecycleGuard = new TenantLifecycleGuard(tenantRepository);
         schedulingService = new SchedulingService(
                 taskTypeRepository,
                 taskRepository,
@@ -106,7 +109,8 @@ class SchedulingServiceTenantScopeTest {
                 quartzSchedulerService,
                 taskExecutorRegistry,
                 new JsonSchemaValidationService(new ObjectMapper()),
-                new ObjectMapper());
+                new ObjectMapper(),
+                tenantLifecycleGuard);
     }
 
     @AfterEach
@@ -130,7 +134,6 @@ class SchedulingServiceTenantScopeTest {
         });
 
         SchedulingTaskTypeCreateUpdateDto dto = new SchedulingTaskTypeCreateUpdateDto();
-        dto.setTenantId(999L);
         dto.setCode("billing");
         dto.setName("Billing");
         dto.setExecutor("loggingTaskExecutor");
@@ -175,7 +178,7 @@ class SchedulingServiceTenantScopeTest {
         activeVersion.setId(101L);
         activeVersion.setDagId(10L);
         activeVersion.setStatus("ACTIVE");
-        when(dagVersionRepository.findByDagIdAndStatus(10L, "ACTIVE")).thenReturn(Optional.of(activeVersion));
+        when(dagVersionRepository.findByDagIdAndStatusAndTenantId(10L, "ACTIVE", 88L)).thenReturn(Optional.of(activeVersion));
         SchedulingDagRun runningRun = new SchedulingDagRun();
         runningRun.setDagId(10L);
         runningRun.setStatus("RUNNING");
@@ -206,7 +209,7 @@ class SchedulingServiceTenantScopeTest {
         activeVersion.setId(201L);
         activeVersion.setDagId(20L);
         activeVersion.setStatus("ACTIVE");
-        when(dagVersionRepository.findByDagIdInAndStatus(List.of(10L, 20L), "ACTIVE"))
+        when(dagVersionRepository.findByDagIdInAndStatusAndTenantId(List.of(10L, 20L), "ACTIVE", 88L))
                 .thenReturn(List.of(activeVersion));
         SchedulingDagRun runningRun = new SchedulingDagRun();
         runningRun.setDagId(10L);
@@ -226,6 +229,115 @@ class SchedulingServiceTenantScopeTest {
         assertThat(dags.get(1).getCurrentVersionId()).isEqualTo(201L);
         assertThat(dags.get(1).getHasRunningRun()).isFalse();
         assertThat(dags.get(1).getHasRetryableRun()).isTrue();
+    }
+
+    @Test
+    void getDagVersionShouldUseTenantScopedLookup() {
+        authenticate(8L, 88L, "alice");
+
+        SchedulingDag dag = new SchedulingDag();
+        dag.setId(10L);
+        dag.setTenantId(88L);
+        when(dagRepository.findByIdAndTenantId(10L, 88L)).thenReturn(Optional.of(dag));
+
+        SchedulingDagVersion version = new SchedulingDagVersion();
+        version.setId(100L);
+        version.setDagId(10L);
+        version.setTenantId(88L);
+        when(dagVersionRepository.findByIdAndTenantId(100L, 88L)).thenReturn(Optional.of(version));
+
+        Optional<SchedulingDagVersion> found = schedulingService.getDagVersion(10L, 100L);
+
+        assertThat(found).contains(version);
+        verify(dagVersionRepository).findByIdAndTenantId(100L, 88L);
+        verify(dagVersionRepository, never()).findById(100L);
+    }
+
+    @Test
+    void getDagNodesShouldUseTenantScopedLookup() {
+        authenticate(8L, 88L, "alice");
+
+        SchedulingDag dag = new SchedulingDag();
+        dag.setId(10L);
+        dag.setTenantId(88L);
+        when(dagRepository.findByIdAndTenantId(10L, 88L)).thenReturn(Optional.of(dag));
+
+        SchedulingDagVersion version = new SchedulingDagVersion();
+        version.setId(100L);
+        version.setDagId(10L);
+        version.setTenantId(88L);
+        when(dagVersionRepository.findByIdAndTenantId(100L, 88L)).thenReturn(Optional.of(version));
+
+        SchedulingDagTask node = new SchedulingDagTask();
+        node.setId(11L);
+        node.setDagVersionId(100L);
+        node.setTenantId(88L);
+        node.setNodeCode("node-a");
+        when(dagTaskRepository.findByDagVersionIdAndTenantId(100L, 88L)).thenReturn(List.of(node));
+
+        List<SchedulingDagTask> nodes = schedulingService.getDagNodes(10L, 100L);
+
+        assertThat(nodes).containsExactly(node);
+        verify(dagTaskRepository).findByDagVersionIdAndTenantId(100L, 88L);
+        verify(dagTaskRepository, never()).findByDagVersionId(100L);
+    }
+
+    @Test
+    void getDagEdgesShouldUseTenantScopedLookup() {
+        authenticate(8L, 88L, "alice");
+
+        SchedulingDag dag = new SchedulingDag();
+        dag.setId(10L);
+        dag.setTenantId(88L);
+        when(dagRepository.findByIdAndTenantId(10L, 88L)).thenReturn(Optional.of(dag));
+
+        SchedulingDagVersion version = new SchedulingDagVersion();
+        version.setId(100L);
+        version.setDagId(10L);
+        version.setTenantId(88L);
+        when(dagVersionRepository.findByIdAndTenantId(100L, 88L)).thenReturn(Optional.of(version));
+
+        SchedulingDagEdge edge = new SchedulingDagEdge();
+        edge.setId(21L);
+        edge.setDagVersionId(100L);
+        edge.setTenantId(88L);
+        edge.setFromNodeCode("node-a");
+        edge.setToNodeCode("node-b");
+        when(dagEdgeRepository.findByDagVersionIdAndTenantId(100L, 88L)).thenReturn(List.of(edge));
+
+        List<SchedulingDagEdge> edges = schedulingService.getDagEdges(10L, 100L);
+
+        assertThat(edges).containsExactly(edge);
+        verify(dagEdgeRepository).findByDagVersionIdAndTenantId(100L, 88L);
+        verify(dagEdgeRepository, never()).findByDagVersionId(100L);
+    }
+
+    @Test
+    void getDagRunNodesShouldUseTenantScopedLookup() {
+        authenticate(8L, 88L, "alice");
+
+        SchedulingDag dag = new SchedulingDag();
+        dag.setId(10L);
+        dag.setTenantId(88L);
+        when(dagRepository.findByIdAndTenantId(10L, 88L)).thenReturn(Optional.of(dag));
+
+        SchedulingDagRun run = new SchedulingDagRun();
+        run.setId(77L);
+        run.setDagId(10L);
+        run.setTenantId(88L);
+        when(dagRunRepository.findByIdAndTenantId(77L, 88L)).thenReturn(Optional.of(run));
+
+        SchedulingTaskInstance nodeInstance = new SchedulingTaskInstance();
+        nodeInstance.setId(501L);
+        nodeInstance.setDagRunId(77L);
+        nodeInstance.setTenantId(88L);
+        when(taskInstanceRepository.findByDagRunIdAndTenantId(77L, 88L)).thenReturn(List.of(nodeInstance));
+
+        List<SchedulingTaskInstance> instances = schedulingService.getDagRunNodes(10L, 77L);
+
+        assertThat(instances).containsExactly(nodeInstance);
+        verify(taskInstanceRepository).findByDagRunIdAndTenantId(77L, 88L);
+        verify(taskInstanceRepository, never()).findByDagRunId(77L);
     }
 
     @Test
@@ -355,7 +467,7 @@ class SchedulingServiceTenantScopeTest {
         SchedulingDagVersion version = new SchedulingDagVersion();
         version.setId(3L);
         version.setDagId(10L);
-        when(dagVersionRepository.findByDagIdAndStatus(10L, "ACTIVE")).thenReturn(Optional.of(version));
+        when(dagVersionRepository.findByDagIdAndStatusAndTenantId(10L, "ACTIVE", 88L)).thenReturn(Optional.of(version));
         when(dagRunRepository.save(any(SchedulingDagRun.class))).thenAnswer(invocation -> {
             SchedulingDagRun run = invocation.getArgument(0);
             if (run.getId() == null) {
@@ -375,7 +487,7 @@ class SchedulingServiceTenantScopeTest {
                 ArgumentCaptor.forClass(SchedulingExecutionContext.class);
         verify(quartzSchedulerService).triggerDagNow(eq(dag), executionContextCaptor.capture());
         SchedulingExecutionContext executionContext = executionContextCaptor.getValue();
-        assertThat(executionContext.getTenantId()).isEqualTo(88L);
+        assertThat(executionContext.getExecutionTenantId()).isEqualTo(88L);
         assertThat(executionContext.getUserId()).isEqualTo("8");
         assertThat(executionContext.getUsername()).isEqualTo("alice");
         assertThat(executionContext.getDagId()).isEqualTo(10L);
@@ -447,7 +559,7 @@ class SchedulingServiceTenantScopeTest {
         activeVersion.setId(3L);
         activeVersion.setDagId(10L);
         activeVersion.setStatus("ACTIVE");
-        when(dagVersionRepository.findByDagIdAndStatus(10L, "ACTIVE")).thenReturn(Optional.of(activeVersion));
+        when(dagVersionRepository.findByDagIdAndStatusAndTenantId(10L, "ACTIVE", 88L)).thenReturn(Optional.of(activeVersion));
 
         SchedulingDagCreateUpdateDto dto = new SchedulingDagCreateUpdateDto();
         dto.setCronEnabled(true);
@@ -634,7 +746,7 @@ class SchedulingServiceTenantScopeTest {
         when(dagEdgeRepository.findByDagVersionId(3L)).thenReturn(List.of());
 
         schedulingService.executeDag(SchedulingExecutionContext.builder()
-                .tenantId(88L)
+                .executionTenantId(88L)
                 .dagId(10L)
                 .dagRunId(77L)
                 .dagVersionId(3L)
@@ -695,7 +807,7 @@ class SchedulingServiceTenantScopeTest {
         when(taskInstanceRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         schedulingService.executeDag(SchedulingExecutionContext.builder()
-                .tenantId(88L)
+                .executionTenantId(88L)
                 .dagId(10L)
                 .dagRunId(77L)
                 .dagVersionId(3L)
@@ -784,7 +896,7 @@ class SchedulingServiceTenantScopeTest {
         when(taskInstanceRepository.saveAll(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
         schedulingService.executeDag(SchedulingExecutionContext.builder()
-                .tenantId(88L)
+                .executionTenantId(88L)
                 .dagId(10L)
                 .dagRunId(77L)
                 .dagVersionId(3L)
@@ -828,7 +940,7 @@ class SchedulingServiceTenantScopeTest {
         SchedulingDagVersion version = new SchedulingDagVersion();
         version.setId(3L);
         version.setDagId(10L);
-        when(dagVersionRepository.findByDagIdAndStatus(10L, "ACTIVE")).thenReturn(Optional.of(version));
+        when(dagVersionRepository.findByDagIdAndStatusAndTenantId(10L, "ACTIVE", 88L)).thenReturn(Optional.of(version));
         when(dagTaskRepository.findByDagVersionId(3L)).thenReturn(List.of());
         when(dagEdgeRepository.findByDagVersionId(3L)).thenReturn(List.of());
         when(dagRunRepository.save(any(SchedulingDagRun.class))).thenAnswer(invocation -> {
@@ -840,7 +952,7 @@ class SchedulingServiceTenantScopeTest {
         });
 
         schedulingService.executeDag(SchedulingExecutionContext.builder()
-                .tenantId(88L)
+                .executionTenantId(88L)
                 .dagId(10L)
                 .triggerType("SCHEDULE")
                 .username("Quartz Scheduler")
@@ -1352,6 +1464,102 @@ class SchedulingServiceTenantScopeTest {
     }
 
     @Test
+    void createDagVersionShouldTranslateVersionNoConstraintConflict() {
+        authenticate(8L, 88L, "alice");
+
+        SchedulingDag dag = new SchedulingDag();
+        dag.setId(10L);
+        dag.setTenantId(88L);
+        when(dagRepository.findByIdAndTenantId(10L, 88L)).thenReturn(Optional.of(dag));
+        when(dagVersionRepository.findMaxVersionNoByDagId(10L)).thenReturn(2);
+
+        org.springframework.dao.DataIntegrityViolationException root =
+                new org.springframework.dao.DataIntegrityViolationException(
+                        "Duplicate entry '10-3' for key 'uk_scheduling_dag_version_dag_version'");
+        when(dagVersionRepository.save(any(SchedulingDagVersion.class))).thenThrow(root);
+
+        SchedulingDagVersionCreateUpdateDto dto = new SchedulingDagVersionCreateUpdateDto();
+        dto.setStatus("DRAFT");
+        dto.setDefinition("{\"nodes\":[]}");
+
+        assertThatThrownBy(() -> schedulingService.createDagVersion(10L, dto))
+                .isInstanceOf(SchedulingException.class)
+                .hasMessageContaining("版本号已被其他请求占用");
+    }
+
+    @Test
+    void updateDagVersionShouldSyncQuartzAfterCommitWhenActiveAvailabilityChanges() throws Exception {
+        authenticate(8L, 88L, "alice");
+
+        SchedulingDag dag = new SchedulingDag();
+        dag.setId(10L);
+        dag.setTenantId(88L);
+        dag.setEnabled(true);
+        dag.setCronEnabled(true);
+        dag.setCronExpression("0 0 12 * * ?");
+        dag.setCronTimezone("UTC");
+        when(dagRepository.findByIdAndTenantId(10L, 88L)).thenReturn(Optional.of(dag));
+
+        SchedulingDagVersion version = new SchedulingDagVersion();
+        version.setId(100L);
+        version.setDagId(10L);
+        version.setStatus("DRAFT");
+        when(dagVersionRepository.findById(100L)).thenReturn(Optional.of(version));
+        when(dagVersionRepository.save(any(SchedulingDagVersion.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(dagVersionRepository.findByDagIdAndStatusAndTenantId(10L, "ACTIVE", 88L))
+                .thenReturn(Optional.of(new SchedulingDagVersion()));
+
+        SchedulingDagVersionCreateUpdateDto dto = new SchedulingDagVersionCreateUpdateDto();
+        dto.setStatus("ACTIVE");
+
+        TransactionSynchronizationManager.initSynchronization();
+        schedulingService.updateDagVersion(10L, 100L, dto);
+        verify(quartzSchedulerService, never()).createOrUpdateDagJob(any(SchedulingDag.class), any(), any());
+        verify(quartzSchedulerService, never()).deleteDagJob(any());
+
+        TransactionSynchronizationManager.getSynchronizations().forEach(sync -> sync.afterCommit());
+        TransactionSynchronizationManager.clearSynchronization();
+
+        verify(quartzSchedulerService).createOrUpdateDagJob(dag, "0 0 12 * * ?", "UTC");
+    }
+
+    @Test
+    void updateDagVersionShouldDeleteQuartzJobAfterCommitWhenActiveIsRemoved() throws Exception {
+        authenticate(8L, 88L, "alice");
+
+        SchedulingDag dag = new SchedulingDag();
+        dag.setId(10L);
+        dag.setTenantId(88L);
+        dag.setEnabled(true);
+        dag.setCronEnabled(true);
+        dag.setCronExpression("0 0 12 * * ?");
+        dag.setCronTimezone("UTC");
+        when(dagRepository.findByIdAndTenantId(10L, 88L)).thenReturn(Optional.of(dag));
+
+        SchedulingDagVersion activeVersion = new SchedulingDagVersion();
+        activeVersion.setId(100L);
+        activeVersion.setDagId(10L);
+        activeVersion.setStatus("ACTIVE");
+        when(dagVersionRepository.findById(100L)).thenReturn(Optional.of(activeVersion));
+        when(dagVersionRepository.save(any(SchedulingDagVersion.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(dagVersionRepository.findByDagIdAndStatusAndTenantId(10L, "ACTIVE", 88L))
+                .thenReturn(Optional.empty());
+
+        SchedulingDagVersionCreateUpdateDto dto = new SchedulingDagVersionCreateUpdateDto();
+        dto.setStatus("ARCHIVED");
+
+        TransactionSynchronizationManager.initSynchronization();
+        schedulingService.updateDagVersion(10L, 100L, dto);
+        verify(quartzSchedulerService, never()).createOrUpdateDagJob(any(SchedulingDag.class), any(), any());
+        verify(quartzSchedulerService, never()).deleteDagJob(any());
+
+        TransactionSynchronizationManager.getSynchronizations().forEach(sync -> sync.afterCommit());
+        TransactionSynchronizationManager.clearSynchronization();
+
+        verify(quartzSchedulerService).deleteDagJob(10L);
+    }
+
+    @Test
     void createDagShouldRejectInvalidTimezone() {
         authenticate(8L, 88L, "alice");
 
@@ -1539,7 +1747,7 @@ class SchedulingServiceTenantScopeTest {
     }
 
     private void authenticate(Long userId, Long tenantId, String username) {
-        TenantContext.setTenantId(tenantId);
+        TenantContext.setActiveTenantId(tenantId);
         SecurityUser securityUser = new SecurityUser(userId, tenantId, username, "", List.of(), true, true, true, true);
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(securityUser, "N/A", List.of()));

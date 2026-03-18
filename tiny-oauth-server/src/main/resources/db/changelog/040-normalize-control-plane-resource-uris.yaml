@@ -1,0 +1,28 @@
+databaseChangeLog:
+  - changeSet:
+      id: normalize-control-plane-resource-uris
+      author: tiny
+      comment: 将历史控制面菜单资源的 /api/* URI 统一到当前 /sys/* 控制器路径
+      validCheckSum:
+        - ANY
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              UPDATE `resource`
+              SET `uri` = CASE `name`
+                WHEN 'user' THEN '/sys/users'
+                WHEN 'role' THEN '/sys/roles'
+                WHEN 'menu' THEN '/sys/menus'
+                WHEN 'resource' THEN '/sys/resources'
+                ELSE `uri`
+              END
+              WHERE `type` = 1
+                AND (
+                  (`name` = 'user' AND `uri` = '/api/users')
+                  OR (`name` = 'role' AND `uri` = '/api/roles')
+                  OR (`name` = 'menu' AND `uri` = '/api/resources/menus')
+                  OR (`name` = 'resource' AND `uri` = '/api/resources')
+                );

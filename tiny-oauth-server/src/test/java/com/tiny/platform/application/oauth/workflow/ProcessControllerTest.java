@@ -193,4 +193,23 @@ class ProcessControllerTest {
             assertThat(response.getBody()).containsEntry("error", "process key not found");
         }
     }
+
+    @Nested
+    class CreateTenant {
+
+        @Test
+        void createTenant_whenSuccess_returnsCreatedTenantId() {
+            when(processEngineService.createTenant(Map.of("id", "acme", "name", "Acme")))
+                .thenReturn("acme");
+
+            ResponseEntity<Map<String, Object>> response =
+                controller.createTenant(Map.of("id", "acme", "name", "Acme"));
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            assertThat(response.getBody()).containsEntry("success", true);
+            assertThat(response.getBody()).containsEntry("createdTenantId", "acme");
+            assertThat(response.getBody()).doesNotContainKey("tenantId");
+            verify(processEngineService).createTenant(Map.of("id", "acme", "name", "Acme"));
+        }
+    }
 }

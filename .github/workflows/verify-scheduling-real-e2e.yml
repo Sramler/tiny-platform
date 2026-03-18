@@ -1,0 +1,272 @@
+name: Verify scheduling real-link E2E (Nightly)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '40 2 * * *'
+
+jobs:
+  verify-scheduling-real-e2e:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ${{ secrets.E2E_DB_PASSWORD }}
+          MYSQL_DATABASE: tiny_web
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -p${MYSQL_ROOT_PASSWORD}"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=20
+
+    defaults:
+      run:
+        working-directory: tiny-oauth-server/src/main/webapp
+
+    env:
+      E2E_FRONTEND_PORT: 5173
+      E2E_BACKEND_PORT: 9000
+      E2E_FRONTEND_BASE_URL: http://localhost:5173
+      E2E_BACKEND_BASE_URL: http://localhost:9000
+      E2E_BACKEND_PROFILE: e2e
+      E2E_ENABLE_OIDC_TRACE: false
+      E2E_USE_SQL_SEED: false
+      E2E_DB_HOST: 127.0.0.1
+      E2E_DB_PORT: 3306
+      E2E_DB_NAME: tiny_web
+      E2E_DB_USER: root
+      E2E_DB_PASSWORD: ${{ secrets.E2E_DB_PASSWORD }}
+      E2E_MYSQL_HOST: 127.0.0.1
+      E2E_MYSQL_PORT: 3306
+      E2E_MYSQL_DATABASE: tiny_web
+      E2E_MYSQL_USER: root
+      E2E_MYSQL_PASSWORD: ${{ secrets.E2E_DB_PASSWORD }}
+      MYSQL_ROOT_PASSWORD: ${{ secrets.E2E_DB_PASSWORD }}
+      E2E_OIDC_CLIENT_ID: vue-client
+      E2E_TENANT_CODE: ${{ secrets.E2E_TENANT_CODE }}
+      E2E_USERNAME: ${{ secrets.E2E_USERNAME }}
+      E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+      E2E_TOTP_SECRET: ${{ secrets.E2E_TOTP_SECRET }}
+      E2E_PLATFORM_TENANT_CODE: default
+      E2E_PLATFORM_USERNAME: ${{ secrets.E2E_PLATFORM_USERNAME }}
+      E2E_PLATFORM_PASSWORD: ${{ secrets.E2E_PLATFORM_PASSWORD }}
+      E2E_PLATFORM_TOTP_SECRET: ${{ secrets.E2E_PLATFORM_TOTP_SECRET }}
+      E2E_TENANT_CODE_B: ${{ secrets.E2E_TENANT_CODE_B }}
+      E2E_USERNAME_B: ${{ secrets.E2E_USERNAME_B }}
+      E2E_PASSWORD_B: ${{ secrets.E2E_PASSWORD_B }}
+      E2E_TOTP_SECRET_B: ${{ secrets.E2E_TOTP_SECRET_B }}
+      E2E_TENANT_CODE_READONLY: ${{ secrets.E2E_TENANT_CODE_READONLY }}
+      E2E_USERNAME_READONLY: ${{ secrets.E2E_USERNAME_READONLY }}
+      E2E_PASSWORD_READONLY: ${{ secrets.E2E_PASSWORD_READONLY }}
+      E2E_TOTP_SECRET_READONLY: ${{ secrets.E2E_TOTP_SECRET_READONLY }}
+      E2E_TENANT_CODE_BIND: ${{ secrets.E2E_TENANT_CODE_BIND }}
+      E2E_USERNAME_BIND: ${{ secrets.E2E_USERNAME_BIND }}
+      E2E_PASSWORD_BIND: ${{ secrets.E2E_PASSWORD_BIND }}
+      PLAYWRIGHT_HTML_OPEN: never
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Validate real-link secret set
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          for key in \
+            E2E_DB_PASSWORD \
+            E2E_TENANT_CODE \
+            E2E_USERNAME \
+            E2E_PASSWORD \
+            E2E_TOTP_SECRET \
+            E2E_PLATFORM_USERNAME \
+            E2E_PLATFORM_PASSWORD \
+            E2E_PLATFORM_TOTP_SECRET \
+            E2E_TENANT_CODE_B \
+            E2E_USERNAME_B \
+            E2E_PASSWORD_B \
+            E2E_TOTP_SECRET_B \
+            E2E_USERNAME_READONLY \
+            E2E_PASSWORD_READONLY \
+            E2E_TOTP_SECRET_READONLY
+          do
+            if [ -z "${!key:-}" ]; then
+              missing+=("$key")
+            fi
+          done
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            {
+              echo "## Missing real-link E2E secrets"
+              echo
+              echo "The workflow requires dedicated automation identities and database credentials."
+              echo
+              echo "Missing:"
+              for key in "${missing[@]}"; do
+                echo "- \`$key\`"
+              done
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Install webapp dependencies
+        run: npm install
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Prime backend Maven dependencies
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          mvn -pl tiny-oauth-server -DskipTests test-compile
+
+      - name: Start backend
+        env:
+          SPRING_PROFILES_ACTIVE: ${{ env.E2E_BACKEND_PROFILE }}
+          E2E_DB_HOST: ${{ env.E2E_DB_HOST }}
+          E2E_DB_PORT: ${{ env.E2E_DB_PORT }}
+          E2E_DB_NAME: ${{ env.E2E_DB_NAME }}
+          E2E_DB_USER: ${{ env.E2E_DB_USER }}
+          E2E_DB_PASSWORD: ${{ env.E2E_DB_PASSWORD }}
+          MYSQL_ROOT_PASSWORD: ${{ env.E2E_DB_PASSWORD }}
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/tiny-platform-scheduling-real-e2e
+          mvn -pl tiny-oauth-server spring-boot:run \
+            > /tmp/tiny-platform-scheduling-real-e2e/backend.log 2>&1 &
+          echo $! > /tmp/tiny-platform-scheduling-real-e2e/backend.pid
+
+          for _ in $(seq 1 120); do
+            if curl -fsS "http://127.0.0.1:${E2E_BACKEND_PORT}/login" >/dev/null 2>&1; then
+              exit 0
+            fi
+            if ! kill -0 "$(cat /tmp/tiny-platform-scheduling-real-e2e/backend.pid)" 2>/dev/null; then
+              echo "Backend exited before becoming ready."
+              tail -n 200 /tmp/tiny-platform-scheduling-real-e2e/backend.log || true
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "Backend did not become ready in time."
+          tail -n 200 /tmp/tiny-platform-scheduling-real-e2e/backend.log || true
+          exit 1
+
+      - name: Start frontend
+        env:
+          VITE_API_BASE_URL: ${{ env.E2E_BACKEND_BASE_URL }}
+          VITE_OIDC_AUTHORITY: ${{ env.E2E_BACKEND_BASE_URL }}
+          VITE_OIDC_CLIENT_ID: ${{ env.E2E_OIDC_CLIENT_ID }}
+          VITE_OIDC_REDIRECT_URI: ${{ env.E2E_FRONTEND_BASE_URL }}/callback
+          VITE_OIDC_POST_LOGOUT_REDIRECT_URI: ${{ env.E2E_FRONTEND_BASE_URL }}/
+          VITE_OIDC_SILENT_REDIRECT_URI: ${{ env.E2E_FRONTEND_BASE_URL }}/silent-renew.html
+          VITE_ENABLE_OIDC_TRACE: ${{ env.E2E_ENABLE_OIDC_TRACE }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/tiny-platform-scheduling-real-e2e
+          npm run dev -- --host 127.0.0.1 --port "${E2E_FRONTEND_PORT}" \
+            > /tmp/tiny-platform-scheduling-real-e2e/frontend.log 2>&1 &
+          echo $! > /tmp/tiny-platform-scheduling-real-e2e/frontend.pid
+
+          for _ in $(seq 1 60); do
+            if curl -fsS "http://127.0.0.1:${E2E_FRONTEND_PORT}/" >/dev/null 2>&1; then
+              exit 0
+            fi
+            if ! kill -0 "$(cat /tmp/tiny-platform-scheduling-real-e2e/frontend.pid)" 2>/dev/null; then
+              echo "Frontend exited before becoming ready."
+              tail -n 200 /tmp/tiny-platform-scheduling-real-e2e/frontend.log || true
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "Frontend did not become ready in time."
+          tail -n 200 /tmp/tiny-platform-scheduling-real-e2e/frontend.log || true
+          exit 1
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run scheduling real-link E2E suite
+        env:
+          E2E_SKIP_WEBSERVER: 'true'
+        run: |
+          npm run test:e2e:real -- \
+            e2e/real/scheduling-dag-orchestration.spec.ts \
+            e2e/real/cross-tenant-a-to-b.spec.ts \
+            e2e/real/cross-tenant-b-to-a.spec.ts \
+            e2e/real/scheduling-rbac-readonly.spec.ts \
+            e2e/real/tenant-lifecycle-freeze.spec.ts \
+            --reporter=line,html
+
+      - name: Dump server logs on failure
+        if: failure()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f /tmp/tiny-platform-scheduling-real-e2e/backend.log ]; then
+            echo '== backend.log =='
+            tail -n 200 /tmp/tiny-platform-scheduling-real-e2e/backend.log
+          fi
+          if [ -f /tmp/tiny-platform-scheduling-real-e2e/frontend.log ]; then
+            echo '== frontend.log =='
+            tail -n 200 /tmp/tiny-platform-scheduling-real-e2e/frontend.log
+          fi
+
+      - name: Collect real-link artifacts
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p e2e-artifacts
+          if [ -f /tmp/tiny-platform-scheduling-real-e2e/backend.log ]; then
+            cp /tmp/tiny-platform-scheduling-real-e2e/backend.log e2e-artifacts/backend.log
+          fi
+          if [ -f /tmp/tiny-platform-scheduling-real-e2e/frontend.log ]; then
+            cp /tmp/tiny-platform-scheduling-real-e2e/frontend.log e2e-artifacts/frontend.log
+          fi
+
+      - name: Upload real-link artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scheduling-real-e2e-${{ github.run_id }}
+          if-no-files-found: ignore
+          retention-days: 14
+          path: |
+            tiny-oauth-server/src/main/webapp/playwright-report
+            tiny-oauth-server/src/main/webapp/test-results
+            tiny-oauth-server/src/main/webapp/e2e-artifacts
+
+      - name: Stop started servers
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          for pid_file in /tmp/tiny-platform-scheduling-real-e2e/frontend.pid /tmp/tiny-platform-scheduling-real-e2e/backend.pid; do
+            if [ -f "$pid_file" ]; then
+              pid="$(cat "$pid_file")"
+              kill "$pid" 2>/dev/null || true
+            fi
+          done

@@ -38,31 +38,31 @@ public class DatabaseIdempotentMetricsRepository {
         this.clock = clock != null ? clock : Clock.systemDefaultZone();
     }
 
-    public void recordPass(LocalDateTime bucketMinute, @Nullable Long tenantId, @Nullable String scope) {
-        record(bucketMinute, tenantId, scope, 1, 0, 0, 0, 0, 0, 1);
+    public void recordPass(LocalDateTime bucketMinute, @Nullable Long activeTenantId, @Nullable String scope) {
+        record(bucketMinute, activeTenantId, scope, 1, 0, 0, 0, 0, 0, 1);
     }
 
-    public void recordDuplicate(LocalDateTime bucketMinute, @Nullable Long tenantId, @Nullable String scope) {
-        record(bucketMinute, tenantId, scope, 0, 1, 0, 0, 0, 0, 1);
+    public void recordDuplicate(LocalDateTime bucketMinute, @Nullable Long activeTenantId, @Nullable String scope) {
+        record(bucketMinute, activeTenantId, scope, 0, 1, 0, 0, 0, 0, 1);
     }
 
-    public void recordSuccess(LocalDateTime bucketMinute, @Nullable Long tenantId, @Nullable String scope) {
-        record(bucketMinute, tenantId, scope, 0, 0, 1, 0, 0, 0, 0);
+    public void recordSuccess(LocalDateTime bucketMinute, @Nullable Long activeTenantId, @Nullable String scope) {
+        record(bucketMinute, activeTenantId, scope, 0, 0, 1, 0, 0, 0, 0);
     }
 
-    public void recordFailure(LocalDateTime bucketMinute, @Nullable Long tenantId, @Nullable String scope) {
-        record(bucketMinute, tenantId, scope, 0, 0, 0, 1, 0, 0, 0);
+    public void recordFailure(LocalDateTime bucketMinute, @Nullable Long activeTenantId, @Nullable String scope) {
+        record(bucketMinute, activeTenantId, scope, 0, 0, 0, 1, 0, 0, 0);
     }
 
-    public void recordStoreError(LocalDateTime bucketMinute, @Nullable Long tenantId, @Nullable String scope) {
-        record(bucketMinute, tenantId, scope, 0, 0, 0, 0, 1, 0, 1);
+    public void recordStoreError(LocalDateTime bucketMinute, @Nullable Long activeTenantId, @Nullable String scope) {
+        record(bucketMinute, activeTenantId, scope, 0, 0, 0, 0, 1, 0, 1);
     }
 
-    public void recordValidationRejected(LocalDateTime bucketMinute, @Nullable Long tenantId) {
-        record(bucketMinute, tenantId, null, 0, 0, 0, 0, 0, 1, 0);
+    public void recordValidationRejected(LocalDateTime bucketMinute, @Nullable Long activeTenantId) {
+        record(bucketMinute, activeTenantId, null, 0, 0, 0, 0, 0, 1, 0);
     }
 
-    public IdempotentMetricsAggregate aggregateWindow(@Nullable Long tenantId,
+    public IdempotentMetricsAggregate aggregateWindow(@Nullable Long activeTenantId,
                                                       LocalDateTime windowStartInclusive,
                                                       LocalDateTime windowEndExclusive) {
         String sql = "SELECT "
@@ -73,8 +73,8 @@ public class DatabaseIdempotentMetricsRepository {
             + "COALESCE(SUM(store_error_count), 0) AS store_error_count, "
             + "COALESCE(SUM(validation_reject_count), 0) AS validation_reject_count "
             + "FROM " + TABLE_NAME + " WHERE scope = ? AND bucket_minute >= ? AND bucket_minute < ?";
-        Object[] args = tenantQueryArgs(tenantId, windowStartInclusive, windowEndExclusive);
-        if (isTenantFilterEnabled(tenantId)) {
+        Object[] args = activeTenantQueryArgs(activeTenantId, windowStartInclusive, windowEndExclusive);
+        if (isActiveTenantFilterEnabled(activeTenantId)) {
             sql += " AND tenant_id = ?";
         }
         try {
@@ -92,13 +92,13 @@ public class DatabaseIdempotentMetricsRepository {
             );
             return aggregate != null ? aggregate : IdempotentMetricsAggregate.empty();
         } catch (Exception e) {
-            log.warn("查询幂等指标聚合失败: tenantId={}, start={}, end={}, error={}",
-                normalizeTenantId(tenantId), windowStartInclusive, windowEndExclusive, e.getMessage());
+            log.warn("查询幂等指标聚合失败: activeTenantId={}, start={}, end={}, error={}",
+                normalizeActiveTenantId(activeTenantId), windowStartInclusive, windowEndExclusive, e.getMessage());
             return IdempotentMetricsAggregate.empty();
         }
     }
 
-    public List<Map<String, Object>> topScopes(@Nullable Long tenantId,
+    public List<Map<String, Object>> topScopes(@Nullable Long activeTenantId,
                                                LocalDateTime windowStartInclusive,
                                                LocalDateTime windowEndExclusive,
                                                int limit) {
@@ -106,12 +106,12 @@ public class DatabaseIdempotentMetricsRepository {
         String sql = "SELECT scope, COALESCE(SUM(hot_count), 0) AS total_hot_count "
             + "FROM " + TABLE_NAME + " "
             + "WHERE scope <> ? AND bucket_minute >= ? AND bucket_minute < ? "
-            + (isTenantFilterEnabled(tenantId) ? "AND tenant_id = ? " : "")
+            + (isActiveTenantFilterEnabled(activeTenantId) ? "AND tenant_id = ? " : "")
             + "GROUP BY scope "
             + "HAVING COALESCE(SUM(hot_count), 0) > 0 "
             + "ORDER BY total_hot_count DESC, scope ASC "
             + "LIMIT " + safeLimit;
-        Object[] args = tenantQueryArgs(tenantId, windowStartInclusive, windowEndExclusive);
+        Object[] args = activeTenantQueryArgs(activeTenantId, windowStartInclusive, windowEndExclusive);
         try {
             return jdbcTemplate.query(
                 sql,
@@ -122,14 +122,14 @@ public class DatabaseIdempotentMetricsRepository {
                 args
             );
         } catch (Exception e) {
-            log.warn("查询幂等热点 scope 失败: tenantId={}, start={}, end={}, limit={}, error={}",
-                normalizeTenantId(tenantId), windowStartInclusive, windowEndExclusive, safeLimit, e.getMessage());
+            log.warn("查询幂等热点 scope 失败: activeTenantId={}, start={}, end={}, limit={}, error={}",
+                normalizeActiveTenantId(activeTenantId), windowStartInclusive, windowEndExclusive, safeLimit, e.getMessage());
             return List.of();
         }
     }
 
     private void record(LocalDateTime bucketMinute,
-                        @Nullable Long tenantId,
+                        @Nullable Long activeTenantId,
                         @Nullable String scope,
                         long passCount,
                         long hitCount,
@@ -140,17 +140,17 @@ public class DatabaseIdempotentMetricsRepository {
                         long hotCount) {
         LocalDateTime normalizedBucket = bucketMinute.withSecond(0).withNano(0);
         LocalDateTime now = LocalDateTime.now(clock);
-        long normalizedTenantId = normalizeTenantId(tenantId);
-        upsert(normalizedBucket, normalizedTenantId, ALL_SCOPE, passCount, hitCount, successCount, failureCount,
+        long normalizedActiveTenantId = normalizeActiveTenantId(activeTenantId);
+        upsert(normalizedBucket, normalizedActiveTenantId, ALL_SCOPE, passCount, hitCount, successCount, failureCount,
             storeErrorCount, validationRejectCount, hotCount, now);
         if (StringUtils.hasText(scope)) {
-            upsert(normalizedBucket, normalizedTenantId, scope, passCount, hitCount, successCount, failureCount,
+            upsert(normalizedBucket, normalizedActiveTenantId, scope, passCount, hitCount, successCount, failureCount,
                 storeErrorCount, validationRejectCount, hotCount, now);
         }
     }
 
     private void upsert(LocalDateTime bucketMinute,
-                        long tenantId,
+                        long activeTenantId,
                         String scope,
                         long passCount,
                         long hitCount,
@@ -182,7 +182,7 @@ public class DatabaseIdempotentMetricsRepository {
                 hotCount,
                 Timestamp.valueOf(now),
                 Timestamp.valueOf(bucketMinute),
-                tenantId,
+                activeTenantId,
                 scope
             );
             if (updated > 0) {
@@ -196,7 +196,7 @@ public class DatabaseIdempotentMetricsRepository {
             jdbcTemplate.update(
                 insertSql,
                 Timestamp.valueOf(bucketMinute),
-                tenantId,
+                activeTenantId,
                 scope,
                 passCount,
                 hitCount,
@@ -221,12 +221,12 @@ public class DatabaseIdempotentMetricsRepository {
                     hotCount,
                     Timestamp.valueOf(now),
                     Timestamp.valueOf(bucketMinute),
-                    tenantId,
+                    activeTenantId,
                     scope
                 );
             } catch (Exception retryError) {
-                log.warn("写入幂等分钟指标失败: bucketMinute={}, tenantId={}, scope={}, error={}",
-                    bucketMinute, tenantId, scope, retryError.getMessage());
+                log.warn("写入幂等分钟指标失败: bucketMinute={}, activeTenantId={}, scope={}, error={}",
+                    bucketMinute, activeTenantId, scope, retryError.getMessage());
             }
         }
     }
@@ -252,15 +252,15 @@ public class DatabaseIdempotentMetricsRepository {
         return 0;
     }
 
-    private Object[] tenantQueryArgs(@Nullable Long tenantId,
+    private Object[] activeTenantQueryArgs(@Nullable Long activeTenantId,
                                      LocalDateTime windowStartInclusive,
                                      LocalDateTime windowEndExclusive) {
-        if (isTenantFilterEnabled(tenantId)) {
+        if (isActiveTenantFilterEnabled(activeTenantId)) {
             return new Object[] {
                 ALL_SCOPE,
                 Timestamp.valueOf(windowStartInclusive),
                 Timestamp.valueOf(windowEndExclusive),
-                normalizeTenantId(tenantId)
+                normalizeActiveTenantId(activeTenantId)
             };
         }
         return new Object[] {
@@ -270,15 +270,15 @@ public class DatabaseIdempotentMetricsRepository {
         };
     }
 
-    private boolean isTenantFilterEnabled(@Nullable Long tenantId) {
-        return normalizeTenantId(tenantId) > 0;
+    private boolean isActiveTenantFilterEnabled(@Nullable Long activeTenantId) {
+        return normalizeActiveTenantId(activeTenantId) > 0;
     }
 
-    private long normalizeTenantId(@Nullable Long tenantId) {
-        if (tenantId == null || tenantId <= 0) {
+    private long normalizeActiveTenantId(@Nullable Long activeTenantId) {
+        if (activeTenantId == null || activeTenantId <= 0) {
             return 0L;
         }
-        return tenantId;
+        return activeTenantId;
     }
 
     private long normalizeRetentionDays(Duration retention) {

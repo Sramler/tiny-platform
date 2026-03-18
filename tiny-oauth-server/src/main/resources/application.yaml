@@ -259,6 +259,10 @@ management:
       show-details: when_authorized
 
 tiny:
+  # 平台租户：迁移期用该 code 的租户表示“平台”或模板来源，与 idempotent.ops.platform-tenant-code 建议一致
+  platform:
+    tenant:
+      platform-tenant-code: default
   idempotent:
     ops:
       # 平台级幂等治理指标默认仅对该租户下的平台管理员开放

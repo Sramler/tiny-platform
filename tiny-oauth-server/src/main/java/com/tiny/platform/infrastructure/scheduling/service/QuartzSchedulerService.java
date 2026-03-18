@@ -68,7 +68,7 @@ public class QuartzSchedulerService {
         // 创建新的 JobDetail
         SchedulingExecutionContext executionContext = SchedulingExecutionContext.builder()
                 .dagId(dag.getId())
-                .tenantId(dag.getTenantId())
+                .executionTenantId(dag.getTenantId())
                 .username("Quartz Scheduler")
                 .triggerType("SCHEDULE")
                 .build();
@@ -131,12 +131,14 @@ public class QuartzSchedulerService {
 
         JobDataMap jobDataMap = existingJob.getJobDataMap();
         Long existingDagId = asLong(jobDataMap != null ? jobDataMap.get(SchedulingExecutionContext.JOB_DATA_DAG_ID) : null);
-        Long existingTenantId = asLong(jobDataMap != null ? jobDataMap.get(SchedulingExecutionContext.JOB_DATA_TENANT_ID) : null);
+        Long existingExecutionTenantId = asLong(jobDataMap != null
+                ? jobDataMap.get(SchedulingExecutionContext.JOB_DATA_EXECUTION_TENANT_ID)
+                : null);
 
         return Objects.equals(cronTrigger.getCronExpression(), expectedCron)
                 && Objects.equals(actualTimezoneId, expectedTimezoneId)
                 && Objects.equals(existingDagId, dag.getId())
-                && Objects.equals(existingTenantId, dag.getTenantId());
+                && Objects.equals(existingExecutionTenantId, dag.getTenantId());
     }
 
     private String normalizeTimezoneId(String cronTimezone) {
@@ -173,7 +175,7 @@ public class QuartzSchedulerService {
 
         SchedulingExecutionContext jobExecutionContext = executionContext != null
                 ? executionContext
-                : SchedulingExecutionContext.builder().dagId(dag.getId()).tenantId(dag.getTenantId()).build();
+                : SchedulingExecutionContext.builder().dagId(dag.getId()).executionTenantId(dag.getTenantId()).build();
         JobDataMap jobDataMap = jobExecutionContext.toJobDataMap();
 
         JobDetail jobDetail = JobBuilder.newJob(DagExecutionJob.class)
@@ -198,7 +200,7 @@ public class QuartzSchedulerService {
                 .dagId(dag.getId())
                 .dagRunId(dagRunId)
                 .dagVersionId(dagVersionId)
-                .tenantId(dag.getTenantId())
+                .executionTenantId(dag.getTenantId())
                 .username("Quartz Scheduler")
                 .triggerType(dagRunId != null && dagRunId > 0 ? "MANUAL" : "SCHEDULE")
                 .build());

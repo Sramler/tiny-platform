@@ -344,6 +344,7 @@ import { message } from 'ant-design-vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ReloadOutlined } from '@ant-design/icons-vue'
 import { throttle } from '@/utils/debounce'
+import { getActiveTenantId, resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
 import {
   dagList,
   getDagRuns,
@@ -360,9 +361,24 @@ import {
   pauseDagRunNode,
   resumeDagRunNode,
 } from '@/api/scheduling'
+import { useAuth } from '@/auth/auth'
+import { extractAuthoritiesFromJwt } from '@/utils/jwt'
 
 const router = useRouter()
 const route = useRoute()
+const { user } = useAuth()
+
+const schedulingAuthorities = computed(() =>
+  extractAuthoritiesFromJwt(user.value?.access_token).filter((a) => a.startsWith('scheduling:')),
+)
+const canOperateSchedulingRun = computed(() =>
+  schedulingAuthorities.value.includes('scheduling:run:control') ||
+  schedulingAuthorities.value.includes('scheduling:*'),
+)
+
+function resolveNavigationTenantId() {
+  return resolveActiveTenantQueryValue(route.query) ?? getActiveTenantId()
+}
 
 const query = reactive<{
   dagId: number | undefined
@@ -669,7 +685,10 @@ const handleSearch = throttle(() => {
     return
   }
   selectedDagId.value = id
-  router.replace({ path: route.path, query: { ...route.query, dagId: String(id) } })
+  router.replace({
+    path: route.path,
+    query: withActiveTenantQuery({ ...route.query, dagId: String(id) }, resolveNavigationTenantId()),
+  })
   pagination.current = 1
   loadData()
 }, 500)
@@ -682,7 +701,10 @@ const handleReset = throttle(() => {
   query.startTimeRange = undefined
   selectedDagId.value = undefined
   dagStats.value = null
-  router.replace({ path: route.path, query: {} })
+  router.replace({
+    path: route.path,
+    query: withActiveTenantQuery({}, resolveNavigationTenantId()),
+  })
   dataSource.value = []
   pagination.current = 1
   pagination.total = 0
@@ -708,6 +730,10 @@ const handleStopRun = async (record: { id: number; runNo?: string; status?: stri
     message.warning(getStopRunDisabledReason(record) || '当前运行不可停止')
     return
   }
+  if (!canOperateSchedulingRun.value) {
+    message.warning('当前账户没有调度运行操作权限')
+    return
+  }
   try {
     await stopDagRun(effectiveDagId.value, record.id)
     message.success(`已停止运行${record.runNo ? `: ${record.runNo}` : ''}`)
@@ -721,6 +747,10 @@ const handleRetryRun = async (record: { id: number; runNo?: string; status?: str
   if (!effectiveDagId.value) return
   if (!canRetryRun(record)) {
     message.warning(getRetryRunDisabledReason(record) || '当前运行不可重试')
+    return
+  }
+  if (!canOperateSchedulingRun.value) {
+    message.warning('当前账户没有调度运行操作权限')
     return
   }
   try {

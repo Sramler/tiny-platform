@@ -1,0 +1,29 @@
+databaseChangeLog:
+  - changeSet:
+      id: 052-role-mutex
+      author: tiny
+      comment: Phase2 草案：新增 role_mutex 表（角色互斥关系，对称互斥由 Service 层保证）
+      preConditions:
+        - onFail: CONTINUE
+        - onError: HALT
+        - dbms:
+            type: mysql
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              CREATE TABLE IF NOT EXISTS `role_mutex` (
+                `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+                `tenant_id` BIGINT NOT NULL COMMENT '租户ID；平台模板可用 tenant_id IS NULL 表示平台层',
+                `left_role_id` BIGINT NOT NULL COMMENT '互斥一端角色模板ID',
+                `right_role_id` BIGINT NOT NULL COMMENT '互斥另一端角色模板ID',
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                `created_by` BIGINT NULL COMMENT '创建人ID',
+                `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uk_role_mutex` (`tenant_id`, `left_role_id`, `right_role_id`)
+                -- 逻辑上互斥是对称关系，Service 层可约定 left_role_id < right_role_id 以避免重复记录。
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='角色互斥关系表（Phase2 草案）';
+

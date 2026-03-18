@@ -1,5 +1,6 @@
 // user.ts 用户相关 API 封装
 import request from '@/utils/request'
+import { syncTenantContextFromClaims } from '@/utils/tenant'
 // axios 已在 request.ts 中引入，此处不再需要
 // import axios from 'axios'
 
@@ -15,6 +16,16 @@ export type UserListParams = {
 export type UserSummary = {
   id: string
   username: string
+  /**
+   * 用户记录所属租户ID，不是当前活动租户上下文。
+   * 控制面列表/详情应把它理解为记录归属。
+   */
+  recordTenantId?: number
+  /**
+   * 当前活动租户主字段。
+   * 页面与运行时上下文应优先消费该字段。
+   */
+  activeTenantId?: number
   nickname?: string
   email?: string
   phone?: string
@@ -71,6 +82,13 @@ export function userList(params: UserListParams) {
 // 获取用户详情
 export function getUserById(id: string) {
   return request.get<UserSummary>(`/sys/users/${id}`)
+}
+
+export function getCurrentUser() {
+  return request.get<UserSummary>('/sys/users/current').then((user) => {
+    syncTenantContextFromClaims(user)
+    return user
+  })
 }
 
 // 创建用户

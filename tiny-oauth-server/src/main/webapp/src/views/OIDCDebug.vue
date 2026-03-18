@@ -26,11 +26,12 @@
 
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { useAuth } from '@/auth/auth'
 import { userManager } from '@/auth/oidc'
 import { clearOidcCache, isInOidcFlow } from '@/utils/auth-utils'
+import { getActiveTenantId, resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
 import StatusSection from './OIDCDebug/components/StatusSection.vue'
 import TokenInfoSection from './OIDCDebug/components/TokenInfoSection.vue'
 import UrlParamsSection from './OIDCDebug/components/UrlParamsSection.vue'
@@ -40,6 +41,7 @@ import ActionSection from './OIDCDebug/components/ActionSection.vue'
 import LogSection from './OIDCDebug/components/LogSection.vue'
 
 const router = useRouter()
+const route = useRoute()
 const { user, isAuthenticated } = useAuth()
 
 type DebugLog = { time: string; level: string; message: string }
@@ -175,6 +177,7 @@ async function forceLogout() {
     await userManager.removeUser()
     addLog('success', '强制登出成功')
     message.success('强制登出成功')
+    // 登录页继续通过 tenantCode 输入与认证前置解析恢复租户，不通过 activeTenantId query 传递上下文。
     router.push('/login')
   } catch (error) {
     addLog('error', `强制登出失败: ${error}`)
@@ -184,12 +187,16 @@ async function forceLogout() {
 
 function goToLogin() {
   addLog('info', '跳转到登录页')
+  // 登录页继续通过 tenantCode 输入与认证前置解析恢复租户，不通过 activeTenantId query 传递上下文。
   router.push('/login')
 }
 
 function goHome() {
   addLog('info', '返回首页')
-  router.push('/')
+  router.push({
+    path: '/',
+    query: withActiveTenantQuery({}, resolveActiveTenantQueryValue(route.query) ?? getActiveTenantId()),
+  })
 }
 
 function clearLogs() {

@@ -34,6 +34,8 @@ public class Tenant implements Serializable {
     @Column(name = "enabled", nullable = false)
     private boolean enabled = true;
 
+    @Column(name = "lifecycle_status", nullable = false, length = 16)
+    private String lifecycleStatus = "ACTIVE";
     @Column(name = "plan_code", length = 64)
     private String planCode;
 
@@ -105,6 +107,14 @@ public class Tenant implements Serializable {
 
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
+    }
+
+    public String getLifecycleStatus() {
+        return lifecycleStatus;
+    }
+
+    public void setLifecycleStatus(String lifecycleStatus) {
+        this.lifecycleStatus = lifecycleStatus;
     }
 
     public String getPlanCode() {

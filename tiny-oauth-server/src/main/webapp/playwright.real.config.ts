@@ -9,7 +9,9 @@ const workspaceRoot = path.resolve(__dirname, '..', '..', '..', '..')
 const webappRoot = path.resolve(__dirname)
 const localE2EEnvPath = path.resolve(webappRoot, '.env.e2e.local')
 
-if (fs.existsSync(localE2EEnvPath)) {
+// Allow callers (CI/local scripts) to fully control env via process.env.
+// When E2E_IGNORE_LOCAL_ENV=true, we skip loading `.env.e2e.local`.
+if (fs.existsSync(localE2EEnvPath) && process.env.E2E_IGNORE_LOCAL_ENV !== 'true') {
   process.loadEnvFile(localE2EEnvPath)
 }
 
@@ -29,6 +31,7 @@ const frontendBaseURL = readEnv(['E2E_FRONTEND_BASE_URL'], `http://localhost:${f
 const backendBaseURL = readEnv(['E2E_BACKEND_BASE_URL'], `http://localhost:${backendPort}`)
 const authStatePath = path.resolve(webappRoot, 'e2e/.auth/scheduling-user.json')
 const secondaryAuthStatePath = path.resolve(webappRoot, 'e2e/.auth/tenant-b-user.json')
+const readonlyAuthStatePath = path.resolve(webappRoot, 'e2e/.auth/scheduling-readonly-user.json')
 const backendProfile = readEnv(['E2E_BACKEND_PROFILE'], 'dev')
 const dbHost = readEnv(['E2E_DB_HOST', 'E2E_MYSQL_HOST'], '127.0.0.1')
 const dbPort = readEnv(['E2E_DB_PORT', 'E2E_MYSQL_PORT'], '3306')
@@ -51,6 +54,8 @@ export default defineConfig({
   use: {
     baseURL: frontendBaseURL,
     trace: 'on-first-retry',
+    screenshot: 'only-on-failure',
+    video: process.env.CI ? 'retain-on-failure' : 'off',
   },
   webServer: skipRealSetup || skipWebServer
     ? undefined
@@ -59,7 +64,7 @@ export default defineConfig({
           command: 'mvn -pl tiny-oauth-server spring-boot:run',
           cwd: workspaceRoot,
           url: `${backendBaseURL}/login`,
-          timeout: 240_000,
+          timeout: 360_000,
           reuseExistingServer: true,
           env: {
             ...process.env,
@@ -95,7 +100,7 @@ export default defineConfig({
       name: 'chromium',
       // 依赖主自动化身份 storageState 的 real-link 用例（调度、post-login 安全中心等）
       testMatch:
-        /real\/(?!mfa-login-flow|mfa-bind-flow|cross-tenant-a-to-b|cross-tenant-b-to-a).*\.spec\.ts/,
+        /real\/(?!mfa-login-flow|mfa-bind-flow|cross-tenant-a-to-b|cross-tenant-b-to-a|scheduling-rbac-readonly).*\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
         storageState: authStatePath,
@@ -135,6 +140,15 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         storageState: secondaryAuthStatePath,
+      },
+    },
+    {
+      name: 'chromium-scheduling-readonly',
+      // 同租户只读调度身份的真实 RBAC 拒绝回归。
+      testMatch: /real\/scheduling-rbac-readonly\.spec\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        storageState: readonlyAuthStatePath,
       },
     },
   ],

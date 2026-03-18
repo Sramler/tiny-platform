@@ -64,7 +64,7 @@
                         与同步导出相同，保持列定义一致，便于统一报表。
                     </a-descriptions-item>
                     <a-descriptions-item label="filters">
-                        {"{"} "is_billable": true {"}"} 或按日期区间、租户ID等条件构造查询。
+                        {"{"} "is_billable": true {"}"} 或按日期区间、记录所属租户ID等条件构造查询。
                     </a-descriptions-item>
                 </a-descriptions>
                 <div class="card-actions">
@@ -89,16 +89,16 @@
 import { h } from 'vue'
 import { Modal, message } from 'ant-design-vue'
 import request from '@/utils/request'
-import { getTenantId } from '@/utils/tenant'
+import { getActiveTenantId } from '@/utils/tenant'
 
 // 符合后端 ExportRequest/SheetConfig 结构的示例请求体
-function resolveTenantId(): string | undefined {
-    const raw = getTenantId()
-    return raw ? String(raw) : undefined
+function resolveActiveTenantId(): string | undefined {
+  const raw = getActiveTenantId()
+  return raw ? String(raw) : undefined
 }
 
 function buildDemoExportRequest(asyncFlag = false) {
-    const tenantId = resolveTenantId()
+    const activeTenantId = resolveActiveTenantId()
     return {
         fileName: 'demo_export_usage',
         pageSize: 5000,
@@ -109,11 +109,11 @@ function buildDemoExportRequest(asyncFlag = false) {
                 exportType: 'demo_export_usage', // 需要在后端注册对应 DataProvider
                 filters: {
                     is_billable: true,
-                    ...(tenantId ? { tenantId } : {}),
+                    ...(activeTenantId ? { activeTenantId } : {}),
                 },
                 // 简化的列定义：字段名需与 DemoExportUsageRow 属性一致
                 columns: [
-                    { title: '租户ID', field: 'tenantId' },
+                    { title: '记录所属租户ID', field: 'recordTenantId' },
                     { title: '用量日期', field: 'usageDate' },
                     { title: '产品编码', field: 'productCode' },
                     { title: '产品名称', field: 'productName' },

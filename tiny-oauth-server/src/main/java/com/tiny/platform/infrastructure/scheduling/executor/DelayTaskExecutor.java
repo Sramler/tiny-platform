@@ -19,8 +19,8 @@ public class DelayTaskExecutor implements TaskExecutorService.TaskExecutor {
     @Override
     public Object execute(SchedulingExecutionContext executionContext, Map<String, Object> params) throws Exception {
         long delayMs = ((Number) params.getOrDefault("delayMs", 1000)).longValue();
-        logger.info("[DelayTaskExecutor] tenantId={}, runId={}, 延迟 {} ms 执行",
-                executionContext != null ? executionContext.getTenantId() : null,
+        logger.info("[DelayTaskExecutor] executionTenantId={}, runId={}, 延迟 {} ms 执行",
+                executionContext != null ? executionContext.getExecutionTenantId() : null,
                 executionContext != null ? executionContext.getDagRunId() : null,
                 delayMs);
         Thread.sleep(delayMs);

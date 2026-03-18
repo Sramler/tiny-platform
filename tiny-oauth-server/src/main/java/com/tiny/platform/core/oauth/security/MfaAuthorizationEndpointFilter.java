@@ -1,12 +1,10 @@
 package com.tiny.platform.core.oauth.security;
 
 import com.tiny.platform.core.oauth.config.FrontendProperties;
-import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
-import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.core.oauth.service.SecurityService;
+import com.tiny.platform.core.oauth.tenant.ActiveTenantResponseSupport;
 import com.tiny.platform.core.oauth.tenant.IssuerTenantSupport;
-import com.tiny.platform.core.oauth.tenant.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
@@ -37,14 +35,14 @@ public class MfaAuthorizationEndpointFilter extends OncePerRequestFilter {
     private static final Logger log = LoggerFactory.getLogger(MfaAuthorizationEndpointFilter.class);
 
     private final SecurityService securityService;
-    private final UserRepository userRepository;
+    private final AuthUserResolutionService authUserResolutionService;
     private final FrontendProperties frontendProperties;
 
     public MfaAuthorizationEndpointFilter(SecurityService securityService,
-                                          UserRepository userRepository,
+                                          AuthUserResolutionService authUserResolutionService,
                                           FrontendProperties frontendProperties) {
         this.securityService = securityService;
-        this.userRepository = userRepository;
+        this.authUserResolutionService = authUserResolutionService;
         this.frontendProperties = frontendProperties;
     }
 
@@ -95,8 +93,8 @@ public class MfaAuthorizationEndpointFilter extends OncePerRequestFilter {
             return;
         }
 
-        Long tenantId = resolveTenantId(authentication);
-        User user = tenantId != null ? userRepository.findUserByUsernameAndTenantId(username, tenantId).orElse(null) : null;
+        Long activeTenantId = resolveActiveTenantId(authentication);
+        User user = activeTenantId != null ? resolveUserInActiveTenant(username, activeTenantId) : null;
         if (user == null) {
             filterChain.doFilter(request, response);
             return;
@@ -198,19 +196,18 @@ public class MfaAuthorizationEndpointFilter extends OncePerRequestFilter {
         return url.toString();
     }
 
-    private Long resolveTenantId(Authentication authentication) {
-        Long tenantId = TenantContext.getTenantId();
-        if (tenantId != null && tenantId > 0) {
-            return tenantId;
+    private Long resolveActiveTenantId(Authentication authentication) {
+        return ActiveTenantResponseSupport.resolveActiveTenantId(authentication);
+    }
+
+    private User resolveUserInActiveTenant(String username, Long activeTenantId) {
+        return requireAuthUserResolutionService().resolveUserRecordInActiveTenant(username, activeTenantId).orElse(null);
+    }
+
+    private AuthUserResolutionService requireAuthUserResolutionService() {
+        if (authUserResolutionService == null) {
+            throw new IllegalStateException("AuthUserResolutionService 未配置");
         }
-        Object principal = authentication.getPrincipal();
-        if (principal instanceof SecurityUser securityUser) {
-            return securityUser.getTenantId();
-        }
-        Object details = authentication.getDetails();
-        if (details instanceof SecurityUser securityUser) {
-            return securityUser.getTenantId();
-        }
-        return null;
+        return authUserResolutionService;
     }
 }

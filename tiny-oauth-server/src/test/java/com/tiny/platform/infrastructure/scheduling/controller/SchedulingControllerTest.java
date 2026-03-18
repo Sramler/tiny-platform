@@ -69,7 +69,7 @@ class SchedulingControllerTest {
     }
 
     private void authenticate(Long userId, Long tenantId, String username) {
-        TenantContext.setTenantId(tenantId);
+        TenantContext.setActiveTenantId(tenantId);
         SecurityUser user = new SecurityUser(userId, tenantId, username, "", List.of(), true, true, true, true);
         SecurityContextHolder.getContext().setAuthentication(
             new UsernamePasswordAuthenticationToken(user, "N/A", List.of()));

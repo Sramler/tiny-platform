@@ -1,0 +1,61 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-scheduling-rbac-authorities
+      author: tiny
+      comment: 为默认租户补充调度 RBAC authority 资源，并默认授予 ROLE_ADMIN 调度全权限
+      validCheckSum:
+        - ANY
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT IGNORE INTO `resource`
+              (`tenant_id`, `name`, `url`, `uri`, `method`, `icon`, `show_icon`, `sort`, `component`, `redirect`, `hidden`, `keep_alive`, `title`, `permission`, `type`, `parent_id`, `enabled`)
+              SELECT
+                1,
+                authority.name,
+                '',
+                '',
+                '',
+                '',
+                0,
+                authority.sort_order,
+                '',
+                '',
+                1,
+                0,
+                authority.title,
+                authority.permission,
+                2,
+                parent.id,
+                1
+              FROM `resource` parent
+              JOIN (
+                SELECT 'scheduling-authority-read' AS name, 'scheduling:console:view' AS permission, '调度控制面查看权限' AS title, 901 AS sort_order
+                UNION ALL
+                SELECT 'scheduling-authority-manage-config', 'scheduling:console:config', '调度控制面配置权限', 902
+                UNION ALL
+                SELECT 'scheduling-authority-operate-run', 'scheduling:run:control', '调度运行控制权限', 903
+                UNION ALL
+                SELECT 'scheduling-authority-view-audit', 'scheduling:audit:view', '调度审计查看权限', 904
+                UNION ALL
+                SELECT 'scheduling-authority-view-cluster-status', 'scheduling:cluster:view', '调度集群状态查看权限', 905
+                UNION ALL
+                SELECT 'scheduling-authority-wildcard', 'scheduling:*', '调度全权限', 906
+              ) authority
+              WHERE parent.tenant_id = 1
+                AND parent.name = 'scheduling';
+
+              INSERT IGNORE INTO `role_resource` (`tenant_id`, `role_id`, `resource_id`)
+              SELECT
+                1,
+                role_entity.id,
+                resource_entity.id
+              FROM `role` role_entity
+              JOIN `resource` resource_entity
+                ON resource_entity.tenant_id = 1
+               AND resource_entity.name = 'scheduling-authority-wildcard'
+              WHERE role_entity.tenant_id = 1
+                AND role_entity.code = 'ROLE_ADMIN';

@@ -7,7 +7,7 @@ const apiMocks = vi.hoisted(() => ({
 }))
 
 const tenantMocks = vi.hoisted(() => ({
-  getTenantId: vi.fn(),
+  getActiveTenantId: vi.fn(),
 }))
 
 const uiMocks = vi.hoisted(() => ({
@@ -22,7 +22,7 @@ vi.mock('@/api/dict', () => ({
 }))
 
 vi.mock('@/utils/tenant', () => ({
-  getTenantId: tenantMocks.getTenantId,
+  getActiveTenantId: tenantMocks.getActiveTenantId,
 }))
 
 vi.mock('@/utils/debounce', () => ({
@@ -68,7 +68,7 @@ async function flushPromises() {
 describe('dictType.vue', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    tenantMocks.getTenantId.mockReturnValue('7')
+    tenantMocks.getActiveTenantId.mockReturnValue('7')
     apiMocks.getDictTypeList.mockResolvedValue({
       content: [
         { id: 1, dictCode: 'STATUS', dictName: '状态', enabled: true },

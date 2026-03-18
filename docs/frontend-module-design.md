@@ -1,6 +1,8 @@
 # tiny-platform 前端模块化设计方案（从问题发现到落地）
 
 > 📋 **文档说明**：本文档按“发现问题 → 分析问题 → 设计方案 → 技术实现 → 实施路径 → 总结决策”的顺序，系统梳理 tiny-platform 前端模块化的完整推导过程。
+>
+> ⚠️ **命名说明**：本文部分早期设计片段仍保留 `tenantId` 示例。当前项目的页面/路由/请求上下文主语义已经统一前移到 `activeTenantId` 与 `X-Active-Tenant-Id`；文中剩余 `tenantId` 应优先理解为历史示例或租户归属/存储语义，而不是当前活动租户契约。
 
 ## 📋 目录
 
@@ -1145,8 +1147,8 @@ export function generateMenus() {
 import { appModules } from "./modules";
 import { getTenantConfig } from "./tenant-config";
 
-export function generateTenantMenus(tenantId: string) {
-  const tenantConfig = getTenantConfig(tenantId);
+export function generateTenantMenus(activeTenantId: string) {
+  const tenantConfig = getTenantConfig(activeTenantId);
 
   return appModules
     .filter((m) => {
@@ -1437,21 +1439,21 @@ Permission
 // 前端路由守卫（完整版）
 router.beforeEach(async (to, from, next) => {
   // 1. Tenant 检查（已在请求头/上下文中）
-  const tenantId = getTenantId();
+  const activeTenantId = getActiveTenantId();
 
   // 2. Plugin 检查（仅业务插件需要检查，核心模块跳过）
   const pluginKey = to.meta.plugin;
   if (pluginKey) {
     // 只有声明了 plugin 字段的路由才进行插件检查
     // 核心模块（core-user、core-dict）不声明 plugin 字段，直接跳过
-    if (!isPluginInstalled(tenantId, pluginKey)) {
+    if (!isPluginInstalled(activeTenantId, pluginKey)) {
       next("/exception/404"); // 插件未安装
       return;
     }
   }
 
   // 3. Feature 检查
-  if (to.meta.feature && !isFeatureEnabled(tenantId, to.meta.feature)) {
+  if (to.meta.feature && !isFeatureEnabled(activeTenantId, to.meta.feature)) {
     next("/exception/404"); // Feature 未启用
     return;
   }
@@ -1827,7 +1829,7 @@ App 启动
 import type { PluginMeta, ModuleMeta } from "../types";
 
 interface TenantContext {
-  tenantId: string;
+  activeTenantId: string;
   plugins: Array<{ key: string; enabled: boolean }>;
   features: string[];
   permissions: string[];
@@ -1987,8 +1989,8 @@ public class TenantContextFilter implements Filter {
     @Override
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) {
         HttpServletRequest httpRequest = (HttpServletRequest) request;
-        String tenantId = httpRequest.getHeader("X-Tenant-ID");
-        TenantContext.set(tenantId);
+        String activeTenantId = httpRequest.getHeader("X-Active-Tenant-Id");
+        TenantContext.set(activeTenantId);
         chain.doFilter(request, response);
     }
 }
@@ -1998,10 +2000,10 @@ public class TenantContextFilter implements Filter {
 public class PluginInstallFilter implements Filter {
     @Override
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) {
-        String tenantId = TenantContext.get();
+        String activeTenantId = TenantContext.get();
         String pluginKey = extractPluginKey(request);
 
-        if (pluginKey != null && !isPluginInstalled(tenantId, pluginKey)) {
+        if (pluginKey != null && !isPluginInstalled(activeTenantId, pluginKey)) {
             throw new PluginNotInstalledException();
         }
 
@@ -3805,7 +3807,7 @@ tiny-platform/
 
 2. **缓存隔离**
 
-   - ✅ 字典缓存：按 `tenantId:dictCode` 隔离
+   - ✅ 字典缓存：按 `activeTenantId:dictCode` 隔离
    - ✅ Redis 缓存：支持租户维度缓存键
 
 3. **权限体系**

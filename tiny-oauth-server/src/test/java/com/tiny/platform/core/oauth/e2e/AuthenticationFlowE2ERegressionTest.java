@@ -4,11 +4,14 @@ import com.tiny.platform.core.oauth.config.CustomLoginSuccessHandler;
 import com.tiny.platform.core.oauth.config.FrontendProperties;
 import com.tiny.platform.core.oauth.config.JwtTokenCustomizer;
 import com.tiny.platform.core.oauth.model.SecurityUser;
+import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationSessionManager;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
+import com.tiny.platform.core.oauth.security.PermissionVersionService;
 import com.tiny.platform.core.oauth.service.AuthenticationAuditService;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
+import com.tiny.platform.core.oauth.tenant.TenantContextContract;
 import com.tiny.platform.core.oauth.tenant.TenantContextFilter;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
@@ -61,7 +64,7 @@ import static org.mockito.Mockito.when;
  * 断言：
  * - 租户隔离：tenant mismatch 时 403 + tenant_mismatch
  * - 登录跳转：业务页 / totp-verify / totp-bind
- * - Token Claims：tenantId 与 amr
+ * - Token Claims：activeTenantId（主字段）与 amr
  */
 class AuthenticationFlowE2ERegressionTest {
 
@@ -69,6 +72,10 @@ class AuthenticationFlowE2ERegressionTest {
     void tearDown() {
         SecurityContextHolder.clearContext();
         TenantContext.clear();
+    }
+
+    private static void assertActiveTenantClaims(Map<String, Object> claims, long expectedTenantId) {
+        assertThat(claims).containsEntry("activeTenantId", expectedTenantId);
     }
 
     @DisplayName("登录与租户认证矩阵回归")
@@ -89,8 +96,8 @@ class AuthenticationFlowE2ERegressionTest {
         SecurityContextHolder.getContext().setAuthentication(baseAuth);
 
         MockHttpServletRequest protectedRequest = new MockHttpServletRequest("GET", "/api/protected");
-        protectedRequest.getSession(true).setAttribute("AUTH_TENANT_ID", 1L);
-        protectedRequest.addHeader("X-Tenant-Id", tenantMatched ? "1" : "2");
+        protectedRequest.getSession(true).setAttribute(TenantContextContract.SESSION_ACTIVE_TENANT_ID_KEY, 1L);
+        protectedRequest.addHeader(TenantContextContract.ACTIVE_TENANT_ID_HEADER, tenantMatched ? "1" : "2");
         MockHttpServletResponse protectedResponse = new MockHttpServletResponse();
 
         AtomicBoolean chainCalled = new AtomicBoolean(false);
@@ -98,7 +105,7 @@ class AuthenticationFlowE2ERegressionTest {
 
         tenantFilter.doFilter(protectedRequest, protectedResponse, (req, resp) -> {
             chainCalled.set(true);
-            tenantInChain.set(TenantContext.getTenantId());
+            tenantInChain.set(TenantContext.getActiveTenantId());
         });
 
         if (!tenantMatched) {
@@ -115,6 +122,7 @@ class AuthenticationFlowE2ERegressionTest {
         // ---------- Step 2: 登录成功跳转 ----------
         SecurityService securityService = mock(SecurityService.class);
         UserRepository userRepository = mock(UserRepository.class);
+        AuthUserResolutionService authUserResolutionService = mock(AuthUserResolutionService.class);
         AuthenticationAuditService auditService = mock(AuthenticationAuditService.class);
         UserDetailsService userDetailsService = mock(UserDetailsService.class);
         when(userDetailsService.loadUserByUsername("admin")).thenReturn(
@@ -130,22 +138,23 @@ class AuthenticationFlowE2ERegressionTest {
                 userRepository,
                 frontendProperties(),
                 sessionManager,
+                authUserResolutionService,
                 auditService);
 
         User user = loginUser();
-        when(userRepository.findUserByUsernameAndTenantId("admin", 1L)).thenReturn(Optional.of(user));
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("admin", 1L)).thenReturn(Optional.of(user));
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(securityService.getSecurityStatus(user)).thenReturn(securityStatus(mode, totpBoundAndActivated));
 
         MockHttpServletRequest loginRequest = new MockHttpServletRequest("POST", "/login");
         MockHttpServletResponse loginResponse = new MockHttpServletResponse();
 
-        TenantContext.setTenantId(1L);
+        TenantContext.setActiveTenantId(1L);
         successHandler.onAuthenticationSuccess(loginRequest, loginResponse, baseAuth);
 
         assertThat(loginResponse.getRedirectedUrl()).contains(expectedRedirectFragment);
 
-        // ---------- Step 3: token claims（amr + tenantId） ----------
+        // ---------- Step 3: token claims（amr + activeTenantId） ----------
         if (!expectTokenClaims) {
             return;
         }
@@ -164,7 +173,7 @@ class AuthenticationFlowE2ERegressionTest {
         }
 
         Map<String, Object> claims = accessTokenClaims(tokenPrincipal, userRepository);
-        assertThat(claims).containsEntry("tenantId", 1L);
+        assertActiveTenantClaims(claims, 1L);
         assertThat(claims).containsKey("amr");
         assertThat(asStringList(claims.get("amr"))).containsExactlyInAnyOrderElementsOf(expectedAmr);
     }
@@ -292,7 +301,9 @@ class AuthenticationFlowE2ERegressionTest {
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .build();
 
-        new JwtTokenCustomizer(userRepository).customize(context);
+        PermissionVersionService permissionVersionService = mock(PermissionVersionService.class);
+        when(permissionVersionService.resolvePermissionsVersion(1L, 1L)).thenReturn("perm-v1");
+        new JwtTokenCustomizer(userRepository, permissionVersionService).customize(context);
         return context.getClaims().build().getClaims();
     }
 

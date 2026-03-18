@@ -1,5 +1,6 @@
 package com.tiny.platform.infrastructure.scheduling;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tiny.platform.infrastructure.core.exception.code.ErrorCode;
 import com.tiny.platform.infrastructure.scheduling.dto.SchedulingDagCreateUpdateDto;
 import com.tiny.platform.infrastructure.scheduling.dto.SchedulingDagTaskCreateUpdateDto;
@@ -8,6 +9,7 @@ import com.tiny.platform.infrastructure.scheduling.dto.SchedulingTaskCreateUpdat
 import com.tiny.platform.infrastructure.scheduling.dto.SchedulingTaskTypeCreateUpdateDto;
 import com.tiny.platform.infrastructure.scheduling.exception.SchedulingException;
 import com.tiny.platform.infrastructure.scheduling.exception.SchedulingExceptions;
+import com.tiny.platform.infrastructure.scheduling.model.SchedulingAudit;
 import com.tiny.platform.infrastructure.scheduling.model.SchedulingDagEdge;
 import com.tiny.platform.infrastructure.scheduling.model.SchedulingDagTask;
 import jakarta.validation.Validation;
@@ -22,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SchedulingDtosAndModelsTest {
 
     private final Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
     void taskCreateUpdateDtoShouldExposeDefaultsAndValidationConstraints() {
@@ -38,7 +41,6 @@ class SchedulingDtosAndModelsTest {
                 .contains("typeId", "code", "name");
 
         dto.setId(1L);
-        dto.setTenantId(2L);
         dto.setTypeId(3L);
         dto.setCode("task-code");
         dto.setName("task-name");
@@ -52,7 +54,6 @@ class SchedulingDtosAndModelsTest {
         dto.setCreatedBy("alice");
 
         assertThat(dto.getId()).isEqualTo(1L);
-        assertThat(dto.getTenantId()).isEqualTo(2L);
         assertThat(dto.getTypeId()).isEqualTo(3L);
         assertThat(dto.getCode()).isEqualTo("task-code");
         assertThat(dto.getName()).isEqualTo("task-name");
@@ -79,7 +80,6 @@ class SchedulingDtosAndModelsTest {
                 .contains("code", "name");
 
         dagDto.setId(10L);
-        dagDto.setTenantId(20L);
         dagDto.setCode("dag-code");
         dagDto.setName("dag-name");
         dagDto.setDescription("dag-desc");
@@ -101,7 +101,6 @@ class SchedulingDtosAndModelsTest {
                 .contains("code", "name");
 
         taskTypeDto.setId(11L);
-        taskTypeDto.setTenantId(21L);
         taskTypeDto.setCode("type-code");
         taskTypeDto.setName("type-name");
         taskTypeDto.setDescription("type-desc");
@@ -113,7 +112,6 @@ class SchedulingDtosAndModelsTest {
         taskTypeDto.setCreatedBy("carol");
 
         assertThat(dagDto.getId()).isEqualTo(10L);
-        assertThat(dagDto.getTenantId()).isEqualTo(20L);
         assertThat(dagDto.getCode()).isEqualTo("dag-code");
         assertThat(dagDto.getName()).isEqualTo("dag-name");
         assertThat(dagDto.getDescription()).isEqualTo("dag-desc");
@@ -124,7 +122,6 @@ class SchedulingDtosAndModelsTest {
         assertThat(dagDto.getCreatedBy()).isEqualTo("bob");
 
         assertThat(taskTypeDto.getId()).isEqualTo(11L);
-        assertThat(taskTypeDto.getTenantId()).isEqualTo(21L);
         assertThat(taskTypeDto.getCode()).isEqualTo("type-code");
         assertThat(taskTypeDto.getName()).isEqualTo("type-name");
         assertThat(taskTypeDto.getDescription()).isEqualTo("type-desc");
@@ -183,6 +180,19 @@ class SchedulingDtosAndModelsTest {
         assertThat(versionDto.getStatus()).isEqualTo("ACTIVE");
         assertThat(versionDto.getDefinition()).isEqualTo("{\"nodes\":[]}");
         assertThat(versionDto.getCreatedBy()).isEqualTo("dave");
+    }
+
+    @Test
+    void schedulingModelsShouldSerializeRecordTenantIdInsteadOfTenantId() throws Exception {
+        SchedulingAudit audit = new SchedulingAudit();
+        audit.setId(1L);
+        audit.setTenantId(88L);
+        audit.setAction("TRIGGER");
+
+        String json = objectMapper.writeValueAsString(audit);
+
+        assertThat(json).contains("\"recordTenantId\":88");
+        assertThat(json).doesNotContain("\"tenantId\"");
     }
 
     @Test

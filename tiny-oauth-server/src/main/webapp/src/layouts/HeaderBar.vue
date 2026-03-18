@@ -50,7 +50,7 @@ import { UserOutlined, SettingOutlined, LogoutOutlined, DownOutlined } from '@an
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '@/auth/auth'
-import { userApi } from '@/api/process'
+import { getCurrentUser } from '@/api/user'
 import { generateAvatarStyleObject } from '@/utils/avatar'
 import { message } from 'ant-design-vue'
 import type { MenuProps } from 'ant-design-vue'
@@ -208,7 +208,7 @@ const handleMenuSelect: MenuProps['onClick'] = (info) => {
  */
 async function loadUserInfo() {
   try {
-    const data = await userApi.getCurrentUser()
+    const data = await getCurrentUser()
     // 优先使用昵称，其次用户名，最后使用备用用户名
     username.value = data.nickname || data.username || FALLBACK_USERNAME
     userId.value = String(data.id || '')

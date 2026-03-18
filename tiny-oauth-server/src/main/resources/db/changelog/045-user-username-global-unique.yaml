@@ -1,0 +1,25 @@
+databaseChangeLog:
+  # 全局 username 唯一，支撑平台账号模型；执行前必须无跨租户重名。
+  # 见 docs/TINY_PLATFORM_AUTHORIZATION_LEGACY_REMOVAL_PLAN.md §3.2、Phase1 技术设计 §4.3
+  - changeSet:
+      id: 045-user-username-global-unique
+      author: tiny
+      comment: 新增 uk_user_username(username)；执行前需保证无重复 username
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - tableExists:
+            tableName: user
+        - sqlCheck:
+            expectedResult: "0"
+            sql: |
+              SELECT COUNT(*) FROM (
+                SELECT username FROM `user` GROUP BY username HAVING COUNT(*) > 1
+              ) t;
+      changes:
+        - addUniqueConstraint:
+            tableName: user
+            constraintName: uk_user_username
+            columnNames: username

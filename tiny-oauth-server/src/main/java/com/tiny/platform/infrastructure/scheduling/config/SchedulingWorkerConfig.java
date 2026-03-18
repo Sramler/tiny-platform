@@ -58,16 +58,16 @@ public class SchedulingWorkerConfig {
             int taskQueueCapacity,
             TaskDecorator mdcTaskDecorator) {
         TaskDecorator tenantAwareTaskDecorator = command -> {
-            Long capturedTenantId = TenantContext.getTenantId();
+            Long capturedTenantId = TenantContext.getActiveTenantId();
             String capturedTenantSource = TenantContext.getTenantSource();
             Runnable mdcDecorated = mdcTaskDecorator.decorate(command);
             return () -> {
-                Long previousTenantId = TenantContext.getTenantId();
+                Long previousTenantId = TenantContext.getActiveTenantId();
                 String previousTenantSource = TenantContext.getTenantSource();
                 try {
                     TenantContext.clear();
                     if (capturedTenantId != null) {
-                        TenantContext.setTenantId(capturedTenantId);
+                        TenantContext.setActiveTenantId(capturedTenantId);
                     }
                     if (capturedTenantSource != null) {
                         TenantContext.setTenantSource(capturedTenantSource);
@@ -76,7 +76,7 @@ public class SchedulingWorkerConfig {
                 } finally {
                     TenantContext.clear();
                     if (previousTenantId != null) {
-                        TenantContext.setTenantId(previousTenantId);
+                        TenantContext.setActiveTenantId(previousTenantId);
                     }
                     if (previousTenantSource != null) {
                         TenantContext.setTenantSource(previousTenantSource);

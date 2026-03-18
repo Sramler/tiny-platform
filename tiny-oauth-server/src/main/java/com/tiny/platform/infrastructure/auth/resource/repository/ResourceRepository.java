@@ -21,7 +21,12 @@ import java.util.Optional;
  */
 @Repository
 public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSpecificationExecutor<Resource> {
-    
+
+    List<Resource> findByTenantIdOrderBySortAscIdAsc(Long tenantId);
+
+    /** 平台模板：tenant_id IS NULL，见 §4 平台模板与 default 解耦 */
+    List<Resource> findByTenantIdIsNullOrderBySortAscIdAsc();
+
     /**
      * 根据资源类型查找资源
      * @param type 资源类型
@@ -412,6 +417,72 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
     List<Resource> findByTypeInAndParentIdIsNullOrderBySortAsc(List<ResourceType> types);
 
     List<Resource> findByTypeInAndParentIdIsNullAndTenantIdOrderBySortAsc(List<ResourceType> types, Long tenantId);
+
+    @Query(value = """
+    SELECT DISTINCT r.*
+    FROM `user` u
+    JOIN `tenant_user` tu
+      ON tu.user_id = u.id
+     AND tu.tenant_id = :tenantId
+     AND tu.status = 'ACTIVE'
+    JOIN `role_assignment` ra
+      ON ra.principal_type = 'USER'
+     AND ra.principal_id = u.id
+     AND ra.scope_type = 'TENANT'
+     AND ra.tenant_id = tu.tenant_id
+     AND ra.status = 'ACTIVE'
+    JOIN `role` role_entity
+      ON role_entity.id = ra.role_id
+     AND role_entity.tenant_id = tu.tenant_id
+    JOIN `role_resource` rr
+      ON rr.role_id = role_entity.id
+     AND rr.tenant_id = tu.tenant_id
+    JOIN `resource` r
+      ON r.id = rr.resource_id
+     AND r.tenant_id = tu.tenant_id
+    WHERE u.username = :username
+      AND r.type IN (:types)
+    ORDER BY r.sort ASC, r.id ASC
+    """, nativeQuery = true)
+    List<Resource> findGrantedResourcesByUsernameAndTenantId(
+        @Param("username") String username,
+        @Param("tenantId") Long tenantId,
+        @Param("types") List<Integer> types
+    );
+
+    @Query(value = """
+    SELECT DISTINCT r.*
+    FROM `user` u
+    JOIN `tenant_user` tu
+      ON tu.user_id = u.id
+     AND tu.tenant_id = :tenantId
+     AND tu.status = 'ACTIVE'
+    JOIN `role_assignment` ra
+      ON ra.principal_type = 'USER'
+     AND ra.principal_id = u.id
+     AND ra.scope_type = 'TENANT'
+     AND ra.tenant_id = tu.tenant_id
+     AND ra.status = 'ACTIVE'
+    JOIN `role` role_entity
+      ON role_entity.id = ra.role_id
+     AND role_entity.tenant_id = tu.tenant_id
+    JOIN `role_resource` rr
+      ON rr.role_id = role_entity.id
+     AND rr.tenant_id = tu.tenant_id
+    JOIN `resource` r
+      ON r.id = rr.resource_id
+     AND r.tenant_id = tu.tenant_id
+    WHERE u.username = :username
+      AND r.type IN (:types)
+      AND ((:parentId IS NULL AND r.parent_id IS NULL) OR r.parent_id = :parentId)
+    ORDER BY r.sort ASC, r.id ASC
+    """, nativeQuery = true)
+    List<Resource> findGrantedResourcesByUsernameAndTenantIdAndParentId(
+        @Param("username") String username,
+        @Param("tenantId") Long tenantId,
+        @Param("types") List<Integer> types,
+        @Param("parentId") Long parentId
+    );
     
     /**
      * 根据父级ID列表查询资源（用于批量判断叶子节点）

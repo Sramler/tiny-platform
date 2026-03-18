@@ -26,8 +26,9 @@ const mocks = vi.hoisted(() => ({
   createNewTraceId: vi.fn(),
   clearTraceId: vi.fn(),
   getTenantCode: vi.fn(),
+  getActiveTenantId: vi.fn(),
   getTenantId: vi.fn(),
-  clearTenantId: vi.fn(),
+  clearActiveTenantId: vi.fn(),
   syncTenantContextFromClaims: vi.fn(),
   syncTenantContextFromAccessToken: vi.fn(),
   jwtVerify: vi.fn(),
@@ -77,8 +78,9 @@ vi.mock('@/utils/traceId', () => ({
 
 vi.mock('@/utils/tenant', () => ({
   getTenantCode: mocks.getTenantCode,
+  getActiveTenantId: mocks.getActiveTenantId,
   getTenantId: mocks.getTenantId,
-  clearTenantId: mocks.clearTenantId,
+  clearActiveTenantId: mocks.clearActiveTenantId,
   syncTenantContextFromClaims: mocks.syncTenantContextFromClaims,
   syncTenantContextFromAccessToken: mocks.syncTenantContextFromAccessToken,
 }))
@@ -96,6 +98,7 @@ describe('auth login flow', () => {
     mocks.getUser.mockResolvedValue(null)
     mocks.signoutRedirect.mockResolvedValue(undefined)
     mocks.getTenantCode.mockReturnValue('tiny-prod')
+    mocks.getActiveTenantId.mockReturnValue(null)
     mocks.getTenantId.mockReturnValue(null)
     mocks.createNewTraceId.mockReturnValue('trace-123')
     mocks.createSigninRequest.mockResolvedValue({
@@ -204,7 +207,7 @@ describe('auth login flow', () => {
     await authModule.logout()
 
     expect(mocks.removeUser).toHaveBeenCalledTimes(1)
-    expect(mocks.clearTenantId).toHaveBeenCalledTimes(1)
+    expect(mocks.clearActiveTenantId).toHaveBeenCalledTimes(1)
     expect(mocks.clearTraceId).toHaveBeenCalled()
     expect(window.location.href).toBe('http://localhost:5173/')
   })

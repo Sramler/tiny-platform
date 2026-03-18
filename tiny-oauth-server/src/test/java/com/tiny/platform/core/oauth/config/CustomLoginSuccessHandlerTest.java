@@ -1,9 +1,12 @@
 package com.tiny.platform.core.oauth.config;
 
+import com.tiny.platform.core.oauth.model.SecurityUser;
+import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationSessionManager;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
 import com.tiny.platform.core.oauth.service.AuthenticationAuditService;
 import com.tiny.platform.core.oauth.service.SecurityService;
+import com.tiny.platform.core.oauth.tenant.TenantContextContract;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
@@ -17,6 +20,7 @@ import org.springframework.security.web.savedrequest.HttpSessionRequestCache;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -27,6 +31,7 @@ class CustomLoginSuccessHandlerTest {
 
     private final SecurityService securityService = mock(SecurityService.class);
     private final UserRepository userRepository = mock(UserRepository.class);
+    private final AuthUserResolutionService authUserResolutionService = mock(AuthUserResolutionService.class);
     private final MultiFactorAuthenticationSessionManager sessionManager = mock(MultiFactorAuthenticationSessionManager.class);
     private final AuthenticationAuditService auditService = mock(AuthenticationAuditService.class);
 
@@ -43,11 +48,12 @@ class CustomLoginSuccessHandlerTest {
                 userRepository,
                 frontendProperties,
                 sessionManager,
+                authUserResolutionService,
                 auditService
         );
 
         User user = user();
-        when(userRepository.findUserByUsernameAndTenantId("admin", 1L)).thenReturn(Optional.of(user));
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("admin", 1L)).thenReturn(Optional.of(user));
         when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
                 "totpBound", true,
                 "totpActivated", true,
@@ -67,7 +73,7 @@ class CustomLoginSuccessHandlerTest {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/login");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
-        TenantContext.setTenantId(1L);
+        TenantContext.setActiveTenantId(1L);
         handler.onAuthenticationSuccess(request, response, authentication);
 
         verify(sessionManager, never()).promoteToFullyAuthenticated(any(User.class), any(), any());
@@ -85,11 +91,12 @@ class CustomLoginSuccessHandlerTest {
                 userRepository,
                 frontendProperties,
                 sessionManager,
+                authUserResolutionService,
                 auditService
         );
 
         User user = user();
-        when(userRepository.findUserByUsernameAndTenantId("admin", 1L)).thenReturn(Optional.of(user));
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("admin", 1L)).thenReturn(Optional.of(user));
         when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
                 "totpBound", true,
                 "totpActivated", true,
@@ -109,7 +116,7 @@ class CustomLoginSuccessHandlerTest {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/login");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
-        TenantContext.setTenantId(1L);
+        TenantContext.setActiveTenantId(1L);
         handler.onAuthenticationSuccess(request, response, authentication);
 
         verify(sessionManager, never()).promoteToFullyAuthenticated(any(User.class), any(), any());
@@ -126,11 +133,12 @@ class CustomLoginSuccessHandlerTest {
                 userRepository,
                 frontendProperties,
                 sessionManager,
+                authUserResolutionService,
                 auditService
         );
 
         User user = user();
-        when(userRepository.findUserByUsernameAndTenantId("admin", 1L)).thenReturn(Optional.of(user));
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("admin", 1L)).thenReturn(Optional.of(user));
         when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
                 "totpBound", true,
                 "totpActivated", true,
@@ -153,13 +161,58 @@ class CustomLoginSuccessHandlerTest {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/login");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
-        TenantContext.setTenantId(1L);
+        TenantContext.setActiveTenantId(1L);
         handler.onAuthenticationSuccess(request, response, authentication);
 
         verify(sessionManager, times(1)).promoteToFullyAuthenticated(eq(user), eq(request), eq(response));
         verify(userRepository).save(user);
         verify(auditService).recordLoginSuccess(eq("admin"), eq(1L), eq("LOCAL"), eq("MFA"), eq(request));
         assertThat(user.getLastLoginAt()).isNotNull();
+        assertThat(response.getRedirectedUrl()).isEqualTo("http://localhost:5173/");
+    }
+
+    @Test
+    void shouldResolveActiveTenantIdFromSecurityUserDetailsWithoutTenantContext() throws Exception {
+        FrontendProperties frontendProperties = frontendProperties();
+        CustomLoginSuccessHandler handler = new CustomLoginSuccessHandler(
+                securityService,
+                userRepository,
+                frontendProperties,
+                sessionManager,
+                authUserResolutionService,
+                auditService
+        );
+
+        User user = user();
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("admin", 9L)).thenReturn(Optional.of(user));
+        when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
+                "totpBound", true,
+                "totpActivated", true,
+                "disableMfa", true,
+                "skipMfaRemind", false,
+                "forceMfa", false,
+                "requireTotp", false
+        ));
+
+        MultiFactorAuthenticationToken authentication = new MultiFactorAuthenticationToken(
+                "admin",
+                null,
+                MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL,
+                MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD,
+                List.of()
+        );
+        authentication.setDetails(new SecurityUser(user, "", 9L, Set.of()));
+
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/login");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        TenantContext.clear();
+        handler.onAuthenticationSuccess(request, response, authentication);
+
+        verify(authUserResolutionService).resolveUserRecordInActiveTenant("admin", 9L);
+        verify(auditService).recordLoginSuccess(eq("admin"), eq(1L), eq("LOCAL"), eq("PASSWORD"), eq(request));
+        assertThat(request.getSession(false)).isNotNull();
+        assertThat(request.getSession(false).getAttribute(TenantContextContract.SESSION_ACTIVE_TENANT_ID_KEY)).isEqualTo(9L);
         assertThat(response.getRedirectedUrl()).isEqualTo("http://localhost:5173/");
     }
 
@@ -171,11 +224,12 @@ class CustomLoginSuccessHandlerTest {
                 userRepository,
                 frontendProperties,
                 sessionManager,
+                authUserResolutionService,
                 auditService
         );
 
         User user = user();
-        when(userRepository.findUserByUsernameAndTenantId("admin", 1L)).thenReturn(Optional.of(user));
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("admin", 1L)).thenReturn(Optional.of(user));
         when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
                 "totpBound", true,
                 "totpActivated", true,
@@ -196,7 +250,7 @@ class CustomLoginSuccessHandlerTest {
         request.setParameter("redirect", "/default/oauth2/authorize?client_id=vue-client");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
-        TenantContext.setTenantId(1L);
+        TenantContext.setActiveTenantId(1L);
         handler.onAuthenticationSuccess(request, response, authentication);
 
         assertThat(response.getRedirectedUrl()).startsWith("http://localhost:5173/self/security/totp-verify");
@@ -212,11 +266,12 @@ class CustomLoginSuccessHandlerTest {
                 userRepository,
                 frontendProperties,
                 sessionManager,
+                authUserResolutionService,
                 auditService
         );
 
         User user = user();
-        when(userRepository.findUserByUsernameAndTenantId("admin", 1L)).thenReturn(Optional.of(user));
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("admin", 1L)).thenReturn(Optional.of(user));
         when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
                 "totpBound", true,
                 "totpActivated", true,
@@ -240,7 +295,7 @@ class CustomLoginSuccessHandlerTest {
         request.setParameter("redirect", "https://evil.com/callback");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
-        TenantContext.setTenantId(1L);
+        TenantContext.setActiveTenantId(1L);
         handler.onAuthenticationSuccess(request, response, authentication);
 
         assertThat(response.getRedirectedUrl()).isEqualTo("http://localhost:5173/");
@@ -254,11 +309,12 @@ class CustomLoginSuccessHandlerTest {
                 userRepository,
                 frontendProperties,
                 sessionManager,
+                authUserResolutionService,
                 auditService
         );
 
         User user = user();
-        when(userRepository.findUserByUsernameAndTenantId("admin", 1L)).thenReturn(Optional.of(user));
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("admin", 1L)).thenReturn(Optional.of(user));
         when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
                 "totpBound", true,
                 "totpActivated", true,
@@ -295,13 +351,98 @@ class CustomLoginSuccessHandlerTest {
         loginRequest.setSession(session);
         MockHttpServletResponse loginResponse = new MockHttpServletResponse();
 
-        TenantContext.setTenantId(1L);
+        TenantContext.setActiveTenantId(1L);
         handler.onAuthenticationSuccess(loginRequest, loginResponse, authentication);
 
         assertThat(loginResponse.getRedirectedUrl()).startsWith("http://localhost:5173/self/security/totp-verify");
         assertThat(loginResponse.getRedirectedUrl())
                 .contains("redirect=%2Foauth2%2Fauthorize%3Fclient_id%3Dvue-client%26redirect_uri%3Dhttps%3A%2F%2Fclient.example.com%2Fcallback");
         assertThat(loginResponse.getRedirectedUrl()).doesNotContain("redirect=https://client.example.com/callback");
+    }
+
+    @Test
+    void should_resolve_membership_user_and_freeze_active_tenant() throws Exception {
+        FrontendProperties frontendProperties = frontendProperties();
+        CustomLoginSuccessHandler handler = new CustomLoginSuccessHandler(
+                securityService,
+                userRepository,
+                frontendProperties,
+                sessionManager,
+                authUserResolutionService,
+                auditService
+        );
+
+        User user = user();
+        user.setTenantId(88L);
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("admin", 1L)).thenReturn(Optional.of(user));
+        when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
+                "totpBound", true,
+                "totpActivated", true,
+                "disableMfa", true,
+                "skipMfaRemind", false,
+                "forceMfa", false,
+                "requireTotp", false
+        ));
+
+        MultiFactorAuthenticationToken authentication = new MultiFactorAuthenticationToken(
+                "admin",
+                null,
+                MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL,
+                MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD,
+                List.of()
+        );
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/login");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        TenantContext.setActiveTenantId(1L);
+        handler.onAuthenticationSuccess(request, response, authentication);
+
+        assertThat(request.getSession(false)).isNotNull();
+        assertThat(request.getSession(false).getAttribute(TenantContextContract.SESSION_ACTIVE_TENANT_ID_KEY)).isEqualTo(1L);
+        verify(authUserResolutionService).resolveUserRecordInActiveTenant("admin", 1L);
+    }
+
+    @Test
+    void should_resolve_user_from_authentication_active_tenant_when_context_missing() throws Exception {
+        FrontendProperties frontendProperties = frontendProperties();
+        CustomLoginSuccessHandler handler = new CustomLoginSuccessHandler(
+                securityService,
+                userRepository,
+                frontendProperties,
+                sessionManager,
+                authUserResolutionService,
+                auditService
+        );
+
+        User user = user();
+        user.setTenantId(88L);
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("admin", 7L)).thenReturn(Optional.of(user));
+        when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
+                "totpBound", true,
+                "totpActivated", true,
+                "disableMfa", true,
+                "skipMfaRemind", false,
+                "forceMfa", false,
+                "requireTotp", false
+        ));
+
+        MultiFactorAuthenticationToken authentication = new MultiFactorAuthenticationToken(
+                "admin",
+                null,
+                MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL,
+                MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD,
+                List.of()
+        );
+        authentication.setDetails(new SecurityUser(1L, 7L, "admin", "", List.of(), true, true, true, true));
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/login");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        TenantContext.clear();
+        handler.onAuthenticationSuccess(request, response, authentication);
+
+        assertThat(request.getSession(false)).isNotNull();
+        assertThat(request.getSession(false).getAttribute(TenantContextContract.SESSION_ACTIVE_TENANT_ID_KEY)).isEqualTo(7L);
+        verify(authUserResolutionService).resolveUserRecordInActiveTenant("admin", 7L);
     }
 
     private FrontendProperties frontendProperties() {

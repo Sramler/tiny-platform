@@ -54,6 +54,7 @@
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { FileSearchOutlined, HomeOutlined, ArrowLeftOutlined, InfoCircleOutlined } from '@ant-design/icons-vue'
+import { getActiveTenantId, resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
 
 const router = useRouter()
 const route = useRoute()
@@ -69,11 +70,14 @@ const errorInfo = computed(() => {
   }
 })
 
+const resolveNavigationTenantQuery = () =>
+  withActiveTenantQuery({}, resolveActiveTenantQueryValue(route.query) ?? getActiveTenantId())
+
 const goHome = () => {
   // 触发关闭当前标签页事件
   window.dispatchEvent(new CustomEvent('close-current-tab'))
   // 跳转到首页
-  router.push('/')
+  router.push({ path: '/', query: resolveNavigationTenantQuery() })
 }
 
 const goBack = () => {
@@ -85,7 +89,7 @@ const goBack = () => {
 
   if (from && !isExceptionPageUrl(from)) {
     if (isInternalPath(from)) {
-      router.push(from).catch(() => router.push('/'))
+      router.push(from).catch(() => router.push({ path: '/', query: resolveNavigationTenantQuery() }))
       return
     }
     try {
@@ -98,7 +102,7 @@ const goBack = () => {
   if (window.history.length > 1) {
     router.go(-1)
   } else {
-    router.push('/')
+    router.push({ path: '/', query: resolveNavigationTenantQuery() })
   }
 }
 </script>
@@ -221,4 +225,3 @@ const goBack = () => {
   }
 }
 </style>
-

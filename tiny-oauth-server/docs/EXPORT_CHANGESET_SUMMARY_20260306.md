@@ -190,9 +190,9 @@ mvn -pl tiny-oauth-server -DskipTests compile
 
 样本数据：
 
-1. `tenantId=1`：`10,000,000`
-2. `tenantId=2`：`100,000`
-3. `tenantId=3`：`1,000,000`
+1. `recordTenantId=1`：`10,000,000`
+2. `recordTenantId=2`：`100,000`
+3. `recordTenantId=3`：`1,000,000`
 4. 总表：`11,100,000`
 
 ### 8.2 导出规模验证

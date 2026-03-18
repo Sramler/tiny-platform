@@ -5,9 +5,7 @@ import jakarta.validation.constraints.Size;
 
 public class SchedulingDagCreateUpdateDto {
     private Long id;
-    
-    private Long tenantId;
-    
+
     @Size(max = 128, message = "编码长度不能超过128")
     private String code;
     
@@ -34,14 +32,6 @@ public class SchedulingDagCreateUpdateDto {
 
     public void setId(Long id) {
         this.id = id;
-    }
-
-    public Long getTenantId() {
-        return tenantId;
-    }
-
-    public void setTenantId(Long tenantId) {
-        this.tenantId = tenantId;
     }
 
     public String getCode() {
@@ -108,5 +98,4 @@ public class SchedulingDagCreateUpdateDto {
         this.createdBy = createdBy;
     }
 }
-
 

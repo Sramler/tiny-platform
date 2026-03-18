@@ -17,6 +17,32 @@
 
 > 当前没有单独的 shared-env smoke / nightly/full-chain 套件，后续如有新增应在本表中补充。
 
+#### 调度 Nightly real-link 套件
+
+- Workflow：`.github/workflows/verify-scheduling-real-e2e.yml`
+- 当前固定清单：
+  - `e2e/real/scheduling-dag-orchestration.spec.ts`
+  - `e2e/real/cross-tenant-a-to-b.spec.ts`
+  - `e2e/real/cross-tenant-b-to-a.spec.ts`
+  - `e2e/real/scheduling-rbac-readonly.spec.ts`
+- 覆盖意图：
+  - DAG 创建 / 触发 / run-node 行为链路
+  - 双向跨租户直读拒绝（404）
+  - 伪造 `X-Active-Tenant-Id` 的 `tenant_mismatch` 拒绝（403）
+  - 同租户只读调度身份的真实 RBAC 拒绝（只允许 `scheduling:console:view`，拒绝 `scheduling:console:config` / `scheduling:run:control` / `scheduling:audit:view` / `scheduling:cluster:view`）
+- 该套件需要额外只读身份 secrets：
+  - `E2E_PLATFORM_USERNAME`
+  - `E2E_PLATFORM_PASSWORD`
+  - `E2E_PLATFORM_TOTP_SECRET`
+  - `E2E_USERNAME_READONLY`
+  - `E2E_PASSWORD_READONLY`
+  - `E2E_TOTP_SECRET_READONLY`
+  - `E2E_TENANT_CODE_READONLY` 可选；未提供时默认复用主调度测试租户
+- 失败证据：
+  - Playwright `playwright-report/`
+  - Playwright `test-results/`（trace / screenshot / retain-on-failure video）
+  - 后端 / 前端启动日志 `e2e-artifacts/backend.log`、`e2e-artifacts/frontend.log`
+
 ---
 
 ### 2. mock-assisted UI 套件（`npm run test:e2e`）
@@ -53,6 +79,8 @@
   - 全局 setup：`e2e/setup/real.global.setup.ts`
     - 清理并创建 `e2e/.auth` 目录。
     - 调用 `scripts/e2e/ensure-scheduling-e2e-auth.sh` 初始化主自动化身份；如配置第二租户变量，再初始化第二自动化身份。
+    - `ensure-scheduling-e2e-auth.sh` 会先验证默认租户是否具备调度 bootstrap 模板（`ROLE_ADMIN` + `037` authority 资源 + `scheduling:*` 绑定），缺失时直接 fail fast，避免在 real-link 中把模板缺失误判成单条业务回归。
+    - 当第二租户或 readonly 租户与主租户不同，`real.global.setup.ts` 会优先使用平台自动化身份（`E2E_PLATFORM_*`）的真实 bearer token 调 `/sys/tenants` 创建租户，再交给 `ensure-scheduling-e2e-auth.sh` 只补用户与认证方式；这样 cross-tenant/readonly 的租户创建会真实触发 `TenantServiceImpl.create() -> TenantBootstrapService`，且不依赖普通租户管理员越权访问租户管理接口。
     - 按需执行 `scripts/e2e/seed-scheduling-orchestration.sql`（由 `E2E_USE_SQL_SEED` 控制）。
     - 运行 `e2e/setup/generate-auth-state.mjs` 生成：
       - `e2e/.auth/scheduling-user.json`（主自动化身份）

@@ -32,7 +32,7 @@ type ExportTask = {
 
 function buildFakeJwtPayload() {
   return {
-    tenantId: 1,
+    activeTenantId: 1,
     iss: AUTHORITY,
   }
 }
@@ -58,7 +58,7 @@ function buildOidcUser() {
     profile: {
       sub: 'user-1',
       preferred_username: 'alice',
-      tenantId: 1,
+      activeTenantId: 1,
       iss: AUTHORITY,
     },
     expires_at: Math.floor(Date.now() / 1000) + 3600,
@@ -89,7 +89,7 @@ async function seedAuthenticatedSession(page: Page) {
         window.sessionStorage.setItem(key, JSON.stringify(oidcUser))
       }
       window.localStorage.setItem('app_tenant_code', tenantCode)
-      window.localStorage.setItem('app_tenant_id', '1')
+      window.localStorage.setItem('app_active_tenant_id', '1')
       window.localStorage.setItem('sider-collapsed', 'false')
       ;(
         window as Window & {

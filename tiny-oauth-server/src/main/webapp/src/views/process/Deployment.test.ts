@@ -10,6 +10,24 @@ const tenantMocks = vi.hoisted(() => ({
   getTenants: vi.fn(),
 }))
 
+const tenantContextMocks = vi.hoisted(() => ({
+  getActiveTenantId: vi.fn(),
+}))
+
+const routerMocks = vi.hoisted(() => ({
+  routeQuery: {} as Record<string, unknown>,
+  routerReplace: vi.fn(),
+}))
+
+vi.mock('vue-router', () => ({
+  useRoute: () => ({
+    query: routerMocks.routeQuery,
+  }),
+  useRouter: () => ({
+    replace: routerMocks.routerReplace,
+  }),
+}))
+
 vi.mock('@/api/process', () => ({
   deploymentApi: { getDeployments: deployMocks.getDeployments, deleteDeployment: vi.fn(), deployProcess: vi.fn(), deployProcessWithInfo: vi.fn() },
   tenantApi: { getTenants: tenantMocks.getTenants },
@@ -18,6 +36,14 @@ vi.mock('@/api/process', () => ({
 vi.mock('@/utils/debounce', () => ({
   useThrottle: (fn: (...args: unknown[]) => unknown) => fn,
 }))
+
+vi.mock('@/utils/tenant', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/utils/tenant')>()
+  return {
+    ...actual,
+    getActiveTenantId: tenantContextMocks.getActiveTenantId,
+  }
+})
 
 const PassThrough = defineComponent({ template: '<div><slot /></div>' })
 
@@ -33,8 +59,12 @@ async function flushPromises() {
 describe('process Deployment.vue', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    Object.keys(routerMocks.routeQuery).forEach((key) => {
+      delete routerMocks.routeQuery[key]
+    })
     deployMocks.getDeployments.mockResolvedValue([])
     tenantMocks.getTenants.mockResolvedValue([])
+    tenantContextMocks.getActiveTenantId.mockReturnValue('9')
   })
 
   it('should load data on mount and render title', async () => {
@@ -69,8 +99,11 @@ describe('process Deployment.vue', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('部署记录列表')
-    expect(deployMocks.getDeployments).toHaveBeenCalled()
+    expect(deployMocks.getDeployments).toHaveBeenCalledWith('9')
     expect(tenantMocks.getTenants).toHaveBeenCalled()
+    expect(routerMocks.routerReplace).toHaveBeenCalledWith({
+      query: { activeTenantId: '9' },
+    })
   })
-})
 
+})

@@ -1,0 +1,31 @@
+databaseChangeLog:
+  - changeSet:
+      id: 054-role-cardinality
+      author: tiny
+      comment: Phase2 草案：新增 role_cardinality 表（角色基数限制）
+      preConditions:
+        - onFail: CONTINUE
+        - onError: HALT
+        - dbms:
+            type: mysql
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              CREATE TABLE IF NOT EXISTS `role_cardinality` (
+                `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+                `tenant_id` BIGINT NOT NULL COMMENT '租户ID；平台模板可用 tenant_id IS NULL 表示平台层',
+                `role_id` BIGINT NOT NULL COMMENT '受基数限制的角色模板ID',
+                `scope_type` VARCHAR(16) NOT NULL COMMENT 'PLATFORM/TENANT/ORG/DEPT 等，Phase2 初期建议只支持 PLATFORM/TENANT',
+                `max_assignments` INT NOT NULL COMMENT '在给定作用域内允许的最大赋权数量，必须为正整数',
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                `created_by` BIGINT NULL COMMENT '创建人ID',
+                `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uk_role_cardinality` (`tenant_id`, `role_id`, `scope_type`)
+                -- 如目标 MySQL 版本支持，可考虑补充：
+                -- ,CONSTRAINT `chk_role_cardinality_positive` CHECK (`max_assignments` > 0)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='角色基数限制表（Phase2 草案）';
+

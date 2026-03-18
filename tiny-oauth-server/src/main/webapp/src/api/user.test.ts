@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   put: vi.fn(),
   get: vi.fn(),
   delete: vi.fn(),
+  syncTenantContextFromClaims: vi.fn(),
 }))
 
 vi.mock('@/utils/request', () => ({
@@ -14,6 +15,10 @@ vi.mock('@/utils/request', () => ({
     get: mocks.get,
     delete: mocks.delete,
   },
+}))
+
+vi.mock('@/utils/tenant', () => ({
+  syncTenantContextFromClaims: mocks.syncTenantContextFromClaims,
 }))
 
 describe('user.ts', () => {
@@ -93,5 +98,17 @@ describe('user.ts', () => {
         payload: roleIds,
       },
     })
+  })
+
+  it('should request current user and sync active tenant context', async () => {
+    const payload = { id: '7', username: 'alice', activeTenantId: 9 }
+    mocks.get.mockResolvedValue(payload)
+
+    const { getCurrentUser } = await import('@/api/user')
+    const result = await getCurrentUser()
+
+    expect(mocks.get).toHaveBeenCalledWith('/sys/users/current')
+    expect(mocks.syncTenantContextFromClaims).toHaveBeenCalledWith(payload)
+    expect(result.activeTenantId).toBe(9)
   })
 })

@@ -8,6 +8,11 @@ public class TenantResponseDto {
     private String name;
     private String domain;
     private boolean enabled;
+    /**
+     * 租户生命周期状态（目标态）：ACTIVE/FROZEN/DECOMMISSIONED。
+     * 当前实现主要用于展示与治理视角，具体语义见 TINY_PLATFORM_TENANT_GOVERNANCE.md。
+     */
+    private String lifecycleStatus;
     private String planCode;
     private String expiresAt;
     private Integer maxUsers;
@@ -65,6 +70,14 @@ public class TenantResponseDto {
 
     public void setPlanCode(String planCode) {
         this.planCode = planCode;
+    }
+
+    public String getLifecycleStatus() {
+        return lifecycleStatus;
+    }
+
+    public void setLifecycleStatus(String lifecycleStatus) {
+        this.lifecycleStatus = lifecycleStatus;
     }
 
     public String getExpiresAt() {

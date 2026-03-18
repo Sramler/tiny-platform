@@ -19,6 +19,7 @@ alwaysApply: true
 ## 必须（Must）
 
 - ✅ 平台特定规则优先级最高：与通用规则冲突时按裁决原则处理。
+- ✅ 新增权限标识、权限字典、菜单资源权限、`hasAuthority` / `@PreAuthorize` 命名必须遵循 `92-tiny-platform-permission.rules.md`，不得继续扩散历史别名风格。
 - ✅ 涉及认证授权/租户隔离：必须明确数据隔离维度与权限决策链路。
 - ✅ 多租户数据隔离：所有业务表必须包含 `tenant_id` 字段；所有业务查询必须包含 `tenant_id` 过滤条件。
 - ✅ 租户 ID 传递：从请求头（`X-Tenant-Id`）或 Token Claims（`tenant_id`）获取，存入 `SecurityContext` 或 `ThreadLocal`。
@@ -32,6 +33,8 @@ alwaysApply: true
 - ✅ 当测试目标涉及 Session/JWT 切换、OIDC、MFA、租户上下文、真实数据库约束、插件装载、调度编排等平台能力时，必须保留至少一条 real-link E2E，不得全部退化为 mock-assisted 测试。
 - ✅ 平台级 E2E 必须优先验证最终业务结果与边界安全：权限拒绝、跨租户拒绝、审计留痕、状态收敛、插件生效/失效，而不是只验证请求成功。
 - ✅ first-party 业务 API 在 real-link E2E 中不得再被 `page.route()` 或等价手段整体替代；确需隔离第三方依赖时，必须明确限定 mock 边界并说明原因。
+- ✅ 平台级 real-link CI 一旦引入第二租户、第二身份、首绑用户或其它动态创建的测试主体，必须在 fresh DB 上验证“身份/租户 bootstrap -> 真实登录 -> 业务回归”的完整链路，不能只依赖本地已预热数据库。
+- ✅ 多租户 OIDC / OAuth2 / 调度等平台能力在测试环境中如果允许 late-created tenant 或运行时补创建租户，必须补回归测试或兼容策略，确保不会因为启动时 registry、cache 或 delegate 尚未预注册而直接阻断真实链路。
 
 ## 应该（Should）
 

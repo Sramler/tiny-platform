@@ -9,27 +9,27 @@ import java.util.Map;
 public interface ProcessEngineService {
 
     // 部署管理
-    String deployProcess(String bpmnXml, String tenantId) throws Exception;
-    String deployProcess(String bpmnXml, String tenantId, String source) throws Exception;
-    String deployProcess(String bpmnXml, String tenantId, String deploymentName, String explicitDeployer,String source) throws Exception;
-    Object listDeployments(String tenantId);
+    String deployProcess(String bpmnXml, String activeTenantId) throws Exception;
+    String deployProcess(String bpmnXml, String activeTenantId, String source) throws Exception;
+    String deployProcess(String bpmnXml, String activeTenantId, String deploymentName, String explicitDeployer,String source) throws Exception;
+    Object listDeployments(String recordTenantId);
     void deleteDeployment(String deploymentId, boolean cascade);
 
     // 流程实例
-    String startProcessInstance(String processKey, String tenantId, Map<String, Object> variables);
-    Object listProcessInstances(String tenantId, String state);
+    String startProcessInstance(String processKey, String activeTenantId, Map<String, Object> variables);
+    Object listProcessInstances(String recordTenantId, String state);
     void suspendInstance(String instanceId);
     void activateInstance(String instanceId);
     void deleteInstance(String instanceId);
     Object getInstanceTasks(String instanceId);
 
     // 任务管理
-    Object getTasks(String assignee, String tenantId);
+    Object getTasks(String assignee, String activeTenantId);
     void claimTask(String taskId, String userId);
     void completeTask(String taskId, Map<String, Object> variables);
 
     // 历史查询
-    Object listHistoricInstances(String tenantId);
+    Object listHistoricInstances(String recordTenantId);
     Object listHistoricTasks(String processInstanceId);
 
     // 租户管理
@@ -40,7 +40,7 @@ public interface ProcessEngineService {
     Object getEngineInfo();
 
     // 流程定义管理
-    Object listProcessDefinitions(String tenantId);
+    Object listProcessDefinitions(String recordTenantId);
     String getProcessDefinitionXml(String processDefinitionId);
     void deleteProcessDefinition(String processDefinitionId, boolean cascade);
     boolean validateBpmnXml(String bpmnXml);

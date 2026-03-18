@@ -7,6 +7,7 @@ import com.tiny.platform.infrastructure.auth.resource.dto.ResourceResponseDto;
 import com.tiny.platform.infrastructure.idempotent.sdk.annotation.Idempotent;
 import com.tiny.platform.infrastructure.menu.service.MenuService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
@@ -30,6 +31,7 @@ public class MenuController {
      * 查询菜单（type为0-目录，1-菜单），返回list结构
      */
     @GetMapping
+    @PreAuthorize("@menuManagementAccessGuard.canRead(authentication)")
     public ResponseEntity<List<ResourceResponseDto>> getMenus(
             @Valid ResourceRequestDto query
     ) {
@@ -48,6 +50,7 @@ public class MenuController {
      * 获取完整菜单树（包含隐藏/禁用/空目录），供后台授权使用
      */
     @GetMapping("/tree/all")
+    @PreAuthorize("@menuManagementAccessGuard.canRead(authentication)")
     public ResponseEntity<List<ResourceResponseDto>> getFullMenuTree() {
         return ResponseEntity.ok(menuService.menuTreeAll());
     }
@@ -56,6 +59,7 @@ public class MenuController {
      * 根据父级ID获取子菜单（type为0-目录，1-菜单）
      */
     @GetMapping("/parent/{parentId}")
+    @PreAuthorize("@menuManagementAccessGuard.canRead(authentication)")
     public ResponseEntity<List<ResourceResponseDto>> getMenusByParentId(@PathVariable("parentId") Long parentId) {
         return ResponseEntity.ok(menuService.getMenusByParentId(parentId));
     }
@@ -65,6 +69,7 @@ public class MenuController {
      */
     @PostMapping
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@menuManagementAccessGuard.canCreate(authentication)")
     public ResponseEntity<Resource> createMenu(@Valid @RequestBody ResourceCreateUpdateDto resourceDto) {
         return ResponseEntity.ok(menuService.createMenu(resourceDto));
     }
@@ -74,6 +79,7 @@ public class MenuController {
      */
     @PutMapping("/{id}")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@menuManagementAccessGuard.canUpdate(authentication)")
     public ResponseEntity<?> updateMenu(@PathVariable("id") Long id, @Valid @RequestBody ResourceCreateUpdateDto resourceDto) {
         resourceDto.setId(id);
         menuService.updateMenu(resourceDto);
@@ -85,6 +91,7 @@ public class MenuController {
      */
     @DeleteMapping("/{id}")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@menuManagementAccessGuard.canDelete(authentication)")
     public ResponseEntity<Void> deleteMenu(@PathVariable("id") Long id) {
         menuService.deleteMenu(id);
         return ResponseEntity.noContent().build();
@@ -95,8 +102,19 @@ public class MenuController {
      */
     @PostMapping("/batch/delete")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@menuManagementAccessGuard.canDelete(authentication)")
     public ResponseEntity<Map<String, Object>> batchDeleteMenus(@RequestBody List<Long> ids) {
         menuService.batchDeleteMenus(ids);
         return ResponseEntity.ok(Map.of("success", true, "message", "批量删除成功"));
+    }
+
+    /**
+     * 更新菜单排序
+     */
+    @PutMapping("/{id}/sort")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@menuManagementAccessGuard.canUpdate(authentication)")
+    public ResponseEntity<Resource> updateMenuSort(@PathVariable("id") Long id, @RequestParam("sort") Integer sort) {
+        return ResponseEntity.ok(menuService.updateMenuSort(id, sort));
     }
 } 

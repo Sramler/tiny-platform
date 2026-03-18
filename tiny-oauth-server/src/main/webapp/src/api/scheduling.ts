@@ -1,6 +1,78 @@
 // scheduling.ts 企业级 DAG 调度相关 API 封装
 import request from '@/utils/request'
 
+export interface SchedulingPageParams {
+  current?: number
+  pageSize?: number
+}
+
+export interface SchedulingTaskTypeListParams extends SchedulingPageParams {
+  code?: string
+  name?: string
+}
+
+export interface SchedulingTaskListParams extends SchedulingTaskTypeListParams {
+  typeId?: number
+}
+
+export type SchedulingDagListParams = SchedulingTaskTypeListParams
+
+export interface SchedulingAuditListParams extends SchedulingPageParams {
+  objectType?: string
+  action?: string
+}
+
+export interface SchedulingTaskTypePayload {
+  id?: number
+  code?: string
+  name: string
+  description?: string
+  executor?: string
+  paramSchema?: string
+  defaultTimeoutSec?: number
+  defaultMaxRetry?: number
+  enabled?: boolean
+  createdBy?: string
+}
+
+export interface SchedulingTaskPayload {
+  id?: number
+  typeId?: number
+  code?: string
+  name: string
+  description?: string
+  params?: string
+  timeoutSec?: number
+  maxRetry?: number
+  retryPolicy?: string
+  concurrencyPolicy?: string
+  enabled?: boolean
+  createdBy?: string
+}
+
+export interface SchedulingDagPayload {
+  id?: number
+  code?: string
+  name: string
+  description?: string
+  enabled?: boolean
+  cronExpression?: string
+  cronTimezone?: string
+  cronEnabled?: boolean
+  createdBy?: string
+}
+
+export interface SchedulingAuditRecord {
+  id: number
+  recordTenantId?: number
+  objectType?: string
+  objectId?: string
+  action?: string
+  performedBy?: string
+  detail?: string
+  createdAt?: string
+}
+
 function withIdempotency(
   scope: string,
   payload?: unknown,
@@ -43,7 +115,7 @@ function cleanParams(p: Record<string, any>): Record<string, any> {
 }
 
 // 分页查询任务类型列表
-export function taskTypeList(params: any) {
+export function taskTypeList(params: SchedulingTaskTypeListParams) {
   const apiParams = cleanParams({
     page: (params.current || 1) - 1,
     size: params.pageSize || 10,
@@ -59,12 +131,12 @@ export function taskTypeList(params: any) {
 }
 
 // 创建任务类型
-export function createTaskType(data: any) {
+export function createTaskType(data: SchedulingTaskTypePayload) {
   return request.post('/scheduling/task-type', data, withIdempotency('scheduling-task-type:create', data))
 }
 
 // 更新任务类型
-export function updateTaskType(id: number, data: any) {
+export function updateTaskType(id: number, data: SchedulingTaskTypePayload) {
   return request.put(
     `/scheduling/task-type/${id}`,
     data,
@@ -93,7 +165,7 @@ export function getExecutors() {
 // ==================== Task - 任务实例定义 ====================
 
 // 分页查询任务列表
-export function taskList(params: any) {
+export function taskList(params: SchedulingTaskListParams) {
   const apiParams = cleanParams({
     page: (params.current || 1) - 1,
     size: params.pageSize || 10,
@@ -110,12 +182,12 @@ export function taskList(params: any) {
 }
 
 // 创建任务实例
-export function createTask(data: any) {
+export function createTask(data: SchedulingTaskPayload) {
   return request.post('/scheduling/task', data, withIdempotency('scheduling-task:create', data))
 }
 
 // 更新任务
-export function updateTask(id: number, data: any) {
+export function updateTask(id: number, data: SchedulingTaskPayload) {
   return request.put(`/scheduling/task/${id}`, data, withIdempotency(`scheduling-task:update:${id}`, data))
 }
 
@@ -137,7 +209,7 @@ export function getTaskParam(taskId: number) {
 // ==================== DAG（编排流程） ====================
 
 // 分页查询 DAG 列表
-export function dagList(params: any) {
+export function dagList(params: SchedulingDagListParams) {
   const apiParams = cleanParams({
     page: (params.current || 1) - 1,
     size: params.pageSize || 10,
@@ -153,12 +225,12 @@ export function dagList(params: any) {
 }
 
 // 创建 DAG
-export function createDag(data: any) {
+export function createDag(data: SchedulingDagPayload) {
   return request.post('/scheduling/dag', data, withIdempotency('scheduling-dag:create', data))
 }
 
 // 更新 DAG
-export function updateDag(id: number, data: any) {
+export function updateDag(id: number, data: SchedulingDagPayload) {
   return request.put(`/scheduling/dag/${id}`, data, withIdempotency(`scheduling-dag:update:${id}`, data))
 }
 
@@ -472,7 +544,7 @@ export function getTaskHistory(historyId: number) {
 // ==================== 审计与监控 ====================
 
 // 分页查询操作审计记录
-export function auditList(params: any) {
+export function auditList(params: SchedulingAuditListParams) {
   const apiParams = cleanParams({
     page: (params.current || 1) - 1,
     size: params.pageSize || 10,
@@ -481,7 +553,7 @@ export function auditList(params: any) {
   })
   return request.get('/scheduling/audit/list', { params: apiParams }).then((res: any) => {
     return {
-      records: res.content || [],
+      records: (res.content || []) as SchedulingAuditRecord[],
       total: res.totalElements || 0,
     }
   })

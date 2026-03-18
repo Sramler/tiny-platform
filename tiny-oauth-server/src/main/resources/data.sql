@@ -22,27 +22,52 @@ INSERT IGNORE INTO `user_role` (`tenant_id`, `user_id`, `role_id`) VALUES
 -- 使用 INSERT IGNORE 避免重复插入
 -- 系统管理目录
 INSERT IGNORE INTO `resource` (`tenant_id`, `name`, `url`, `uri`, `method`, `icon`, `show_icon`, `sort`, `component`, `redirect`, `hidden`, `keep_alive`, `title`, `permission`, `type`, `parent_id`) VALUES
-(1, 'system', '/system', '', '', 'SettingOutlined', 1, 1, '', '', 0, 0, '系统管理', 'system', 0, NULL);
+(1, 'system', '/system', '', '', 'SettingOutlined', 1, 1, '', '', 0, 0, '系统管理', 'system:entry:view', 0, NULL);
 
 -- 用户管理菜单
 INSERT IGNORE INTO `resource` (`tenant_id`, `name`, `url`, `uri`, `method`, `icon`, `show_icon`, `sort`, `component`, `redirect`, `hidden`, `keep_alive`, `title`, `permission`, `type`, `parent_id`) VALUES
-(1, 'user', '/system/user', '/api/users', 'GET', 'UserOutlined', 1, 1, '/views/user/User.vue', '', 0, 0, '用户管理', 'user:list', 1, 1);
+(1, 'user', '/system/user', '/sys/users', 'GET', 'UserOutlined', 1, 1, '/views/user/User.vue', '', 0, 0, '用户管理', 'system:user:list', 1, 1);
 
 -- 角色管理菜单
 INSERT IGNORE INTO `resource` (`tenant_id`, `name`, `url`, `uri`, `method`, `icon`, `show_icon`, `sort`, `component`, `redirect`, `hidden`, `keep_alive`, `title`, `permission`, `type`, `parent_id`) VALUES
-(1, 'role', '/system/role', '/api/roles', 'GET', 'TeamOutlined', 1, 2, '/views/role/role.vue', '', 0, 0, '角色管理', 'role:list', 1, 1);
+(1, 'role', '/system/role', '/sys/roles', 'GET', 'TeamOutlined', 1, 2, '/views/role/role.vue', '', 0, 0, '角色管理', 'system:role:list', 1, 1);
+
+-- RBAC3 role-constraints authorities (control-plane)
+SET @role_menu_id = (SELECT id FROM `resource` WHERE tenant_id = 1 AND name = 'role' LIMIT 1);
+INSERT IGNORE INTO `resource`
+(`tenant_id`, `name`, `url`, `uri`, `method`, `icon`, `show_icon`, `sort`, `component`, `redirect`, `hidden`, `keep_alive`, `title`, `permission`, `type`, `parent_id`, `enabled`)
+VALUES
+(1, 'role-constraint-view-authority', '', '', '', '', 0, 801, '', '', 1, 0, 'RBAC3 角色约束查看权限', 'system:role:constraint:view', 2, @role_menu_id, 1),
+(1, 'role-constraint-edit-authority', '', '', '', '', 0, 802, '', '', 1, 0, 'RBAC3 角色约束配置权限', 'system:role:constraint:edit', 2, @role_menu_id, 1),
+(1, 'role-constraint-violation-view-authority', '', '', '', '', 0, 803, '', '', 1, 0, 'RBAC3 违例日志查看权限', 'system:role:constraint:violation:view', 2, @role_menu_id, 1);
+
+INSERT IGNORE INTO `role_resource` (`tenant_id`, `role_id`, `resource_id`)
+SELECT
+  1,
+  role_entity.id,
+  resource_entity.id
+FROM `role` role_entity
+JOIN `resource` resource_entity
+  ON resource_entity.tenant_id = 1
+ AND resource_entity.name IN (
+   'role-constraint-view-authority',
+   'role-constraint-edit-authority',
+   'role-constraint-violation-view-authority'
+ )
+WHERE role_entity.tenant_id = 1
+  AND role_entity.code = 'ROLE_ADMIN';
 
 -- 菜单管理菜单
 INSERT IGNORE INTO `resource` (`tenant_id`, `name`, `url`, `uri`, `method`, `icon`, `show_icon`, `sort`, `component`, `redirect`, `hidden`, `keep_alive`, `title`, `permission`, `type`, `parent_id`) VALUES
-(1, 'menu', '/system/menu', '/api/resources/menus', 'GET', 'MenuOutlined', 1, 3, '/views/menu/Menu.vue', '', 0, 0, '菜单管理', 'menu:list', 1, 1);
+(1, 'menu', '/system/menu', '/sys/menus', 'GET', 'MenuOutlined', 1, 3, '/views/menu/Menu.vue', '', 0, 0, '菜单管理', 'system:menu:list', 1, 1);
 
 -- 资源管理菜单
 INSERT IGNORE INTO `resource` (`tenant_id`, `name`, `url`, `uri`, `method`, `icon`, `show_icon`, `sort`, `component`, `redirect`, `hidden`, `keep_alive`, `title`, `permission`, `type`, `parent_id`) VALUES
-(1, 'resource', '/system/resource', '/api/resources', 'GET', 'ApiOutlined', 1, 4, '/views/resource/resource.vue', '', 0, 0, '资源管理', 'resource:list', 1, 1);
+(1, 'resource', '/system/resource', '/sys/resources', 'GET', 'ApiOutlined', 1, 4, '/views/resource/resource.vue', '', 0, 0, '资源管理', 'system:resource:list', 1, 1);
 
 -- 租户管理菜单
 INSERT IGNORE INTO `resource` (`tenant_id`, `name`, `url`, `uri`, `method`, `icon`, `show_icon`, `sort`, `component`, `redirect`, `hidden`, `keep_alive`, `title`, `permission`, `type`, `parent_id`) VALUES
-(1, 'tenant', '/system/tenant', '/sys/tenants', 'GET', 'ApartmentOutlined', 1, 5, '/views/tenant/Tenant.vue', '', 0, 0, '租户管理', 'tenant:list', 1, 1);
+(1, 'tenant', '/system/tenant', '/sys/tenants', 'GET', 'ApartmentOutlined', 1, 5, '/views/tenant/Tenant.vue', '', 0, 0, '租户管理', 'system:tenant:list', 1, 1);
 
 -- 幂等治理菜单（平台管理员）
 INSERT IGNORE INTO `resource` (`tenant_id`, `name`, `url`, `uri`, `method`, `icon`, `show_icon`, `sort`, `component`, `redirect`, `hidden`, `keep_alive`, `title`, `permission`, `type`, `parent_id`) VALUES
@@ -52,38 +77,38 @@ INSERT IGNORE INTO `resource` (`tenant_id`, `name`, `url`, `uri`, `method`, `ico
 INSERT IGNORE INTO `resource`
 (`tenant_id`, `name`, `url`, `uri`, `method`, `icon`, `show_icon`, `sort`, `component`, `redirect`, `hidden`, `keep_alive`, `title`, `permission`, `type`, `parent_id`)
 VALUES
-(1, 'scheduling', '/scheduling', '', '', 'ClusterOutlined', 1, 10, '', '/scheduling/dag', 0, 0, '调度中心', 'scheduling', 0, NULL);
+(1, 'scheduling', '/scheduling', '', '', 'ClusterOutlined', 1, 10, '', '/scheduling/dag', 0, 0, '调度中心', 'scheduling:entry:view', 0, NULL);
 SET @scheduling_dir_id = (SELECT id FROM `resource` WHERE `name` = 'scheduling' LIMIT 1);
 
 -- 调度中心 - DAG 管理
 INSERT IGNORE INTO `resource`
 (`tenant_id`, `name`, `url`, `uri`, `method`, `icon`, `show_icon`, `sort`, `component`, `redirect`, `hidden`, `keep_alive`, `title`, `permission`, `type`, `parent_id`)
 VALUES
-(1, 'schedulingDag', '/scheduling/dag', '/scheduling/dag/list', 'GET', 'BranchesOutlined', 1, 11, '/views/scheduling/Dag.vue', '', 0, 0, 'DAG 管理', 'scheduling:dag:list', 1, @scheduling_dir_id);
+(1, 'schedulingDag', '/scheduling/dag', '/scheduling/dag/list', 'GET', 'BranchesOutlined', 1, 11, '/views/scheduling/Dag.vue', '', 0, 0, 'DAG 管理', 'scheduling:console:view', 1, @scheduling_dir_id);
 
 -- 调度中心 - 任务管理
 INSERT IGNORE INTO `resource`
 (`tenant_id`, `name`, `url`, `uri`, `method`, `icon`, `show_icon`, `sort`, `component`, `redirect`, `hidden`, `keep_alive`, `title`, `permission`, `type`, `parent_id`)
 VALUES
-(1, 'schedulingTask', '/scheduling/task', '/scheduling/task/list', 'GET', 'ProfileOutlined', 1, 12, '/views/scheduling/Task.vue', '', 0, 0, '任务管理', 'scheduling:task:list', 1, @scheduling_dir_id);
+(1, 'schedulingTask', '/scheduling/task', '/scheduling/task/list', 'GET', 'ProfileOutlined', 1, 12, '/views/scheduling/Task.vue', '', 0, 0, '任务管理', 'scheduling:console:view', 1, @scheduling_dir_id);
 
 -- 调度中心 - 任务类型
 INSERT IGNORE INTO `resource`
 (`tenant_id`, `name`, `url`, `uri`, `method`, `icon`, `show_icon`, `sort`, `component`, `redirect`, `hidden`, `keep_alive`, `title`, `permission`, `type`, `parent_id`)
 VALUES
-(1, 'schedulingTaskType', '/scheduling/task-type', '/scheduling/task-type/list', 'GET', 'DatabaseOutlined', 1, 13, '/views/scheduling/TaskType.vue', '', 0, 0, '任务类型', 'scheduling:task-type:list', 1, @scheduling_dir_id);
+(1, 'schedulingTaskType', '/scheduling/task-type', '/scheduling/task-type/list', 'GET', 'DatabaseOutlined', 1, 13, '/views/scheduling/TaskType.vue', '', 0, 0, '任务类型', 'scheduling:console:view', 1, @scheduling_dir_id);
 
 -- 调度中心 - 运行历史
 INSERT IGNORE INTO `resource`
 (`tenant_id`, `name`, `url`, `uri`, `method`, `icon`, `show_icon`, `sort`, `component`, `redirect`, `hidden`, `keep_alive`, `title`, `permission`, `type`, `parent_id`)
 VALUES
-(1, 'schedulingDagHistory', '/scheduling/dag-history', '/scheduling/dag/run/list', 'GET', 'HistoryOutlined', 1, 14, '/views/scheduling/DagHistory.vue', '', 0, 0, '运行历史', 'scheduling:dag-run:list', 1, @scheduling_dir_id);
+(1, 'schedulingDagHistory', '/scheduling/dag-history', '/scheduling/dag/run/list', 'GET', 'HistoryOutlined', 1, 14, '/views/scheduling/DagHistory.vue', '', 0, 0, '运行历史', 'scheduling:console:view', 1, @scheduling_dir_id);
 
 -- 调度中心 - 审计日志
 INSERT IGNORE INTO `resource`
 (`tenant_id`, `name`, `url`, `uri`, `method`, `icon`, `show_icon`, `sort`, `component`, `redirect`, `hidden`, `keep_alive`, `title`, `permission`, `type`, `parent_id`)
 VALUES
-(1, 'schedulingAudit', '/scheduling/audit', '/scheduling/audit/list', 'GET', 'SecurityScanOutlined', 1, 15, '/views/scheduling/Audit.vue', '', 0, 0, '审计日志', 'scheduling:audit:list', 1, @scheduling_dir_id);
+(1, 'schedulingAudit', '/scheduling/audit', '/scheduling/audit/list', 'GET', 'SecurityScanOutlined', 1, 15, '/views/scheduling/Audit.vue', '', 0, 0, '审计日志', 'scheduling:audit:view', 1, @scheduling_dir_id);
 
 -- 插入角色资源关联数据（使用 INSERT IGNORE 避免重复插入）
 INSERT IGNORE INTO `role_resource` (`tenant_id`, `role_id`, `resource_id`) VALUES

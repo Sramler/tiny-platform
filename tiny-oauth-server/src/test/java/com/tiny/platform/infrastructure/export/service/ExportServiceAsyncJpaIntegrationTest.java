@@ -91,7 +91,7 @@ class ExportServiceAsyncJpaIntegrationTest {
         SheetConfig sheet = new SheetConfig();
         sheet.setSheetName("demo_export_usage");
         sheet.setExportType("itExport");
-        sheet.setFilters(new LinkedHashMap<>(Map.of("tenantId", 1)));
+        sheet.setFilters(new LinkedHashMap<>(Map.of("activeTenantId", 1)));
         sheet.setColumns(List.of(
             new ColumnNode("ID", "id", null),
             new ColumnNode("Name", "name", null)
@@ -211,12 +211,12 @@ class ExportServiceAsyncJpaIntegrationTest {
         @Override
         public Iterator<Map<String, Object>> fetchIterator(int batchSize) {
             List<Map<String, Object>> rows = new ArrayList<>();
-            long tenantId = filters != null && filters.get("tenantId") instanceof Number number
+            long activeTenantId = filters != null && filters.get("activeTenantId") instanceof Number number
                 ? number.longValue()
                 : 0L;
-            rows.add(Map.of("id", 1L, "name", "alpha", "tenantId", tenantId));
-            rows.add(Map.of("id", 2L, "name", "beta", "tenantId", tenantId));
-            rows.add(Map.of("id", 3L, "name", "gamma", "tenantId", tenantId));
+            rows.add(Map.of("id", 1L, "name", "alpha", "recordTenantId", activeTenantId));
+            rows.add(Map.of("id", 2L, "name", "beta", "recordTenantId", activeTenantId));
+            rows.add(Map.of("id", 3L, "name", "gamma", "recordTenantId", activeTenantId));
             return rows.iterator();
         }
 

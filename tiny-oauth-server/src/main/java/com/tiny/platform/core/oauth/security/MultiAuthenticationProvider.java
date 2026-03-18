@@ -6,10 +6,12 @@ import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationMetho
 import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.core.oauth.service.SecurityService;
-import com.tiny.platform.core.oauth.tenant.TenantContext;
+import com.tiny.platform.core.oauth.tenant.ActiveTenantResponseSupport;
+import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import com.tiny.platform.infrastructure.core.util.IpUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.LockedException;
@@ -22,7 +24,6 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
-
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -50,6 +51,8 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
     private static final String PROVIDER_LOCAL = "LOCAL";
 
     private final UserRepository userRepository;
+    private final TenantRepository tenantRepository;
+    private final AuthUserResolutionService authUserResolutionService;
     private final UserAuthenticationMethodRepository authenticationMethodRepository;
     private final PasswordEncoder passwordEncoder;
     private final UserDetailsService userDetailsService;
@@ -57,14 +60,19 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
     private final TotpVerificationGuard totpVerificationGuard;
     private final LoginFailurePolicy loginFailurePolicy;
 
+    @Autowired
     public MultiAuthenticationProvider(UserRepository userRepository,
+                                       TenantRepository tenantRepository,
                                        UserAuthenticationMethodRepository authenticationMethodRepository,
                                        PasswordEncoder passwordEncoder,
                                        UserDetailsService userDetailsService,
                                        SecurityService securityService,
+                                       AuthUserResolutionService authUserResolutionService,
                                        TotpVerificationGuard totpVerificationGuard,
                                        LoginFailurePolicy loginFailurePolicy) {
         this.userRepository = userRepository;
+        this.tenantRepository = tenantRepository;
+        this.authUserResolutionService = authUserResolutionService;
         this.authenticationMethodRepository = authenticationMethodRepository;
         this.passwordEncoder = passwordEncoder;
         this.userDetailsService = userDetailsService;
@@ -107,14 +115,37 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
             throw new BadCredentialsException("用户名不能为空");
         }
 
-        Long tenantId = TenantContext.getTenantId();
-        if (tenantId == null) {
+        Long activeTenantId = resolveActiveTenantId();
+        if (logger.isDebugEnabled()) {
+            logger.debug(
+                    "[auth-login] 解析登录租户上下文: username='{}', activeTenantId={}",
+                    username,
+                    activeTenantId
+            );
+        }
+        if (activeTenantId == null) {
+            logger.warn("[auth-login] 缺少登录租户信息，将返回 BadCredentialsException(username='{}')", username);
             throw new BadCredentialsException("缺少租户信息");
+        }
+        if (tenantRepository != null && tenantRepository.isTenantFrozen(activeTenantId)) {
+            logger.warn(
+                    "[auth-login] 活动租户已冻结，将拒绝登录 username='{}', activeTenantId={}",
+                    username,
+                    activeTenantId
+            );
+            throw new BadCredentialsException("租户已冻结");
         }
 
         // 先查用户（单次）
-        User user = userRepository.findUserByUsernameAndTenantId(username, tenantId)
-                .orElseThrow(() -> new BadCredentialsException("用户不存在"));
+        User user = resolveUserInActiveTenant(username, activeTenantId)
+            .orElseThrow(() -> {
+                logger.warn(
+                        "[auth-login] 在活动租户下未找到用户记录，将返回 BadCredentialsException(username='{}', activeTenantId={})",
+                        username,
+                        activeTenantId
+                );
+                return new BadCredentialsException("用户不存在");
+            });
         LocalDateTime now = LocalDateTime.now();
         if (loginFailurePolicy.isManuallyLocked(user)) {
             throw new LockedException(loginFailurePolicy.buildManualLockMessage());
@@ -129,7 +160,7 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
         Supplier<UserDetails> userDetailsSupplier = memoizedUserDetailsLoader(user.getUsername());
 
         // 读取所有已启用的方法（只查询一次）
-        List<UserAuthenticationMethod> enabledMethods = authenticationMethodRepository.findEnabledMethodsByUserId(user.getId(), tenantId);
+        List<UserAuthenticationMethod> enabledMethods = authenticationMethodRepository.findEnabledMethodsByUserId(user.getId(), activeTenantId);
         if (enabledMethods == null) {
             enabledMethods = Collections.emptyList();
         }
@@ -351,6 +382,21 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
         );
         logger.info("用户 {} 完成所有 MFA 因子，认证成功", user.getUsername());
         return finalToken;
+    }
+
+    private Optional<User> resolveUserInActiveTenant(String username, Long activeTenantId) {
+        return requireAuthUserResolutionService().resolveUserRecordInActiveTenant(username, activeTenantId);
+    }
+
+    private Long resolveActiveTenantId() {
+        return ActiveTenantResponseSupport.resolveActiveTenantIdFromRequestContext();
+    }
+
+    private AuthUserResolutionService requireAuthUserResolutionService() {
+        if (authUserResolutionService == null) {
+            throw new IllegalStateException("AuthUserResolutionService 未配置");
+        }
+        return authUserResolutionService;
     }
 
     private void validateNoSkippedPrerequisite(User user,

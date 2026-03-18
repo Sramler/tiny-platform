@@ -7,7 +7,9 @@ import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.scheduling.dto.*;
 import com.tiny.platform.infrastructure.scheduling.exception.SchedulingExceptions;
 import com.tiny.platform.infrastructure.scheduling.model.*;
+import com.tiny.platform.infrastructure.scheduling.security.SchedulingErrorSanitizer;
 import com.tiny.platform.infrastructure.scheduling.repository.*;
+import com.tiny.platform.infrastructure.tenant.guard.TenantLifecycleGuard;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
@@ -52,6 +54,7 @@ public class SchedulingService {
     private final TaskExecutorRegistry taskExecutorRegistry;
     private final JsonSchemaValidationService jsonSchemaValidationService;
     private final ObjectMapper objectMapper;
+    private final TenantLifecycleGuard tenantLifecycleGuard;
 
     public SchedulingService(
             SchedulingTaskTypeRepository taskTypeRepository,
@@ -67,7 +70,8 @@ public class SchedulingService {
             QuartzSchedulerService quartzSchedulerService,
             TaskExecutorRegistry taskExecutorRegistry,
             JsonSchemaValidationService jsonSchemaValidationService,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            TenantLifecycleGuard tenantLifecycleGuard) {
         this.taskTypeRepository = taskTypeRepository;
         this.taskRepository = taskRepository;
         this.dagRepository = dagRepository;
@@ -82,6 +86,7 @@ public class SchedulingService {
         this.taskExecutorRegistry = taskExecutorRegistry;
         this.jsonSchemaValidationService = jsonSchemaValidationService;
         this.objectMapper = objectMapper;
+        this.tenantLifecycleGuard = tenantLifecycleGuard;
     }
 
     /**
@@ -99,11 +104,18 @@ public class SchedulingService {
     }
 
     private Long requireCurrentTenantId() {
-        Long tenantId = TenantContext.getTenantId();
+        Long tenantId = TenantContext.getActiveTenantId();
         if (tenantId == null || tenantId <= 0) {
             throw SchedulingExceptions.operationNotAllowed("当前请求未解析到有效租户上下文");
         }
         return tenantId;
+    }
+
+    /**
+     * 冻结租户写保护：当租户生命周期为 FROZEN 时禁止执行调度写操作。
+     */
+    private void assertTenantNotFrozenForWrite() {
+        tenantLifecycleGuard.assertNotFrozenForWrite("scheduling", "write");
     }
 
     private Authentication currentAuthentication() {
@@ -297,7 +309,7 @@ public class SchedulingService {
     }
 
     private SchedulingExecutionContext buildExecutionContext(
-            Long tenantId,
+            Long executionTenantId,
             Long dagId,
             Long dagRunId,
             Long dagVersionId,
@@ -308,7 +320,7 @@ public class SchedulingService {
             username = fallbackUsername;
         }
         return SchedulingExecutionContext.builder()
-                .tenantId(tenantId)
+                .executionTenantId(executionTenantId)
                 .userId(resolveCurrentUserId())
                 .username(username)
                 .dagId(dagId)
@@ -320,8 +332,8 @@ public class SchedulingService {
 
     private void applyExecutionContextTenant(SchedulingExecutionContext executionContext) {
         TenantContext.clear();
-        if (executionContext != null && executionContext.getTenantId() != null) {
-            TenantContext.setTenantId(executionContext.getTenantId());
+        if (executionContext != null && executionContext.getExecutionTenantId() != null) {
+            TenantContext.setActiveTenantId(executionContext.getExecutionTenantId());
             TenantContext.setTenantSource(TenantContext.SOURCE_UNKNOWN);
         }
     }
@@ -329,7 +341,7 @@ public class SchedulingService {
     private void restoreTenantContext(Long previousTenantId, String previousTenantSource) {
         TenantContext.clear();
         if (previousTenantId != null) {
-            TenantContext.setTenantId(previousTenantId);
+            TenantContext.setActiveTenantId(previousTenantId);
         }
         if (previousTenantSource != null) {
             TenantContext.setTenantSource(previousTenantSource);
@@ -340,6 +352,7 @@ public class SchedulingService {
 
     @Transactional
     public SchedulingTaskType createTaskType(SchedulingTaskTypeCreateUpdateDto dto) {
+        assertTenantNotFrozenForWrite();
         Long tenantId = requireCurrentTenantId();
         if (taskTypeRepository.findByTenantIdAndCode(tenantId, dto.getCode()).isPresent()) {
             throw SchedulingExceptions.conflict("任务类型编码已存在: %s", dto.getCode());
@@ -363,6 +376,7 @@ public class SchedulingService {
 
     @Transactional
     public SchedulingTaskType updateTaskType(Long id, SchedulingTaskTypeCreateUpdateDto dto) {
+        assertTenantNotFrozenForWrite();
         Long tenantId = requireCurrentTenantId();
         SchedulingTaskType taskType = taskTypeRepository.findByIdAndTenantId(id, tenantId)
                 .orElseThrow(() -> {
@@ -395,6 +409,7 @@ public class SchedulingService {
 
     @Transactional
     public void deleteTaskType(Long id) {
+        assertTenantNotFrozenForWrite();
         SchedulingTaskType taskType = requireTaskTypeInTenant(id, requireCurrentTenantId());
         // 检查是否有任务在使用
         long count = taskRepository.count((root, query, cb) -> 
@@ -431,6 +446,7 @@ public class SchedulingService {
 
     @Transactional
     public SchedulingTask createTask(SchedulingTaskCreateUpdateDto dto) {
+        assertTenantNotFrozenForWrite();
         Long tenantId = requireCurrentTenantId();
         if (dto.getTypeId() == null) {
             throw SchedulingExceptions.validation("任务类型(typeId)不能为空");
@@ -465,6 +481,7 @@ public class SchedulingService {
 
     @Transactional
     public SchedulingTask updateTask(Long id, SchedulingTaskCreateUpdateDto dto) {
+        assertTenantNotFrozenForWrite();
         Long tenantId = requireCurrentTenantId();
         SchedulingTask task = requireTaskInTenant(id, tenantId);
         if (dto.getCode() != null) {
@@ -501,6 +518,7 @@ public class SchedulingService {
 
     @Transactional
     public void deleteTask(Long id) {
+        assertTenantNotFrozenForWrite();
         SchedulingTask task = requireTaskInTenant(id, requireCurrentTenantId());
         // 检查是否有 DAG 节点在使用
         List<SchedulingDagTask> usingNodes = dagTaskRepository.findByTaskId(id);
@@ -586,7 +604,7 @@ public class SchedulingService {
         try {
             objectMapper.readTree(json);
         } catch (Exception e) {
-            throw SchedulingExceptions.validation("%s 不是合法 JSON: %s", fieldName, e.getMessage());
+            throw SchedulingExceptions.validation("%s 不是合法 JSON，请检查格式", fieldName);
         }
     }
 
@@ -621,7 +639,8 @@ public class SchedulingService {
         try {
             operation.run();
         } catch (Exception e) {
-            throw SchedulingExceptions.systemError(actionDescription + ": %s", e, e.getMessage());
+            logger.error("{} 失败", actionDescription, e);
+            throw SchedulingExceptions.systemError("操作失败，请稍后重试", e);
         }
     }
 
@@ -664,7 +683,7 @@ public class SchedulingService {
             quartzSchedulerService.triggerDagNow(dag, executionContext);
         } catch (Exception e) {
             markDagRunTriggerFailed(dagRunId, failureActionDescription, e);
-            throw SchedulingExceptions.systemError(failureActionDescription + ": %s", e, e.getMessage());
+            throw SchedulingExceptions.systemError("触发执行失败，请稍后重试", e);
         }
     }
 
@@ -688,6 +707,7 @@ public class SchedulingService {
 
     @Transactional
     public SchedulingDag createDag(SchedulingDagCreateUpdateDto dto) {
+        assertTenantNotFrozenForWrite();
         Long tenantId = requireCurrentTenantId();
         if (dto.getCode() != null && !dto.getCode().isEmpty()) {
             if (dagRepository.findByTenantIdAndCode(tenantId, dto.getCode()).isPresent()) {
@@ -727,6 +747,7 @@ public class SchedulingService {
 
     @Transactional
     public SchedulingDag updateDag(Long id, SchedulingDagCreateUpdateDto dto) {
+        assertTenantNotFrozenForWrite();
         SchedulingDag dag = requireDagInTenant(id, requireCurrentTenantId());
         if (dto.getCode() != null && !dto.getCode().equals(dag.getCode())) {
             if (dagRepository.findByTenantIdAndCode(dag.getTenantId(), dto.getCode()).isPresent()) {
@@ -764,6 +785,7 @@ public class SchedulingService {
 
     @Transactional
     public void deleteDag(Long id) {
+        assertTenantNotFrozenForWrite();
         SchedulingDag dag = requireDagInTenant(id, requireCurrentTenantId());
         if (dagRunRepository.countByDagId(id) > 0) {
             throw SchedulingExceptions.operationNotAllowed("该DAG已有运行历史，无法删除");
@@ -810,8 +832,11 @@ public class SchedulingService {
         if (dag == null || dag.getId() == null) {
             return dag;
         }
+        Long tenantId = dag.getTenantId();
         dag.setCurrentVersionId(
-                dagVersionRepository.findByDagIdAndStatus(dag.getId(), "ACTIVE")
+                (tenantId != null
+                        ? dagVersionRepository.findByDagIdAndStatusAndTenantId(dag.getId(), "ACTIVE", tenantId)
+                        : dagVersionRepository.findByDagIdAndStatus(dag.getId(), "ACTIVE"))
                         .map(SchedulingDagVersion::getId)
                         .orElse(null));
         List<SchedulingDagRun> relevantRuns = dagRunRepository.findByDagIdInAndStatusInOrderByIdDesc(
@@ -837,7 +862,8 @@ public class SchedulingService {
         if (dagIds.isEmpty()) {
             return;
         }
-        Map<Long, Long> activeVersionByDagId = dagVersionRepository.findByDagIdInAndStatus(dagIds, "ACTIVE")
+        Long currentTenantId = requireCurrentTenantId();
+        Map<Long, Long> activeVersionByDagId = dagVersionRepository.findByDagIdInAndStatusAndTenantId(dagIds, "ACTIVE", currentTenantId)
                 .stream()
                 .collect(Collectors.toMap(
                         SchedulingDagVersion::getDagId,
@@ -862,12 +888,13 @@ public class SchedulingService {
     @Transactional
     public SchedulingDagVersion createDagVersion(Long dagId, SchedulingDagVersionCreateUpdateDto dto) {
         Long tenantId = requireCurrentTenantId();
-        requireDagInTenant(dagId, tenantId);
+        SchedulingDag dag = requireDagInTenant(dagId, tenantId);
         Integer maxVersion = dagVersionRepository.findMaxVersionNoByDagId(dagId);
         int nextVersion = (maxVersion != null ? maxVersion : 0) + 1;
         String normalizedStatus = normalizeDagVersionStatus(dto.getStatus());
         SchedulingDagVersion version = new SchedulingDagVersion();
         version.setDagId(dagId);
+        version.setTenantId(dag.getTenantId());
         version.setVersionNo(nextVersion);
         version.setStatus(normalizedStatus != null ? normalizedStatus : "DRAFT");
         version.setDefinition(normalizeJsonColumn(dto.getDefinition()));
@@ -875,7 +902,20 @@ public class SchedulingService {
         if ("ACTIVE".equals(version.getStatus())) {
             activateDagVersion(dagId, version);
         }
-        SchedulingDagVersion saved = dagVersionRepository.save(version);
+        SchedulingDagVersion saved;
+        try {
+            saved = dagVersionRepository.save(version);
+        } catch (org.springframework.dao.DataIntegrityViolationException e) {
+            String message = e.getMostSpecificCause() != null ? e.getMostSpecificCause().getMessage() : e.getMessage();
+            if (message != null && message.contains("uk_scheduling_dag_version_dag_version")) {
+                throw SchedulingExceptions.conflict("当前 DAG 版本号已被其他请求占用，请刷新后重试");
+            }
+            logger.error("保存 DAG 版本时发生数据约束异常", e);
+            throw SchedulingExceptions.systemError("数据保存失败，请稍后重试", e);
+        }
+        if ("ACTIVE".equals(saved.getStatus())) {
+            syncDagCronToQuartz(dag);
+        }
         recordAudit("dag_version", saved.getId(), "CREATE", saved, tenantId);
         return saved;
     }
@@ -883,7 +923,9 @@ public class SchedulingService {
     @Transactional
     public SchedulingDagVersion updateDagVersion(Long dagId, Long versionId, SchedulingDagVersionCreateUpdateDto dto) {
         Long tenantId = requireCurrentTenantId();
+        SchedulingDag dag = requireDagInTenant(dagId, tenantId);
         SchedulingDagVersion version = requireDagVersionInTenant(dagId, versionId, tenantId);
+        String originalStatus = version.getStatus();
         if (dto.getDefinition() != null) {
             ensureDagVersionMutable(version);
             version.setDefinition(normalizeJsonColumn(dto.getDefinition()));
@@ -897,6 +939,9 @@ public class SchedulingService {
             }
         }
         SchedulingDagVersion saved = dagVersionRepository.save(version);
+        if (dto.getStatus() != null && (Objects.equals(originalStatus, "ACTIVE") || Objects.equals(saved.getStatus(), "ACTIVE"))) {
+            syncDagCronToQuartz(dag);
+        }
         recordAudit("dag_version", saved.getId(), "UPDATE", saved, tenantId);
         return saved;
     }
@@ -906,13 +951,14 @@ public class SchedulingService {
         if (dagRepository.findByIdAndTenantId(dagId, tenantId).isEmpty()) {
             return Optional.empty();
         }
-        return dagVersionRepository.findById(versionId)
+        return dagVersionRepository.findByIdAndTenantId(versionId, tenantId)
                 .filter(v -> Objects.equals(v.getDagId(), dagId));
     }
 
     public List<SchedulingDagVersion> listDagVersions(Long dagId) {
-        requireDagInTenant(dagId, requireCurrentTenantId());
-        return dagVersionRepository.findByDagId(dagId);
+        Long tenantId = requireCurrentTenantId();
+        requireDagInTenant(dagId, tenantId);
+        return dagVersionRepository.findByDagIdAndTenantId(dagId, tenantId);
     }
 
     // ==================== DAG Node 相关 ====================
@@ -927,6 +973,7 @@ public class SchedulingService {
         }
         SchedulingDagTask node = new SchedulingDagTask();
         node.setDagVersionId(versionId);
+        node.setTenantId(tenantId);
         node.setNodeCode(dto.getNodeCode());
         node.setTaskId(dto.getTaskId());
         node.setName(dto.getName());
@@ -990,35 +1037,45 @@ public class SchedulingService {
         if (dagRepository.findByIdAndTenantId(dagId, tenantId).isEmpty()) {
             return Optional.empty();
         }
-        return dagVersionRepository.findById(versionId)
+        return dagVersionRepository.findByIdAndTenantId(versionId, tenantId)
                 .filter(v -> Objects.equals(v.getDagId(), dagId))
-                .flatMap(v -> dagTaskRepository.findById(nodeId)
+                .flatMap(v -> dagTaskRepository.findByIdAndTenantId(nodeId, tenantId)
                         .filter(n -> Objects.equals(n.getDagVersionId(), versionId)));
     }
 
     public List<SchedulingDagTask> getDagNodes(Long dagId, Long versionId) {
-        requireDagVersionInTenant(dagId, versionId, requireCurrentTenantId());
-        return dagTaskRepository.findByDagVersionId(versionId);
+        Long tenantId = requireCurrentTenantId();
+        if (dagRepository.findByIdAndTenantId(dagId, tenantId).isEmpty()) {
+            throw SchedulingExceptions.notFound("DAG不存在: %s", dagId);
+        }
+        dagVersionRepository.findByIdAndTenantId(versionId, tenantId)
+                .filter(version -> Objects.equals(version.getDagId(), dagId))
+                .orElseThrow(() -> SchedulingExceptions.notFound("DAG版本不存在: %s", versionId));
+        return dagTaskRepository.findByDagVersionIdAndTenantId(versionId, tenantId);
     }
 
     public List<SchedulingDagTask> getUpstreamNodes(Long dagId, Long versionId, Long nodeId) {
+        Long tenantId = requireCurrentTenantId();
         SchedulingDagTask node = getDagNode(dagId, versionId, nodeId)
                 .orElseThrow(() -> SchedulingExceptions.notFound("节点不存在: %s", nodeId));
-        List<String> upstreamCodes = dagEdgeRepository.findByDagVersionIdAndToNodeCode(versionId, node.getNodeCode()).stream()
+        List<String> upstreamCodes = dagEdgeRepository
+                .findByDagVersionIdAndToNodeCodeAndTenantId(versionId, node.getNodeCode(), tenantId).stream()
                 .map(SchedulingDagEdge::getFromNodeCode)
                 .collect(Collectors.toList());
-        return dagTaskRepository.findByDagVersionId(versionId).stream()
+        return dagTaskRepository.findByDagVersionIdAndTenantId(versionId, tenantId).stream()
                 .filter(n -> upstreamCodes.contains(n.getNodeCode()))
                 .collect(Collectors.toList());
     }
 
     public List<SchedulingDagTask> getDownstreamNodes(Long dagId, Long versionId, Long nodeId) {
+        Long tenantId = requireCurrentTenantId();
         SchedulingDagTask node = getDagNode(dagId, versionId, nodeId)
                 .orElseThrow(() -> SchedulingExceptions.notFound("节点不存在: %s", nodeId));
-        List<String> downstreamCodes = dagEdgeRepository.findByDagVersionIdAndFromNodeCode(versionId, node.getNodeCode()).stream()
+        List<String> downstreamCodes = dagEdgeRepository
+                .findByDagVersionIdAndFromNodeCodeAndTenantId(versionId, node.getNodeCode(), tenantId).stream()
                 .map(SchedulingDagEdge::getToNodeCode)
                 .collect(Collectors.toList());
-        return dagTaskRepository.findByDagVersionId(versionId).stream()
+        return dagTaskRepository.findByDagVersionIdAndTenantId(versionId, tenantId).stream()
                 .filter(n -> downstreamCodes.contains(n.getNodeCode()))
                 .collect(Collectors.toList());
     }
@@ -1051,6 +1108,7 @@ public class SchedulingService {
         }
         SchedulingDagEdge edge = new SchedulingDagEdge();
         edge.setDagVersionId(versionId);
+        edge.setTenantId(tenantId);
         edge.setFromNodeCode(dto.getFromNodeCode());
         edge.setToNodeCode(dto.getToNodeCode());
         edge.setCondition(normalizeJsonColumn(dto.getCondition()));
@@ -1075,8 +1133,14 @@ public class SchedulingService {
     }
 
     public List<SchedulingDagEdge> getDagEdges(Long dagId, Long versionId) {
-        requireDagVersionInTenant(dagId, versionId, requireCurrentTenantId());
-        return dagEdgeRepository.findByDagVersionId(versionId);
+        Long tenantId = requireCurrentTenantId();
+        if (dagRepository.findByIdAndTenantId(dagId, tenantId).isEmpty()) {
+            throw SchedulingExceptions.notFound("DAG不存在: %s", dagId);
+        }
+        dagVersionRepository.findByIdAndTenantId(versionId, tenantId)
+                .filter(version -> Objects.equals(version.getDagId(), dagId))
+                .orElseThrow(() -> SchedulingExceptions.notFound("DAG版本不存在: %s", versionId));
+        return dagEdgeRepository.findByDagVersionIdAndTenantId(versionId, tenantId);
     }
 
     /**
@@ -1125,7 +1189,7 @@ public class SchedulingService {
             throw SchedulingExceptions.operationNotAllowed("DAG已禁用，无法触发");
         }
         // 获取当前激活版本
-        SchedulingDagVersion version = dagVersionRepository.findByDagIdAndStatus(dagId, "ACTIVE")
+        SchedulingDagVersion version = dagVersionRepository.findByDagIdAndStatusAndTenantId(dagId, "ACTIVE", dag.getTenantId())
                 .orElseThrow(() -> SchedulingExceptions.notFound("DAG没有激活版本"));
         String currentActor = resolveCurrentActor();
         
@@ -1251,7 +1315,7 @@ public class SchedulingService {
     @Transactional
     public void executeDag(Long dagId, Long dagRunId, Long dagVersionId) {
         executeDag(SchedulingExecutionContext.builder()
-                .tenantId(TenantContext.getTenantId())
+                .executionTenantId(TenantContext.getActiveTenantId())
                 .dagId(dagId)
                 .dagRunId(dagRunId)
                 .dagVersionId(dagVersionId)
@@ -1264,7 +1328,7 @@ public class SchedulingService {
         if (executionContext == null || executionContext.getDagId() == null) {
             throw SchedulingExceptions.validation("执行 DAG 缺少 dagId");
         }
-        Long previousTenantId = TenantContext.getTenantId();
+        Long previousTenantId = TenantContext.getActiveTenantId();
         String previousTenantSource = TenantContext.getTenantSource();
         try {
             applyExecutionContextTenant(executionContext);
@@ -1278,25 +1342,25 @@ public class SchedulingService {
         Long dagId = executionContext.getDagId();
         Long dagRunId = executionContext.getDagRunId();
         Long dagVersionId = executionContext.getDagVersionId();
-        Long tenantId = executionContext.getTenantId();
+        Long executionTenantId = executionContext.getExecutionTenantId();
         boolean isManualTrigger = (dagRunId != null && dagRunId > 0);
-        logger.info("开始执行 DAG, tenantId: {}, dagId: {}, dagRunId: {}, triggerType: {}, isManualTrigger: {}",
-                tenantId,
+        logger.info("开始执行 DAG, executionTenantId: {}, dagId: {}, dagRunId: {}, triggerType: {}, isManualTrigger: {}",
+                executionTenantId,
                 dagId,
                 dagRunId,
                 executionContext.getTriggerType(),
                 isManualTrigger);
 
-        SchedulingDag dag = tenantId != null
-                ? requireDagInTenant(dagId, tenantId)
+        SchedulingDag dag = executionTenantId != null
+                ? requireDagInTenant(dagId, executionTenantId)
                 : dagRepository.findById(dagId)
                         .orElseThrow(() -> SchedulingExceptions.notFound("DAG不存在: %s", dagId));
 
         if (!dag.getEnabled()) {
             logger.warn("DAG已禁用，跳过执行, dagId: {}", dagId);
             if (isManualTrigger && dagRunId != null && dagRunId > 0) {
-                Optional<SchedulingDagRun> existingRun = tenantId != null
-                        ? dagRunRepository.findByIdAndTenantId(dagRunId, tenantId)
+                Optional<SchedulingDagRun> existingRun = executionTenantId != null
+                        ? dagRunRepository.findByIdAndTenantId(dagRunId, executionTenantId)
                         : dagRunRepository.findById(dagRunId);
                 existingRun.ifPresent(run -> {
                     run.setStatus("CANCELLED");
@@ -1315,8 +1379,8 @@ public class SchedulingService {
             if (dagRunId == null || dagRunId <= 0) {
                 throw SchedulingExceptions.validation("手动触发时 dagRunId 不能为空");
             }
-            run = tenantId != null
-                    ? dagRunRepository.findByIdAndTenantId(dagRunId, tenantId)
+            run = executionTenantId != null
+                    ? dagRunRepository.findByIdAndTenantId(dagRunId, executionTenantId)
                         .orElseThrow(() -> SchedulingExceptions.notFound("DAG运行实例不存在: %s", dagRunId))
                     : dagRunRepository.findById(dagRunId)
                         .orElseThrow(() -> SchedulingExceptions.notFound("DAG运行实例不存在: %s", dagRunId));
@@ -1324,8 +1388,8 @@ public class SchedulingService {
             if (versionId == null) {
                 throw SchedulingExceptions.validation("DAG版本ID不能为空");
             }
-            version = tenantId != null
-                    ? requireDagVersionInTenant(dagId, versionId, tenantId)
+            version = executionTenantId != null
+                    ? requireDagVersionInTenant(dagId, versionId, executionTenantId)
                     : dagVersionRepository.findById(versionId)
                         .orElseThrow(() -> SchedulingExceptions.notFound("DAG版本不存在: %s", versionId));
 
@@ -1335,8 +1399,8 @@ public class SchedulingService {
             run = dagRunRepository.save(run);
         } else {
             // 定时触发：创建新的 dagRun
-                version = dagVersionRepository.findByDagIdAndStatus(dagId, "ACTIVE")
-                        .orElseThrow(() -> SchedulingExceptions.notFound("DAG没有激活版本: %s", dagId));
+            version = dagVersionRepository.findByDagIdAndStatusAndTenantId(dagId, "ACTIVE", dag.getTenantId())
+                    .orElseThrow(() -> SchedulingExceptions.notFound("DAG没有激活版本: %s", dagId));
 
             run = new SchedulingDagRun();
             run.setDagId(dagId);
@@ -1365,15 +1429,21 @@ public class SchedulingService {
             SchedulingDagRun run,
             SchedulingDagVersion version) {
 
-        // 1. 获取版本下的所有节点
-        List<SchedulingDagTask> nodes = dagTaskRepository.findByDagVersionId(version.getId());
+        // 1. 获取版本下的所有节点（版本与 run 均有租户时按租户过滤，否则兼容旧数据/测试）
+        Long tenantId = run.getTenantId();
+        boolean useTenantFilter = tenantId != null && version.getTenantId() != null;
+        List<SchedulingDagTask> nodes = useTenantFilter
+                ? dagTaskRepository.findByDagVersionIdAndTenantId(version.getId(), tenantId)
+                : dagTaskRepository.findByDagVersionId(version.getId());
         if (nodes.isEmpty()) {
             logger.warn("DAG版本 {} 没有节点", version.getId());
             return List.of();
         }
 
-        // 2. 获取所有边（依赖关系）
-        List<SchedulingDagEdge> edges = dagEdgeRepository.findByDagVersionId(version.getId());
+        // 2. 获取所有边（依赖关系）；同上
+        List<SchedulingDagEdge> edges = useTenantFilter
+                ? dagEdgeRepository.findByDagVersionIdAndTenantId(version.getId(), tenantId)
+                : dagEdgeRepository.findByDagVersionId(version.getId());
 
         // 3. 构建依赖图：找出每个节点的上游节点
         Map<String, List<String>> upstreamMap = new HashMap<>();
@@ -1758,8 +1828,9 @@ public class SchedulingService {
     }
 
     public List<SchedulingTaskInstance> getDagRunNodes(Long dagId, Long runId) {
-        requireDagRunInTenant(dagId, runId, requireCurrentTenantId());
-        return taskInstanceRepository.findByDagRunId(runId);
+        Long tenantId = requireCurrentTenantId();
+        requireDagRunInTenant(dagId, runId, tenantId);
+        return taskInstanceRepository.findByDagRunIdAndTenantId(runId, tenantId);
     }
 
     public Optional<SchedulingTaskInstance> getDagRunNode(Long dagId, Long runId, Long nodeId) {
@@ -1771,11 +1842,13 @@ public class SchedulingService {
                 .filter(instance -> Objects.equals(instance.getDagRunId(), runId) && Objects.equals(instance.getDagId(), dagId));
     }
 
+    /**
+     * 返回任务实例执行摘要，供前端展示。不暴露内部 logPath、stackTrace、未脱敏异常信息。
+     */
     public Optional<String> getTaskInstanceLog(Long instanceId) {
         Long tenantId = requireCurrentTenantId();
         return taskInstanceRepository.findByIdAndTenantId(instanceId, tenantId)
                 .map(instance -> {
-                    // 从历史记录中获取日志
                     Optional<SchedulingTaskHistory> latestHistory =
                             taskHistoryRepository.findTopByTaskInstanceIdAndTenantIdOrderByIdDesc(instanceId, tenantId);
                     if (latestHistory.isEmpty()) {
@@ -1783,14 +1856,14 @@ public class SchedulingService {
                     }
                     SchedulingTaskHistory latest = latestHistory.get();
                     if (latest.getLogPath() != null) {
-                        return "日志路径: " + latest.getLogPath();
+                        return "执行日志已落盘，详情请通过运维侧查看";
                     }
                     if ("SUCCESS".equals(latest.getStatus())) {
-                        return latest.getResult() != null ? latest.getResult() : "执行成功";
-                    } else {
-                        return (latest.getErrorMessage() != null ? latest.getErrorMessage() : "") + 
-                               (latest.getStackTrace() != null ? "\n" + latest.getStackTrace() : "");
+                        return latest.getResult() != null
+                                ? SchedulingErrorSanitizer.sanitizeForLogResponse(latest.getResult())
+                                : "执行成功";
                     }
+                    return SchedulingErrorSanitizer.sanitizeForPersistence(latest.getErrorMessage());
                 });
     }
 
@@ -1852,7 +1925,7 @@ public class SchedulingService {
     }
 
     private boolean hasActiveDagVersion(Long dagId) {
-        return dagVersionRepository.findByDagIdAndStatus(dagId, "ACTIVE").isPresent();
+        return dagVersionRepository.findByDagIdAndStatusAndTenantId(dagId, "ACTIVE", requireCurrentTenantId()).isPresent();
     }
 
     private boolean isCronSchedulingActive(Boolean dagEnabled, Boolean cronEnabled, String cronExpression) {

@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
   routerReplace: vi.fn(),
   signinRedirectCallback: vi.fn(),
   removeUser: vi.fn(),
+  getActiveTenantId: vi.fn(),
+  withActiveTenantQuery: vi.fn((query, activeTenantId) => (activeTenantId ? { ...query, activeTenantId: String(activeTenantId) } : { ...query })),
   persistentLogger: {
     debug: vi.fn(),
     error: vi.fn(),
@@ -39,8 +41,10 @@ vi.mock('@/utils/logger', () => ({
 }))
 
 vi.mock('@/utils/tenant', () => ({
+  getActiveTenantId: mocks.getActiveTenantId,
   syncTenantContextFromClaims: mocks.syncTenantContextFromClaims,
   syncTenantContextFromAccessToken: mocks.syncTenantContextFromAccessToken,
+  withActiveTenantQuery: mocks.withActiveTenantQuery,
 }))
 
 import OidcCallback from '@/views/OidcCallback.vue'
@@ -60,9 +64,12 @@ describe('OidcCallback.vue', () => {
     mocks.persistentLogger.debug.mockReset()
     mocks.persistentLogger.error.mockReset()
     mocks.persistentLogger.info.mockReset()
+    mocks.getActiveTenantId.mockReset()
     mocks.syncTenantContextFromClaims.mockReset()
     mocks.syncTenantContextFromAccessToken.mockReset()
+    mocks.withActiveTenantQuery.mockClear()
     mocks.removeUser.mockResolvedValue(undefined)
+    mocks.getActiveTenantId.mockReturnValue(null)
     window.history.replaceState({}, '', '/callback')
   })
 
@@ -72,9 +79,10 @@ describe('OidcCallback.vue', () => {
 
   it('should sanitize return url and redirect after successful callback', async () => {
     window.history.replaceState({}, '', '/callback?code=abc&state=xyz')
+    mocks.getActiveTenantId.mockReturnValue('1')
     mocks.signinRedirectCallback.mockResolvedValue({
       state: { returnUrl: 'https://evil.com/callback' },
-      profile: { tenantId: 1, iss: 'http://localhost/issuer/tiny' },
+      profile: { activeTenantId: 1, iss: 'http://localhost/issuer/tiny' },
       access_token: 'access-token',
       refresh_token: 'refresh-token',
       scope: 'openid profile',
@@ -89,7 +97,10 @@ describe('OidcCallback.vue', () => {
     expect(mocks.signinRedirectCallback).toHaveBeenCalledTimes(1)
     expect(mocks.syncTenantContextFromClaims).toHaveBeenCalledTimes(1)
     expect(mocks.syncTenantContextFromAccessToken).toHaveBeenCalledWith('access-token')
-    expect(mocks.routerReplace).toHaveBeenCalledWith('/')
+    expect(mocks.routerReplace).toHaveBeenCalledWith({
+      path: '/',
+      query: { activeTenantId: '1' },
+    })
   })
 
   it('should show state mismatch error and redirect to login', async () => {
@@ -127,9 +138,14 @@ describe('OidcCallback.vue', () => {
   })
 
   it('should redirect home when current page is not an oidc callback', async () => {
+    mocks.getActiveTenantId.mockReturnValue('9')
+
     mount(OidcCallback)
     await flushPromises()
 
-    expect(mocks.routerReplace).toHaveBeenCalledWith('/')
+    expect(mocks.routerReplace).toHaveBeenCalledWith({
+      path: '/',
+      query: { activeTenantId: '9' },
+    })
   })
 })

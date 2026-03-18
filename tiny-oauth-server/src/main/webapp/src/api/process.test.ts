@@ -5,11 +5,19 @@ const requestMocks = vi.hoisted(() => ({
   post: vi.fn(),
 }))
 
+const tenantMocks = vi.hoisted(() => ({
+  syncTenantContextFromClaims: vi.fn(),
+}))
+
 vi.mock('@/utils/request', () => ({
   default: {
     get: requestMocks.get,
     post: requestMocks.post,
   },
+}))
+
+vi.mock('@/utils/tenant', () => ({
+  syncTenantContextFromClaims: tenantMocks.syncTenantContextFromClaims,
 }))
 
 describe('process API (read & validate)', () => {
@@ -18,13 +26,13 @@ describe('process API (read & validate)', () => {
   })
 
   describe('processApi', () => {
-    it('should request process definitions with optional tenantId', async () => {
+    it('should request process definitions with optional recordTenantId', async () => {
       requestMocks.get.mockResolvedValue([{ id: 'def-1', key: 'demo', name: 'Demo' }])
       const { processApi } = await import('@/api/process')
 
       const result = await processApi.getProcessDefinitions('tenant-1')
 
-      expect(requestMocks.get).toHaveBeenCalledWith('/process/definitions', { params: { tenantId: 'tenant-1' } })
+      expect(requestMocks.get).toHaveBeenCalledWith('/process/definitions', { params: { recordTenantId: 'tenant-1' } })
       expect(result).toHaveLength(1)
       expect(result[0]?.key).toBe('demo')
     })
@@ -53,13 +61,13 @@ describe('process API (read & validate)', () => {
   })
 
   describe('deploymentApi', () => {
-    it('should request deployments with optional tenantId', async () => {
+    it('should request deployments with optional recordTenantId', async () => {
       requestMocks.get.mockResolvedValue([{ id: 'dep-1', name: 'Deploy 1' }])
       const { deploymentApi } = await import('@/api/process')
 
       const result = await deploymentApi.getDeployments('tenant-1')
 
-      expect(requestMocks.get).toHaveBeenCalledWith('/process/deployments', { params: { tenantId: 'tenant-1' } })
+      expect(requestMocks.get).toHaveBeenCalledWith('/process/deployments', { params: { recordTenantId: 'tenant-1' } })
       expect(result).toHaveLength(1)
     })
   })
@@ -72,7 +80,7 @@ describe('process API (read & validate)', () => {
       const result = await instanceApi.getProcessInstances('tenant-1', 'active')
 
       expect(requestMocks.get).toHaveBeenCalledWith('/process/instances', {
-        params: { tenantId: 'tenant-1', state: 'active' },
+        params: { recordTenantId: 'tenant-1', state: 'active' },
       })
       expect(result).toHaveLength(1)
     })
@@ -89,14 +97,14 @@ describe('process API (read & validate)', () => {
   })
 
   describe('taskApi', () => {
-    it('should request tasks with optional assignee and tenantId', async () => {
+    it('should request tasks with optional assignee', async () => {
       requestMocks.get.mockResolvedValue([{ id: 'task-1', assignee: 'alice' }])
       const { taskApi } = await import('@/api/process')
 
-      const result = await taskApi.getTasks('alice', 'tenant-1')
+      const result = await taskApi.getTasks('alice')
 
       expect(requestMocks.get).toHaveBeenCalledWith('/process/tasks', {
-        params: { assignee: 'alice', tenantId: 'tenant-1' },
+        params: { assignee: 'alice' },
       })
       expect(result).toHaveLength(1)
     })
@@ -110,7 +118,7 @@ describe('process API (read & validate)', () => {
       await historyApi.getHistoricInstances('tenant-1')
 
       expect(requestMocks.get).toHaveBeenCalledWith('/process/history/instances', {
-        params: { tenantId: 'tenant-1' },
+        params: { recordTenantId: 'tenant-1' },
       })
     })
 

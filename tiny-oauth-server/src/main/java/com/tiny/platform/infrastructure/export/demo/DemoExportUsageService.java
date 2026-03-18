@@ -81,7 +81,7 @@ public class DemoExportUsageService {
     }
 
     public Page<DemoExportUsageEntity> search(
-            Long tenantId,
+            Long activeTenantId,
             String productCode,
             String status,
             LocalDate startDate,
@@ -90,8 +90,8 @@ public class DemoExportUsageService {
 
         Specification<DemoExportUsageEntity> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
-            if (tenantId != null) {
-                predicates.add(cb.equal(root.get("tenantId"), tenantId));
+            if (activeTenantId != null) {
+                predicates.add(cb.equal(root.get("tenantId"), activeTenantId));
             }
             if (productCode != null && !productCode.isBlank()) {
                 predicates.add(cb.equal(root.get("productCode"), productCode));
@@ -122,18 +122,18 @@ public class DemoExportUsageService {
 
     /**
      * 调用存储过程生成测试数据 sp_generate_demo_export_usage
-     * @param tenantId 租户ID
+     * @param activeTenantId 当前活动租户ID
      * @param days 生成天数
      * @param rowsPerDay 每天生成行数
      * @param targetRows 目标总行数（0 表示不限制）
      * @param clearExisting 是否清空现有数据（true=清空，false=保留）
      */
-    public int generateDemoData(Long tenantId, int days, int rowsPerDay, int targetRows, boolean clearExisting) {
+    public int generateDemoData(Long activeTenantId, int days, int rowsPerDay, int targetRows, boolean clearExisting) {
         long start = System.currentTimeMillis();
 
         // 简单防御性校验
-        if (tenantId == null || tenantId <= 0) {
-            tenantId = 1L;
+        if (activeTenantId == null || activeTenantId <= 0) {
+            activeTenantId = 1L;
         }
         if (days <= 0) days = 7;
         if (rowsPerDay <= 0) rowsPerDay = 2000;
@@ -141,7 +141,7 @@ public class DemoExportUsageService {
 
         // 将 boolean 转换为 TINYINT(1)：true=1, false=0
         int clearFlag = clearExisting ? 1 : 0;
-        jdbcTemplate.update("CALL sp_generate_demo_export_usage(?, ?, ?, ?, ?)", tenantId, days, rowsPerDay, targetRows, clearFlag);
+        jdbcTemplate.update("CALL sp_generate_demo_export_usage(?, ?, ?, ?, ?)", activeTenantId, days, rowsPerDay, targetRows, clearFlag);
 
         long elapsed = System.currentTimeMillis() - start;
 
@@ -152,10 +152,10 @@ public class DemoExportUsageService {
     /**
      * 清空所有测试数据
      */
-    public void clearByTenantId(Long tenantId) {
-        if (tenantId == null || tenantId <= 0) {
-            throw new IllegalArgumentException("tenantId is required");
+    public void clearByActiveTenantId(Long activeTenantId) {
+        if (activeTenantId == null || activeTenantId <= 0) {
+            throw new IllegalArgumentException("activeTenantId is required");
         }
-        repository.deleteByTenantId(tenantId);
+        repository.deleteByTenantId(activeTenantId);
     }
 }

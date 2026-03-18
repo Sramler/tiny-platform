@@ -16,6 +16,18 @@ const routerMocks = vi.hoisted(() => ({
   push: vi.fn(),
 }))
 
+const routeState = vi.hoisted(() => ({
+  query: { activeTenantId: '9' } as Record<string, string>,
+}))
+
+const tenantMocks = vi.hoisted(() => ({
+  getActiveTenantId: vi.fn(),
+}))
+
+const authMocks = vi.hoisted(() => ({
+  authUser: { value: null as { access_token?: string | null } | null },
+}))
+
 const uiMocks = vi.hoisted(() => ({
   messageError: vi.fn(),
   messageSuccess: vi.fn(),
@@ -34,11 +46,26 @@ vi.mock('@/api/scheduling', () => ({
 
 vi.mock('vue-router', () => ({
   useRouter: () => routerMocks,
+  useRoute: () => routeState,
+}))
+
+vi.mock('@/auth/auth', () => ({
+  useAuth: () => ({
+    user: authMocks.authUser,
+  }),
 }))
 
 vi.mock('@/utils/debounce', () => ({
   throttle: (fn: (...args: unknown[]) => unknown) => fn,
 }))
+
+vi.mock('@/utils/tenant', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/utils/tenant')>()
+  return {
+    ...actual,
+    getActiveTenantId: tenantMocks.getActiveTenantId,
+  }
+})
 
 vi.mock('ant-design-vue', () => ({
   message: {
@@ -199,9 +226,20 @@ function findButtonByText(wrapper: ReturnType<typeof mountView> | ReturnType<typ
   return wrapper.findAll('button').find((button) => button.text().includes(text))
 }
 
+function createToken(authorities: string[]) {
+  const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')
+  const payload = Buffer.from(JSON.stringify({ authorities })).toString('base64url')
+  return `${header}.${payload}.signature`
+}
+
 describe('Dag.vue', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    routeState.query = { activeTenantId: '9' }
+    tenantMocks.getActiveTenantId.mockReturnValue('9')
+    authMocks.authUser.value = {
+      access_token: createToken(['scheduling:console:config', 'scheduling:run:control']),
+    }
     apiMocks.createDag.mockResolvedValue({ id: 999 })
     apiMocks.updateDag.mockResolvedValue({ id: 999 })
     apiMocks.deleteDag.mockResolvedValue(undefined)
@@ -210,9 +248,9 @@ describe('Dag.vue', () => {
     apiMocks.retryDag.mockResolvedValue(undefined)
     apiMocks.dagList.mockResolvedValue({
       records: [
-        { id: 1, code: 'draft-only', name: 'Draft Only', enabled: true, currentVersionId: null, hasRunningRun: false, hasRetryableRun: false },
-        { id: 2, code: 'running-dag', name: 'Running DAG', enabled: true, currentVersionId: 12, hasRunningRun: true, hasRetryableRun: false },
-        { id: 3, code: 'failed-dag', name: 'Failed DAG', enabled: true, currentVersionId: 13, hasRunningRun: false, hasRetryableRun: true },
+        { id: 1, code: 'draft-only', name: 'Draft Only', enabled: true, cronEnabled: true, cronExpression: '0 0 2 * * ?', currentVersionId: null, hasRunningRun: false, hasRetryableRun: false },
+        { id: 2, code: 'running-dag', name: 'Running DAG', enabled: true, cronEnabled: true, cronExpression: '0 0 2 * * ?', currentVersionId: 12, hasRunningRun: true, hasRetryableRun: false },
+        { id: 3, code: 'failed-dag', name: 'Failed DAG', enabled: true, cronEnabled: false, cronExpression: '0 0 2 * * ?', currentVersionId: 13, hasRunningRun: false, hasRetryableRun: true },
       ],
       total: 3,
     })
@@ -231,6 +269,11 @@ describe('Dag.vue', () => {
     expect(findRow(wrapper, 2).text()).toContain('12')
     expect(findRow(wrapper, 2).text()).toContain('运行中')
     expect(findRow(wrapper, 3).text()).toContain('可重试')
+    expect(findRow(wrapper, 2).text()).toContain('Cron 生效')
+    expect(findRow(wrapper, 1).text()).toContain('Cron 未生效')
+    expect(findRow(wrapper, 1).text()).toContain('无 ACTIVE 版本，Cron 不会生效')
+    expect(findRow(wrapper, 3).text()).toContain('Cron 未生效')
+    expect(findRow(wrapper, 3).text()).toContain('Cron 已禁用')
   })
 
   it('should call DAG trigger/stop/retry APIs only for eligible dags', async () => {
@@ -279,11 +322,11 @@ describe('Dag.vue', () => {
 
     expect(routerMocks.push).toHaveBeenNthCalledWith(1, {
       path: '/scheduling/dag/detail',
-      query: { id: 2 },
+      query: { id: 2, activeTenantId: '9' },
     })
     expect(routerMocks.push).toHaveBeenNthCalledWith(2, {
       path: '/scheduling/dag/history',
-      query: { dagId: 2 },
+      query: { dagId: 2, activeTenantId: '9' },
     })
   })
 

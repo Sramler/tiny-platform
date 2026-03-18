@@ -2,6 +2,7 @@ package com.tiny.platform.infrastructure.scheduling.config;
 
 import com.tiny.platform.infrastructure.scheduling.model.SchedulingDag;
 import com.tiny.platform.infrastructure.scheduling.repository.SchedulingDagRepository;
+import com.tiny.platform.infrastructure.scheduling.repository.SchedulingDagVersionRepository;
 import com.tiny.platform.infrastructure.scheduling.service.QuartzSchedulerService;
 import org.quartz.SchedulerException;
 import org.slf4j.Logger;
@@ -24,11 +25,14 @@ public class QuartzCronRecoveryRunner implements ApplicationRunner {
     private static final Logger logger = LoggerFactory.getLogger(QuartzCronRecoveryRunner.class);
 
     private final SchedulingDagRepository dagRepository;
+    private final SchedulingDagVersionRepository dagVersionRepository;
     private final QuartzSchedulerService quartzSchedulerService;
 
     public QuartzCronRecoveryRunner(SchedulingDagRepository dagRepository,
+                                   SchedulingDagVersionRepository dagVersionRepository,
                                    QuartzSchedulerService quartzSchedulerService) {
         this.dagRepository = dagRepository;
+        this.dagVersionRepository = dagVersionRepository;
         this.quartzSchedulerService = quartzSchedulerService;
     }
 
@@ -43,9 +47,11 @@ public class QuartzCronRecoveryRunner implements ApplicationRunner {
             int ok = 0;
             for (SchedulingDag dag : dags) {
                 try {
-                    // 只恢复 cronEnabled=true 的 DAG
-                    if (dag.getCronEnabled() != null && !dag.getCronEnabled()) {
-                        logger.debug("跳过恢复 DAG Cron（cronEnabled=false）, dagId: {}", dag.getId());
+                    // 只恢复 enabled + cronEnabled + 有 ACTIVE 版本 的 DAG（按租户过滤，避免跨租户）
+                    if (dag.getTenantId() != null
+                            ? dagVersionRepository.findByDagIdAndStatusAndTenantId(dag.getId(), "ACTIVE", dag.getTenantId()).isEmpty()
+                            : dagVersionRepository.findByDagIdAndStatus(dag.getId(), "ACTIVE").isEmpty()) {
+                        logger.debug("跳过恢复 DAG Cron（无 ACTIVE 版本）, dagId: {}", dag.getId());
                         continue;
                     }
                     quartzSchedulerService.createOrUpdateDagJob(dag, dag.getCronExpression(), dag.getCronTimezone());

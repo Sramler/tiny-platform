@@ -52,3 +52,10 @@ logging:
 http:
   request-log:
     enabled: true
+
+# Platform control-plane (sys/*) is guarded by "platform tenant code" in migration phase.
+# For real-link E2E we allow overriding this via env, so the platform control-plane can run on a non-frozen tenant.
+tiny:
+  platform:
+    tenant:
+      platform-tenant-code: ${E2E_PLATFORM_TENANT_CODE:default}

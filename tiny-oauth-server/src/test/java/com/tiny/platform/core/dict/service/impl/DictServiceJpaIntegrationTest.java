@@ -67,7 +67,7 @@ class DictServiceJpaIntegrationTest {
 
     @Test
     void findVisibleTypes_should_only_return_platform_and_current_tenant_types() {
-        TenantContext.setTenantId(7L);
+        TenantContext.setActiveTenantId(7L);
 
         saveType("PLATFORM_STATUS", 0L, 1);
         saveType("CURRENT_STATUS", 7L, 2);
@@ -82,7 +82,7 @@ class DictServiceJpaIntegrationTest {
 
     @Test
     void findByDictCode_should_merge_overlay_label_but_keep_platform_metadata() {
-        TenantContext.setTenantId(7L);
+        TenantContext.setActiveTenantId(7L);
 
         DictType platformType = saveType("ENABLE_STATUS", 0L, 1);
         saveItem(platformType, 0L, "ENABLED", "启用", "平台描述", false, 9);
@@ -101,7 +101,7 @@ class DictServiceJpaIntegrationTest {
 
     @Test
     void query_for_platform_type_should_return_merged_page_under_h2() {
-        TenantContext.setTenantId(7L);
+        TenantContext.setActiveTenantId(7L);
 
         DictType platformType = saveType("ORDER_STATUS", 0L, 1);
         saveItem(platformType, 0L, "PAID", "已支付", "平台说明", false, 6);
@@ -114,7 +114,7 @@ class DictServiceJpaIntegrationTest {
 
         assertThat(page.getTotalElements()).isEqualTo(1);
         DictItemResponseDto item = page.getContent().getFirst();
-        assertThat(item.getTenantId()).isEqualTo(7L);
+        assertThat(item.getRecordTenantId()).isEqualTo(7L);
         assertThat(item.getLabel()).isEqualTo("租户已支付");
         assertThat(item.getDescription()).isEqualTo("平台说明");
         assertThat(item.getEnabled()).isFalse();
@@ -123,7 +123,7 @@ class DictServiceJpaIntegrationTest {
 
     @Test
     void query_without_type_filter_should_return_merged_page_under_h2() {
-        TenantContext.setTenantId(7L);
+        TenantContext.setActiveTenantId(7L);
 
         DictType platformType = saveType("PAY_STATUS", 0L, 1);
         saveItem(platformType, 0L, "PAID", "已支付", "平台说明", false, 6);
@@ -135,7 +135,7 @@ class DictServiceJpaIntegrationTest {
 
         assertThat(page.getTotalElements()).isEqualTo(1);
         DictItemResponseDto item = page.getContent().getFirst();
-        assertThat(item.getTenantId()).isEqualTo(7L);
+        assertThat(item.getRecordTenantId()).isEqualTo(7L);
         assertThat(item.getLabel()).isEqualTo("租户已支付");
         assertThat(item.getDescription()).isEqualTo("平台说明");
         assertThat(item.getEnabled()).isFalse();

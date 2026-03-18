@@ -11,6 +11,7 @@ import com.tiny.platform.core.oauth.config.MfaProperties;
 import com.tiny.platform.core.oauth.config.LoginProtectionProperties;
 import com.tiny.platform.core.oauth.controller.CsrfController;
 import com.tiny.platform.core.oauth.controller.SecurityController;
+import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
 import com.tiny.platform.core.oauth.security.LoginFailurePolicy;
 import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.security.MultiAuthenticationProvider;
@@ -20,11 +21,12 @@ import com.tiny.platform.core.oauth.security.TotpService;
 import com.tiny.platform.core.oauth.security.TotpVerificationGuard;
 import com.tiny.platform.core.oauth.service.AuthenticationAuditService;
 import com.tiny.platform.core.oauth.service.SecurityService;
+import com.tiny.platform.core.oauth.tenant.TenantContextContract;
 import com.tiny.platform.core.oauth.tenant.TenantContextFilter;
-import com.tiny.platform.infrastructure.auth.role.domain.Role;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationMethod;
 import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
+import com.tiny.platform.infrastructure.tenant.domain.Tenant;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import jakarta.servlet.http.Cookie;
@@ -98,6 +100,9 @@ class PartialMfaFormLoginIntegrationTest {
     @Mock
     private TotpService totpService;
 
+    @Mock
+    private AuthUserResolutionService authUserResolutionService;
+
     private MockMvc mockMvc;
 
     private SecurityContextRepository securityContextRepository;
@@ -127,15 +132,18 @@ class PartialMfaFormLoginIntegrationTest {
                 authenticationMethodRepository,
                 frontendProperties,
                 sessionManager,
+                authUserResolutionService,
                 authenticationAuditService
         );
 
         MultiAuthenticationProvider authenticationProvider = new MultiAuthenticationProvider(
                 userRepository,
+                tenantRepository,
                 authenticationMethodRepository,
                 passwordEncoder,
                 userDetailsService,
                 securityService,
+                authUserResolutionService,
                 new TotpVerificationGuard(authenticationMethodRepository, new MfaProperties(), totpService),
                 new LoginFailurePolicy(new LoginProtectionProperties())
         );
@@ -147,10 +155,12 @@ class PartialMfaFormLoginIntegrationTest {
                 userRepository,
                 frontendProperties,
                 sessionManager,
+                authUserResolutionService,
                 authenticationAuditService
         ));
         loginFilter.setAuthenticationFailureHandler(new CustomLoginFailureHandler(
                 userRepository,
+                authUserResolutionService,
                 authenticationAuditService,
                 new LoginFailurePolicy(new LoginProtectionProperties())
         ));
@@ -172,22 +182,25 @@ class PartialMfaFormLoginIntegrationTest {
     }
 
     @Test
-    void loginShouldRejectPostWithoutCsrfToken() throws Exception {
+    void loginShouldRejectPostWithoutCsrfToken_whenTenantCodeProvided() throws Exception {
+        when(tenantRepository.findByCode("acme")).thenReturn(Optional.of(activeTenant(1L, "acme")));
+
         mockMvc.perform(post("/login")
                         .param("username", "admin")
                         .param("password", "raw-password")
-                        .param("tenantId", "1")
+                        .param("tenantCode", "acme")
                         .param("authenticationProvider", "LOCAL")
                         .param("authenticationType", "PASSWORD"))
                 .andExpect(status().isForbidden());
     }
 
     @Test
-    void formLoginShouldPersistPartialMfaTokenAndAllowSecurityChallengeEndpoints() throws Exception {
+    void formLoginShouldPersistPartialMfaTokenAndAllowSecurityChallengeEndpoints_whenTenantCodeUsed() throws Exception {
         User user = user();
         SecurityUser securityUser = securityUser(user);
 
-        when(userRepository.findUserByUsernameAndTenantId("admin", 1L)).thenReturn(Optional.of(user));
+        when(tenantRepository.findByCode("acme")).thenReturn(Optional.of(activeTenant(1L, "acme")));
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("admin", 1L)).thenReturn(Optional.of(user));
         when(userDetailsService.loadUserByUsername("admin")).thenReturn(securityUser);
         when(authenticationMethodRepository.findEnabledMethodsByUserId(1L, 1L)).thenReturn(List.of(
                 passwordMethod(user.getId(), user.getTenantId(), "{noop}raw-password"),
@@ -207,7 +220,7 @@ class PartialMfaFormLoginIntegrationTest {
                         .cookie(csrf.cookie())
                         .param("username", "admin")
                         .param("password", "raw-password")
-                        .param("tenantId", "1")
+                        .param("tenantCode", "acme")
                         .param("authenticationProvider", "LOCAL")
                         .param("authenticationType", "PASSWORD")
                         .param(csrf.parameterName(), csrf.token()))
@@ -217,7 +230,7 @@ class PartialMfaFormLoginIntegrationTest {
 
         MockHttpSession session = (MockHttpSession) loginResult.getRequest().getSession(false);
         assertThat(session).isNotNull();
-        assertThat(session.getAttribute("AUTH_TENANT_ID")).isEqualTo(1L);
+        assertThat(session.getAttribute(TenantContextContract.SESSION_ACTIVE_TENANT_ID_KEY)).isEqualTo(1L);
 
         SecurityContext securityContext = (SecurityContext) session.getAttribute(SPRING_SECURITY_CONTEXT_KEY);
         assertThat(securityContext).isNotNull();
@@ -250,6 +263,69 @@ class PartialMfaFormLoginIntegrationTest {
                         .contentType("application/json")
                         .content("{\"totpCode\":\"123456\"}"))
                 .andExpect(status().isForbidden());
+    }
+
+    /**
+     * 登录成功路径（MFA 关闭）：POST /login 后会话为完整认证且含 activeTenantId，用于授权模型验证。
+     * 与 AuthenticationFlowE2ERegressionTest、UserControllerRbacIntegrationTest、JwtTokenCustomizerTest 一起构成完整验证矩阵。
+     */
+    @Test
+    void formLoginWithMfaDisabled_sessionHasFullAuthAndActiveTenant() throws Exception {
+        User user = user();
+        SecurityUser securityUser = new SecurityUser(
+                user.getId(),
+                user.getTenantId(),
+                user.getUsername(),
+                "",
+                List.of(
+                        new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_USER"),
+                        new org.springframework.security.core.authority.SimpleGrantedAuthority("system:user:list")
+                ),
+                true,
+                true,
+                true,
+                true
+        );
+
+        when(tenantRepository.findByCode("acme")).thenReturn(Optional.of(activeTenant(1L, "acme")));
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("admin", 1L)).thenReturn(Optional.of(user));
+        when(userDetailsService.loadUserByUsername("admin")).thenReturn(securityUser);
+        when(authenticationMethodRepository.findEnabledMethodsByUserId(1L, 1L)).thenReturn(List.of(
+                passwordMethod(user.getId(), user.getTenantId(), "{noop}raw-password")
+        ));
+        when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
+                "totpBound", false,
+                "totpActivated", false,
+                "disableMfa", true,
+                "skipMfaRemind", false,
+                "forceMfa", false,
+                "requireTotp", false
+        ));
+        var csrf = fetchCsrf();
+
+        var loginResult = mockMvc.perform(post("/login")
+                        .cookie(csrf.cookie())
+                        .param("username", "admin")
+                        .param("password", "raw-password")
+                        .param("tenantCode", "acme")
+                        .param("authenticationProvider", "LOCAL")
+                        .param("authenticationType", "PASSWORD")
+                        .param(csrf.parameterName(), csrf.token()))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", org.hamcrest.Matchers.containsString("localhost:5173")))
+                .andReturn();
+
+        MockHttpSession session = (MockHttpSession) loginResult.getRequest().getSession(false);
+        assertThat(session).isNotNull();
+        assertThat(session.getAttribute(TenantContextContract.SESSION_ACTIVE_TENANT_ID_KEY)).isEqualTo(1L);
+
+        SecurityContext securityContext = (SecurityContext) session.getAttribute(SPRING_SECURITY_CONTEXT_KEY);
+        assertThat(securityContext).isNotNull();
+        Authentication auth = securityContext.getAuthentication();
+        assertThat(auth.isAuthenticated()).isTrue();
+        assertThat(auth.getName()).isEqualTo("admin");
+        assertThat(auth.getAuthorities().stream().map(Object::toString))
+                .contains("ROLE_USER", "system:user:list");
     }
 
     private OncePerRequestFilter partialMfaAuthorizationFilter() {
@@ -312,9 +388,6 @@ class PartialMfaFormLoginIntegrationTest {
         user.setAccountNonExpired(true);
         user.setAccountNonLocked(true);
         user.setCredentialsNonExpired(true);
-        Role role = new Role();
-        role.setName("ROLE_ADMIN");
-        user.setRoles(Set.of(role));
         return user;
     }
 
@@ -354,5 +427,14 @@ class PartialMfaFormLoginIntegrationTest {
         method.setAuthenticationConfiguration(Map.of("secret", secret));
         method.setIsMethodEnabled(true);
         return method;
+    }
+
+    private static Tenant activeTenant(Long id, String code) {
+        Tenant tenant = new Tenant();
+        tenant.setId(id);
+        tenant.setCode(code);
+        tenant.setName(code);
+        tenant.setEnabled(true);
+        return tenant;
     }
 }

@@ -1,6 +1,16 @@
 <template>
   <div class="content-container" style="position: relative;">
     <div class="content-card">
+      <div v-if="!canReadUserManagement" class="platform-guard-card">
+        <div class="platform-guard-kicker">Permission Required</div>
+        <h3>用户管理需要额外授权</h3>
+        <p>
+          当前页面属于后台配置面。只有具备 <code>system:user:list</code> 或管理员权限的用户，才会请求
+          <code>/sys/users</code> 并展示用户管理数据。
+        </p>
+      </div>
+
+      <template v-else>
       <div class="form-container">
         <a-form layout="inline" :model="query">
           <a-form-item label="用户名">
@@ -22,13 +32,13 @@
         </div>
         <div class="table-actions">
           <div v-if="selectedRowKeys.length > 0" class="batch-actions">
-            <a-button type="primary" danger @click="throttledBatchDelete" class="toolbar-btn">
+            <a-button v-if="canDeleteUserManagement" type="primary" danger @click="throttledBatchDelete" class="toolbar-btn">
               <template #icon>
                 <DeleteOutlined />
               </template>
               批量删除 ({{ selectedRowKeys.length }})
             </a-button>
-            <a-tooltip v-if="!allDisabled" title="只有全部未启用用户时才可批量启用">
+            <a-tooltip v-if="canEnableUserManagement && !allDisabled" title="只有全部未启用用户时才可批量启用">
               <span>
                 <a-button type="primary" class="toolbar-btn" :disabled="!allDisabled">
                   <template #icon>
@@ -38,13 +48,13 @@
                 </a-button>
               </span>
             </a-tooltip>
-            <a-button v-else type="primary" class="toolbar-btn" @click="throttledBatchEnable">
+            <a-button v-else-if="canEnableUserManagement" type="primary" class="toolbar-btn" @click="throttledBatchEnable">
               <template #icon>
                 <CheckCircleOutlined />
               </template>
               批量启用
             </a-button>
-            <a-tooltip v-if="!allEnabled" title="只有全部已启用用户时才可批量禁用">
+            <a-tooltip v-if="canDisableUserManagement && !allEnabled" title="只有全部已启用用户时才可批量禁用">
               <span>
                 <a-button class="toolbar-btn" :disabled="!allEnabled">
                   <template #icon>
@@ -54,7 +64,7 @@
                 </a-button>
               </span>
             </a-tooltip>
-            <a-button v-else class="toolbar-btn" @click="throttledBatchDisable">
+            <a-button v-else-if="canDisableUserManagement" class="toolbar-btn" @click="throttledBatchDisable">
               <template #icon>
                 <StopOutlined />
               </template>
@@ -67,7 +77,7 @@
               取消选择
             </a-button>
             <!-- 分配角色按钮，仅单选时可用，否则禁用并提示 -->
-            <a-tooltip v-if="selectedRowKeys.length !== 1" title="请仅选择一个用户进行角色分配">
+            <a-tooltip v-if="canUpdateUserManagement && selectedRowKeys.length !== 1" title="请仅选择一个用户进行角色分配">
               <span>
                 <a-button type="primary" class="toolbar-btn" disabled style="pointer-events: auto;">
                   <template #icon>
@@ -77,7 +87,7 @@
                 </a-button>
               </span>
             </a-tooltip>
-            <a-button v-else type="primary" class="toolbar-btn" @click="openBatchRoleTransfer">
+            <a-button v-else-if="canUpdateUserManagement" type="primary" class="toolbar-btn" @click="openBatchRoleTransfer">
               <template #icon>
                 <SettingOutlined />
               </template>
@@ -85,7 +95,7 @@
             </a-button>
           </div>
 
-          <a-button type="link" @click="throttledCreate" class="toolbar-btn">
+          <a-button v-if="canCreateUserManagement" type="link" @click="throttledCreate" class="toolbar-btn">
             <template #icon>
               <PlusOutlined />
             </template>
@@ -192,19 +202,19 @@
               </template>
               <template v-else-if="column.dataIndex === 'action'">
                 <div class="action-buttons">
-                  <a-button type="link" size="small" @click.stop="throttledEdit(record)" class="action-btn">
+                  <a-button v-if="canUpdateUserManagement" type="link" size="small" @click.stop="throttledEdit(record)" class="action-btn">
                     <template #icon>
                       <EditOutlined />
                     </template>
                     编辑
                   </a-button>
-                  <a-button type="link" size="small" danger @click.stop="throttledDelete(record)" class="action-btn">
+                  <a-button v-if="canDeleteUserManagement" type="link" size="small" danger @click.stop="throttledDelete(record)" class="action-btn">
                     <template #icon>
                       <DeleteOutlined />
                     </template>
                     删除
                   </a-button>
-                  <a-button type="link" size="small" @click.stop="throttledView(record)" class="action-btn">
+                  <a-button v-if="canReadUserManagement" type="link" size="small" @click.stop="throttledView(record)" class="action-btn">
                     <template #icon>
                       <EyeOutlined />
                     </template>
@@ -249,7 +259,8 @@
             :locale="{ items_per_page: '条/页' }" />
         </div>
       </div>
-    </div>
+      </template>
+      </div>
 
     <a-drawer v-model:open="drawerVisible"
       :title="drawerMode === 'create' ? '新建用户' : drawerMode === 'edit' ? '编辑用户' : '查看用户'" width="50%"
@@ -266,6 +277,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch, h, onBeforeUnmount, nextTick } from 'vue'
+import { useAuth } from '@/auth/auth'
 import { userList, createUser, updateUser, deleteUser, batchDeleteUsers, batchEnableUsers, batchDisableUsers } from '@/api/user'
 import { PlusOutlined, ReloadOutlined, SettingOutlined, HolderOutlined, DeleteOutlined, CheckCircleOutlined, StopOutlined, CloseOutlined, EditOutlined, EyeOutlined, InfoCircleOutlined, QuestionCircleOutlined, PoweroffOutlined, DownloadOutlined, ColumnHeightOutlined, CopyOutlined } from '@ant-design/icons-vue'
 import VueDraggable from 'vuedraggable'
@@ -276,6 +288,7 @@ import RoleTransfer from './RoleTransfer.vue'
 import { getAllRoles, getRoleById } from '@/api/role'
 import { getUserRoles, updateUserRoles } from '@/api/user'
 import request from '@/utils/request'
+import { extractAuthoritiesFromJwt } from '@/utils/jwt'
 import dayjs from 'dayjs'
 
 const query = ref({
@@ -284,6 +297,26 @@ const query = ref({
 })
 
 const tableData = ref<any[]>([])
+const { user } = useAuth()
+const userAuthorities = computed(() => new Set(extractAuthoritiesFromJwt(user.value?.access_token)))
+
+const USER_MANAGEMENT_READ_AUTHORITIES = ['ROLE_ADMIN', 'system:user:list']
+const USER_MANAGEMENT_CREATE_AUTHORITIES = ['ROLE_ADMIN', 'system:user:create']
+const USER_MANAGEMENT_UPDATE_AUTHORITIES = ['ROLE_ADMIN', 'system:user:edit', 'system:user:assign-role', 'system:user:role:assign']
+const USER_MANAGEMENT_DELETE_AUTHORITIES = ['ROLE_ADMIN', 'system:user:delete', 'system:user:batch-delete']
+const USER_MANAGEMENT_ENABLE_AUTHORITIES = ['ROLE_ADMIN', 'system:user:batch-enable', 'system:user:enable']
+const USER_MANAGEMENT_DISABLE_AUTHORITIES = ['ROLE_ADMIN', 'system:user:batch-disable', 'system:user:disable']
+
+function hasAnyUserAuthority(requiredAuthorities: string[]) {
+  return requiredAuthorities.some((authority) => userAuthorities.value.has(authority))
+}
+
+const canReadUserManagement = computed(() => hasAnyUserAuthority(USER_MANAGEMENT_READ_AUTHORITIES))
+const canCreateUserManagement = computed(() => hasAnyUserAuthority(USER_MANAGEMENT_CREATE_AUTHORITIES))
+const canUpdateUserManagement = computed(() => hasAnyUserAuthority(USER_MANAGEMENT_UPDATE_AUTHORITIES))
+const canDeleteUserManagement = computed(() => hasAnyUserAuthority(USER_MANAGEMENT_DELETE_AUTHORITIES))
+const canEnableUserManagement = computed(() => hasAnyUserAuthority(USER_MANAGEMENT_ENABLE_AUTHORITIES))
+const canDisableUserManagement = computed(() => hasAnyUserAuthority(USER_MANAGEMENT_DISABLE_AUTHORITIES))
 
 const loading = ref(false)
 const exporting = ref(false)
@@ -446,6 +479,12 @@ const rowSelection = computed(() => ({
 }))
 
 async function loadData() {
+  if (!canReadUserManagement.value) {
+    tableData.value = []
+    pagination.value.total = 0
+    loading.value = false
+    return
+  }
   loading.value = true
   try {
     const params = {
@@ -521,6 +560,9 @@ function handleTableChange(pag: any, filters: any, sorter: any) {
 }
 
 function handleCreate() {
+  if (!canCreateUserManagement.value) {
+    return
+  }
   drawerMode.value = 'create'
   currentUser.value = {
     username: '',
@@ -643,7 +685,9 @@ function updateTableBodyHeight() {
 }
 
 onMounted(() => {
-  loadData()
+  if (canReadUserManagement.value) {
+    loadData()
+  }
   updateTableBodyHeight()
   window.addEventListener('resize', updateTableBodyHeight)
 })
@@ -655,7 +699,20 @@ watch(() => pagination.value.pageSize, () => {
   updateTableBodyHeight()
 })
 
+watch(canReadUserManagement, (enabled) => {
+  if (enabled) {
+    loadData()
+    return
+  }
+  tableData.value = []
+  pagination.value.total = 0
+  loading.value = false
+})
+
 function handleBatchDelete() {
+  if (!canDeleteUserManagement.value) {
+    return
+  }
   if (selectedRowKeys.value.length === 0) {
     message.warning('请先选择要删除的用户')
     return
@@ -685,6 +742,9 @@ function handleBatchDelete() {
 const throttledBatchDelete = useThrottle(handleBatchDelete, 1000)
 
 function handleBatchEnable() {
+  if (!canEnableUserManagement.value) {
+    return
+  }
   if (selectedRowKeys.value.length === 0) {
     message.warning('请先选择要启用的用户')
     return
@@ -707,6 +767,9 @@ function handleBatchEnable() {
 const throttledBatchEnable = useThrottle(handleBatchEnable, 1000)
 
 function handleBatchDisable() {
+  if (!canDisableUserManagement.value) {
+    return
+  }
   if (selectedRowKeys.value.length === 0) {
     message.warning('请先选择要禁用的用户')
     return
@@ -757,6 +820,9 @@ function handlePageSizeChange(current: number, size: number) {
 }
 
 function handleDelete(record: any) {
+  if (!canDeleteUserManagement.value) {
+    return
+  }
   Modal.confirm({
     title: '确认删除',
     content: `确定要删除用户 ${record.username} 吗？`,
@@ -779,6 +845,9 @@ function handleDelete(record: any) {
 const throttledDelete = useThrottle(handleDelete, 500)
 
 function handleView(record: any) {
+  if (!canReadUserManagement.value) {
+    return
+  }
   drawerMode.value = 'view'
   currentUser.value = record
   drawerVisible.value = true
@@ -791,6 +860,9 @@ const drawerMode = ref<'create' | 'edit' | 'view'>('edit')
 const currentUser = ref<any | null>(null)
 
 function handleEdit(record: any) {
+  if (!canUpdateUserManagement.value) {
+    return
+  }
   drawerMode.value = 'edit'
   currentUser.value = record
   drawerVisible.value = true
@@ -802,10 +874,16 @@ const throttledEdit = useThrottle(handleEdit, 500)
 async function handleFormSubmit(formData: any) {
   try {
     if (drawerMode.value === 'create') {
+      if (!canCreateUserManagement.value) {
+        return
+      }
       // 创建用户
       await createUser(formData)
       message.success('用户创建成功')
     } else if (drawerMode.value === 'edit') {
+      if (!canUpdateUserManagement.value) {
+        return
+      }
       // 更新用户
       await updateUser(formData.id, formData)
       message.success('用户更新成功')
@@ -997,6 +1075,9 @@ const allRoles = ref<any[]>([])
 const batchSelectedRoleIds = ref<string[]>([])
 
 async function openBatchRoleTransfer() {
+  if (!canUpdateUserManagement.value) {
+    return
+  }
   // 获取所有角色
   const all = await getAllRoles()
   allRoles.value = (all || []).map((r: any) => ({
@@ -1017,6 +1098,9 @@ async function openBatchRoleTransfer() {
 }
 
 async function handleBatchRoleAssign(newRoleIds: string[]) {
+  if (!canUpdateUserManagement.value) {
+    return
+  }
   // 这里可以实现批量分配角色逻辑，如循环调用后端接口
   // 示例：对每个选中用户调用 updateUser/updateUserRoles
   for (const userIdStr of selectedRowKeys.value) {

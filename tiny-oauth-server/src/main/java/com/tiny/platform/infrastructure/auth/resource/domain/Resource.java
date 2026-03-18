@@ -1,5 +1,6 @@
 package com.tiny.platform.infrastructure.auth.resource.domain;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.tiny.platform.infrastructure.auth.resource.enums.ResourceType;
 import com.tiny.platform.infrastructure.auth.role.domain.Role;
 import jakarta.persistence.*;
@@ -17,8 +18,11 @@ public class Resource implements Serializable {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "tenant_id", nullable = false)
+    @Column(name = "tenant_id", nullable = true)
     private Long tenantId;
+
+    @Column(name = "resource_level", nullable = false, length = 16)
+    private String resourceLevel = "TENANT"; // 模板层级：PLATFORM/TENANT，见 Phase1 技术设计 §4.5
 
     @Column(nullable = false, length = 100)
     private String name = ""; // 权限资源名（后端内部识别名）
@@ -104,12 +108,21 @@ public class Resource implements Serializable {
         this.id = id;
     }
 
+    @JsonProperty("recordTenantId")
     public Long getTenantId() {
         return tenantId;
     }
 
     public void setTenantId(Long tenantId) {
         this.tenantId = tenantId;
+    }
+
+    public String getResourceLevel() {
+        return resourceLevel;
+    }
+
+    public void setResourceLevel(String resourceLevel) {
+        this.resourceLevel = resourceLevel;
     }
 
     public String getName() {

@@ -141,16 +141,16 @@
 
 本次本地样本表为 `demo_export_usage`，最终形成的数据分布：
 
-1. `tenantId=1`：`10,000,000`
-2. `tenantId=2`：`100,000`
-3. `tenantId=3`：`1,000,000`
+1. `recordTenantId=1`：`10,000,000`
+2. `recordTenantId=2`：`100,000`
+3. `recordTenantId=3`：`1,000,000`
 4. 全表合计：`11,100,000`
 
 为什么这样做：
 
-1. `tenantId=2` 用于 `10w`
-2. `tenantId=3` 用于 `100w`
-3. `tenantId=1` 用于 `1000w`
+1. `recordTenantId=2` 用于 `10w`
+2. `recordTenantId=3` 用于 `100w`
+3. `recordTenantId=1` 用于 `1000w`
 
 这样可以同时保证：
 

@@ -30,17 +30,17 @@ export interface IdempotentMqMetricsSnapshot {
   duplicateRate: number
 }
 
-function buildTenantParams(tenantId?: number) {
-  if (typeof tenantId === 'number' && tenantId > 0) {
-    return { params: { tenantId } }
+function buildActiveTenantParams(activeTenantId?: number) {
+  if (typeof activeTenantId === 'number' && activeTenantId > 0) {
+    return { params: { activeTenantId } }
   }
   return undefined
 }
 
-export async function getIdempotentMetrics(tenantId?: number): Promise<IdempotentMetricsSnapshot> {
-  const tenantParams = buildTenantParams(tenantId)
-  const response = tenantParams
-    ? await request.get<any>('/metrics/idempotent', tenantParams)
+export async function getIdempotentMetrics(activeTenantId?: number): Promise<IdempotentMetricsSnapshot> {
+  const activeTenantParams = buildActiveTenantParams(activeTenantId)
+  const response = activeTenantParams
+    ? await request.get<any>('/metrics/idempotent', activeTenantParams)
     : await request.get<any>('/metrics/idempotent')
   return {
     windowMinutes: Number(response?.windowMinutes ?? 60),
@@ -59,8 +59,8 @@ export async function getIdempotentMetrics(tenantId?: number): Promise<Idempoten
   }
 }
 
-export async function getIdempotentTopKeys(limit = 5, tenantId?: number): Promise<IdempotentTopKey[]> {
-  const query = buildTenantParams(tenantId)
+export async function getIdempotentTopKeys(limit = 5, activeTenantId?: number): Promise<IdempotentTopKey[]> {
+  const query = buildActiveTenantParams(activeTenantId)
   const response = await request.get<any>('/metrics/idempotent/top-keys', {
     params: {
       limit,
@@ -74,10 +74,10 @@ export async function getIdempotentTopKeys(limit = 5, tenantId?: number): Promis
   }))
 }
 
-export async function getIdempotentMqMetrics(tenantId?: number): Promise<IdempotentMqMetricsSnapshot> {
-  const tenantParams = buildTenantParams(tenantId)
-  const response = tenantParams
-    ? await request.get<any>('/metrics/idempotent/mq', tenantParams)
+export async function getIdempotentMqMetrics(activeTenantId?: number): Promise<IdempotentMqMetricsSnapshot> {
+  const activeTenantParams = buildActiveTenantParams(activeTenantId)
+  const response = activeTenantParams
+    ? await request.get<any>('/metrics/idempotent/mq', activeTenantParams)
     : await request.get<any>('/metrics/idempotent/mq')
   return {
     windowMinutes: Number(response?.windowMinutes ?? 60),

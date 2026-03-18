@@ -2,26 +2,30 @@ import request from '@/utils/request'
 
 export interface DemoExportUsage {
   id?: number
-  tenantId?: number
+  /**
+   * 导出记录所属租户ID，不是当前活动租户上下文。
+   */
+  recordTenantId?: number
   tenantName?: string
   loginName?: string
   createdAt?: string
-  // 对应 demo_export_usage 表中的字段
-  tenantIdRef?: string
-  tenantNameRef?: string
   userId?: number
   clientId?: string
   grantType?: string
   payload?: string
-  createdAtRaw?: string
 }
 
-export function demoExportUsageList(params: any) {
+export function demoExportUsageList(params: {
+  current?: number
+  pageSize?: number
+  activeTenantId?: number
+  productCode?: string
+  status?: string
+}) {
   const apiParams: { [key: string]: any } = {
     page: (params.current || 1) - 1,
     size: params.pageSize || 10,
-    // 与后端 DemoExportUsageController.list 参数保持一致
-    tenantId: params.tenantId,
+    activeTenantId: params.activeTenantId,
     productCode: params.productCode,
     status: params.status,
   }
@@ -52,7 +56,7 @@ export function deleteDemoExportUsage(id: number) {
 
 export function generateDemoExportUsage(
   params?: {
-    tenantId?: number
+    activeTenantId?: number
     days?: number
     rowsPerDay?: number
     targetRows?: number
@@ -66,6 +70,6 @@ export function generateDemoExportUsage(
   })
 }
 
-export function clearDemoExportUsage(params?: { tenantId?: number }) {
+export function clearDemoExportUsage(params?: { activeTenantId?: number }) {
   return request.post('/demo/export-usage/clear', null, { params })
 }

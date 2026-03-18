@@ -12,6 +12,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.validation.Valid;
@@ -41,6 +42,7 @@ public class ResourceController {
      * @return 分页结果
      */
     @GetMapping
+    @PreAuthorize("@resourceManagementAccessGuard.canRead(authentication)")
     public ResponseEntity<PageResponse<ResourceResponseDto>> getResources(
             @Valid ResourceRequestDto query,
             @PageableDefault(size = 10, sort = "sort", direction = Sort.Direction.ASC) Pageable pageable
@@ -54,6 +56,7 @@ public class ResourceController {
      * @return 资源详情
      */
     @GetMapping("/{id}")
+    @PreAuthorize("@resourceManagementAccessGuard.canRead(authentication)")
     public ResponseEntity<Resource> getResource(@PathVariable("id") Long id) {
         return resourceService.findById(id)
             .map(ResponseEntity::ok)
@@ -67,6 +70,7 @@ public class ResourceController {
      */
     @PostMapping
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@resourceManagementAccessGuard.canCreate(authentication)")
     public ResponseEntity<Resource> create(@Valid @RequestBody ResourceCreateUpdateDto resourceDto) {
         Resource resource = resourceService.createFromDto(resourceDto);
         return ResponseEntity.ok(resource);
@@ -80,6 +84,7 @@ public class ResourceController {
      */
     @PutMapping("/{id}")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@resourceManagementAccessGuard.canUpdate(authentication)")
     public ResponseEntity<Resource> update(@PathVariable("id") Long id, @Valid @RequestBody ResourceCreateUpdateDto resourceDto) {
         resourceDto.setId(id);
         Resource resource = resourceService.updateFromDto(resourceDto);
@@ -93,6 +98,7 @@ public class ResourceController {
      */
     @DeleteMapping("/{id}")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@resourceManagementAccessGuard.canDelete(authentication)")
     public ResponseEntity<Void> delete(@PathVariable("id") Long id) {
         resourceService.delete(id);
         return ResponseEntity.noContent().build();
@@ -105,6 +111,7 @@ public class ResourceController {
      */
     @PostMapping("/batch/delete")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@resourceManagementAccessGuard.canDelete(authentication)")
     public ResponseEntity<Map<String, Object>> batchDelete(@RequestBody List<Long> ids) {
         resourceService.batchDelete(ids);
         return ResponseEntity.ok(Map.of("success", true, "message", "批量删除成功"));
@@ -121,6 +128,7 @@ public class ResourceController {
      * @return 分页结果
      */
     @GetMapping("/menus")
+    @PreAuthorize("@menuManagementAccessGuard.canRead(authentication)")
     public ResponseEntity<PageResponse<ResourceResponseDto>> getMenus(
             @RequestParam(value = "name", required = false) String name,
             @RequestParam(value = "title", required = false) String title,
@@ -141,6 +149,7 @@ public class ResourceController {
      * @return 菜单树
      */
     @GetMapping("/menus/tree")
+    @PreAuthorize("@menuManagementAccessGuard.canRead(authentication)")
     public ResponseEntity<List<ResourceResponseDto>> getMenuTree() {
         List<Resource> menuResources = resourceService.findByTypeIn(List.of(ResourceType.DIRECTORY, ResourceType.MENU));
         List<ResourceResponseDto> tree = resourceService.buildResourceTree(menuResources);
@@ -154,6 +163,7 @@ public class ResourceController {
      */
     @PostMapping("/menus")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@menuManagementAccessGuard.canCreate(authentication)")
     public ResponseEntity<Resource> createMenu(@Valid @RequestBody ResourceCreateUpdateDto resourceDto) {
         // 确保类型为目录或菜单
         if (resourceDto.getType() == null || (resourceDto.getType() != ResourceType.DIRECTORY.getCode() && resourceDto.getType() != ResourceType.MENU.getCode())) {
@@ -172,6 +182,7 @@ public class ResourceController {
      */
     @PutMapping("/menus/{id}")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@menuManagementAccessGuard.canUpdate(authentication)")
     public ResponseEntity<Resource> updateMenu(@PathVariable("id") Long id, @Valid @RequestBody ResourceCreateUpdateDto resourceDto) {
         // 设置ID
         resourceDto.setId(id);
@@ -192,6 +203,7 @@ public class ResourceController {
      */
     @DeleteMapping("/menus/{id}")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@menuManagementAccessGuard.canDelete(authentication)")
     public ResponseEntity<Void> deleteMenu(@PathVariable("id") Long id) {
         resourceService.delete(id);
         return ResponseEntity.noContent().build();
@@ -204,6 +216,7 @@ public class ResourceController {
      */
     @PostMapping("/menus/batch/delete")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@menuManagementAccessGuard.canDelete(authentication)")
     public ResponseEntity<Map<String, Object>> batchDeleteMenus(@RequestBody List<Long> ids) {
         resourceService.batchDelete(ids);
         return ResponseEntity.ok(Map.of("success", true, "message", "批量删除成功"));
@@ -217,6 +230,7 @@ public class ResourceController {
      */
     @PutMapping("/menus/{id}/sort")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@menuManagementAccessGuard.canUpdate(authentication)")
     public ResponseEntity<Resource> updateMenuSort(@PathVariable("id") Long id, @RequestParam("sort") Integer sort) {
         Resource resource = resourceService.updateSort(id, sort);
         return ResponseEntity.ok(resource);
@@ -230,6 +244,7 @@ public class ResourceController {
      * @return 资源列表
      */
     @GetMapping("/type/{type}")
+    @PreAuthorize("@resourceManagementAccessGuard.canRead(authentication)")
     public ResponseEntity<List<Resource>> getResourcesByType(@PathVariable("type") Integer type) {
         ResourceType resourceType = ResourceType.fromCode(type);
         List<Resource> resources = resourceService.findByType(resourceType);
@@ -242,6 +257,7 @@ public class ResourceController {
      * @return 子资源列表
      */
     @GetMapping("/parent/{parentId}")
+    @PreAuthorize("@resourceManagementAccessGuard.canRead(authentication)")
     public ResponseEntity<List<Resource>> getResourcesByParentId(@PathVariable("parentId") Long parentId) {
         List<Resource> resources = resourceService.findByParentId(parentId);
         return ResponseEntity.ok(resources);
@@ -252,6 +268,7 @@ public class ResourceController {
      * @return 顶级资源列表
      */
     @GetMapping("/top-level")
+    @PreAuthorize("@resourceManagementAccessGuard.canRead(authentication)")
     public ResponseEntity<List<Resource>> getTopLevelResources() {
         List<Resource> resources = resourceService.findTopLevel();
         return ResponseEntity.ok(resources);
@@ -262,6 +279,7 @@ public class ResourceController {
      * @return 资源树
      */
     @GetMapping("/tree")
+    @PreAuthorize("@resourceManagementAccessGuard.canRead(authentication)")
     public ResponseEntity<List<ResourceResponseDto>> getResourceTree() {
         List<Resource> allResources = resourceService.findTopLevel();
         // 递归获取所有子资源
@@ -278,6 +296,7 @@ public class ResourceController {
      */
     @PutMapping("/{id}/sort")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@resourceManagementAccessGuard.canUpdate(authentication)")
     public ResponseEntity<Resource> updateSort(@PathVariable("id") Long id, @RequestParam("sort") Integer sort) {
         Resource resource = resourceService.updateSort(id, sort);
         return ResponseEntity.ok(resource);
@@ -288,6 +307,7 @@ public class ResourceController {
      * @return 资源类型列表
      */
     @GetMapping("/types")
+    @PreAuthorize("@resourceManagementAccessGuard.canRead(authentication)")
     public ResponseEntity<List<ResourceType>> getResourceTypes() {
         List<ResourceType> types = resourceService.getResourceTypes();
         return ResponseEntity.ok(types);
@@ -299,6 +319,7 @@ public class ResourceController {
      * @return 资源列表
      */
     @GetMapping("/permission/{permission}")
+    @PreAuthorize("@resourceManagementAccessGuard.canRead(authentication)")
     public ResponseEntity<List<Resource>> getResourcesByPermission(@PathVariable("permission") String permission) {
         List<Resource> resources = resourceService.findByPermission(permission);
         return ResponseEntity.ok(resources);
@@ -311,6 +332,7 @@ public class ResourceController {
      * @return 是否存在
      */
     @GetMapping("/check-name")
+    @PreAuthorize("@resourceManagementAccessGuard.canRead(authentication)")
     public ResponseEntity<Map<String, Boolean>> checkNameExists(
             @RequestParam("name") String name,
             @RequestParam(value = "excludeId", required = false) Long excludeId) {
@@ -325,6 +347,7 @@ public class ResourceController {
      * @return 是否存在
      */
     @GetMapping("/check-url")
+    @PreAuthorize("@resourceManagementAccessGuard.canRead(authentication)")
     public ResponseEntity<Map<String, Boolean>> checkUrlExists(
             @RequestParam("url") String url,
             @RequestParam(value = "excludeId", required = false) Long excludeId) {
@@ -339,6 +362,7 @@ public class ResourceController {
      * @return 是否存在
      */
     @GetMapping("/check-uri")
+    @PreAuthorize("@resourceManagementAccessGuard.canRead(authentication)")
     public ResponseEntity<Map<String, Boolean>> checkUriExists(
             @RequestParam("uri") String uri,
             @RequestParam(value = "excludeId", required = false) Long excludeId) {

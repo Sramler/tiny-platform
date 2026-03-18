@@ -54,6 +54,7 @@
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { StopOutlined, HomeOutlined, ArrowLeftOutlined, InfoCircleOutlined } from '@ant-design/icons-vue'
+import { getActiveTenantId, resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
 
 const router = useRouter()
 const route = useRoute()
@@ -69,24 +70,29 @@ const errorInfo = computed(() => {
   }
 })
 
+const resolveNavigationTenantQuery = () =>
+  withActiveTenantQuery({}, resolveActiveTenantQueryValue(route.query) ?? getActiveTenantId())
+
 const goHome = () => {
   // 触发关闭当前标签页事件
   window.dispatchEvent(new CustomEvent('close-current-tab'))
   // 跳转到首页
-  router.push('/')
+  router.push({ path: '/', query: resolveNavigationTenantQuery() })
 }
 
 /** 返回上一页：仅 DAG 相关错误时返回列表页，其余走浏览器后退或首页 */
 const goBack = () => {
   const failedPath = (errorInfo.value.path as string) || ''
   if (failedPath.includes('scheduling/dag')) {
-    router.push('/scheduling/dag').catch(() => router.push('/'))
+    router
+      .push({ path: '/scheduling/dag', query: resolveNavigationTenantQuery() })
+      .catch(() => router.push({ path: '/', query: resolveNavigationTenantQuery() }))
     return
   }
   if (window.history.length > 1) {
     router.go(-1)
   } else {
-    router.push('/')
+    router.push({ path: '/', query: resolveNavigationTenantQuery() })
   }
 }
 </script>

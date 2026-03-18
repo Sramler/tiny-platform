@@ -13,6 +13,11 @@
 - JWT Token 自定义器
 - OAuth2 Authorization / Client 存储模型
 
+> 说明：
+> - 本文保留了 2025 年早期问题分析语境，包含部分已完成整改的历史项。
+> - 当前实现已经前移到 `TenantContextFilter + activeTenantId + X-Active-Tenant-Id`。
+> - 文中凡是把 `tenantId` 用作“当前活动租户上下文”、或把 `TenantFilter / X-Tenant-Id` 作为目标实现的段落，应优先按现行契约理解，而不是按历史草案继续实现。
+
 ---
 
 ## 1. 必须改（不改就不算 SaaS 多租户）
@@ -118,17 +123,17 @@ private String code; // 权限标识：ROLE_ADMIN
 
 ### ✅ 1.4 租户解析必须"强制"，禁止 default 回退
 
-**问题状态：❌ 存在 default 回退**
+**问题状态：✅ 已完成整改（保留为历史问题记录）**
 
-**现状：**
+**当前契约：**
 
 ```java
-// TenantFilter.java:21-24
-String tenantId = request.getHeader("X-Tenant-ID");
-if (tenantId == null || tenantId.isEmpty()) {
-    tenantId = "default";  // ❌ 高风险：自动回退到 default
+// 当前实现：TenantContextFilter / HeaderTenantResolver
+String activeTenantId = request.getHeader("X-Active-Tenant-Id");
+if (activeTenantId == null || activeTenantId.isBlank()) {
+    throw tenantMissingOrUnauthorized();
 }
-TenantContext.setCurrentTenant(tenantId);
+TenantContext.setTenantId(parseActiveTenantId(activeTenantId));
 ```
 
 **问题：**
@@ -145,11 +150,10 @@ TenantContext.setCurrentTenant(tenantId);
   - `/.well-known/**`、`/oauth2/jwks` 等
 - ❌ 除白名单外：缺失 tenant → 直接 400/401（明确错误码）
 
-**Header 不一致问题：**
+**当前 Header 契约：**
 
-- `TenantFilter` 使用：`X-Tenant-ID`
-- `HeaderTenantResolver` 使用：`X-Tenant-Id`
-- ❌ 需要统一为：`X-Tenant-Id`（建议统一拼写）
+- 当前活动租户请求头：`X-Active-Tenant-Id`
+- `X-Tenant-ID` / `X-Tenant-Id` 属于历史遗留写法，不再作为当前上下文契约
 
 ---
 
@@ -259,8 +263,8 @@ public class TenantAwareOAuth2AuthorizationService implements OAuth2Authorizatio
 
     @Override
     public void save(OAuth2Authorization authorization) {
-        String tenantId = TenantContext.getCurrentTenant();
-        // 将 tenantId 写入 authorization 的 attributes 或扩展字段
+        String activeTenantId = TenantContext.getCurrentTenant();
+        // 将 activeTenantId 写入 authorization 的 attributes 或扩展字段
         // 然后调用 delegate.save()
     }
 
@@ -272,14 +276,14 @@ public class TenantAwareOAuth2AuthorizationService implements OAuth2Authorizatio
 
     @Override
     public OAuth2Authorization findById(String id) {
-        String tenantId = TenantContext.getCurrentTenant();
+        String activeTenantId = TenantContext.getCurrentTenant();
         // 查询时加上 tenant_id 条件
         return delegate.findById(id);
     }
 
     @Override
     public OAuth2Authorization findByToken(String token, OAuth2TokenType tokenType) {
-        String tenantId = TenantContext.getCurrentTenant();
+        String activeTenantId = TenantContext.getCurrentTenant();
         // 查询时加上 tenant_id 条件
         return delegate.findByToken(token, tokenType);
     }
@@ -352,21 +356,21 @@ public class TenantAwareRegisteredClientRepository implements RegisteredClientRe
 
     @Override
     public void save(RegisteredClient registeredClient) {
-        String tenantId = TenantContext.getCurrentTenant();
-        // 将 tenantId 写入 registered_client 表
+        String activeTenantId = TenantContext.getCurrentTenant();
+        // 将 activeTenantId 写入 registered_client 表的 tenant_id 列
         // 然后调用 delegate.save()
     }
 
     @Override
     public RegisteredClient findById(String id) {
-        String tenantId = TenantContext.getCurrentTenant();
+        String activeTenantId = TenantContext.getCurrentTenant();
         // 查询时加上 tenant_id 条件
         return delegate.findById(id);
     }
 
     @Override
     public RegisteredClient findByClientId(String clientId) {
-        String tenantId = TenantContext.getCurrentTenant();
+        String activeTenantId = TenantContext.getCurrentTenant();
         // 查询时加上 tenant_id 条件
         // 平台级客户端：tenant_id IS NULL OR scope = 'PLATFORM'
         // 租户级客户端：tenant_id = ? AND scope = 'TENANT'
@@ -487,31 +491,30 @@ public class Resource implements Serializable {
 
 ### 4.1 必改清单（落代码点）
 
-#### 4.1.1 TenantFilter 改造
+#### 4.1.1 TenantFilter 改造（历史项）
 
 **文件：** `tiny-oauth-server/src/main/java/com/tiny/platform/application/oauth/workflow/TenantFilter.java`
 
-**必须改：**
+**说明：**
 
-- ❌ 去掉 `default` 回退（第 23 行）
-- ❌ 统一 Header：`X-Tenant-Id`（当前是 `X-Tenant-ID`）
-- ❌ 加入白名单（`/login`, `/oauth2/token`, `/.well-known/**` 等）
-- ❌ 抛明确异常（缺失 tenant → 400/401）
+- 该历史项已被当前实现替代：
+  - 认证链主入口：`TenantContextFilter`
+  - 当前上下文头名：`X-Active-Tenant-Id`
+- `TenantFilter` 已不再作为目标实现保留
 
 ---
 
-#### 4.1.2 SecurityFilterChain 接入 TenantFilter
+#### 4.1.2 SecurityFilterChain 接入 TenantFilter（历史项）
 
 **文件：**
 
 - `tiny-oauth-server/src/main/java/com/tiny/platform/core/oauth/config/AuthorizationServerConfig.java`
 - `tiny-oauth-server/src/main/java/com/tiny/platform/core/oauth/config/DefaultSecurityConfig.java`
 
-**必须改：**
+**说明：**
 
-- ❌ 在 `AuthorizationServerConfig.authorizationServerSecurityFilterChain()` 中添加 `TenantFilter`
-- ❌ 在 `DefaultSecurityConfig.defaultSecurityFilterChain()` 中添加 `TenantFilter`
-- 确保 `TenantFilter` 在认证之前执行
+- 当前实现已经改为在认证链中接入 `TenantContextFilter`
+- 后续不应再回退到 `TenantFilter + X-Tenant-Id` 方案
 
 ---
 

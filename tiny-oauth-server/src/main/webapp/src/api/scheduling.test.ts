@@ -27,7 +27,7 @@ describe('scheduling API', () => {
       mocks.get.mockResolvedValue({ content: [{ id: 1, code: 'billing' }], totalElements: 1 })
       const { taskTypeList } = await import('@/api/scheduling')
 
-      const result = await taskTypeList({ current: 1, pageSize: 10, tenantId: 88 })
+      const result = await taskTypeList({ current: 1, pageSize: 10 })
 
       expect(mocks.get).toHaveBeenCalledWith('/scheduling/task-type/list', expect.objectContaining({
         params: { page: 0, size: 10 },
@@ -62,7 +62,7 @@ describe('scheduling API', () => {
       mocks.get.mockResolvedValue({ content: [{ id: 1, code: 'daily' }], totalElements: 1 })
       const { taskList } = await import('@/api/scheduling')
 
-      const result = await taskList({ current: 1, pageSize: 10, tenantId: 88 })
+      const result = await taskList({ current: 1, pageSize: 10 })
 
       expect(mocks.get).toHaveBeenCalledWith('/scheduling/task/list', expect.objectContaining({
         params: { page: 0, size: 10 },
@@ -86,7 +86,7 @@ describe('scheduling API', () => {
       mocks.get.mockResolvedValue({ content: [{ id: 1, code: 'etl' }], totalElements: 1 })
       const { dagList } = await import('@/api/scheduling')
 
-      const result = await dagList({ current: 1, pageSize: 10, tenantId: 88 })
+      const result = await dagList({ current: 1, pageSize: 10 })
 
       expect(mocks.get).toHaveBeenCalledWith('/scheduling/dag/list', expect.objectContaining({
         params: { page: 0, size: 10 },
@@ -194,7 +194,7 @@ describe('scheduling API', () => {
       mocks.get.mockResolvedValue({ content: [{ id: 1, action: 'TRIGGER' }], totalElements: 1 })
       const { auditList } = await import('@/api/scheduling')
 
-      const result = await auditList({ current: 1, pageSize: 10, tenantId: 88, action: 'TRIGGER' })
+      const result = await auditList({ current: 1, pageSize: 10, action: 'TRIGGER' })
 
       expect(mocks.get).toHaveBeenCalledWith('/scheduling/audit/list', {
         params: { page: 0, size: 10, action: 'TRIGGER' },

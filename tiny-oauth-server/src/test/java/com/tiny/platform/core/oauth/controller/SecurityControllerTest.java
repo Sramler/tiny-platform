@@ -1,6 +1,8 @@
 package com.tiny.platform.core.oauth.controller;
 
 import com.tiny.platform.core.oauth.config.FrontendProperties;
+import com.tiny.platform.core.oauth.model.SecurityUser;
+import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationSessionManager;
 import com.tiny.platform.core.oauth.service.AuthenticationAuditService;
 import com.tiny.platform.core.oauth.service.SecurityService;
@@ -27,12 +29,14 @@ class SecurityControllerTest {
 
     private UserRepository userRepository;
     private SecurityService securityService;
+    private AuthUserResolutionService authUserResolutionService;
     private SecurityController controller;
 
     @BeforeEach
     void setUp() {
         userRepository = mock(UserRepository.class);
         securityService = mock(SecurityService.class);
+        authUserResolutionService = mock(AuthUserResolutionService.class);
         UserAuthenticationMethodRepository authMethodRepo = mock(UserAuthenticationMethodRepository.class);
         FrontendProperties frontendProperties = mock(FrontendProperties.class);
         MultiFactorAuthenticationSessionManager sessionManager = mock(MultiFactorAuthenticationSessionManager.class);
@@ -43,6 +47,7 @@ class SecurityControllerTest {
             authMethodRepo,
             frontendProperties,
             sessionManager,
+            authUserResolutionService,
             auditService
         );
         SecurityContextHolder.clearContext();
@@ -55,6 +60,10 @@ class SecurityControllerTest {
         TenantContext.clear();
     }
 
+    private static void assertActiveTenantResponse(Map<String, Object> payload, long expectedTenantId) {
+        assertEquals(expectedTenantId, payload.get("activeTenantId"));
+    }
+
     @Test
     void status_whenNotLoggedIn_shouldReturn401() {
         ResponseEntity<Map<String, Object>> resp = controller.status();
@@ -65,21 +74,132 @@ class SecurityControllerTest {
 
     @Test
     void status_whenLoggedIn_shouldDelegateToService() {
-        TenantContext.setTenantId(1L);
+        TenantContext.setActiveTenantId(1L);
         SecurityContextHolder.getContext().setAuthentication(
             new UsernamePasswordAuthenticationToken("alice", "n/a", List.of())
         );
         User user = mock(User.class);
         when(user.getId()).thenReturn(10L);
         when(user.getUsername()).thenReturn("alice");
-        when(userRepository.findUserByUsernameAndTenantId("alice", 1L)).thenReturn(Optional.of(user));
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("alice", 1L)).thenReturn(Optional.of(user));
         when(securityService.getSecurityStatus(user)).thenReturn(Map.of("success", true));
 
         ResponseEntity<Map<String, Object>> resp = controller.status();
 
         assertEquals(HttpStatus.OK, resp.getStatusCode());
         assertEquals(Boolean.TRUE, resp.getBody().get("success"));
+        assertActiveTenantResponse(resp.getBody(), 1L);
         verify(securityService).getSecurityStatus(user);
     }
-}
 
+    @Test
+    void status_should_support_membership_user_resolution() {
+        TenantContext.setActiveTenantId(9L);
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("shared.alice", "n/a", List.of())
+        );
+        User user = mock(User.class);
+        when(user.getId()).thenReturn(21L);
+        when(user.getUsername()).thenReturn("shared.alice");
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("shared.alice", 9L)).thenReturn(Optional.of(user));
+        when(securityService.getSecurityStatus(user)).thenReturn(Map.of("success", true));
+
+        ResponseEntity<Map<String, Object>> resp = controller.status();
+
+        assertEquals(HttpStatus.OK, resp.getStatusCode());
+        assertEquals(Boolean.TRUE, resp.getBody().get("success"));
+        assertActiveTenantResponse(resp.getBody(), 9L);
+        verify(authUserResolutionService).resolveUserRecordInActiveTenant("shared.alice", 9L);
+    }
+
+    @Test
+    void status_should_resolve_user_from_authentication_active_tenant_when_tenant_context_missing() {
+        UserAuthenticationMethodRepository authMethodRepo = mock(UserAuthenticationMethodRepository.class);
+        FrontendProperties frontendProperties = mock(FrontendProperties.class);
+        MultiFactorAuthenticationSessionManager sessionManager = mock(MultiFactorAuthenticationSessionManager.class);
+        AuthenticationAuditService auditService = mock(AuthenticationAuditService.class);
+        AuthUserResolutionService authUserResolutionService = mock(AuthUserResolutionService.class);
+        controller = new SecurityController(
+                userRepository,
+                securityService,
+                authMethodRepo,
+                frontendProperties,
+                sessionManager,
+                authUserResolutionService,
+                auditService
+        );
+
+        SecurityUser principal = new SecurityUser(21L, 7L, "shared.alice", "", List.of(), true, true, true, true);
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(principal, "n/a", List.of())
+        );
+        User user = mock(User.class);
+        when(user.getId()).thenReturn(21L);
+        when(user.getUsername()).thenReturn("shared.alice");
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("shared.alice", 7L)).thenReturn(Optional.of(user));
+        when(securityService.getSecurityStatus(user)).thenReturn(Map.of("success", true));
+
+        ResponseEntity<Map<String, Object>> resp = controller.status();
+
+        assertEquals(HttpStatus.OK, resp.getStatusCode());
+        assertEquals(Boolean.TRUE, resp.getBody().get("success"));
+        assertActiveTenantResponse(resp.getBody(), 7L);
+        verify(authUserResolutionService).resolveUserRecordInActiveTenant("shared.alice", 7L);
+    }
+
+    @Test
+    void preBindTotp_should_include_active_tenant_fields() {
+        TenantContext.setActiveTenantId(9L);
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("alice", "n/a", List.of())
+        );
+        User user = mock(User.class);
+        when(user.getId()).thenReturn(10L);
+        when(user.getUsername()).thenReturn("alice");
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("alice", 9L)).thenReturn(Optional.of(user));
+        when(securityService.preBindTotp(user)).thenReturn(Map.of("success", true, "otpauthUri", "otpauth://totp/demo"));
+
+        ResponseEntity<Map<String, Object>> resp = controller.preBindTotp();
+
+        assertEquals(HttpStatus.OK, resp.getStatusCode());
+        assertEquals(Boolean.TRUE, resp.getBody().get("success"));
+        assertActiveTenantResponse(resp.getBody(), 9L);
+    }
+
+    @Test
+    void bindTotp_should_include_active_tenant_fields_on_success() {
+        TenantContext.setActiveTenantId(9L);
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("alice", "n/a", List.of())
+        );
+        User user = mock(User.class);
+        when(user.getId()).thenReturn(10L);
+        when(user.getUsername()).thenReturn("alice");
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("alice", 9L)).thenReturn(Optional.of(user));
+        when(securityService.bindTotp(user, null, "123456")).thenReturn(Map.of("success", true));
+
+        ResponseEntity<Map<String, Object>> resp = controller.bindTotp(Map.of("totpCode", "123456"));
+
+        assertEquals(HttpStatus.OK, resp.getStatusCode());
+        assertEquals(Boolean.TRUE, resp.getBody().get("success"));
+        assertActiveTenantResponse(resp.getBody(), 9L);
+    }
+
+    @Test
+    void bindTotp_should_include_active_tenant_fields_on_validation_error() {
+        TenantContext.setActiveTenantId(9L);
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("alice", "n/a", List.of())
+        );
+        User user = mock(User.class);
+        when(user.getId()).thenReturn(10L);
+        when(user.getUsername()).thenReturn("alice");
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("alice", 9L)).thenReturn(Optional.of(user));
+
+        ResponseEntity<Map<String, Object>> resp = controller.bindTotp(Map.of());
+
+        assertEquals(HttpStatus.BAD_REQUEST, resp.getStatusCode());
+        assertEquals(Boolean.FALSE, resp.getBody().get("success"));
+        assertActiveTenantResponse(resp.getBody(), 9L);
+    }
+}

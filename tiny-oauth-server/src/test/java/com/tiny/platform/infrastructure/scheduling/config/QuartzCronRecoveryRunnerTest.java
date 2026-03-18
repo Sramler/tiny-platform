@@ -2,6 +2,7 @@ package com.tiny.platform.infrastructure.scheduling.config;
 
 import com.tiny.platform.infrastructure.scheduling.model.SchedulingDag;
 import com.tiny.platform.infrastructure.scheduling.repository.SchedulingDagRepository;
+import com.tiny.platform.infrastructure.scheduling.repository.SchedulingDagVersionRepository;
 import com.tiny.platform.infrastructure.scheduling.service.QuartzSchedulerService;
 import org.junit.jupiter.api.Test;
 import org.quartz.SchedulerException;
@@ -20,29 +21,34 @@ class QuartzCronRecoveryRunnerTest {
     @Test
     void shouldSkipWhenNoCronDagNeedsRecovery() throws Exception {
         SchedulingDagRepository dagRepository = mock(SchedulingDagRepository.class);
+        SchedulingDagVersionRepository dagVersionRepository = mock(SchedulingDagVersionRepository.class);
         QuartzSchedulerService quartzSchedulerService = mock(QuartzSchedulerService.class);
         when(dagRepository.findAllEnabledWithCron()).thenReturn(List.of());
 
-        new QuartzCronRecoveryRunner(dagRepository, quartzSchedulerService).run(new DefaultApplicationArguments());
+        new QuartzCronRecoveryRunner(dagRepository, dagVersionRepository, quartzSchedulerService).run(new DefaultApplicationArguments());
 
         verify(quartzSchedulerService, never()).createOrUpdateDagJob(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 
     @Test
-    void shouldRecoverOnlyCronEnabledDagAndContinueOnSchedulerException() throws Exception {
+    void shouldRecoverOnlyDagWithActiveVersionAndContinueOnSchedulerException() throws Exception {
         SchedulingDagRepository dagRepository = mock(SchedulingDagRepository.class);
+        SchedulingDagVersionRepository dagVersionRepository = mock(SchedulingDagVersionRepository.class);
         QuartzSchedulerService quartzSchedulerService = mock(QuartzSchedulerService.class);
-        SchedulingDag disabledCronDag = dag(1L, false, "0 0 * * * ?", "Asia/Shanghai");
+        SchedulingDag noActiveVersionDag = dag(1L, true, "0 0 * * * ?", "Asia/Shanghai");
         SchedulingDag okDag = dag(2L, true, "0 5 * * * ?", "UTC");
         SchedulingDag brokenDag = dag(3L, true, "0 10 * * * ?", "UTC");
-        when(dagRepository.findAllEnabledWithCron()).thenReturn(List.of(disabledCronDag, okDag, brokenDag));
+        when(dagRepository.findAllEnabledWithCron()).thenReturn(List.of(noActiveVersionDag, okDag, brokenDag));
+        when(dagVersionRepository.findByDagIdAndStatus(1L, "ACTIVE")).thenReturn(java.util.Optional.empty());
+        when(dagVersionRepository.findByDagIdAndStatus(2L, "ACTIVE")).thenReturn(java.util.Optional.of(new com.tiny.platform.infrastructure.scheduling.model.SchedulingDagVersion()));
+        when(dagVersionRepository.findByDagIdAndStatus(3L, "ACTIVE")).thenReturn(java.util.Optional.of(new com.tiny.platform.infrastructure.scheduling.model.SchedulingDagVersion()));
         org.mockito.Mockito.doThrow(new SchedulerException("boom"))
                 .when(quartzSchedulerService)
                 .createOrUpdateDagJob(brokenDag, brokenDag.getCronExpression(), brokenDag.getCronTimezone());
 
-        new QuartzCronRecoveryRunner(dagRepository, quartzSchedulerService).run(new DefaultApplicationArguments());
+        new QuartzCronRecoveryRunner(dagRepository, dagVersionRepository, quartzSchedulerService).run(new DefaultApplicationArguments());
 
-        verify(quartzSchedulerService, never()).createOrUpdateDagJob(disabledCronDag, disabledCronDag.getCronExpression(), disabledCronDag.getCronTimezone());
+        verify(quartzSchedulerService, never()).createOrUpdateDagJob(noActiveVersionDag, noActiveVersionDag.getCronExpression(), noActiveVersionDag.getCronTimezone());
         verify(quartzSchedulerService).createOrUpdateDagJob(okDag, okDag.getCronExpression(), okDag.getCronTimezone());
         verify(quartzSchedulerService, times(1)).createOrUpdateDagJob(brokenDag, brokenDag.getCronExpression(), brokenDag.getCronTimezone());
     }

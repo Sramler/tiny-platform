@@ -135,8 +135,8 @@ public class IdempotentConsoleController extends BaseExceptionHandler {
     public ResponseEntity<Map<String, Object>> getMetrics(
             @RequestParam(required = false) String date,
             @RequestParam(required = false) String scene,
-            @RequestParam(required = false) Long tenantId) {
-        return ResponseEntity.ok(consoleService.getMetricsMap(date, scene, tenantId));
+            @RequestParam(name = "activeTenantId", required = false) Long activeTenantId) {
+        return ResponseEntity.ok(consoleService.getMetricsMap(date, scene, activeTenantId));
     }
 
     /**

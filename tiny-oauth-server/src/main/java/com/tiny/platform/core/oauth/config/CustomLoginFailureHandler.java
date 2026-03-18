@@ -1,10 +1,11 @@
 package com.tiny.platform.core.oauth.config;
 
 import com.tiny.platform.core.oauth.security.LoginFailurePolicy;
+import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.core.oauth.service.AuthenticationAuditService;
-import com.tiny.platform.core.oauth.tenant.TenantContext;
+import com.tiny.platform.core.oauth.tenant.ActiveTenantResponseSupport;
 import com.tiny.platform.infrastructure.core.util.IpUtils;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -30,14 +31,17 @@ public class CustomLoginFailureHandler implements AuthenticationFailureHandler {
     private static final Logger logger = LoggerFactory.getLogger(CustomLoginFailureHandler.class);
 
     private final UserRepository userRepository;
+    private final AuthUserResolutionService authUserResolutionService;
     private final AuthenticationAuditService auditService;
     private final LoginFailurePolicy loginFailurePolicy;
     private final SimpleUrlAuthenticationFailureHandler defaultHandler;
 
     public CustomLoginFailureHandler(UserRepository userRepository,
+                                     AuthUserResolutionService authUserResolutionService,
                                      AuthenticationAuditService auditService,
                                      LoginFailurePolicy loginFailurePolicy) {
         this.userRepository = userRepository;
+        this.authUserResolutionService = authUserResolutionService;
         this.auditService = auditService;
         this.loginFailurePolicy = loginFailurePolicy;
         this.defaultHandler = new SimpleUrlAuthenticationFailureHandler();
@@ -62,11 +66,11 @@ public class CustomLoginFailureHandler implements AuthenticationFailureHandler {
         if (username != null && !username.isBlank()) {
             try {
                 // 尝试查找用户并记录失败登录信息
-                Long tenantId = TenantContext.getTenantId();
-                var userOpt = tenantId != null
-                        ? userRepository.findUserByUsernameAndTenantId(username, tenantId)
+                Long activeTenantId = resolveActiveTenantId(request);
+                var userOpt = activeTenantId != null
+                        ? resolveUserInActiveTenant(username, activeTenantId)
                         : java.util.Optional.<User>empty();
-                if (tenantId != null) {
+                if (activeTenantId != null) {
                     userOpt.ifPresent(user -> {
                         recordFailedLogin(user, request, exception);
                         // 记录登录失败审计
@@ -81,7 +85,7 @@ public class CustomLoginFailureHandler implements AuthenticationFailureHandler {
                 }
                 
                 // 如果用户不存在，也记录审计（userId为null）
-                if (tenantId == null || userOpt.isEmpty()) {
+                if (activeTenantId == null || userOpt.isEmpty()) {
                     auditService.recordLoginFailure(
                         username,
                         null,
@@ -153,5 +157,20 @@ public class CustomLoginFailureHandler implements AuthenticationFailureHandler {
 
     private String urlEncode(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    private java.util.Optional<User> resolveUserInActiveTenant(String username, Long activeTenantId) {
+        return requireAuthUserResolutionService().resolveUserRecordInActiveTenant(username, activeTenantId);
+    }
+
+    private Long resolveActiveTenantId(HttpServletRequest request) {
+        return ActiveTenantResponseSupport.resolveActiveTenantId(request);
+    }
+
+    private AuthUserResolutionService requireAuthUserResolutionService() {
+        if (authUserResolutionService == null) {
+            throw new IllegalStateException("AuthUserResolutionService 未配置");
+        }
+        return authUserResolutionService;
     }
 }

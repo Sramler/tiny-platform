@@ -62,8 +62,9 @@ class IdempotentConsoleControllerTest {
         when(consoleService.getRecords("k", "SUCCESS", 0, 10)).thenReturn(records);
         assertEquals(records, controller.getRecords("k", "SUCCESS", 0, 10).getBody());
 
-        when(consoleService.getMetricsMap("2026-01-01", "scene", 1L)).thenReturn(Map.of("success", true));
+        when(consoleService.getMetricsMap("2026-01-01", "scene", 1L)).thenReturn(Map.of("success", true, "activeTenantId", 1L));
         assertEquals(Boolean.TRUE, controller.getMetrics("2026-01-01", "scene", 1L).getBody().get("success"));
+        assertEquals(1L, controller.getMetrics("2026-01-01", "scene", 1L).getBody().get("activeTenantId"));
 
         PageResponse<IdempotentBlacklistDto> blacklist = new PageResponse<>(new PageImpl<>(List.of()));
         when(consoleService.getBlacklist(0, 10)).thenReturn(blacklist);
@@ -84,4 +85,3 @@ class IdempotentConsoleControllerTest {
         verify(consoleService).retryRecord("123");
     }
 }
-

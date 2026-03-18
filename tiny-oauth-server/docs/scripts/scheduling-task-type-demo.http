@@ -1,13 +1,17 @@
 @baseUrl = http://localhost:9000
 @token = Bearer {{paste_access_token_here}}
 
+# 说明：
+# - 当前活动租户上下文优先来自 access token / session 中冻结的 activeTenantId。
+# - 如需显式指定当前活动租户，请使用 X-Active-Tenant-Id。
+
 ### 创建 LoggingTaskExecutor 示例任务类型
 POST {{baseUrl}}/scheduling/task-type
 Authorization: {{token}}
 Content-Type: application/json
+X-Active-Tenant-Id: 1
 
 {
-  "tenantId": 1,
   "code": "demo_logging",
   "name": "示例-日志执行器",
   "description": "使用 loggingTaskExecutor 打印参数并返回结果",
@@ -23,9 +27,9 @@ Content-Type: application/json
 POST {{baseUrl}}/scheduling/task-type
 Authorization: {{token}}
 Content-Type: application/json
+X-Active-Tenant-Id: 1
 
 {
-  "tenantId": 1,
   "code": "demo_delay",
   "name": "示例-延迟执行器",
   "description": "使用 delayTaskExecutor, 支持延迟/失败模拟",
@@ -36,4 +40,3 @@ Content-Type: application/json
   "enabled": true,
   "createdBy": "demo"
 }
-

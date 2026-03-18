@@ -4,10 +4,12 @@ import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationAudit
 import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationAuditRepository;
 import com.tiny.platform.core.oauth.service.AuthenticationAuditService;
 import com.tiny.platform.infrastructure.core.util.IpUtils;
+import com.tiny.platform.core.oauth.tenant.ActiveTenantResponseSupport;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.core.oauth.tenant.TenantContextFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,8 +42,8 @@ public class AuthenticationAuditServiceImpl implements AuthenticationAuditServic
             UserAuthenticationAudit audit = new UserAuthenticationAudit();
             audit.setUsername(username != null ? username : "unknown");
             audit.setUserId(userId);
-            TenantResolution tenantResolution = resolveTenant(request);
-            audit.setTenantId(tenantResolution.tenantId());
+            TenantResolution tenantResolution = resolveActiveTenant(request);
+            audit.setTenantId(tenantResolution.activeTenantId());
             audit.setTenantResolutionCode(tenantResolution.code());
             audit.setTenantResolutionSource(tenantResolution.source());
             audit.setEventType(eventType);
@@ -109,8 +111,8 @@ public class AuthenticationAuditServiceImpl implements AuthenticationAuditServic
         UserAuthenticationAudit audit = new UserAuthenticationAudit();
         audit.setUsername(username != null ? username : "unknown");
         audit.setUserId(userId);
-        TenantResolution tenantResolution = resolveTenant(request);
-        audit.setTenantId(tenantResolution.tenantId());
+        TenantResolution tenantResolution = resolveActiveTenant(request);
+        audit.setTenantId(tenantResolution.activeTenantId());
         audit.setTenantResolutionCode(tenantResolution.code());
         audit.setTenantResolutionSource(tenantResolution.source());
         audit.setEventType("TOKEN_ISSUE");
@@ -135,8 +137,8 @@ public class AuthenticationAuditServiceImpl implements AuthenticationAuditServic
         UserAuthenticationAudit audit = new UserAuthenticationAudit();
         audit.setUsername(username != null ? username : "unknown");
         audit.setUserId(userId);
-        TenantResolution tenantResolution = resolveTenant(request);
-        audit.setTenantId(tenantResolution.tenantId());
+        TenantResolution tenantResolution = resolveActiveTenant(request);
+        audit.setTenantId(tenantResolution.activeTenantId());
         audit.setTenantResolutionCode(tenantResolution.code());
         audit.setTenantResolutionSource(tenantResolution.source());
         audit.setEventType("TOKEN_REVOKE");
@@ -155,13 +157,18 @@ public class AuthenticationAuditServiceImpl implements AuthenticationAuditServic
         }
     }
 
-    private TenantResolution resolveTenant(HttpServletRequest request) {
-        Long tenantId = TenantContext.getTenantId();
+    private TenantResolution resolveActiveTenant(HttpServletRequest request) {
+        Long activeTenantId = TenantContext.getActiveTenantId();
+        if (activeTenantId == null || activeTenantId <= 0) {
+            activeTenantId = ActiveTenantResponseSupport.resolveActiveTenantId(
+                    SecurityContextHolder.getContext().getAuthentication()
+            );
+        }
         String tenantSource = resolveTenantSource(request);
-        if (tenantId == null || tenantId <= 0) {
+        if (activeTenantId == null || activeTenantId <= 0) {
             return new TenantResolution(null, TENANT_RESOLUTION_MISSING, tenantSource);
         }
-        return new TenantResolution(tenantId, TENANT_RESOLUTION_RESOLVED, tenantSource);
+        return new TenantResolution(activeTenantId, TENANT_RESOLUTION_RESOLVED, tenantSource);
     }
 
     private String resolveTenantSource(HttpServletRequest request) {
@@ -178,5 +185,5 @@ public class AuthenticationAuditServiceImpl implements AuthenticationAuditServic
         return sourceFromContext;
     }
 
-    private record TenantResolution(Long tenantId, String code, String source) {}
+    private record TenantResolution(Long activeTenantId, String code, String source) {}
 }

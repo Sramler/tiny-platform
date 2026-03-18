@@ -70,7 +70,7 @@
     >
       <a-descriptions :column="1" bordered v-if="currentRecord">
         <a-descriptions-item label="ID">{{ currentRecord.id }}</a-descriptions-item>
-        <a-descriptions-item label="租户ID">{{ currentRecord.tenantId || '-' }}</a-descriptions-item>
+        <a-descriptions-item label="记录所属租户ID">{{ currentRecord.recordTenantId || '-' }}</a-descriptions-item>
         <a-descriptions-item label="对象类型">{{ currentRecord.objectType }}</a-descriptions-item>
         <a-descriptions-item label="对象ID">{{ currentRecord.objectId || '-' }}</a-descriptions-item>
         <a-descriptions-item label="操作类型">
@@ -89,11 +89,22 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { message } from 'ant-design-vue'
 import { ReloadOutlined } from '@ant-design/icons-vue'
 import { auditList } from '@/api/scheduling'
 import { throttle } from '@/utils/debounce'
+import { useAuth } from '@/auth/auth'
+import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+
+const { user } = useAuth()
+const schedulingAuthorities = computed(() =>
+  extractAuthoritiesFromJwt(user.value?.access_token).filter((a) => a.startsWith('scheduling:')),
+)
+const canViewSchedulingAudit = computed(() =>
+  schedulingAuthorities.value.includes('scheduling:audit:view') ||
+  schedulingAuthorities.value.includes('scheduling:*'),
+)
 
 const loading = ref(false)
 const refreshing = ref(false)
@@ -149,6 +160,11 @@ const formatJson = (str: string | null | undefined) => {
 const loadData = async () => {
   loading.value = true
   try {
+    if (!canViewSchedulingAudit.value) {
+      dataSource.value = []
+      pagination.total = 0
+      return
+    }
     const params = {
       current: pagination.current,
       pageSize: pagination.pageSize,
@@ -247,5 +263,3 @@ onMounted(() => {
   margin-left: 8px;
 }
 </style>
-
-

@@ -24,6 +24,10 @@ const routerMocks = vi.hoisted(() => ({
   replace: vi.fn(),
 }))
 
+const authMocks = vi.hoisted(() => ({
+  authUser: { value: null as { access_token?: string | null } | null },
+}))
+
 const routeState = vi.hoisted(() => ({
   path: '/scheduling/dag/history',
   query: { dagId: '10' } as Record<string, string>,
@@ -56,6 +60,12 @@ vi.mock('@/api/scheduling', () => ({
 vi.mock('vue-router', () => ({
   useRouter: () => routerMocks,
   useRoute: () => routeState,
+}))
+
+vi.mock('@/auth/auth', () => ({
+  useAuth: () => ({
+    user: authMocks.authUser,
+  }),
 }))
 
 vi.mock('@/utils/debounce', () => ({
@@ -175,10 +185,19 @@ function findButtonByText(wrapper: ReturnType<typeof mountView> | ReturnType<typ
   return wrapper.findAll('button').find((button) => button.text().includes(text))
 }
 
+function createToken(authorities: string[]) {
+  const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')
+  const payload = Buffer.from(JSON.stringify({ authorities })).toString('base64url')
+  return `${header}.${payload}.signature`
+}
+
 describe('DagHistory.vue', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    routeState.query = { dagId: '10' }
+    authMocks.authUser.value = {
+      access_token: createToken(['scheduling:run:control']),
+    }
+    routeState.query = { dagId: '10', activeTenantId: '9' }
     apiMocks.dagList.mockResolvedValue({
       records: [{ id: 10, code: 'etl', name: 'ETL' }],
       total: 1,
@@ -235,9 +254,9 @@ describe('DagHistory.vue', () => {
     expect(findRow(wrapper, 101).text()).toContain('可停止')
     expect(findRow(wrapper, 103).text()).toContain('可重试')
 
-    await findButtonByText(findRow(wrapper, 101), '停止本次')?.trigger('click')
+    await findRow(wrapper, 101).findAll('.popconfirm')[0]?.trigger('click')
     await flushPromises()
-    await findButtonByText(findRow(wrapper, 103), '重试本次')?.trigger('click')
+    await findRow(wrapper, 103).findAll('.popconfirm')[1]?.trigger('click')
     await flushPromises()
 
     expect(apiMocks.stopDagRun).toHaveBeenCalledWith(10, 101)
@@ -256,6 +275,19 @@ describe('DagHistory.vue', () => {
     expect(retryButton?.attributes('disabled')).toBeDefined()
     expect(successRow.text()).toContain('仅 RUNNING 的运行实例支持停止')
     expect(successRow.text()).toContain('仅失败或部分失败的运行实例支持重试')
+  })
+
+  it('should preserve activeTenantId when resetting filters', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    await findButtonByText(wrapper, '重置')?.trigger('click')
+    await flushPromises()
+
+    expect(routerMocks.replace).toHaveBeenCalledWith({
+      path: '/scheduling/dag/history',
+      query: { activeTenantId: '9' },
+    })
   })
 
   it('should map dag nodes and execute run-level node actions', async () => {

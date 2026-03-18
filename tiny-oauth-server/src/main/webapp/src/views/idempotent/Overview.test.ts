@@ -176,7 +176,7 @@ describe('idempotent Overview.vue', () => {
     })
   })
 
-  it('should load platform view first and pass tenantId after filter changes', async () => {
+  it('should load platform view first and pass activeTenantId after filter changes', async () => {
     const wrapper = mountView()
     await flushPromises()
     await flushPromises()
@@ -191,15 +191,15 @@ describe('idempotent Overview.vue', () => {
     await flushPromises()
     await flushPromises()
 
-    expect(mocks.routerReplace).toHaveBeenCalledWith({ query: { tenantId: '7' } })
+    expect(mocks.routerReplace).toHaveBeenCalledWith({ query: { activeTenantId: '7' } })
     expect(mocks.getIdempotentMetrics).toHaveBeenLastCalledWith(7)
     expect(mocks.getIdempotentTopKeys).toHaveBeenLastCalledWith(10, 7)
     expect(mocks.getIdempotentMqMetrics).toHaveBeenLastCalledWith(7)
     expect(wrapper.text()).toContain('演示租户 (demo)')
   })
 
-  it('should honor tenantId from route query on first load', async () => {
-    mocks.routeQuery.tenantId = '7'
+  it('should honor activeTenantId from route query on first load', async () => {
+    mocks.routeQuery.activeTenantId = '7'
 
     const wrapper = mountView()
     await flushPromises()
@@ -223,5 +223,20 @@ describe('idempotent Overview.vue', () => {
     expect(mocks.getIdempotentMqMetrics).toHaveBeenCalledTimes(1)
     expect(wrapper.text()).toContain('租户列表加载失败')
     expect(mocks.messageError).not.toHaveBeenCalled()
+  })
+
+  it('should preserve activeTenantId when returning home', async () => {
+    mocks.routeQuery.activeTenantId = '7'
+
+    const wrapper = mountView()
+    await flushPromises()
+    await flushPromises()
+
+    await wrapper.findAll('button')[0]?.trigger('click')
+
+    expect(mocks.routerPush).toHaveBeenCalledWith({
+      path: '/',
+      query: { activeTenantId: '7' },
+    })
   })
 })

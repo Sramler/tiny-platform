@@ -13,7 +13,7 @@ public class DictTypeResponseDto {
     private String dictCode;
     private String dictName;
     private String description;
-    private Long tenantId;
+    private Long recordTenantId;
     private Long categoryId;
     private Boolean isBuiltin;
     private Boolean builtinLocked;
@@ -33,7 +33,7 @@ public class DictTypeResponseDto {
         this.dictCode = dictType.getDictCode();
         this.dictName = dictType.getDictName();
         this.description = dictType.getDescription();
-        this.tenantId = dictType.getTenantId();
+        this.recordTenantId = dictType.getTenantId();
         this.categoryId = dictType.getCategoryId();
         this.isBuiltin = dictType.getIsBuiltin();
         this.builtinLocked = dictType.getBuiltinLocked();
@@ -80,12 +80,12 @@ public class DictTypeResponseDto {
         this.description = description;
     }
 
-    public Long getTenantId() {
-        return tenantId;
+    public Long getRecordTenantId() {
+        return recordTenantId;
     }
 
-    public void setTenantId(Long tenantId) {
-        this.tenantId = tenantId;
+    public void setRecordTenantId(Long recordTenantId) {
+        this.recordTenantId = recordTenantId;
     }
 
     public Long getCategoryId() {
@@ -168,4 +168,3 @@ public class DictTypeResponseDto {
         this.updatedBy = updatedBy;
     }
 }
-

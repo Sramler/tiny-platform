@@ -5,7 +5,12 @@ import { userManager } from '@/auth/oidc.ts'
 import { useAuth } from '@/auth/auth'
 import { persistentLogger } from '@/utils/logger'
 import { sanitizeInternalRedirect } from '@/utils/redirect'
-import { syncTenantContextFromAccessToken, syncTenantContextFromClaims } from '@/utils/tenant'
+import {
+  getActiveTenantId,
+  syncTenantContextFromAccessToken,
+  syncTenantContextFromClaims,
+  withActiveTenantQuery,
+} from '@/utils/tenant'
 
 const router = useRouter()
 const { isAuthenticated } = useAuth()
@@ -25,6 +30,11 @@ const trace = (step: string, payload?: unknown) => {
 const persistError = (step: string, detail?: unknown) => {
   persistentLogger.error(`[OIDC] 回调异常: ${step}`, detail)
 }
+
+const buildHomeTarget = () => ({
+  path: '/',
+  query: withActiveTenantQuery({}, getActiveTenantId()),
+})
 
 onMounted(async () => {
   try {
@@ -58,7 +68,7 @@ onMounted(async () => {
         trace('redirect', { returnUrl })
 
         // 使用 replace 避免历史记录问题
-        await router.replace(returnUrl)
+        await router.replace(returnUrl === '/' ? buildHomeTarget() : returnUrl)
       } catch (callbackError: any) {
         // 检查是否是 state 不匹配的错误
         if (callbackError?.message?.includes('No matching state') ||
@@ -76,6 +86,7 @@ onMounted(async () => {
           error.value = '登录状态已失效，请重新登录'
           persistError('state-mismatch', callbackError?.message)
           setTimeout(() => {
+            // 登录页继续通过 tenantCode 输入与认证前置解析恢复租户，不通过 activeTenantId query 传递上下文。
             router.replace('/login')
           }, 3000)
         } else {
@@ -93,11 +104,12 @@ onMounted(async () => {
 
       // 延迟跳转到登录页
       setTimeout(() => {
+        // 登录页继续通过 tenantCode 输入与认证前置解析恢复租户，不通过 activeTenantId query 传递上下文。
         router.replace('/login')
       }, 3000)
     } else {
       console.warn('⚠️ 非 OIDC 回调，跳转到主页')
-      router.replace('/')
+      router.replace(buildHomeTarget())
     }
   } catch (e) {
     trace('callback.error', e instanceof Error ? e.message : e)
@@ -106,6 +118,7 @@ onMounted(async () => {
 
     // 延迟跳转到登录页
     setTimeout(() => {
+      // 登录页继续通过 tenantCode 输入与认证前置解析恢复租户，不通过 activeTenantId query 传递上下文。
       router.replace('/login')
     }, 3000)
   } finally {

@@ -1,0 +1,52 @@
+databaseChangeLog:
+  - changeSet:
+      id: 042-validate-role-assignment-backfill
+      author: tiny
+      comment: 校验 041 回填后 role_assignment 与 user_role 一致（不再运行态回退）
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - tableExists:
+            tableName: user_role
+        - tableExists:
+            tableName: role_assignment
+        - sqlCheck:
+            expectedResult: "0"
+            sql: |
+              SELECT COUNT(*) FROM (
+                -- user_role 中存在，但 role_assignment(TENANT/ACTIVE) 中缺失
+                SELECT ur.user_id, ur.tenant_id, ur.role_id
+                FROM user_role ur
+                LEFT JOIN role_assignment ra
+                  ON ra.principal_type = 'USER'
+                 AND ra.principal_id = ur.user_id
+                 AND ra.role_id = ur.role_id
+                 AND ra.scope_type = 'TENANT'
+                 AND ra.tenant_id = ur.tenant_id
+                 AND ra.scope_id = ur.tenant_id
+                 AND ra.status = 'ACTIVE'
+                WHERE ra.id IS NULL
+                UNION ALL
+                -- role_assignment(TENANT/ACTIVE) 中存在，但 user_role 中缺失
+                SELECT ra.principal_id AS user_id, ra.tenant_id, ra.role_id
+                FROM role_assignment ra
+                LEFT JOIN user_role ur
+                  ON ur.user_id = ra.principal_id
+                 AND ur.role_id = ra.role_id
+                 AND ur.tenant_id = ra.tenant_id
+                WHERE ra.principal_type = 'USER'
+                  AND ra.scope_type = 'TENANT'
+                  AND ra.status = 'ACTIVE'
+                  AND ur.user_id IS NULL
+              ) diff;
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: false
+            stripComments: false
+            sql: |
+              -- no-op: 仅做一致性校验，确保后续移除 legacy 回退与删表安全
+              SELECT 1;
+

@@ -33,7 +33,7 @@ class IdempotentControllersTest {
     void execute_request_dto_should_cover_getters_and_setters() {
         IdempotentExecuteController.ExecuteRequest request = new IdempotentExecuteController.ExecuteRequest();
         Map<String, Object> bizContext = new HashMap<>();
-        bizContext.put("tenantId", "t1");
+        bizContext.put("activeTenantId", "t1");
 
         request.setKey("http:demo:1");
         request.setTtl(33L);
@@ -45,7 +45,7 @@ class IdempotentControllersTest {
         assertThat(request.getTtl()).isEqualTo(33L);
         assertThat(request.getFailOpen()).isFalse();
         assertThat(request.getPayload()).isEqualTo(Map.of("x", 1));
-        assertThat(request.getBizContext()).containsEntry("tenantId", "t1");
+        assertThat(request.getBizContext()).containsEntry("activeTenantId", "t1");
     }
 
     @Test

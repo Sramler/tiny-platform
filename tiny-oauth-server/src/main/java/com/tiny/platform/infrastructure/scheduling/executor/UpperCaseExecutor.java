@@ -1,5 +1,6 @@
 package com.tiny.platform.infrastructure.scheduling.executor;
 
+import com.tiny.platform.infrastructure.scheduling.security.SchedulingLogSanitizer;
 import com.tiny.platform.infrastructure.scheduling.service.SchedulingExecutionContext;
 import com.tiny.platform.infrastructure.scheduling.service.TaskExecutorService;
 import org.slf4j.Logger;
@@ -23,11 +24,11 @@ public class UpperCaseExecutor implements TaskExecutorService.TaskExecutor {
                 ? String.valueOf(params.get("message"))
                 : "";
         String result = message.toUpperCase();
-        logger.info("[UpperCaseExecutor] tenantId={}, runId={}, in={}, out={}",
-                executionContext != null ? executionContext.getTenantId() : null,
+        logger.info("[UpperCaseExecutor] executionTenantId={}, runId={}, in={}, out={}",
+                executionContext != null ? executionContext.getExecutionTenantId() : null,
                 executionContext != null ? executionContext.getDagRunId() : null,
-                message,
-                result);
+                SchedulingLogSanitizer.sanitizeMessageForLog(message, 64),
+                SchedulingLogSanitizer.sanitizeMessageForLog(result, 64));
         return Map.of(
                 "status", "OK",
                 "original", message,

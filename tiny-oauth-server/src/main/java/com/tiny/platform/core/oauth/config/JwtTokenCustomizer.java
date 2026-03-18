@@ -1,6 +1,9 @@
 package com.tiny.platform.core.oauth.config;
 
 import com.tiny.platform.core.oauth.model.SecurityUser;
+import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
+import com.tiny.platform.core.oauth.security.PermissionVersionService;
+import com.tiny.platform.core.oauth.tenant.TenantContextContract;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.core.oauth.security.AuthenticationFactorAuthorities;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
@@ -10,11 +13,13 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
 import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
+import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -61,14 +66,25 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
 
     private static final Logger log = LoggerFactory.getLogger(JwtTokenCustomizer.class);
     private final UserRepository userRepository;
+    private final AuthUserResolutionService authUserResolutionService;
+    private final PermissionVersionService permissionVersionService;
 
     /**
      * 构造函数
      * 
      * @param userRepository 用户仓库，用于查询完整的用户信息（email, phone, nickname 等）
      */
-    public JwtTokenCustomizer(UserRepository userRepository) {
+    public JwtTokenCustomizer(UserRepository userRepository,
+                              PermissionVersionService permissionVersionService) {
+        this(userRepository, null, permissionVersionService);
+    }
+
+    public JwtTokenCustomizer(UserRepository userRepository,
+                              AuthUserResolutionService authUserResolutionService,
+                              PermissionVersionService permissionVersionService) {
         this.userRepository = userRepository;
+        this.authUserResolutionService = authUserResolutionService;
+        this.permissionVersionService = permissionVersionService;
     }
 
     @Override
@@ -174,7 +190,7 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
         if (securityUser != null) {
             Long userId = securityUser.getUserId();
             String username = securityUser.getUsername();
-            Long tenantId = securityUser.getTenantId();
+            Long activeTenantId = securityUser.getActiveTenantId();
             log.info("[JwtTokenCustomizer] Access Token - SecurityUser 来源: {}, userId: {}, username: {}", 
                     source, userId, username);
             
@@ -185,15 +201,13 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
             // 添加用户ID和用户名
             claims.claim("userId", userId);
             claims.claim("username", username);
-            if (tenantId != null) {
-                claims.claim("tenantId", tenantId);
-            }
-            
-            // 添加权限列表（角色和资源权限）
-            Set<String> authorities = principal.getAuthorities().stream()
-                    .map(GrantedAuthority::getAuthority)
-                    .collect(Collectors.toSet());
+            applyTenantClaims(claims, activeTenantId);
+
+            // 兼容保留旧 authorities，同时新增 permissions 供后续最小契约迁移。
+            Set<String> authorities = collectAuthorities(principal);
             claims.claim("authorities", authorities);
+            claims.claim("permissions", extractPermissionAuthorities(authorities));
+            addPermissionsVersionClaim(claims, userId, activeTenantId);
             log.debug("[JwtTokenCustomizer] Access Token - 添加 authorities: {}", authorities);
         } else if (principal != null && principal.getName() != null) {
             // 如果 details 中没有 SecurityUser，至少添加用户名（从 principal.getName() 获取）
@@ -262,8 +276,10 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
         if (securityUser != null) {
             Long userId = securityUser.getUserId();
             String username = securityUser.getUsername();
+            Long activeTenantId = securityUser.getActiveTenantId();
             claims.claim("userId", userId);
             claims.claim("username", username);
+            applyTenantClaims(claims, activeTenantId);
             log.info("[JwtTokenCustomizer] Refresh Token - 添加 userId: {}, username: {}", userId, username);
         } else if (principal.getName() != null) {
             claims.claim("username", principal.getName());
@@ -336,12 +352,10 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
         if (securityUser != null) {
             userId = securityUser.getUserId();
             username = securityUser.getUsername();
-            Long tenantId = securityUser.getTenantId();
+            Long activeTenantId = securityUser.getActiveTenantId();
             claims.claim("userId", userId);
             claims.claim("username", username);
-            if (tenantId != null) {
-                claims.claim("tenantId", tenantId);
-            }
+            applyTenantClaims(claims, activeTenantId);
             log.info("[JwtTokenCustomizer] ID Token - 添加 userId: {}, username: {}", userId, username);
             
             // 标准 OIDC claims: sub (subject) 通常由框架自动设置
@@ -369,13 +383,13 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
         }
         
         // 查询完整的 User 信息以获取 email、phone、nickname 等字段
-        if (username != null && userRepository != null) {
-            Long tenantId = securityUser != null ? securityUser.getTenantId() : null;
-            if (tenantId != null) {
-                userRepository.findUserByUsernameAndTenantId(username, tenantId).ifPresent(user -> {
+        if (userRepository != null) {
+            Long activeTenantId = securityUser != null ? securityUser.getActiveTenantId() : null;
+            var userOpt = resolveUserForClaims(userId, username, activeTenantId);
+            userOpt.ifPresent(user -> {
                 // 根据请求的 scope 添加相应的字段
                 Set<String> scopes = context.getAuthorizedScopes();
-                
+
                 // profile scope: 添加用户基本信息
                 if (scopes != null && scopes.contains("profile")) {
                     if (user.getNickname() != null && !user.getNickname().isEmpty()) {
@@ -383,7 +397,7 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
                         claims.claim("nickname", user.getNickname());
                     }
                 }
-                
+
                 // email scope: 添加邮箱信息
                 if (scopes != null && scopes.contains("email")) {
                     if (user.getEmail() != null && !user.getEmail().isEmpty()) {
@@ -393,7 +407,7 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
                         claims.claim("email_verified", true);
                     }
                 }
-                
+
                 // phone scope: 添加手机号信息
                 if (scopes != null && scopes.contains("phone")) {
                     if (user.getPhone() != null && !user.getPhone().isEmpty()) {
@@ -402,9 +416,23 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
                         claims.claim("phone_number_verified", true);
                     }
                 }
-                });
-            }
+            });
         }
+    }
+
+    private java.util.Optional<com.tiny.platform.infrastructure.auth.user.domain.User> resolveUserForClaims(Long userId,
+                                                                                                             String username,
+                                                                                                             Long activeTenantId) {
+        var userOpt = userId != null
+                ? userRepository.findById(userId)
+                : java.util.Optional.<com.tiny.platform.infrastructure.auth.user.domain.User>empty();
+        if (userOpt.isPresent() || username == null || username.isBlank()) {
+            return userOpt;
+        }
+        if (activeTenantId != null && activeTenantId > 0 && authUserResolutionService != null) {
+            userOpt = authUserResolutionService.resolveUserRecordInActiveTenant(username, activeTenantId);
+        }
+        return userOpt;
     }
     
     /**
@@ -444,6 +472,32 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
         // TODO: 改进 - 在认证成功时将 auth_time 存储到 OAuth2Authorization.attributes 中
         return Instant.now();
     }
+
+    /**
+     * 写入租户与作用域相关 claims，与运行态最小授权上下文一致。
+     * activeScopeType：有 activeTenantId 时为 TENANT，无时为 PLATFORM。
+     * 契约详见 docs/TOKEN_CLAIMS_ENTERPRISE_STANDARD.md §2.3。
+     */
+    private void applyTenantClaims(JwtClaimsSet.Builder claims, Long activeTenantId) {
+        if (activeTenantId != null && activeTenantId > 0) {
+            claims.claim(TenantContextContract.ACTIVE_TENANT_ID_CLAIM, activeTenantId);
+            claims.claim(TenantContextContract.ACTIVE_SCOPE_TYPE_CLAIM, TenantContextContract.SCOPE_TYPE_TENANT);
+        } else {
+            claims.claim(TenantContextContract.ACTIVE_SCOPE_TYPE_CLAIM, TenantContextContract.SCOPE_TYPE_PLATFORM);
+        }
+    }
+
+    private void addPermissionsVersionClaim(JwtClaimsSet.Builder claims,
+                                            Long userId,
+                                            Long activeTenantId) {
+        if (permissionVersionService == null) {
+            return;
+        }
+        String permissionsVersion = permissionVersionService.resolvePermissionsVersion(userId, activeTenantId);
+        if (permissionsVersion != null && !permissionsVersion.isBlank()) {
+            claims.claim("permissionsVersion", permissionsVersion);
+        }
+    }
     
     /**
      * 获取认证方法引用（Authentication Method References）
@@ -480,6 +534,25 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
         }
         
         return amr;
+    }
+
+    private Set<String> collectAuthorities(Authentication principal) {
+        if (principal == null || principal.getAuthorities() == null) {
+            return Set.of();
+        }
+        return principal.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .filter(authority -> authority != null && !authority.isBlank())
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private Set<String> extractPermissionAuthorities(Set<String> authorities) {
+        if (authorities == null || authorities.isEmpty()) {
+            return Set.of();
+        }
+        return authorities.stream()
+                .filter(authority -> authority.contains(":"))
+                .collect(Collectors.toCollection(LinkedHashSet::new));
     }
     
     /**

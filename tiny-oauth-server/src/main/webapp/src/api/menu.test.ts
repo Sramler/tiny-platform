@@ -142,10 +142,25 @@ describe('menu API', () => {
 
     await batchDeleteMenus(ids)
 
-    expect(requestMocks.post).toHaveBeenCalledWith('/sys/resources/menus/batch/delete', ids, {
+    expect(requestMocks.post).toHaveBeenCalledWith('/sys/menus/batch/delete', ids, {
       idempotency: {
         scope: 'sys-menus:batch-delete',
         payload: ids,
+      },
+    })
+  })
+
+  it('should update menu sort with idempotency', async () => {
+    requestMocks.put.mockResolvedValue({ id: 5, sort: 8 })
+    const { updateMenuSort } = await import('@/api/menu')
+
+    await updateMenuSort(5, 8)
+
+    expect(requestMocks.put).toHaveBeenCalledWith('/sys/menus/5/sort', null, {
+      params: { sort: 8 },
+      idempotency: {
+        scope: 'sys-menus:sort:5',
+        payload: { id: 5, sort: 8 },
       },
     })
   })

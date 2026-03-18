@@ -107,6 +107,10 @@ describe('401.vue', () => {
   })
 
   it('should navigate home when clicking home button', async () => {
+    routeState.query = {
+      activeTenantId: '7',
+    }
+
     const wrapper = mount(Error401, {
       global: {
         stubs: {
@@ -130,6 +134,9 @@ describe('401.vue', () => {
     const buttons = wrapper.findAll('button')
     await buttons[1]!.trigger('click')
 
-    expect(mocks.routerPush).toHaveBeenCalledWith('/')
+    expect(mocks.routerPush).toHaveBeenCalledWith({
+      path: '/',
+      query: { activeTenantId: '7' },
+    })
   })
 })

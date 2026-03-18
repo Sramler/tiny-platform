@@ -3,12 +3,15 @@ package com.tiny.platform.core.oauth.interceptor;
 import com.tiny.platform.core.oauth.config.HttpRequestLoggingProperties;
 import com.tiny.platform.core.oauth.filter.HttpRequestLoggingFilter;
 import com.tiny.platform.core.oauth.model.HttpRequestLog;
+import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.service.HttpRequestLogService;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.slf4j.MDC;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.web.servlet.HandlerMapping;
@@ -27,6 +30,7 @@ class HttpRequestLoggingInterceptorTest {
     void tearDown() {
         MDC.clear();
         TenantContext.clear();
+        SecurityContextHolder.clearContext();
     }
 
     @Test
@@ -67,7 +71,7 @@ class HttpRequestLoggingInterceptorTest {
         response.getWriter().write("{\"access_token\":\"token-value\",\"error\":\"invalid_grant\"}");
         response.getWriter().flush();
 
-        TenantContext.setTenantId(9L);
+        TenantContext.setActiveTenantId(9L);
 
         interceptor.preHandle(request, response, new Object());
         interceptor.afterCompletion(request, response, new Object(), null);
@@ -80,10 +84,41 @@ class HttpRequestLoggingInterceptorTest {
         assertThat(saved.getRequestBody()).contains("\"password\":\"***\"");
         assertThat(saved.getRequestBody()).contains("\"refresh_token\":\"***\"");
         assertThat(saved.getResponseBody()).contains("\"access_token\":\"***\"");
-        assertThat(saved.getTenantId()).isEqualTo(9L);
+        assertThat(saved.getActiveTenantId()).isEqualTo(9L);
         assertThat(saved.getStatus()).isEqualTo(400);
         assertThat(saved.getSuccess()).isFalse();
         assertThat(request.getAttribute(HttpRequestLoggingFilter.ATTR_AUDIT_LOGGED)).isEqualTo(Boolean.TRUE);
-        assertThat(MDC.get("tenantId")).isEqualTo("9");
+        assertThat(MDC.get("activeTenantId")).isEqualTo("9");
+    }
+
+    @Test
+    void shouldFallbackToAuthenticationActiveTenantWhenTenantContextMissing() throws Exception {
+        HttpRequestLoggingProperties properties = new HttpRequestLoggingProperties();
+        HttpRequestLogService logService = mock(HttpRequestLogService.class);
+        HttpRequestLoggingInterceptor interceptor = new HttpRequestLoggingInterceptor(properties, logService);
+
+        SecurityUser principal = new SecurityUser(8L, 12L, "alice", "", java.util.List.of(), true, true, true, true);
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(principal, "n/a", java.util.List.of())
+        );
+
+        MockHttpServletRequest rawRequest = new MockHttpServletRequest("GET", "/api/test");
+        rawRequest.setRemoteAddr("127.0.0.1");
+        ContentCachingRequestWrapper request = new ContentCachingRequestWrapper(rawRequest, properties.getMaxBodyLength());
+        request.setAttribute(HttpRequestLoggingFilter.ATTR_START_TIME, System.currentTimeMillis() - 5);
+
+        MockHttpServletResponse rawResponse = new MockHttpServletResponse();
+        ContentCachingResponseWrapper response = new ContentCachingResponseWrapper(rawResponse);
+        response.setStatus(200);
+
+        interceptor.preHandle(request, response, new Object());
+        interceptor.afterCompletion(request, response, new Object(), null);
+
+        ArgumentCaptor<HttpRequestLog> captor = ArgumentCaptor.forClass(HttpRequestLog.class);
+        verify(logService).save(captor.capture());
+
+        HttpRequestLog saved = captor.getValue();
+        assertThat(saved.getActiveTenantId()).isEqualTo(12L);
+        assertThat(MDC.get("activeTenantId")).isEqualTo("12");
     }
 }

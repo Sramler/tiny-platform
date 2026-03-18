@@ -1,6 +1,8 @@
 package com.tiny.platform.infrastructure.auth.user.service;
 
 import com.tiny.platform.core.oauth.security.LoginFailurePolicy;
+import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
+import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.core.exception.code.ErrorCode;
 import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
@@ -10,8 +12,12 @@ import com.tiny.platform.infrastructure.auth.user.dto.UserResponseDto;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.infrastructure.auth.role.domain.Role;
 import com.tiny.platform.infrastructure.auth.role.repository.RoleRepository;
+import com.tiny.platform.infrastructure.auth.role.service.EffectiveRoleResolutionService;
+import com.tiny.platform.infrastructure.auth.role.service.RoleAssignmentSyncService;
 import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
+import com.tiny.platform.infrastructure.auth.user.repository.TenantUserRepository;
 import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationMethod;
+import com.tiny.platform.infrastructure.tenant.guard.TenantLifecycleGuard;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -20,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.data.jpa.domain.Specification;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -33,30 +40,51 @@ import com.tiny.platform.core.oauth.tenant.TenantContext;
 @Service
 public class UserServiceImpl implements UserService {
 
+    private static final String ACTIVE = "ACTIVE";
+
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final RoleRepository roleRepository;
     private final UserAuthenticationMethodRepository authenticationMethodRepository;
     private final LoginFailurePolicy loginFailurePolicy;
+    private final RoleAssignmentSyncService roleAssignmentSyncService;
+    private final EffectiveRoleResolutionService effectiveRoleResolutionService;
+    private final TenantUserRepository tenantUserRepository;
+    private final AuthUserResolutionService authUserResolutionService;
+    private final TenantLifecycleGuard tenantLifecycleGuard;
 
     @Autowired
-    public UserServiceImpl(UserRepository userRepository, PasswordEncoder passwordEncoder, 
+    public UserServiceImpl(UserRepository userRepository, PasswordEncoder passwordEncoder,
                           RoleRepository roleRepository, UserAuthenticationMethodRepository authenticationMethodRepository,
-                          LoginFailurePolicy loginFailurePolicy) {
+                          LoginFailurePolicy loginFailurePolicy,
+                          RoleAssignmentSyncService roleAssignmentSyncService,
+                          EffectiveRoleResolutionService effectiveRoleResolutionService,
+                          TenantUserRepository tenantUserRepository,
+                          AuthUserResolutionService authUserResolutionService,
+                          TenantLifecycleGuard tenantLifecycleGuard) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.roleRepository = roleRepository;
         this.authenticationMethodRepository = authenticationMethodRepository;
         this.loginFailurePolicy = loginFailurePolicy;
+        this.roleAssignmentSyncService = roleAssignmentSyncService;
+        this.effectiveRoleResolutionService = effectiveRoleResolutionService;
+        this.tenantUserRepository = tenantUserRepository;
+        this.authUserResolutionService = authUserResolutionService;
+        this.tenantLifecycleGuard = tenantLifecycleGuard;
     }
 
 
     @Override
     public Page<UserResponseDto> users(UserRequestDto query, Pageable pageable) {
         Long tenantId = requireTenantId();
+        var visibleUserIds = resolveVisibleUserIdsForTenant(tenantId);
         Page<User> users = userRepository.findAll((Specification<User>) (root, q, cb) -> {
+            if (visibleUserIds.isEmpty()) {
+                return cb.disjunction();
+            }
             List<Predicate> predicates = new ArrayList<>();
-            predicates.add(cb.equal(root.get("tenantId"), tenantId));
+            predicates.add(root.get("id").in(visibleUserIds));
 
             if (StringUtils.hasText(query.getUsername())) {
                 predicates.add(cb.like(root.get("username"), "%" + query.getUsername() + "%"));
@@ -75,32 +103,43 @@ public class UserServiceImpl implements UserService {
     private UserResponseDto toDto(User user) {
         LocalDateTime now = LocalDateTime.now();
         boolean temporarilyLocked = loginFailurePolicy.isTemporarilyLocked(user, now);
-        return new UserResponseDto(user.getId(),user.getUsername(),user.getNickname(),user.isEnabled(),
+        UserResponseDto dto = new UserResponseDto(user.getId(),user.getUsername(),user.getNickname(),user.isEnabled(),
                 user.isAccountNonExpired(),user.isAccountNonLocked(),user.isCredentialsNonExpired(),user.getLastLoginAt(),
                 user.getFailedLoginCount() != null ? user.getFailedLoginCount() : 0, user.getLastFailedLoginAt(),
                 temporarilyLocked,
                 temporarilyLocked ? loginFailurePolicy.remainingLockMinutes(user, now) : null);
+        // 展示/审计用，来自兼容字段 user.tenant_id；授权与可见性以 tenant_user + activeTenantId 为准
+        dto.setRecordTenantId(user.getTenantId());
+        return dto;
     }
 
     @Override
     public Optional<User> findById(Long id) {
-        return userRepository.findByIdAndTenantId(id, requireTenantId());
+        Long tenantId = requireTenantId();
+        if (tenantUserRepository.existsByTenantIdAndUserIdAndStatus(tenantId, id, ACTIVE)) {
+            return userRepository.findById(id);
+        }
+        return Optional.empty();
     }
 
     @Override
     public Optional<User> findByUsername(String username) {
-        return userRepository.findUserByUsernameAndTenantId(username, requireTenantId());
+        Long tenantId = requireTenantId();
+        return requireAuthUserResolutionService().resolveUserRecordInActiveTenant(username, tenantId);
     }
 
     @Override
     public User create(User user) {
-        user.setTenantId(requireTenantId());
-        return userRepository.save(user);
+        Long tenantId = requireTenantId();
+        // 不再写入 user.tenant_id；仅写入 tenant_user membership（见 AUTHORIZATION_LEGACY_REMOVAL_PLAN §3.2）
+        User saved = userRepository.save(user);
+        roleAssignmentSyncService.ensureTenantMembership(saved.getId(), tenantId, true);
+        return saved;
     }
 
     @Override
     public User update(Long id, User user) {
-        return userRepository.findByIdAndTenantId(id, requireTenantId())
+        return findById(id)
             .map(existing -> {
                 existing.setUsername(user.getUsername());
                 // 不再更新 user.password，密码已迁移到 user_authentication_method 表
@@ -114,16 +153,18 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public void delete(Long id) {
-        userRepository.findByIdAndTenantId(id, requireTenantId())
+        tenantLifecycleGuard.assertNotFrozenForWrite("user", "delete");
+        findById(id)
             .ifPresent(userRepository::delete);
     }
 
     @Override
     @Transactional
     public User createFromDto(UserCreateUpdateDto userDto) {
+        tenantLifecycleGuard.assertNotFrozenForWrite("user", "create");
         Long tenantId = requireTenantId();
         // 检查用户名是否已存在
-        if (userRepository.findUserByUsernameAndTenantId(userDto.getUsername(), tenantId).isPresent()) {
+        if (findByUsername(userDto.getUsername()).isPresent()) {
             throw new BusinessException(
                 ErrorCode.RESOURCE_ALREADY_EXISTS,
                 "用户名已存在: " + userDto.getUsername()
@@ -153,11 +194,10 @@ public class UserServiceImpl implements UserService {
         
         // 保存用户，获取用户ID
         user = userRepository.save(user);
+        roleAssignmentSyncService.ensureTenantMembership(user.getId(), tenantId, true);
 
         if (userDto.getRoleIds() != null && !userDto.getRoleIds().isEmpty()) {
-            for (Long roleId : userDto.getRoleIds()) {
-                userRepository.addUserRoleRelation(tenantId, user.getId(), roleId);
-            }
+            roleAssignmentSyncService.replaceUserTenantRoleAssignments(user.getId(), tenantId, userDto.getRoleIds());
         }
         
         // 创建认证方法（将密码存储在 user_authentication_method 表中）
@@ -169,15 +209,16 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public User updateFromDto(UserCreateUpdateDto userDto) {
+        tenantLifecycleGuard.assertNotFrozenForWrite("user", "update");
         Long tenantId = requireTenantId();
-        User existingUser = userRepository.findByIdAndTenantId(userDto.getId(), tenantId)
+        User existingUser = findById(userDto.getId())
             .orElseThrow(() -> new BusinessException(
                 ErrorCode.NOT_FOUND,
                 "用户不存在: " + userDto.getId()
             ));
         
         // 检查用户名是否已被其他用户使用
-        Optional<User> userWithSameUsername = userRepository.findUserByUsernameAndTenantId(userDto.getUsername(), tenantId);
+        Optional<User> userWithSameUsername = findByUsername(userDto.getUsername());
         if (userWithSameUsername.isPresent() && !userWithSameUsername.get().getId().equals(userDto.getId())) {
             throw new BusinessException(
                 ErrorCode.RESOURCE_ALREADY_EXISTS,
@@ -220,10 +261,7 @@ public class UserServiceImpl implements UserService {
                     "部分角色不存在"
                 );
             }
-            userRepository.deleteUserRoleRelationsByUserId(existingUser.getId(), tenantId);
-            for (Long roleId : userDto.getRoleIds()) {
-                userRepository.addUserRoleRelation(tenantId, existingUser.getId(), roleId);
-            }
+            roleAssignmentSyncService.replaceUserTenantRoleAssignments(existingUser.getId(), tenantId, userDto.getRoleIds());
         }
         
         return userRepository.save(existingUser);
@@ -291,17 +329,9 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public void batchEnable(List<Long> ids) {
+        tenantLifecycleGuard.assertNotFrozenForWrite("user", "batchEnable");
         // 批量启用用户，使用事务确保一致性
-        Long tenantId = requireTenantId();
-        List<User> users = userRepository.findAllById(ids).stream()
-                .filter(u -> u.getTenantId().equals(tenantId))
-                .toList();
-        if (users.size() != ids.size()) {
-                throw new BusinessException(
-                    ErrorCode.NOT_FOUND,
-                    "部分用户不存在"
-                );
-        }
+        List<User> users = requireUsersInTenant(ids);
         
         for (User user : users) {
             user.setEnabled(true);
@@ -312,17 +342,9 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public void batchDisable(List<Long> ids) {
+        tenantLifecycleGuard.assertNotFrozenForWrite("user", "batchDisable");
         // 批量禁用用户，使用事务确保一致性
-        Long tenantId = requireTenantId();
-        List<User> users = userRepository.findAllById(ids).stream()
-                .filter(u -> u.getTenantId().equals(tenantId))
-                .toList();
-        if (users.size() != ids.size()) {
-                throw new BusinessException(
-                    ErrorCode.NOT_FOUND,
-                    "部分用户不存在"
-                );
-        }
+        List<User> users = requireUsersInTenant(ids);
         
         for (User user : users) {
             user.setEnabled(false);
@@ -333,17 +355,9 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public void batchDelete(List<Long> ids) {
+        tenantLifecycleGuard.assertNotFrozenForWrite("user", "batchDelete");
         // 批量删除用户，使用事务确保一致性
-        Long tenantId = requireTenantId();
-        List<User> users = userRepository.findAllById(ids).stream()
-                .filter(u -> u.getTenantId().equals(tenantId))
-                .toList();
-        if (users.size() != ids.size()) {
-                throw new BusinessException(
-                    ErrorCode.NOT_FOUND,
-                    "部分用户不存在"
-                );
-        }
+        List<User> users = requireUsersInTenant(ids);
         
         userRepository.deleteAll(users);
     }
@@ -351,13 +365,13 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public void updateUserRoles(Long userId, List<Long> roleIds) {
+        tenantLifecycleGuard.assertNotFrozenForWrite("user", "updateUserRoles");
         Long tenantId = requireTenantId();
-        User user = userRepository.findByIdAndTenantId(userId, tenantId)
+        User user = findById(userId)
             .orElseThrow(() -> new BusinessException(
                 ErrorCode.NOT_FOUND,
                 "用户不存在: " + userId
             ));
-        // 查询所有角色
         List<Role> roles = roleRepository.findByIdInAndTenantId(roleIds, tenantId);
         if (roles.size() != roleIds.size()) {
             throw new BusinessException(
@@ -365,17 +379,67 @@ public class UserServiceImpl implements UserService {
                 "部分角色不存在"
             );
         }
-        userRepository.deleteUserRoleRelationsByUserId(user.getId(), tenantId);
-        for (Role role : roles) {
-            userRepository.addUserRoleRelation(tenantId, user.getId(), role.getId());
+        roleAssignmentSyncService.replaceUserTenantRoleAssignments(user.getId(), tenantId, roleIds);
+    }
+
+    @Override
+    public List<Long> getRoleIdsByUserId(Long userId) {
+        Long tenantId = requireTenantId();
+        if (findById(userId).isEmpty()) {
+            throw new BusinessException(
+                ErrorCode.NOT_FOUND,
+                "用户不存在: " + userId
+            );
         }
+
+        return effectiveRoleResolutionService.findEffectiveRoleIdsForUserInTenant(userId, tenantId);
     }
 
     private Long requireTenantId() {
-        Long tenantId = TenantContext.getTenantId();
+        Long tenantId = TenantContext.getActiveTenantId();
         if (tenantId == null) {
             throw new BusinessException(ErrorCode.MISSING_PARAMETER, "缺少租户信息");
         }
         return tenantId;
+    }
+
+    private AuthUserResolutionService requireAuthUserResolutionService() {
+        if (authUserResolutionService == null) {
+            throw new IllegalStateException("AuthUserResolutionService 未配置");
+        }
+        return authUserResolutionService;
+    }
+
+    private List<User> requireUsersInTenant(List<Long> ids) {
+        Long tenantId = requireTenantId();
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        var requestedIds = new LinkedHashSet<>(ids);
+        var visibleIds = resolveVisibleUserIdsForTenant(tenantId, requestedIds);
+        if (visibleIds.size() != requestedIds.size()) {
+            throw new BusinessException(
+                ErrorCode.NOT_FOUND,
+                "部分用户不存在"
+            );
+        }
+        List<User> users = userRepository.findAllById(visibleIds).stream()
+                .filter(user -> visibleIds.contains(user.getId()))
+                .toList();
+        if (users.size() != requestedIds.size()) {
+            throw new BusinessException(
+                ErrorCode.NOT_FOUND,
+                "部分用户不存在"
+            );
+        }
+        return users;
+    }
+
+    private LinkedHashSet<Long> resolveVisibleUserIdsForTenant(Long tenantId) {
+        return new LinkedHashSet<>(tenantUserRepository.findUserIdsByTenantIdAndStatus(tenantId, ACTIVE));
+    }
+
+    private LinkedHashSet<Long> resolveVisibleUserIdsForTenant(Long tenantId, LinkedHashSet<Long> candidateIds) {
+        return new LinkedHashSet<>(tenantUserRepository.findUserIdsByTenantIdAndUserIdInAndStatus(tenantId, candidateIds, ACTIVE));
     }
 }

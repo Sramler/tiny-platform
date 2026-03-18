@@ -34,7 +34,7 @@ public class HttpRequestLogServiceImpl implements HttpRequestLogService {
             bindLogMdc(requestLog);
             repository.save(requestLog);
             if (log.isInfoEnabled()) {
-                log.info("REQ_LOG service={} env={} method={} path={} status={} duration={}ms user={} tenantId={} traceId={} requestId={} clientRequestId={} traceSource={}",
+                log.info("REQ_LOG service={} env={} method={} path={} status={} duration={}ms user={} activeTenantId={} traceId={} requestId={} clientRequestId={} traceSource={}",
                         requestLog.getServiceName(),
                         requestLog.getEnv(),
                         requestLog.getMethod(),
@@ -42,7 +42,7 @@ public class HttpRequestLogServiceImpl implements HttpRequestLogService {
                         requestLog.getStatus(),
                         requestLog.getDurationMs(),
                         requestLog.getUserId(),
-                        requestLog.getTenantId(),
+                        requestLog.getActiveTenantId(),
                         requestLog.getTraceId(),
                         requestLog.getRequestId(),
                         requestLog.getClientRequestId(),
@@ -62,8 +62,8 @@ public class HttpRequestLogServiceImpl implements HttpRequestLogService {
         putIfText("traceId", requestLog.getTraceId());
         putIfText("requestId", requestLog.getRequestId());
         putIfText("userId", requestLog.getUserId());
-        if (requestLog.getTenantId() != null) {
-            MDC.put("tenantId", String.valueOf(requestLog.getTenantId()));
+        if (requestLog.getActiveTenantId() != null) {
+            MDC.put("activeTenantId", String.valueOf(requestLog.getActiveTenantId()));
         }
     }
 

@@ -1,0 +1,35 @@
+databaseChangeLog:
+  - changeSet:
+      id: 055-role-constraint-violation-log
+      author: tiny
+      comment: "Phase2: RBAC3 dry-run 违例审计表（不阻断，仅用于观测）"
+      preConditions:
+        - onFail: CONTINUE
+        - onError: HALT
+        - dbms:
+            type: mysql
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              CREATE TABLE IF NOT EXISTS `role_constraint_violation_log` (
+                `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+                `tenant_id` BIGINT NOT NULL COMMENT '租户ID',
+                `principal_type` VARCHAR(16) NOT NULL COMMENT '授权主体类型（USER 等）',
+                `principal_id` BIGINT NULL COMMENT '授权主体ID（如 user.id；role 级校验时可空）',
+                `scope_type` VARCHAR(16) NOT NULL COMMENT '作用域类型（TENANT/PLATFORM 等）',
+                `scope_id` BIGINT NULL COMMENT '作用域ID（TENANT 时为 tenant_id 等）',
+                `violation_type` VARCHAR(32) NOT NULL COMMENT '违例类型（MUTEX/HIERARCHY/PREREQUISITE/CARDINALITY 等）',
+                `violation_code` VARCHAR(64) NOT NULL COMMENT '违例码（如 ROLE_CONFLICT_MUTEX）',
+                `direct_role_ids` VARCHAR(1024) NULL COMMENT '直接授予角色ID列表（逗号分隔）',
+                `effective_role_ids` VARCHAR(1024) NULL COMMENT '层级展开后的有效角色ID列表（逗号分隔）',
+                `details` TEXT NULL COMMENT '违例详情（JSON 字符串）',
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                PRIMARY KEY (`id`),
+                KEY `idx_role_constraint_violation_log_tenant_created` (`tenant_id`, `created_at`),
+                KEY `idx_role_constraint_violation_log_principal_created` (`principal_type`, `principal_id`, `created_at`),
+                KEY `idx_role_constraint_violation_log_type_created` (`violation_type`, `created_at`)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='RBAC3 角色约束违例审计（dry-run）';
+

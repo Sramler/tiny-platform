@@ -16,10 +16,12 @@
                 title="确认立即按当前 ACTIVE 版本创建一条新的手动运行吗？"
                 ok-text="确认触发"
                 cancel-text="取消"
-                :disabled="!canTriggerDag"
+                :disabled="!canTriggerDag || !canOperateSchedulingRun"
                 @confirm="handleTrigger"
               >
-                <a-button :loading="triggering" :disabled="!canTriggerDag">触发执行</a-button>
+                <a-button :loading="triggering" :disabled="!canTriggerDag || !canOperateSchedulingRun">
+                  触发执行
+                </a-button>
               </a-popconfirm>
             </span>
           </a-tooltip>
@@ -29,10 +31,12 @@
                 title="确认停止该 DAG 当前所有 RUNNING 运行，并暂停 Quartz 调度吗？如需只处理单次运行，请前往运行历史。"
                 ok-text="确认停止"
                 cancel-text="取消"
-                :disabled="!canStopDag"
+                :disabled="!canStopDag || !canOperateSchedulingRun"
                 @confirm="handleStop"
               >
-                <a-button :loading="stopping" :disabled="!canStopDag">停止 DAG</a-button>
+                <a-button :loading="stopping" :disabled="!canStopDag || !canOperateSchedulingRun">
+                  停止 DAG
+                </a-button>
               </a-popconfirm>
             </span>
           </a-tooltip>
@@ -42,10 +46,12 @@
                 title="确认重试该 DAG 最近一次失败运行吗？系统会创建新的 Run。如需指定某次运行，请前往运行历史。"
                 ok-text="确认重试"
                 cancel-text="取消"
-                :disabled="!canRetryDag"
+                :disabled="!canRetryDag || !canOperateSchedulingRun"
                 @confirm="handleRetry"
               >
-                <a-button :loading="retrying" :disabled="!canRetryDag">重试最近失败运行</a-button>
+                <a-button :loading="retrying" :disabled="!canRetryDag || !canOperateSchedulingRun">
+                  重试最近失败运行
+                </a-button>
               </a-popconfirm>
             </span>
           </a-tooltip>
@@ -54,20 +60,22 @@
             title="确认禁用该 DAG 并暂停后续定时调度吗？"
             ok-text="确认暂停"
             cancel-text="取消"
+            :disabled="!canOperateSchedulingRun"
             @confirm="handlePause"
           >
-            <a-button>暂停 DAG</a-button>
+            <a-button :disabled="!canOperateSchedulingRun">暂停 DAG</a-button>
           </a-popconfirm>
           <a-popconfirm
             v-else
             title="确认重新启用该 DAG 并恢复后续定时调度吗？"
             ok-text="确认恢复"
             cancel-text="取消"
+            :disabled="!canOperateSchedulingRun"
             @confirm="handleResume"
           >
-            <a-button>恢复 DAG</a-button>
+            <a-button :disabled="!canOperateSchedulingRun">恢复 DAG</a-button>
           </a-popconfirm>
-          <a-button @click="handleEdit">编辑</a-button>
+          <a-button :disabled="!canManageSchedulingConfig" @click="handleEdit">编辑</a-button>
         </a-space>
       </template>
     </a-page-header>
@@ -92,6 +100,14 @@
               <a-tag :color="dagInfo.cronEnabled ? 'green' : 'red'">
                 {{ dagInfo.cronEnabled ? '启用' : '禁用' }}
               </a-tag>
+            </a-descriptions-item>
+            <a-descriptions-item label="Cron 生效">
+              <a-tooltip :title="getCronEffectiveReason(dagInfo)">
+                <a-tag v-if="isCronConfigured(dagInfo)" :color="isCronEffective(dagInfo) ? 'green' : 'red'">
+                  {{ isCronEffective(dagInfo) ? '生效' : '未生效' }}
+                </a-tag>
+                <span v-else style="color: #999;">-</span>
+              </a-tooltip>
             </a-descriptions-item>
             <a-descriptions-item label="当前版本ID">{{ dagInfo.currentVersionId || '-' }}</a-descriptions-item>
             <a-descriptions-item label="创建时间">{{ dagInfo.createdAt }}</a-descriptions-item>
@@ -400,6 +416,9 @@ import CronDesigner from '@/components/scheduling/CronDesigner.vue'
 import { message } from 'ant-design-vue'
 import { PlusOutlined } from '@ant-design/icons-vue'
 import { useRouter, useRoute } from 'vue-router'
+import { useAuth } from '@/auth/auth'
+import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import { getActiveTenantId, resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
 import {
   getDag,
   updateDag,
@@ -425,6 +444,22 @@ import {
 
 const router = useRouter()
 const route = useRoute()
+const { user } = useAuth()
+
+const schedulingAuthorities = computed(() =>
+  extractAuthoritiesFromJwt(user.value?.access_token).filter((a) => a.startsWith('scheduling:')),
+)
+const canReadScheduling = computed(() =>
+  schedulingAuthorities.value.includes('scheduling:console:view') || schedulingAuthorities.value.includes('scheduling:*'),
+)
+const canManageSchedulingConfig = computed(() =>
+  schedulingAuthorities.value.includes('scheduling:console:config') ||
+  schedulingAuthorities.value.includes('scheduling:*'),
+)
+const canOperateSchedulingRun = computed(() =>
+  schedulingAuthorities.value.includes('scheduling:run:control') ||
+  schedulingAuthorities.value.includes('scheduling:*'),
+)
 
 // 支持 query.id 或 query.dagId（与 DAG 列表跳转及菜单链接保持一致）
 const dagId = computed(() => Number(route.query.id) || Number(route.query.dagId))
@@ -444,6 +479,35 @@ const dagFormData = reactive({
   cronEnabled: true,
   enabled: true,
 })
+
+const isCronConfigured = (record: { cronExpression?: string | null }) => {
+  return Boolean(record.cronExpression && String(record.cronExpression).trim())
+}
+
+const isCronEffective = (record: {
+  enabled?: boolean
+  cronEnabled?: boolean | null
+  cronExpression?: string | null
+  currentVersionId?: number | null
+}) => {
+  if (!Boolean(record.enabled)) return false
+  if (record.cronEnabled === false) return false
+  if (!isCronConfigured(record)) return false
+  return Boolean(record.currentVersionId)
+}
+
+const getCronEffectiveReason = (record: {
+  enabled?: boolean
+  cronEnabled?: boolean | null
+  cronExpression?: string | null
+  currentVersionId?: number | null
+}) => {
+  if (!isCronConfigured(record)) return undefined
+  if (record.enabled === false) return 'DAG 已禁用'
+  if (record.cronEnabled === false) return 'Cron 已禁用'
+  if (!record.currentVersionId) return '无 ACTIVE 版本，Cron 不会生效'
+  return 'Cron 已生效（以 ACTIVE 版本执行）'
+}
 
 const cronDesignerVisible = ref(false)
 const cronDesignerValue = ref('')
@@ -639,7 +703,10 @@ const handleBack = () => {
 const handleHistory = () => {
   router.push({
     path: '/scheduling/dag/history',
-    query: { dagId: String(dagId.value) },
+    query: withActiveTenantQuery(
+      { dagId: String(dagId.value) },
+      resolveActiveTenantQueryValue(route.query) ?? getActiveTenantId(),
+    ),
   })
 }
 
@@ -806,7 +873,12 @@ const handleSubmitVersion = async () => {
     versionFormVisible.value = false
     loadVersions()
   } catch (error: any) {
-    message.error(error.message || '操作失败')
+    const msg = error?.message ?? ''
+    if (msg.includes('版本号已被其他请求占用')) {
+      message.error('当前版本列表已被其他请求更新，请刷新后重试')
+    } else {
+      message.error(msg || '操作失败')
+    }
   }
 }
 
@@ -969,12 +1041,17 @@ const handleDeleteEdge = async (edgeId: number) => {
 }
 
 const DAG_LIST_PATH = '/scheduling/dag'
+const buildDagListQuery = () =>
+  withActiveTenantQuery({}, resolveActiveTenantQueryValue(route.query) ?? getActiveTenantId())
 
 onMounted(() => {
   const id = dagId.value
   if (!id || Number.isNaN(id)) {
     message.warning('请先选择 DAG：从 DAG 列表中点击「详情」进入，或使用链接带参数 ?id=xxx 或 ?dagId=xxx')
-    router.replace(DAG_LIST_PATH)
+    router.replace({
+      path: DAG_LIST_PATH,
+      query: buildDagListQuery(),
+    })
     return
   }
   loadDag()

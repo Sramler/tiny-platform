@@ -88,7 +88,7 @@ describe('idempotent API', () => {
     expect(mocks.get).toHaveBeenNthCalledWith(3, '/metrics/idempotent/mq')
   })
 
-  it('should pass tenantId query params when requested', async () => {
+  it('should pass activeTenantId query params when requested', async () => {
     const { getIdempotentMetrics, getIdempotentMqMetrics, getIdempotentTopKeys } =
       await import('@/api/idempotent')
 
@@ -102,13 +102,13 @@ describe('idempotent API', () => {
     await getIdempotentMqMetrics(8)
 
     expect(mocks.get).toHaveBeenNthCalledWith(1, '/metrics/idempotent', {
-      params: { tenantId: 8 },
+      params: { activeTenantId: 8 },
     })
     expect(mocks.get).toHaveBeenNthCalledWith(2, '/metrics/idempotent/top-keys', {
-      params: { limit: 10, tenantId: 8 },
+      params: { limit: 10, activeTenantId: 8 },
     })
     expect(mocks.get).toHaveBeenNthCalledWith(3, '/metrics/idempotent/mq', {
-      params: { tenantId: 8 },
+      params: { activeTenantId: 8 },
     })
   })
 })

@@ -64,7 +64,7 @@ class SchedulingControllerMockMvcTest {
     }
 
     private void authenticate() {
-        TenantContext.setTenantId(10L);
+        TenantContext.setActiveTenantId(10L);
         SecurityUser user = new SecurityUser(1L, 10L, "alice", "", List.of(), true, true, true, true);
         SecurityContextHolder.getContext().setAuthentication(
             new UsernamePasswordAuthenticationToken(user, "N/A", List.of()));

@@ -1,6 +1,7 @@
 package com.tiny.platform.core.oauth.model;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.annotation.JsonTypeName;
@@ -8,11 +9,18 @@ import com.tiny.platform.core.oauth.config.jackson.SecurityUserLongDeserializer;
 import com.tiny.platform.core.oauth.config.jackson.SecurityUserLongSerializer;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonSerialize;
+import com.tiny.platform.core.oauth.tenant.ActiveTenantResponseSupport;
+import com.tiny.platform.core.oauth.tenant.TenantContext;
+import com.tiny.platform.infrastructure.auth.role.domain.Role;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 
 import java.util.Collection;
+import java.util.LinkedHashSet;
+import java.util.Set;
+import java.util.stream.Stream;
 
 /**
  * SecurityUser 是 Spring Security 的认证用户对象，仅用于安全框架内部，
@@ -24,7 +32,7 @@ public class SecurityUser implements UserDetails {
 
     private final Long userId;
 
-    private final Long tenantId;
+    private final Long activeTenantId;
 
     // 用户名
     private final String username;
@@ -34,6 +42,9 @@ public class SecurityUser implements UserDetails {
 
     // 权限列表（通常来源于角色）
     private final Collection<? extends GrantedAuthority> authorities;
+
+    // 当前权限版本指纹，用于识别会话/Token 权限是否漂移
+    private final String permissionsVersion;
 
     // 账号是否未过期
     private final boolean accountNonExpired;
@@ -61,49 +72,120 @@ public class SecurityUser implements UserDetails {
      * 用于从 user_authentication_method 表获取密码的场景。
      */
     public SecurityUser(User user, String password) {
+        this(user, password, resolveActiveTenantId(user), Set.of());
+    }
+
+    public SecurityUser(User user, Long activeTenantId, Set<Role> roles) {
+        this(user, "", activeTenantId, roles);
+    }
+
+    public SecurityUser(User user, String password, Long activeTenantId, Set<Role> roles) {
+        this(user, password, activeTenantId, roles, null);
+    }
+
+    public SecurityUser(User user, String password, Long activeTenantId, Set<Role> roles, String permissionsVersion) {
         this.userId = user.getId();
-        this.tenantId = user.getTenantId();
+        this.activeTenantId = activeTenantId;
         this.username = user.getUsername();
         this.password = password != null ? password : "";
-        this.authorities = user.getRoles().stream()
-                .flatMap(role -> {
-                    // 1. 将 roleName 作为权限（如 "ROLE_ADMIN"）
-                    // 2. 将 resource.code 也作为权限（如 "PERM_READ"）
-                    return java.util.stream.Stream.concat(
-                            java.util.stream.Stream.of(
-                                    new org.springframework.security.core.authority.SimpleGrantedAuthority(role.getName())
-                            ),
-                            role.getResources().stream()
-                                    .map(resource -> new org.springframework.security.core.authority.SimpleGrantedAuthority(resource.getName()))
-                    );
-                })
-                .collect(java.util.stream.Collectors.toSet());
+        this.authorities = buildAuthorities(roles);
+        this.permissionsVersion = permissionsVersion;
         this.accountNonExpired = user.isAccountNonExpired();
         this.accountNonLocked = user.isAccountNonLocked();
         this.credentialsNonExpired = user.isCredentialsNonExpired();
         this.enabled = user.isEnabled();
     }
 
+    private static Long resolveActiveTenantId(User user) {
+        Long activeTenantId = TenantContext.getActiveTenantId();
+        if (activeTenantId != null && activeTenantId > 0) {
+            return activeTenantId;
+        }
+        return ActiveTenantResponseSupport.resolveActiveTenantId(
+                SecurityContextHolder.getContext().getAuthentication()
+        );
+    }
+
+    public SecurityUser(
+            Long userId,
+            Long activeTenantId,
+            String username,
+            String password,
+            Collection<? extends GrantedAuthority> authorities,
+            boolean accountNonExpired,
+            boolean accountNonLocked,
+            boolean credentialsNonExpired,
+            boolean enabled) {
+        this(
+                userId,
+                activeTenantId,
+                username,
+                password,
+                authorities,
+                accountNonExpired,
+                accountNonLocked,
+                credentialsNonExpired,
+                enabled,
+                null
+        );
+    }
+
     @JsonCreator
     public SecurityUser(
             @JsonProperty("userId") Long userId,
-            @JsonProperty("tenantId") Long tenantId,
+            @JsonProperty("activeTenantId") Long activeTenantId,
             @JsonProperty("username") String username,
             @JsonProperty("password") String password,
             @JsonProperty("authorities") Collection<? extends GrantedAuthority> authorities,
             @JsonProperty("accountNonExpired") boolean accountNonExpired,
             @JsonProperty("accountNonLocked") boolean accountNonLocked,
             @JsonProperty("credentialsNonExpired") boolean credentialsNonExpired,
-            @JsonProperty("enabled") boolean enabled) {
+            @JsonProperty("enabled") boolean enabled,
+            @JsonProperty("permissionsVersion") String permissionsVersion) {
         this.userId = userId;
-        this.tenantId = tenantId;
+        this.activeTenantId = activeTenantId;
         this.username = username;
         this.password = password;
         this.authorities = authorities;
+        this.permissionsVersion = permissionsVersion;
         this.accountNonExpired = accountNonExpired;
         this.accountNonLocked = accountNonLocked;
         this.credentialsNonExpired = credentialsNonExpired;
         this.enabled = enabled;
+    }
+
+    /**
+     * 构建 authority 列表：仅使用 role.code 与 resource.permission，不使用 role.name。
+     * 与授权模型契约一致：JWT/Session 不包含展示用 role.name，鉴权以规范码为准。
+     */
+    private static Collection<? extends GrantedAuthority> buildAuthorities(Set<Role> roles) {
+        Set<Role> effectiveRoles = roles != null ? roles : Set.of();
+        return effectiveRoles.stream()
+                .flatMap(role -> Stream.concat(
+                        authorityStream(role.getCode()),
+                        role.getResources().stream().flatMap(resource ->
+                                authorityStream(resource.getPermission()))
+                ))
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private static Stream<org.springframework.security.core.authority.SimpleGrantedAuthority> authorityStream(String... candidates) {
+        Set<String> normalizedValues = new LinkedHashSet<>();
+        for (String value : candidates) {
+            addAuthorityValue(normalizedValues, value);
+        }
+        return normalizedValues.stream()
+                .map(org.springframework.security.core.authority.SimpleGrantedAuthority::new);
+    }
+
+    private static void addAuthorityValue(Set<String> values, String value) {
+        if (value == null) {
+            return;
+        }
+        String normalized = value.trim();
+        if (!normalized.isEmpty()) {
+            values.add(normalized);
+        }
     }
 
     /**
@@ -132,10 +214,15 @@ public class SecurityUser implements UserDetails {
         return userId;
     }
 
+    @JsonProperty("activeTenantId")
     @JsonSerialize(using = SecurityUserLongSerializer.class)
     @JsonDeserialize(using = SecurityUserLongDeserializer.class)
-    public Long getTenantId() {
-        return tenantId;
+    public Long getActiveTenantId() {
+        return activeTenantId;
+    }
+
+    public String getPermissionsVersion() {
+        return permissionsVersion;
     }
 
     /**

@@ -119,19 +119,19 @@ async function callSchedulingApi<T>(
 
       const user = JSON.parse(rawUser) as {
         access_token?: string
-        profile?: { tenantId?: number | string }
+        profile?: { activeTenantId?: number | string }
       }
       const accessToken = user.access_token
       if (!accessToken) {
         throw new Error('OIDC 用户缺少 access_token')
       }
 
-      const tenantId =
-        window.localStorage.getItem('app_tenant_id') ?? String(user.profile?.tenantId ?? 1)
+      const activeTenantId =
+        window.localStorage.getItem('app_active_tenant_id') ?? String(user.profile?.activeTenantId ?? 1)
       const headers = new Headers({
         Accept: 'application/json',
         Authorization: `Bearer ${accessToken}`,
-        'X-Tenant-Id': tenantId,
+        'X-Active-Tenant-Id': activeTenantId,
       })
       if (apiMethod !== 'GET') {
         const sanitizedPath = apiPath.replace(/[^A-Za-z0-9._:-]/g, '-')

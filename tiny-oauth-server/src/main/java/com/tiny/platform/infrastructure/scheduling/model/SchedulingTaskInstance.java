@@ -1,5 +1,6 @@
 package com.tiny.platform.infrastructure.scheduling.model;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import java.io.Serializable;
 import java.time.LocalDateTime;
@@ -141,6 +142,7 @@ public class SchedulingTaskInstance implements Serializable {
         this.taskId = taskId;
     }
 
+    @JsonProperty("recordTenantId")
     public Long getTenantId() {
         return tenantId;
     }

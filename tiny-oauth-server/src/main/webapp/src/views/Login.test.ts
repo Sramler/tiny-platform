@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   ensureCsrfToken: vi.fn(),
-  clearTenantId: vi.fn(),
+  clearActiveTenantId: vi.fn(),
   getTenantCode: vi.fn(),
   isValidTenantCode: vi.fn(),
   setTenantCode: vi.fn(),
@@ -23,7 +23,7 @@ vi.mock('@/utils/csrf', () => ({
 }))
 
 vi.mock('@/utils/tenant', () => ({
-  clearTenantId: mocks.clearTenantId,
+  clearActiveTenantId: mocks.clearActiveTenantId,
   getTenantCode: mocks.getTenantCode,
   isValidTenantCode: mocks.isValidTenantCode,
   setTenantCode: mocks.setTenantCode,
@@ -40,7 +40,7 @@ describe('Login.vue', () => {
   beforeEach(() => {
     routeState.query = {}
     mocks.ensureCsrfToken.mockReset()
-    mocks.clearTenantId.mockReset()
+    mocks.clearActiveTenantId.mockReset()
     mocks.getTenantCode.mockReset()
     mocks.isValidTenantCode.mockReset()
     mocks.setTenantCode.mockReset()
@@ -82,7 +82,7 @@ describe('Login.vue', () => {
 
     expect(wrapper.text()).toContain('租户编码格式错误')
     expect(mocks.setTenantCode).not.toHaveBeenCalled()
-    expect(mocks.clearTenantId).not.toHaveBeenCalled()
+    expect(mocks.clearActiveTenantId).not.toHaveBeenCalled()
   })
 
   it('should render backend failure message from query', async () => {
@@ -111,7 +111,7 @@ describe('Login.vue', () => {
     await wrapper.find('form').trigger('submit')
 
     expect(mocks.setTenantCode).toHaveBeenCalledWith('tiny-prod')
-    expect(mocks.clearTenantId).toHaveBeenCalledTimes(1)
+    expect(mocks.clearActiveTenantId).toHaveBeenCalledTimes(1)
     expect(submitSpy).toHaveBeenCalledTimes(1)
   })
 })

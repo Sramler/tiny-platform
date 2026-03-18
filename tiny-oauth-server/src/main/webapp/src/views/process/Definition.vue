@@ -9,8 +9,8 @@
                     <a-form-item label="流程Key">
                         <a-input v-model:value="query.key" placeholder="请输入流程Key" />
                     </a-form-item>
-                    <a-form-item label="租户">
-                        <a-select v-model:value="query.tenantId" placeholder="选择租户" allow-clear style="width: 150px">
+                    <a-form-item label="记录租户筛选">
+                        <a-select v-model:value="query.recordTenantId" placeholder="默认当前活动租户" allow-clear style="width: 150px">
                             <a-select-option value="">全部租户</a-select-option>
                             <a-select-option v-for="tenant in tenants" :key="tenant.id" :value="tenant.id">
                                 {{ tenant.name }}
@@ -124,8 +124,8 @@
                             <template v-else-if="column.dataIndex === 'created'">
                                 {{ formatDate(record.created) }}
                             </template>
-                            <template v-else-if="column.dataIndex === 'tenantId'">
-                                <a-tag v-if="record.tenantId" color="green">{{ record.tenantId }}</a-tag>
+                            <template v-else-if="column.dataIndex === 'recordTenantId'">
+                                <a-tag v-if="record.recordTenantId" color="green">{{ record.recordTenantId }}</a-tag>
                                 <a-tag v-else color="default">默认</a-tag>
                             </template>
                             <template v-else-if="column.dataIndex === 'action'">
@@ -204,8 +204,8 @@
                         {{ viewRecord?.suspended ? '已暂停' : '活跃' }}
                     </a-tag>
                 </a-descriptions-item>
-                <a-descriptions-item label="租户">
-                    <a-tag v-if="viewRecord?.tenantId" color="green">{{ viewRecord?.tenantId }}</a-tag>
+                <a-descriptions-item label="记录所属租户ID">
+                    <a-tag v-if="viewRecord?.recordTenantId" color="green">{{ viewRecord?.recordTenantId }}</a-tag>
                     <a-tag v-else color="default">默认</a-tag>
                 </a-descriptions-item>
                 <a-descriptions-item label="创建时间">
@@ -234,7 +234,7 @@
 
 <script setup lang="ts" name="ProcessDefinition">
 import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import {
     PlusOutlined,
@@ -256,14 +256,43 @@ import type { ProcessDefinition } from '@/api/process'
 import { useThrottle } from '@/utils/debounce'
 import ProcessPreviewDrawer from '@/components/process/ProcessPreviewDrawer.vue'
 import ProcessDeployResultModal from '@/components/process/ProcessDeployResultModal.vue'
+import { getActiveTenantId, resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
 
+const route = useRoute()
 const router = useRouter()
+
+function resolveActiveTenantFilter() {
+    return getActiveTenantId() ?? ''
+}
+
+function resolveInitialRecordTenantFilter() {
+    return resolveActiveTenantQueryValue(route.query) ?? resolveActiveTenantFilter()
+}
+
+function resolveCurrentActiveTenant() {
+    return resolveActiveTenantQueryValue(route.query) ?? resolveActiveTenantFilter()
+}
+
+function buildNavigationQuery() {
+    return withActiveTenantQuery({}, resolveCurrentActiveTenant())
+}
+
+async function syncActiveTenantContextToRoute(activeTenantId: string | null | undefined) {
+    const currentTenant = resolveActiveTenantQueryValue(route.query) ?? ''
+    const nextTenant = activeTenantId || ''
+    if (currentTenant === nextTenant) {
+        return
+    }
+    await router.replace({
+        query: withActiveTenantQuery({ ...route.query }, nextTenant || null),
+    })
+}
 
 // 查询条件
 const query = ref({
     name: '',
     key: '',
-    tenantId: ''
+    recordTenantId: resolveInitialRecordTenantFilter()
 })
 
 const tableData = ref<ProcessDefinition[]>([])
@@ -354,7 +383,7 @@ const INITIAL_COLUMNS = [
     { title: '版本', dataIndex: 'version', sorter: true, width: 80 },
     { title: '状态', dataIndex: 'suspended', sorter: true, width: 100 },
     { title: '创建时间', dataIndex: 'created', sorter: true, width: 150 },
-    { title: '租户', dataIndex: 'tenantId', width: 100 },
+    { title: '记录所属租户ID', dataIndex: 'recordTenantId', width: 120 },
     {
         title: '操作',
         dataIndex: 'action',
@@ -478,11 +507,11 @@ async function loadData() {
         const params = {
             name: query.value.name.trim(),
             key: query.value.key.trim(),
-            tenantId: query.value.tenantId || undefined,
+            recordTenantId: query.value.recordTenantId || undefined,
             current: Number(pagination.value.current) || 1,
             pageSize: Number(pagination.value.pageSize) || 10
         }
-        const result = await processApi.getProcessDefinitions(params.tenantId)
+        const result = await processApi.getProcessDefinitions(params.recordTenantId)
         tableData.value = Array.isArray(result) ? result : []
         pagination.value.total = tableData.value.length
     } catch (error: unknown) {
@@ -506,17 +535,17 @@ const loadTenants = async () => {
     }
 }
 
-function handleSearch() {
+async function handleSearch() {
     pagination.value.current = 1
     loadData()
 }
 
 const throttledSearch = useThrottle(handleSearch, 1000)
 
-function handleReset() {
+async function handleReset() {
     query.value.name = ''
     query.value.key = ''
-    query.value.tenantId = ''
+    query.value.recordTenantId = resolveActiveTenantFilter()
     pagination.value.current = 1
     loadData()
 }
@@ -727,12 +756,18 @@ const formatDate = (dateString: string | Date | undefined) => {
 }
 
 const goToDesigner = () => {
-    router.push('/workflowDesign')
+    router.push({
+        path: '/workflowDesign',
+        query: buildNavigationQuery(),
+    })
 }
 
 const goToManagement = () => {
     showSaveResult.value = false
-    router.push('/deployment')
+    router.push({
+        path: '/deployment',
+        query: buildNavigationQuery(),
+    })
 }
 
 const closeSaveResult = () => {
@@ -877,7 +912,10 @@ const handleShowSaveResult = (event: Event) => {
     showProcessSaveResult(customEvent.detail)
 }
 
-onMounted(() => {
+onMounted(async () => {
+    const initialRecordTenantId = resolveInitialRecordTenantFilter()
+    query.value.recordTenantId = initialRecordTenantId
+    await syncActiveTenantContextToRoute(initialRecordTenantId)
     loadData()
     loadTenants()
     updateTableBodyHeight()

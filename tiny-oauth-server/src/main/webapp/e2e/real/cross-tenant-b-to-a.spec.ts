@@ -15,7 +15,7 @@ import {
  * 目标：
  * - 使用第二租户身份（tenant B）作为当前浏览器 storageState。
  * - 使用主自动化身份（tenant A）创建真实资源，再验证 tenant B 无法读取。
- * - 额外验证 tenant B 若伪造 `X-Tenant-Id = tenant A`，后端会返回 tenant_mismatch。
+ * - 额外验证 tenant B 若伪造 `X-Active-Tenant-Id = tenant A`，后端会返回 tenant_mismatch。
  */
 
 test.describe('real-link: tenant B is isolated from tenant A resources', () => {

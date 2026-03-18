@@ -1,6 +1,16 @@
 <template>
   <div class="content-container" style="position: relative;">
     <div class="content-card">
+      <div v-if="!canManageTenants" class="platform-guard-card">
+        <div class="platform-guard-kicker">Platform Only</div>
+        <h3>租户管理仅对平台管理员开放</h3>
+        <p>
+          当前页面属于平台级控制面。只有默认平台租户下具备 <code>ROLE_ADMIN</code>
+          的管理员才会请求 <code>/sys/tenants</code> 并显示租户管理操作。
+        </p>
+      </div>
+
+      <template v-else>
       <div class="form-container">
         <a-form layout="inline" :model="query">
           <a-form-item label="租户编码">
@@ -99,7 +109,7 @@
             </template>
           </a-table>
         </div>
-        <div class="pagination-container" ref="paginationRef">
+      <div class="pagination-container" ref="paginationRef">
           <a-pagination
             v-model:current="pagination.current"
             :page-size="pagination.pageSize"
@@ -113,9 +123,11 @@
           />
         </div>
       </div>
+      </template>
     </div>
 
     <a-drawer
+      v-if="canManageTenants"
       v-model:open="drawerVisible"
       :title="drawerMode === 'create' ? '新建租户' : '编辑租户'"
       width="520"
@@ -137,7 +149,10 @@
 import { ref, onMounted, onBeforeUnmount, nextTick, computed, watch } from 'vue'
 import { message, Modal } from 'ant-design-vue'
 import { PlusOutlined, ReloadOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons-vue'
+import { useAuth } from '@/auth/auth'
 import { tenantList, createTenant, updateTenant, deleteTenant } from '@/api/tenant'
+import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import { getTenantCode } from '@/utils/tenant'
 import TenantForm from './TenantForm.vue'
 
 const query = ref({
@@ -149,6 +164,12 @@ const query = ref({
 
 const loading = ref(false)
 const tableData = ref<any[]>([])
+const { user } = useAuth()
+const canManageTenants = computed(() => {
+  const authorities = extractAuthoritiesFromJwt(user.value?.access_token)
+  const isPlatformTenant = getTenantCode() === 'default'
+  return isPlatformTenant && authorities.some((authority) => authority === 'ROLE_ADMIN')
+})
 
 const pagination = ref({
   current: 1,
@@ -201,6 +222,12 @@ function updateTableBodyHeight() {
 }
 
 async function loadData() {
+  if (!canManageTenants.value) {
+    tableData.value = []
+    pagination.value.total = 0
+    loading.value = false
+    return
+  }
   loading.value = true
   try {
     const params = {
@@ -223,12 +250,14 @@ async function loadData() {
 }
 
 function handleSearch() {
+  if (!canManageTenants.value) return
   pagination.value.current = 1
   loadData()
 }
 const throttledSearch = handleSearch
 
 function handleReset() {
+  if (!canManageTenants.value) return
   query.value.code = ''
   query.value.name = ''
   query.value.domain = ''
@@ -240,6 +269,7 @@ const throttledReset = handleReset
 
 const refreshing = ref(false)
 async function handleRefresh() {
+  if (!canManageTenants.value) return
   refreshing.value = true
   await loadData().finally(() => {
     setTimeout(() => {
@@ -265,6 +295,10 @@ function handlePageSizeChange(current: number, size: number) {
 }
 
 function handleBatchDelete() {
+  if (!canManageTenants.value) {
+    message.warning('租户管理仅对平台管理员开放')
+    return
+  }
   if (selectedRowKeys.value.length === 0) {
     message.warning('请先选择要删除的租户')
     return
@@ -291,6 +325,10 @@ function handleBatchDelete() {
 const throttledBatchDelete = handleBatchDelete
 
 function handleDelete(record: any) {
+  if (!canManageTenants.value) {
+    message.warning('租户管理仅对平台管理员开放')
+    return
+  }
   Modal.confirm({
     title: '确认删除',
     content: `确定要删除租户 ${record.name} 吗？`,
@@ -316,6 +354,10 @@ const drawerMode = ref<'create' | 'edit'>('create')
 const currentTenant = ref<any | null>(null)
 
 function handleCreate() {
+  if (!canManageTenants.value) {
+    message.warning('租户管理仅对平台管理员开放')
+    return
+  }
   drawerMode.value = 'create'
   currentTenant.value = { id: '', enabled: true }
   drawerVisible.value = true
@@ -323,6 +365,10 @@ function handleCreate() {
 const throttledCreate = handleCreate
 
 function handleEdit(record: any) {
+  if (!canManageTenants.value) {
+    message.warning('租户管理仅对平台管理员开放')
+    return
+  }
   drawerMode.value = 'edit'
   currentTenant.value = { ...record }
   drawerVisible.value = true
@@ -335,6 +381,10 @@ function handleDrawerClose() {
 }
 
 async function handleFormSubmit(formData: any) {
+  if (!canManageTenants.value) {
+    message.warning('租户管理仅对平台管理员开放')
+    return
+  }
   try {
     if (drawerMode.value === 'edit' && formData.id) {
       await updateTenant(formData.id, formData)
@@ -390,7 +440,6 @@ function getRowClassName(record: any) {
 }
 
 onMounted(() => {
-  loadData()
   updateTableBodyHeight()
   window.addEventListener('resize', updateTableBodyHeight)
 })
@@ -402,6 +451,18 @@ onBeforeUnmount(() => {
 watch(() => pagination.value.pageSize, () => {
   updateTableBodyHeight()
 })
+
+watch(canManageTenants, (enabled) => {
+  if (!enabled) {
+    tableData.value = []
+    selectedRowKeys.value = []
+    pagination.value.total = 0
+    drawerVisible.value = false
+    currentTenant.value = null
+    return
+  }
+  void loadData()
+}, { immediate: true })
 </script>
 
 <style scoped>
@@ -417,6 +478,22 @@ watch(() => pagination.value.pageSize, () => {
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+
+.platform-guard-card {
+  margin: 24px;
+  padding: 24px;
+  border: 1px solid #f0f0f0;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #fffaf0 0%, #fff 100%);
+}
+
+.platform-guard-kicker {
+  color: #b26a00;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .form-container {

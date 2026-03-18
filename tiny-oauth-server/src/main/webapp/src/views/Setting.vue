@@ -169,18 +169,23 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { UserOutlined } from '@ant-design/icons-vue'
 import type { Rule } from 'ant-design-vue/es/form'
 import type { FormInstance } from 'ant-design-vue'
 import type { UploadRequestOption } from 'rc-upload/es/interface'
 import { message } from 'ant-design-vue'
-import { userApi } from '@/api/process'
-import { updateUser } from '@/api/user'
+import { getSecurityStatus } from '@/api/security'
+import { getCurrentUser, updateUser } from '@/api/user'
 import { generateAvatarStyleObject } from '@/utils/avatar'
+import { getActiveTenantId, resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
 
 // 路由
+const route = useRoute()
 const router = useRouter()
+
+const buildNavigationQuery = () =>
+  withActiveTenantQuery({}, resolveActiveTenantQueryValue(route.query) ?? getActiveTenantId())
 
 // 当前激活的标签页
 const activeKey = ref('basic')
@@ -314,19 +319,7 @@ const unbindRules: Record<string, Rule[]> = {
 const loadSecurityStatus = async () => {
   securityLoading.value = true
   try {
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000'
-    const baseUrl = apiBaseUrl.endsWith('/') ? apiBaseUrl.slice(0, -1) : apiBaseUrl
-    const { fetchWithTraceId } = await import('@/utils/traceId')
-    const response = await fetchWithTraceId(`${baseUrl}/self/security/status`, {
-      method: 'GET',
-      credentials: 'include',
-      headers: { Accept: 'application/json' },
-      timeout: 5000 // 5 秒超时
-    })
-    if (!response.ok) {
-      throw new Error('无法获取安全状态')
-    }
-    const data = await response.json()
+    const data = await getSecurityStatus()
     totpBound.value = Boolean(data.totpBound)
     totpActivated.value = Boolean(data.totpActivated)
   } catch (error: any) {
@@ -506,7 +499,7 @@ const handleAvatarUpload = async (options: UploadRequestOption) => {
 // 加载用户信息
 const loadUserInfo = async () => {
   try {
-    const data = await userApi.getCurrentUser()
+    const data = await getCurrentUser()
     basicForm.id = data.id
     basicForm.username = data.username
     basicForm.nickname = data.nickname || ''
@@ -595,7 +588,10 @@ const resetPasswordForm = () => {
 
 // 绑定两步验证
 const handleBindTotp = () => {
-  router.push('/self/security/totp-bind')
+  router.push({
+    path: '/self/security/totp-bind',
+    query: buildNavigationQuery(),
+  })
 }
 
 // 组件挂载时加载数据

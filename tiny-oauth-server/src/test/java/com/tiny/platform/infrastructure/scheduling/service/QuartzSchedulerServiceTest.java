@@ -62,7 +62,7 @@ class QuartzSchedulerServiceTest {
                 .withIdentity(jobKey)
                 .usingJobData(SchedulingExecutionContext.builder()
                         .dagId(10L)
-                        .tenantId(88L)
+                        .executionTenantId(88L)
                         .username("Quartz Scheduler")
                         .triggerType("SCHEDULE")
                         .build()
@@ -109,7 +109,7 @@ class QuartzSchedulerServiceTest {
         ArgumentCaptor<JobDetail> jobDetailCaptor = ArgumentCaptor.forClass(JobDetail.class);
         ArgumentCaptor<Trigger> triggerCaptor = ArgumentCaptor.forClass(Trigger.class);
         verify(scheduler).scheduleJob(jobDetailCaptor.capture(), triggerCaptor.capture());
-        assertThat(jobDetailCaptor.getValue().getJobDataMap().getLong("tenantId")).isEqualTo(88L);
+        assertThat(jobDetailCaptor.getValue().getJobDataMap().getLong("executionTenantId")).isEqualTo(88L);
         assertThat(((CronTrigger) triggerCaptor.getValue()).getTimeZone().getID()).isEqualTo(TimeZone.getDefault().getID());
     }
 
@@ -129,7 +129,7 @@ class QuartzSchedulerServiceTest {
                 .withIdentity(jobKey)
                 .usingJobData(SchedulingExecutionContext.builder()
                         .dagId(10L)
-                        .tenantId(88L)
+                        .executionTenantId(88L)
                         .build()
                         .toJobDataMap())
                 .storeDurably(true)
@@ -165,7 +165,7 @@ class QuartzSchedulerServiceTest {
         dag.setTenantId(88L);
 
         SchedulingExecutionContext executionContext = SchedulingExecutionContext.builder()
-                .tenantId(88L)
+                .executionTenantId(88L)
                 .username("alice")
                 .dagId(10L)
                 .dagRunId(77L)
@@ -184,7 +184,7 @@ class QuartzSchedulerServiceTest {
         assertThat(jobName).startsWith("dag-trigger-now-10-");
         UUID.fromString(jobName.substring("dag-trigger-now-10-".length()));
         assertThat(jobDetail.getJobClass()).isEqualTo(DagExecutionJob.class);
-        assertThat(jobDetail.getJobDataMap().getLong("tenantId")).isEqualTo(88L);
+        assertThat(jobDetail.getJobDataMap().getLong("executionTenantId")).isEqualTo(88L);
         assertThat(jobDetail.getJobDataMap().getLong("dagRunId")).isEqualTo(77L);
         assertThat(jobDetail.getJobDataMap().getLong("dagVersionId")).isEqualTo(3L);
         assertThat(triggerCaptor.getValue().getKey().getName()).startsWith("trigger-" + jobName);

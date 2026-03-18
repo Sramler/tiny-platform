@@ -8,11 +8,28 @@
 
 - **规则唯一真相**：`.agent/src/**`
 - **Cursor 生效入口（生成物）**：`.cursor/rules/**`
+- **Codex 通用入口**：`AGENTS.md` + `docs/**` + `.agent/src/**`
 - **测试实施手册**：`docs/TINY_PLATFORM_TESTING_PLAYBOOK.md`
 - **AI 测试任务模板**：`docs/TINY_PLATFORM_AI_TEST_TASK_TEMPLATE.md`
 - **门禁豁免政策**：`docs/TINY_PLATFORM_CI_WAIVER_POLICY.md`
+- **权限标识规范**：`docs/TINY_PLATFORM_PERMISSION_IDENTIFIER_SPEC.md`
+- **授权模型与重构方案**：`docs/TINY_PLATFORM_AUTHORIZATION_MODEL.md`
+- **下一阶段变更与改进清单**：`docs/TINY_PLATFORM_AUTHORIZATION_NEXT_PHASE_AND_IMPROVEMENTS.md`
+- **权限/授权可执行任务清单**：`docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md`
+- **租户命名拆分规范**：`docs/TINY_PLATFORM_TENANT_NAMING_GUIDELINES.md`
+- **测试规则源**：`.agent/src/rules/50-testing.rules.md`
+- **CI/CD 规则源**：`.agent/src/rules/58-cicd.rules.md`
+- **平台规则源**：`.agent/src/rules/90-tiny-platform.rules.md`
+- **认证规则源**：`.agent/src/rules/91-tiny-platform-auth.rules.md`
+- **权限标识规则源**：`.agent/src/rules/92-tiny-platform-permission.rules.md`
+- **授权模型规则源**：`.agent/src/rules/93-tiny-platform-authorization-model.rules.md`
 - **构建**：`.agent/build/build.sh --target cursor`
 - **校验**：`.agent/build/validate.sh --target cursor --cursor-format mdc`
+
+> 说明：
+> - `AGENTS.md` 是统一入口与顶层契约，不是所有规则的全文展开版。
+> - Cursor 运行时直接消费 `.cursor/rules/**`。
+> - Codex 当前没有仓库内专用生成产物，默认以 `AGENTS.md`、`docs/**` 和 `.agent/src/**` 为规则来源。
 
 ---
 
@@ -44,6 +61,24 @@
 2. **平台特定覆盖通用**：`90+` > `30+` > `10/20` > `00`
 3. **更严格覆盖更宽松**
 4. **仍不确定时**：必须说明假设并请求确认（或给默认策略）
+
+---
+
+## 2.2 工具适配说明（手写区）
+
+为避免不同 AI 工具读取规则时产生理解偏差，统一约定如下：
+
+1. **唯一真相源始终是**：`.agent/src/**`
+2. **Cursor 产物只是生成物**：`.cursor/rules/**` 仅供 Cursor 直接消费，禁止手改
+3. **Codex 依赖统一入口**：Codex 默认应先读 `AGENTS.md`，再按其中链接读取 `docs/**` 与 `.agent/src/**`
+4. **新增规则时必须双同步**：
+   - 更新对应 `.agent/src/rules/*.rules.md`
+   - 如影响通用入口或高频决策，更新 `AGENTS.md`
+5. **不要假设 AGENTS 全量展开了规则正文**：
+   - 详细可执行约束以 `.agent/src/rules/**` 为准
+   - 长文说明与设计基线以 `docs/**` 为准
+
+当前仓库只实现了 `cursor` 构建/校验目标；若未来引入 `.codex` 产物，仍必须以 `.agent/src/**` 为唯一真相源，而不是在 `.codex/**` 中手工维护第二套规则。
 
 ---
 

@@ -37,12 +37,12 @@ public class IdempotentMetricsController extends BaseExceptionHandler {
      */
     @GetMapping
     public ResponseEntity<Map<String, Object>> getMetrics(
-            @RequestParam(required = false) Long tenantId) {
-        IdempotentMetricsSnapshot snapshot = metricsService.snapshot(tenantId);
+            @RequestParam(name = "activeTenantId", required = false) Long activeTenantId) {
+        IdempotentMetricsSnapshot snapshot = metricsService.snapshot(activeTenantId);
         Map<String, Object> response = new HashMap<>();
         response.put("success", true);
         response.put("message", "OK");
-        response.put("tenantId", tenantId);
+        response.put("activeTenantId", activeTenantId);
         response.put("windowMinutes", snapshot.windowMinutes());
         response.put("windowStartEpochMillis", snapshot.windowStartEpochMillis());
         response.put("windowEndEpochMillis", snapshot.windowEndEpochMillis());
@@ -66,17 +66,17 @@ public class IdempotentMetricsController extends BaseExceptionHandler {
     @GetMapping("/top-keys")
     public ResponseEntity<Map<String, Object>> getTopKeys(
             @RequestParam(defaultValue = "10") int limit,
-            @RequestParam(required = false) Long tenantId) {
-        IdempotentMetricsSnapshot snapshot = metricsService.snapshot(tenantId);
+            @RequestParam(name = "activeTenantId", required = false) Long activeTenantId) {
+        IdempotentMetricsSnapshot snapshot = metricsService.snapshot(activeTenantId);
         Map<String, Object> response = new HashMap<>();
         response.put("success", true);
         response.put("message", "OK");
-        response.put("tenantId", tenantId);
+        response.put("activeTenantId", activeTenantId);
         response.put("windowMinutes", snapshot.windowMinutes());
         response.put("windowStartEpochMillis", snapshot.windowStartEpochMillis());
         response.put("windowEndEpochMillis", snapshot.windowEndEpochMillis());
         response.put("limit", Math.max(1, Math.min(limit, 100)));
-        response.put("topKeys", metricsService.topScopes(limit, tenantId));
+        response.put("topKeys", metricsService.topScopes(limit, activeTenantId));
         return ResponseEntity.ok(response);
     }
     
@@ -86,12 +86,12 @@ public class IdempotentMetricsController extends BaseExceptionHandler {
      */
     @GetMapping("/mq")
     public ResponseEntity<Map<String, Object>> getMqMetrics(
-            @RequestParam(required = false) Long tenantId) {
-        IdempotentMetricsSnapshot snapshot = metricsService.snapshot(tenantId);
+            @RequestParam(name = "activeTenantId", required = false) Long activeTenantId) {
+        IdempotentMetricsSnapshot snapshot = metricsService.snapshot(activeTenantId);
         Map<String, Object> response = new HashMap<>();
         response.put("success", true);
         response.put("message", "OK");
-        response.put("tenantId", tenantId);
+        response.put("activeTenantId", activeTenantId);
         response.put("windowMinutes", snapshot.windowMinutes());
         response.put("windowStartEpochMillis", snapshot.windowStartEpochMillis());
         response.put("windowEndEpochMillis", snapshot.windowEndEpochMillis());

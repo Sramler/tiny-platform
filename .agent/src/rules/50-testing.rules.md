@@ -106,6 +106,8 @@
 - ✅ 涉及长流程、异步编排、状态机收敛的 E2E，必须断言中间关键状态与最终状态，而不是只等待最后一个 toast。
 - ✅ E2E 必须对关键高风险路径补拒绝场景或失败场景，至少覆盖权限拒绝、租户拒绝、重复提交、取消/回滚/恢复中的相关一类。
 - ✅ 如果使用 `storageState`、cookie 预置、session 预置，它们必须来源于真实登录 setup，而不是手写伪造状态；当测试目标本身是登录/MFA/OIDC 时，必须直接覆盖真实登录步骤。
+- ✅ 真实认证链路的 helper、setup script、seed script、auth-state 生成器一旦引入多身份、多租户、TOTP/MFA 环境变量覆盖，必须补单元回归测试，至少锁住：主身份与次身份 secret / one-time code 不串用、输出状态文件不串用、缺失配置时失败信息明确。
+- ✅ 首绑 MFA、post-login 安全中心、OIDC callback 相关 real-link 测试必须遵循真实页面契约：优先通过页面可见信息或浏览器已认证 session 调 first-party API，不能假设 `localStorage` 中的 OIDC token 一定已经存在。
 
 ### 7) 前端测试要求
 

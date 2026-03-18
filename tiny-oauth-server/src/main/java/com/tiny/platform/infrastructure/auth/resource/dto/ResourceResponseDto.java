@@ -21,6 +21,11 @@ public class ResourceResponseDto {
     private Long id;
 
     /**
+     * 资源记录所属租户ID
+     */
+    private Long recordTenantId;
+
+    /**
      * 资源名称（后端内部识别名）
      */
     private String name;
@@ -126,6 +131,14 @@ public class ResourceResponseDto {
 
     public void setId(Long id) {
         this.id = id;
+    }
+
+    public Long getRecordTenantId() {
+        return recordTenantId;
+    }
+
+    public void setRecordTenantId(Long recordTenantId) {
+        this.recordTenantId = recordTenantId;
     }
 
     public String getName() {

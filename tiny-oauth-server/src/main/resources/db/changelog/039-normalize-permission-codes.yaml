@@ -1,0 +1,155 @@
+databaseChangeLog:
+  - changeSet:
+      id: normalize-permission-codes
+      author: tiny
+      comment: 将历史两段式、query/update 风格权限统一迁移到规范权限码
+      validCheckSum:
+        - ANY
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              UPDATE `resource`
+              SET `permission` = CASE `permission`
+                WHEN 'system' THEN 'system:entry:view'
+                WHEN 'scheduling' THEN 'scheduling:entry:view'
+                WHEN 'dashboard:view' THEN 'dashboard:entry:view'
+                WHEN 'system:view' THEN 'system:entry:view'
+                WHEN 'user:view' THEN 'user:entry:view'
+                WHEN 'profile:view' THEN 'profile:entry:view'
+                WHEN 'profile:center' THEN 'profile:center:view'
+                WHEN 'profile:setting' THEN 'profile:setting:view'
+                WHEN 'exception:view' THEN 'exception:entry:view'
+                WHEN 'exception:403' THEN 'exception:page-403:view'
+                WHEN 'exception:404' THEN 'exception:page-404:view'
+                WHEN 'exception:500' THEN 'exception:page-500:view'
+                WHEN 'tenant:list' THEN 'system:tenant:list'
+                WHEN 'user:list' THEN 'system:user:list'
+                WHEN 'role:list' THEN 'system:role:list'
+                WHEN 'menu:list' THEN 'system:menu:list'
+                WHEN 'resource:list' THEN 'system:resource:list'
+                WHEN 'system:user:view' THEN 'system:user:list'
+                WHEN 'system:role:view' THEN 'system:role:list'
+                WHEN 'system:menu:view' THEN 'system:menu:list'
+                WHEN 'system:resource:view' THEN 'system:resource:list'
+                WHEN 'user:list:query' THEN 'system:user:list'
+                WHEN 'role:list:query' THEN 'system:role:list'
+                WHEN 'menu:list:query' THEN 'system:menu:list'
+                WHEN 'resource:list:query' THEN 'system:resource:list'
+                WHEN 'user:create' THEN 'system:user:create'
+                WHEN 'role:create' THEN 'system:role:create'
+                WHEN 'menu:create' THEN 'system:menu:create'
+                WHEN 'resource:create' THEN 'system:resource:create'
+                WHEN 'user:update' THEN 'system:user:edit'
+                WHEN 'role:update' THEN 'system:role:edit'
+                WHEN 'menu:update' THEN 'system:menu:edit'
+                WHEN 'resource:update' THEN 'system:resource:edit'
+                WHEN 'user:delete' THEN 'system:user:delete'
+                WHEN 'role:delete' THEN 'system:role:delete'
+                WHEN 'menu:delete' THEN 'system:menu:delete'
+                WHEN 'resource:delete' THEN 'system:resource:delete'
+                WHEN 'user:batch:delete' THEN 'system:user:batch-delete'
+                WHEN 'role:batch:delete' THEN 'system:role:batch-delete'
+                WHEN 'menu:batch:delete' THEN 'system:menu:batch-delete'
+                WHEN 'resource:batch:delete' THEN 'system:resource:batch-delete'
+                WHEN 'user:batch:enable' THEN 'system:user:batch-enable'
+                WHEN 'user:batch:disable' THEN 'system:user:batch-disable'
+                WHEN 'menu:tree:query' THEN 'system:menu:list'
+                WHEN 'resource:tree:query' THEN 'system:resource:list'
+                WHEN 'menu:sort:update' THEN 'system:menu:edit'
+                WHEN 'resource:sort:update' THEN 'system:resource:edit'
+                WHEN 'menu:batch:sort' THEN 'system:menu:edit'
+                WHEN 'user:add' THEN 'system:user:create'
+                WHEN 'user:edit' THEN 'system:user:edit'
+                WHEN 'user:enable' THEN 'system:user:enable'
+                WHEN 'user:disable' THEN 'system:user:disable'
+                WHEN 'role:add' THEN 'system:role:create'
+                WHEN 'role:edit' THEN 'system:role:edit'
+                WHEN 'menu:add' THEN 'system:menu:create'
+                WHEN 'menu:edit' THEN 'system:menu:edit'
+                WHEN 'resource:add' THEN 'system:resource:create'
+                WHEN 'resource:edit' THEN 'system:resource:edit'
+                WHEN 'scheduling:dag:list' THEN 'scheduling:console:view'
+                WHEN 'scheduling:task:list' THEN 'scheduling:console:view'
+                WHEN 'scheduling:task-type:list' THEN 'scheduling:console:view'
+                WHEN 'scheduling:dag-run:list' THEN 'scheduling:console:view'
+                WHEN 'scheduling:audit:list' THEN 'scheduling:audit:view'
+                WHEN 'scheduling:read' THEN 'scheduling:console:view'
+                WHEN 'scheduling:manage-config' THEN 'scheduling:console:config'
+                WHEN 'scheduling:operate-run' THEN 'scheduling:run:control'
+                WHEN 'scheduling:view-audit' THEN 'scheduling:audit:view'
+                WHEN 'scheduling:view-cluster-status' THEN 'scheduling:cluster:view'
+                ELSE `permission`
+              END
+              WHERE `permission` IN (
+                'system',
+                'scheduling',
+                'dashboard:view',
+                'system:view',
+                'user:view',
+                'profile:view',
+                'profile:center',
+                'profile:setting',
+                'exception:view',
+                'exception:403',
+                'exception:404',
+                'exception:500',
+                'tenant:list',
+                'user:list',
+                'role:list',
+                'menu:list',
+                'resource:list',
+                'system:user:view',
+                'system:role:view',
+                'system:menu:view',
+                'system:resource:view',
+                'user:list:query',
+                'role:list:query',
+                'menu:list:query',
+                'resource:list:query',
+                'user:create',
+                'role:create',
+                'menu:create',
+                'resource:create',
+                'user:update',
+                'role:update',
+                'menu:update',
+                'resource:update',
+                'user:delete',
+                'role:delete',
+                'menu:delete',
+                'resource:delete',
+                'user:batch:delete',
+                'role:batch:delete',
+                'menu:batch:delete',
+                'resource:batch:delete',
+                'user:batch:enable',
+                'user:batch:disable',
+                'menu:tree:query',
+                'resource:tree:query',
+                'menu:sort:update',
+                'resource:sort:update',
+                'menu:batch:sort',
+                'user:add',
+                'user:edit',
+                'user:enable',
+                'user:disable',
+                'role:add',
+                'role:edit',
+                'menu:add',
+                'menu:edit',
+                'resource:add',
+                'resource:edit',
+                'scheduling:dag:list',
+                'scheduling:task:list',
+                'scheduling:task-type:list',
+                'scheduling:dag-run:list',
+                'scheduling:audit:list',
+                'scheduling:read',
+                'scheduling:manage-config',
+                'scheduling:operate-run',
+                'scheduling:view-audit',
+                'scheduling:view-cluster-status'
+              );

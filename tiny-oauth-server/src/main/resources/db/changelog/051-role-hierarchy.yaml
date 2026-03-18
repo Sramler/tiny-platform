@@ -1,0 +1,30 @@
+databaseChangeLog:
+  - changeSet:
+      id: 051-role-hierarchy
+      author: tiny
+      comment: Phase2 草案：新增 role_hierarchy 表（角色继承关系，DAG 约束见文档说明）
+      preConditions:
+        - onFail: CONTINUE
+        - onError: HALT
+        - dbms:
+            type: mysql
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              CREATE TABLE IF NOT EXISTS `role_hierarchy` (
+                `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+                `tenant_id` BIGINT NOT NULL COMMENT '租户ID；平台模板可用 tenant_id IS NULL 表示平台层',
+                `parent_role_id` BIGINT NOT NULL COMMENT '父角色模板ID（被继承方）',
+                `child_role_id` BIGINT NOT NULL COMMENT '子角色模板ID（继承方，至少包含父角色全部权限）',
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                `created_by` BIGINT NULL COMMENT '创建人ID',
+                `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uk_role_hierarchy` (`tenant_id`, `parent_role_id`, `child_role_id`)
+                -- 如目标 MySQL 版本支持，可考虑补充：
+                -- ,CONSTRAINT `chk_role_hierarchy_no_self` CHECK (`parent_role_id` <> `child_role_id`)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='角色继承关系表（Phase2 草案，逻辑上要求 DAG）';
+

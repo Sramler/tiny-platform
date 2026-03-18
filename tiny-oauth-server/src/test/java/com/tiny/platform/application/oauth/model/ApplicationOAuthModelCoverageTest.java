@@ -141,7 +141,7 @@ class ApplicationOAuthModelCoverageTest {
         resourceRequest.setName("menu");
         resourceRequest.setUrl("/menu");
         resourceRequest.setUri("/api/menu");
-        resourceRequest.setPermission("menu:view");
+        resourceRequest.setPermission("system:menu:list");
         resourceRequest.setTitle("Menu");
         resourceRequest.setType(1);
         resourceRequest.setParentId(5L);
@@ -152,7 +152,7 @@ class ApplicationOAuthModelCoverageTest {
         assertThat(resourceRequest.getName()).isEqualTo("menu");
         assertThat(resourceRequest.getUrl()).isEqualTo("/menu");
         assertThat(resourceRequest.getUri()).isEqualTo("/api/menu");
-        assertThat(resourceRequest.getPermission()).isEqualTo("menu:view");
+        assertThat(resourceRequest.getPermission()).isEqualTo("system:menu:list");
         assertThat(resourceRequest.getTitle()).isEqualTo("Menu");
         assertThat(resourceRequest.getType()).isEqualTo(1);
         assertThat(resourceRequest.getParentId()).isEqualTo(5L);
@@ -175,7 +175,7 @@ class ApplicationOAuthModelCoverageTest {
         resourceCreate.setRedirect("/home");
         resourceCreate.setHidden(true);
         resourceCreate.setKeepAlive(true);
-        resourceCreate.setPermission("menu:edit");
+        resourceCreate.setPermission("system:menu:edit");
         resourceCreate.setType(2);
         resourceCreate.setParentId(8L);
         assertThat(resourceCreate.getId()).isEqualTo(3L);
@@ -183,7 +183,7 @@ class ApplicationOAuthModelCoverageTest {
         assertThat(resourceCreate.isShowIcon()).isFalse();
         assertThat(resourceCreate.isHidden()).isTrue();
         assertThat(resourceCreate.isKeepAlive()).isTrue();
-        assertThat(resourceCreate.getPermission()).isEqualTo("menu:edit");
+        assertThat(resourceCreate.getPermission()).isEqualTo("system:menu:edit");
         assertThat(resourceCreate.getType()).isEqualTo(2);
         assertThat(resourceCreate.getParentId()).isEqualTo(8L);
 
@@ -201,7 +201,7 @@ class ApplicationOAuthModelCoverageTest {
         emptyResponse.setRedirect("/home");
         emptyResponse.setHidden(false);
         emptyResponse.setKeepAlive(true);
-        emptyResponse.setPermission("res:view");
+        emptyResponse.setPermission("system:resource:list");
         emptyResponse.setType(1);
         emptyResponse.setTypeName("菜单");
         emptyResponse.setParentId(0L);
@@ -217,7 +217,7 @@ class ApplicationOAuthModelCoverageTest {
         ResourceResponseDto projected = new ResourceResponseDto(
             5L, "proj", "Projection", "/proj", "icon",
             Boolean.TRUE, 7, "ProjView", "/home",
-            Boolean.FALSE, Boolean.TRUE, "proj:view",
+            Boolean.FALSE, Boolean.TRUE, "system:resource:list",
             ResourceType.API, 9L, false
         );
         assertThat(projected.getId()).isEqualTo(5L);

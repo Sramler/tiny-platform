@@ -1,7 +1,7 @@
 package com.tiny.platform.core.oauth.tenant;
 
 /**
- * TenantContext - ThreadLocal 保存当前请求的 tenantId。
+ * TenantContext - ThreadLocal 保存当前请求的 activeTenantId。
  * 仅用于单请求内的租户隔离，必须在请求结束时清理。
  */
 public final class TenantContext {
@@ -17,11 +17,11 @@ public final class TenantContext {
 
     private TenantContext() {}
 
-    public static void setTenantId(Long tenantId) {
-        TENANT_ID.set(tenantId);
+    public static void setActiveTenantId(Long activeTenantId) {
+        TENANT_ID.set(activeTenantId);
     }
 
-    public static Long getTenantId() {
+    public static Long getActiveTenantId() {
         return TENANT_ID.get();
     }
 

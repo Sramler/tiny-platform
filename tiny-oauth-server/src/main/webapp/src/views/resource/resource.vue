@@ -1,7 +1,18 @@
 <template>
   <!-- 外层内容容器，统一风格 -->
   <div class="content-container" style="position: relative;">
-    <div class="content-card">
+    <div v-if="!canReadResourceManagement" class="content-card">
+      <div class="platform-guard-card">
+        <div class="platform-guard-kicker">Permission Required</div>
+        <h3>资源管理需要额外授权</h3>
+        <p>
+          当前页面属于后台配置面。只有具备 <code>system:resource:list</code> 或管理员权限的用户，才会请求
+          <code>/sys/resources</code> 并展示资源管理数据。
+        </p>
+      </div>
+    </div>
+
+    <div v-else class="content-card">
       <!-- 查询表单 -->
       <div class="form-container">
         <a-form layout="inline" :model="query">
@@ -41,12 +52,12 @@
         <div class="table-title">资源管理</div>
         <div class="table-actions">
           <div v-if="selectedRowKeys.length > 0" class="batch-actions">
-            <a-button type="primary" danger @click="throttledBatchDelete" class="toolbar-btn">
+            <a-button v-if="canDeleteResourceManagement" type="primary" danger @click="throttledBatchDelete" class="toolbar-btn">
               批量删除 ({{ selectedRowKeys.length }})
             </a-button>
             <a-button @click="clearSelection" class="toolbar-btn">取消选择</a-button>
           </div>
-          <a-button type="link" @click="throttledCreate" class="toolbar-btn">
+          <a-button v-if="canCreateResourceManagement" type="link" @click="throttledCreate" class="toolbar-btn">
             <template #icon>
               <PlusOutlined />
             </template>
@@ -153,13 +164,13 @@
               </template>
               <template v-else-if="column.dataIndex === 'action'">
                 <div class="action-buttons">
-                  <a-button type="link" size="small" @click.stop="throttledEdit(record)" class="action-btn">
+                  <a-button v-if="canUpdateResourceManagement" type="link" size="small" @click.stop="throttledEdit(record)" class="action-btn">
                     <template #icon>
                       <EditOutlined />
                     </template>
                     编辑
                   </a-button>
-                  <a-button type="link" size="small" danger @click.stop="throttledDelete(record)" class="action-btn">
+                  <a-button v-if="canDeleteResourceManagement" type="link" size="small" danger @click.stop="throttledDelete(record)" class="action-btn">
                     <template #icon>
                       <DeleteOutlined />
                     </template>
@@ -196,6 +207,7 @@
 <script setup lang="ts">
 // 引入Vue相关API
 import { ref, computed, onMounted, watch, nextTick, onBeforeUnmount } from 'vue'
+import { useAuth } from '@/auth/auth'
 // 引入资源API
 import { getResourceTree, createResource, updateResource, deleteResource, batchDeleteResources, type ResourceItem, type ResourceQuery, ResourceType } from '@/api/resource'
 // 引入Antd组件和图标
@@ -212,6 +224,7 @@ import {
 import VueDraggable from 'vuedraggable'
 import ResourceForm from './ResourceForm.vue'
 import Icon from '@/components/Icon.vue'
+import { extractAuthoritiesFromJwt } from '@/utils/jwt'
 
 // 查询条件
 const query = ref<ResourceQuery>({ 
@@ -220,6 +233,21 @@ const query = ref<ResourceQuery>({
   permission: '',
   type: undefined
 })
+const { user } = useAuth()
+const resourceAuthorities = computed(() => new Set(extractAuthoritiesFromJwt(user.value?.access_token)))
+const RESOURCE_MANAGEMENT_READ_AUTHORITIES = ['ROLE_ADMIN', 'system:resource:list']
+const RESOURCE_MANAGEMENT_CREATE_AUTHORITIES = ['ROLE_ADMIN', 'system:resource:create']
+const RESOURCE_MANAGEMENT_UPDATE_AUTHORITIES = ['ROLE_ADMIN', 'system:resource:edit']
+const RESOURCE_MANAGEMENT_DELETE_AUTHORITIES = ['ROLE_ADMIN', 'system:resource:delete', 'system:resource:batch-delete']
+
+function hasAnyResourceAuthority(requiredAuthorities: string[]) {
+  return requiredAuthorities.some((authority) => resourceAuthorities.value.has(authority))
+}
+
+const canReadResourceManagement = computed(() => hasAnyResourceAuthority(RESOURCE_MANAGEMENT_READ_AUTHORITIES))
+const canCreateResourceManagement = computed(() => hasAnyResourceAuthority(RESOURCE_MANAGEMENT_CREATE_AUTHORITIES))
+const canUpdateResourceManagement = computed(() => hasAnyResourceAuthority(RESOURCE_MANAGEMENT_UPDATE_AUTHORITIES))
+const canDeleteResourceManagement = computed(() => hasAnyResourceAuthority(RESOURCE_MANAGEMENT_DELETE_AUTHORITIES))
 
 // 表格数据（树形结构）
 const tableData = ref<ResourceItem[]>([])
@@ -350,6 +378,10 @@ function fixLeafAndChildren(nodes: ResourceItem[]) {
 
 // 加载树形数据
 async function loadData() {
+  if (!canReadResourceManagement.value) {
+    tableData.value = []
+    return
+  }
   loading.value = true
   try {
     const res = await getResourceTree()
@@ -394,6 +426,10 @@ const throttledRefresh = handleRefresh
 
 // 新建
 function handleCreate() {
+  if (!canCreateResourceManagement.value) {
+    message.warning('缺少资源创建权限')
+    return
+  }
   drawerMode.value = 'create'
   currentResource.value = { name: '', title: '', type: ResourceType.API, sort: 0 }
   drawerVisible.value = true
@@ -402,6 +438,10 @@ const throttledCreate = handleCreate
 
 // 编辑
 function handleEdit(record: any) {
+  if (!canUpdateResourceManagement.value) {
+    message.warning('缺少资源更新权限')
+    return
+  }
   drawerMode.value = 'edit'
   currentResource.value = { ...record }
   drawerVisible.value = true
@@ -410,6 +450,10 @@ const throttledEdit = handleEdit
 
 // 删除
 function handleDelete(record: any) {
+  if (!canDeleteResourceManagement.value) {
+    message.warning('缺少资源删除权限')
+    return
+  }
   Modal.confirm({
     title: '确认删除',
     content: `确定要删除资源 ${record.title} 吗？`,
@@ -430,6 +474,10 @@ const throttledDelete = handleDelete
 
 // 批量删除
 function handleBatchDelete() {
+  if (!canDeleteResourceManagement.value) {
+    message.warning('缺少资源删除权限')
+    return
+  }
   if (selectedRowKeys.value.length === 0) {
     message.warning('请先选择要删除的资源')
     return
@@ -501,6 +549,14 @@ function handleDrawerClose() {
 
 // 保存（新建/编辑）
 async function handleFormSubmit(formData: any) {
+  if (drawerMode.value === 'edit' && !canUpdateResourceManagement.value) {
+    message.warning('缺少资源更新权限')
+    return
+  }
+  if (drawerMode.value === 'create' && !canCreateResourceManagement.value) {
+    message.warning('缺少资源创建权限')
+    return
+  }
   try {
     if (drawerMode.value === 'edit' && formData.id) {
       await updateResource(formData.id, formData)
@@ -518,13 +574,23 @@ async function handleFormSubmit(formData: any) {
 
 // 生命周期钩子
 onMounted(() => {
-  loadData()
+  if (canReadResourceManagement.value) {
+    loadData()
+  }
   updateTableBodyHeight()
   window.addEventListener('resize', updateTableBodyHeight)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', updateTableBodyHeight)
+})
+watch(canReadResourceManagement, (enabled) => {
+  if (enabled) {
+    loadData()
+    return
+  }
+  tableData.value = []
+  selectedRowKeys.value = []
 })
 
 // 获取请求方法颜色

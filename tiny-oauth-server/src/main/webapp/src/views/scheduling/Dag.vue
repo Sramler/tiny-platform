@@ -48,6 +48,14 @@
               {{ record.enabled ? '启用' : '禁用' }}
             </a-tag>
           </template>
+          <template v-if="column.key === 'cronState'">
+            <a-tooltip :title="getCronEffectiveReason(record)">
+              <a-tag v-if="isCronConfigured(record)" :color="isCronEffective(record) ? 'green' : 'red'">
+                {{ isCronEffective(record) ? 'Cron 生效' : 'Cron 未生效' }}
+              </a-tag>
+              <span v-else style="color: #999;">-</span>
+            </a-tooltip>
+          </template>
           <template v-if="column.key === 'runState'">
             <a-space size="small">
               <a-tag v-if="record.hasRunningRun" color="processing">运行中</a-tag>
@@ -179,15 +187,31 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import CronDesigner from '@/components/scheduling/CronDesigner.vue'
 import { message } from 'ant-design-vue'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { dagList, createDag, updateDag, deleteDag, triggerDag, stopDag, retryDag } from '@/api/scheduling'
 import { throttle } from '@/utils/debounce'
+import { useAuth } from '@/auth/auth'
+import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import { getActiveTenantId, resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
 
+const route = useRoute()
 const router = useRouter()
+const { user } = useAuth()
+const schedulingAuthorities = computed(() =>
+  extractAuthoritiesFromJwt(user.value?.access_token).filter((a) => a.startsWith('scheduling:')),
+)
+const canManageSchedulingConfig = computed(() =>
+  schedulingAuthorities.value.includes('scheduling:console:config') ||
+  schedulingAuthorities.value.includes('scheduling:*'),
+)
+const canOperateSchedulingRun = computed(() =>
+  schedulingAuthorities.value.includes('scheduling:run:control') ||
+  schedulingAuthorities.value.includes('scheduling:*'),
+)
 const loading = ref(false)
 const refreshing = ref(false)
 const formVisible = ref(false)
@@ -236,6 +260,7 @@ const columns = [
   { title: '名称', dataIndex: 'name', key: 'name' },
   { title: '描述', dataIndex: 'description', key: 'description' },
   { title: '状态', key: 'enabled', width: 100 },
+  { title: 'Cron', key: 'cronState', width: 120 },
   { title: '运行态', key: 'runState', width: 150 },
   { title: '当前版本ID', key: 'currentVersionId', width: 120 },
   { title: '创建时间', dataIndex: 'createdAt', key: 'createdAt', width: 180 },
@@ -294,6 +319,10 @@ const filterTimezoneOption = (input: string, option: any) => {
 }
 
 const handleCreate = () => {
+  if (!canManageSchedulingConfig.value) {
+    message.warning('当前账户没有调度配置管理权限')
+    return
+  }
   formTitle.value = '新建 DAG'
   Object.assign(formData, {
     id: undefined,
@@ -309,6 +338,10 @@ const handleCreate = () => {
 }
 
 const handleEdit = (record: any) => {
+  if (!canManageSchedulingConfig.value) {
+    message.warning('当前账户没有调度配置管理权限')
+    return
+  }
   formTitle.value = '编辑 DAG'
   Object.assign(formData, {
     id: record.id,
@@ -326,19 +359,54 @@ const handleEdit = (record: any) => {
 const handleDetail = (record: any) => {
   router.push({
     path: '/scheduling/dag/detail',
-    query: { id: record.id },
+    query: withActiveTenantQuery(
+      { id: record.id },
+      resolveActiveTenantQueryValue(route.query) ?? getActiveTenantId(),
+    ),
   })
 }
 
 const handleHistory = (record: any) => {
   router.push({
     path: '/scheduling/dag/history',
-    query: { dagId: record.id },
+    query: withActiveTenantQuery(
+      { dagId: record.id },
+      resolveActiveTenantQueryValue(route.query) ?? getActiveTenantId(),
+    ),
   })
 }
 
 const canTriggerDag = (record: { enabled?: boolean; currentVersionId?: number | null }) => {
   return Boolean(record.enabled && record.currentVersionId)
+}
+
+const isCronConfigured = (record: { cronExpression?: string | null }) => {
+  return Boolean(record.cronExpression && String(record.cronExpression).trim())
+}
+
+const isCronEffective = (record: {
+  enabled?: boolean
+  cronEnabled?: boolean | null
+  cronExpression?: string | null
+  currentVersionId?: number | null
+}) => {
+  if (!Boolean(record.enabled)) return false
+  if (record.cronEnabled === false) return false
+  if (!isCronConfigured(record)) return false
+  return Boolean(record.currentVersionId)
+}
+
+const getCronEffectiveReason = (record: {
+  enabled?: boolean
+  cronEnabled?: boolean | null
+  cronExpression?: string | null
+  currentVersionId?: number | null
+}) => {
+  if (!isCronConfigured(record)) return undefined
+  if (record.enabled === false) return 'DAG 已禁用'
+  if (record.cronEnabled === false) return 'Cron 已禁用'
+  if (!record.currentVersionId) return '无 ACTIVE 版本，Cron 不会生效'
+  return 'Cron 已生效（以 ACTIVE 版本执行）'
 }
 
 const getTriggerDisabledReason = (record: { enabled?: boolean; currentVersionId?: number | null }) => {
@@ -384,6 +452,10 @@ const handleTrigger = async (record: any) => {
     message.warning(getTriggerDisabledReason(record) || '当前 DAG 不可触发')
     return
   }
+  if (!canOperateSchedulingRun.value) {
+    message.warning('当前账户没有调度运行操作权限')
+    return
+  }
   try {
     await triggerDag(record.id)
     message.success('已创建新的手动运行')
@@ -398,6 +470,10 @@ const handleStop = async (record: any) => {
     message.warning(getStopDisabledReason(record) || '当前 DAG 不可停止')
     return
   }
+  if (!canOperateSchedulingRun.value) {
+    message.warning('当前账户没有调度运行操作权限')
+    return
+  }
   try {
     await stopDag(record.id)
     message.success('已停止当前 DAG 的运行中任务')
@@ -410,6 +486,10 @@ const handleStop = async (record: any) => {
 const handleRetry = async (record: any) => {
   if (!canRetryDag(record)) {
     message.warning(getRetryDisabledReason(record) || '当前 DAG 不可重试')
+    return
+  }
+  if (!canOperateSchedulingRun.value) {
+    message.warning('当前账户没有调度运行操作权限')
     return
   }
   try {
@@ -436,6 +516,10 @@ const handleSubmit = async () => {
     message.error('请输入名称')
     return
   }
+  if (!canManageSchedulingConfig.value) {
+    message.error('当前账户没有调度配置管理权限')
+    return
+  }
   try {
     const payload = buildDagPayload()
     if (formData.id) {
@@ -458,6 +542,10 @@ const handleCancel = () => {
 
 const handleDelete = async (id: number) => {
   try {
+    if (!canManageSchedulingConfig.value) {
+      message.error('当前账户没有调度配置管理权限')
+      return
+    }
     await deleteDag(id)
     message.success('删除成功')
     loadData()

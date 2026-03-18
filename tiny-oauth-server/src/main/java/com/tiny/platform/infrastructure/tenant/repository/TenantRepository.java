@@ -10,4 +10,13 @@ public interface TenantRepository extends JpaRepository<Tenant, Long>, JpaSpecif
     Optional<Tenant> findByDomain(String domain);
     boolean existsByCode(String code);
     boolean existsByDomain(String domain);
+
+    default boolean isTenantFrozen(Long tenantId) {
+        if (tenantId == null) {
+            return false;
+        }
+        return findById(tenantId)
+            .filter(t -> "FROZEN".equalsIgnoreCase(t.getLifecycleStatus()))
+            .isPresent();
+    }
 }

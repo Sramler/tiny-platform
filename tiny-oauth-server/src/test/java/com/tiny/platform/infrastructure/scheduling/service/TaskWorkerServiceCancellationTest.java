@@ -86,6 +86,7 @@ class TaskWorkerServiceCancellationTest {
                 dispatchExecutor);
         ReflectionTestUtils.setField(taskWorkerService, "self", taskWorkerService);
         ReflectionTestUtils.setField(taskWorkerService, "lockTimeoutSec", 1);
+        ReflectionTestUtils.setField(taskWorkerService, "maxTasksPerTenantPerCycle", 100);
     }
 
     @AfterEach

@@ -1,5 +1,5 @@
 import request from '@/utils/request'
-import type { UserSummary } from '@/api/user'
+import { syncTenantContextFromClaims } from '@/utils/tenant'
 
 function normalizeProcessPayload(payload: unknown): unknown {
   if (typeof FormData !== 'undefined' && payload instanceof FormData) {
@@ -62,7 +62,10 @@ export interface ProcessDefinition {
   version: number
   deploymentId: string
   deploymentTime: string
-  tenantId?: string
+  /**
+   * 所属租户ID（业务记录字段），不是当前活动租户上下文。
+   */
+  recordTenantId?: string
   suspended?: boolean
   created?: string
   description?: string
@@ -77,7 +80,10 @@ export interface ProcessInstance {
   startTime: string
   endTime?: string
   state?: string
-  tenantId?: string
+  /**
+   * 所属租户ID（业务记录字段），不是当前活动租户上下文。
+   */
+  recordTenantId?: string
   variables?: Record<string, unknown>
 }
 
@@ -89,14 +95,20 @@ export interface Task {
   createTime: string
   dueDate?: string
   priority?: number
-  tenantId?: string
+  /**
+   * 所属租户ID（业务记录字段），不是当前活动租户上下文。
+   */
+  recordTenantId?: string
 }
 
 export interface Deployment {
   id: string
   name: string
   deploymentTime: string
-  tenantId?: string
+  /**
+   * 所属租户ID（业务记录字段），不是当前活动租户上下文。
+   */
+  recordTenantId?: string
   status?: string
   source?: string
   processDefinitionCount?: number
@@ -135,8 +147,8 @@ export interface CompleteTaskRequest {
 // 流程定义管理
 export const processApi = {
   // 获取流程定义列表
-  getProcessDefinitions: (tenantId?: string) =>
-    request.get<ProcessDefinition[]>('/process/definitions', { params: { tenantId } }),
+  getProcessDefinitions: (recordTenantId?: string) =>
+    request.get<ProcessDefinition[]>('/process/definitions', { params: { recordTenantId } }),
 
   // 获取流程定义 XML
   getProcessDefinitionXml: (processDefinitionId: string) =>
@@ -181,8 +193,8 @@ export const deploymentApi = {
     ),
 
   // 获取部署列表
-  getDeployments: (tenantId?: string) =>
-    request.get<Deployment[]>('/process/deployments', { params: { tenantId } }),
+  getDeployments: (recordTenantId?: string) =>
+    request.get<Deployment[]>('/process/deployments', { params: { recordTenantId } }),
 
   // 删除部署
   deleteDeployment: (deploymentId: string) =>
@@ -205,8 +217,8 @@ export const instanceApi = {
     ),
 
   // 获取流程实例列表
-  getProcessInstances: (tenantId?: string, state?: string) =>
-    request.get<ProcessInstance[]>('/process/instances', { params: { tenantId, state } }),
+  getProcessInstances: (recordTenantId?: string, state?: string) =>
+    request.get<ProcessInstance[]>('/process/instances', { params: { recordTenantId, state } }),
 
   // 挂起流程实例
   suspendInstance: (instanceId: string) =>
@@ -257,8 +269,8 @@ export const instanceApi = {
 // 任务管理
 export const taskApi = {
   // 获取任务列表
-  getTasks: (assignee?: string, tenantId?: string) =>
-    request.get<Task[]>('/process/tasks', { params: { assignee, tenantId } }),
+  getTasks: (assignee?: string) =>
+    request.get<Task[]>('/process/tasks', { params: { assignee } }),
 
   // 领取任务
   claimTask: (taskId: string, userId: string) =>
@@ -282,8 +294,8 @@ export const taskApi = {
 // 历史数据查询
 export const historyApi = {
   // 获取历史流程实例
-  getHistoricInstances: (tenantId?: string) =>
-    request.get('/process/history/instances', { params: { tenantId } }),
+  getHistoricInstances: (recordTenantId?: string) =>
+    request.get('/process/history/instances', { params: { recordTenantId } }),
 
   // 获取历史任务记录
   getHistoricTasks: (processInstanceId: string) =>
@@ -294,7 +306,7 @@ export const historyApi = {
 export const tenantApi = {
   // 创建租户
   createTenant: (tenantInfo: { id: string; name: string }) =>
-    request.post<{ tenantId: string; message: string }>(
+    request.post<{ createdTenantId: string; message: string }>(
       '/process/tenant',
       tenantInfo,
       withIdempotency(`process-tenant:create:${tenantInfo.id}`, tenantInfo),
@@ -302,12 +314,6 @@ export const tenantApi = {
 
   // 获取租户列表
   getTenants: () => request.get('/process/tenants'),
-}
-
-// 用户管理
-export const userApi = {
-  // 获取当前用户信息
-  getCurrentUser: () => request.get<UserSummary>('/sys/users/current'),
 }
 
 // 运维管理

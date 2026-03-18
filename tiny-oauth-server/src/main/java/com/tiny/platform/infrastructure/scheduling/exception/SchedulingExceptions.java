@@ -32,6 +32,14 @@ public final class SchedulingExceptions {
         return new SchedulingException(ErrorCode.INTERNAL_ERROR, format(message, args), cause);
     }
 
+    /**
+     * 系统错误且仅向客户端展示统一文案，不暴露 cause 的 message（避免泄露内部细节）。
+     * 调用方应在日志中记录 cause 便于排查。
+     */
+    public static SchedulingException systemError(String userFacingMessage, Throwable cause) {
+        return new SchedulingException(ErrorCode.INTERNAL_ERROR, userFacingMessage, cause);
+    }
+
     public static SchedulingException systemError(String message, Object... args) {
         return new SchedulingException(ErrorCode.INTERNAL_ERROR, format(message, args));
     }

@@ -61,6 +61,7 @@ class RoleControllerTest {
     void get_whenFound_shouldMapToResponseDto() {
         Role role = mock(Role.class);
         when(role.getId()).thenReturn(2L);
+        when(role.getTenantId()).thenReturn(7L);
         when(role.getName()).thenReturn("Role");
         when(role.getCode()).thenReturn("ROLE");
         when(role.getDescription()).thenReturn("desc");
@@ -75,6 +76,7 @@ class RoleControllerTest {
         assertEquals(HttpStatus.OK, resp.getStatusCode());
         assertNotNull(resp.getBody());
         assertEquals(2L, resp.getBody().getId());
+        assertEquals(7L, resp.getBody().getRecordTenantId());
         assertEquals("ROLE", resp.getBody().getCode());
         assertTrue(resp.getBody().isBuiltin());
         assertFalse(resp.getBody().isEnabled());
@@ -133,4 +135,3 @@ class RoleControllerTest {
         verify(roleService).updateRoleResources(10L, List.of(8L, 9L));
     }
 }
-

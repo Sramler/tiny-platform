@@ -98,7 +98,7 @@ async function main() {
     await page.addInitScript(
       ({ seedTenantCode }) => {
         window.localStorage.setItem('app_tenant_code', seedTenantCode)
-        window.localStorage.removeItem('app_tenant_id')
+        window.localStorage.removeItem('app_active_tenant_id')
         window.localStorage.setItem('sider-collapsed', 'false')
       },
       { seedTenantCode: tenantCode }
@@ -106,6 +106,16 @@ async function main() {
 
     await page.goto(`${frontendBaseURL}/login?redirect=${encodeURIComponent(landingPath)}`)
     await page.getByRole('heading', { name: '欢迎登录' }).waitFor({ timeout: 90_000 })
+
+    // 显式填充租户编码，避免依赖本地缓存或页面默认值
+    try {
+      const tenantInput = page.getByLabel('租户编码')
+      if (await tenantInput.isVisible({ timeout: 5_000 }).catch(() => false)) {
+        await tenantInput.fill(tenantCode)
+      }
+    } catch {
+      // 如果页面上不存在租户编码输入框，则退化为依赖 initScript 注入的 app_tenant_code
+    }
 
     await page.getByLabel('用户名').fill(username)
     await page.getByLabel('密码').fill(password)

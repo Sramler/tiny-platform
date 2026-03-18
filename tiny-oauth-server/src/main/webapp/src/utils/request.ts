@@ -16,7 +16,7 @@ import {
   createIdempotencyHeaders,
   createSubmitIdempotencyKey,
 } from '@/utils/idempotency'
-import { clearTenantContext, getTenantId, syncTenantContextFromAccessToken } from '@/utils/tenant'
+import { clearTenantContext, getActiveTenantId, syncTenantContextFromAccessToken } from '@/utils/tenant'
 // 引入 Problem 响应解析工具
 import { extractErrorFromAxios, extractErrorInfo } from '@/utils/problemParser'
 
@@ -49,7 +49,7 @@ function buildSubmitIdempotencyFingerprint(
   idempotency: RequestIdempotencyOptions,
 ): string {
   return createIdempotencyFingerprint({
-    tenantId: getTenantId() ?? 'anonymous',
+    activeTenantId: getActiveTenantId() ?? 'anonymous',
     baseURL: config.baseURL ?? null,
     method: (config.method ?? 'get').toUpperCase(),
     url: config.url ?? '',
@@ -143,13 +143,14 @@ service.interceptors.request.use(
     if (token) {
       // 如果获取到 token，则添加到请求头中
       config.headers.Authorization = `Bearer ${token}`
-      // tenantId 以 access_token 中的 claim 为准，防止本地状态丢失导致租户头缺失
+      // 当前活动租户以 access_token 中的 activeTenantId claim 为准。
       syncTenantContextFromAccessToken(token)
     }
 
-    const tenantId = getTenantId()
-    if (tenantId) {
-      config.headers['X-Tenant-Id'] = tenantId
+    // 当前活动租户统一通过 X-Active-Tenant-Id 传输。
+    const activeTenantId = getActiveTenantId()
+    if (activeTenantId) {
+      config.headers['X-Active-Tenant-Id'] = activeTenantId
     }
 
     const idempotency = (config as TinyRequestConfig).idempotency

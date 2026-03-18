@@ -64,7 +64,7 @@
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
             <!-- 控制台：时间用短格式，logger 截断到 36，便于开发查看 -->
-            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} traceId=%X{traceId} requestId=%X{requestId} tenantId=%X{tenantId} userId=%X{userId} ip=%X{clientIp} - %msg%n</pattern>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} traceId=%X{traceId} requestId=%X{requestId} activeTenantId=%X{activeTenantId} userId=%X{userId} ip=%X{clientIp} - %msg%n</pattern>
             <charset>UTF-8</charset>
         </encoder>
     </appender>
@@ -81,7 +81,7 @@
         </rollingPolicy>
         <encoder>
             <!-- 业务日志文件：logger 不截断，便于精确检索 -->
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger traceId=%X{traceId} requestId=%X{requestId} tenantId=%X{tenantId} userId=%X{userId} ip=%X{clientIp} - %msg%n</pattern>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger traceId=%X{traceId} requestId=%X{requestId} activeTenantId=%X{activeTenantId} userId=%X{userId} ip=%X{clientIp} - %msg%n</pattern>
             <charset>UTF-8</charset>
         </encoder>
     </appender>
@@ -102,7 +102,7 @@
         </rollingPolicy>
         <encoder>
             <!-- 错误日志文件：同样使用完整 logger 名称 -->
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger traceId=%X{traceId} requestId=%X{requestId} tenantId=%X{tenantId} userId=%X{userId} ip=%X{clientIp} - %msg%n%ex</pattern>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger traceId=%X{traceId} requestId=%X{requestId} activeTenantId=%X{activeTenantId} userId=%X{userId} ip=%X{clientIp} - %msg%n%ex</pattern>
             <charset>UTF-8</charset>
         </encoder>
     </appender>
@@ -119,7 +119,7 @@
             <totalSizeCap>50GB</totalSizeCap>
         </rollingPolicy>
         <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} traceId=%X{traceId} requestId=%X{requestId} tenantId=%X{tenantId} userId=%X{userId} ip=%X{clientIp} - %msg%n</pattern>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} traceId=%X{traceId} requestId=%X{requestId} activeTenantId=%X{activeTenantId} userId=%X{userId} ip=%X{clientIp} - %msg%n</pattern>
             <charset>UTF-8</charset>
         </encoder>
     </appender>

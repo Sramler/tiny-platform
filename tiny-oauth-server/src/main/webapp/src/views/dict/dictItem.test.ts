@@ -8,7 +8,7 @@ const apiMocks = vi.hoisted(() => ({
 }))
 
 const tenantMocks = vi.hoisted(() => ({
-  getTenantId: vi.fn(),
+  getActiveTenantId: vi.fn(),
 }))
 
 const uiMocks = vi.hoisted(() => ({
@@ -24,7 +24,7 @@ vi.mock('@/api/dict', () => ({
 }))
 
 vi.mock('@/utils/tenant', () => ({
-  getTenantId: tenantMocks.getTenantId,
+  getActiveTenantId: tenantMocks.getActiveTenantId,
 }))
 
 vi.mock('@/utils/debounce', () => ({
@@ -70,7 +70,7 @@ async function flushPromises() {
 describe('dictItem.vue', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    tenantMocks.getTenantId.mockReturnValue('7')
+    tenantMocks.getActiveTenantId.mockReturnValue('7')
     apiMocks.getVisibleDictTypes.mockResolvedValue([
       { id: 10, dictCode: 'STATUS', dictName: '状态' },
     ])
@@ -136,12 +136,12 @@ describe('dictItem.vue', () => {
   })
 
   it('should show error when tenant is not selected', async () => {
-    tenantMocks.getTenantId.mockReturnValue(null)
+    tenantMocks.getActiveTenantId.mockReturnValue(null)
 
     mountView()
     await flushPromises()
 
-    expect(uiMocks.messageError).toHaveBeenCalledWith('请先选择租户')
+    expect(uiMocks.messageError).toHaveBeenCalledWith('请先确定当前活动租户')
   })
 
   it('should show error message when load fails', async () => {

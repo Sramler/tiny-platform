@@ -10,9 +10,14 @@ const apiMocks = vi.hoisted(() => ({
   getExecutors: vi.fn(),
 }))
 
+const authMocks = vi.hoisted(() => ({
+  authUser: { value: null as { access_token?: string | null } | null },
+}))
+
 const uiMocks = vi.hoisted(() => ({
   messageError: vi.fn(),
   messageSuccess: vi.fn(),
+  messageWarning: vi.fn(),
 }))
 
 vi.mock('@/api/scheduling', () => ({
@@ -31,10 +36,17 @@ vi.mock('@/utils/problemParser', () => ({
   extractErrorFromAxios: (_err: unknown, fallback: string) => fallback,
 }))
 
+vi.mock('@/auth/auth', () => ({
+  useAuth: () => ({
+    user: authMocks.authUser,
+  }),
+}))
+
 vi.mock('ant-design-vue', () => ({
   message: {
     error: uiMocks.messageError,
     success: uiMocks.messageSuccess,
+    warning: uiMocks.messageWarning,
   },
 }))
 
@@ -135,9 +147,18 @@ async function flushPromises() {
   await nextTick()
 }
 
+function createToken(authorities: string[]) {
+  const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')
+  const payload = Buffer.from(JSON.stringify({ authorities })).toString('base64url')
+  return `${header}.${payload}.signature`
+}
+
 describe('TaskType.vue', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    authMocks.authUser.value = {
+      access_token: createToken(['scheduling:console:config']),
+    }
     apiMocks.getExecutors.mockResolvedValue(['logging', 'shell'])
     apiMocks.taskTypeList.mockResolvedValue({ records: [], total: 0 })
   })

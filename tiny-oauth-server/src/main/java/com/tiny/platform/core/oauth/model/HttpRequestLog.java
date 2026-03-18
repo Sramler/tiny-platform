@@ -207,12 +207,12 @@ public class HttpRequestLog {
         this.userId = userId;
     }
 
-    public Long getTenantId() {
+    public Long getActiveTenantId() {
         return tenantId;
     }
 
-    public void setTenantId(Long tenantId) {
-        this.tenantId = tenantId;
+    public void setActiveTenantId(Long activeTenantId) {
+        this.tenantId = activeTenantId;
     }
 
     public String getIssuer() {

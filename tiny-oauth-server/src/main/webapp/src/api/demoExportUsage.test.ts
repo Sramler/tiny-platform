@@ -23,7 +23,7 @@ describe('demoExportUsage API', () => {
 
   it('should request list and normalize to records/total', async () => {
     requestMocks.get.mockResolvedValue({
-      content: [{ id: 1 }],
+      content: [{ id: 1, recordTenantId: 7 }],
       totalElements: 12,
     })
     const { demoExportUsageList } = await import('@/api/demoExportUsage')
@@ -31,7 +31,7 @@ describe('demoExportUsage API', () => {
     const result = await demoExportUsageList({
       current: 2,
       pageSize: 10,
-      tenantId: 7,
+      activeTenantId: 7,
       productCode: 'P-1',
       status: 'OK',
     })
@@ -40,12 +40,12 @@ describe('demoExportUsage API', () => {
       params: {
         page: 1,
         size: 10,
-        tenantId: 7,
+        activeTenantId: 7,
         productCode: 'P-1',
         status: 'OK',
       },
     })
-    expect(result).toEqual({ records: [{ id: 1 }], total: 12 })
+    expect(result).toEqual({ records: [{ id: 1, recordTenantId: 7 }], total: 12 })
   })
 
   it('should request detail by id', async () => {
@@ -65,11 +65,11 @@ describe('demoExportUsage API', () => {
       '@/api/demoExportUsage',
     )
 
-    await createDemoExportUsage({ tenantId: 7 })
+    await createDemoExportUsage({ recordTenantId: 7 })
     await updateDemoExportUsage(1, { status: 'OK' })
     await deleteDemoExportUsage(1)
 
-    expect(requestMocks.post).toHaveBeenCalledWith('/demo/export-usage', { tenantId: 7 })
+    expect(requestMocks.post).toHaveBeenCalledWith('/demo/export-usage', { recordTenantId: 7 })
     expect(requestMocks.put).toHaveBeenCalledWith('/demo/export-usage/1', { status: 'OK' })
     expect(requestMocks.delete).toHaveBeenCalledWith('/demo/export-usage/1')
   })
@@ -78,13 +78,12 @@ describe('demoExportUsage API', () => {
     requestMocks.post.mockResolvedValue({ message: 'ok' })
     const { generateDemoExportUsage, clearDemoExportUsage } = await import('@/api/demoExportUsage')
 
-    await generateDemoExportUsage({ tenantId: 7, days: 3, rowsPerDay: 100, targetRows: 0, clearExisting: true })
-    await clearDemoExportUsage({ tenantId: 7 })
+    await generateDemoExportUsage({ activeTenantId: 7, days: 3, rowsPerDay: 100, targetRows: 0, clearExisting: true })
+    await clearDemoExportUsage({ activeTenantId: 7 })
 
     expect(requestMocks.post).toHaveBeenCalledWith('/demo/export-usage/generate', null, {
-      params: { tenantId: 7, days: 3, rowsPerDay: 100, targetRows: 0, clearExisting: true },
+      params: { activeTenantId: 7, days: 3, rowsPerDay: 100, targetRows: 0, clearExisting: true },
     })
-    expect(requestMocks.post).toHaveBeenCalledWith('/demo/export-usage/clear', null, { params: { tenantId: 7 } })
+    expect(requestMocks.post).toHaveBeenCalledWith('/demo/export-usage/clear', null, { params: { activeTenantId: 7 } })
   })
 })
-

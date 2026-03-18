@@ -8,6 +8,7 @@ import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
+import org.springframework.context.annotation.Profile;
 import org.springframework.core.env.Environment;
 
 /**
@@ -16,6 +17,7 @@ import org.springframework.core.env.Environment;
  * 这样可以实现完整的追踪闭环：从前端请求到最终返回，所有日志都包含 traceId
  */
 @Configuration
+@Profile("!e2e")
 public class HttpRequestLoggingFilterConfig {
 
     /**

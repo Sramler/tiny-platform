@@ -1,0 +1,86 @@
+name: Migration smoke (real MySQL)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '20 1 * * *'
+
+jobs:
+  migration-smoke-mysql:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci
+          MYSQL_DATABASE: tiny_web
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pci"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      MYSQL_ROOT_PASSWORD: ci
+      MYSQL_PORT: 3306
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: 21
+          distribution: temurin
+          cache: maven
+
+      - name: Install MySQL client
+        run: sudo apt-get update && sudo apt-get install -y default-mysql-client
+
+      - name: Build backend (skip tests)
+        run: mvn -q -DskipTests package -pl tiny-oauth-server -am
+
+      - name: Start backend (Liquibase smoke) and wait ready
+        shell: bash
+        run: |
+          set -euo pipefail
+          JAR=$(ls tiny-oauth-server/target/tiny-oauth-server-*.jar | head -1)
+          java -Dspring.profiles.active=ci -jar "$JAR" > /tmp/migration-smoke-backend.log 2>&1 &
+          APP_PID=$!
+          trap "kill $APP_PID 2>/dev/null || true" EXIT
+
+          for _ in $(seq 1 120); do
+            if curl -fsS "http://127.0.0.1:9000/actuator/health" >/dev/null 2>&1; then
+              echo "Backend ready. Liquibase migration should have completed."
+              exit 0
+            fi
+            if ! kill -0 "$APP_PID" 2>/dev/null; then
+              echo "Backend exited before becoming ready."
+              tail -n 200 /tmp/migration-smoke-backend.log || true
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "Backend did not become ready in time."
+          tail -n 200 /tmp/migration-smoke-backend.log || true
+          exit 1
+
+      - name: Verify scheduling migration artifacts
+        shell: bash
+        run: bash ./tiny-oauth-server/scripts/verify-scheduling-migration-smoke.sh
+
+      - name: Verify auth migration: user_role_legacy dropped
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Checking that user_role_legacy table has been dropped (047-drop-user-role-legacy)..."
+          COUNT=$(mysql -h 127.0.0.1 -P "$MYSQL_PORT" -uroot -p"$MYSQL_ROOT_PASSWORD" -D tiny_web -N -e "SHOW TABLES LIKE 'user_role_legacy';" | wc -l)
+          if [ "$COUNT" -ne 0 ]; then
+            echo "Expected user_role_legacy to be dropped, but table still exists."
+            exit 1
+          fi
+          echo "user_role_legacy table not found, auth migration is consistent."

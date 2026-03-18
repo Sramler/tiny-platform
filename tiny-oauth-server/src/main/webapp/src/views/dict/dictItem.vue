@@ -164,8 +164,8 @@
         <a-form-item v-if="isLabelOnlyOverlayMode" label="覆盖规则">
           <a-alert message="平台字典的租户覆盖仅允许修改 label，description / 排序 / 状态沿用平台定义。" type="info" show-icon />
         </a-form-item>
-        <a-form-item label="租户ID" name="tenantId">
-          <a-input :value="tenantIdDisplay" disabled />
+        <a-form-item label="记录所属租户ID" name="recordTenantId">
+          <a-input :value="recordTenantIdDisplay" disabled />
         </a-form-item>
         <a-form-item label="排序" name="sortOrder">
           <a-input-number v-model:value="formState.sortOrder" :min="0" style="width: 100%"
@@ -195,7 +195,7 @@ import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { PlusOutlined, ReloadOutlined, EditOutlined, DeleteOutlined, EyeOutlined } from '@ant-design/icons-vue'
 import { message, Modal } from 'ant-design-vue'
 import { useThrottle } from '@/utils/debounce'
-import { getTenantId } from '@/utils/tenant'
+import { getActiveTenantId } from '@/utils/tenant'
 import {
   getVisibleDictTypes,
   getDictItemList,
@@ -225,9 +225,9 @@ const dictTypeOptions = ref<DictTypeItem[]>([])
 // 加载字典类型选项
 async function loadDictTypeOptions() {
   try {
-    const tenantId = resolveTenantId()
-    if (tenantId == null) {
-      message.error('请先选择租户')
+    const activeTenantId = resolveActiveTenantId()
+    if (activeTenantId == null) {
+      message.error('请先确定当前活动租户')
       dictTypeOptions.value = []
       return
     }
@@ -321,7 +321,7 @@ const INITIAL_COLUMNS: Array<Record<string, any>> = [
   { title: '字典值', dataIndex: 'value', width: 150 },
   { title: '字典标签', dataIndex: 'label', width: 150 },
   { title: '描述', dataIndex: 'description', width: 200 },
-  { title: '租户ID', dataIndex: 'tenantId', width: 100 },
+  { title: '记录所属租户ID', dataIndex: 'recordTenantId', width: 120 },
   { title: '是否内置', dataIndex: 'isBuiltin', width: 100 },
   { title: '排序', dataIndex: 'sortOrder', width: 80, sorter: true },
   { title: '状态', dataIndex: 'enabled', width: 100 },
@@ -422,7 +422,7 @@ interface DictItemFormState {
   value: string
   label: string
   description?: string
-  tenantId?: number
+  recordTenantId?: number
   isBuiltin?: boolean
   enabled?: boolean
   sortOrder?: number
@@ -433,14 +433,14 @@ const formState = ref<DictItemFormState>({
   value: '',
   label: '',
   description: '',
-  tenantId: undefined,
+  recordTenantId: undefined,
   enabled: true,
   sortOrder: 0,
 })
 
-const tenantIdDisplay = computed(() => {
-  const tenantId = formState.value.tenantId ?? resolveTenantId()
-  return tenantId != null ? String(tenantId) : '-'
+const recordTenantIdDisplay = computed(() => {
+  const recordTenantId = formState.value.recordTenantId ?? resolveActiveTenantId()
+  return recordTenantId != null ? String(recordTenantId) : '-'
 })
 
 const selectedDictType = computed(() =>
@@ -448,19 +448,19 @@ const selectedDictType = computed(() =>
 )
 
 const isPlatformOverlayCreate = computed(() =>
-  drawerMode.value === 'create' && Number(selectedDictType.value?.tenantId) === 0,
+  drawerMode.value === 'create' && Number(selectedDictType.value?.recordTenantId) === 0,
 )
 
 const isPlatformOverlayEdit = computed(() =>
   drawerMode.value === 'edit' &&
-  Number(formState.value.tenantId) !== 0 &&
-  Number(selectedDictType.value?.tenantId) === 0,
+  Number(formState.value.recordTenantId) !== 0 &&
+  Number(selectedDictType.value?.recordTenantId) === 0,
 )
 
 const isLabelOnlyOverlayMode = computed(() => isPlatformOverlayCreate.value || isPlatformOverlayEdit.value)
 
-function resolveTenantId(): number | undefined {
-  const raw = getTenantId()
+function resolveActiveTenantId(): number | undefined {
+  const raw = getActiveTenantId()
   if (!raw) return undefined
   const parsed = Number(raw)
   return Number.isFinite(parsed) ? parsed : undefined
@@ -472,8 +472,8 @@ function openCreateDrawer() {
     message.warning('请先选择字典类型')
     return
   }
-  if (resolveTenantId() == null) {
-    message.warning('请先选择租户')
+  if (resolveActiveTenantId() == null) {
+    message.warning('请先确定当前活动租户')
     return
   }
   drawerMode.value = 'create'
@@ -482,7 +482,7 @@ function openCreateDrawer() {
     value: '',
     label: '',
     description: '',
-    tenantId: resolveTenantId(),
+    recordTenantId: resolveActiveTenantId(),
     isBuiltin: false,
     enabled: true,
     sortOrder: 0,
@@ -498,7 +498,7 @@ function openEditDrawer(record: any) {
     value: record.value || '',
     label: record.label || '',
     description: record.description || '',
-    tenantId: record.tenantId ?? resolveTenantId(),
+    recordTenantId: record.recordTenantId ?? resolveActiveTenantId(),
     isBuiltin: record.isBuiltin ?? false,
     enabled: record.enabled ?? true,
     sortOrder: record.sortOrder ?? 0,
@@ -514,7 +514,7 @@ function handleView(record: any) {
     value: record.value || '',
     label: record.label || '',
     description: record.description || '',
-    tenantId: record.tenantId ?? resolveTenantId(),
+    recordTenantId: record.recordTenantId ?? resolveActiveTenantId(),
     isBuiltin: record.isBuiltin ?? false,
     enabled: record.enabled ?? true,
     sortOrder: record.sortOrder ?? 0,
@@ -530,9 +530,9 @@ function handleDrawerClose() {
 
 async function handleSubmit() {
   try {
-    const tenantId = resolveTenantId()
-    if (tenantId == null) {
-      message.error('请先选择租户')
+    const activeTenantId = resolveActiveTenantId()
+    if (activeTenantId == null) {
+      message.error('请先确定当前活动租户')
       return
     }
     const payload: DictItemCreateUpdateDto = {
@@ -584,11 +584,11 @@ function handleDelete(record: any) {
 }
 
 function isReadonlyItemRecord(record: any) {
-  return Number(record?.tenantId) === 0
+  return Number(record?.recordTenantId) === 0
 }
 
 function getItemReadonlyReason(record: any) {
-  if (Number(record?.tenantId) === 0) {
+  if (Number(record?.recordTenantId) === 0) {
     return '平台字典项只读，不允许修改'
   }
   return '当前字典项不允许修改'

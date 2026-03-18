@@ -1,0 +1,147 @@
+package com.tiny.platform.application.controller.tenant;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.tiny.platform.core.oauth.tenant.TenantContext;
+import com.tiny.platform.infrastructure.tenant.domain.Tenant;
+import com.tiny.platform.infrastructure.tenant.dto.TenantCreateUpdateDto;
+import com.tiny.platform.infrastructure.tenant.dto.TenantResponseDto;
+import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
+import com.tiny.platform.infrastructure.tenant.service.TenantService;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.SpringBootConfiguration;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Import;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.http.MediaType;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.test.context.support.WithAnonymousUser;
+import org.springframework.test.web.servlet.MockMvc;
+
+import java.util.List;
+
+@SpringBootTest(webEnvironment = WebEnvironment.MOCK, classes = TenantControllerRbacIntegrationTest.RbacTestApp.class)
+@AutoConfigureMockMvc
+@ActiveProfiles("rbac-test")
+class TenantControllerRbacIntegrationTest {
+
+    @SpringBootConfiguration
+    @Import({
+        TenantControllerRbacTestConfig.class,
+        TenantController.class,
+        org.springframework.boot.autoconfigure.data.web.SpringDataWebAutoConfiguration.class,
+        org.springframework.boot.autoconfigure.http.HttpMessageConvertersAutoConfiguration.class,
+        org.springframework.boot.autoconfigure.web.servlet.WebMvcAutoConfiguration.class
+    })
+    static class RbacTestApp {}
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @MockBean
+    private TenantService tenantService;
+
+    @MockBean
+    private TenantRepository tenantRepository;
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @BeforeEach
+    void setUp() {
+        Tenant platformTenant = new Tenant();
+        platformTenant.setId(1L);
+        platformTenant.setCode("default");
+        platformTenant.setName("默认租户");
+        when(tenantRepository.findByCode("default")).thenReturn(java.util.Optional.of(platformTenant));
+    }
+
+    @AfterEach
+    void tearDown() {
+        TenantContext.clear();
+    }
+
+    @Nested
+    @DisplayName("platform admin access")
+    class PlatformAdminAccess {
+
+        @BeforeEach
+        void setPlatformTenant() {
+            TenantContext.setActiveTenantId(1L);
+        }
+
+        @Test
+        void list_allowsPlatformAdmin() throws Exception {
+            when(tenantService.list(any(), any())).thenReturn(new PageImpl<>(List.of(new TenantResponseDto())));
+
+            mockMvc.perform(get("/sys/tenants")
+                    .param("page", "0")
+                    .param("size", "10")
+                    .with(user("platform-admin").authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
+                .andExpect(status().isOk());
+        }
+
+        @Test
+        void create_allowsPlatformAdmin() throws Exception {
+            TenantCreateUpdateDto dto = new TenantCreateUpdateDto();
+            dto.setCode("tenant-z");
+            dto.setName("Tenant Z");
+            TenantResponseDto response = new TenantResponseDto();
+            response.setId(9L);
+            when(tenantService.create(any(TenantCreateUpdateDto.class))).thenReturn(response);
+
+            mockMvc.perform(post("/sys/tenants")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(dto))
+                    .with(user("platform-admin").authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
+                .andExpect(status().isOk());
+        }
+    }
+
+    @Test
+    void list_deniesNonPlatformTenantAdmin() throws Exception {
+        TenantContext.setActiveTenantId(2L);
+
+        mockMvc.perform(get("/sys/tenants")
+                .with(user("tenant-admin").authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void create_deniesPlatformTenantWithoutAdminRole() throws Exception {
+        TenantContext.setActiveTenantId(1L);
+        TenantCreateUpdateDto dto = new TenantCreateUpdateDto();
+        dto.setCode("tenant-z");
+        dto.setName("Tenant Z");
+
+        mockMvc.perform(post("/sys/tenants")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(dto))
+                .with(user("viewer").authorities(new SimpleGrantedAuthority("ROLE_USER"))))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @WithAnonymousUser
+    void list_deniesAnonymous() throws Exception {
+        TenantContext.setActiveTenantId(1L);
+
+        mockMvc.perform(get("/sys/tenants"))
+            .andExpect(status().is4xxClientError());
+    }
+}

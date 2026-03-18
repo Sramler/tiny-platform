@@ -90,7 +90,7 @@ class ExportServiceTest {
         SheetConfig sheet = new SheetConfig();
         sheet.setSheetName("用户列表");
         sheet.setExportType("user");
-        sheet.setFilters(new LinkedHashMap<>(Map.of("tenantId", 7, "__mode", "page")));
+        sheet.setFilters(new LinkedHashMap<>(Map.of("activeTenantId", 7, "__mode", "page")));
         sheet.setColumns(List.of(
             new ColumnNode("ID", "id", null),
             new ColumnNode("姓名", "name", null)
@@ -101,7 +101,7 @@ class ExportServiceTest {
 
         assertEquals(5000, provider.batchSizeSeen.get());
         assertEquals(List.of("id", "name"), provider.leafFieldsSeen.get());
-        assertEquals(7, provider.filtersSeenInFetch.get().get("tenantId"));
+        assertEquals(7, provider.filtersSeenInFetch.get().get("activeTenantId"));
         assertEquals("page", provider.filtersSeenInFetch.get().get("__mode"));
         assertTrue(provider.clearCalls.get() >= 1);
         assertEquals(List.of(List.of("租户A"), List.of("导出人")), writer.topInfoRows);

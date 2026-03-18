@@ -1,35 +1,45 @@
 package com.tiny.platform.infrastructure.auth.role.service;
 
+import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.auth.role.domain.Role;
 import com.tiny.platform.infrastructure.auth.role.dto.RoleCreateUpdateDto;
 import com.tiny.platform.infrastructure.auth.role.dto.RoleRequestDto;
 import com.tiny.platform.infrastructure.auth.role.dto.RoleResponseDto;
 import com.tiny.platform.infrastructure.auth.role.repository.RoleRepository;
-import com.tiny.platform.infrastructure.auth.user.domain.User;
-import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.infrastructure.auth.resource.domain.Resource;
 import com.tiny.platform.infrastructure.auth.resource.repository.ResourceRepository;
-import com.tiny.platform.core.oauth.tenant.TenantContext;
+import com.tiny.platform.infrastructure.auth.user.repository.TenantUserRepository;
 import org.springframework.beans.BeanUtils;
 import org.springframework.data.domain.*;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
-import java.util.Objects;
 
 @Service
 public class RoleServiceImpl implements RoleService {
     private final RoleRepository roleRepository;
-    private final UserRepository userRepository;
     private final ResourceRepository resourceRepository;
-    public RoleServiceImpl(RoleRepository roleRepository, UserRepository userRepository, ResourceRepository resourceRepository) {
+    private final TenantUserRepository tenantUserRepository;
+    private final RoleAssignmentSyncService roleAssignmentSyncService;
+    private final EffectiveRoleResolutionService effectiveRoleResolutionService;
+    private final RoleConstraintService roleConstraintService;
+
+    public RoleServiceImpl(RoleRepository roleRepository,
+                           ResourceRepository resourceRepository,
+                           TenantUserRepository tenantUserRepository,
+                           RoleAssignmentSyncService roleAssignmentSyncService,
+                           EffectiveRoleResolutionService effectiveRoleResolutionService,
+                           RoleConstraintService roleConstraintService) {
         this.roleRepository = roleRepository;
-        this.userRepository = userRepository;
         this.resourceRepository = resourceRepository;
+        this.tenantUserRepository = tenantUserRepository;
+        this.roleAssignmentSyncService = roleAssignmentSyncService;
+        this.effectiveRoleResolutionService = effectiveRoleResolutionService;
+        this.roleConstraintService = roleConstraintService;
     }
 
     @Override
@@ -81,21 +91,20 @@ public class RoleServiceImpl implements RoleService {
         Long tenantId = requireTenantId();
         Role role = roleRepository.findByIdAndTenantId(id, tenantId).orElseThrow(() -> new RuntimeException("角色不存在"));
         BeanUtils.copyProperties(dto, role, "id");
-
-        // 只查当前拥有该角色的用户ID
-        List<Long> oldUserIds = userRepository.findUserIdsByRoleId(id, tenantId);
-        for (Long userId : oldUserIds) {
-            userRepository.deleteUserRoleRelation(userId, id, tenantId);
-        }
-
-        // 再为新分配的用户添加角色
-        if (dto.getUserIds() != null) {
-            for (Long userId : dto.getUserIds()) {
-                userRepository.findByIdAndTenantId(userId, tenantId).ifPresent(user -> {
-                    userRepository.addUserRoleRelation(tenantId, user.getId(), role.getId());
-                });
-            }
-        }
+        assertUsersVisibleInTenant(dto.getUserIds(), tenantId);
+        // Phase 2 之前仅预留 RBAC3 约束校验入口，当前实现为 no-op。
+        // 这里以“ROLE + TENANT”为粒度传入，将当前角色自身作为待检查对象，后续实现可以据此检查：
+        // - 角色本身是否违反层级/互斥/基数等约束
+        // - 或在将来迁移到 RoleAssignmentSyncService 时复用同一调用形状
+        roleConstraintService.validateAssignmentsBeforeGrant(
+            "ROLE",
+            role.getId(),
+            tenantId,
+            "TENANT",
+            tenantId,
+            List.of(role.getId())
+        );
+        roleAssignmentSyncService.replaceRoleTenantUserAssignments(role.getId(), tenantId, dto.getUserIds());
 
         return toDto(roleRepository.save(role));
     }
@@ -108,8 +117,8 @@ public class RoleServiceImpl implements RoleService {
 
     @Override
     public List<Long> getUserIdsByRoleId(Long roleId) {
-        // 直接使用原生SQL查询用户ID列表，避免懒加载问题
-        return userRepository.findUserIdsByRoleId(roleId, requireTenantId());
+        Long tenantId = requireTenantId();
+        return effectiveRoleResolutionService.findEffectiveUserIdsForRoleInTenant(roleId, tenantId);
     }
 
     @Override
@@ -119,22 +128,19 @@ public class RoleServiceImpl implements RoleService {
         // 查询角色是否存在
         Optional<Role> roleOpt = roleRepository.findByIdAndTenantId(roleId, tenantId);
         if (roleOpt.isEmpty()) return;
-        
-        // 1. 先删除该角色的所有用户关联
-        List<Long> oldUserIds = userRepository.findUserIdsByRoleId(roleId, tenantId);
-        for (Long userId : oldUserIds) {
-            userRepository.deleteUserRoleRelation(userId, roleId, tenantId);
-        }
-        
-        // 2. 为新分配的用户添加角色关联
-        if (userIds != null && !userIds.isEmpty()) {
-            for (Long userId : userIds) {
-                // 检查用户是否存在
-                if (userRepository.findByIdAndTenantId(userId, tenantId).isPresent()) {
-                    userRepository.addUserRoleRelation(tenantId, userId, roleId);
-                }
-            }
-        }
+        assertUsersVisibleInTenant(userIds, tenantId);
+        // Phase 2 之前仅预留 RBAC3 约束校验入口，当前实现为 no-op。
+        // 这里同样以“ROLE + TENANT”为粒度传入，方便后续在真正接入 RBAC3 时，
+        // 将此调用迁移/下沉到 RoleAssignmentSyncService 等统一赋权入口。
+        roleConstraintService.validateAssignmentsBeforeGrant(
+            "ROLE",
+            roleId,
+            tenantId,
+            "TENANT",
+            tenantId,
+            List.of(roleId)
+        );
+        roleAssignmentSyncService.replaceRoleTenantUserAssignments(roleId, tenantId, userIds);
     }
 
     @Override
@@ -159,14 +165,27 @@ public class RoleServiceImpl implements RoleService {
     private RoleResponseDto toDto(Role role) {
         RoleResponseDto dto = new RoleResponseDto();
         BeanUtils.copyProperties(role, dto);
+        dto.setRecordTenantId(role.getTenantId());
         return dto;
     }
 
     private Long requireTenantId() {
-        Long tenantId = TenantContext.getTenantId();
+        Long tenantId = TenantContext.getActiveTenantId();
         if (tenantId == null) {
             throw new RuntimeException("缺少租户信息");
         }
         return tenantId;
     }
-} 
+
+    private void assertUsersVisibleInTenant(List<Long> userIds, Long tenantId) {
+        if (userIds == null || userIds.isEmpty()) {
+            return;
+        }
+
+        var requestedIds = new LinkedHashSet<>(userIds);
+        var visibleIds = new LinkedHashSet<>(tenantUserRepository.findUserIdsByTenantIdAndUserIdInAndStatus(tenantId, requestedIds, "ACTIVE"));
+        if (visibleIds.size() != requestedIds.size()) {
+            throw new RuntimeException("部分用户不存在");
+        }
+    }
+}

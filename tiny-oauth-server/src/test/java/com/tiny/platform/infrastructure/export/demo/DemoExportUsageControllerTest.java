@@ -76,12 +76,12 @@ class DemoExportUsageControllerTest {
 
         ResponseEntity<Map<String, Object>> clearResp = controller.clear(10L);
         assertThat(clearResp.getStatusCode().value()).isEqualTo(200);
-        assertThat(clearResp.getBody()).containsEntry("tenantId", 10L);
-        verify(service).clearByTenantId(10L);
+        assertThat(clearResp.getBody()).containsEntry("activeTenantId", 10L);
+        verify(service).clearByActiveTenantId(10L);
 
         ResponseEntity<Map<String, Object>> generateResp = controller.generate(10L, 7, 2000, 0, false);
         assertThat(generateResp.getStatusCode().value()).isEqualTo(200);
-        assertThat(generateResp.getBody()).containsEntry("tenantId", 10L);
+        assertThat(generateResp.getBody()).containsEntry("activeTenantId", 10L);
         assertThat(generateResp.getBody()).containsEntry("days", 7);
         assertThat(generateResp.getBody()).containsEntry("rowsPerDay", 2000);
         assertThat(generateResp.getBody()).containsEntry("targetRows", 0);
@@ -90,4 +90,3 @@ class DemoExportUsageControllerTest {
         verify(service).generateDemoData(10L, 7, 2000, 0, false);
     }
 }
-

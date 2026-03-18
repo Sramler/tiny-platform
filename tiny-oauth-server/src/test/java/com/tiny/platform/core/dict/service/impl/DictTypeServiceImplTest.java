@@ -37,7 +37,7 @@ class DictTypeServiceImplTest {
 
     @Test
     void should_use_tenant_context_for_query_instead_of_query_tenant_id() {
-        TenantContext.setTenantId(7L);
+        TenantContext.setActiveTenantId(7L);
 
         DictTypeQueryDto query = new DictTypeQueryDto();
         Pageable pageable = PageRequest.of(0, 10);
@@ -51,7 +51,7 @@ class DictTypeServiceImplTest {
 
     @Test
     void should_create_type_using_current_tenant_context() {
-        TenantContext.setTenantId(7L);
+        TenantContext.setActiveTenantId(7L);
 
         DictTypeCreateUpdateDto dto = new DictTypeCreateUpdateDto();
         dto.setDictCode("CUSTOM_STATUS");
@@ -69,7 +69,7 @@ class DictTypeServiceImplTest {
 
     @Test
     void should_reject_creating_type_when_code_is_reserved_by_platform() {
-        TenantContext.setTenantId(7L);
+        TenantContext.setActiveTenantId(7L);
 
         DictTypeCreateUpdateDto dto = new DictTypeCreateUpdateDto();
         dto.setDictCode("ENABLE_STATUS");
@@ -86,7 +86,7 @@ class DictTypeServiceImplTest {
 
     @Test
     void should_reject_updating_platform_type() {
-        TenantContext.setTenantId(7L);
+        TenantContext.setActiveTenantId(7L);
 
         DictType platformType = dictType(1L, 0L, "ENABLE_STATUS");
         DictTypeCreateUpdateDto dto = new DictTypeCreateUpdateDto();
@@ -103,7 +103,7 @@ class DictTypeServiceImplTest {
 
     @Test
     void findById_whenTypeBelongsToOtherTenant_returnsEmpty() {
-        TenantContext.setTenantId(7L);
+        TenantContext.setActiveTenantId(7L);
         DictType otherTenantType = dictType(1L, 8L, "OTHER_STATUS");
         when(dictTypeRepository.findById(1L)).thenReturn(Optional.of(otherTenantType));
 
@@ -112,7 +112,7 @@ class DictTypeServiceImplTest {
 
     @Test
     void update_whenTypeBelongsToOtherTenant_throwsNotFound() {
-        TenantContext.setTenantId(7L);
+        TenantContext.setActiveTenantId(7L);
         DictType otherTenantType = dictType(1L, 8L, "OTHER_STATUS");
         DictTypeCreateUpdateDto dto = new DictTypeCreateUpdateDto();
         dto.setDictCode("OTHER_STATUS");
@@ -126,7 +126,7 @@ class DictTypeServiceImplTest {
 
     @Test
     void delete_whenTypeBelongsToOtherTenant_throwsNotFound() {
-        TenantContext.setTenantId(7L);
+        TenantContext.setActiveTenantId(7L);
         DictType otherTenantType = dictType(1L, 8L, "OTHER_STATUS");
         when(dictTypeRepository.findById(1L)).thenReturn(Optional.of(otherTenantType));
 

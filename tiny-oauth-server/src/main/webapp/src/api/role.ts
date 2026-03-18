@@ -5,7 +5,10 @@ export type Role = {
   code?: string
   name: string
   description?: string
-  tenantId?: number
+  /**
+   * 角色记录所属租户ID，不是当前活动租户上下文。
+   */
+  recordTenantId?: number
 }
 
 export function roleList(params: { current?: number; pageSize?: number; name?: string; code?: string }) {

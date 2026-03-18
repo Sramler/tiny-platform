@@ -1,5 +1,7 @@
 # Tiny Platform 数据字典指南
 
+> **命名说明**：本文部分运行时示例形成于租户命名拆分之前。当前项目中，外部“当前活动租户”契约已统一使用 `activeTenantId`；本文若仍出现 `tenantId`，应优先理解为租户作用域输入或存储/缓存语义，而不是新的当前上下文命名。新的外部 API 示例应优先使用 `activeTenantId` / `recordTenantId`。
+
 > **统一文档版本**：v1.0  
 > **最后更新**：2025-01-XX  
 > **文档说明**：本文档整合了数据字典的设计规范、实施总结、检查报告等内容，提供完整的使用指南。
@@ -136,14 +138,14 @@ public class UserService {
     @Autowired
     private DictRuntime dictRuntime;
 
-    public String getUserGenderLabel(String genderValue, Long tenantId) {
+    public String getUserGenderLabel(String genderValue, Long activeTenantId) {
         // 获取字典标签
-        return dictRuntime.getLabel("GENDER", genderValue, tenantId);
+        return dictRuntime.getLabel("GENDER", genderValue, activeTenantId);
     }
 
-    public Map<String, String> getAllGenders(Long tenantId) {
+    public Map<String, String> getAllGenders(Long activeTenantId) {
         // 获取整个字典
-        return dictRuntime.getAll("GENDER", tenantId);
+        return dictRuntime.getAll("GENDER", activeTenantId);
     }
 }
 ```
@@ -153,7 +155,7 @@ public class UserService {
 ```typescript
 import { useDict } from "@/composables/useDict";
 
-const { translateLabel, loadDictTypes } = useDict(tenantId);
+const { translateLabel, loadDictTypes } = useDict(activeTenantId);
 
 // 翻译字典标签
 const label = await translateLabel("GENDER", "MALE");
@@ -343,13 +345,13 @@ public class OrderService {
     @Autowired
     private DictRuntime dictRuntime;
 
-    public void processOrder(Order order, Long tenantId) {
-        // ✅ 正确：传入 tenantId
+    public void processOrder(Order order, Long activeTenantId) {
+        // ✅ 正确：传入 activeTenantId
         String statusLabel = dictRuntime.getLabel("ORDER_STATUS",
                                                    order.getStatus(),
-                                                   tenantId);
+                                                   activeTenantId);
 
-        // ❌ 错误：使用固定 tenantId
+        // ❌ 错误：使用固定活动租户
         String wrongLabel = dictRuntime.getLabel("ORDER_STATUS",
                                                  order.getStatus(),
                                                  0L);  // 只查询平台字典
@@ -361,7 +363,7 @@ public class OrderService {
 
 ```java
 // ✅ 推荐：直接使用 DictRuntime，自动缓存
-String label = dictRuntime.getLabel("GENDER", "M", tenantId);
+String label = dictRuntime.getLabel("GENDER", "M", activeTenantId);
 
 // ❌ 不推荐：手动管理缓存
 // 不要自己实现缓存逻辑，使用平台提供的缓存机制
@@ -375,12 +377,12 @@ public class OrderService {
     @Autowired
     private DictRuntime dictRuntime;
 
-    public String getStatusLabel(String status, Long tenantId) {
-        String label = dictRuntime.getLabel("ORDER_STATUS", status, tenantId);
+    public String getStatusLabel(String status, Long activeTenantId) {
+        String label = dictRuntime.getLabel("ORDER_STATUS", status, activeTenantId);
 
         // ✅ 推荐：处理空值情况
         if (label == null || label.isEmpty()) {
-            logger.warn("字典值不存在: ORDER_STATUS={}, tenantId={}", status, tenantId);
+            logger.warn("字典值不存在: ORDER_STATUS={}, activeTenantId={}", status, activeTenantId);
             return status;  // 返回原始值
         }
 
@@ -422,21 +424,21 @@ const columns = [
 根据字典编码和值获取标签。
 
 ```java
-String getLabel(String dictCode, String value, Long tenantId)
+String getLabel(String dictCode, String value, Long activeTenantId)
 ```
 
 **参数**：
 
 - `dictCode`：字典编码（如 "GENDER"）
 - `value`：字典值（如 "MALE"）
-- `tenantId`：租户 ID
+- `activeTenantId`：当前活动租户 ID
 
 **返回**：字典标签，如果不存在返回空字符串
 
 **示例**：
 
 ```java
-String label = dictRuntime.getLabel("GENDER", "MALE", tenantId);
+String label = dictRuntime.getLabel("GENDER", "MALE", activeTenantId);
 // 结果：label = "男"
 ```
 
@@ -445,20 +447,20 @@ String label = dictRuntime.getLabel("GENDER", "MALE", tenantId);
 获取字典的所有项（value -> label 映射）。
 
 ```java
-Map<String, String> getAll(String dictCode, Long tenantId)
+Map<String, String> getAll(String dictCode, Long activeTenantId)
 ```
 
 **参数**：
 
 - `dictCode`：字典编码
-- `tenantId`：租户 ID
+- `activeTenantId`：当前活动租户 ID
 
 **返回**：value -> label 映射表
 
 **示例**：
 
 ```java
-Map<String, String> genderMap = dictRuntime.getAll("GENDER", tenantId);
+Map<String, String> genderMap = dictRuntime.getAll("GENDER", activeTenantId);
 // 结果：{"MALE": "男", "FEMALE": "女"}
 ```
 
@@ -467,7 +469,7 @@ Map<String, String> genderMap = dictRuntime.getAll("GENDER", tenantId);
 #### 获取字典标签
 
 ```http
-GET /api/dict/label?dictCode=GENDER&value=MALE&tenantId=100
+GET /api/dict/label?dictCode=GENDER&value=MALE&activeTenantId=100
 ```
 
 **响应**：
@@ -479,7 +481,7 @@ GET /api/dict/label?dictCode=GENDER&value=MALE&tenantId=100
 #### 获取字典所有项
 
 ```http
-GET /api/dict/{dictCode}?tenantId=100
+GET /api/dict/{dictCode}?activeTenantId=100
 ```
 
 **响应**：
@@ -500,7 +502,7 @@ Content-Type: application/json
 {
   "dictCode": "GENDER",
   "values": ["MALE", "FEMALE"],
-  "tenantId": 100
+  "activeTenantId": 100
 }
 ```
 
@@ -528,10 +530,10 @@ Content-Type: application/json
 
 ### 7.2 多租户使用
 
-- ✅ 始终传入正确的 `tenantId`
+- ✅ 始终传入正确的 `activeTenantId`
 - ✅ 使用 ThreadLocal 存储租户上下文
 - ✅ 在拦截器中自动设置租户上下文
-- ❌ 不要硬编码 `tenantId = 0`
+- ❌ 不要硬编码 `activeTenantId = 0`
 
 ### 7.3 性能优化
 

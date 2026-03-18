@@ -36,7 +36,8 @@ public class DagExecutionJob implements Job {
             applicationContext = (ApplicationContext) context.getScheduler()
                     .getContext().get("applicationContext");
         } catch (Exception e) {
-            throw new JobExecutionException("无法获取 ApplicationContext: " + e.getMessage(), e);
+            logger.error("无法获取 ApplicationContext", e);
+            throw new JobExecutionException("无法获取 ApplicationContext", e);
         }
         if (applicationContext == null) {
             throw new JobExecutionException("无法获取 ApplicationContext");
@@ -51,7 +52,7 @@ public class DagExecutionJob implements Job {
             logger.info("DAG执行完成, dagId: {}, dagRunId: {}", dagId, dagRunId);
         } catch (Exception e) {
             logger.error("DAG执行失败, dagId: {}, dagRunId: {}", dagId, dagRunId, e);
-            throw new JobExecutionException("DAG执行失败: " + e.getMessage(), e);
+            throw new JobExecutionException("DAG执行失败", e);
         }
     }
 }

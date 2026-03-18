@@ -1,5 +1,6 @@
 package com.tiny.platform.infrastructure.export.web;
 
+import com.tiny.platform.core.oauth.security.LegacyAuthConstants;
 import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
 import com.tiny.platform.infrastructure.export.core.ExportRequest;
 import com.tiny.platform.infrastructure.export.persistence.ExportTaskEntity;
@@ -16,6 +17,7 @@ import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -45,6 +47,9 @@ public class ExportController {
 
     private static final Logger log = LoggerFactory.getLogger(ExportController.class);
 
+    /** 规范权限码：具备导出能力（提交/查看本人任务）；与 {@link LegacyAuthConstants#isAdminAuthority} 兼容。 */
+    private static final String EXPORT_VIEW_AUTHORITY = "system:export:view";
+
     private final ExportService exportService;
     private final ExportTaskService exportTaskService;
 
@@ -56,6 +61,7 @@ public class ExportController {
     /** 同步导出（阻塞，先生成临时文件，成功后再回传响应流） */
     @PostMapping("/sync")
     public ResponseEntity<StreamingResponseBody> exportSync(@RequestBody ExportRequest request) {
+        assertCanExport(currentAuthentication());
         validateSyncRequest(request);
         exportService.assertSyncExportWithinRowLimit(request);
         String currentUserId = currentUserId();
@@ -90,6 +96,7 @@ public class ExportController {
     /** 异步任务提交 */
     @PostMapping("/async")
     public ResponseEntity<Map<String, String>> submitAsync(@RequestBody ExportRequest request) {
+        assertCanExport(currentAuthentication());
         String uid = currentUserId();
         String taskId = exportService.submitAsync(request, uid);
         return ResponseEntity.accepted()
@@ -160,6 +167,7 @@ public class ExportController {
     public void exportAsyncServlet(@RequestBody ExportRequest request,
                                    HttpServletRequest httpRequest,
                                    HttpServletResponse response) {
+        assertCanExport(currentAuthentication());
         String uid = currentUserId();
         AsyncContext async = httpRequest.startAsync();
         async.setTimeout(60_000L);
@@ -289,12 +297,28 @@ public class ExportController {
         return name;
     }
 
+    /** 具备导出能力：规范码 system:export:view 或管理员。查看全部任务/下载他人结果仍仅管理员。 */
+    private boolean canExport(Authentication authentication) {
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return false;
+        }
+        return authentication.getAuthorities().stream()
+            .map(GrantedAuthority::getAuthority)
+            .anyMatch(a -> EXPORT_VIEW_AUTHORITY.equals(a) || LegacyAuthConstants.isAdminAuthority(a));
+    }
+
+    private void assertCanExport(Authentication authentication) {
+        if (!canExport(authentication)) {
+            throw new AccessDeniedException("Export not allowed");
+        }
+    }
+
     private boolean hasAdminAuthority(Authentication authentication) {
         if (authentication == null) {
             return false;
         }
         return authentication.getAuthorities().stream()
             .map(GrantedAuthority::getAuthority)
-            .anyMatch(auth -> "ROLE_ADMIN".equalsIgnoreCase(auth) || "ADMIN".equalsIgnoreCase(auth));
+            .anyMatch(LegacyAuthConstants::isAdminAuthority);
     }
 }

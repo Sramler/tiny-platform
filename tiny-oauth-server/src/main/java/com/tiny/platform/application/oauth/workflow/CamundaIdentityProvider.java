@@ -70,6 +70,7 @@ public class CamundaIdentityProvider implements ReadOnlyIdentityProvider {
         GroupEntity group = new GroupEntity();
         // 将组ID与数据库角色ID保持一致，字符串化
         group.setId(String.valueOf(role.getId()));
+        // 仅展示/下游：Camunda 组名用 role.name；鉴权不依赖 role.name
         group.setName(role.getName());
         group.setType("ROLE");
         return group;
@@ -84,16 +85,19 @@ public class CamundaIdentityProvider implements ReadOnlyIdentityProvider {
         }
 
         User user = userOpt.get();
-        if (user.getRoles() == null || user.getRoles().isEmpty()) {
+        List<Long> roleIds = userService.getRoleIdsByUserId(user.getId());
+        if (roleIds == null || roleIds.isEmpty()) {
             return result;
         }
 
-        for (Role role : user.getRoles()) {
-            GroupEntity g = new GroupEntity();
-            g.setId(String.valueOf(role.getId()));
-            g.setName(role.getName());
-            g.setType("ROLE");
-            result.add(g);
+        for (Long roleId : roleIds) {
+            roleService.findById(roleId).ifPresent(role -> {
+                GroupEntity g = new GroupEntity();
+                g.setId(String.valueOf(role.getId()));
+                g.setName(role.getName()); // 仅展示/下游，鉴权不依赖 role.name
+                g.setType("ROLE");
+                result.add(g);
+            });
         }
         return result;
     }
@@ -157,7 +161,7 @@ public class CamundaIdentityProvider implements ReadOnlyIdentityProvider {
     public TenantQuery createTenantQuery(CommandContext commandContext) { return null; }
 
     @Override
-    public Tenant findTenantById(String tenantId) { return null; }
+    public Tenant findTenantById(String activeTenantId) { return null; }
 
     // 以下接口在某些 Camunda 版本中并不存在于 ReadOnlyIdentityProvider，可不实现
 

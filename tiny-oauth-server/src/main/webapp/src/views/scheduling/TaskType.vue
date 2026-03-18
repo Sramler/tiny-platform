@@ -105,12 +105,23 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { message } from 'ant-design-vue'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import { taskTypeList, createTaskType, updateTaskType, deleteTaskType, getExecutors } from '@/api/scheduling'
 import { throttle } from '@/utils/debounce'
 import { extractErrorFromAxios } from '@/utils/problemParser'
+import { useAuth } from '@/auth/auth'
+import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+
+const { user } = useAuth()
+const schedulingAuthorities = computed(() =>
+  extractAuthoritiesFromJwt(user.value?.access_token).filter((a) => a.startsWith('scheduling:')),
+)
+const canManageSchedulingConfig = computed(() =>
+  schedulingAuthorities.value.includes('scheduling:console:config') ||
+  schedulingAuthorities.value.includes('scheduling:*'),
+)
 
 const loading = ref(false)
 const refreshing = ref(false)
@@ -215,6 +226,10 @@ const onSelectChange = (keys: number[]) => {
 }
 
 const handleCreate = () => {
+  if (!canManageSchedulingConfig.value) {
+    message.warning('当前账户没有调度配置管理权限')
+    return
+  }
   formTitle.value = '新建任务类型'
   Object.assign(formData, {
     id: undefined,
@@ -231,6 +246,10 @@ const handleCreate = () => {
 }
 
 const handleEdit = (record: any) => {
+  if (!canManageSchedulingConfig.value) {
+    message.warning('当前账户没有调度配置管理权限')
+    return
+  }
   formTitle.value = '编辑任务类型'
   // 兼容接口返回 camelCase / snake_case；数字字段统一为 number，避免 a-input-number 与后端 Integer 不一致
   const num = (v: unknown) => (v !== null && v !== undefined && v !== '' ? Number(v) : 0)
@@ -279,6 +298,10 @@ const handleSubmit = async () => {
     message.error('请输入名称')
     return
   }
+  if (!canManageSchedulingConfig.value) {
+    message.error('当前账户没有调度配置管理权限')
+    return
+  }
   try {
     const payload = buildTaskTypePayload()
     if (formData.id != null) {
@@ -301,6 +324,10 @@ const handleCancel = () => {
 
 const handleDelete = async (id: number) => {
   try {
+    if (!canManageSchedulingConfig.value) {
+      message.error('当前账户没有调度配置管理权限')
+      return
+    }
     await deleteTaskType(id)
     message.success('删除成功')
     loadData()

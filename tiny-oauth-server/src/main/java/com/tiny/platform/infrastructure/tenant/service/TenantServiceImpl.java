@@ -22,9 +22,11 @@ public class TenantServiceImpl implements TenantService {
     private static final Pattern TENANT_CODE_PATTERN = Pattern.compile("^[a-z0-9][a-z0-9-]{1,31}$");
 
     private final TenantRepository tenantRepository;
+    private final TenantBootstrapService tenantBootstrapService;
 
-    public TenantServiceImpl(TenantRepository tenantRepository) {
+    public TenantServiceImpl(TenantRepository tenantRepository, TenantBootstrapService tenantBootstrapService) {
         this.tenantRepository = tenantRepository;
+        this.tenantBootstrapService = tenantBootstrapService;
     }
 
     @Override
@@ -95,7 +97,9 @@ public class TenantServiceImpl implements TenantService {
         tenant.setRemark(dto.getRemark());
         tenant.setCreatedAt(LocalDateTime.now());
         tenant.setUpdatedAt(LocalDateTime.now());
+        tenant.setLifecycleStatus("ACTIVE");
         Tenant saved = tenantRepository.save(tenant);
+        tenantBootstrapService.bootstrapFromDefaultTenant(saved);
         return toDto(saved);
     }
 
@@ -131,6 +135,14 @@ public class TenantServiceImpl implements TenantService {
 
         if (dto.getEnabled() != null) {
             tenant.setEnabled(dto.getEnabled());
+        }
+
+        if (dto.getLifecycleStatus() != null && !dto.getLifecycleStatus().isBlank()) {
+            String status = dto.getLifecycleStatus().trim().toUpperCase(Locale.ROOT);
+            if (!status.equals("ACTIVE") && !status.equals("FROZEN") && !status.equals("DECOMMISSIONED")) {
+                throw new RuntimeException("无效的租户生命周期状态");
+            }
+            tenant.setLifecycleStatus(status);
         }
 
         if (dto.getPlanCode() != null) {

@@ -36,6 +36,15 @@
 
 这组身份只用于双身份跨租户拒绝场景，不应复用主自动化身份。
 
+同时，租户管理接口 `/sys/tenants` 现已收口为平台管理员入口。凡是需要在 real-link 中动态创建第二租户、readonly 租户的场景，还需要一组平台自动化身份：
+
+- 平台租户编码：`E2E_PLATFORM_TENANT_CODE`（默认 `default`）
+- 平台管理员账号：`E2E_PLATFORM_USERNAME`
+- 平台管理员密码：`E2E_PLATFORM_PASSWORD`
+- 平台管理员 TOTP secret：`E2E_PLATFORM_TOTP_SECRET`
+
+这组身份只用于通过真实 `/sys/tenants` API 创建测试租户，不参与普通租户内的业务操作链路。
+
 ---
 
 ## 推荐扩展的身份矩阵
@@ -62,6 +71,14 @@
 - `E2E_PASSWORD_B`
 - `E2E_TOTP_SECRET_B`
 - `E2E_TOTP_CODE_B`（可选，仅用于 CI 注入一次性验证码）
+
+调度 readonly real-link 当前还需要一组只读身份：
+
+- `E2E_TENANT_CODE_READONLY`（可选，不配置时回退到主租户）
+- `E2E_USERNAME_READONLY`
+- `E2E_PASSWORD_READONLY`
+- `E2E_TOTP_SECRET_READONLY`
+- `E2E_TOTP_CODE_READONLY`（可选）
 
 此外，为了支持“未绑定 TOTP 首绑 real-link”，还需要一组专用首绑身份：
 
@@ -133,10 +150,16 @@ export E2E_BACKEND_PROFILE=e2e
 - `E2E_USERNAME`
 - `E2E_PASSWORD`
 - `E2E_TOTP_SECRET`
+- `E2E_PLATFORM_USERNAME`
+- `E2E_PLATFORM_PASSWORD`
+- `E2E_PLATFORM_TOTP_SECRET`
 - `E2E_TENANT_CODE_B`
 - `E2E_USERNAME_B`
 - `E2E_PASSWORD_B`
 - `E2E_TOTP_SECRET_B`
+- `E2E_USERNAME_READONLY`
+- `E2E_PASSWORD_READONLY`
+- `E2E_TOTP_SECRET_READONLY`
 - `E2E_USERNAME_BIND`
 - `E2E_PASSWORD_BIND`
 
@@ -153,9 +176,13 @@ export E2E_BACKEND_PROFILE=e2e
 | `E2E_TENANT_CODE` | 主自动化租户编码 |
 | `E2E_USERNAME` / `E2E_PASSWORD` | 主自动化管理员账号 |
 | `E2E_TOTP_SECRET` | 主自动化管理员 TOTP secret |
+| `E2E_PLATFORM_USERNAME` / `E2E_PLATFORM_PASSWORD` | 平台自动化管理员账号 |
+| `E2E_PLATFORM_TOTP_SECRET` | 平台自动化管理员 TOTP secret |
 | `E2E_TENANT_CODE_B` | 第二自动化租户编码 |
 | `E2E_USERNAME_B` / `E2E_PASSWORD_B` | 第二自动化管理员账号 |
 | `E2E_TOTP_SECRET_B` | 第二自动化管理员 TOTP secret |
+| `E2E_USERNAME_READONLY` / `E2E_PASSWORD_READONLY` | readonly 自动化账号 |
+| `E2E_TOTP_SECRET_READONLY` | readonly 自动化账号 TOTP secret |
 | `E2E_TENANT_CODE_BIND` | 首绑用户所属租户，可选 |
 | `E2E_USERNAME_BIND` / `E2E_PASSWORD_BIND` | 未绑定 TOTP 的首绑专用用户 |
 

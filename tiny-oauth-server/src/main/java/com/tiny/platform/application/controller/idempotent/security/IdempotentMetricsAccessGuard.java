@@ -1,13 +1,12 @@
 package com.tiny.platform.application.controller.idempotent.security;
 
-import com.tiny.platform.core.oauth.model.SecurityUser;
-import com.tiny.platform.core.oauth.tenant.TenantContext;
+import com.tiny.platform.core.oauth.security.LegacyAuthConstants;
+import com.tiny.platform.core.oauth.tenant.ActiveTenantResponseSupport;
 import com.tiny.platform.infrastructure.idempotent.starter.properties.IdempotentProperties;
 import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import java.util.Objects;
 import org.springframework.util.StringUtils;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.stereotype.Component;
 
 /**
@@ -18,8 +17,7 @@ import org.springframework.stereotype.Component;
 @Component("idempotentMetricsAccessGuard")
 public class IdempotentMetricsAccessGuard {
 
-    static final String PLATFORM_METRICS_AUTHORITY = "idempotentOps";
-
+    static final String PLATFORM_METRICS_AUTHORITY = "idempotent:ops:view";
     private final TenantRepository tenantRepository;
     private final IdempotentProperties properties;
 
@@ -40,9 +38,9 @@ public class IdempotentMetricsAccessGuard {
             return false;
         }
 
-        Long currentTenantId = resolveTenantId(authentication);
-        return Objects.equals(platformTenantId, currentTenantId)
-                && hasAuthority(authentication, "ROLE_ADMIN")
+        Long currentActiveTenantId = resolveActiveTenantId(authentication);
+        return Objects.equals(platformTenantId, currentActiveTenantId)
+                && hasAdminAuthority(authentication)
                 && hasAuthority(authentication, PLATFORM_METRICS_AUTHORITY);
     }
 
@@ -51,41 +49,19 @@ public class IdempotentMetricsAccessGuard {
         return StringUtils.hasText(configuredCode) ? configuredCode.trim() : "default";
     }
 
+    private static boolean hasAdminAuthority(Authentication authentication) {
+        return authentication.getAuthorities().stream()
+                .map(grantedAuthority -> grantedAuthority.getAuthority())
+                .anyMatch(LegacyAuthConstants::isAdminAuthority);
+    }
+
     private static boolean hasAuthority(Authentication authentication, String authority) {
         return authentication.getAuthorities().stream()
                 .map(grantedAuthority -> grantedAuthority.getAuthority())
                 .anyMatch(authority::equals);
     }
 
-    private static Long resolveTenantId(Authentication authentication) {
-        Long tenantId = TenantContext.getTenantId();
-        if (tenantId != null && tenantId > 0) {
-            return tenantId;
-        }
-
-        Object principal = authentication.getPrincipal();
-        if (principal instanceof SecurityUser securityUser) {
-            return securityUser.getTenantId();
-        }
-
-        if (authentication instanceof JwtAuthenticationToken jwtAuthenticationToken) {
-            return toLong(jwtAuthenticationToken.getTokenAttributes().get("tenantId"));
-        }
-
-        return null;
-    }
-
-    private static Long toLong(Object value) {
-        if (value instanceof Number number) {
-            return number.longValue();
-        }
-        if (value instanceof String stringValue && !stringValue.isBlank()) {
-            try {
-                return Long.parseLong(stringValue);
-            } catch (NumberFormatException ignored) {
-                return null;
-            }
-        }
-        return null;
+    private static Long resolveActiveTenantId(Authentication authentication) {
+        return ActiveTenantResponseSupport.resolveActiveTenantId(authentication);
     }
 }

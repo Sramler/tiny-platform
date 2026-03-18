@@ -91,5 +91,16 @@ class MenuControllerTest {
         assertEquals(Boolean.TRUE, resp.getBody().get("success"));
         verify(menuService).batchDeleteMenus(List.of(1L, 2L));
     }
-}
 
+    @Test
+    void updateMenuSort_shouldDelegate() {
+        Resource updated = mock(Resource.class);
+        when(menuService.updateMenuSort(9L, 8)).thenReturn(updated);
+
+        ResponseEntity<Resource> resp = controller.updateMenuSort(9L, 8);
+
+        assertEquals(HttpStatus.OK, resp.getStatusCode());
+        assertSame(updated, resp.getBody());
+        verify(menuService).updateMenuSort(9L, 8);
+    }
+}

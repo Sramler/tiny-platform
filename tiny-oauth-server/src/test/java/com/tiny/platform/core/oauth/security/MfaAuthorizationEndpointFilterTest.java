@@ -5,7 +5,6 @@ import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
-import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockFilterChain;
@@ -26,6 +25,8 @@ import static org.mockito.Mockito.when;
 
 class MfaAuthorizationEndpointFilterTest {
 
+    private final AuthUserResolutionService authUserResolutionService = mock(AuthUserResolutionService.class);
+
     @AfterEach
     void tearDown() {
         SecurityContextHolder.clearContext();
@@ -34,7 +35,7 @@ class MfaAuthorizationEndpointFilterTest {
 
     @Test
     void should_skip_non_authorization_path_and_allow_when_auth_missing() throws Exception {
-        MfaAuthorizationEndpointFilter filter = newFilter(mock(SecurityService.class), mock(UserRepository.class));
+        MfaAuthorizationEndpointFilter filter = newFilter(mock(SecurityService.class));
 
         MockHttpServletRequest nonAuthorize = new MockHttpServletRequest("GET", "/api/test");
         MockHttpServletResponse nonAuthorizeResponse = new MockHttpServletResponse();
@@ -53,14 +54,13 @@ class MfaAuthorizationEndpointFilterTest {
     @Test
     void should_redirect_to_bind_or_verify_and_allow_when_totp_not_required() throws Exception {
         SecurityService securityService = mock(SecurityService.class);
-        UserRepository userRepository = mock(UserRepository.class);
-        MfaAuthorizationEndpointFilter filter = newFilter(securityService, userRepository);
+        MfaAuthorizationEndpointFilter filter = newFilter(securityService);
         User user = user(1L, "alice");
-        TenantContext.setTenantId(1L);
+        TenantContext.setActiveTenantId(1L);
 
         UsernamePasswordAuthenticationToken auth = UsernamePasswordAuthenticationToken.authenticated("alice", null, List.of());
         SecurityContextHolder.getContext().setAuthentication(auth);
-        when(userRepository.findUserByUsernameAndTenantId("alice", 1L)).thenReturn(Optional.of(user));
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("alice", 1L)).thenReturn(Optional.of(user));
         when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
             "totpBound", false,
             "totpActivated", false,
@@ -99,8 +99,7 @@ class MfaAuthorizationEndpointFilterTest {
     @Test
     void should_allow_when_totp_completed_and_handle_user_resolution_fallbacks() throws Exception {
         SecurityService securityService = mock(SecurityService.class);
-        UserRepository userRepository = mock(UserRepository.class);
-        MfaAuthorizationEndpointFilter filter = newFilter(securityService, userRepository);
+        MfaAuthorizationEndpointFilter filter = newFilter(securityService);
         User user = user(2L, "bob");
 
         SecurityUser securityUser = new SecurityUser(
@@ -119,7 +118,7 @@ class MfaAuthorizationEndpointFilterTest {
         token.setDetails(securityUser);
         SecurityContextHolder.getContext().setAuthentication(token);
 
-        when(userRepository.findUserByUsernameAndTenantId("bob", 9L)).thenReturn(Optional.of(user));
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("bob", 9L)).thenReturn(Optional.of(user));
         when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
             "totpBound", true,
             "totpActivated", true,
@@ -140,10 +139,38 @@ class MfaAuthorizationEndpointFilterTest {
     }
 
     @Test
+    void should_resolve_active_tenant_from_authenticated_principal() throws Exception {
+        SecurityService securityService = mock(SecurityService.class);
+        MfaAuthorizationEndpointFilter filter = newFilter(securityService);
+        User user = user(4L, "principal-user");
+
+        SecurityUser principal = new SecurityUser(
+                4L, 8L, "principal-user", "",
+                List.of(new SimpleGrantedAuthority("ROLE_USER")),
+                true, true, true, true
+        );
+        UsernamePasswordAuthenticationToken authentication =
+                UsernamePasswordAuthenticationToken.authenticated(principal, null, principal.getAuthorities());
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("principal-user", 8L)).thenReturn(Optional.of(user));
+        when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
+                "totpBound", true,
+                "totpActivated", true,
+                "forceMfa", false,
+                "requireTotp", false
+        ));
+
+        MockFilterChain chain = new MockFilterChain();
+        filter.doFilter(new MockHttpServletRequest("GET", "/oauth2/authorize"), new MockHttpServletResponse(), chain);
+
+        assertThat(chain.getRequest()).isNotNull();
+    }
+
+    @Test
     void should_redirect_when_partialMfaTokenStillNeedsTotp() throws Exception {
         SecurityService securityService = mock(SecurityService.class);
-        UserRepository userRepository = mock(UserRepository.class);
-        MfaAuthorizationEndpointFilter filter = newFilter(securityService, userRepository);
+        MfaAuthorizationEndpointFilter filter = newFilter(securityService);
         User user = user(3L, "partial");
 
         SecurityUser securityUser = new SecurityUser(
@@ -161,7 +188,7 @@ class MfaAuthorizationEndpointFilterTest {
         partial.setDetails(securityUser);
         SecurityContextHolder.getContext().setAuthentication(partial);
 
-        when(userRepository.findUserByUsernameAndTenantId("partial", 5L)).thenReturn(Optional.of(user));
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("partial", 5L)).thenReturn(Optional.of(user));
         when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
                 "totpBound", true,
                 "totpActivated", true,
@@ -175,11 +202,11 @@ class MfaAuthorizationEndpointFilterTest {
         assertThat(verifyResponse.getRedirectedUrl()).contains("http://localhost:5173/totp-verify");
     }
 
-    private static MfaAuthorizationEndpointFilter newFilter(SecurityService securityService, UserRepository userRepository) {
+    private MfaAuthorizationEndpointFilter newFilter(SecurityService securityService) {
         FrontendProperties frontendProperties = new FrontendProperties();
         frontendProperties.setTotpBindUrl("redirect:http://localhost:5173/totp-bind");
         frontendProperties.setTotpVerifyUrl("redirect:http://localhost:5173/totp-verify");
-        return new MfaAuthorizationEndpointFilter(securityService, userRepository, frontendProperties);
+        return new MfaAuthorizationEndpointFilter(securityService, authUserResolutionService, frontendProperties);
     }
 
     private static User user(Long id, String username) {

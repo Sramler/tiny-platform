@@ -35,7 +35,7 @@ class HttpRequestLogServiceImplTest {
         log.setStatus(200);
         log.setDurationMs(12);
         log.setUserId("u1");
-        log.setTenantId(9L);
+        log.setActiveTenantId(9L);
         log.setTraceId("0123456789abcdef0123456789abcdef");
         log.setRequestId("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
         log.setClientRequestId("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
@@ -47,7 +47,7 @@ class HttpRequestLogServiceImplTest {
         verify(repository).save(log);
         assertThat(MDC.get("pre")).isEqualTo("keep");
         assertThat(MDC.get("traceId")).isNull();
-        assertThat(MDC.get("tenantId")).isNull();
+        assertThat(MDC.get("activeTenantId")).isNull();
     }
 
     @Test
@@ -79,12 +79,12 @@ class HttpRequestLogServiceImplTest {
         log.setTraceId("0123456789abcdef0123456789abcdef");
         log.setRequestId("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
         log.setUserId("u1");
-        log.setTenantId(1L);
+        log.setActiveTenantId(1L);
         ReflectionTestUtils.invokeMethod(service, "bindLogMdc", log);
         assertThat(MDC.get("traceId")).isEqualTo("0123456789abcdef0123456789abcdef");
         assertThat(MDC.get("requestId")).isEqualTo("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
         assertThat(MDC.get("userId")).isEqualTo("u1");
-        assertThat(MDC.get("tenantId")).isEqualTo("1");
+        assertThat(MDC.get("activeTenantId")).isEqualTo("1");
 
         ReflectionTestUtils.invokeMethod(service, "putIfText", "traceId", "   ");
         assertThat(MDC.get("traceId")).isEqualTo("0123456789abcdef0123456789abcdef");

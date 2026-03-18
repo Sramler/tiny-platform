@@ -35,7 +35,7 @@ class IdempotentMetricsControllerTest {
         Map<String, Object> resp = controller.getMetrics(9L).getBody();
 
         assertEquals(Boolean.TRUE, resp.get("success"));
-        assertEquals(9L, resp.get("tenantId"));
+        assertEquals(9L, resp.get("activeTenantId"));
         assertEquals(5L, resp.get("windowMinutes"));
         assertEquals(8L, resp.get("totalCheckCount"));
         assertEquals(0.1, (Double) resp.get("conflictRate"), 1e-9);
@@ -59,4 +59,3 @@ class IdempotentMetricsControllerTest {
         verify(metricsService).topScopes(1000, null);
     }
 }
-

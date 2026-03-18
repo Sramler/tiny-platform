@@ -591,8 +591,8 @@ public String getMessage(Locale locale) {
 **可选增强**:
 
 ```java
-// 可在 Problem 中添加租户上下文（可选）
-.with("tenantId", getCurrentTenantId(request))
+// 可在 Problem 中添加当前活动租户上下文（可选）
+.with("activeTenantId", getCurrentActiveTenantId(request))
 ```
 
 #### 可扩展性 ⭐⭐⭐⭐⭐
@@ -733,8 +733,8 @@ public class OrderServiceExceptionHandler extends BaseExceptionHandler {
 1. **多租户支持增强**（可选）:
 
 ```java
-// 如需多租户支持，可添加租户上下文到 Problem
-.with("tenantId", getCurrentTenantId(request))
+// 如需多租户支持，可添加当前活动租户上下文到 Problem
+.with("activeTenantId", getCurrentActiveTenantId(request))
 ```
 
 2. **国际化支持**（可选）:

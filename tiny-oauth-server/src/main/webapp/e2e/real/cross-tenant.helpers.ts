@@ -10,6 +10,12 @@ const backendBaseUrl = process.env.E2E_BACKEND_BASE_URL ?? 'http://localhost:900
 
 export const primaryAuthStatePath = path.resolve(__dirname, '..', '.auth', 'scheduling-user.json')
 export const secondaryAuthStatePath = path.resolve(__dirname, '..', '.auth', 'tenant-b-user.json')
+export const readonlyAuthStatePath = path.resolve(
+  __dirname,
+  '..',
+  '.auth',
+  'scheduling-readonly-user.json',
+)
 
 function isPlaceholderValue(value: string): boolean {
   const normalized = value.trim()
@@ -26,6 +32,12 @@ function isConfiguredValue(value: string | undefined): boolean {
 export function isCrossTenantIdentityConfigured(): boolean {
   return ['E2E_TENANT_CODE_B', 'E2E_USERNAME_B', 'E2E_PASSWORD_B', 'E2E_TOTP_SECRET_B'].every((name) =>
     isConfiguredValue(process.env[name]),
+  )
+}
+
+export function isReadonlyIdentityConfigured(): boolean {
+  return ['E2E_USERNAME_READONLY', 'E2E_PASSWORD_READONLY', 'E2E_TOTP_SECRET_READONLY'].every(
+    (name) => isConfiguredValue(process.env[name]),
   )
 }
 
@@ -66,7 +78,7 @@ export async function openOidcDebug(page: Page) {
 
 type OidcIdentitySnapshot = {
   accessToken: string
-  tenantId: string
+  activeTenantId: string
 }
 
 async function loadIdentitySnapshot(page: Page): Promise<OidcIdentitySnapshot> {
@@ -82,21 +94,21 @@ async function loadIdentitySnapshot(page: Page): Promise<OidcIdentitySnapshot> {
 
     const user = JSON.parse(rawUser) as {
       access_token?: string
-      profile?: { tenantId?: number | string }
+      profile?: { activeTenantId?: number | string }
     }
     if (!user.access_token) {
       throw new Error('OIDC 用户缺少 access_token')
     }
 
-    const tenantId =
-      window.localStorage.getItem('app_tenant_id') ?? String(user.profile?.tenantId ?? '')
-    if (!tenantId) {
-      throw new Error('OIDC 用户缺少 tenantId')
+    const activeTenantId =
+      window.localStorage.getItem('app_active_tenant_id') ?? String(user.profile?.activeTenantId ?? '')
+    if (!activeTenantId) {
+      throw new Error('OIDC 用户缺少 activeTenantId')
     }
 
     return {
       accessToken: user.access_token,
-      tenantId,
+      activeTenantId,
     }
   })
 }
@@ -123,11 +135,11 @@ export async function fetchSchedulingApi<T>(
   const { method = 'GET', body, overrideTenantId, idempotencyKey } = options
 
   return page.evaluate(
-    async ({ apiBaseUrl, path, auth, tenantId, apiMethod, apiBody, idemKey }) => {
+    async ({ apiBaseUrl, path, auth, activeTenantId, apiMethod, apiBody, idemKey }) => {
       const headers = new Headers({
         Accept: 'application/json',
         Authorization: `Bearer ${auth.accessToken}`,
-        'X-Tenant-Id': tenantId,
+        'X-Active-Tenant-Id': activeTenantId,
       })
       if (idemKey) {
         headers.set('X-Idempotency-Key', idemKey)
@@ -156,7 +168,7 @@ export async function fetchSchedulingApi<T>(
       apiBaseUrl: backendBaseUrl,
       path: apiPath,
       auth: identity,
-      tenantId: overrideTenantId ?? identity.tenantId,
+      activeTenantId: overrideTenantId ?? identity.activeTenantId,
       apiMethod: method,
       apiBody: body,
       idemKey: idempotencyKey,
@@ -176,7 +188,7 @@ export async function createTaskType(page: Page, codePrefix: string) {
     defaultMaxRetry: 0,
   }
 
-  const response = await fetchSchedulingApi<{ id?: number; tenantId?: number | string }>(
+  const response = await fetchSchedulingApi<{ id?: number; recordTenantId?: number | string }>(
     page,
     '/scheduling/task-type',
     {
@@ -191,7 +203,7 @@ export async function createTaskType(page: Page, codePrefix: string) {
   return {
     id: Number(response.payload!.id),
     ownerTenantId:
-      response.payload?.tenantId == null ? null : String(response.payload.tenantId),
+      response.payload?.recordTenantId == null ? null : String(response.payload.recordTenantId),
   }
 }
 
