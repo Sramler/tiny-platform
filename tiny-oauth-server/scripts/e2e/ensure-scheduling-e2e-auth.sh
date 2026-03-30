@@ -242,16 +242,6 @@ Long findRoleIdByCode(Connection connection, Long tenantId, String roleCode) thr
     return null;
 }
 
-boolean tableExists(Connection connection, String tableName) throws SQLException {
-    try (PreparedStatement ps = connection.prepareStatement(
-            "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?")) {
-        ps.setString(1, tableName);
-        try (ResultSet rs = ps.executeQuery()) {
-            return rs.next() && rs.getInt(1) > 0;
-        }
-    }
-}
-
 void verifyDefaultSchedulingBootstrapTemplate(Connection connection) throws SQLException {
     Long defaultTenantId = findTenantIdByCode(connection, "default");
     if (defaultTenantId == null) {
@@ -280,12 +270,6 @@ void verifyDefaultSchedulingBootstrapTemplate(Connection connection) throws SQLE
         if (findResourceIdByPermission(connection, defaultTenantId, authority) == null) {
             throw new IllegalStateException("默认租户缺少调度 authority 模板资源: " + authority);
         }
-    }
-
-    if (!tableExists(connection, "role_permission")) {
-        // 兼容历史库：仍使用 role_resource 表时，跳过 role_permission 绑定校验。
-        System.out.println("Skip role_permission template verification: table role_permission not found");
-        return;
     }
 
     Long wildcardResourceId = findResourceIdByPermission(connection, defaultTenantId, "scheduling:*");
@@ -400,22 +384,6 @@ Long ensureHiddenAuthorityResource(Connection connection, Long tenantId, String 
 }
 
 void ensureRolePermissionBinding(Connection connection, Long tenantId, Long roleId, Long resourceId) throws SQLException {
-    if (!tableExists(connection, "role_permission")) {
-        // 兼容历史库（RBAC2）: 回退 role_resource 绑定，避免因未迁移到 role_permission 阻断 E2E 数据准备。
-        try (PreparedStatement ps = connection.prepareStatement(
-                "INSERT IGNORE INTO role_resource (tenant_id, role_id, resource_id) VALUES (?, ?, ?)")) {
-            if (tenantId == null) {
-                ps.setNull(1, Types.BIGINT);
-            } else {
-                ps.setLong(1, tenantId);
-            }
-            ps.setLong(2, roleId);
-            ps.setLong(3, resourceId);
-            ps.executeUpdate();
-        }
-        return;
-    }
-
     try (PreparedStatement ps = connection.prepareStatement(
             """
             INSERT IGNORE INTO role_permission (tenant_id, role_id, permission_id)

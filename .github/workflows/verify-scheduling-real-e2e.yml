@@ -244,6 +244,26 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
+      - name: Verify authorization schema baseline
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          table_count="$(mysql -h "${E2E_DB_HOST}" -P "${E2E_DB_PORT}" -u "${E2E_DB_USER}" -p"${E2E_DB_PASSWORD}" -N -s -e \
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '${E2E_DB_NAME}' AND table_name = 'role_permission';")"
+          if [ "${table_count:-0}" -lt 1 ]; then
+            {
+              echo
+              echo "## Preflight blocker: authorization schema baseline not met"
+              echo
+              echo "Missing required table: \`${E2E_DB_NAME}.role_permission\`."
+              echo
+              echo "Nightly real-link no longer supports legacy \`role_resource\` fallback in auth bootstrap."
+              echo "Please run database migration to the authorization baseline before rerun."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
       - name: Run scheduling real-link E2E suite
         env:
           E2E_SKIP_WEBSERVER: 'true'

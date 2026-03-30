@@ -29,6 +29,73 @@
 - 不允许只补 getter/setter 或只补“接口 200”型测试冒充回归。
 - 风险越跨边界，测试层级越要往上提。
 
+### 1.1 租户控制面与 `active-scope-changed`（2026-03-29）
+
+- **正式边界**：无活动租户（`getActiveTenantId()` 为空）时，租户数据控制面**不得**因 `active-scope-changed` 重拉；判定统一用 `shouldReloadTenantControlPlaneOnActiveScopeChange()`（`activeScopeEvents.ts`），单测见 `activeScopeEvents.test.ts` 与租户字典 `dictType.test.ts` / `dictItem.test.ts`。
+- **文档**：`TINY_PLATFORM_DATASCOPE_EXPANSION_GUIDE.md` §10–§11；构建链技术债全文 `TINY_PLATFORM_BUILD_TECH_DEBT_LEDGER.md`。
+
+### 1.2 `verify-platform-dev-bootstrap.sh`：环境前置与退出码（2026-03-30）
+
+**前置条件（正式契约）**：
+
+- 环境变量 **`DB_PASSWORD`**：连接本机 MySQL 用（脚本使用 `MYSQL_PWD`，密码不进 argv）；若未设置，脚本会把 **`E2E_DB_PASSWORD`** 作为兼容别名回填。
+- **`mysql` 客户端** 在 `PATH` 中可执行。
+- MySQL 服务可达，且存在 **`DB_NAME`**（默认 `tiny_web`）库；预检可用 `SKIP_DB_PING=1` 跳过（不推荐）。
+- 如 `DB_PASSWORD` / `DB_*` / `MYSQL_*` 已在 login shell 中导出，可由脚本通过 **白名单环境变量**自动回填；`E2E_DB_*` 也可作为 `DB_*` 的兼容别名来源。读取方式仅限 login shell 子进程中的 `printenv`，**禁止** `cat ~/.zprofile` / `~/.zshrc` / `~/.bashrc`。
+
+**结果解释**：
+
+| 情况 | 含义 |
+| --- | --- |
+| **未执行** | 终端从未运行该脚本；PR/报告应写「未跑 dev-bootstrap」，**不得**冒充已验证。 |
+| **exit 0** | 全链路通过（含模板行数、登录链等）。 |
+| **exit 1** | 前置已满足，但某步失败（oauth 未就绪、模板仍空、子脚本非 0）。**需排查**，属有效门禁失败。 |
+| **exit 2** | **环境前置未满足**（缺 `DB_PASSWORD`、无 `mysql`、连不上库）。**非代码回归结论**；助手应标注「环境未满足」，与 exit 1 区分。 |
+
+**口令**：仅通过环境变量/本机 secret 注入，**禁止**写入仓库。
+
+### 1.3 Maven：同模块禁止并发 `compile`/`test`（2026-03-30）
+
+- **问题**：对 **`tiny-oauth-server` 同一 `target/`** 并发跑多个 Maven 进程，可能产生 `NoSuchFileException`、类文件半写入 → **误判为代码回归**。
+- **性质**：**执行方式噪声**（见 `TINY_PLATFORM_BUILD_TECH_DEBT_LEDGER.md` §0、§2.1）。
+- **要求**：同一模块 **顺序**执行；本地门禁可：`bash tiny-oauth-server/scripts/mvn-tiny-oauth-server-gate-sequential.sh`（先 `compile` 再 `test`）。若刚跑过其他 Maven 目标、JaCoCo 报 `execution data does not match`，可 **`GATE_CLEAN_FIRST=1`** 再跑该脚本，或 **`mvn clean test`**。
+
+### 1.4 Vite `build-only`：mixed import 门禁口径（2026-03-28）
+
+- **命令**：`npm --prefix tiny-oauth-server/src/main/webapp run build-only`
+- **期望**：构建 **exit 0**，且日志中 **不出现** `[plugin vite:reporter]` 下 “dynamically imported … but also statically imported” 行（同模块混用静态与动态 `import`）。
+- **已收口策略摘要**：工具链（`logger` / `traceId` / `tenant`）与 `auth` / `oidc` / `router` 的交叉引用已统一为静态导入或去掉无效动态边界；`traceId` 不再动态 `import('@/router')`（见 `TINY_PLATFORM_BUILD_TECH_DEBT_LEDGER.md` §1）。
+- **回归**：相关单测至少包含 `src/utils/traceId.test.ts`（401 跳转与 `fetchWithTraceId` 行为）。
+
+### 1.4.1 Vite 主入口、路由拆包与 Ant Design Vue（2026-03-28）
+
+- **与 §1.4 的关系**：§1.4 管 **mixed import**；本节管 **入口 chunk 体积、拆包与 UI 库**（不同类问题，勿混写）。
+- **命令**：`npm --prefix tiny-oauth-server/src/main/webapp run build-only`
+- **期望**：主入口 `dist/assets/index-*.js` 为 **应用业务壳**（体积应远小于历史单文件 ~2.8MB）；`vendor-*` 为 `manualChunks` 拆出的依赖块；**不出现**新的 `plugin vite:reporter` mixed import 行。
+- **路由与 vendor 策略摘要**：见 `TINY_PLATFORM_BUILD_TECH_DEBT_LEDGER.md` §1（路由异步组件 + `manualChunks`）。
+- **Ant Design Vue 唯一主策略（策略 B）**：`unplugin-vue-components` + `AntDesignVueResolver`；**禁止** `app.use(整包 Antd)`；全局样式保留 `ant-design-vue/dist/reset.css`；`App.vue` **显式** `ConfigProvider` + `zh_CN`；`message` / `Modal` 等 **按文件** `import { message } from 'ant-design-vue'`。图标：`@ant-design/icons-vue` **禁止** `import *`（`Icon.vue` / `IconSelect` 用 `import.meta.glob` + 懒加载）；各页 **命名导入** `XxxOutlined` 保留。详情与体积对比见台账 §1。
+- **可选产物分析**：`npm --prefix tiny-oauth-server/src/main/webapp run build:analyze` → `dist/bundle-stats.html`。
+- **回归**：`src/router/lazy-routes.test.ts`（顶层路由保持异步组件）；涉及认证/租户/trace 时仍跑 `src/api/user.test.ts`、`src/utils/traceId.test.ts`、`src/views/Setting.test.ts` 等定向单测。
+
+### 1.5 本地自愈式 dev stack 入口（2026-03-30）
+
+- **统一默认入口**：`bash tiny-oauth-server/scripts/verify-platform-local-dev-stack.sh`
+- **职责**：
+  - 先调用 `verify-platform-dev-bootstrap.sh` 自愈并验证 DB + oauth-server
+  - 再检查前端 `Vite`；未运行时自动启动并等待健康检查
+- **使用顺序**：
+  - 默认先跑 `verify-platform-local-dev-stack.sh`
+  - 只有在明确不需要前端联动时，才降级到 `verify-platform-dev-bootstrap.sh`
+  - 只有在纯 Maven 编译/定向测试门禁时，才单独运行 `mvn-tiny-oauth-server-gate-sequential.sh`
+- **结果语义**：
+  - `exit 0`：前后端 dev stack 就绪
+  - `exit 1`：前置满足，但某个服务启动/校验失败
+  - `exit 2`：本机环境前置未满足（例如 `DB_PASSWORD`、`npm`、`mysql` 缺失）
+- **边界**：
+  - 自动启动后必须二次健康检查，不能把“命令返回 0”当作通过
+  - 若脚本自动拉起前端，仅清理自己拉起的进程，不干扰用户手工启动的现有服务
+  - `verify-platform-dev-bootstrap.sh` 不再视为 tiny-platform 本地 AI 验证默认入口；它是“后端/数据库专用降级入口”
+
 ## 2. tiny-platform 测试分层
 
 ### 2.1 单元测试
@@ -335,9 +402,15 @@
 - real-link 或 full-chain E2E
 - trace / screenshot / 视频 / seed 日志
 
+认证授权主线（当前最低建议）：
+- 将 `e2e/real/active-scope-token-refresh.spec.ts` 纳入 Nightly real-link 门禁，锁定租户态身份前置、`tokenRefreshRequired` 写链、`prompt=none` 静默续签与 Bearer 复验。
+- 该用例应使用 globalSetup 派生租户态 storageState（`e2e/.auth/scheduling-tenant-user.json`），避免平台态身份导致 `activeTenantId` 缺失产生伪失败。
+- Nightly real-link 运行前必须满足授权 schema 基线：数据库存在 `role_permission` 表；`ensure-scheduling-e2e-auth.sh` 不再回退 `role_resource`。若缺失基线，workflow 应在执行 E2E 前 fail-fast 并输出迁移提示。
+
 建议：
 - real-link E2E 使用独立 workflow，入口至少包含 `workflow_dispatch` 和 `schedule`
 - workflow 开始时显式检查必需 secrets/自动化身份，缺失时快速失败并输出修复提示
+- 对共享测试库中的历史兼容策略要有明确退役窗口；当 schema 基线在 CI 强制后，应移除旧模型 fallback 并保持文档同步。
 - setup helper 的纯逻辑回归仍然留在普通 unit test 中，和 PR 一起跑
 
 ### 9.4 失败输出
