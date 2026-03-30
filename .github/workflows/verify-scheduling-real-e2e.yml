@@ -52,17 +52,19 @@ jobs:
       E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
       E2E_TOTP_SECRET: ${{ secrets.E2E_TOTP_SECRET }}
       E2E_PLATFORM_TENANT_CODE: default
-      E2E_PLATFORM_USERNAME: ${{ secrets.E2E_PLATFORM_USERNAME }}
-      E2E_PLATFORM_PASSWORD: ${{ secrets.E2E_PLATFORM_PASSWORD }}
-      E2E_PLATFORM_TOTP_SECRET: ${{ secrets.E2E_PLATFORM_TOTP_SECRET }}
+      # 平台身份允许回退到“独立用户名 + 主身份密码/TOTP”，由 ensure-scheduling-e2e-auth.sh 幂等补齐。
+      E2E_PLATFORM_USERNAME: ${{ secrets.E2E_PLATFORM_USERNAME || 'e2e_platform_admin' }}
+      E2E_PLATFORM_PASSWORD: ${{ secrets.E2E_PLATFORM_PASSWORD || secrets.E2E_PASSWORD }}
+      E2E_PLATFORM_TOTP_SECRET: ${{ secrets.E2E_PLATFORM_TOTP_SECRET || secrets.E2E_TOTP_SECRET }}
       E2E_TENANT_CODE_B: ${{ secrets.E2E_TENANT_CODE_B }}
       E2E_USERNAME_B: ${{ secrets.E2E_USERNAME_B }}
       E2E_PASSWORD_B: ${{ secrets.E2E_PASSWORD_B }}
       E2E_TOTP_SECRET_B: ${{ secrets.E2E_TOTP_SECRET_B }}
       E2E_TENANT_CODE_READONLY: ${{ secrets.E2E_TENANT_CODE_READONLY }}
-      E2E_USERNAME_READONLY: ${{ secrets.E2E_USERNAME_READONLY }}
-      E2E_PASSWORD_READONLY: ${{ secrets.E2E_PASSWORD_READONLY }}
-      E2E_TOTP_SECRET_READONLY: ${{ secrets.E2E_TOTP_SECRET_READONLY }}
+      # readonly 身份允许回退到“独立用户名 + 主身份密码/TOTP”，保持 RBAC 链路真实且避免账号串用。
+      E2E_USERNAME_READONLY: ${{ secrets.E2E_USERNAME_READONLY || 'e2e_scheduling_readonly' }}
+      E2E_PASSWORD_READONLY: ${{ secrets.E2E_PASSWORD_READONLY || secrets.E2E_PASSWORD }}
+      E2E_TOTP_SECRET_READONLY: ${{ secrets.E2E_TOTP_SECRET_READONLY || secrets.E2E_TOTP_SECRET }}
       E2E_TENANT_CODE_BIND: ${{ secrets.E2E_TENANT_CODE_BIND }}
       E2E_USERNAME_BIND: ${{ secrets.E2E_USERNAME_BIND }}
       E2E_PASSWORD_BIND: ${{ secrets.E2E_PASSWORD_BIND }}
@@ -121,10 +123,6 @@ jobs:
             E2E_PLATFORM_USERNAME \
             E2E_PLATFORM_PASSWORD \
             E2E_PLATFORM_TOTP_SECRET \
-            E2E_TENANT_CODE_B \
-            E2E_USERNAME_B \
-            E2E_PASSWORD_B \
-            E2E_TOTP_SECRET_B \
             E2E_USERNAME_READONLY \
             E2E_PASSWORD_READONLY \
             E2E_TOTP_SECRET_READONLY
