@@ -51,7 +51,8 @@ jobs:
       E2E_USERNAME: ${{ secrets.E2E_USERNAME }}
       E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
       E2E_TOTP_SECRET: ${{ secrets.E2E_TOTP_SECRET }}
-      E2E_PLATFORM_TENANT_CODE: default
+      # globalSetup 明确禁止 default 作为平台自动化 tenant（可能被冻结）；使用独立平台租户。
+      E2E_PLATFORM_TENANT_CODE: ${{ secrets.E2E_PLATFORM_TENANT_CODE || 'platform-e2e' }}
       # 平台身份允许回退到“独立用户名 + 主身份密码/TOTP”，由 ensure-scheduling-e2e-auth.sh 幂等补齐。
       E2E_PLATFORM_USERNAME: ${{ secrets.E2E_PLATFORM_USERNAME || 'e2e_platform_admin' }}
       E2E_PLATFORM_PASSWORD: ${{ secrets.E2E_PLATFORM_PASSWORD || secrets.E2E_PASSWORD }}
