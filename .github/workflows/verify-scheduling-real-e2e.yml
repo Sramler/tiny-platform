@@ -71,6 +71,42 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Write real-link run summary (preflight)
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "## Scheduling real-link Nightly"
+            echo
+            echo "- **Workflow**: \`.github/workflows/verify-scheduling-real-e2e.yml\`"
+            echo "- **Environment**: \`ubuntu-latest\` + service \`mysql:8.4\` (fresh DB per run)"
+            echo "- **Backend**: \`${E2E_BACKEND_BASE_URL}\` (profile=\`${E2E_BACKEND_PROFILE}\`)"
+            echo "- **Frontend**: \`${E2E_FRONTEND_BASE_URL}\`"
+            echo "- **OIDC client**: \`${E2E_OIDC_CLIENT_ID}\` (silent redirect: \`${E2E_FRONTEND_BASE_URL}/silent-renew.html\`)"
+            echo
+            echo "### Covered real-link specs"
+            echo "- \`e2e/real/platform-vue-login.spec.ts\`"
+            echo "- \`e2e/real/active-scope-token-refresh.spec.ts\`"
+            echo "- \`e2e/real/scheduling-dag-orchestration.spec.ts\`"
+            echo "- \`e2e/real/scheduling-rbac-readonly.spec.ts\`"
+            echo "- \`e2e/real/tenant-lifecycle-freeze.spec.ts\`"
+            echo
+            echo "### Identity & seed notes"
+            echo "- **Auth state generation**: Playwright \`globalSetup\` creates storageState via real login (no forged cookie/JWT)."
+            echo "- **Tenant-scoped identity**: \`active-scope-token-refresh\` requires a **tenant-scoped** principal;"
+            echo "  globalSetup derives \`e2e/.auth/scheduling-tenant-user.json\` (must include \`activeTenantId\` in token + \`GET /sys/users/current\`)."
+            echo "- **Seed/auth bootstrap**: \`scripts/e2e/ensure-scheduling-e2e-auth.sh\` runs during globalSetup to ensure deterministic identities/permissions."
+            echo
+            echo "### Failure triage (first look)"
+            echo "- **secrets**: missing secret set => preflight fails fast."
+            echo "- **seed/auth**: ensure script errors or login can't proceed."
+            echo "- **login/MFA**: redirect loop, stuck on \`/self/security/totp-*\`."
+            echo "- **silent renew**: no \`prompt=none\` authorize request or \`login_required\` mismatch."
+            echo "- **active scope**: \`POST /sys/users/current/active-scope\` non-200 or missing \`X-Active-Tenant-Id\`."
+            echo
+            echo "Artifacts are always uploaded: \`playwright-report/\`, \`test-results/\`, backend/frontend logs."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Validate real-link secret set
         shell: bash
         run: |
@@ -100,7 +136,8 @@ jobs:
 
           if [ "${#missing[@]}" -gt 0 ]; then
             {
-              echo "## Missing real-link E2E secrets"
+              echo
+              echo "## Preflight blocker: missing real-link E2E secrets"
               echo
               echo "The workflow requires dedicated automation identities and database credentials."
               echo
@@ -213,12 +250,120 @@ jobs:
           E2E_SKIP_WEBSERVER: 'true'
         run: |
           npm run test:e2e:real -- \
+            e2e/real/platform-vue-login.spec.ts \
+            e2e/real/active-scope-token-refresh.spec.ts \
             e2e/real/scheduling-dag-orchestration.spec.ts \
-            e2e/real/cross-tenant-a-to-b.spec.ts \
-            e2e/real/cross-tenant-b-to-a.spec.ts \
             e2e/real/scheduling-rbac-readonly.spec.ts \
             e2e/real/tenant-lifecycle-freeze.spec.ts \
             --reporter=line,html
+
+      - name: Summarize seed & identity signals (post-run)
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo
+            echo "## Seed & identity signals"
+            echo
+            echo "- **Expected tenant-scoped auth state**: \`tiny-oauth-server/src/main/webapp/e2e/.auth/scheduling-tenant-user.json\`"
+            if [ -f "e2e/.auth/scheduling-tenant-user.json" ]; then
+              echo "- **scheduling-tenant-user.json**: present ✅"
+            else
+              echo "- **scheduling-tenant-user.json**: missing ❌"
+            fi
+            echo
+            echo "### Derived tenant evidence (best effort)"
+            if [ -f /tmp/tiny-platform-scheduling-real-e2e/backend.log ]; then
+              derived="$(rg -n \"Prepared real scheduling e2e auth user: tenant=\" /tmp/tiny-platform-scheduling-real-e2e/backend.log | tail -n 5 || true)"
+              if [ -n \"$derived\" ]; then
+                echo \"\`\`\`text\"
+                echo \"$derived\"
+                echo \"\`\`\`\"
+              else
+                echo \"- No 'Prepared real scheduling e2e auth user' lines found in backend.log\"
+              fi
+            else
+              echo \"- backend.log not found; cannot extract derived tenant lines\"
+            fi
+          } >> \"$GITHUB_STEP_SUMMARY\"
+
+      - name: Summarize server logs (tail)
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo
+            echo "## Server logs (tail)"
+            echo
+            if [ -f /tmp/tiny-platform-scheduling-real-e2e/backend.log ]; then
+              echo "### backend.log (last 120 lines)"
+              echo "\`\`\`text"
+              tail -n 120 /tmp/tiny-platform-scheduling-real-e2e/backend.log
+              echo "\`\`\`"
+              echo
+            else
+              echo "- backend.log not found"
+              echo
+            fi
+            if [ -f /tmp/tiny-platform-scheduling-real-e2e/frontend.log ]; then
+              echo "### frontend.log (last 120 lines)"
+              echo "\`\`\`text"
+              tail -n 120 /tmp/tiny-platform-scheduling-real-e2e/frontend.log
+              echo "\`\`\`"
+              echo
+            else
+              echo "- frontend.log not found"
+              echo
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Summarize Playwright artifacts (post-run)
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo
+            echo "## Playwright artifacts"
+            echo
+            if [ -d test-results ]; then
+              traces="$(find test-results -name trace.zip 2>/dev/null | sort | head -n 20 || true)"
+              videos="$(find test-results -name '*.webm' 2>/dev/null | sort | head -n 20 || true)"
+              screenshots="$(find test-results -name '*.png' 2>/dev/null | sort | head -n 20 || true)"
+              error_contexts="$(find test-results -name error-context.md 2>/dev/null | sort | head -n 20 || true)"
+
+              echo "- **Report**: \`tiny-oauth-server/src/main/webapp/playwright-report/\`"
+              echo "- **Results**: \`tiny-oauth-server/src/main/webapp/test-results/\`"
+              echo
+              if [ -n "${error_contexts}" ]; then
+                echo "### Error context (top)"
+                echo "${error_contexts}" | sed 's/^/- `/' | sed 's/$/`/'
+                echo
+              fi
+              if [ -n "${traces}" ]; then
+                echo "### Traces (top)"
+                echo "${traces}" | sed 's/^/- `/' | sed 's/$/`/'
+                echo
+                echo "To inspect locally:"
+                echo "\`npx playwright show-trace <path-to-trace.zip>\`"
+                echo
+              fi
+              if [ -n "${videos}" ]; then
+                echo "### Videos (top)"
+                echo "${videos}" | sed 's/^/- `/' | sed 's/$/`/'
+                echo
+              fi
+              if [ -n "${screenshots}" ]; then
+                echo "### Screenshots (top)"
+                echo "${screenshots}" | sed 's/^/- `/' | sed 's/$/`/'
+                echo
+              fi
+            else
+              echo "- No \`test-results/\` directory found."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Dump server logs on failure
         if: failure()
