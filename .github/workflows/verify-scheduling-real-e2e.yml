@@ -275,18 +275,18 @@ jobs:
             echo
             echo "### Derived tenant evidence (best effort)"
             if [ -f /tmp/tiny-platform-scheduling-real-e2e/backend.log ]; then
-              derived="$(rg -n \"Prepared real scheduling e2e auth user: tenant=\" /tmp/tiny-platform-scheduling-real-e2e/backend.log | tail -n 5 || true)"
-              if [ -n \"$derived\" ]; then
-                echo \"\`\`\`text\"
-                echo \"$derived\"
-                echo \"\`\`\`\"
+              derived="$(rg -n "Prepared real scheduling e2e auth user: tenant=" /tmp/tiny-platform-scheduling-real-e2e/backend.log | tail -n 5 || true)"
+              if [ -n "$derived" ]; then
+                echo "\`\`\`text"
+                echo "$derived"
+                echo "\`\`\`"
               else
-                echo \"- No 'Prepared real scheduling e2e auth user' lines found in backend.log\"
+                echo "- No 'Prepared real scheduling e2e auth user' lines found in backend.log"
               fi
             else
-              echo \"- backend.log not found; cannot extract derived tenant lines\"
+              echo "- backend.log not found; cannot extract derived tenant lines"
             fi
-          } >> \"$GITHUB_STEP_SUMMARY\"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Summarize server logs (tail)
         if: always()
