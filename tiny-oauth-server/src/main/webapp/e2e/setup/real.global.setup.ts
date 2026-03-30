@@ -9,6 +9,7 @@ const webappRoot = path.resolve(__dirname, '..', '..')
 const backendRoot = path.resolve(webappRoot, '..', '..', '..')
 const authDir = path.resolve(webappRoot, 'e2e/.auth')
 const authStatePath = path.resolve(authDir, 'scheduling-user.json')
+const tenantScopedAuthStatePath = path.resolve(authDir, 'scheduling-tenant-user.json')
 const secondaryAuthStatePath = path.resolve(authDir, 'tenant-b-user.json')
 const readonlyAuthStatePath = path.resolve(authDir, 'scheduling-readonly-user.json')
 const platformAuthStatePath = path.resolve(authDir, 'platform-admin-user.json')
@@ -82,12 +83,26 @@ export function shouldCreateTenantViaApi(
 async function prepareAuthState() {
   await fs.mkdir(authDir, { recursive: true })
   await fs.rm(authStatePath, { force: true })
+  await fs.rm(tenantScopedAuthStatePath, { force: true })
   await fs.rm(secondaryAuthStatePath, { force: true })
   await fs.rm(readonlyAuthStatePath, { force: true })
   await fs.rm(platformAuthStatePath, { force: true })
   await fs.writeFile(secondaryAuthStatePath, EMPTY_STORAGE_STATE, 'utf8')
   await fs.writeFile(readonlyAuthStatePath, EMPTY_STORAGE_STATE, 'utf8')
   await fs.writeFile(platformAuthStatePath, EMPTY_STORAGE_STATE, 'utf8')
+  await fs.writeFile(tenantScopedAuthStatePath, EMPTY_STORAGE_STATE, 'utf8')
+}
+
+function deriveTenantCodeForTenantScope(primaryTenantCode: string, platformTenantCode: string): string {
+  // 目标：避免 TenantContextFilter 将该 tenant 推断为 PLATFORM tenant。
+  // 当 primary 与 platform tenant 相等时，为本用例派生一个不同的 tenant code。
+  if (primaryTenantCode.trim().toLowerCase() !== platformTenantCode.trim().toLowerCase()) {
+    return primaryTenantCode.trim()
+  }
+  const base = primaryTenantCode.trim().toLowerCase()
+  // 简单派生：在末尾加 -t，满足 tenant code pattern 且总长度 <= 32
+  const candidate = `${base}-t`
+  return candidate.length <= 32 ? candidate : candidate.slice(0, 32)
 }
 
 async function ensureTenantViaApi(authStateFilePath: string, targetTenantCode: string) {
@@ -117,6 +132,12 @@ async function ensureTenantViaApi(authStateFilePath: string, targetTenantCode: s
     return
   }
 
+  const safeTenantCode = normalizedTargetTenantCode
+    .replace(/[^a-z0-9_]/gi, '_')
+    .slice(0, 11) // keep username length <= 20 (e2e_init_ prefix)
+  const initialAdminPassword = process.env.E2E_INITIAL_ADMIN_PASSWORD ?? 'Tianye0903.'
+  const initialAdminUsername = `e2e_init_${safeTenantCode}`
+
   const createResponse = await fetch(`${backendBaseURL}/sys/tenants`, {
     method: 'POST',
     headers: {
@@ -128,6 +149,11 @@ async function ensureTenantViaApi(authStateFilePath: string, targetTenantCode: s
       code: normalizedTargetTenantCode,
       name: `E2E租户(${normalizedTargetTenantCode})`,
       enabled: true,
+      // TenantServiceImpl.create() requires initial admin credentials.
+      initialAdminUsername,
+      initialAdminNickname: `E2E初始管理员(${normalizedTargetTenantCode})`,
+      initialAdminPassword,
+      initialAdminConfirmPassword: initialAdminPassword,
     }),
   })
 
@@ -363,6 +389,27 @@ function resolveReadonlyIdentityEnv(): ResolvedIdentityEnv | null {
 
 export default async function globalSetup() {
   await prepareAuthState()
+
+  const createPrimaryTenantViaApi = process.env.E2E_CREATE_PRIMARY_TENANT_VIA_API === 'true'
+  if (createPrimaryTenantViaApi) {
+    const primaryTenantCode = process.env.E2E_TENANT_CODE?.trim()
+    if (!primaryTenantCode) {
+      throw new Error('E2E_CREATE_PRIMARY_TENANT_VIA_API=true 但缺少 E2E_TENANT_CODE')
+    }
+    const platformIdentityEnv = resolvePlatformIdentityEnv()
+    if (!platformIdentityEnv) {
+      throw new Error(
+        'E2E_CREATE_PRIMARY_TENANT_VIA_API=true 需要完整的平台自动化身份配置：E2E_PLATFORM_USERNAME / E2E_PLATFORM_PASSWORD / E2E_PLATFORM_TOTP_SECRET（以及可选 E2E_PLATFORM_TOTP_CODE）'
+      )
+    }
+    ensureDeterministicE2EAuthFor({
+      ...platformIdentityEnv,
+      E2E_SKIP_SCHEDULING_ADMIN_AUTH: 'true',
+    })
+    generateAuthStateFor(platformIdentityEnv, platformAuthStatePath)
+    await ensureTenantViaApi(platformAuthStatePath, primaryTenantCode)
+  }
+
   ensureDeterministicE2EAuth()
   await runMysqlSeed()
   generateAuthState()
@@ -374,6 +421,29 @@ export default async function globalSetup() {
   if (!primaryAuthExists) {
     throw new Error(
       `real-link globalSetup: 未生成主身份登录态 ${authStatePath}。请确认后端与前端已启动且 E2E_TENANT_CODE/E2E_USERNAME/E2E_PASSWORD/E2E_TOTP_SECRET 已配置，并查看 generate-auth-state.mjs 的登录输出。`,
+    )
+  }
+
+  // 生成“租户态真实身份”的登录态（避免 PLATFORM 计算导致 activeTenantId 为空）。
+  // 仅针对本用例派生：不改动后端契约，也不要求手工编辑 e2e/.auth/*.json。
+  const primaryTenantCodeValue = process.env.E2E_TENANT_CODE!
+  const platformTenantCodeValue = (process.env.E2E_PLATFORM_TENANT_CODE ?? 'default').trim()
+  const tenantScopeTenantCode = deriveTenantCodeForTenantScope(primaryTenantCodeValue, platformTenantCodeValue)
+
+  if (tenantScopeTenantCode.trim().toLowerCase() === primaryTenantCodeValue.trim().toLowerCase()) {
+    await fs.copyFile(authStatePath, tenantScopedAuthStatePath)
+  } else {
+    ensureDeterministicE2EAuthFor({ E2E_TENANT_CODE: tenantScopeTenantCode })
+    generateAuthStateFor({ E2E_TENANT_CODE: tenantScopeTenantCode }, tenantScopedAuthStatePath)
+  }
+
+  const scopedAuthExists = await fs
+    .access(tenantScopedAuthStatePath)
+    .then(() => true)
+    .catch(() => false)
+  if (!scopedAuthExists) {
+    throw new Error(
+      `real-link globalSetup: 未生成租户态登录态 ${tenantScopedAuthStatePath}（tenant=${tenantScopeTenantCode}）。请确认派生 tenant 已成功完成 ensure-scheduling-e2e-auth 与 generate-auth-state.mjs。`,
     )
   }
 
@@ -398,7 +468,10 @@ export default async function globalSetup() {
         'secondary/readonly real-link 需要平台自动化身份去调用 /sys/tenants，请提供 E2E_PLATFORM_USERNAME / E2E_PLATFORM_PASSWORD / E2E_PLATFORM_TOTP_SECRET',
       )
     }
-    ensureDeterministicE2EAuthFor(platformIdentityEnv)
+    ensureDeterministicE2EAuthFor({
+      ...platformIdentityEnv,
+      E2E_SKIP_SCHEDULING_ADMIN_AUTH: 'true',
+    })
     generateAuthStateFor(platformIdentityEnv, platformAuthStatePath)
     tenantBootstrapAuthStatePath = platformAuthStatePath
     platformAuthGenerated = true
@@ -406,7 +479,10 @@ export default async function globalSetup() {
 
   const platformIdentityEnv = resolvePlatformIdentityEnv()
   if (platformIdentityEnv && !platformAuthGenerated) {
-    ensureDeterministicE2EAuthFor(platformIdentityEnv)
+    ensureDeterministicE2EAuthFor({
+      ...platformIdentityEnv,
+      E2E_SKIP_SCHEDULING_ADMIN_AUTH: 'true',
+    })
     generateAuthStateFor(platformIdentityEnv, platformAuthStatePath)
   }
 

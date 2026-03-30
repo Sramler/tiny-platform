@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Real-link E2E：幂等准备调度/平台治理权限与用户（口径与 permission/resource 的 normalized_tenant_id 一致）。
+# 内嵌 sys_idempotent_token DDL 仅用于缺少迁移的本地沙箱，与权限链“历史兼容”无关。
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -175,13 +177,25 @@ Long findTenantIdByCode(Connection connection, String rawTenantCode) throws SQLE
 }
 
 Long findResourceId(Connection connection, Long tenantId, String name) throws SQLException {
-    try (PreparedStatement ps = connection.prepareStatement(
-            "SELECT id FROM resource WHERE tenant_id = ? AND name = ? LIMIT 1")) {
-        ps.setLong(1, tenantId);
-        ps.setString(2, name);
-        try (ResultSet rs = ps.executeQuery()) {
-            if (rs.next()) {
-                return rs.getLong(1);
+    if (tenantId == null) {
+        try (PreparedStatement ps = connection.prepareStatement(
+                "SELECT id FROM resource WHERE tenant_id IS NULL AND name = ? LIMIT 1")) {
+            ps.setString(1, name);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getLong(1);
+                }
+            }
+        }
+    } else {
+        try (PreparedStatement ps = connection.prepareStatement(
+                "SELECT id FROM resource WHERE tenant_id = ? AND name = ? LIMIT 1")) {
+            ps.setLong(1, tenantId);
+            ps.setString(2, name);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getLong(1);
+                }
             }
         }
     }
@@ -189,13 +203,25 @@ Long findResourceId(Connection connection, Long tenantId, String name) throws SQ
 }
 
 Long findResourceIdByPermission(Connection connection, Long tenantId, String permission) throws SQLException {
-    try (PreparedStatement ps = connection.prepareStatement(
-            "SELECT id FROM resource WHERE tenant_id = ? AND permission = ? LIMIT 1")) {
-        ps.setLong(1, tenantId);
-        ps.setString(2, permission);
-        try (ResultSet rs = ps.executeQuery()) {
-            if (rs.next()) {
-                return rs.getLong(1);
+    if (tenantId == null) {
+        try (PreparedStatement ps = connection.prepareStatement(
+                "SELECT id FROM resource WHERE tenant_id IS NULL AND permission = ? LIMIT 1")) {
+            ps.setString(1, permission);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getLong(1);
+                }
+            }
+        }
+    } else {
+        try (PreparedStatement ps = connection.prepareStatement(
+                "SELECT id FROM resource WHERE tenant_id = ? AND permission = ? LIMIT 1")) {
+            ps.setLong(1, tenantId);
+            ps.setString(2, permission);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getLong(1);
+                }
             }
         }
     }
@@ -222,9 +248,9 @@ void verifyDefaultSchedulingBootstrapTemplate(Connection connection) throws SQLE
         throw new IllegalStateException("默认租户 default 不存在，无法作为调度 E2E 权限模板来源");
     }
 
-    Long adminRoleId = findRoleIdByCode(connection, defaultTenantId, "ROLE_ADMIN");
+    Long adminRoleId = findRoleIdByCode(connection, defaultTenantId, "ROLE_TENANT_ADMIN");
     if (adminRoleId == null) {
-        throw new IllegalStateException("默认租户缺少 ROLE_ADMIN，无法作为调度 E2E 权限模板来源");
+        throw new IllegalStateException("默认租户缺少 ROLE_TENANT_ADMIN，无法作为调度 E2E 权限模板来源");
     }
 
     String[] requiredAuthorities = new String[] {
@@ -244,16 +270,30 @@ void verifyDefaultSchedulingBootstrapTemplate(Connection connection) throws SQLE
     Long wildcardResourceId = findResourceIdByPermission(connection, defaultTenantId, "scheduling:*");
     boolean wildcardBound = false;
     try (PreparedStatement ps = connection.prepareStatement(
-            "SELECT 1 FROM role_resource WHERE tenant_id = ? AND role_id = ? AND resource_id = ? LIMIT 1")) {
-        ps.setLong(1, defaultTenantId);
-        ps.setLong(2, adminRoleId);
-        ps.setLong(3, wildcardResourceId);
+            """
+            SELECT 1
+            FROM role_permission rp
+            JOIN permission p
+              ON p.id = rp.permission_id
+             AND p.normalized_tenant_id = rp.normalized_tenant_id
+            JOIN resource res
+              ON res.id = ?
+             AND res.tenant_id = rp.tenant_id
+             AND res.normalized_tenant_id = rp.normalized_tenant_id
+            WHERE rp.tenant_id = ?
+              AND rp.role_id = ?
+              AND p.permission_code = res.permission
+            LIMIT 1
+            """)) {
+        ps.setLong(1, wildcardResourceId);
+        ps.setLong(2, defaultTenantId);
+        ps.setLong(3, adminRoleId);
         try (ResultSet rs = ps.executeQuery()) {
             wildcardBound = rs.next();
         }
     }
     if (!wildcardBound) {
-        throw new IllegalStateException("默认租户 ROLE_ADMIN 未绑定 scheduling:*，调度 E2E 权限模板不完整");
+        throw new IllegalStateException("默认租户 ROLE_TENANT_ADMIN 未绑定 scheduling:*，调度 E2E 权限模板不完整");
     }
 
     System.out.println("Verified default scheduling bootstrap template: tenant=default");
@@ -297,10 +337,64 @@ Long ensureAuthorityResource(Connection connection, Long tenantId, String author
     throw new IllegalStateException("创建调度 authority 资源失败: " + authority);
 }
 
-void ensureRoleResource(Connection connection, Long tenantId, Long roleId, Long resourceId) throws SQLException {
+Long ensureHiddenAuthorityResource(Connection connection, Long tenantId, String authority, String title) throws SQLException {
+    Long resourceId = findResourceIdByPermission(connection, tenantId, authority);
+    if (resourceId == null) {
+        resourceId = findResourceId(connection, tenantId, authority);
+    }
+    if (resourceId != null) {
+        try (PreparedStatement ps = connection.prepareStatement(
+                "UPDATE resource SET name = ?, permission = ?, title = ?, hidden = 1, type = 2, resource_level = ?, enabled = 1, updated_at = NOW() WHERE id = ?")) {
+            ps.setString(1, authority);
+            ps.setString(2, authority);
+            ps.setString(3, title);
+            ps.setString(4, tenantId == null ? "PLATFORM" : "TENANT");
+            ps.setLong(5, resourceId);
+            ps.executeUpdate();
+        }
+        return resourceId;
+    }
+
     try (PreparedStatement ps = connection.prepareStatement(
-            "INSERT IGNORE INTO role_resource (tenant_id, role_id, resource_id) VALUES (?, ?, ?)")) {
-        ps.setLong(1, tenantId);
+            "INSERT INTO resource (tenant_id, name, url, uri, method, icon, show_icon, sort, component, redirect, hidden, keep_alive, title, permission, type, parent_id, enabled, resource_level, created_at, updated_at) " +
+                    "VALUES (?, ?, '', '', '', '', 0, 999, '', '', 1, 0, ?, ?, 2, NULL, 1, ?, NOW(), NOW())",
+            Statement.RETURN_GENERATED_KEYS)) {
+        if (tenantId == null) {
+            ps.setNull(1, Types.BIGINT);
+        } else {
+            ps.setLong(1, tenantId);
+        }
+        ps.setString(2, authority);
+        ps.setString(3, title);
+        ps.setString(4, authority);
+        ps.setString(5, tenantId == null ? "PLATFORM" : "TENANT");
+        ps.executeUpdate();
+        try (ResultSet rs = ps.getGeneratedKeys()) {
+            if (rs.next()) {
+                return rs.getLong(1);
+            }
+        }
+    }
+    throw new IllegalStateException("创建治理 authority 资源失败: " + authority);
+}
+
+void ensureRolePermissionBinding(Connection connection, Long tenantId, Long roleId, Long resourceId) throws SQLException {
+    try (PreparedStatement ps = connection.prepareStatement(
+            """
+            INSERT IGNORE INTO role_permission (tenant_id, role_id, permission_id)
+            SELECT ?, ?, p.id
+            FROM resource r
+            JOIN permission p
+              ON p.permission_code = r.permission
+             AND p.normalized_tenant_id = r.normalized_tenant_id
+            WHERE r.id = ?
+              AND p.enabled = 1
+            """)) {
+        if (tenantId == null) {
+            ps.setNull(1, Types.BIGINT);
+        } else {
+            ps.setLong(1, tenantId);
+        }
         ps.setLong(2, roleId);
         ps.setLong(3, resourceId);
         ps.executeUpdate();
@@ -309,7 +403,28 @@ void ensureRoleResource(Connection connection, Long tenantId, Long roleId, Long 
 
 void ensureSchedulingAdminAuthority(Connection connection, Long tenantId, Long roleId) throws SQLException {
     Long wildcardResourceId = ensureAuthorityResource(connection, tenantId, "scheduling:*", "调度全权限");
-    ensureRoleResource(connection, tenantId, roleId, wildcardResourceId);
+    ensureRolePermissionBinding(connection, tenantId, roleId, wildcardResourceId);
+    // HeaderBar 打开「切换作用域」时会拉取 ORG/DEPT 选项（GET /sys/org/list）；调度 E2E 身份需具备读权限，否则会 403 并被前端导向异常页。
+    Long orgListResourceId = ensureHiddenAuthorityResource(connection, tenantId, "system:org:list", "组织列表");
+    ensureRolePermissionBinding(connection, tenantId, roleId, orgListResourceId);
+}
+
+void ensurePlatformGovernanceAuthorities(Connection connection, Long tenantId, Long roleId) throws SQLException {
+    String[][] authorities = new String[][] {
+            {"system:tenant:list", "租户列表访问"},
+            {"system:tenant:view", "租户详情访问"},
+            {"system:tenant:freeze", "租户冻结"},
+            {"system:tenant:unfreeze", "租户解冻"},
+            {"system:tenant:decommission", "租户下线"},
+            {"system:audit:auth:view", "授权审计查看"},
+            {"system:audit:auth:export", "授权审计导出"},
+            {"system:audit:authentication:view", "认证审计查看"},
+            {"system:audit:authentication:export", "认证审计导出"}
+    };
+    for (String[] authority : authorities) {
+        Long resourceId = ensureHiddenAuthorityResource(connection, tenantId, authority[0], authority[1]);
+        ensureRolePermissionBinding(connection, tenantId, roleId, resourceId);
+    }
 }
 
 try (Connection connection = DriverManager.getConnection(jdbcUrl, dbUser, dbPassword)) {
@@ -360,19 +475,23 @@ try (Connection connection = DriverManager.getConnection(jdbcUrl, dbUser, dbPass
         }
     }
 
-    String normalizedTenantCode = tenantCode.trim().toLowerCase(Locale.ROOT);
+String normalizedTenantCode = tenantCode.trim().toLowerCase(Locale.ROOT);
+    String platformTenantCode = System.getenv("E2E_PLATFORM_TENANT_CODE");
+String skipSchedulingAdminAuth = System.getenv("E2E_SKIP_SCHEDULING_ADMIN_AUTH");
     String tenantDisplayName = "default".equals(normalizedTenantCode)
             ? "默认租户"
             : "E2E租户(" + normalizedTenantCode + ")";
     Long tenantId = ensureTenant(connection, normalizedTenantCode, tenantDisplayName);
 
     Long userId = null;
+    Long existingUserTenantId = null;
     try (PreparedStatement ps = connection.prepareStatement(
-            "SELECT id FROM user WHERE username = ? LIMIT 1")) {
+            "SELECT id, tenant_id FROM user WHERE username = ? LIMIT 1")) {
         ps.setString(1, username);
         try (ResultSet rs = ps.executeQuery()) {
             if (rs.next()) {
                 userId = rs.getLong(1);
+                existingUserTenantId = rs.getLong(2);
             }
         }
     }
@@ -395,6 +514,32 @@ try (Connection connection = DriverManager.getConnection(jdbcUrl, dbUser, dbPass
         throw new IllegalStateException("创建 E2E 用户失败: " + username);
     }
 
+    // 共享测试库约定：user.username 全局唯一。若同名行落在其它 tenant，迁移到当前 E2E tenant，
+    // 否则按租户登录会解析失败（幂等）。
+    if (existingUserTenantId != null && !existingUserTenantId.equals(tenantId)) {
+        try (PreparedStatement ps = connection.prepareStatement(
+                "UPDATE user SET tenant_id = ? WHERE id = ?")) {
+            ps.setLong(1, tenantId);
+            ps.setLong(2, userId);
+            ps.executeUpdate();
+        }
+        // authentication methods 也依赖 tenant_id
+        // 若目标 tenant 已存在同一 user_id 的 authentication_method（历史残留/重复执行），会触发唯一约束。
+        // 先删除目标 tenant 的同一 user_id 记录，再迁移 tenant_id，保证幂等。
+        try (PreparedStatement ps = connection.prepareStatement(
+                "DELETE FROM user_authentication_method WHERE tenant_id = ? AND user_id = ?")) {
+            ps.setLong(1, tenantId);
+            ps.setLong(2, userId);
+            ps.executeUpdate();
+        }
+        try (PreparedStatement ps = connection.prepareStatement(
+                "UPDATE user_authentication_method SET tenant_id = ? WHERE user_id = ?")) {
+            ps.setLong(1, tenantId);
+            ps.setLong(2, userId);
+            ps.executeUpdate();
+        }
+    }
+
     try (PreparedStatement ps = connection.prepareStatement(
             "UPDATE user SET enabled = true, account_non_expired = true, account_non_locked = true, credentials_non_expired = true, failed_login_count = 0, last_failed_login_at = NULL WHERE id = ?")) {
         ps.setLong(1, userId);
@@ -413,7 +558,7 @@ try (Connection connection = DriverManager.getConnection(jdbcUrl, dbUser, dbPass
 
     Long roleId = null;
     try (PreparedStatement ps = connection.prepareStatement(
-            "SELECT id FROM role WHERE tenant_id = ? AND code = 'ROLE_ADMIN' LIMIT 1")) {
+            "SELECT id FROM role WHERE tenant_id = ? AND code = 'ROLE_TENANT_ADMIN' LIMIT 1")) {
         ps.setLong(1, tenantId);
         try (ResultSet rs = ps.executeQuery()) {
             if (rs.next()) {
@@ -426,7 +571,7 @@ try (Connection connection = DriverManager.getConnection(jdbcUrl, dbUser, dbPass
                 ? "系统管理员"
                 : "系统管理员(" + tenantCode + ")";
         try (PreparedStatement ps = connection.prepareStatement(
-                "INSERT INTO role (tenant_id, code, name, description, builtin, enabled) VALUES (?, 'ROLE_ADMIN', ?, 'real e2e admin role', true, true)",
+                "INSERT INTO role (tenant_id, code, name, description, builtin, enabled) VALUES (?, 'ROLE_TENANT_ADMIN', ?, 'real e2e tenant admin role', true, true)",
                 Statement.RETURN_GENERATED_KEYS)) {
             ps.setLong(1, tenantId);
             ps.setString(2, roleDisplayName);
@@ -439,7 +584,7 @@ try (Connection connection = DriverManager.getConnection(jdbcUrl, dbUser, dbPass
         }
     }
     if (roleId == null) {
-        throw new IllegalStateException("未找到或创建 ROLE_ADMIN 失败");
+        throw new IllegalStateException("未找到或创建 ROLE_TENANT_ADMIN 失败");
     }
 
     try (PreparedStatement ps = connection.prepareStatement(
@@ -450,7 +595,39 @@ try (Connection connection = DriverManager.getConnection(jdbcUrl, dbUser, dbPass
         ps.setLong(4, tenantId);
         ps.executeUpdate();
     }
-    ensureSchedulingAdminAuthority(connection, tenantId, roleId);
+    if (!"true".equalsIgnoreCase(skipSchedulingAdminAuth)) {
+        ensureSchedulingAdminAuthority(connection, tenantId, roleId);
+    } else {
+        System.out.println("Skipped scheduling admin authority bootstrap for user: " + username);
+    }
+    if (platformTenantCode != null && !platformTenantCode.isBlank()
+            && normalizedTenantCode.equals(platformTenantCode.trim().toLowerCase(Locale.ROOT))) {
+        // When the active tenant is configured as PLATFORM tenant, login scope becomes PLATFORM.
+        // Provide at least one platform role assignment so AuthUserResolutionService can resolve the user.
+        Long platformAdminRoleId = null;
+        try (PreparedStatement ps = connection.prepareStatement(
+                "SELECT id FROM role WHERE tenant_id IS NULL AND code = 'ROLE_PLATFORM_ADMIN' LIMIT 1")) {
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    platformAdminRoleId = rs.getLong(1);
+                }
+            }
+        }
+        if (platformAdminRoleId == null) {
+            throw new IllegalStateException("缺少平台角色 ROLE_PLATFORM_ADMIN，无法完成 PLATFORM 登录所需赋权");
+        }
+        try (PreparedStatement ps = connection.prepareStatement(
+                "INSERT IGNORE INTO role_assignment " +
+                        "(principal_type, principal_id, role_id, tenant_id, scope_type, scope_id, status, start_time, end_time, granted_by, granted_at) " +
+                        "VALUES ('USER', ?, ?, NULL, 'PLATFORM', NULL, 'ACTIVE', NOW(), NULL, NULL, NOW())")) {
+            ps.setLong(1, userId);
+            ps.setLong(2, platformAdminRoleId);
+            ps.executeUpdate();
+        }
+        // Tenant management (/sys/tenants) is platform-scope only (TenantContext.activeScopeType=PLATFORM).
+        // Bind system:tenant:* to ROLE_PLATFORM_ADMIN; resource/permission rows use this tenantId so joins match generated normalized_tenant_id.
+        ensurePlatformGovernanceAuthorities(connection, tenantId, platformAdminRoleId);
+    }
 
     String passwordJson = "{\"password\":\"{noop}" + rawPassword + "\",\"created_by\":\"real-e2e\",\"hash_algorithm\":\"noop\",\"password_version\":1,\"password_changed_at\":\"" + Instant.now().toString() + "\"}";
     try (PreparedStatement ps = connection.prepareStatement(
@@ -533,7 +710,7 @@ try (Connection connection = DriverManager.getConnection(jdbcUrl, dbUser, dbPass
 
         Long bindRoleId = null;
         try (PreparedStatement ps = connection.prepareStatement(
-                "SELECT id FROM role WHERE tenant_id = ? AND code = 'ROLE_ADMIN' LIMIT 1")) {
+                "SELECT id FROM role WHERE tenant_id = ? AND code = 'ROLE_TENANT_ADMIN' LIMIT 1")) {
             ps.setLong(1, bindTenantId);
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
@@ -546,7 +723,7 @@ try (Connection connection = DriverManager.getConnection(jdbcUrl, dbUser, dbPass
                     ? "系统管理员(bind)"
                     : "系统管理员(bind-" + effectiveBindTenantCode + ")";
             try (PreparedStatement ps = connection.prepareStatement(
-                    "INSERT INTO role (tenant_id, code, name, description, builtin, enabled) VALUES (?, 'ROLE_ADMIN', ?, 'real e2e admin role (bind)', true, true)",
+                    "INSERT INTO role (tenant_id, code, name, description, builtin, enabled) VALUES (?, 'ROLE_TENANT_ADMIN', ?, 'real e2e tenant admin role (bind)', true, true)",
                     Statement.RETURN_GENERATED_KEYS)) {
                 ps.setLong(1, bindTenantId);
                 ps.setString(2, bindRoleDisplayName);
@@ -559,7 +736,7 @@ try (Connection connection = DriverManager.getConnection(jdbcUrl, dbUser, dbPass
             }
         }
         if (bindRoleId == null) {
-            throw new IllegalStateException("未找到或创建 ROLE_ADMIN (bind) 失败");
+            throw new IllegalStateException("未找到或创建 ROLE_TENANT_ADMIN (bind) 失败");
         }
 
         try (PreparedStatement ps = connection.prepareStatement(
@@ -679,7 +856,7 @@ try (Connection connection = DriverManager.getConnection(jdbcUrl, dbUser, dbPass
         }
 
         Long schedulingReadResourceId = ensureAuthorityResource(connection, readonlyTenantId, "scheduling:console:view", "调度控制面查看权限");
-        ensureRoleResource(connection, readonlyTenantId, readonlyRoleId, schedulingReadResourceId);
+        ensureRolePermissionBinding(connection, readonlyTenantId, readonlyRoleId, schedulingReadResourceId);
 
         try (PreparedStatement ps = connection.prepareStatement(
                 "DELETE FROM role_assignment WHERE tenant_id = ? AND principal_type = 'USER' AND principal_id = ? AND role_id <> ?")) {
