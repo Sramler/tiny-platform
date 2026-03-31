@@ -39,6 +39,7 @@ jobs:
       E2E_DB_PORT: 3306
       E2E_DB_NAME: tiny_web
       E2E_DB_USER: root
+      E2E_DB_USERNAME: root
       E2E_DB_PASSWORD: ${{ secrets.E2E_DB_PASSWORD }}
       E2E_MYSQL_HOST: 127.0.0.1
       E2E_MYSQL_PORT: 3306
@@ -174,6 +175,51 @@ jobs:
           set -euo pipefail
           mvn -pl tiny-oauth-server -DskipTests test-compile
 
+      - name: Migrate CI DB to RBAC3 baseline (Liquibase)
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          mvn -pl tiny-oauth-server \
+            -DskipTests \
+            liquibase:update
+
+      - name: Verify RBAC3 schema health after migration
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/tiny-platform-scheduling-real-e2e
+          chmod +x tiny-oauth-server/scripts/verify-rbac3-schema-health.sh
+          tiny-oauth-server/scripts/verify-rbac3-schema-health.sh | tee /tmp/tiny-platform-scheduling-real-e2e/rbac3-schema-health.log
+          role_state="$(mysql -h "${E2E_DB_HOST}" -P "${E2E_DB_PORT}" -u "${E2E_DB_USER}" -p"${E2E_DB_PASSWORD}" -N -s -e \
+            "SELECT IF(COUNT(*)>0,'present','missing') FROM information_schema.tables WHERE table_schema='${E2E_DB_NAME}' AND table_name='role';")"
+          permission_state="$(mysql -h "${E2E_DB_HOST}" -P "${E2E_DB_PORT}" -u "${E2E_DB_USER}" -p"${E2E_DB_PASSWORD}" -N -s -e \
+            "SELECT IF(COUNT(*)>0,'present','missing') FROM information_schema.tables WHERE table_schema='${E2E_DB_NAME}' AND table_name='permission';")"
+          role_permission_state="$(mysql -h "${E2E_DB_HOST}" -P "${E2E_DB_PORT}" -u "${E2E_DB_USER}" -p"${E2E_DB_PASSWORD}" -N -s -e \
+            "SELECT IF(COUNT(*)>0,'present','missing') FROM information_schema.tables WHERE table_schema='${E2E_DB_NAME}' AND table_name='role_permission';")"
+          changelog_state="$(mysql -h "${E2E_DB_HOST}" -P "${E2E_DB_PORT}" -u "${E2E_DB_USER}" -p"${E2E_DB_PASSWORD}" -N -s -e \
+            "SELECT IF(COUNT(*)>0,'yes','no') FROM information_schema.tables WHERE table_schema='${E2E_DB_NAME}' AND table_name='DATABASECHANGELOG';")"
+          {
+            echo
+            echo "## RBAC3 schema health (post-migration)"
+            echo
+            echo "- **DB target**: \`${E2E_DB_HOST}:${E2E_DB_PORT}/${E2E_DB_NAME}\`"
+            echo "- **DB user**: \`${E2E_DB_USER}\`"
+            echo
+            echo "### RBAC3 schema summary"
+            echo "- role: ${role_state}"
+            echo "- permission: ${permission_state}"
+            echo "- role_permission: ${role_permission_state}"
+            echo "- changelog recent entries: ${changelog_state}"
+            echo "- migration status: passed"
+            echo
+            echo "### Health output"
+            echo "\`\`\`text"
+            cat /tmp/tiny-platform-scheduling-real-e2e/rbac3-schema-health.log
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Start backend
         env:
           SPRING_PROFILES_ACTIVE: ${{ env.E2E_BACKEND_PROFILE }}
@@ -249,14 +295,66 @@ jobs:
         working-directory: ${{ github.workspace }}
         run: |
           set -euo pipefail
-          table_count="$(mysql -h "${E2E_DB_HOST}" -P "${E2E_DB_PORT}" -u "${E2E_DB_USER}" -p"${E2E_DB_PASSWORD}" -N -s -e \
+          role_table_count="$(mysql -h "${E2E_DB_HOST}" -P "${E2E_DB_PORT}" -u "${E2E_DB_USER}" -p"${E2E_DB_PASSWORD}" -N -s -e \
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '${E2E_DB_NAME}' AND table_name = 'role';")"
+          permission_table_count="$(mysql -h "${E2E_DB_HOST}" -P "${E2E_DB_PORT}" -u "${E2E_DB_USER}" -p"${E2E_DB_PASSWORD}" -N -s -e \
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '${E2E_DB_NAME}' AND table_name = 'permission';")"
+          role_permission_table_count="$(mysql -h "${E2E_DB_HOST}" -P "${E2E_DB_PORT}" -u "${E2E_DB_USER}" -p"${E2E_DB_PASSWORD}" -N -s -e \
             "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '${E2E_DB_NAME}' AND table_name = 'role_permission';")"
-          if [ "${table_count:-0}" -lt 1 ]; then
+          changelog_count="$(mysql -h "${E2E_DB_HOST}" -P "${E2E_DB_PORT}" -u "${E2E_DB_USER}" -p"${E2E_DB_PASSWORD}" -N -s -e \
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '${E2E_DB_NAME}' AND table_name = 'DATABASECHANGELOG';")"
+          recent_changelog="$(mysql -h "${E2E_DB_HOST}" -P "${E2E_DB_PORT}" -u "${E2E_DB_USER}" -p"${E2E_DB_PASSWORD}" -N -s -e \
+            "SELECT id, author, filename, dateexecuted FROM ${E2E_DB_NAME}.DATABASECHANGELOG ORDER BY dateexecuted DESC LIMIT 5;" 2>/dev/null || true)"
+          role_state="missing"
+          permission_state="missing"
+          role_permission_state="missing"
+          if [ "${role_table_count:-0}" -gt 0 ]; then role_state="present"; fi
+          if [ "${permission_table_count:-0}" -gt 0 ]; then permission_state="present"; fi
+          if [ "${role_permission_table_count:-0}" -gt 0 ]; then role_permission_state="present"; fi
+          changelog_state="no"
+          if [ "${changelog_count:-0}" -gt 0 ]; then changelog_state="yes"; fi
+          migration_status="passed"
+          if [ "${role_permission_table_count:-0}" -lt 1 ]; then migration_status="failed"; fi
+          {
+            echo
+            echo "## Authorization schema baseline details"
+            echo
+            echo "- **DB target**: \`${E2E_DB_HOST}:${E2E_DB_PORT}/${E2E_DB_NAME}\`"
+            echo "- **DB user**: \`${E2E_DB_USER}\`"
+            echo
+            echo "### RBAC3 schema summary"
+            echo "- role: ${role_state}"
+            echo "- permission: ${permission_state}"
+            echo "- role_permission: ${role_permission_state}"
+            echo "- changelog recent entries: ${changelog_state}"
+            echo "- migration status: ${migration_status}"
+            echo
+            echo "- **table role**: ${role_table_count:-0}"
+            echo "- **table permission**: ${permission_table_count:-0}"
+            echo "- **table role_permission**: ${role_permission_table_count:-0}"
+            echo "- **DATABASECHANGELOG present**: ${changelog_count:-0}"
+            if [ "${changelog_count:-0}" -gt 0 ] && [ -n "${recent_changelog}" ]; then
+              echo
+              echo "### DATABASECHANGELOG recent rows"
+              echo "\`\`\`text"
+              echo "${recent_changelog}"
+              echo "\`\`\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "${role_permission_table_count:-0}" -lt 1 ]; then
             {
               echo
               echo "## Preflight blocker: authorization schema baseline not met"
               echo
               echo "Missing required table: \`${E2E_DB_NAME}.role_permission\`."
+              echo
+              if [ "${changelog_count:-0}" -lt 1 ]; then
+                echo "Likely cause: Liquibase did not run on target DB (or DB connection points to wrong schema)."
+              elif [ "${role_table_count:-0}" -gt 0 ] || [ "${permission_table_count:-0}" -gt 0 ]; then
+                echo "Likely cause: partial migration / inconsistent schema state (possible historical MARK_RAN)."
+              else
+                echo "Likely cause: target DB is not migrated to RBAC3 baseline."
+              fi
               echo
               echo "Nightly real-link no longer supports legacy \`role_resource\` fallback in auth bootstrap."
               echo "Please run database migration to the authorization baseline before rerun."
@@ -409,6 +507,9 @@ jobs:
           fi
           if [ -f /tmp/tiny-platform-scheduling-real-e2e/frontend.log ]; then
             cp /tmp/tiny-platform-scheduling-real-e2e/frontend.log e2e-artifacts/frontend.log
+          fi
+          if [ -f /tmp/tiny-platform-scheduling-real-e2e/rbac3-schema-health.log ]; then
+            cp /tmp/tiny-platform-scheduling-real-e2e/rbac3-schema-health.log e2e-artifacts/rbac3-schema-health.log
           fi
 
       - name: Upload real-link artifacts
