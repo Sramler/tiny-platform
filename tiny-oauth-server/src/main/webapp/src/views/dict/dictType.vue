@@ -201,6 +201,10 @@ import { message, Modal } from 'ant-design-vue'
 import { useThrottle } from '@/utils/debounce'
 import { getActiveTenantId } from '@/utils/tenant'
 import {
+  ACTIVE_SCOPE_CHANGED_EVENT,
+  shouldReloadTenantControlPlaneOnActiveScopeChange,
+} from '@/utils/activeScopeEvents'
+import {
   getDictTypeList,
   createDictType,
   updateDictType,
@@ -548,11 +552,11 @@ function handleDelete(record: any) {
 }
 
 function isReadonlyTypeRecord(record: any) {
-  return Number(record?.recordTenantId) === 0 || Boolean(record?.builtinLocked)
+  return record?.recordTenantId == null || Boolean(record?.builtinLocked)
 }
 
 function getTypeReadonlyReason(record: any) {
-  if (Number(record?.recordTenantId) === 0) {
+  if (record?.recordTenantId == null) {
     return '平台字典只读，不允许修改'
   }
   if (record?.builtinLocked) {
@@ -579,9 +583,18 @@ async function handleRefresh() {
 
 const throttledRefresh = useThrottle(handleRefresh, 1000)
 
+/** 租户字典控制面：见 `shouldReloadTenantControlPlaneOnActiveScopeChange`（统一边界，禁止页面各自推断 scope）。 */
+function handleActiveScopeChanged() {
+  if (!shouldReloadTenantControlPlaneOnActiveScopeChange()) {
+    return
+  }
+  loadData()
+}
+
 onMounted(() => {
   updateTableBodyHeight()
   window.addEventListener('resize', updateTableBodyHeight)
+  window.addEventListener(ACTIVE_SCOPE_CHANGED_EVENT, handleActiveScopeChanged)
   loadData()
 })
 
@@ -593,6 +606,7 @@ defineExpose({
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', updateTableBodyHeight)
+  window.removeEventListener(ACTIVE_SCOPE_CHANGED_EVENT, handleActiveScopeChanged)
 })
 
 watch(

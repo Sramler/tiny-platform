@@ -1,6 +1,9 @@
 package com.tiny.platform.core.oauth.service;
 
+import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationAudit;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 /**
  * 认证审计服务接口
@@ -54,4 +57,25 @@ public interface AuthenticationAuditService {
      */
     void recordTokenRevoke(String username, Long userId, String tokenId,
                           HttpServletRequest request);
+
+    /**
+     * 记录服务端会话被强制下线事件。
+     */
+    void recordSessionRevoke(String username, Long userId, String sessionId,
+                             HttpServletRequest request);
+
+    /**
+     * 分页查询认证审计记录。
+     */
+    Page<UserAuthenticationAudit> search(AuthenticationAuditQuery query, Pageable pageable);
+
+    /**
+     * 统计认证审计概览。
+     */
+    AuthenticationAuditSummary summarize(AuthenticationAuditQuery query);
+
+    /**
+     * 查询当前用户的登录历史。
+     */
+    Page<UserAuthenticationAudit> listCurrentUserLoginHistory(Long userId, Pageable pageable);
 }

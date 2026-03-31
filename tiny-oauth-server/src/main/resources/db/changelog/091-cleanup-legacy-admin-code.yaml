@@ -1,0 +1,38 @@
+databaseChangeLog:
+  - changeSet:
+      id: 091-cleanup-legacy-admin-code
+      author: tiny
+      comment: 遗留下线：将历史 code='ADMIN' 的角色记录统一为 ROLE_ADMIN，消除双码并存
+      preConditions:
+        - onFail: CONTINUE
+        - onError: HALT
+        - dbms:
+            type: mysql
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              -- 如果已有 ROLE_ADMIN 记录，则删除 code='ADMIN' 的重复记录
+              -- 同时将 role_resource / role_assignment 中引用旧 ADMIN role_id 的迁移到 ROLE_ADMIN
+              SET @admin_id = (SELECT id FROM `role` WHERE code = 'ADMIN' AND tenant_id = 1 LIMIT 1);
+              SET @role_admin_id = (SELECT id FROM `role` WHERE code = 'ROLE_ADMIN' AND tenant_id = 1 LIMIT 1);
+
+              -- 仅在旧 ADMIN 记录存在且 ROLE_ADMIN 记录也存在时执行迁移
+              -- 将旧 ADMIN 的 role_resource 关联迁移到 ROLE_ADMIN（跳过已存在的）
+              INSERT IGNORE INTO `role_resource` (role_id, resource_id)
+              SELECT @role_admin_id, resource_id
+              FROM `role_resource`
+              WHERE role_id = @admin_id AND @admin_id IS NOT NULL AND @role_admin_id IS NOT NULL;
+
+              -- 将旧 ADMIN 的 role_assignment 迁移到 ROLE_ADMIN（跳过已存在的）
+              UPDATE IGNORE `role_assignment`
+              SET role_id = @role_admin_id
+              WHERE role_id = @admin_id AND @admin_id IS NOT NULL AND @role_admin_id IS NOT NULL;
+
+              -- 清理旧 ADMIN 角色的 role_resource 关联
+              DELETE FROM `role_resource` WHERE role_id = @admin_id AND @admin_id IS NOT NULL AND @role_admin_id IS NOT NULL;
+
+              -- 删除旧 ADMIN 角色记录
+              DELETE FROM `role` WHERE code = 'ADMIN' AND id = @admin_id AND @admin_id IS NOT NULL AND @role_admin_id IS NOT NULL;

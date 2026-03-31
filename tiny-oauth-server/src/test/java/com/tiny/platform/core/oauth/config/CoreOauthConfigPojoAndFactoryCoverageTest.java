@@ -10,7 +10,6 @@ import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.web.authentication.WebAuthenticationDetails;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.beans.factory.ObjectProvider;
@@ -102,7 +101,25 @@ class CoreOauthConfigPojoAndFactoryCoverageTest {
         TenantRepository tenantRepository = mock(TenantRepository.class);
         @SuppressWarnings("unchecked")
         ObjectProvider<PermissionVersionService> permissionVersionProvider = mock(ObjectProvider.class);
-        assertThat(securityConfig.tenantContextFilter(tenantRepository, permissionVersionProvider)).isNotNull();
+        @SuppressWarnings("unchecked")
+        ObjectProvider<com.tiny.platform.infrastructure.tenant.config.PlatformTenantResolver> platformTenantResolverProvider = mock(ObjectProvider.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<com.tiny.platform.infrastructure.auth.audit.service.AuthorizationAuditService> authorizationAuditServiceProvider = mock(ObjectProvider.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<com.tiny.platform.core.oauth.tenant.TenantLifecycleReadPolicy> tenantLifecycleReadPolicyProvider = mock(ObjectProvider.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<com.tiny.platform.infrastructure.auth.org.repository.OrganizationUnitRepository> organizationUnitRepositoryProvider = mock(ObjectProvider.class);
+        @SuppressWarnings("unchecked")
+        ObjectProvider<com.tiny.platform.infrastructure.auth.org.repository.UserUnitRepository> userUnitRepositoryProvider = mock(ObjectProvider.class);
+        assertThat(securityConfig.tenantContextFilter(
+                tenantRepository,
+                permissionVersionProvider,
+                platformTenantResolverProvider,
+                authorizationAuditServiceProvider,
+                tenantLifecycleReadPolicyProvider,
+                organizationUnitRepositoryProvider,
+                userUnitRepositoryProvider
+        )).isNotNull();
 
         UserRepository userRepository = mock(UserRepository.class);
         AuthUserResolutionService authUserResolutionService = mock(AuthUserResolutionService.class);

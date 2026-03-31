@@ -1,9 +1,11 @@
 package com.tiny.platform.core.oauth.service.impl;
 
 import com.tiny.platform.core.oauth.model.UserAvatar;
+import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.core.oauth.repository.UserAvatarRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.infrastructure.auth.user.service.AvatarService;
+import com.tiny.platform.infrastructure.tenant.service.TenantQuotaService;
 import javax.imageio.ImageIO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -47,11 +49,15 @@ public class AvatarServiceImpl implements AvatarService {
 
     private final UserAvatarRepository avatarRepository;
     private final UserRepository userRepository;
+    private final TenantQuotaService tenantQuotaService;
 
     @Autowired
-    public AvatarServiceImpl(UserAvatarRepository avatarRepository, UserRepository userRepository) {
+    public AvatarServiceImpl(UserAvatarRepository avatarRepository,
+                             UserRepository userRepository,
+                             TenantQuotaService tenantQuotaService) {
         this.avatarRepository = avatarRepository;
         this.userRepository = userRepository;
+        this.tenantQuotaService = tenantQuotaService;
     }
 
     @Override
@@ -80,6 +86,19 @@ public class AvatarServiceImpl implements AvatarService {
             // 6. 验证用户是否存在（不需要加载整个 User 实体）
             if (!userRepository.existsById(userId)) {
                 throw new IllegalArgumentException("用户不存在: " + userId);
+            }
+
+            long existingSize = avatarRepository.findByUserId(userId)
+                .map(UserAvatar::getFileSize)
+                .map(Integer::longValue)
+                .orElse(0L);
+            long additionalBytes = Math.max(0L, processedData.length - existingSize);
+            if (tenantQuotaService != null) {
+                tenantQuotaService.assertStorageQuotaAvailable(
+                    TenantContext.getActiveTenantId(),
+                    additionalBytes,
+                    "上传头像"
+                );
             }
 
             // 7. 先删除已存在的头像（如果存在）

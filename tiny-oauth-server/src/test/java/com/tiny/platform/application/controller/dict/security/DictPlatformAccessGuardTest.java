@@ -13,18 +13,29 @@ class DictPlatformAccessGuardTest {
     private final DictPlatformAccessGuard guard = new DictPlatformAccessGuard();
 
     @Test
-    void canManagePlatformDict_whenRoleAdmin_returnsTrue() {
+    void canManagePlatformDict_whenHasDictPlatformManage_returnsTrue() {
         UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                 "admin",
                 "n/a",
-                List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
+                List.of(new SimpleGrantedAuthority("dict:platform:manage"))
         );
 
         assertThat(guard.canManagePlatformDict(authentication)).isTrue();
     }
 
     @Test
-    void canManagePlatformDict_whenNoAdminAuthority_returnsFalse() {
+    void canManagePlatformDict_whenOnlyRoleAdmin_returnsFalse() {
+        UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
+                "admin",
+                "n/a",
+                List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
+        );
+
+        assertThat(guard.canManagePlatformDict(authentication)).isFalse();
+    }
+
+    @Test
+    void canManagePlatformDict_whenNoRelevantAuthority_returnsFalse() {
         UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                 "user",
                 "n/a",

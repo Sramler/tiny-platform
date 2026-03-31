@@ -13,6 +13,9 @@ const userApiMocks = vi.hoisted(() => ({
 
 const securityApiMocks = vi.hoisted(() => ({
   getSecurityStatus: vi.fn(),
+  getSecuritySessions: vi.fn(),
+  revokeSecuritySession: vi.fn(),
+  revokeOtherSecuritySessions: vi.fn(),
 }))
 
 const routerMocks = vi.hoisted(() => ({
@@ -26,6 +29,9 @@ const tenantContextMocks = vi.hoisted(() => ({
 
 vi.mock('@/api/security', () => ({
   getSecurityStatus: securityApiMocks.getSecurityStatus,
+  getSecuritySessions: securityApiMocks.getSecuritySessions,
+  revokeSecuritySession: securityApiMocks.revokeSecuritySession,
+  revokeOtherSecuritySessions: securityApiMocks.revokeOtherSecuritySessions,
 }))
 
 vi.mock('@/api/user', () => ({
@@ -81,6 +87,7 @@ describe('Setting.vue', () => {
     tenantContextMocks.getActiveTenantId.mockReturnValue('9')
     userApiMocks.getCurrentUser.mockResolvedValue({ id: 1, username: 'alice', nickname: 'Alice' })
     securityApiMocks.getSecurityStatus.mockResolvedValue({ activeTenantId: 9, disableMfa: false, forceMfa: false })
+    securityApiMocks.getSecuritySessions.mockResolvedValue({ activeTenantId: 9, currentSessionId: 'sid-1', content: [] })
   })
 
   it('should render setting page title', async () => {
@@ -101,6 +108,8 @@ describe('Setting.vue', () => {
           'a-spin': PassThrough,
           'a-alert': PassThrough,
           'a-modal': PassThrough,
+          'a-empty': PassThrough,
+          'a-tag': PassThrough,
           UserOutlined: PassThrough,
         },
       },
@@ -130,6 +139,8 @@ describe('Setting.vue', () => {
           'a-spin': PassThrough,
           'a-alert': PassThrough,
           'a-modal': PassThrough,
+          'a-empty': PassThrough,
+          'a-tag': PassThrough,
           UserOutlined: PassThrough,
         },
       },
@@ -144,5 +155,52 @@ describe('Setting.vue', () => {
       path: '/self/security/totp-bind',
       query: { activeTenantId: '11' },
     })
+  })
+
+  it('should load active sessions and allow revoking other sessions', async () => {
+    securityApiMocks.getSecuritySessions.mockResolvedValue({
+      activeTenantId: 9,
+      currentSessionId: 'sid-current',
+      content: [
+        { sessionId: 'sid-current', current: true, userAgent: 'Chrome Current' },
+        { sessionId: 'sid-other', current: false, userAgent: 'Safari Other' },
+      ],
+    })
+    securityApiMocks.revokeOtherSecuritySessions.mockResolvedValue({ success: true, revokedCount: 1, message: '其他会话已强制下线' })
+
+    const wrapper = mount(Setting, {
+      global: {
+        stubs: {
+          'a-card': CardStub,
+          'a-tabs': PassThrough,
+          'a-tab-pane': PassThrough,
+          'a-form': PassThrough,
+          'a-form-item': PassThrough,
+          'a-input': PassThrough,
+          'a-input-password': PassThrough,
+          'a-button': ButtonStub,
+          'a-upload': PassThrough,
+          'a-avatar': PassThrough,
+          'a-space': PassThrough,
+          'a-spin': PassThrough,
+          'a-alert': PassThrough,
+          'a-modal': PassThrough,
+          'a-empty': PassThrough,
+          'a-tag': PassThrough,
+          UserOutlined: PassThrough,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(securityApiMocks.getSecuritySessions).toHaveBeenCalled()
+    expect(wrapper.text()).toContain('活跃会话')
+    expect(wrapper.text()).toContain('Safari Other')
+
+    const revokeOthersButton = wrapper.findAll('button').find((button) => button.text().includes('下线其他会话'))
+    expect(revokeOthersButton).toBeDefined()
+    await revokeOthersButton!.trigger('click')
+
+    expect(securityApiMocks.revokeOtherSecuritySessions).toHaveBeenCalled()
   })
 })

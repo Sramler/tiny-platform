@@ -49,6 +49,10 @@ public class UserCreateUpdateDto {
     private Boolean credentialsNonExpired = true;
     
     private List<Long> roleIds;
+
+    private List<Long> unitIds;
+
+    private Long primaryUnitId;
     
     // 构造函数
     public UserCreateUpdateDto() {}
@@ -148,6 +152,22 @@ public class UserCreateUpdateDto {
     
     public void setRoleIds(List<Long> roleIds) {
         this.roleIds = roleIds;
+    }
+
+    public List<Long> getUnitIds() {
+        return unitIds;
+    }
+
+    public void setUnitIds(List<Long> unitIds) {
+        this.unitIds = unitIds;
+    }
+
+    public Long getPrimaryUnitId() {
+        return primaryUnitId;
+    }
+
+    public void setPrimaryUnitId(Long primaryUnitId) {
+        this.primaryUnitId = primaryUnitId;
     }
     
     /**

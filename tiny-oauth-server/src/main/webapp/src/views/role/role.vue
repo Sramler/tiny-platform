@@ -276,9 +276,15 @@
       :open="showBatchUserTransfer"
       :all-users="allUsers"
       :model-value="batchSelectedUserIds"
+      :scope-type="batchUserScopeType"
+      :scope-id="batchUserScopeId ?? undefined"
+      :org-options="roleUserScopeOrgOptions"
+      :dept-options="roleUserScopeDeptOptions"
       title="批量配置用户"
       @update:open="showBatchUserTransfer = $event"
       @update:modelValue="handleBatchUserAssign"
+      @update:scopeType="handleBatchUserScopeTypeChange"
+      @update:scopeId="handleBatchUserScopeIdChange"
     />
     <!-- 新增：资源分配弹窗 -->
     <ResourceTransfer
@@ -297,7 +303,7 @@
 import { ref, computed, onMounted, watch, nextTick, onBeforeUnmount } from 'vue'
 import { useAuth } from '@/auth/auth'
 // 引入角色API
-import { roleList, createRole, updateRole, deleteRole } from '@/api/role'
+import { roleList, createRole, updateRole, deleteRole, getRoleUsers, updateRoleUsers } from '@/api/role'
 // 引入Antd组件和图标
 import { message, Modal } from 'ant-design-vue'
 import { ReloadOutlined, SettingOutlined, HolderOutlined, PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons-vue'
@@ -305,30 +311,39 @@ import VueDraggable from 'vuedraggable'
 import RoleForm from './RoleForm.vue'
 import UserTransfer from './UserTransfer.vue' // 引入用户分配弹窗组件
 import { userList } from '@/api/user' // 引入用户API
+import { getOrgList } from '@/api/org'
 import ResourceTransfer from './ResourceTransfer.vue' // 资源分配弹窗组件
+import { getRuntimeUiActions } from '@/api/resource'
 import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import {
+  ROLE_MANAGEMENT_READ_AUTHORITIES,
+} from '@/constants/permission'
 
 // 查询条件
 const query = ref({ name: '', code: '' })
 const { user } = useAuth()
 const roleAuthorities = computed(() => new Set(extractAuthoritiesFromJwt(user.value?.access_token)))
-const ROLE_MANAGEMENT_READ_AUTHORITIES = ['ROLE_ADMIN', 'system:role:list']
-const ROLE_MANAGEMENT_CREATE_AUTHORITIES = ['ROLE_ADMIN', 'system:role:create']
-const ROLE_MANAGEMENT_UPDATE_AUTHORITIES = ['ROLE_ADMIN', 'system:role:edit']
-const ROLE_MANAGEMENT_DELETE_AUTHORITIES = ['ROLE_ADMIN', 'system:role:delete', 'system:role:batch-delete']
-const ROLE_ASSIGN_USER_AUTHORITIES = ['ROLE_ADMIN', 'system:user:assign-role', 'system:user:role:assign']
-const ROLE_ASSIGN_PERMISSION_AUTHORITIES = ['ROLE_ADMIN', 'system:role:assign-permission', 'system:role:permission:assign']
 
 function hasAnyRoleAuthority(requiredAuthorities: string[]) {
   return requiredAuthorities.some((authority) => roleAuthorities.value.has(authority))
 }
 
 const canReadRoleManagement = computed(() => hasAnyRoleAuthority(ROLE_MANAGEMENT_READ_AUTHORITIES))
-const canCreateRoleManagement = computed(() => hasAnyRoleAuthority(ROLE_MANAGEMENT_CREATE_AUTHORITIES))
-const canUpdateRoleManagement = computed(() => hasAnyRoleAuthority(ROLE_MANAGEMENT_UPDATE_AUTHORITIES))
-const canDeleteRoleManagement = computed(() => hasAnyRoleAuthority(ROLE_MANAGEMENT_DELETE_AUTHORITIES))
-const canAssignRoleUsers = computed(() => hasAnyRoleAuthority(ROLE_ASSIGN_USER_AUTHORITIES))
-const canAssignRolePermissions = computed(() => hasAnyRoleAuthority(ROLE_ASSIGN_PERMISSION_AUTHORITIES))
+const runtimeUiActionPermissions = ref<Set<string>>(new Set())
+const runtimeUiActionsLoaded = ref(false)
+
+function hasRuntimeUiAction(permission: string) {
+  if (!runtimeUiActionsLoaded.value) {
+    return false
+  }
+  return runtimeUiActionPermissions.value.has(permission)
+}
+
+const canCreateRoleManagement = computed(() => hasRuntimeUiAction('system:role:create'))
+const canUpdateRoleManagement = computed(() => hasRuntimeUiAction('system:role:edit'))
+const canDeleteRoleManagement = computed(() => hasRuntimeUiAction('system:role:delete') || hasRuntimeUiAction('system:role:batch-delete'))
+const canAssignRoleUsers = computed(() => hasRuntimeUiAction('system:user:role:assign'))
+const canAssignRolePermissions = computed(() => hasRuntimeUiAction('system:role:permission:assign'))
 // 表格数据
 const tableData = ref<any[]>([])
 // 加载状态
@@ -456,10 +471,13 @@ async function loadData() {
   if (!canReadRoleManagement.value) {
     tableData.value = []
     pagination.value.total = 0
+    runtimeUiActionsLoaded.value = false
+    runtimeUiActionPermissions.value = new Set()
     return
   }
   loading.value = true
   try {
+    await loadRuntimeUiActions()
     const params = {
       name: query.value.name.trim(),
       code: query.value.code.trim(),
@@ -475,6 +493,35 @@ async function loadData() {
     pagination.value.total = 0
   } finally {
     loading.value = false
+  }
+}
+
+function resolveRuntimePagePath() {
+  const currentPath = window?.location?.pathname
+  if (currentPath && currentPath !== '/') {
+    return currentPath
+  }
+  return '/system/role'
+}
+
+async function loadRuntimeUiActions() {
+  if (!canReadRoleManagement.value) {
+    runtimeUiActionsLoaded.value = false
+    runtimeUiActionPermissions.value = new Set()
+    return
+  }
+  try {
+    const actions = await getRuntimeUiActions(resolveRuntimePagePath())
+    runtimeUiActionPermissions.value = new Set(
+      (actions || [])
+        .map((action) => action.permission)
+        .filter((permission): permission is string => Boolean(permission)),
+    )
+    runtimeUiActionsLoaded.value = true
+  } catch (error) {
+    console.error('加载角色页运行时按钮载体失败:', error)
+    runtimeUiActionsLoaded.value = false
+    runtimeUiActionPermissions.value = new Set()
   }
 }
 // 查询
@@ -665,6 +712,8 @@ watch(canReadRoleManagement, (enabled) => {
   tableData.value = []
   selectedRowKeys.value = []
   pagination.value.total = 0
+  runtimeUiActionsLoaded.value = false
+  runtimeUiActionPermissions.value = new Set()
 })
 // 抽屉相关
 const drawerVisible = ref(false)
@@ -708,6 +757,58 @@ const hasBuiltinSelected = computed(() =>
 const showBatchUserTransfer = ref(false) // 控制弹窗显示
 const allUsers = ref<any[]>([]) // 所有可选用户
 const batchSelectedUserIds = ref<string[]>([]) // 已分配用户ID
+const batchUserScopeType = ref<'TENANT' | 'ORG' | 'DEPT'>('TENANT')
+const batchUserScopeId = ref<number | null>(null)
+const roleUserScopeUnits = ref<any[]>([])
+
+const roleUserScopeOrgOptions = computed(() =>
+  roleUserScopeUnits.value
+    .filter((unit: any) => unit.status === 'ACTIVE' && unit.unitType === 'ORG')
+    .map((unit: any) => ({ value: Number(unit.id), label: unit.name })),
+)
+
+const roleUserScopeDeptOptions = computed(() =>
+  roleUserScopeUnits.value
+    .filter((unit: any) => unit.status === 'ACTIVE' && unit.unitType === 'DEPT')
+    .map((unit: any) => ({ value: Number(unit.id), label: unit.name })),
+)
+
+function defaultUserScopeId(scopeType: 'ORG' | 'DEPT') {
+  const options = scopeType === 'ORG' ? roleUserScopeOrgOptions.value : roleUserScopeDeptOptions.value
+  const firstOption = options[0]
+  return firstOption ? Number(firstOption.value) : null
+}
+
+async function ensureRoleUserScopeUnitsLoaded() {
+  if (roleUserScopeUnits.value.length > 0) {
+    return
+  }
+  try {
+    roleUserScopeUnits.value = await getOrgList()
+  } catch (error: any) {
+    roleUserScopeUnits.value = []
+    message.warning(error?.message || '组织/部门列表加载失败，当前仅可配置租户级用户')
+  }
+}
+
+async function loadRoleUsersForScope() {
+  if (selectedRowKeys.value.length === 0) {
+    batchSelectedUserIds.value = []
+    return
+  }
+  if (batchUserScopeType.value !== 'TENANT' && batchUserScopeId.value == null) {
+    batchSelectedUserIds.value = []
+    return
+  }
+  const roleId = Number(selectedRowKeys.value[0])
+  const userIds = await getRoleUsers(
+    roleId,
+    batchUserScopeType.value === 'TENANT'
+      ? undefined
+      : { scopeType: batchUserScopeType.value, scopeId: batchUserScopeId.value },
+  )
+  batchSelectedUserIds.value = (userIds || []).map((id: any) => String(id))
+}
 
 // 打开批量配置用户弹窗
 async function openBatchUserTransfer() {
@@ -722,18 +823,22 @@ async function openBatchUserTransfer() {
     title: u.username + (u.nickname ? `（${u.nickname}）` : ''),
     ...u
   }))
-  // 这里只取第一个选中角色的用户作为默认（如需交集/并集可自定义）
-  if (selectedRowKeys.value.length > 0) {
-    // 取第一个角色ID
-    const roleId = selectedRowKeys.value[0]
-    // 查询该角色已分配用户
-    const { getRoleUsers } = await import('@/api/role')
-    const userIds = await getRoleUsers(Number(roleId))
-    batchSelectedUserIds.value = (userIds || []).map((id: any) => String(id))
-  } else {
-    batchSelectedUserIds.value = []
-  }
+  await ensureRoleUserScopeUnitsLoaded()
+  batchUserScopeType.value = 'TENANT'
+  batchUserScopeId.value = null
+  await loadRoleUsersForScope()
   showBatchUserTransfer.value = true
+}
+
+async function handleBatchUserScopeTypeChange(scopeType: 'TENANT' | 'ORG' | 'DEPT') {
+  batchUserScopeType.value = scopeType
+  batchUserScopeId.value = scopeType === 'TENANT' ? null : defaultUserScopeId(scopeType)
+  await loadRoleUsersForScope()
+}
+
+async function handleBatchUserScopeIdChange(scopeId: number) {
+  batchUserScopeId.value = scopeId != null ? Number(scopeId) : null
+  await loadRoleUsersForScope()
 }
 // 批量保存分配用户
 async function handleBatchUserAssign(newUserIds: string[]) {
@@ -741,15 +846,24 @@ async function handleBatchUserAssign(newUserIds: string[]) {
     message.warning('缺少角色用户分配权限')
     return
   }
-  // 对每个选中角色调用 updateRoleUsers
-  const { updateRoleUsers } = await import('@/api/role')
-  for (const roleIdStr of selectedRowKeys.value) {
-    const roleId = Number(roleIdStr)
-    await updateRoleUsers(roleId, newUserIds.map(id => Number(id)))
+  try {
+    const payload = batchUserScopeType.value === 'TENANT'
+      ? newUserIds.map(id => Number(id))
+      : {
+          scopeType: batchUserScopeType.value,
+          scopeId: batchUserScopeId.value ?? undefined,
+          userIds: newUserIds.map(id => Number(id)),
+        }
+    for (const roleIdStr of selectedRowKeys.value) {
+      const roleId = Number(roleIdStr)
+      await updateRoleUsers(roleId, payload)
+    }
+    message.success('批量配置用户成功')
+    showBatchUserTransfer.value = false
+    loadData() // 刷新表格
+  } catch (error: any) {
+    message.error('配置用户失败: ' + (error?.message || '未知错误'))
   }
-  message.success('批量配置用户成功')
-  showBatchUserTransfer.value = false
-  loadData() // 刷新表格
 }
 
 // 控制资源分配弹窗显示
@@ -774,7 +888,7 @@ async function openResourceTransfer() {
   showResourceTransfer.value = true
 }
 // 保存分配资源
-async function handleResourceAssign(newResourceIds: number[]) {
+async function handleResourceAssign(payload: { resourceIds: number[]; permissionIds: number[] }) {
   if (!canAssignRolePermissions.value) {
     message.warning('缺少角色权限分配权限')
     return
@@ -782,7 +896,7 @@ async function handleResourceAssign(newResourceIds: number[]) {
   try {
     // 调用 updateRoleResources 保存角色资源分配
     const { updateRoleResources } = await import('@/api/role')
-    await updateRoleResources(currentRoleId.value, newResourceIds)
+    await updateRoleResources(currentRoleId.value, payload)
     message.success('配置资源成功')
     showResourceTransfer.value = false
     loadData() // 刷新表格

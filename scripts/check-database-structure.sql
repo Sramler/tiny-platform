@@ -75,11 +75,11 @@ SELECT 'user 表数据' as table_name, COUNT(*) as count FROM user
 UNION ALL
 SELECT 'role 表数据', COUNT(*) FROM role
 UNION ALL
-SELECT 'user_role 表数据', COUNT(*) FROM user_role
+SELECT 'tenant_user 表数据', COUNT(*) FROM tenant_user
+UNION ALL
+SELECT 'role_assignment 表数据', COUNT(*) FROM role_assignment
 UNION ALL
 SELECT 'resource 表数据', COUNT(*) FROM resource
-UNION ALL
-SELECT 'role_resource 表数据', COUNT(*) FROM role_resource
 UNION ALL
 SELECT 'user_authentication_method 表数据', COUNT(*) FROM user_authentication_method;
 

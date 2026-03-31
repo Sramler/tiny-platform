@@ -17,6 +17,7 @@ import {
   createSubmitIdempotencyKey,
 } from '@/utils/idempotency'
 import { clearTenantContext, getActiveTenantId, syncTenantContextFromAccessToken } from '@/utils/tenant'
+import { persistentLogger } from '@/utils/logger'
 // 引入 Problem 响应解析工具
 import { extractErrorFromAxios, extractErrorInfo } from '@/utils/problemParser'
 
@@ -234,14 +235,12 @@ service.interceptors.response.use(
       console.log('[401] axios 拦截器检测到 401 错误，URL:', requestUrl)
       
       // 记录持久化日志（避免302跳转清空控制台）
-      import('@/utils/logger').then(({ persistentLogger }) => {
-        persistentLogger.warn('[401] axios 拦截器检测到 401 错误', {
-          url: requestUrl,
-          method: error.config?.method,
-          headers: error.config?.headers,
-          timestamp: new Date().toISOString(),
-        }, requestUrl, 401)
-      })
+      persistentLogger.warn('[401] axios 拦截器检测到 401 错误', {
+        url: requestUrl,
+        method: error.config?.method,
+        headers: error.config?.headers,
+        timestamp: new Date().toISOString(),
+      }, requestUrl, 401)
       
       // ⚠️ 重要：先跳转到 401 页面，不要先调用 logout()
       // 因为 logout() 会触发 window.location.href，会覆盖我们的跳转

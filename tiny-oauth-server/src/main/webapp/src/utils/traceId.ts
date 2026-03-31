@@ -3,6 +3,21 @@
  * 用于生成和管理分布式追踪 ID
  */
 import { ensureCsrfToken, isUnsafeHttpMethod } from '@/utils/csrf'
+import { persistentLogger } from '@/utils/logger'
+import { getActiveTenantId } from '@/utils/tenant'
+
+/**
+ * 401 跳转的最后兜底：避免同步 import `@/router`（会与 router → auth → traceId 形成环）。
+ * 全页跳转场景下与 `router.replace` 等价目标一致。
+ */
+function fallbackNavigateTo401(targetUrl: string): void {
+  try {
+    window.location.assign(targetUrl)
+  } catch (assignError) {
+    console.error('[401] assign 失败:', assignError)
+    alert('认证失败，请手动刷新页面或重新登录')
+  }
+}
 
 /**
  * 生成一个随机十六进制字符串（32 字符，用于 TRACE_ID）
@@ -139,7 +154,6 @@ async function handleUnauthorized(): Promise<void> {
     isRedirectingTo401 = true
 
     // 记录持久化日志（避免302跳转清空控制台）
-    const { persistentLogger } = await import('@/utils/logger')
     persistentLogger.warn('[401] 检测到未授权，准备跳转到 401 页面', {
       currentPath,
       timestamp: new Date().toISOString(),
@@ -196,12 +210,7 @@ async function handleUnauthorized(): Promise<void> {
             console.log('[401] ✅ 已执行 window.location.replace =', targetUrl)
           } catch (replaceError) {
             console.error('[401] ❌ replace 失败:', replaceError)
-            // 最后尝试使用 router（虽然可能被路由守卫拦截）
-            import('@/router').then(({ default: router }) => {
-              router.replace(targetUrl).catch((routerError) => {
-                console.error('[401] ❌ router.replace 也失败:', routerError)
-              })
-            })
+            fallbackNavigateTo401(targetUrl)
           }
         }
       }, 100)
@@ -218,15 +227,7 @@ async function handleUnauthorized(): Promise<void> {
         console.log('[401] ✅ 已执行 window.location.replace =', targetUrl)
       } catch (replaceError) {
         console.error('[401] ❌ replace 也失败:', replaceError)
-
-        // 备选方案2: 使用 router（可能被路由守卫拦截，但至少尝试）
-        import('@/router').then(({ default: router }) => {
-          router.replace(targetUrl).catch((routerError) => {
-            console.error('[401] ❌ router.replace 也失败:', routerError)
-            // 如果所有方法都失败，至少显示一个错误提示
-            alert('认证失败，请手动刷新页面或重新登录')
-          })
-        })
+        fallbackNavigateTo401(targetUrl)
       }
     }
   } else {
@@ -248,7 +249,6 @@ export async function fetchWithTraceId(
 ): Promise<Response> {
   const { timeout = 5000, skipAuthError = false, ...fetchOptions } = options // 默认 5 秒超时
   const optionsWithTraceId = addTraceIdToFetchOptions(fetchOptions)
-  const { getActiveTenantId } = await import('@/utils/tenant')
   const headers = new Headers(optionsWithTraceId.headers)
   const activeTenantId = getActiveTenantId()
   if (activeTenantId) {
@@ -288,7 +288,6 @@ export async function fetchWithTraceId(
       )
 
       // 记录持久化日志（避免302跳转清空控制台）
-      const { persistentLogger } = await import('@/utils/logger')
       persistentLogger.warn(
         `[${statusCode}] fetchWithTraceId 检测到未授权/重定向`,
         {

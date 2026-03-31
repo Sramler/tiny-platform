@@ -20,22 +20,33 @@ import org.springframework.security.web.authentication.WebAuthenticationDetails;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
-import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.http.HttpMethod;
+import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.security.web.util.matcher.OrRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.Set;
 
-import com.tiny.platform.core.oauth.security.LegacyAuthConstants;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationSessionManager;
 import com.tiny.platform.core.oauth.security.PermissionVersionService;
 import com.tiny.platform.core.oauth.service.SecurityService;
+import com.tiny.platform.core.oauth.session.SessionAuditLogoutHandler;
+import com.tiny.platform.core.oauth.session.UserSessionActivityFilter;
+import com.tiny.platform.core.oauth.session.UserSessionHttpSessionListener;
+import com.tiny.platform.core.oauth.session.UserSessionService;
 import com.tiny.platform.core.oauth.tenant.TenantContextFilter;
+import com.tiny.platform.core.oauth.tenant.TenantLifecycleReadPolicy;
+import com.tiny.platform.core.oauth.security.ApiEndpointRequirementFilter;
+import com.tiny.platform.infrastructure.tenant.config.PlatformTenantResolver;
+import com.tiny.platform.infrastructure.auth.resource.service.ResourceService;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.boot.web.servlet.ServletListenerRegistrationBean;
+import org.springframework.security.web.authentication.logout.LogoutHandler;
 
 @Configuration
 @Order(2)
@@ -43,8 +54,8 @@ import org.springframework.beans.factory.ObjectProvider;
 public class DefaultSecurityConfig {
 
     static final RequestMatcher CSRF_PROTECTED_PATHS = new OrRequestMatcher(
-            new AntPathRequestMatcher("/login", "POST"),
-            new AntPathRequestMatcher("/self/security/**", "POST")
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/login"),
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/self/security/**")
     );
 
     private final CorsConfigurationSource corsConfigurationSource;
@@ -59,7 +70,10 @@ public class DefaultSecurityConfig {
                                                           AuthenticationProvider authenticationProvider,
                                                           CustomLoginSuccessHandler customLoginSuccessHandler,
                                                           CustomLoginFailureHandler customLoginFailureHandler,
-                                                          TenantContextFilter tenantContextFilter)
+                                                          TenantContextFilter tenantContextFilter,
+                                                          ApiEndpointRequirementFilter apiEndpointRequirementFilter,
+                                                          UserSessionActivityFilter userSessionActivityFilter,
+                                                          LogoutHandler sessionAuditLogoutHandler)
             throws Exception {
         http
                 .authorizeHttpRequests(authorize -> authorize
@@ -88,7 +102,9 @@ public class DefaultSecurityConfig {
                         // 需要完整登录态，但不要求已完成 TOTP 的安全接口。
                         .requestMatchers(
                                 "/self/security/totp/bind",
-                                "/self/security/totp/check"
+                                "/self/security/totp/check",
+                                "/self/security/sessions",
+                                "/self/security/sessions/**"
                         ).access((authentication, context) ->
                                 new AuthorizationDecision(hasSensitiveSecurityAccess(authentication.get())))
                         .requestMatchers(
@@ -102,7 +118,12 @@ public class DefaultSecurityConfig {
                         .requestMatchers("/self/security/**").denyAll()
                         .anyRequest().authenticated()
                 )
+                .logout(logout -> logout
+                        .addLogoutHandler(sessionAuditLogoutHandler)
+                )
                 .addFilterBefore(tenantContextFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(apiEndpointRequirementFilter, TenantContextFilter.class)
+                .addFilterAfter(userSessionActivityFilter, ApiEndpointRequirementFilter.class)
                 .formLogin(formLogin -> formLogin
                         .loginPage("/login")
                         .loginProcessingUrl("/login")
@@ -120,6 +141,11 @@ public class DefaultSecurityConfig {
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(tinyPlatformJwtAuthenticationConverter())))
                 .authenticationProvider(authenticationProvider);
         return http.build();
+    }
+
+    @Bean
+    public ApiEndpointRequirementFilter apiEndpointRequirementFilter(ResourceService resourceService) {
+        return new ApiEndpointRequirementFilter(resourceService);
     }
 
     @Bean
@@ -164,8 +190,36 @@ public class DefaultSecurityConfig {
 
     @Bean
     public TenantContextFilter tenantContextFilter(TenantRepository tenantRepository,
-                                                   ObjectProvider<PermissionVersionService> permissionVersionServiceProvider) {
-        return new TenantContextFilter(tenantRepository, permissionVersionServiceProvider.getIfAvailable());
+                                                   ObjectProvider<PermissionVersionService> permissionVersionServiceProvider,
+                                                   ObjectProvider<PlatformTenantResolver> platformTenantResolverProvider,
+                                                   ObjectProvider<com.tiny.platform.infrastructure.auth.audit.service.AuthorizationAuditService> authorizationAuditServiceProvider,
+                                                   ObjectProvider<TenantLifecycleReadPolicy> tenantLifecycleReadPolicyProvider,
+                                                   ObjectProvider<com.tiny.platform.infrastructure.auth.org.repository.OrganizationUnitRepository> organizationUnitRepositoryProvider,
+                                                   ObjectProvider<com.tiny.platform.infrastructure.auth.org.repository.UserUnitRepository> userUnitRepositoryProvider) {
+        return new TenantContextFilter(tenantRepository,
+                permissionVersionServiceProvider.getIfAvailable(),
+                platformTenantResolverProvider.getIfAvailable(),
+                authorizationAuditServiceProvider.getIfAvailable(),
+                tenantLifecycleReadPolicyProvider.getIfAvailable(),
+                organizationUnitRepositoryProvider.getIfAvailable(),
+                userUnitRepositoryProvider.getIfAvailable());
+    }
+
+    @Bean
+    public TenantLifecycleReadPolicy tenantLifecycleReadPolicy() {
+        return new TenantLifecycleReadPolicy();
+    }
+
+    @Bean
+    public LogoutHandler sessionAuditLogoutHandler(UserSessionService userSessionService,
+                                                   com.tiny.platform.core.oauth.service.AuthenticationAuditService authenticationAuditService) {
+        return new SessionAuditLogoutHandler(userSessionService, authenticationAuditService);
+    }
+
+    @Bean
+    public ServletListenerRegistrationBean<jakarta.servlet.http.HttpSessionListener> userSessionHttpSessionListener(
+            UserSessionService userSessionService) {
+        return new ServletListenerRegistrationBean<>(new UserSessionHttpSessionListener(userSessionService));
     }
 
     @Bean
@@ -210,6 +264,10 @@ public class DefaultSecurityConfig {
         );
     }
 
+    private static final Set<String> SCHEDULING_PRIVILEGED_PERMISSIONS = Set.of(
+        "scheduling:cluster:view", "scheduling:console:config", "scheduling:*"
+    );
+
     public static boolean hasSchedulingAdminAccess(Authentication authentication) {
         if (!hasSensitiveSecurityAccess(authentication)) {
             return false;
@@ -218,7 +276,7 @@ public class DefaultSecurityConfig {
             return false;
         }
         for (GrantedAuthority authority : authentication.getAuthorities()) {
-            if (LegacyAuthConstants.isAdminAuthority(authority.getAuthority())) {
+            if (SCHEDULING_PRIVILEGED_PERMISSIONS.contains(authority.getAuthority())) {
                 return true;
             }
         }

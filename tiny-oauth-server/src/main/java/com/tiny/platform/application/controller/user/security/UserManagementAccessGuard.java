@@ -1,20 +1,20 @@
 package com.tiny.platform.application.controller.user.security;
 
-import com.tiny.platform.core.oauth.security.LegacyAuthConstants;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 
 import java.util.Set;
 
+/**
+ * 用户管理控制面权限守卫。
+ */
 @Component("userManagementAccessGuard")
 public class UserManagementAccessGuard {
 
-    private static final Set<String> ADMIN_AUTHORITIES = LegacyAuthConstants.ADMIN_AUTHORITIES;
     private static final Set<String> READ_AUTHORITIES = Set.of("system:user:list", "system:user:view");
     private static final Set<String> CREATE_AUTHORITIES = Set.of("system:user:create");
     private static final Set<String> UPDATE_AUTHORITIES = Set.of(
         "system:user:edit",
-        "system:user:assign-role",
         "system:user:role:assign"
     );
     private static final Set<String> DELETE_AUTHORITIES = Set.of(
@@ -60,6 +60,6 @@ public class UserManagementAccessGuard {
         }
         return authentication.getAuthorities().stream()
             .map(grantedAuthority -> grantedAuthority.getAuthority())
-            .anyMatch(authority -> ADMIN_AUTHORITIES.contains(authority) || requiredAuthorities.contains(authority));
+            .anyMatch(requiredAuthorities::contains);
     }
 }

@@ -1,0 +1,66 @@
+databaseChangeLog:
+  - changeSet:
+      id: 063-role-assignment-extend-org-dept-scope
+      author: tiny
+      comment: Phase3：扩展 role_assignment CHECK 约束以支持 ORG/DEPT scope_type
+      preConditions:
+        - onFail: CONTINUE
+        - onError: HALT
+        - dbms:
+            type: mysql
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: false
+            stripComments: false
+            sql: |
+              DROP PROCEDURE IF EXISTS `_063_drop_check_if_exists`;
+        - sql:
+            dbms: mysql
+            splitStatements: false
+            stripComments: false
+            sql: |
+              CREATE PROCEDURE `_063_drop_check_if_exists`()
+              BEGIN
+                IF EXISTS (
+                  SELECT 1 FROM information_schema.TABLE_CONSTRAINTS
+                  WHERE CONSTRAINT_SCHEMA = DATABASE()
+                    AND TABLE_NAME = 'role_assignment'
+                    AND CONSTRAINT_NAME = 'chk_scope_platform'
+                    AND CONSTRAINT_TYPE = 'CHECK'
+                ) THEN
+                  ALTER TABLE `role_assignment` DROP CONSTRAINT `chk_scope_platform`;
+                END IF;
+
+                IF EXISTS (
+                  SELECT 1 FROM information_schema.TABLE_CONSTRAINTS
+                  WHERE CONSTRAINT_SCHEMA = DATABASE()
+                    AND TABLE_NAME = 'role_assignment'
+                    AND CONSTRAINT_NAME = 'chk_scope_tenant'
+                    AND CONSTRAINT_TYPE = 'CHECK'
+                ) THEN
+                  ALTER TABLE `role_assignment` DROP CONSTRAINT `chk_scope_tenant`;
+                END IF;
+              END;
+        - sql:
+            dbms: mysql
+            splitStatements: false
+            stripComments: false
+            sql: |
+              CALL `_063_drop_check_if_exists`();
+        - sql:
+            dbms: mysql
+            splitStatements: false
+            stripComments: false
+            sql: |
+              DROP PROCEDURE IF EXISTS `_063_drop_check_if_exists`;
+        - sql:
+            dbms: mysql
+            splitStatements: false
+            stripComments: false
+            sql: |
+              ALTER TABLE `role_assignment` ADD CONSTRAINT `chk_scope_rules` CHECK (
+                (scope_type = 'PLATFORM' AND tenant_id IS NULL AND scope_id IS NULL)
+                OR (scope_type = 'TENANT' AND tenant_id IS NOT NULL AND scope_id = tenant_id)
+                OR (scope_type IN ('ORG', 'DEPT') AND tenant_id IS NOT NULL AND scope_id IS NOT NULL)
+              );

@@ -1,0 +1,27 @@
+databaseChangeLog:
+  - changeSet:
+      id: 072-role-data-scope-item
+      author: tiny
+      comment: Phase4：新增 role_data_scope_item 自定义数据范围明细表（scope_type=CUSTOM 时的具体范围条目）
+      preConditions:
+        - onFail: CONTINUE
+        - onError: HALT
+        - dbms:
+            type: mysql
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              CREATE TABLE IF NOT EXISTS `role_data_scope_item` (
+                `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+                `role_data_scope_id` BIGINT NOT NULL COMMENT '所属数据范围规则ID（引用 role_data_scope.id）',
+                `target_type` VARCHAR(16) NOT NULL COMMENT '目标类型：ORG/DEPT/USER',
+                `target_id` BIGINT NOT NULL COMMENT '目标实体ID（organization_unit.id 或 user.id）',
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uk_rdsi_scope_target` (`role_data_scope_id`, `target_type`, `target_id`),
+                KEY `idx_rdsi_target` (`target_type`, `target_id`),
+                CONSTRAINT `chk_rdsi_target_type` CHECK (`target_type` IN ('ORG', 'DEPT', 'USER'))
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='自定义数据范围明细表（Phase4）';

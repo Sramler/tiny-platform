@@ -39,9 +39,3 @@ VALUES (
 -- 用户与角色关联（admin -> ROLE_ADMIN）
 INSERT INTO user_role (user_id, role_id) VALUES
     (1, 1);
-
--- 角色与资源关联（ROLE_ADMIN -> 所有资源）
-INSERT INTO role_resource (role_id, resource_id) VALUES
-                                                     (1, 1),
-                                                     (1, 2),
-                                                     (1, 3);

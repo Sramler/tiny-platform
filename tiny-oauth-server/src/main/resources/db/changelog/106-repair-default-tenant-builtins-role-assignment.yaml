@@ -1,0 +1,35 @@
+databaseChangeLog:
+  - changeSet:
+      id: 106-repair-default-tenant-builtins-role-assignment
+      author: codex
+      comment: 修复默认租户内置账号 admin/user 的基础角色赋权
+      changes:
+        - sql:
+            sql: |
+              INSERT IGNORE INTO `role_assignment`
+              (`principal_type`, `principal_id`, `role_id`, `tenant_id`, `scope_type`, `scope_id`, `status`, `start_time`, `granted_at`, `updated_at`)
+              SELECT
+                'USER',
+                user_entity.`id`,
+                role_entity.`id`,
+                1,
+                'TENANT',
+                1,
+                'ACTIVE',
+                NOW(),
+                NOW(),
+                NOW()
+              FROM `user` user_entity
+              JOIN (
+                SELECT 'admin' AS `username`, 'ROLE_ADMIN' AS `role_code`
+                UNION ALL
+                SELECT 'user', 'ROLE_USER'
+              ) builtin_mapping
+                ON builtin_mapping.`username` = user_entity.`username`
+              JOIN `tenant_user` tenant_membership
+                ON tenant_membership.`tenant_id` = 1
+               AND tenant_membership.`user_id` = user_entity.`id`
+               AND tenant_membership.`status` = 'ACTIVE'
+              JOIN `role` role_entity
+                ON role_entity.`tenant_id` = 1
+               AND role_entity.`code` = builtin_mapping.`role_code`;

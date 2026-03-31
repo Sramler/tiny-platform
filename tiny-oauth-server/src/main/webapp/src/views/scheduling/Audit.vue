@@ -96,14 +96,15 @@ import { auditList } from '@/api/scheduling'
 import { throttle } from '@/utils/debounce'
 import { useAuth } from '@/auth/auth'
 import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import { SCHEDULING_AUDIT_VIEW, SCHEDULING_WILDCARD } from '@/constants/permission'
 
 const { user } = useAuth()
 const schedulingAuthorities = computed(() =>
   extractAuthoritiesFromJwt(user.value?.access_token).filter((a) => a.startsWith('scheduling:')),
 )
 const canViewSchedulingAudit = computed(() =>
-  schedulingAuthorities.value.includes('scheduling:audit:view') ||
-  schedulingAuthorities.value.includes('scheduling:*'),
+  schedulingAuthorities.value.includes(SCHEDULING_AUDIT_VIEW) ||
+  schedulingAuthorities.value.includes(SCHEDULING_WILDCARD),
 )
 
 const loading = ref(false)

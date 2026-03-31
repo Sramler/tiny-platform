@@ -63,6 +63,8 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { LockOutlined, LoginOutlined, HomeOutlined, InfoCircleOutlined } from '@ant-design/icons-vue'
 import { getActiveTenantId, resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
+import { userManager } from '@/auth/oidc'
+import { useAuth } from '@/auth/auth'
 
 const router = useRouter()
 const route = useRoute()
@@ -108,8 +110,6 @@ onMounted(async () => {
   // ⚠️ 重要：在 401 页面加载后，清理认证状态
   // 这样可以避免 logout() 的跳转覆盖 401 页面的显示
   try {
-    const { userManager } = await import('@/auth/oidc')
-    const { useAuth } = await import('@/auth/auth')
     const { user } = useAuth()
 
     // 只清除本地状态，不触发 OIDC 登出重定向

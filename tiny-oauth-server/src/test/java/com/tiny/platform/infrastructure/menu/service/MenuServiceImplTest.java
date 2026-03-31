@@ -1,258 +1,507 @@
 package com.tiny.platform.infrastructure.menu.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
+import com.tiny.platform.core.oauth.tenant.TenantContextContract;
+import com.tiny.platform.infrastructure.auth.datascope.framework.DataScopeContext;
+import com.tiny.platform.infrastructure.auth.datascope.framework.ResolvedDataScope;
+import com.tiny.platform.infrastructure.auth.org.repository.UserUnitRepository;
 import com.tiny.platform.infrastructure.auth.resource.domain.Resource;
+import com.tiny.platform.infrastructure.auth.resource.dto.ResourceCreateUpdateDto;
 import com.tiny.platform.infrastructure.auth.resource.dto.ResourceResponseDto;
 import com.tiny.platform.infrastructure.auth.resource.enums.ResourceType;
+import com.tiny.platform.infrastructure.auth.resource.repository.ApiEndpointPermissionRequirementRepository;
+import com.tiny.platform.infrastructure.auth.resource.repository.CarrierPermissionRequirementRow;
+import com.tiny.platform.infrastructure.auth.resource.repository.ApiEndpointEntryRepository;
+import com.tiny.platform.infrastructure.auth.resource.repository.UiActionEntryRepository;
+import com.tiny.platform.infrastructure.auth.resource.repository.UiActionPermissionRequirementRepository;
 import com.tiny.platform.infrastructure.auth.resource.repository.ResourceRepository;
-import com.tiny.platform.infrastructure.tenant.config.PlatformTenantProperties;
-import com.tiny.platform.infrastructure.tenant.domain.Tenant;
-import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
+import com.tiny.platform.infrastructure.auth.audit.domain.AuthorizationAuditEventType;
+import com.tiny.platform.infrastructure.auth.audit.domain.RequirementAwareAuditDetail;
+import com.tiny.platform.infrastructure.auth.audit.service.AuthorizationAuditService;
+import com.tiny.platform.infrastructure.auth.resource.service.CarrierCompatibilityBinding;
+import com.tiny.platform.infrastructure.auth.resource.service.CarrierPermissionRequirementEvaluator;
+import com.tiny.platform.infrastructure.auth.resource.service.CarrierCompatibilitySafetyService;
+import com.tiny.platform.infrastructure.auth.resource.service.ResourcePermissionBindingService;
+import com.tiny.platform.infrastructure.auth.role.repository.RoleRepository;
+import com.tiny.platform.infrastructure.auth.user.repository.TenantUserRepository;
+import com.tiny.platform.infrastructure.menu.domain.MenuEntry;
+import com.tiny.platform.infrastructure.menu.repository.MenuEntryRepository;
+import com.tiny.platform.infrastructure.menu.repository.MenuPermissionRequirementRepository;
+import com.tiny.platform.infrastructure.tenant.config.PlatformTenantResolver;
+import jakarta.persistence.EntityManager;
 import java.util.List;
-import java.util.Optional;
+import java.util.Objects;
+import java.util.Set;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.mockito.ArgumentCaptor;
 
 class MenuServiceImplTest {
 
     private ResourceRepository resourceRepository;
-    private TenantRepository tenantRepository;
-    private PlatformTenantProperties platformTenantProperties;
+    private MenuEntryRepository menuEntryRepository;
+    private UiActionEntryRepository uiActionEntryRepository;
+    private ApiEndpointEntryRepository apiEndpointEntryRepository;
+    private TenantUserRepository tenantUserRepository;
+    private UserUnitRepository userUnitRepository;
+    private PlatformTenantResolver platformTenantResolver;
+    private ResourcePermissionBindingService resourcePermissionBindingService;
+    private CarrierCompatibilitySafetyService carrierCompatibilitySafetyService;
+    private MenuPermissionRequirementRepository menuPermissionRequirementRepository;
+    private UiActionPermissionRequirementRepository uiActionPermissionRequirementRepository;
+    private ApiEndpointPermissionRequirementRepository apiEndpointPermissionRequirementRepository;
+    private AuthorizationAuditService authorizationAuditService;
+    private EntityManager entityManager;
+    private RoleRepository roleRepository;
     private MenuServiceImpl service;
 
     @BeforeEach
     void setUp() {
         resourceRepository = Mockito.mock(ResourceRepository.class);
-        tenantRepository = Mockito.mock(TenantRepository.class);
-        platformTenantProperties = new PlatformTenantProperties();
-        service = new MenuServiceImpl(resourceRepository, tenantRepository, platformTenantProperties);
+        menuEntryRepository = Mockito.mock(MenuEntryRepository.class);
+        uiActionEntryRepository = Mockito.mock(UiActionEntryRepository.class);
+        apiEndpointEntryRepository = Mockito.mock(ApiEndpointEntryRepository.class);
+        tenantUserRepository = Mockito.mock(TenantUserRepository.class);
+        userUnitRepository = Mockito.mock(UserUnitRepository.class);
+        platformTenantResolver = Mockito.mock(PlatformTenantResolver.class);
+        resourcePermissionBindingService = Mockito.mock(ResourcePermissionBindingService.class);
+        carrierCompatibilitySafetyService = Mockito.mock(CarrierCompatibilitySafetyService.class);
+        menuPermissionRequirementRepository = Mockito.mock(MenuPermissionRequirementRepository.class);
+        uiActionPermissionRequirementRepository = Mockito.mock(UiActionPermissionRequirementRepository.class);
+        apiEndpointPermissionRequirementRepository = Mockito.mock(ApiEndpointPermissionRequirementRepository.class);
+        entityManager = Mockito.mock(EntityManager.class);
+        authorizationAuditService = Mockito.mock(AuthorizationAuditService.class);
+        roleRepository = Mockito.mock(RoleRepository.class);
 
-        Tenant platformTenant = new Tenant();
-        platformTenant.setId(1L);
-        platformTenant.setCode("default");
-        when(tenantRepository.findByCode("default")).thenReturn(Optional.of(platformTenant));
+        CarrierPermissionRequirementEvaluator evaluator = new CarrierPermissionRequirementEvaluator(
+            menuPermissionRequirementRepository,
+            uiActionPermissionRequirementRepository,
+            apiEndpointPermissionRequirementRepository
+        );
+        service = new MenuServiceImpl(
+            resourceRepository,
+            menuEntryRepository,
+            uiActionEntryRepository,
+            apiEndpointEntryRepository,
+            tenantUserRepository,
+            userUnitRepository,
+            platformTenantResolver,
+            resourcePermissionBindingService,
+            carrierCompatibilitySafetyService,
+            evaluator,
+            authorizationAuditService,
+            roleRepository
+        );
+        ReflectionTestUtils.setField(service, "entityManager", entityManager);
+
+        when(menuPermissionRequirementRepository.findRowsByMenuIdIn(anyCollection())).thenReturn(List.of());
+        when(uiActionPermissionRequirementRepository.findRowsByUiActionIdIn(anyCollection())).thenReturn(List.of());
+        when(apiEndpointPermissionRequirementRepository.findRowsByApiEndpointIdIn(anyCollection())).thenReturn(List.of());
     }
 
     @AfterEach
     void tearDown() {
         TenantContext.clear();
+        DataScopeContext.clear();
         SecurityContextHolder.clearContext();
     }
 
     @Test
-    void menuTree_shouldHidePlatformOnlyMenusForNonPlatformTenant() {
+    void menusShouldApplyCreatedByFilterWhenDataScopeRestricted() {
         TenantContext.setActiveTenantId(2L);
-        SecurityContextHolder.getContext().setAuthentication(
-            new UsernamePasswordAuthenticationToken(
-                "tenant-admin",
-                "n/a",
-                List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
-            )
-        );
+        DataScopeContext.set(ResolvedDataScope.ofUnitsAndUsers(Set.of(30L), Set.of(2L), true));
+        authenticate(5L, 2L, "tenant-admin", "system:menu:list");
 
-        when(resourceRepository.findByTypeInAndTenantIdOrderBySortAsc(anyList(), eq(2L)))
-            .thenReturn(List.of(
-                resource(1L, 2L, "system", null, "/system", "", "system", ResourceType.DIRECTORY),
-                resource(2L, 2L, "user", 1L, "/system/user", "/api/users", "system:user:list", ResourceType.MENU),
-                resource(3L, 2L, "tenant", 1L, "/system/tenant", "/sys/tenants", "system:tenant:list", ResourceType.MENU),
-                resource(4L, 2L, "idempotentOps", 1L, "/ops/idempotent", "/metrics/idempotent", "idempotent:ops:view", ResourceType.MENU)
-            ));
-        when(resourceRepository.existsByParentIdAndTenantId(1L, 2L)).thenReturn(true);
-        when(resourceRepository.existsByParentIdAndTenantId(2L, 2L)).thenReturn(false);
-        when(resourceRepository.existsByParentIdAndTenantId(3L, 2L)).thenReturn(false);
-        when(resourceRepository.existsByParentIdAndTenantId(4L, 2L)).thenReturn(false);
+        when(tenantUserRepository.findUserIdsByTenantIdAndStatus(2L, "ACTIVE")).thenReturn(List.of(2L, 3L, 5L));
+        when(tenantUserRepository.findUserIdsByTenantIdAndUserIdInAndStatus(2L, Set.of(2L), "ACTIVE")).thenReturn(List.of(2L));
+        when(userUnitRepository.findUserIdsByTenantIdAndUnitIdInAndStatus(2L, Set.of(30L), "ACTIVE")).thenReturn(List.of(3L));
+        MenuEntry entry = menuEntry(2L, 2L, "user", 1L, "/system/user", "system:user:list", ResourceType.MENU.getCode());
+        when(menuEntryRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Pageable.class)))
+            .thenReturn(new PageImpl<>(List.of(entry), PageRequest.of(0, 10), 1));
+        when(menuEntryRepository.existsByParentIdAndTenantId(2L, 2L)).thenReturn(false);
 
-        List<ResourceResponseDto> tree = service.menuTree();
-        List<ResourceResponseDto> fullTree = service.menuTreeAll();
-        List<ResourceResponseDto> children = tree.get(0).getChildren();
+        Page<ResourceResponseDto> page = service.menus(new com.tiny.platform.infrastructure.auth.resource.dto.ResourceRequestDto(), PageRequest.of(0, 10));
 
-        assertThat(tree).singleElement().extracting(ResourceResponseDto::getName).isEqualTo("system");
-        assertThat(children).extracting(ResourceResponseDto::getName).containsExactly("user");
-        assertThat(fullTree).singleElement().extracting(ResourceResponseDto::getName).isEqualTo("system");
-        assertThat(fullTree.get(0).getChildren()).extracting(ResourceResponseDto::getName).containsExactly("user");
+        assertThat(page.getTotalElements()).isEqualTo(1L);
+        assertThat(page.getContent()).extracting(ResourceResponseDto::getName).containsExactly("user");
+        verify(menuEntryRepository).findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Pageable.class));
+        verify(entityManager, never()).createNativeQuery(any(String.class));
     }
 
     @Test
-    void menuTree_shouldKeepPlatformOnlyMenusForPlatformAdminWithAuthority() {
-        TenantContext.setActiveTenantId(1L);
-        SecurityContextHolder.getContext().setAuthentication(
-            new UsernamePasswordAuthenticationToken(
-                "platform-admin",
-                "n/a",
-                List.of(
-                    new SimpleGrantedAuthority("ROLE_ADMIN"),
-                    new SimpleGrantedAuthority("idempotent:ops:view")
-                )
-            )
-        );
+    void listShouldApplyCreatedByFilterWhenDataScopeRestricted() {
+        TenantContext.setActiveTenantId(2L);
+        DataScopeContext.set(ResolvedDataScope.ofUnitsAndUsers(Set.of(30L), Set.of(2L), true));
+        authenticate(5L, 2L, "tenant-admin", "system:menu:list");
 
-        when(resourceRepository.findByTypeInAndTenantIdOrderBySortAsc(anyList(), eq(1L)))
-            .thenReturn(List.of(
-                resource(1L, 1L, "system", null, "/system", "", "system", ResourceType.DIRECTORY),
-                resource(2L, 1L, "user", 1L, "/system/user", "/api/users", "system:user:list", ResourceType.MENU),
-                resource(3L, 1L, "tenant", 1L, "/system/tenant", "/sys/tenants", "system:tenant:list", ResourceType.MENU),
-                resource(4L, 1L, "idempotentOps", 1L, "/ops/idempotent", "/metrics/idempotent", "idempotent:ops:view", ResourceType.MENU)
-            ));
-        when(resourceRepository.existsByParentIdAndTenantId(1L, 1L)).thenReturn(true);
-        when(resourceRepository.existsByParentIdAndTenantId(2L, 1L)).thenReturn(false);
-        when(resourceRepository.existsByParentIdAndTenantId(3L, 1L)).thenReturn(false);
-        when(resourceRepository.existsByParentIdAndTenantId(4L, 1L)).thenReturn(false);
+        when(tenantUserRepository.findUserIdsByTenantIdAndStatus(2L, "ACTIVE")).thenReturn(List.of(2L, 3L, 5L));
+        when(tenantUserRepository.findUserIdsByTenantIdAndUserIdInAndStatus(2L, Set.of(2L), "ACTIVE")).thenReturn(List.of(2L));
+        when(userUnitRepository.findUserIdsByTenantIdAndUnitIdInAndStatus(2L, Set.of(30L), "ACTIVE")).thenReturn(List.of(3L));
+        MenuEntry entry = menuEntry(2L, 2L, "sys", null, "/", "", ResourceType.DIRECTORY.getCode());
+        when(menuEntryRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Sort.class)))
+            .thenReturn(List.of(entry));
+        when(menuPermissionRequirementRepository.findRowsByMenuIdIn(anyCollection())).thenReturn(List.of());
 
-        List<ResourceResponseDto> tree = service.menuTree();
+        List<ResourceResponseDto> rows = service.list(new com.tiny.platform.infrastructure.auth.resource.dto.ResourceRequestDto());
 
-        assertThat(tree).singleElement().extracting(ResourceResponseDto::getName).isEqualTo("system");
-        assertThat(tree.get(0).getChildren())
-            .extracting(ResourceResponseDto::getName)
-            .containsExactly("user", "tenant", "idempotentOps");
+        assertThat(rows).hasSize(1);
+        assertThat(rows.getFirst().getName()).isEqualTo("sys");
+        verify(menuEntryRepository).findAll(
+            any(org.springframework.data.jpa.domain.Specification.class),
+            any(org.springframework.data.domain.Sort.class));
     }
 
     @Test
-    void getMenusByParentId_shouldFilterPlatformOnlyChildrenForNonPlatformTenant() {
+    void createMenuShouldCaptureCurrentUserAsCreatedBy() {
         TenantContext.setActiveTenantId(2L);
-        SecurityContextHolder.getContext().setAuthentication(
-            new UsernamePasswordAuthenticationToken(
-                "tenant-admin",
-                "n/a",
-                List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
-            )
-        );
+        authenticate(7L, 2L, "creator", "system:menu:create");
+        when(menuEntryRepository.save(any(MenuEntry.class))).thenAnswer(invocation -> {
+            MenuEntry saved = invocation.getArgument(0);
+            if (saved.getId() == null) {
+                saved.setId(501L);
+            }
+            return saved;
+        });
 
-        when(resourceRepository.findByTypeInAndParentIdAndTenantIdOrderBySortAsc(anyList(), eq(1L), eq(2L)))
-            .thenReturn(List.of(
-                resource(2L, 2L, "user", 1L, "/system/user", "/api/users", "system:user:list", ResourceType.MENU),
-                resource(3L, 2L, "tenant", 1L, "/system/tenant", "/sys/tenants", "system:tenant:list", ResourceType.MENU),
-                resource(4L, 2L, "idempotentOps", 1L, "/ops/idempotent", "/metrics/idempotent", "idempotent:ops:view", ResourceType.MENU)
-            ));
-        when(resourceRepository.existsByParentIdAndTenantId(2L, 2L)).thenReturn(false);
+        ResourceCreateUpdateDto dto = new ResourceCreateUpdateDto();
+        dto.setName("sys-user");
+        dto.setTitle("User");
+        dto.setType(ResourceType.MENU.getCode());
 
-        List<ResourceResponseDto> children = service.getMenusByParentId(1L);
+        Resource created = service.createMenu(dto);
 
-        assertThat(children).extracting(ResourceResponseDto::getName).containsExactly("user");
-    }
-
-    @Test
-    void menuTree_shouldFilterRegularMenusByCurrentUserAuthorities() {
-        TenantContext.setActiveTenantId(2L);
-        SecurityContextHolder.getContext().setAuthentication(
-            new UsernamePasswordAuthenticationToken(
-                "tenant-user",
-                "n/a",
-                List.of(
-                    new SimpleGrantedAuthority("ROLE_USER"),
-                    new SimpleGrantedAuthority("system:user:list")
-                )
-            )
-        );
-
-        when(resourceRepository.findByTypeAndTenantIdOrderBySortAsc(ResourceType.DIRECTORY, 2L))
-            .thenReturn(List.of(
-                resource(1L, 2L, "system", null, "/system", "", "system", ResourceType.DIRECTORY)
-            ));
-        when(resourceRepository.findGrantedResourcesByUsernameAndTenantId("tenant-user", 2L, List.of(ResourceType.MENU.getCode())))
-            .thenReturn(List.of(
-                resource(2L, 2L, "user", 1L, "/system/user", "/api/users", "system:user:list", ResourceType.MENU)
-            ));
-        when(resourceRepository.existsByParentIdAndTenantId(1L, 2L)).thenReturn(true);
-        when(resourceRepository.existsByParentIdAndTenantId(2L, 2L)).thenReturn(false);
-
-        List<ResourceResponseDto> tree = service.menuTree();
-
-        assertThat(tree).singleElement().extracting(ResourceResponseDto::getName).isEqualTo("system");
-        assertThat(tree.get(0).getChildren())
-            .extracting(ResourceResponseDto::getName)
-            .containsExactly("user");
-        verify(resourceRepository).findGrantedResourcesByUsernameAndTenantId("tenant-user", 2L, List.of(ResourceType.MENU.getCode()));
-        verify(resourceRepository, never()).findByTypeInAndTenantIdOrderBySortAsc(
-            eq(List.of(ResourceType.DIRECTORY, ResourceType.MENU)),
-            eq(2L)
+        assertThat(created.getCreatedBy()).isEqualTo(7L);
+        assertThat(created.getTenantId()).isEqualTo(2L);
+        verify(resourcePermissionBindingService).bindResource(any(Resource.class), eq(7L));
+        verify(menuEntryRepository).save(any(MenuEntry.class));
+        verify(carrierCompatibilitySafetyService).replaceCompatibilityRequirement(
+            any(CarrierCompatibilityBinding.class)
         );
     }
 
     @Test
-    void getMenusByParentId_shouldLoadGrantedMenusForCurrentUser() {
+    void createMenuShouldValidateParentByMenuCarrierInsteadOfResourceTreeRead() {
         TenantContext.setActiveTenantId(2L);
-        SecurityContextHolder.getContext().setAuthentication(
-            new UsernamePasswordAuthenticationToken(
-                "tenant-user",
-                "n/a",
-                List.of(
-                    new SimpleGrantedAuthority("ROLE_USER"),
-                    new SimpleGrantedAuthority("system:user:list")
-                )
-            )
-        );
+        authenticate(7L, 2L, "creator", "system:menu:create");
+        when(menuEntryRepository.save(any(MenuEntry.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(menuEntryRepository.findById(100L)).thenReturn(java.util.Optional.of(
+            menuEntry(100L, 2L, "system", null, "/system", "", ResourceType.DIRECTORY.getCode())
+        ));
 
-        when(resourceRepository.findByTypeInAndParentIdAndTenantIdOrderBySortAsc(
-                List.of(ResourceType.DIRECTORY),
-                1L,
-                2L
-            ))
+        ResourceCreateUpdateDto dto = new ResourceCreateUpdateDto();
+        dto.setName("sys-user");
+        dto.setTitle("User");
+        dto.setType(ResourceType.MENU.getCode());
+        dto.setParentId(100L);
+
+        service.createMenu(dto);
+
+        verify(menuEntryRepository, atLeastOnce()).findById(100L);
+        verify(resourceRepository, never()).findByParentIdAndTenantIdOrderBySortAsc(any(Long.class), any(Long.class));
+    }
+
+    @Test
+    void deleteMenuShouldKeepRolePermissionWhenPermissionStillReferenced() {
+        TenantContext.setActiveTenantId(2L);
+        MenuEntry menu = menuEntry(9L, 2L, "user", null, "/system/user", "system:user:list", ResourceType.MENU.getCode());
+        menu.setRequiredPermissionId(88L);
+
+        when(menuEntryRepository.findById(9L)).thenReturn(java.util.Optional.of(menu));
+        when(menuEntryRepository.findByTenantIdAndTypeInAndParentIdOrderBySortAsc(2L, List.of(ResourceType.DIRECTORY.getCode(), ResourceType.MENU.getCode()), 9L))
             .thenReturn(List.of());
-        when(resourceRepository.findGrantedResourcesByUsernameAndTenantIdAndParentId(
-                "tenant-user",
-                2L,
-                List.of(ResourceType.MENU.getCode()),
-                1L
-            ))
+        when(carrierCompatibilitySafetyService.existsPermissionReference(88L, 2L)).thenReturn(true);
+
+        service.deleteMenu(9L);
+
+        verify(menuEntryRepository).deleteAllByIdInBatch(List.of(9L));
+        verify(uiActionEntryRepository).deleteAllByIdInBatch(List.of(9L));
+        verify(apiEndpointEntryRepository).deleteAllByIdInBatch(List.of(9L));
+        verify(entityManager, never()).createNativeQuery(any(String.class));
+    }
+
+    @Test
+    void deleteMenuShouldRemoveRolePermissionWhenLastReferenceDeleted() {
+        TenantContext.setActiveTenantId(2L);
+        MenuEntry menu = menuEntry(10L, 2L, "user", null, "/system/user", "system:user:list", ResourceType.MENU.getCode());
+        menu.setRequiredPermissionId(99L);
+
+        when(menuEntryRepository.findById(10L)).thenReturn(java.util.Optional.of(menu));
+        when(menuEntryRepository.findByTenantIdAndTypeInAndParentIdOrderBySortAsc(2L, List.of(ResourceType.DIRECTORY.getCode(), ResourceType.MENU.getCode()), 10L))
+            .thenReturn(List.of());
+        when(carrierCompatibilitySafetyService.existsPermissionReference(99L, 2L)).thenReturn(false);
+
+        service.deleteMenu(10L);
+
+        verify(menuEntryRepository).deleteAllByIdInBatch(List.of(10L));
+        verify(uiActionEntryRepository).deleteAllByIdInBatch(List.of(10L));
+        verify(apiEndpointEntryRepository).deleteAllByIdInBatch(List.of(10L));
+        verify(roleRepository).deleteRolePermissionRelationsByPermissionIdAndTenantId(99L, 2L);
+    }
+
+    @Test
+    void deleteMenuShouldEnumerateChildrenFromMenuCarrierRepository() {
+        TenantContext.setActiveTenantId(2L);
+
+        MenuEntry root = menuEntry(20L, 2L, "system", null, "/system", "system:menu:list", ResourceType.DIRECTORY.getCode());
+        root.setRequiredPermissionId(200L);
+        MenuEntry child = menuEntry(21L, 2L, "user", 20L, "/system/user", "system:user:list", ResourceType.MENU.getCode());
+        child.setRequiredPermissionId(201L);
+
+        when(menuEntryRepository.findById(20L)).thenReturn(java.util.Optional.of(root));
+        when(menuEntryRepository.findByTenantIdAndTypeInAndParentIdOrderBySortAsc(
+            2L, List.of(ResourceType.DIRECTORY.getCode(), ResourceType.MENU.getCode()), 20L
+        )).thenReturn(List.of(child));
+        when(menuEntryRepository.findByTenantIdAndTypeInAndParentIdOrderBySortAsc(
+            2L, List.of(ResourceType.DIRECTORY.getCode(), ResourceType.MENU.getCode()), 21L
+        )).thenReturn(List.of());
+        when(carrierCompatibilitySafetyService.existsPermissionReference(200L, 2L)).thenReturn(true);
+        when(carrierCompatibilitySafetyService.existsPermissionReference(201L, 2L)).thenReturn(true);
+
+        service.deleteMenu(20L);
+
+        verify(menuEntryRepository).findByTenantIdAndTypeInAndParentIdOrderBySortAsc(
+            2L, List.of(ResourceType.DIRECTORY.getCode(), ResourceType.MENU.getCode()), 20L
+        );
+        verify(menuEntryRepository).findByTenantIdAndTypeInAndParentIdOrderBySortAsc(
+            2L, List.of(ResourceType.DIRECTORY.getCode(), ResourceType.MENU.getCode()), 21L
+        );
+        verify(menuEntryRepository).deleteAllByIdInBatch(List.of(21L));
+        verify(menuEntryRepository).deleteAllByIdInBatch(List.of(20L));
+        verify(uiActionEntryRepository).deleteAllByIdInBatch(List.of(21L));
+        verify(uiActionEntryRepository).deleteAllByIdInBatch(List.of(20L));
+        verify(apiEndpointEntryRepository).deleteAllByIdInBatch(List.of(21L));
+        verify(apiEndpointEntryRepository).deleteAllByIdInBatch(List.of(20L));
+        verify(resourceRepository, never()).findByParentIdAndTenantIdOrderBySortAsc(any(Long.class), any(Long.class));
+    }
+
+    @Test
+    void updateMenuSortShouldNotUpsertCompatibilityResource() {
+        TenantContext.setActiveTenantId(2L);
+        MenuEntry menu = menuEntry(40L, 2L, "system", null, "/system", "system:menu:list", ResourceType.MENU.getCode());
+        menu.setResourceLevel("TENANT");
+        menu.setRequiredPermissionId(4100L);
+
+        when(menuEntryRepository.findById(40L)).thenReturn(java.util.Optional.of(menu));
+        when(menuEntryRepository.save(any(MenuEntry.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.updateMenuSort(40L, 8);
+
+        verify(menuEntryRepository).save(argThat(saved ->
+            Objects.equals(saved.getId(), 40L) && saved.getSort().equals(8)
+        ));
+        verify(resourceRepository, never()).findByTenantIdAndResourceLevelAndCarrierTypeAndCarrierSourceId(
+            any(Long.class), any(String.class), any(String.class), any(Long.class)
+        );
+        verify(resourceRepository, never()).save(any(Resource.class));
+    }
+
+    @Test
+    void menuTreeShouldFilterMenusByCurrentAuthoritiesWithoutLegacyGrantedQueries() {
+        TenantContext.setActiveTenantId(2L);
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_TENANT);
+        authenticate(5L, 2L, "tenant-user", "system:user:list");
+
+        when(menuEntryRepository.findByTenantIdAndTypeInOrderBySortAsc(2L, List.of(ResourceType.DIRECTORY.getCode(), ResourceType.MENU.getCode())))
             .thenReturn(List.of(
-                resource(2L, 2L, "user", 1L, "/system/user", "/api/users", "system:user:list", ResourceType.MENU)
+                menuEntry(1L, 2L, "system", null, "/system", "", ResourceType.DIRECTORY.getCode()),
+                menuEntry(2L, 2L, "user", 1L, "/system/user", "system:user:list", ResourceType.MENU.getCode()),
+                menuEntry(3L, 2L, "tenant", 1L, "/system/tenant", "system:tenant:list", ResourceType.MENU.getCode()),
+                menuEntry(4L, 2L, "idempotentOps", 1L, "/ops/idempotent", "idempotent:ops:view", ResourceType.MENU.getCode())
             ));
-        when(resourceRepository.existsByParentIdAndTenantId(2L, 2L)).thenReturn(false);
+
+        List<ResourceResponseDto> tree = service.menuTree();
+
+        assertThat(tree).singleElement().extracting(ResourceResponseDto::getName).isEqualTo("system");
+        assertThat(tree.get(0).getChildren()).extracting(ResourceResponseDto::getName).containsExactly("user");
+        verify(menuEntryRepository).findByTenantIdAndTypeInOrderBySortAsc(2L, List.of(ResourceType.DIRECTORY.getCode(), ResourceType.MENU.getCode()));
+    }
+
+    @Test
+    void menuTreeShouldKeepPlatformOnlyMenusForPlatformAdmin() {
+        when(platformTenantResolver.getPlatformTenantId()).thenReturn(1L);
+        TenantContext.setActiveTenantId(null);
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_PLATFORM);
+        authenticate(1L, null, "platform-admin", "system:user:list", "system:tenant:list", "idempotent:ops:view");
+
+        when(menuEntryRepository.findByTenantIdIsNullAndTypeInOrderBySortAsc(List.of(ResourceType.DIRECTORY.getCode(), ResourceType.MENU.getCode())))
+            .thenReturn(List.of(
+                menuEntry(1L, null, "system", null, "/system", "", ResourceType.DIRECTORY.getCode()),
+                menuEntry(2L, null, "user", 1L, "/system/user", "system:user:list", ResourceType.MENU.getCode()),
+                menuEntry(3L, null, "tenant", 1L, "/system/tenant", "system:tenant:list", ResourceType.MENU.getCode()),
+                menuEntry(4L, null, "idempotentOps", 1L, "/ops/idempotent", "idempotent:ops:view", ResourceType.MENU.getCode())
+            ));
+
+        List<ResourceResponseDto> tree = service.menuTree();
+
+        assertThat(tree).singleElement().extracting(ResourceResponseDto::getName).isEqualTo("system");
+        assertThat(tree.get(0).getChildren()).extracting(ResourceResponseDto::getName).containsExactly("user", "tenant", "idempotentOps");
+        verify(platformTenantResolver, atLeastOnce()).getPlatformTenantId();
+    }
+
+    @Test
+    void menuTreeShouldSupportAndOrAndNegatedRequirements() {
+        TenantContext.setActiveTenantId(2L);
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_TENANT);
+        authenticate(5L, 2L, "tenant-user", "system:user:list", "system:tenant:list");
+
+        when(menuEntryRepository.findByTenantIdAndTypeInOrderBySortAsc(2L, List.of(ResourceType.DIRECTORY.getCode(), ResourceType.MENU.getCode())))
+            .thenReturn(List.of(
+                menuEntry(1L, 2L, "system", null, "/system", "", ResourceType.DIRECTORY.getCode()),
+                menuEntry(2L, 2L, "audit", 1L, "/system/audit", "system:audit:auth:view", ResourceType.MENU.getCode()),
+                menuEntry(3L, 2L, "forbidden", 1L, "/system/forbidden", "system:audit:authentication:view", ResourceType.MENU.getCode())
+            ));
+        when(menuPermissionRequirementRepository.findRowsByMenuIdIn(anyCollection())).thenReturn(List.of(
+            row(2L, 1, 1, "system:audit:auth:view", false),
+            row(2L, 1, 2, "system:tenant:list", false),
+            row(2L, 2, 1, "system:user:list", false),
+            row(2L, 2, 2, "system:audit:auth:view", true),
+            row(3L, 1, 1, "system:user:list", false),
+            row(3L, 1, 2, "system:tenant:list", false),
+            row(3L, 1, 3, "system:audit:auth:view", false)
+        ));
+
+        List<ResourceResponseDto> tree = service.menuTree();
+
+        assertThat(tree).singleElement().extracting(ResourceResponseDto::getName).isEqualTo("system");
+        assertThat(tree.get(0).getChildren()).extracting(ResourceResponseDto::getName).containsExactly("audit");
+
+        ArgumentCaptor<RequirementAwareAuditDetail> detailCaptor = ArgumentCaptor.forClass(RequirementAwareAuditDetail.class);
+        verify(authorizationAuditService, Mockito.atLeastOnce()).logRequirementAware(
+            eq(AuthorizationAuditEventType.REQUIREMENT_AWARE_ACCESS),
+            eq(2L),
+            eq("menu-runtime-tree"),
+            detailCaptor.capture()
+        );
+
+        var details = detailCaptor.getAllValues();
+        assertThat(details).anySatisfy(d -> {
+            assertThat(d.carrierType()).isEqualTo("menu");
+            assertThat(d.carrierId()).isEqualTo(2L);
+            assertThat(d.requirementGroup()).isEqualTo(2);
+            assertThat(d.decision()).isEqualTo("ALLOW");
+            assertThat(d.matchedPermissionCodes()).contains("system:user:list");
+        });
+        assertThat(details).anySatisfy(d -> {
+            assertThat(d.carrierId()).isEqualTo(3L);
+            assertThat(d.decision()).isEqualTo("DENY");
+            assertThat(d.requirementGroup()).isEqualTo(1);
+        });
+    }
+
+    @Test
+    void getMenusByParentIdShouldFilterChildrenByRequirements() {
+        TenantContext.setActiveTenantId(2L);
+        authenticate(5L, 2L, "tenant-user", "system:user:list");
+
+        when(menuEntryRepository.findByTenantIdAndTypeInAndParentIdOrderBySortAsc(2L, List.of(ResourceType.DIRECTORY.getCode(), ResourceType.MENU.getCode()), 1L))
+            .thenReturn(List.of(
+                menuEntry(2L, 2L, "user", 1L, "/system/user", "system:user:list", ResourceType.MENU.getCode()),
+                menuEntry(3L, 2L, "tenant", 1L, "/system/tenant", "system:tenant:list", ResourceType.MENU.getCode())
+            ));
 
         List<ResourceResponseDto> children = service.getMenusByParentId(1L);
 
         assertThat(children).extracting(ResourceResponseDto::getName).containsExactly("user");
-        verify(resourceRepository).findGrantedResourcesByUsernameAndTenantIdAndParentId(
-            "tenant-user",
-            2L,
-            List.of(ResourceType.MENU.getCode()),
-            1L
-        );
-        verify(resourceRepository, never()).findByTypeInAndParentIdAndTenantIdOrderBySortAsc(
-            eq(List.of(ResourceType.DIRECTORY, ResourceType.MENU)),
-            eq(1L),
-            eq(2L)
-        );
     }
 
-    private Resource resource(
+    private MenuEntry menuEntry(
         Long id,
         Long tenantId,
         String name,
         Long parentId,
-        String url,
-        String uri,
+        String path,
         String permission,
-        ResourceType type
+        Integer type
     ) {
-        Resource resource = new Resource();
-        resource.setId(id);
-        resource.setTenantId(tenantId);
-        resource.setName(name);
-        resource.setTitle(name);
-        resource.setParentId(parentId);
-        resource.setUrl(url);
-        resource.setUri(uri);
-        resource.setMethod("");
-        resource.setPermission(permission);
-        resource.setType(type);
-        resource.setEnabled(true);
-        resource.setHidden(false);
-        resource.setShowIcon(false);
-        resource.setKeepAlive(false);
-        resource.setSort(1);
-        return resource;
+        MenuEntry entry = new MenuEntry();
+        entry.setId(id);
+        entry.setTenantId(tenantId);
+        entry.setName(name);
+        entry.setTitle(name);
+        entry.setParentId(parentId);
+        entry.setPath(path);
+        entry.setPermission(permission);
+        entry.setType(type);
+        entry.setEnabled(true);
+        entry.setHidden(false);
+        entry.setShowIcon(false);
+        entry.setKeepAlive(false);
+        entry.setSort(1);
+        return entry;
+    }
+
+    private CarrierPermissionRequirementRow row(Long carrierId, Integer group, Integer sortOrder, String permissionCode, boolean negated) {
+        return new CarrierPermissionRequirementRow() {
+            @Override
+            public Long getCarrierId() {
+                return carrierId;
+            }
+
+            @Override
+            public Integer getRequirementGroup() {
+                return group;
+            }
+
+            @Override
+            public Integer getSortOrder() {
+                return sortOrder;
+            }
+
+            @Override
+            public String getPermissionCode() {
+                return permissionCode;
+            }
+
+            @Override
+            public Boolean getNegated() {
+                return negated;
+            }
+
+            @Override
+            public Boolean getPermissionEnabled() {
+                return true;
+            }
+        };
+    }
+
+    private void authenticate(Long userId, Long tenantId, String username, String... authorities) {
+        List<SimpleGrantedAuthority> grantedAuthorities = java.util.Arrays.stream(authorities)
+            .map(SimpleGrantedAuthority::new)
+            .toList();
+        SecurityUser principal = new SecurityUser(
+            userId,
+            tenantId,
+            username,
+            "",
+            grantedAuthorities,
+            true,
+            true,
+            true,
+            true,
+            "pv-1"
+        );
+        SecurityContextHolder.getContext().setAuthentication(
+            new UsernamePasswordAuthenticationToken(principal, "n/a", principal.getAuthorities())
+        );
     }
 }

@@ -32,12 +32,12 @@ class DictPlatformAdminServiceImplTest {
         dto.setDictCode("ENABLE_STATUS");
         dto.setDictName("启用状态");
 
-        when(dictTypeRepository.existsByDictCodeAndTenantId("ENABLE_STATUS", 0L)).thenReturn(false);
+        when(dictTypeRepository.existsByDictCodeAndTenantIdIsNull("ENABLE_STATUS")).thenReturn(false);
         when(dictTypeRepository.save(any(DictType.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         DictType created = service.createType(dto);
 
-        assertThat(created.getTenantId()).isZero();
+        assertThat(created.getTenantId()).isNull();
         assertThat(created.getDictCode()).isEqualTo("ENABLE_STATUS");
     }
 
@@ -45,7 +45,7 @@ class DictPlatformAdminServiceImplTest {
     void updateType_when_builtin_locked_should_reject() {
         DictType dictType = new DictType();
         dictType.setId(1L);
-        dictType.setTenantId(0L);
+        dictType.setTenantId(null);
         dictType.setDictCode("ENABLE_STATUS");
         dictType.setBuiltinLocked(true);
 
@@ -83,7 +83,7 @@ class DictPlatformAdminServiceImplTest {
     void createItem_should_use_platform_tenant() {
         DictType platformType = new DictType();
         platformType.setId(10L);
-        platformType.setTenantId(0L);
+        platformType.setTenantId(null);
 
         DictItemCreateUpdateDto dto = new DictItemCreateUpdateDto();
         dto.setDictTypeId(10L);
@@ -91,12 +91,12 @@ class DictPlatformAdminServiceImplTest {
         dto.setLabel("Alpha");
 
         when(dictTypeRepository.findById(10L)).thenReturn(Optional.of(platformType));
-        when(dictItemRepository.existsByDictTypeIdAndValueAndTenantId(10L, "A", 0L)).thenReturn(false);
+        when(dictItemRepository.existsByDictTypeIdAndValueAndTenantIdIsNull(10L, "A")).thenReturn(false);
         when(dictItemRepository.save(any(DictItem.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         DictItem created = service.createItem(dto);
 
-        assertThat(created.getTenantId()).isZero();
+        assertThat(created.getTenantId()).isNull();
         assertThat(created.getLabel()).isEqualTo("Alpha");
     }
 

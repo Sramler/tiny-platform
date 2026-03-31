@@ -2,7 +2,7 @@ databaseChangeLog:
   - changeSet:
       id: add-scheduling-rbac-authorities
       author: tiny
-      comment: 为默认租户补充调度 RBAC authority 资源，并默认授予 ROLE_ADMIN 调度全权限
+      comment: 为默认租户补充调度 RBAC authority 资源，并默认授予 ROLE_TENANT_ADMIN 调度全权限
       validCheckSum:
         - ANY
       changes:

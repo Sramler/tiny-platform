@@ -11,6 +11,7 @@ import {
   type IdempotentTopKey,
 } from '@/api/idempotent'
 import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import { IDEMPOTENT_OPS_VIEW } from '@/constants/permission'
 import { getActiveTenantId, withActiveTenantQuery } from '@/utils/tenant'
 
 const router = useRouter()
@@ -36,7 +37,7 @@ const metrics = ref<IdempotentMetricsSnapshot>(emptyMetrics)
 const topKeys = ref<IdempotentTopKey[]>([])
 
 const canViewIdempotentOps = computed(() =>
-  extractAuthoritiesFromJwt(user.value?.access_token).includes('idempotent:ops:view'),
+  extractAuthoritiesFromJwt(user.value?.access_token).includes(IDEMPOTENT_OPS_VIEW),
 )
 
 const successRate = computed(() => {

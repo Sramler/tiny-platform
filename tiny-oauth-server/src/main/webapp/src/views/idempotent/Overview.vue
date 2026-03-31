@@ -366,7 +366,7 @@ watch(
     <a-card v-if="accessDenied" class="panel-card restricted-card" :bordered="false">
       <p class="restricted-title">无权查看平台级幂等治理指标</p>
       <p class="restricted-copy">
-        当前页面承载的是平台级汇总指标，后端已限制为默认平台租户下具备 `ROLE_ADMIN + idempotent:ops:view` 权限的管理员访问。
+        当前页面承载的是平台级汇总指标，后端已限制为默认平台租户下具备 `idempotent:ops:view` 权限的用户访问。
       </p>
     </a-card>
 

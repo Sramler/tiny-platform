@@ -2,12 +2,16 @@ package com.tiny.platform.application.controller.user;
 
 import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
+import com.tiny.platform.core.oauth.tenant.TenantContextContract;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationAudit;
 import com.tiny.platform.infrastructure.auth.user.dto.UserCreateUpdateDto;
 import com.tiny.platform.infrastructure.auth.user.dto.UserRequestDto;
 import com.tiny.platform.infrastructure.auth.user.dto.UserResponseDto;
 import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationAuditRepository;
+import com.tiny.platform.infrastructure.auth.org.domain.OrganizationUnit;
+import com.tiny.platform.infrastructure.auth.org.repository.OrganizationUnitRepository;
+import com.tiny.platform.infrastructure.auth.org.repository.UserUnitRepository;
 import com.tiny.platform.infrastructure.auth.user.service.AvatarService;
 import com.tiny.platform.infrastructure.auth.user.service.UserService;
 import com.tiny.platform.infrastructure.core.dto.PageResponse;
@@ -20,10 +24,15 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
@@ -43,6 +52,7 @@ import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.times;
 
 class UserControllerTest {
 
@@ -110,18 +120,25 @@ class UserControllerTest {
             .containsEntry("message", "批量删除成功");
         verify(userService).batchDelete(List.of(1L, 2L));
 
-        when(userService.getRoleIdsByUserId(2L)).thenReturn(List.of(10L, 11L));
-        when(userService.getRoleIdsByUserId(99L)).thenThrow(new RuntimeException("missing"));
-        assertThat(controller.getUserRoles(2L).getBody()).containsExactlyInAnyOrder(10L, 11L);
-        assertThat(controller.getUserRoles(99L).getStatusCode().value()).isEqualTo(404);
+        when(userService.getDirectRoleIdsByUserId(2L, null, null)).thenReturn(List.of(10L, 11L));
+        when(userService.getDirectRoleIdsByUserId(99L, null, null)).thenThrow(new RuntimeException("missing"));
+        assertThat(controller.getUserRoles(2L, null, null).getBody()).containsExactlyInAnyOrder(10L, 11L);
+        assertThat(controller.getUserRoles(99L, null, null).getStatusCode().value()).isEqualTo(404);
 
         assertThat(controller.updateUserRoles(2L, List.of(10L)).getStatusCode().value()).isEqualTo(200);
-        verify(userService).updateUserRoles(2L, List.of(10L));
+        verify(userService).updateUserRoles(2L, null, null, List.of(10L));
 
-        doThrow(new RuntimeException("role-error")).when(userService).updateUserRoles(3L, List.of(11L));
+        doThrow(new RuntimeException("role-error")).when(userService).updateUserRoles(3L, null, null, List.of(11L));
         assertThat(asMap(controller.updateUserRoles(3L, List.of(11L)).getBody()))
             .containsEntry("success", false)
             .containsEntry("message", "role-error");
+
+        assertThat(controller.updateUserRoles(4L, Map.of(
+            "scopeType", "DEPT",
+            "scopeId", 200L,
+            "roleIds", List.of(12L)
+        )).getStatusCode().value()).isEqualTo(200);
+        verify(userService).updateUserRoles(4L, "DEPT", 200L, List.of(12L));
     }
 
     @Test
@@ -391,6 +408,126 @@ class UserControllerTest {
         ResponseEntity<Map<String, Object>> error = controller.deleteCurrentUserAvatar();
         assertThat(error.getStatusCode().value()).isEqualTo(500);
         assertThat(error.getBody()).containsEntry("success", false).containsEntry("error", "头像删除失败: delete-error");
+    }
+
+    @Test
+    void getCurrentUser_should_include_active_scope_and_permissionsVersion_when_session_has_scope() {
+        UserService userService = mock(UserService.class);
+        UserController controller = new UserController(userService, mock(UserAuthenticationAuditRepository.class), mock(AvatarService.class));
+
+        MockHttpServletRequest httpRequest = new MockHttpServletRequest();
+        MockHttpSession session = new MockHttpSession();
+        session.setAttribute(TenantContextContract.SESSION_ACTIVE_TENANT_ID_KEY, 9L);
+        session.setAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_TYPE_KEY, "ORG");
+        session.setAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_ID_KEY, 101L);
+        httpRequest.setSession(session);
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(httpRequest));
+
+        SecurityUser su = new SecurityUser(1L, 9L, "alice", "", List.of(), true, true, true, true, "pv-scope");
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(su, null, List.of()));
+
+        when(userService.findByUsername("alice")).thenReturn(Optional.of(user(1L, "alice")));
+
+        try {
+            Map<String, Object> body = controller.getCurrentUser().getBody();
+            assertThat(body).containsEntry("activeScopeType", "ORG");
+            assertThat(body).containsEntry("activeScopeId", 101L);
+            assertThat(body).containsEntry("permissionsVersion", "pv-scope");
+        } finally {
+            RequestContextHolder.resetRequestAttributes();
+            SecurityContextHolder.clearContext();
+        }
+    }
+
+    @Test
+    void switchActiveScope_should_succeed_for_tenant_org_dept_and_fail_closed_on_invalid_input() {
+        UserService userService = mock(UserService.class);
+        OrganizationUnitRepository orgRepo = mock(OrganizationUnitRepository.class);
+        UserUnitRepository userUnitRepo = mock(UserUnitRepository.class);
+        UserDetailsService userDetailsService = mock(UserDetailsService.class);
+        UserController controller = new UserController(userService, mock(UserAuthenticationAuditRepository.class), mock(AvatarService.class),
+            orgRepo, userUnitRepo, userDetailsService);
+
+        MockHttpServletRequest httpRequest = new MockHttpServletRequest();
+        MockHttpSession session = new MockHttpSession();
+        httpRequest.setSession(session);
+
+        SecurityUser principal = new SecurityUser(5L, 2L, "alice", "", List.of(), true, true, true, true);
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(principal, "cred", List.of()));
+
+        SecurityUser reloaded = new SecurityUser(5L, 2L, "alice", "", List.of(new SimpleGrantedAuthority("P1")), true, true, true, true, "pv2");
+        when(userDetailsService.loadUserByUsername("alice")).thenReturn(reloaded);
+        when(userService.findByUsername("alice")).thenReturn(Optional.of(user(5L, "alice")));
+
+        httpRequest.addHeader("Authorization", "Bearer test-jwt");
+        ResponseEntity<Map<String, Object>> bearerSwitch = controller.switchActiveScope(
+            new UserController.ActiveScopeSwitchRequest("TENANT", null), httpRequest);
+        assertThat(bearerSwitch.getStatusCode().value()).isEqualTo(200);
+        assertThat(bearerSwitch.getBody()).containsEntry("tokenRefreshRequired", true);
+
+        httpRequest.removeHeader("Authorization");
+        ResponseEntity<Map<String, Object>> sessionSwitch = controller.switchActiveScope(
+            new UserController.ActiveScopeSwitchRequest("TENANT", null), httpRequest);
+        assertThat(sessionSwitch.getStatusCode().value()).isEqualTo(200);
+        assertThat(sessionSwitch.getBody()).containsEntry("tokenRefreshRequired", false);
+        assertThat(session.getAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_TYPE_KEY)).isEqualTo("TENANT");
+        assertThat(session.getAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_ID_KEY)).isEqualTo(2L);
+
+        OrganizationUnit org = new OrganizationUnit();
+        org.setId(55L);
+        org.setTenantId(2L);
+        org.setUnitType("ORG");
+        when(orgRepo.findByIdAndTenantId(55L, 2L)).thenReturn(Optional.of(org));
+        when(userUnitRepo.findUnitIdsByTenantIdAndUserIdAndStatus(2L, 5L, "ACTIVE")).thenReturn(List.of(55L));
+
+        assertThat(controller.switchActiveScope(new UserController.ActiveScopeSwitchRequest("ORG", 55L), httpRequest).getStatusCode().value())
+            .isEqualTo(200);
+        assertThat(session.getAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_TYPE_KEY)).isEqualTo("ORG");
+
+        OrganizationUnit dept = new OrganizationUnit();
+        dept.setId(60L);
+        dept.setTenantId(2L);
+        dept.setUnitType("DEPT");
+        when(orgRepo.findByIdAndTenantId(60L, 2L)).thenReturn(Optional.of(dept));
+        when(userUnitRepo.existsByTenantIdAndUserIdAndUnitId(2L, 5L, 60L)).thenReturn(true);
+
+        assertThat(controller.switchActiveScope(new UserController.ActiveScopeSwitchRequest("DEPT", 60L), httpRequest).getStatusCode().value())
+            .isEqualTo(200);
+        assertThat(session.getAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_ID_KEY)).isEqualTo(60L);
+
+        verify(userDetailsService, times(4)).loadUserByUsername("alice");
+
+        assertThat(controller.switchActiveScope(new UserController.ActiveScopeSwitchRequest("INVALID", 1L), httpRequest).getStatusCode().value())
+            .isEqualTo(400);
+        assertThat(controller.switchActiveScope(new UserController.ActiveScopeSwitchRequest("ORG", null), httpRequest).getStatusCode().value())
+            .isEqualTo(400);
+
+        when(orgRepo.findByIdAndTenantId(999L, 2L)).thenReturn(Optional.empty());
+        assertThat(controller.switchActiveScope(new UserController.ActiveScopeSwitchRequest("ORG", 999L), httpRequest).getStatusCode().value())
+            .isEqualTo(403);
+
+        when(orgRepo.findByIdAndTenantId(60L, 2L)).thenReturn(Optional.of(dept));
+        when(userUnitRepo.existsByTenantIdAndUserIdAndUnitId(2L, 5L, 60L)).thenReturn(false);
+        assertThat(controller.switchActiveScope(new UserController.ActiveScopeSwitchRequest("DEPT", 60L), httpRequest).getStatusCode().value())
+            .isEqualTo(403);
+
+        OrganizationUnit wrongType = new OrganizationUnit();
+        wrongType.setId(70L);
+        wrongType.setTenantId(2L);
+        wrongType.setUnitType("DEPT");
+        when(orgRepo.findByIdAndTenantId(70L, 2L)).thenReturn(Optional.of(wrongType));
+        assertThat(controller.switchActiveScope(new UserController.ActiveScopeSwitchRequest("ORG", 70L), httpRequest).getStatusCode().value())
+            .isEqualTo(403);
+
+        UserController bareController = new UserController(userService, mock(UserAuthenticationAuditRepository.class), mock(AvatarService.class));
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(principal, "cred", List.of()));
+        assertThat(bareController.switchActiveScope(new UserController.ActiveScopeSwitchRequest("ORG", 55L), httpRequest).getStatusCode().value())
+            .isEqualTo(503);
+
+        SecurityContextHolder.clearContext();
     }
 
     @SuppressWarnings("unchecked")

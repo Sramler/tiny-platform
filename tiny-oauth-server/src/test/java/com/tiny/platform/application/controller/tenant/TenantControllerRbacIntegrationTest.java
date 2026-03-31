@@ -10,6 +10,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
+import com.tiny.platform.core.oauth.tenant.TenantContextContract;
+import com.tiny.platform.core.oauth.tenant.TenantLifecycleAccessGuard;
 import com.tiny.platform.infrastructure.tenant.domain.Tenant;
 import com.tiny.platform.infrastructure.tenant.dto.TenantCreateUpdateDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantResponseDto;
@@ -60,15 +62,13 @@ class TenantControllerRbacIntegrationTest {
     @MockBean
     private TenantRepository tenantRepository;
 
+    @MockBean
+    private TenantLifecycleAccessGuard tenantLifecycleAccessGuard;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @BeforeEach
     void setUp() {
-        Tenant platformTenant = new Tenant();
-        platformTenant.setId(1L);
-        platformTenant.setCode("default");
-        platformTenant.setName("默认租户");
-        when(tenantRepository.findByCode("default")).thenReturn(java.util.Optional.of(platformTenant));
     }
 
     @AfterEach
@@ -83,6 +83,7 @@ class TenantControllerRbacIntegrationTest {
         @BeforeEach
         void setPlatformTenant() {
             TenantContext.setActiveTenantId(1L);
+            TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_PLATFORM);
         }
 
         @Test
@@ -92,7 +93,7 @@ class TenantControllerRbacIntegrationTest {
             mockMvc.perform(get("/sys/tenants")
                     .param("page", "0")
                     .param("size", "10")
-                    .with(user("platform-admin").authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
+                    .with(user("platform-admin").authorities(new SimpleGrantedAuthority("system:tenant:list"))))
                 .andExpect(status().isOk());
         }
 
@@ -108,7 +109,40 @@ class TenantControllerRbacIntegrationTest {
             mockMvc.perform(post("/sys/tenants")
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(dto))
-                    .with(user("platform-admin").authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
+                    .with(user("platform-admin").authorities(new SimpleGrantedAuthority("system:tenant:create"))))
+                .andExpect(status().isOk());
+        }
+
+        @Test
+        void freeze_allowsPlatformAdminWithLifecycleAuthority() throws Exception {
+            TenantResponseDto response = new TenantResponseDto();
+            response.setId(9L);
+            response.setLifecycleStatus("FROZEN");
+            when(tenantService.freeze(eq(9L))).thenReturn(response);
+
+            mockMvc.perform(post("/sys/tenants/9/freeze")
+                    .with(user("platform-admin").authorities(new SimpleGrantedAuthority("system:tenant:freeze"))))
+                .andExpect(status().isOk());
+        }
+
+        @Test
+        void decommission_allowsPlatformAdminWithLifecycleAuthority() throws Exception {
+            TenantResponseDto response = new TenantResponseDto();
+            response.setId(9L);
+            response.setLifecycleStatus("DECOMMISSIONED");
+            when(tenantService.decommission(eq(9L))).thenReturn(response);
+
+            mockMvc.perform(post("/sys/tenants/9/decommission")
+                    .with(user("platform-admin").authorities(new SimpleGrantedAuthority("system:tenant:decommission"))))
+                .andExpect(status().isOk());
+        }
+
+        @Test
+        void initializePlatformTemplate_allowsPlatformAdminWithDedicatedAuthority() throws Exception {
+            when(tenantService.initializePlatformTemplates()).thenReturn(true);
+
+            mockMvc.perform(post("/sys/tenants/platform-template/initialize")
+                    .with(user("platform-admin").authorities(new SimpleGrantedAuthority("system:tenant:template:initialize"))))
                 .andExpect(status().isOk());
         }
     }
@@ -133,6 +167,26 @@ class TenantControllerRbacIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(dto))
                 .with(user("viewer").authorities(new SimpleGrantedAuthority("ROLE_USER"))))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void freeze_deniesWithoutDedicatedAuthority() throws Exception {
+        TenantContext.setActiveTenantId(1L);
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_PLATFORM);
+
+        mockMvc.perform(post("/sys/tenants/9/freeze")
+                .with(user("editor").authorities(new SimpleGrantedAuthority("system:tenant:edit"))))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void initializePlatformTemplate_deniesWithoutDedicatedAuthority() throws Exception {
+        TenantContext.setActiveTenantId(1L);
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_PLATFORM);
+
+        mockMvc.perform(post("/sys/tenants/platform-template/initialize")
+                .with(user("editor").authorities(new SimpleGrantedAuthority("system:tenant:edit"))))
             .andExpect(status().isForbidden());
     }
 

@@ -1,0 +1,169 @@
+databaseChangeLog:
+  - changeSet:
+      id: platform-template-org-permission-chain
+      author: codex
+      comment: Fill platform template for ROLE_TENANT_ADMIN grant system:org:list/view
+      preConditions:
+        onFail: MARK_RAN
+        and:
+          - tableExists:
+              tableName: role
+          - tableExists:
+              tableName: permission
+          - tableExists:
+              tableName: resource
+          - tableExists:
+              tableName: role_permission
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              -- 1) Ensure platform template role ROLE_TENANT_ADMIN exists (tenant_id IS NULL + role_level=PLATFORM)
+              INSERT INTO `role` (
+                `code`,
+                `name`,
+                `description`,
+                `enabled`,
+                `builtin`,
+                `tenant_id`,
+                `role_level`,
+                `created_at`,
+                `updated_at`
+              )
+              SELECT
+                src.`code`,
+                CONCAT(src.`name`, ' · ', src.`code`) AS `name`,
+                src.`description`,
+                src.`enabled`,
+                src.`builtin`,
+                NULL AS `tenant_id`,
+                'PLATFORM' AS `role_level`,
+                NOW() AS `created_at`,
+                NOW() AS `updated_at`
+              FROM `role` src
+              WHERE src.`tenant_id` = 1
+                AND src.`code` = 'ROLE_TENANT_ADMIN'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `role` r2
+                  WHERE r2.`tenant_id` IS NULL
+                    AND r2.`code` = 'ROLE_TENANT_ADMIN'
+                );
+
+              -- 2) Ensure platform template permission master data exists
+              INSERT IGNORE INTO `permission` (
+                `permission_code`,
+                `permission_name`,
+                `module_code`,
+                `action_code`,
+                `permission_type`,
+                `description`,
+                `enabled`,
+                `built_in_flag`,
+                `tenant_id`,
+                `created_by`,
+                `created_at`,
+                `updated_by`,
+                `updated_at`
+              )
+              SELECT
+                src.`permission_code`,
+                src.`permission_name`,
+                src.`module_code`,
+                src.`action_code`,
+                src.`permission_type`,
+                src.`description`,
+                src.`enabled`,
+                src.`built_in_flag`,
+                NULL AS `tenant_id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`,
+                NULL AS `updated_by`,
+                NOW() AS `updated_at`
+              FROM `permission` src
+              WHERE src.`tenant_id` = 1
+                AND src.`permission_code` IN ('system:org:list', 'system:org:view');
+
+              -- 3) Ensure platform template resource nodes exist (copy from default tenant)
+              INSERT INTO `resource` (
+                `parent_id`,
+                `name`,
+                `title`,
+                `url`,
+                `uri`,
+                `method`,
+                `icon`,
+                `show_icon`,
+                `sort`,
+                `component`,
+                `redirect`,
+                `hidden`,
+                `keep_alive`,
+                `permission`,
+                `type`,
+                `created_by`,
+                `created_at`,
+                `updated_at`,
+                `enabled`,
+                `tenant_id`,
+                `resource_level`
+              )
+              SELECT
+                (SELECT r_dash.`id`
+                 FROM `resource` r_dash
+                 WHERE r_dash.`tenant_id` IS NULL
+                   AND r_dash.`name` = 'dashboard'
+                 LIMIT 1) AS `parent_id`,
+                src.`name`,
+                src.`title`,
+                src.`url`,
+                src.`uri`,
+                src.`method`,
+                src.`icon`,
+                src.`show_icon`,
+                src.`sort`,
+                src.`component`,
+                src.`redirect`,
+                src.`hidden`,
+                src.`keep_alive`,
+                src.`permission`,
+                src.`type`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`,
+                NOW() AS `updated_at`,
+                src.`enabled`,
+                NULL AS `tenant_id`,
+                'PLATFORM' AS `resource_level`
+              FROM `resource` src
+              WHERE src.`tenant_id` = 1
+                AND src.`permission` IN ('system:org:list', 'system:org:view')
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `resource` r2
+                  WHERE r2.`tenant_id` IS NULL
+                    AND r2.`name` = src.`name`
+                );
+
+              -- 4) Bind platform template ROLE_TENANT_ADMIN to platform org permissions (role_permission)
+              INSERT IGNORE INTO `role_permission` (
+                `tenant_id`,
+                `role_id`,
+                `permission_id`,
+                `created_by`,
+                `created_at`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                r_admin.`id` AS `role_id`,
+                p.`id` AS `permission_id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`
+              FROM `role` r_admin
+              JOIN `permission` p
+                ON p.`tenant_id` IS NULL
+               AND p.`permission_code` IN ('system:org:list', 'system:org:view')
+              WHERE r_admin.`tenant_id` IS NULL
+                AND r_admin.`code` = 'ROLE_TENANT_ADMIN';
+

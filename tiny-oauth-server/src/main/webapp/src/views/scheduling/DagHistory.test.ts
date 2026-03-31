@@ -81,6 +81,7 @@ vi.mock('ant-design-vue', () => ({
   },
 }))
 
+import { ACTIVE_SCOPE_CHANGED_EVENT } from '@/utils/activeScopeEvents'
 import DagHistory from '@/views/scheduling/DagHistory.vue'
 
 const PassThrough = defineComponent({
@@ -155,6 +156,13 @@ function mountView() {
         'a-select-option': PassThrough,
         'a-input': PassThrough,
         'a-range-picker': PassThrough,
+        'a-alert': defineComponent({
+          props: {
+            message: { type: String, default: '' },
+            description: { type: String, default: '' },
+          },
+          template: '<div class="a-alert-stub">{{ message }}{{ description }}</div>',
+        }),
         'a-button': ButtonStub,
         'a-tooltip': TooltipStub,
         'a-card': PassThrough,
@@ -237,6 +245,23 @@ describe('DagHistory.vue', () => {
     apiMocks.getDagRun.mockResolvedValue({ id: 101 })
     apiMocks.getDagRunNode.mockResolvedValue({ id: 201 })
     apiMocks.getTaskInstanceLog.mockResolvedValue('ok')
+  })
+
+  it('should surface operational-view notice that run history does not follow active scope', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.text()).toContain('不按顶部「活动组织/部门」收缩')
+    expect(wrapper.text()).toContain('DAG 管理列表会随活动范围变化')
+  })
+
+  it('should not refetch runs when active scope changes (contract: no active-scope listener)', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const callCount = apiMocks.getDagRuns.mock.calls.length
+    expect(callCount).toBeGreaterThan(0)
+    window.dispatchEvent(new CustomEvent(ACTIVE_SCOPE_CHANGED_EVENT, { detail: {} }))
+    await flushPromises()
+    expect(apiMocks.getDagRuns.mock.calls.length).toBe(callCount)
   })
 
   it('should load DAG runs from route and execute run-level stop/retry flow', async () => {

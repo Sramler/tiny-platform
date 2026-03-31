@@ -6,6 +6,7 @@ export type Tenant = {
   name: string
   domain?: string
   enabled?: boolean
+  lifecycleStatus?: string
   planCode?: string
   expiresAt?: string
   maxUsers?: number
@@ -23,6 +24,8 @@ export type TenantListParams = {
   name?: string
   domain?: string
   enabled?: boolean
+  lifecycleStatus?: string
+  includeDeleted?: boolean
   page?: number
   size?: number
 }
@@ -30,6 +33,11 @@ export type TenantListParams = {
 type PageResponse<T> = {
   content?: T[]
   totalElements?: number
+}
+
+export type PlatformTemplateInitializationResult = {
+  initialized: boolean
+  message: string
 }
 
 export function tenantList(params: TenantListParams) {
@@ -54,6 +62,42 @@ export function updateTenant(id: string | number, data: Partial<Tenant> & Record
     idempotency: {
       scope: `sys-tenants:update:${id}`,
       payload: data,
+    },
+  })
+}
+
+export function initializePlatformTemplate() {
+  return request.post<PlatformTemplateInitializationResult>('/sys/tenants/platform-template/initialize', null, {
+    idempotency: {
+      scope: 'sys-tenants:platform-template:initialize',
+      payload: {},
+    },
+  })
+}
+
+export function freezeTenant(id: string | number) {
+  return request.post(`/sys/tenants/${id}/freeze`, null, {
+    idempotency: {
+      scope: `sys-tenants:freeze:${id}`,
+      payload: { id },
+    },
+  })
+}
+
+export function unfreezeTenant(id: string | number) {
+  return request.post(`/sys/tenants/${id}/unfreeze`, null, {
+    idempotency: {
+      scope: `sys-tenants:unfreeze:${id}`,
+      payload: { id },
+    },
+  })
+}
+
+export function decommissionTenant(id: string | number) {
+  return request.post(`/sys/tenants/${id}/decommission`, null, {
+    idempotency: {
+      scope: `sys-tenants:decommission:${id}`,
+      payload: { id },
     },
   })
 }

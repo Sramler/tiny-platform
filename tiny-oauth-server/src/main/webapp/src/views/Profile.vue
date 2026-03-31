@@ -267,6 +267,7 @@ import { getCurrentUser } from '@/api/user'
 import type { TableColumnsType } from 'ant-design-vue'
 import { generateAvatarStyleObject } from '@/utils/avatar'
 import { getActiveTenantId, resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
+import { fetchWithTraceId } from '@/utils/traceId'
 
 // 路由
 const route = useRoute()
@@ -421,7 +422,6 @@ const loadLoginHistory = async () => {
     // 构建分页参数：Spring Data JPA 使用 page (从0开始) 和 size
     const page = loginHistoryPagination.value.current - 1 // Ant Design Vue 从1开始，后端从0开始
     const size = loginHistoryPagination.value.pageSize
-    const { fetchWithTraceId } = await import('@/utils/traceId')
     const response = await fetchWithTraceId(`${baseUrl}/sys/users/current/login-history?page=${page}&size=${size}&sort=createdAt,desc`, {
       method: 'GET',
       credentials: 'include',

@@ -95,7 +95,6 @@ import type { FormInstance } from 'ant-design-vue'
 // 引入菜单API
 import { menuTreeAll, type MenuItem } from '@/api/menu'
 import IconSelect from '../../components/IconSelect.vue' // 新增
-import * as allIcons from '@ant-design/icons-vue' // 新增
 import Icon from '@/components/Icon.vue' // 通用图标回显组件
 
 // 定义组件属性
@@ -161,11 +160,6 @@ const showIconSelector = ref(false)
 
 // 提交状态
 const submitting = ref(false)
-// 获取图标组件（支持所有官方风格，找不到时兜底）
-function getIconComponent(iconName: string) {
-  return (allIcons as any)[iconName] || allIcons.MenuOutlined
-}
-
 // 选择图标
 function selectIcon(iconName: string) {
   formData.icon = iconName

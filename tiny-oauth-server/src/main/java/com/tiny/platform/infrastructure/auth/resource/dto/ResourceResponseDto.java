@@ -89,6 +89,7 @@ public class ResourceResponseDto {
      * 权限标识
      */
     private String permission;
+    private Long requiredPermissionId;
 
     /**
      * 资源类型
@@ -99,6 +100,11 @@ public class ResourceResponseDto {
      * 资源类型名称
      */
     private String typeName;
+
+    /**
+     * 资源载体类型（过渡态显式标识：menu / ui_action / api_endpoint）
+     */
+    private String carrierKind;
 
     /**
      * 父级资源ID
@@ -245,6 +251,14 @@ public class ResourceResponseDto {
         this.permission = permission;
     }
 
+    public Long getRequiredPermissionId() {
+        return requiredPermissionId;
+    }
+
+    public void setRequiredPermissionId(Long requiredPermissionId) {
+        this.requiredPermissionId = requiredPermissionId;
+    }
+
     public Integer getType() {
         return type;
     }
@@ -259,6 +273,14 @@ public class ResourceResponseDto {
 
     public void setTypeName(String typeName) {
         this.typeName = typeName;
+    }
+
+    public String getCarrierKind() {
+        return carrierKind;
+    }
+
+    public void setCarrierKind(String carrierKind) {
+        this.carrierKind = carrierKind;
     }
 
     public Long getParentId() {
@@ -314,6 +336,11 @@ public class ResourceResponseDto {
         this.keepAlive = keepAlive != null && keepAlive;
         this.permission = permission;
         this.type = type != null ? type.getCode() : null;
+        this.carrierKind = type == null ? null : switch (type) {
+            case DIRECTORY, MENU -> "menu";
+            case BUTTON -> "ui_action";
+            case API -> "api_endpoint";
+        };
         this.parentId = parentId;
         this.leaf = leaf;
     }

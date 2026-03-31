@@ -66,13 +66,13 @@ class DefaultSecurityConfigAccessPolicyTest {
     }
 
     @Test
-    void schedulingAdminShouldRequireFullAuthenticationAndRoleAdmin() {
+    void schedulingAdminShouldRequireFullAuthenticationAndSchedulingAuthority() {
         MultiFactorAuthenticationToken admin = new MultiFactorAuthenticationToken(
                 "admin",
                 null,
                 MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL,
                 Set.of(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD),
-                List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
+                List.of(new SimpleGrantedAuthority("scheduling:cluster:view"))
         );
         MultiFactorAuthenticationToken user = new MultiFactorAuthenticationToken(
                 "user",
@@ -86,7 +86,7 @@ class DefaultSecurityConfigAccessPolicyTest {
                 null,
                 MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL,
                 Set.of(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD),
-                List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
+                List.of(new SimpleGrantedAuthority("scheduling:cluster:view"))
         );
 
         assertThat(DefaultSecurityConfig.hasSchedulingAdminAccess(admin)).isTrue();

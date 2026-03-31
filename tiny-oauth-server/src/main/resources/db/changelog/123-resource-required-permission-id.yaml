@@ -1,0 +1,38 @@
+databaseChangeLog:
+  - changeSet:
+      id: 123-add-resource-required-permission-id
+      author: codex
+      comment: Add explicit carrier-to-permission binding on resource and backfill from permission_code
+      preConditions:
+        onFail: MARK_RAN
+        and:
+          - tableExists:
+              tableName: resource
+          - tableExists:
+              tableName: permission
+          - not:
+              columnExists:
+                tableName: resource
+                columnName: required_permission_id
+      changes:
+        - sql:
+            dbms: mysql
+            sql: |
+              ALTER TABLE `resource`
+                ADD COLUMN `required_permission_id` BIGINT DEFAULT NULL COMMENT '载体绑定的权限主数据ID（兼容期过渡字段）' AFTER `permission`;
+
+              UPDATE `resource` r
+              JOIN `permission` p
+                ON p.`normalized_tenant_id` = r.`normalized_tenant_id`
+               AND p.`permission_code` = TRIM(r.`permission`)
+              SET r.`required_permission_id` = p.`id`
+              WHERE r.`permission` IS NOT NULL
+                AND TRIM(r.`permission`) <> ''
+                AND r.`required_permission_id` IS NULL;
+
+              ALTER TABLE `resource`
+                ADD KEY `idx_resource_required_permission_id` (`required_permission_id`);
+
+              ALTER TABLE `resource`
+                ADD CONSTRAINT `fk_resource_required_permission`
+                FOREIGN KEY (`required_permission_id`) REFERENCES `permission` (`id`);

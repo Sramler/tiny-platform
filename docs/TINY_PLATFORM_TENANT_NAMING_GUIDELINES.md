@@ -1,5 +1,13 @@
 # Tiny Platform Tenant Naming Guidelines
 
+> 状态：租户命名专题规范  
+> 适用范围：外部 API 契约、前端页面上下文、请求头、认证上下文、后台执行上下文  
+> 关联主线：`TINY_PLATFORM_AUTHORIZATION_MODEL.md`、`TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md`、`TINY_PLATFORM_TENANT_GOVERNANCE.md`
+
+> 说明：
+> - 本文件只负责 `tenantId` 相关外部语义拆分，不维护授权主线完成度。
+> - 新模块应直接遵循本规范，不再新增语义混叠的外部 `tenantId` 命名。
+
 ## Goal
 
 Split tenant semantics so one field name no longer carries multiple meanings.

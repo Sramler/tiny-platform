@@ -19,6 +19,7 @@ import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationSessionMan
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
 import com.tiny.platform.core.oauth.security.TotpService;
 import com.tiny.platform.core.oauth.security.TotpVerificationGuard;
+import com.tiny.platform.core.oauth.session.UserSessionService;
 import com.tiny.platform.core.oauth.service.AuthenticationAuditService;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.core.oauth.tenant.TenantContextContract;
@@ -26,6 +27,8 @@ import com.tiny.platform.core.oauth.tenant.TenantContextFilter;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationMethod;
 import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
+import com.tiny.platform.infrastructure.tenant.config.PlatformTenantProperties;
+import com.tiny.platform.infrastructure.tenant.config.PlatformTenantResolver;
 import com.tiny.platform.infrastructure.tenant.domain.Tenant;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
@@ -66,6 +69,8 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.web.context.HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -103,6 +108,9 @@ class PartialMfaFormLoginIntegrationTest {
     @Mock
     private AuthUserResolutionService authUserResolutionService;
 
+    @Mock
+    private UserSessionService userSessionService;
+
     private MockMvc mockMvc;
 
     private SecurityContextRepository securityContextRepository;
@@ -117,6 +125,9 @@ class PartialMfaFormLoginIntegrationTest {
         csrfTokenRepository.setCookieName("XSRF-TOKEN");
         csrfTokenRepository.setHeaderName("X-XSRF-TOKEN");
         csrfTokenRepository.setParameterName("_csrf");
+
+        lenient().when(authenticationMethodRepository.findByUserIdAndTenantIdIsNullAndIsMethodEnabledTrueOrderByAuthenticationPriorityAsc(anyLong()))
+                .thenReturn(List.of());
 
         FrontendProperties frontendProperties = new FrontendProperties();
         frontendProperties.setLoginUrl("redirect:http://localhost:5173/login");
@@ -133,12 +144,15 @@ class PartialMfaFormLoginIntegrationTest {
                 frontendProperties,
                 sessionManager,
                 authUserResolutionService,
-                authenticationAuditService
+                authenticationAuditService,
+                userSessionService
         );
 
+        PlatformTenantResolver platformTenantResolver = new PlatformTenantResolver(tenantRepository, new PlatformTenantProperties());
         MultiAuthenticationProvider authenticationProvider = new MultiAuthenticationProvider(
                 userRepository,
                 tenantRepository,
+                platformTenantResolver,
                 authenticationMethodRepository,
                 passwordEncoder,
                 userDetailsService,

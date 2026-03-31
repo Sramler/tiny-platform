@@ -1,3 +1,13 @@
+# Tiny Platform RBAC3 Enforce Rollout SOP
+
+> 状态：RBAC3 灰度发布运行手册  
+> 适用范围：`role-constraint` 控制面、enforce 灰度、违例观测、回滚操作  
+> 关联主线：`TINY_PLATFORM_AUTHORIZATION_MODEL.md`、`TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md`
+
+> 说明：
+> - 本文件只负责 RBAC3 从 dry-run 到 enforce 的操作步骤、观测口径与回滚策略。
+> - RBAC3 的建模边界、完成度与后续优先级，以授权模型文档和任务清单为准。
+
 ## 目标
 
 把 RBAC3 Phase2 的 **dry-run 违例观测**，安全地推进到 **enforce 阻断**（带灰度 allowlist + 可回滚）。
@@ -77,4 +87,3 @@
 - 表：`role_constraint_violation_log`
 - 建议 retention：默认保留 30 天（可按合规调整）
 - 清理脚本：`tiny-oauth-server/scripts/cleanup-role-constraint-violation-log.sql`
-

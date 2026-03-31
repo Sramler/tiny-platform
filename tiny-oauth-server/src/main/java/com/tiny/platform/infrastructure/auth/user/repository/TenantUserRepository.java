@@ -17,6 +17,8 @@ public interface TenantUserRepository extends JpaRepository<TenantUser, Long> {
 
     boolean existsByTenantIdAndStatus(Long tenantId, String status);
 
+    long countByTenantIdAndStatus(Long tenantId, String status);
+
     @Query("select tu.userId from TenantUser tu where tu.tenantId = :tenantId and tu.status = :status")
     List<Long> findUserIdsByTenantIdAndStatus(@Param("tenantId") Long tenantId, @Param("status") String status);
 

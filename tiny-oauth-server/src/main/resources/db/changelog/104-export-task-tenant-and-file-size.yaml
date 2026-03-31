@@ -1,0 +1,22 @@
+databaseChangeLog:
+  - changeSet:
+      id: 104-export-task-tenant-and-file-size
+      author: codex
+      changes:
+        - addColumn:
+            tableName: export_task
+            columns:
+              - column:
+                  name: tenant_id
+                  type: BIGINT
+                  remarks: 导出任务所属租户
+              - column:
+                  name: file_size_bytes
+                  type: BIGINT
+                  remarks: 导出文件大小（字节）
+        - createIndex:
+            tableName: export_task
+            indexName: idx_export_task_tenant
+            columns:
+              - column:
+                  name: tenant_id

@@ -25,3 +25,5 @@ jobs:
         run: |
           mvn -q -pl tiny-oauth-server test -Dtest=PartialMfaFormLoginIntegrationTest#formLoginWithMfaDisabled_sessionHasFullAuthAndActiveTenant,AuthenticationFlowE2ERegressionTest,UserControllerRbacIntegrationTest,JwtTokenCustomizerTest,EffectiveRoleResolutionServiceTest,UserDetailsServiceImplTest,AuthUserResolutionServiceTest,DefaultSecurityConfigUserEndpointIntegrationTest
 
+      - name: Run role_resource legacy removal proof pack
+        run: bash tiny-oauth-server/scripts/verify-role-resource-legacy-removal-proof-pack.sh

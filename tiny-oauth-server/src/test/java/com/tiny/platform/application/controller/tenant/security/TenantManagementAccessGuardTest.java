@@ -1,9 +1,7 @@
 package com.tiny.platform.application.controller.tenant.security;
 
 import com.tiny.platform.core.oauth.tenant.TenantContext;
-import com.tiny.platform.infrastructure.tenant.config.PlatformTenantProperties;
-import com.tiny.platform.infrastructure.tenant.domain.Tenant;
-import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
+import com.tiny.platform.core.oauth.tenant.TenantContextContract;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -11,17 +9,12 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 import java.util.List;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 class TenantManagementAccessGuardTest {
 
-    private final TenantRepository tenantRepository = mock(TenantRepository.class);
-    private final PlatformTenantProperties platformTenantProperties = new PlatformTenantProperties();
-    private final TenantManagementAccessGuard guard = new TenantManagementAccessGuard(tenantRepository, platformTenantProperties);
+    private final TenantManagementAccessGuard guard = new TenantManagementAccessGuard();
 
     @AfterEach
     void tearDown() {
@@ -29,21 +22,65 @@ class TenantManagementAccessGuardTest {
     }
 
     @Test
-    void should_allow_platform_admin_from_active_tenant_claim_when_context_missing() {
-        Tenant platformTenant = new Tenant();
-        platformTenant.setId(1L);
-        platformTenant.setCode("default");
-        when(tenantRepository.findByCode("default")).thenReturn(Optional.of(platformTenant));
+    void should_allow_platform_admin_with_fine_grained_permissions() {
+        TenantContext.setActiveTenantId(1L);
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_PLATFORM);
 
-        Jwt jwt = Jwt.withTokenValue("token")
-                .header("alg", "none")
-                .claim("activeTenantId", "1")
-                .build();
-        JwtAuthenticationToken authentication = new JwtAuthenticationToken(
-                jwt,
-                List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
+        JwtAuthenticationToken authentication = jwtAuth(
+                "system:tenant:list", "system:tenant:create",
+                "system:tenant:edit", "system:tenant:template:initialize", "system:tenant:delete"
         );
 
-        assertThat(guard.canManage(authentication)).isTrue();
+        assertThat(guard.canRead(authentication)).isTrue();
+        assertThat(guard.canCreate(authentication)).isTrue();
+        assertThat(guard.canUpdate(authentication)).isTrue();
+        assertThat(guard.canInitializePlatformTemplate(authentication)).isTrue();
+        assertThat(guard.canDelete(authentication)).isTrue();
+    }
+
+    @Test
+    void should_deny_role_admin_alone_without_fine_grained_permissions() {
+        TenantContext.setActiveTenantId(1L);
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_PLATFORM);
+
+        JwtAuthenticationToken authentication = jwtAuth("ROLE_ADMIN");
+
+        assertThat(guard.canRead(authentication)).isFalse();
+        assertThat(guard.canCreate(authentication)).isFalse();
+        assertThat(guard.canUpdate(authentication)).isFalse();
+        assertThat(guard.canInitializePlatformTemplate(authentication)).isFalse();
+        assertThat(guard.canDelete(authentication)).isFalse();
+    }
+
+    @Test
+    void should_deny_when_not_platform_scope() {
+        TenantContext.setActiveTenantId(999L);
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_TENANT);
+
+        JwtAuthenticationToken authentication = jwtAuth("system:tenant:list", "system:tenant:view");
+
+        assertThat(guard.canRead(authentication)).isFalse();
+    }
+
+    @Test
+    void should_deny_when_scope_type_not_set() {
+        TenantContext.setActiveTenantId(1L);
+
+        JwtAuthenticationToken authentication = jwtAuth("system:tenant:list");
+
+        assertThat(guard.canRead(authentication)).isFalse();
+    }
+
+    private static JwtAuthenticationToken jwtAuth(String... authorities) {
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "none")
+                .claim("sub", "test-user")
+                .build();
+        return new JwtAuthenticationToken(
+                jwt,
+                java.util.Arrays.stream(authorities)
+                        .map(SimpleGrantedAuthority::new)
+                        .toList()
+        );
     }
 }

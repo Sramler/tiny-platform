@@ -77,13 +77,14 @@ public class CustomLoginSuccessHandler implements AuthenticationSuccessHandler {
     public void onAuthenticationSuccess(HttpServletRequest request, HttpServletResponse response, Authentication authentication) throws IOException, ServletException {
         String username = authentication.getName();
         Long activeTenantId = ActiveTenantResponseSupport.resolveActiveTenantId(authentication);
-        User user = resolveUserInActiveTenant(username, activeTenantId);
+        String activeScopeType = resolveActiveScopeType();
+        User user = resolveUserByScope(username, activeTenantId, activeScopeType);
         if (user == null) {
             response.sendRedirect("/");
             return;
         }
 
-        freezeActiveTenantId(request, activeTenantId);
+        freezeActiveContext(request, activeTenantId, activeScopeType);
         
         Map<String, Object> status = securityService.getSecurityStatus(user);
         boolean totpBound = Boolean.TRUE.equals(status.get("totpBound"));
@@ -120,7 +121,7 @@ public class CustomLoginSuccessHandler implements AuthenticationSuccessHandler {
         }
 
         // 2️⃣ 检查是否仅具备 PASSWORD factor authority、仍需继续 TOTP challenge
-        if (authentication instanceof MultiFactorAuthenticationToken mfaToken) {
+        if (authentication instanceof MultiFactorAuthenticationToken) {
             if (AuthenticationFactorAuthorities.hasFactor(authentication, MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD) &&
                 !AuthenticationFactorAuthorities.hasFactor(authentication, MultiFactorAuthenticationToken.AuthenticationFactorType.TOTP) &&
                 totpActivated &&
@@ -302,20 +303,48 @@ public class CustomLoginSuccessHandler implements AuthenticationSuccessHandler {
         }
     }
 
-    private void freezeActiveTenantId(HttpServletRequest request, Long activeTenantId) {
-        if (request == null || activeTenantId == null || activeTenantId <= 0) {
+    private void freezeActiveContext(HttpServletRequest request, Long activeTenantId, String activeScopeType) {
+        if (request == null) {
             return;
         }
         var session = request.getSession(true);
-        session.setAttribute(SESSION_ACTIVE_TENANT_ID_KEY, activeTenantId);
-        session.setAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_TYPE_KEY, TenantContextContract.SCOPE_TYPE_TENANT);
+        if (activeTenantId != null && activeTenantId > 0) {
+            session.setAttribute(SESSION_ACTIVE_TENANT_ID_KEY, activeTenantId);
+        } else {
+            session.removeAttribute(SESSION_ACTIVE_TENANT_ID_KEY);
+        }
+        String normalizedScopeType = activeScopeType == null || activeScopeType.isBlank()
+            ? TenantContextContract.SCOPE_TYPE_TENANT
+            : activeScopeType.trim().toUpperCase(java.util.Locale.ROOT);
+        session.setAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_TYPE_KEY, normalizedScopeType);
+        if (TenantContextContract.SCOPE_TYPE_PLATFORM.equals(normalizedScopeType)) {
+            session.removeAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_ID_KEY);
+        } else if (activeTenantId != null && activeTenantId > 0) {
+            session.setAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_ID_KEY, activeTenantId);
+        } else {
+            session.removeAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_ID_KEY);
+        }
     }
 
-    private User resolveUserInActiveTenant(String username, Long activeTenantId) {
-        if (activeTenantId == null || username == null || username.isBlank()) {
+    private User resolveUserByScope(String username, Long activeTenantId, String activeScopeType) {
+        if (username == null || username.isBlank()) {
+            return null;
+        }
+        if (TenantContextContract.SCOPE_TYPE_PLATFORM.equalsIgnoreCase(activeScopeType)) {
+            return requireAuthUserResolutionService().resolveUserRecordInPlatform(username).orElse(null);
+        }
+        if (activeTenantId == null) {
             return null;
         }
         return requireAuthUserResolutionService().resolveUserRecordInActiveTenant(username, activeTenantId).orElse(null);
+    }
+
+    private String resolveActiveScopeType() {
+        String scopeType = TenantContext.getActiveScopeType();
+        if (scopeType == null || scopeType.isBlank()) {
+            scopeType = TenantContextContract.SCOPE_TYPE_TENANT;
+        }
+        return scopeType.trim().toUpperCase(java.util.Locale.ROOT);
     }
 
     private AuthUserResolutionService requireAuthUserResolutionService() {

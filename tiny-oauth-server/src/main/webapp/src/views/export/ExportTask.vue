@@ -195,6 +195,7 @@ import {
     paginateTasks,
     statusLabel
 } from './taskUtils'
+import { ACTIVE_SCOPE_CHANGED_EVENT } from '@/utils/activeScopeEvents'
 
 const route = useRoute()
 
@@ -496,6 +497,10 @@ function updateTableBodyHeight() {
     })
 }
 
+function handleActiveScopeChanged() {
+    void loadData()
+}
+
 onMounted(async () => {
     // 从路由查询参数中读取 taskId，如果存在则自动填充到搜索表单并过滤
     const taskIdFromQuery = route.query.taskId as string | undefined
@@ -509,10 +514,12 @@ onMounted(async () => {
     // 更新表格高度
     updateTableBodyHeight()
     window.addEventListener('resize', updateTableBodyHeight)
+    window.addEventListener(ACTIVE_SCOPE_CHANGED_EVENT, handleActiveScopeChanged)
 })
 
 onBeforeUnmount(() => {
     window.removeEventListener('resize', updateTableBodyHeight)
+    window.removeEventListener(ACTIVE_SCOPE_CHANGED_EVENT, handleActiveScopeChanged)
 })
 
 // 监听路由 query 参数变化，自动更新过滤条件

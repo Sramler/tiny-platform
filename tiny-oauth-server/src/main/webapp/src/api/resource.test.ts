@@ -110,6 +110,32 @@ describe('resource API', () => {
     })
   })
 
+
+
+  it('should request runtime ui actions', async () => {
+    requestMocks.get.mockResolvedValue([{ id: 11, permission: 'system:resource:create' }])
+    const { getRuntimeUiActions } = await import('@/api/resource')
+
+    const result = await getRuntimeUiActions('/system/resource')
+
+    expect(requestMocks.get).toHaveBeenCalledWith('/sys/resources/runtime/ui-actions', {
+      params: { pagePath: '/system/resource' },
+    })
+    expect(result).toHaveLength(1)
+  })
+
+  it('should request runtime api access', async () => {
+    requestMocks.get.mockResolvedValue({ allowed: true })
+    const { getRuntimeApiAccess } = await import('@/api/resource')
+
+    const result = await getRuntimeApiAccess('GET', '/sys/resources')
+
+    expect(requestMocks.get).toHaveBeenCalledWith('/sys/resources/runtime/api-access', {
+      params: { method: 'GET', uri: '/sys/resources' },
+    })
+    expect(result.allowed).toBe(true)
+  })
+
   it('should request resource tree', async () => {
     requestMocks.get.mockResolvedValue([{ id: 1, children: [] }])
     const { getResourceTree } = await import('@/api/resource')

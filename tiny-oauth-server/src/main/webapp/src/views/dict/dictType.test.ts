@@ -34,6 +34,7 @@ vi.mock('ant-design-vue', () => ({
   Modal: { confirm: vi.fn() },
 }))
 
+import { ACTIVE_SCOPE_CHANGED_EVENT } from '@/utils/activeScopeEvents'
 import DictType from '@/views/dict/dictType.vue'
 
 const PassThrough = defineComponent({
@@ -140,5 +141,27 @@ describe('dictType.vue', () => {
   it('should display table title', () => {
     const wrapper = mountView()
     expect(wrapper.text()).toContain('字典类型管理')
+  })
+
+  it('should refetch dict types when active scope changes and tenant is selected', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const n = apiMocks.getDictTypeList.mock.calls.length
+    expect(n).toBeGreaterThanOrEqual(1)
+    window.dispatchEvent(new CustomEvent(ACTIVE_SCOPE_CHANGED_EVENT))
+    await flushPromises()
+    expect(apiMocks.getDictTypeList.mock.calls.length).toBeGreaterThan(n)
+    wrapper.unmount()
+  })
+
+  it('should not refetch on active scope change without active tenant', async () => {
+    tenantMocks.getActiveTenantId.mockReturnValue(null)
+    const wrapper = mountView()
+    await flushPromises()
+    const n = apiMocks.getDictTypeList.mock.calls.length
+    window.dispatchEvent(new CustomEvent(ACTIVE_SCOPE_CHANGED_EVENT))
+    await flushPromises()
+    expect(apiMocks.getDictTypeList.mock.calls.length).toBe(n)
+    wrapper.unmount()
   })
 })

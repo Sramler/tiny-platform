@@ -1,7 +1,6 @@
 package com.tiny.platform.infrastructure.auth.role.repository;
 
 import com.tiny.platform.infrastructure.auth.role.domain.Role;
-import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
@@ -15,6 +14,8 @@ public interface RoleRepository extends JpaRepository<Role, Long>, JpaSpecificat
 
     List<Role> findByTenantIdOrderByIdAsc(Long tenantId);
 
+    boolean existsByTenantId(Long tenantId);
+
     /** 平台模板：tenant_id IS NULL，见 §4 平台模板与 default 解耦 */
     List<Role> findByTenantIdIsNullOrderByIdAsc();
 
@@ -26,27 +27,125 @@ public interface RoleRepository extends JpaRepository<Role, Long>, JpaSpecificat
 
     List<Role> findByIdInAndTenantId(List<Long> ids, Long tenantId);
 
-    @EntityGraph(attributePaths = {"resources"})
-    List<Role> findWithResourcesByIdInAndTenantIdOrderByIdAsc(List<Long> ids, Long tenantId);
+    List<Role> findByIdInAndTenantIdOrderByIdAsc(List<Long> ids, Long tenantId);
+
+    List<Role> findByIdInAndTenantIdIsNullOrderByIdAsc(List<Long> ids);
 
     /**
-     * 查询角色已经分配的所有资源ID
+     * 查询角色已经分配的所有资源ID（新模型口径：role_permission -> permission，carrier 通过 required_permission_id 绑定）。
      */
-    @Query("select res.id from Role role join role.resources res where role.id = :roleId")
+    @Query(value = """
+        SELECT DISTINCT c.id
+        FROM role ro
+        JOIN role_permission rp
+          ON rp.role_id = ro.id
+         AND rp.normalized_tenant_id = IFNULL(ro.tenant_id, 0)
+        JOIN (
+            SELECT m.id, m.required_permission_id, IFNULL(m.tenant_id, 0) AS normalized_tenant_id
+            FROM menu m
+            UNION ALL
+            SELECT a.id, a.required_permission_id, IFNULL(a.tenant_id, 0) AS normalized_tenant_id
+            FROM ui_action a
+            UNION ALL
+            SELECT e.id, e.required_permission_id, IFNULL(e.tenant_id, 0) AS normalized_tenant_id
+            FROM api_endpoint e
+        ) c
+          ON c.required_permission_id = rp.permission_id
+         AND c.normalized_tenant_id = rp.normalized_tenant_id
+        WHERE ro.id = :roleId
+        ORDER BY c.id ASC
+        """, nativeQuery = true)
     List<Long> findResourceIdsByRoleId(@Param("roleId") Long roleId);
 
-    @Modifying
-    @Query(value = "DELETE FROM role_resource WHERE role_id = :roleId AND tenant_id = :tenantId", nativeQuery = true)
-    void deleteRoleResourceRelations(@Param("roleId") Long roleId, @Param("tenantId") Long tenantId);
+    @Query(value = """
+        SELECT DISTINCT rp.permission_id
+        FROM role_permission rp
+        WHERE rp.role_id = :roleId
+          AND rp.tenant_id <=> :tenantId
+        ORDER BY rp.permission_id ASC
+        """, nativeQuery = true)
+    List<Long> findPermissionIdsByRoleIdAndTenantId(@Param("roleId") Long roleId, @Param("tenantId") Long tenantId);
+
+    @Query(value = """
+        SELECT DISTINCT rp.permission_id
+        FROM role_permission rp
+        WHERE rp.role_id IN (:roleIds)
+          AND rp.tenant_id <=> :tenantId
+        ORDER BY rp.permission_id ASC
+        """, nativeQuery = true)
+    List<Long> findPermissionIdsByRoleIdsAndTenantId(@Param("roleIds") List<Long> roleIds, @Param("tenantId") Long tenantId);
 
     @Modifying
-    @Query(value = "INSERT INTO role_resource (tenant_id, role_id, resource_id) VALUES (:tenantId, :roleId, :resourceId)", nativeQuery = true)
-    void addRoleResourceRelation(@Param("tenantId") Long tenantId, @Param("roleId") Long roleId, @Param("resourceId") Long resourceId);
+    @Query(value = "DELETE FROM role_permission WHERE role_id = :roleId AND tenant_id <=> :tenantId", nativeQuery = true)
+    void deleteRolePermissionRelations(@Param("roleId") Long roleId, @Param("tenantId") Long tenantId);
 
-    @Query(value = "SELECT role_id AS roleId, resource_id AS resourceId FROM role_resource WHERE tenant_id = :tenantId ORDER BY role_id ASC, resource_id ASC", nativeQuery = true)
-    List<RoleResourceRelationProjection> findRoleResourceRelationsByTenantId(@Param("tenantId") Long tenantId);
+    /**
+     * When a carrier becomes the last reference of a permission under a tenant scope,
+     * revoke all role_permission relations by {@code permission_id}.
+     */
+    @Modifying
+    @Query(value = "DELETE FROM role_permission WHERE permission_id = :permissionId AND tenant_id <=> :tenantId", nativeQuery = true)
+    void deleteRolePermissionRelationsByPermissionIdAndTenantId(@Param("permissionId") Long permissionId,
+                                                                   @Param("tenantId") Long tenantId);
 
-    /** 平台模板关联：tenant_id IS NULL */
-    @Query(value = "SELECT role_id AS roleId, resource_id AS resourceId FROM role_resource WHERE tenant_id IS NULL ORDER BY role_id ASC, resource_id ASC", nativeQuery = true)
-    List<RoleResourceRelationProjection> findRoleResourceRelationsByTenantIdIsNull();
+    @Modifying
+    @Query(value = """
+        INSERT IGNORE INTO role_permission (tenant_id, role_id, permission_id)
+        VALUES (:tenantId, :roleId, :permissionId)
+        """, nativeQuery = true)
+    void addRolePermissionRelationByPermissionId(@Param("tenantId") Long tenantId,
+                                                 @Param("roleId") Long roleId,
+                                                 @Param("permissionId") Long permissionId);
+
+    /**
+     * 租户内角色已授权资源对（主模型：role_permission → permission；carrier 通过 required_permission_id 绑定）。
+     */
+    @Query(value = """
+        SELECT DISTINCT ro.id AS roleId, c.id AS resourceId
+        FROM role ro
+        JOIN role_permission rp
+          ON rp.role_id = ro.id
+         AND rp.normalized_tenant_id = IFNULL(ro.tenant_id, 0)
+        JOIN (
+            SELECT m.id, m.required_permission_id, IFNULL(m.tenant_id, 0) AS normalized_tenant_id
+            FROM menu m
+            UNION ALL
+            SELECT a.id, a.required_permission_id, IFNULL(a.tenant_id, 0) AS normalized_tenant_id
+            FROM ui_action a
+            UNION ALL
+            SELECT e.id, e.required_permission_id, IFNULL(e.tenant_id, 0) AS normalized_tenant_id
+            FROM api_endpoint e
+        ) c
+          ON c.required_permission_id = rp.permission_id
+         AND c.normalized_tenant_id = rp.normalized_tenant_id
+        WHERE ro.tenant_id = :tenantId
+        ORDER BY ro.id ASC, c.id ASC
+        """, nativeQuery = true)
+    List<RoleResourceRelationProjection> findGrantedRoleCarrierPairsByTenantId(@Param("tenantId") Long tenantId);
+
+    /**
+     * 平台模板（tenant_id IS NULL 角色/资源）已授权资源对，口径同 {@link #findGrantedRoleCarrierPairsByTenantId}。
+     */
+    @Query(value = """
+        SELECT DISTINCT ro.id AS roleId, c.id AS resourceId
+        FROM role ro
+        JOIN role_permission rp
+          ON rp.role_id = ro.id
+         AND rp.normalized_tenant_id = IFNULL(ro.tenant_id, 0)
+        JOIN (
+            SELECT m.id, m.required_permission_id, IFNULL(m.tenant_id, 0) AS normalized_tenant_id
+            FROM menu m
+            UNION ALL
+            SELECT a.id, a.required_permission_id, IFNULL(a.tenant_id, 0) AS normalized_tenant_id
+            FROM ui_action a
+            UNION ALL
+            SELECT e.id, e.required_permission_id, IFNULL(e.tenant_id, 0) AS normalized_tenant_id
+            FROM api_endpoint e
+        ) c
+          ON c.required_permission_id = rp.permission_id
+         AND c.normalized_tenant_id = rp.normalized_tenant_id
+        WHERE ro.tenant_id IS NULL
+        ORDER BY ro.id ASC, c.id ASC
+        """, nativeQuery = true)
+    List<RoleResourceRelationProjection> findGrantedRoleCarrierPairsForPlatformTemplate();
 }

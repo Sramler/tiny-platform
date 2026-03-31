@@ -72,15 +72,11 @@ class SecurityServiceImplMfaDecisionTest {
         MfaProperties mfaProperties = new MfaProperties();
         mfaProperties.setMode("OPTIONAL");
 
-        when(repository.existsByUserIdAndTenantIdAndAuthenticationProviderAndAuthenticationType(
-                1L, 9L, "LOCAL", "TOTP"
-        )).thenReturn(true);
+        when(repository.existsEffectiveAuthenticationMethod(1L, 9L, "LOCAL", "TOTP")).thenReturn(true);
 
         UserAuthenticationMethod method = new UserAuthenticationMethod();
         method.setAuthenticationConfiguration(Map.of("activated", true));
-        when(repository.findByUserIdAndTenantIdAndAuthenticationProviderAndAuthenticationType(
-                1L, 9L, "LOCAL", "TOTP"
-        )).thenReturn(Optional.of(method));
+        when(repository.findEffectiveAuthenticationMethod(1L, 9L, "LOCAL", "TOTP")).thenReturn(Optional.of(method));
 
         TotpVerificationGuard guard = new TotpVerificationGuard(repository, mfaProperties, totpService);
         SecurityServiceImpl service = new SecurityServiceImpl(repository, passwordEncoder, mfaProperties, guard);
@@ -104,15 +100,11 @@ class SecurityServiceImplMfaDecisionTest {
         MfaProperties mfaProperties = new MfaProperties();
         mfaProperties.setMode("OPTIONAL");
 
-        when(repository.existsByUserIdAndTenantIdAndAuthenticationProviderAndAuthenticationType(
-                1L, 9L, "LOCAL", "TOTP"
-        )).thenReturn(true);
+        when(repository.existsEffectiveAuthenticationMethod(1L, 9L, "LOCAL", "TOTP")).thenReturn(true);
 
         UserAuthenticationMethod method = new UserAuthenticationMethod();
         method.setAuthenticationConfiguration(Map.of("activated", true));
-        when(repository.findByUserIdAndTenantIdAndAuthenticationProviderAndAuthenticationType(
-                1L, 9L, "LOCAL", "TOTP"
-        )).thenReturn(Optional.of(method));
+        when(repository.findEffectiveAuthenticationMethod(1L, 9L, "LOCAL", "TOTP")).thenReturn(Optional.of(method));
 
         TotpVerificationGuard guard = new TotpVerificationGuard(repository, mfaProperties, totpService);
         SecurityServiceImpl service = new SecurityServiceImpl(repository, passwordEncoder, mfaProperties, guard);
@@ -138,16 +130,12 @@ class SecurityServiceImplMfaDecisionTest {
         MfaProperties mfaProperties = new MfaProperties();
         mfaProperties.setMode(mode);
 
-        when(repository.existsByUserIdAndTenantIdAndAuthenticationProviderAndAuthenticationType(
-                1L, 1L, "LOCAL", "TOTP"
-        )).thenReturn(totpBound);
+        when(repository.existsEffectiveAuthenticationMethod(1L, 1L, "LOCAL", "TOTP")).thenReturn(totpBound);
 
         if (totpBound) {
             UserAuthenticationMethod method = new UserAuthenticationMethod();
             method.setAuthenticationConfiguration(Map.of("activated", totpActivated));
-            when(repository.findByUserIdAndTenantIdAndAuthenticationProviderAndAuthenticationType(
-                    1L, 1L, "LOCAL", "TOTP"
-            )).thenReturn(Optional.of(method));
+            when(repository.findEffectiveAuthenticationMethod(1L, 1L, "LOCAL", "TOTP")).thenReturn(Optional.of(method));
         }
 
         TotpVerificationGuard guard = new TotpVerificationGuard(repository, mfaProperties, totpService);

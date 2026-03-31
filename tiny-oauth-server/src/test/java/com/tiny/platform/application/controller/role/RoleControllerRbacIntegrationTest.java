@@ -75,11 +75,11 @@ class RoleControllerRbacIntegrationTest {
         }
 
         @Test
-        void getAll_allowsAdminAuthority() throws Exception {
+        void getAll_allowsRoleListAuthority() throws Exception {
             when(roleService.roles(any(), any())).thenReturn(new PageImpl<>(List.of(sampleRoleResponse())));
 
             mockMvc.perform(get("/sys/roles/all")
-                    .with(user("admin").authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
+                    .with(user("admin").authorities(new SimpleGrantedAuthority("system:role:list"))))
                 .andExpect(status().isOk());
         }
 

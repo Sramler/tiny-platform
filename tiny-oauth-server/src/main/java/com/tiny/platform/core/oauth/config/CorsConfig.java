@@ -19,9 +19,10 @@ public class CorsConfig {
         CorsConfiguration config = new CorsConfiguration();
 
         // 允许的源，可以根据环境配置
+        // 使用端口通配：Spring 的 allowedOriginPatterns 中 "[*]" 不能可靠匹配任意端口。
         config.setAllowedOriginPatterns(List.of(
-                "http://localhost:[*]",  // 本地开发环境
-                "http://127.0.0.1:[*]",  // 本地开发环境
+                "http://localhost:*", // 任意端口（含 Playwright 动态 Vite 端口）
+                "http://127.0.0.1:*",
                 "https://*.yourdomain.com" // 生产环境域名
         ));
 

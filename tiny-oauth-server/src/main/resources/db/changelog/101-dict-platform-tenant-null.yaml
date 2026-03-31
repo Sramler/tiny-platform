@@ -1,0 +1,111 @@
+databaseChangeLog:
+  - changeSet:
+      id: 101-dict-platform-tenant-null
+      author: tiny
+      comment: >
+        平台语义统一：dict_type/dict_item 的 tenant_id 从 0 迁移到 NULL，
+        与 role/resource 的 tenant_id IS NULL = PLATFORM 模式对齐。
+        使用 COALESCE 函数索引保证平台字典唯一性（MySQL 8.0.13+）。
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: false
+            stripComments: false
+            sql: |
+              ALTER TABLE `dict_type` MODIFY COLUMN `tenant_id` BIGINT NULL;
+        - sql:
+            dbms: mysql
+            splitStatements: false
+            stripComments: false
+            sql: |
+              ALTER TABLE `dict_item` MODIFY COLUMN `tenant_id` BIGINT NULL;
+        - sql:
+            dbms: mysql
+            splitStatements: false
+            stripComments: false
+            sql: |
+              UPDATE `dict_type` SET `tenant_id` = NULL WHERE `tenant_id` = 0;
+        - sql:
+            dbms: mysql
+            splitStatements: false
+            stripComments: false
+            sql: |
+              UPDATE `dict_item` SET `tenant_id` = NULL WHERE `tenant_id` = 0;
+        - sql:
+            dbms: mysql
+            splitStatements: false
+            stripComments: false
+            sql: |
+              DROP PROCEDURE IF EXISTS `_101_dict_reindex`;
+        - sql:
+            dbms: mysql
+            splitStatements: false
+            stripComments: false
+            sql: |
+              CREATE PROCEDURE `_101_dict_reindex`()
+              BEGIN
+                IF EXISTS (
+                  SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS
+                  WHERE TABLE_SCHEMA = DATABASE()
+                    AND TABLE_NAME = 'dict_type'
+                    AND INDEX_NAME = 'uk_dict_type_tenant_code'
+                ) THEN
+                  ALTER TABLE `dict_type` DROP INDEX `uk_dict_type_tenant_code`;
+                END IF;
+
+                IF EXISTS (
+                  SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS
+                  WHERE TABLE_SCHEMA = DATABASE()
+                    AND TABLE_NAME = 'dict_item'
+                    AND INDEX_NAME = 'uk_dict_type_value_tenant'
+                ) THEN
+                  ALTER TABLE `dict_item` DROP INDEX `uk_dict_type_value_tenant`;
+                END IF;
+              END;
+        - sql:
+            dbms: mysql
+            splitStatements: false
+            stripComments: false
+            sql: |
+              CALL `_101_dict_reindex`();
+        - sql:
+            dbms: mysql
+            splitStatements: false
+            stripComments: false
+            sql: |
+              DROP PROCEDURE IF EXISTS `_101_dict_reindex`;
+        - sql:
+            dbms: mysql
+            splitStatements: false
+            stripComments: false
+            sql: |
+              CREATE UNIQUE INDEX `uk_dict_type_tenant_code`
+                ON `dict_type` ((COALESCE(`tenant_id`, 0)), `dict_code`);
+        - sql:
+            dbms: mysql
+            splitStatements: false
+            stripComments: false
+            sql: |
+              CREATE UNIQUE INDEX `uk_dict_type_value_tenant`
+                ON `dict_item` (`dict_type_id`, (COALESCE(`tenant_id`, 0)), `value`);
+      rollback:
+        - sql:
+            dbms: mysql
+            splitStatements: false
+            sql: |
+              UPDATE `dict_type` SET `tenant_id` = 0 WHERE `tenant_id` IS NULL;
+        - sql:
+            dbms: mysql
+            splitStatements: false
+            sql: |
+              UPDATE `dict_item` SET `tenant_id` = 0 WHERE `tenant_id` IS NULL;
+        - sql:
+            dbms: mysql
+            splitStatements: false
+            sql: |
+              ALTER TABLE `dict_type` MODIFY COLUMN `tenant_id` BIGINT NOT NULL;
+        - sql:
+            dbms: mysql
+            splitStatements: false
+            sql: |
+              ALTER TABLE `dict_item` MODIFY COLUMN `tenant_id` BIGINT NOT NULL;

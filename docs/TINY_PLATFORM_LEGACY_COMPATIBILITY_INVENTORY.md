@@ -2,16 +2,23 @@
 
 > 与授权模型、租户、用户解析相关的遗留包袱，便于分阶段收口与下线。  
 > 关联：`docs/TINY_PLATFORM_AUTHORIZATION_MODEL.md`、`docs/TINY_PLATFORM_PERMISSION_IDENTIFIER_SPEC.md`、`.agent/src/rules/92-tiny-platform-permission.rules.md`、`.agent/src/rules/93-tiny-platform-authorization-model.rules.md`。
+> 说明：本文件只维护遗留来源、兼容现状与下线策略；不承担“当前完成度/优先级”的唯一维护职责。
 
 ---
 
 ## 0. 按权限模型与权限标识符的演进路径
 
-- **权限真相源**：运行态以 `resource.permission` 为准，权限码命名遵循 [TINY_PLATFORM_PERMISSION_IDENTIFIER_SPEC.md](./TINY_PLATFORM_PERMISSION_IDENTIFIER_SPEC.md)，新增仅使用规范码。
-- **控制面 Guard**：各 AccessGuard 已使用规范权限码（如 `system:user:list`、`system:role:edit`、`idempotent:ops:view`、`dict:platform:manage`）与 `LegacyAuthConstants`（ROLE_ADMIN/ADMIN）兼容；具备任一规范码或管理员角色即可通过。目标态为仅依赖 resource 下发的规范码，管理员角色作为迁移期快捷方式保留。
+- **权限真相源**：运行态功能权限已统一为 `role_assignment -> role_permission -> permission`；`resource.permission` 仅保留为兼容字段、运营可读字段和历史回填输入，新增逻辑不得再把它当唯一真相源。
+- **控制面 Guard**：各 AccessGuard 仅使用规范权限码（如 `system:user:list`、`system:role:edit`、`idempotent:ops:view`、`dict:platform:manage`）。`LegacyAuthConstants` 已删除，ROLE_ADMIN 兜底已移除。平台级入口通过 `TenantContext.isPlatformScope()` 判定，不再查库。
 - **平台级入口**：租户管理、幂等治理、字典平台等仅允许“当前平台租户 + 管理员”或“当前平台租户 + 对应规范码”（如 `system:tenant:list`、`idempotent:ops:view`、`dict:platform:manage`），见权限规范文档“控制面与平台级”小节。
-- **角色码演进**：ROLE_ADMIN 为规范角色码，ADMIN 为历史兼容码；目标为数据与前端收口后仅保留 ROLE_ADMIN，或完全由“控制面权限集”替代粗粒度管理员判断。
-- **导出能力**：导出接口已支持规范码 `system:export:view`（具备则可用导出）；查看全部任务/下载他人结果仍仅允许管理员，与 LegacyAuthConstants 一致。
+- **角色码演进**：运行时代码已不再特殊识别 `ADMIN`；`ROLE_ADMIN` 只是当前 seed 中的管理员角色码。若历史环境仍残留 `ADMIN` 数据，应通过迁移脚本清理，而不是继续在运行时兼容。
+- **导出能力**：导出接口已支持规范码 `system:export:view`（具备则可用导出）；查看全部任务/下载他人结果仍仅允许管理员，与当前导出权限语义一致。
+
+### 0.1 兼容清退分桶（2026-03）
+
+- **可立刻删除（已完成）**：旧菜单/资源运行时查询 helper，包括 `MenuServiceImpl.mergeTreeMenus(...)`、`MenuServiceImpl.resolveCurrentUsername()`、`MenuEntryRepository.findGranted*ByUsername*`、`ResourceRepository.findGrantedResourcesByUsername*`。
+- **已迁 runtime 后删除（已完成本轮迁移）**：资源管理控制面的运行时按钮门控、API 访问判断、资源树与按类型读路径已迁到 `menu / ui_action / api_endpoint + requirement`，并据此删除对应 legacy 查询。
+- **暂时必须保留**：`resource` 总表、`resource.permission`、部分 `ResourceRepository` 兼容查询（仅作为历史资产：可观测/迁移输入/运营可读字段；运行时主线不再读写 `resource` 表）。与运行时安全边界相关的显式语义由 `CarrierCompatibilitySafetyService` 承接（`replaceCompatibilityRequirement(requirement_group=0)` 与 `existsPermissionReference`），不再以 legacy projection bridge 的形式存在。后续若要物理下线 `resource` 表，应先补齐归档/迁移与回滚路径（历史资产治理议题，不是运行时阻断）。
 
 ---
 
@@ -29,8 +36,8 @@
 
 | 项 | 位置 | 说明 | 收口建议 |
 |----|------|------|----------|
-| **平台 = code "default" 的租户** | `TenantManagementAccessGuard`（PLATFORM_TENANT_CODE）、`IdempotentMetricsAccessGuard`（properties.getOps().getPlatformTenantCode）、`MenuServiceImpl`（`tenantRepository.findByCode("default")`）、`TenantBootstrapServiceImpl`（DEFAULT_TENANT_CODE） | 用“默认租户”编码表示平台或模板来源。 | 文档已约定迁移期允许；长期改为 `scope_type=PLATFORM` + 可选配置的“平台租户 ID”，不再用 code 语义。 |
-| **平台 = tenant_id 0** | `DictTenantScope.PLATFORM_TENANT_ID = 0`，字典模块各处 `isPlatformTenant(tenantId)` | 字典用 `tenant_id=0` 表示平台字典，与“default 租户”可能不一致（若 default 的 id≠0）。 | **当前约定**：`tenant_id=0` 仅字典模块表示“平台字典”；其余控制面（菜单、幂等、租户管理等）使用“code=default 的租户”或配置。可配置化留待与平台租户统一时做（T7.1）。 |
+| **平台 = code "default" 的租户** | `PlatformTenantProperties` / `PlatformTenantResolver`、`IdempotentProperties`、`TenantBootstrapServiceImpl` | 平台控制面 Guard 已不再依赖 `default`，但平台租户解析与 bootstrap 模板回退仍以配置的 `platformTenantCode`（默认 `default`）作为兼容承载。 | 长期改为 `scope_type=PLATFORM` + 平台模板层级；不再把 `code=default` 作为模板/平台语义的最后回退。 |
+| ~~**平台 = tenant_id 0**~~ | `DictTenantScope.PLATFORM_TENANT_ID = 0`，字典模块各处 `isPlatformTenant(tenantId)` | ✅ 已收口：字典已迁移到 `tenant_id IS NULL`，与“default 租户”可能不一致（若 default 的 id≠0）。 | **当前约定**：`tenant_id=0` 仅字典模块表示“平台字典”；其余控制面（菜单、幂等、租户管理等）使用“code=default 的租户”或配置。可配置化留待与平台租户统一时做（T7.1）。 |
 
 ---
 
@@ -38,7 +45,7 @@
 
 | 项 | 位置 | 说明 | 收口建议 |
 |----|------|------|----------|
-| **"ADMIN" 与 "ROLE_ADMIN" 并存** | `UserManagementAccessGuard`、`RoleManagementAccessGuard`、`ResourceManagementAccessGuard`、`MenuManagementAccessGuard`、`DictPlatformAccessGuard`、`TenantManagementAccessGuard`、`MenuServiceImpl`、`ExportController` | 多处 `Set.of("ROLE_ADMIN", "ADMIN")` 或 `equalsIgnoreCase("ADMIN")`。 | 规范上角色 authority 应为 `ROLE_*`；可统一为仅 `ROLE_ADMIN`，或保留双码但注明兼容期、逐步从数据与前端收口 `ADMIN`。 |
+| ~~**"ADMIN" 与 "ROLE_ADMIN" 并存**~~ | 旧：各 AccessGuard 中 `Set.of("ROLE_ADMIN", "ADMIN")` | ✅ **已收口**：所有 Guard 已移除 ROLE_ADMIN/ADMIN 兜底，改为纯细粒度权限码判定。`LegacyAuthConstants` 已物理删除。默认 seed 通过 `role_permission -> permission` 将全部权限码授予 ROLE_ADMIN 角色。 | 已达目标态。 |
 | **role.name 用于展示/下游** | `RoleController`（返回 name/code）、`CamundaIdentityProvider`（`group.setName(role.getName())`） | 运行态鉴权已不依赖 role.name，但 API 与工作流仍用 name。 | 展示可保留；Camunda 若强依赖 name，可保留至工作流迁移或改为用 role.code。 |
 | **role.getCode() 进入 authority** | `SecurityUser.buildAuthorities`、`PermissionVersionService` | 角色 code 作为 authority，与 resource.permission 一起组成权限。 | 已符合“不把 role.name 放入 authority”；若未来仅用 permissions，可逐步不再把 role.code 放入。 |
 
@@ -48,7 +55,7 @@
 
 | 项 | 位置 | 现状 | 收口结果 |
 |----|------|------|----------|
-| **user_role 读回退** | 旧：`RoleAssignmentRepository.findLegacyRoleIdsByUserIdAndTenantId`、`EffectiveRoleResolutionService` legacy 分支 | Phase1 已移除所有对 `user_role` 的运行时读取与回退逻辑：`EffectiveRoleResolutionService` 仅通过 `RoleAssignmentSyncService` + `role_assignment` 解析有效角色，`AuthUserResolutionService` 也只基于 assignment。 | 运行态权限来源已统一为 `role_assignment -> role_resource -> resource.permission`，不再依赖 `user_role`。 |
+| **user_role 读回退** | 旧：`RoleAssignmentRepository.findLegacyRoleIdsByUserIdAndTenantId`、`EffectiveRoleResolutionService` legacy 分支 | Phase1 已移除所有对 `user_role` 的运行时读取与回退逻辑：`EffectiveRoleResolutionService` 仅通过 `RoleAssignmentSyncService` + `role_assignment` 解析有效角色，`AuthUserResolutionService` 也只基于 assignment。 | 运行态权限来源已统一为 `role_assignment -> role_permission -> permission -> resource`，不再依赖 `user_role`。 |
 | **user_role 表 / user_role_legacy** | Liquibase `041`、`042`、`043`、`047` | `041`/`042` 完成从 `user_role` 回填 `role_assignment` 与一致性校验，`043` 将表重命名为 `user_role_legacy` 进入只读观察期，`047-drop-user-role-legacy.yaml` 在 MySQL 环境中物理删除 `user_role_legacy`。 | `user_role`/`user_role_legacy` 已在主线迁移中下线；CI 的 `migration-smoke-mysql` workflow 通过额外步骤确认该表不存在，保证回退彻底关闭。 |
 
 ---
@@ -57,8 +64,8 @@
 
 | 项 | 位置 | 说明 | 收口建议 |
 |----|------|------|----------|
-| **从 default 租户复制角色/资源** | `TenantBootstrapServiceImpl.bootstrapFromDefaultTenant` | 新租户从 code=default 的租户复制资源和角色，属“默认租户即模板”的遗留语义。 | 目标态改为“平台模板 + 租户派生”；需引入 role/resource 模板层级或平台模板表后再改。 |
-| **菜单树平台租户硬编码** | `MenuServiceImpl`（`tenantRepository.findByCode("default")`、`hasAuthority("ROLE_ADMIN", "ADMIN")`） | 平台级菜单过滤、管理员快捷路径依赖 default 与 ADMIN。 | 与“平台语义双轨”一并收口；菜单权限已按 resource.permission，可保留 ADMIN 兼容至角色码统一。 |
+| **平台模板缺失时的首次回填** | `TenantBootstrapServiceImpl.bootstrapFromPlatformTemplate` | 新租户 bootstrap 已统一从 `tenant_id IS NULL` 的平台模板派生；仅当历史环境尚未回填模板时，才会按配置的平台租户 code（默认 `default`）补一次模板。 | 当前可接受；长期可继续把“一次性回填”下沉为显式迁移或后台运维脚本。 |
+| ~~**菜单树平台租户硬编码**~~ | ~~`MenuServiceImpl`~~ | ✅ 已收口：菜单树过滤已按 `TenantContext.isPlatformScope()` 与平台专属资源策略处理，不再查 `default` 或依赖 `ADMIN`/`ROLE_ADMIN` 兜底。 | 已达目标态。 |
 
 ---
 
@@ -66,7 +73,7 @@
 
 | 项 | 位置 | 说明 | 收口建议 |
 |----|------|------|----------|
-| **ExportController 鉴权** | `ExportController` | 已使用 `LegacyAuthConstants.isAdminAuthority`；导出能力同时支持规范码 `system:export:view`，查看全部任务/下载他人结果仍仅管理员。 | 保持规范码 + 管理员兼容；若后续引入独立 ExportAccessGuard 可再收口。 |
+| **ExportController 鉴权** | `ExportController` | 已移除 `LegacyAuthConstants` 依赖，导出能力使用规范码 `system:export:view`；查看全部任务/下载他人结果仍保留管理员语义。 | 当前可接受；若后续拆独立 AccessGuard，可继续收口“管理员专属能力”。 |
 | **recordTenantId 等展示字段** | 各 DTO（如 `UserResponseDto`、`RoleResponseDto`、`ResourceResponseDto` 等） | 响应中 `setRecordTenantId(entity.getTenantId())`，用于前端/审计展示。 | 非授权逻辑，可保留；若平台模板将来 tenant_id 可空，展示层需约定“平台”的展示方式。 |
 | **User 注释掉的 role.getName()** | `User.java` 内注释 | 历史用 role.name 作 authority 的代码已注释。 | 保持注释或删除，避免误导。 |
 
@@ -74,13 +81,13 @@
 
 ## 7. 汇总：按优先级收口（更新状态）
 
--- **高（与授权/多租户强相关）**  
+- **高（与授权/多租户强相关）**  
   - 平台语义双轨（default vs tenant_id=0）统一为可配置的“平台租户/作用域”。  
   - ✅ user.tenant_id 与 uk_user_tenant_username 已按“平台账号 + membership”目标态迁移（停双写、tenant_id 可空、username 全局唯一），仅剩少量展示/审计用途。  
 
 - **中（一致性/可维护性）**  
-  - 角色码统一为 `ROLE_ADMIN`，或明确 “ADMIN” 为兼容并文档化。  
   - TenantBootstrap 从“default 租户复制”改为“平台模板 + 租户派生”。  
+  - 平台租户解析逐步从 `platformTenantCode` 回退演进为显式平台模板层级。  
 
 - **低（清理与文档）**  
   - ✅ user_role / user_role_legacy 表已通过 Liquibase 043/047 下线，运行态与数据侧均不再依赖。  

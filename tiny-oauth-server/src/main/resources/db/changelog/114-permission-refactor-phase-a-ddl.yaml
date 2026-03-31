@@ -1,0 +1,69 @@
+databaseChangeLog:
+  - changeSet:
+      id: 114-create-permission-table
+      author: codex
+      comment: PermissionRefactor Phase A - create permission table with tenant-scoped uniqueness
+      preConditions:
+        onFail: MARK_RAN
+        not:
+          tableExists:
+            tableName: permission
+      changes:
+        - sql:
+            dbms: mysql
+            sql: |
+              CREATE TABLE `permission` (
+                `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+                `permission_code` VARCHAR(128) NOT NULL COMMENT '权限编码（来源于 resource.permission）',
+                `permission_name` VARCHAR(255) NOT NULL COMMENT '权限名称',
+                `module_code` VARCHAR(64) DEFAULT NULL COMMENT '模块编码（permission_code 第一段）',
+                `action_code` VARCHAR(64) DEFAULT NULL COMMENT '动作编码（permission_code 最后一段）',
+                `permission_type` VARCHAR(32) NOT NULL DEFAULT 'OTHER' COMMENT '权限类型（治理属性）',
+                `description` VARCHAR(255) DEFAULT NULL COMMENT '描述',
+                `enabled` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '启用标志',
+                `built_in_flag` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '内置标志',
+                `tenant_id` BIGINT DEFAULT NULL COMMENT '租户ID，NULL=平台模板',
+                `created_by` BIGINT DEFAULT NULL COMMENT '创建人',
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                `updated_by` BIGINT DEFAULT NULL COMMENT '更新人',
+                `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+                `normalized_tenant_id` BIGINT GENERATED ALWAYS AS (IFNULL(`tenant_id`, 0)) STORED COMMENT '归一化租户ID',
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uk_permission_tenant_code` (`normalized_tenant_id`, `permission_code`),
+                KEY `idx_permission_code` (`permission_code`),
+                KEY `idx_permission_tenant_id` (`tenant_id`),
+                KEY `idx_permission_module_code` (`module_code`),
+                KEY `idx_permission_enabled` (`enabled`)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='权限主数据表';
+
+  - changeSet:
+      id: 114-create-role-permission-table
+      author: codex
+      comment: PermissionRefactor Phase A - create role_permission relation table
+      preConditions:
+        onFail: MARK_RAN
+        not:
+          tableExists:
+            tableName: role_permission
+      changes:
+        - sql:
+            dbms: mysql
+            sql: |
+              CREATE TABLE `role_permission` (
+                `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+                `role_id` BIGINT NOT NULL COMMENT '角色ID',
+                `permission_id` BIGINT NOT NULL COMMENT '权限ID',
+                `tenant_id` BIGINT DEFAULT NULL COMMENT '租户ID，NULL=平台模板',
+                `created_by` BIGINT DEFAULT NULL COMMENT '创建人',
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                `normalized_tenant_id` BIGINT GENERATED ALWAYS AS (IFNULL(`tenant_id`, 0)) STORED COMMENT '归一化租户ID',
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uk_role_permission_tenant` (`normalized_tenant_id`, `role_id`, `permission_id`),
+                KEY `idx_role_permission_role_id` (`role_id`),
+                KEY `idx_role_permission_permission_id` (`permission_id`),
+                KEY `idx_role_permission_tenant_id` (`tenant_id`),
+                KEY `idx_role_permission_tenant_role` (`tenant_id`, `role_id`),
+                KEY `idx_role_permission_tenant_permission` (`tenant_id`, `permission_id`),
+                CONSTRAINT `fk_role_permission_role` FOREIGN KEY (`role_id`) REFERENCES `role` (`id`),
+                CONSTRAINT `fk_role_permission_permission` FOREIGN KEY (`permission_id`) REFERENCES `permission` (`id`)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='角色-权限关系表';

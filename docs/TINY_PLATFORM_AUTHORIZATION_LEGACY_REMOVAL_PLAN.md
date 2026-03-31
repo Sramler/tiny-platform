@@ -1,10 +1,15 @@
 # Tiny Platform 授权遗留彻底下线计划（不再兼容旧模型）
 
+> 状态更新：本文件保留为 **遗留清退计划 / 历史收口参考 / 非当前运行态真相源**。  
+> 当前仓库的授权主链、当前完成度与文档读取入口，请优先以 [TINY_PLATFORM_AUTHORIZATION_DOC_MAP.md](./TINY_PLATFORM_AUTHORIZATION_DOC_MAP.md)、[TINY_PLATFORM_AUTHORIZATION_MODEL.md](./TINY_PLATFORM_AUTHORIZATION_MODEL.md) 与 [TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md](./TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md) 为准。  
+> 本文中若出现 `resource.permission`、`user_role`、`default` 租户或旧兼容清退步骤，应按“遗留收口计划”理解，不直接代表当前运行态仍按该口径工作。  
+>
 > 目标：按最新授权模型与权限标识符规范推进，**运行态不再兼容旧权限模型**（不再读 `user_role`、不再依赖 `user.tenant_id` 做授权）。  
 > 说明：这是“面向未来架构负责”的收口计划，建议按多 PR / 多迭代推进，每一步都可验证、可回滚。
 
 关联：
 
+- `docs/TINY_PLATFORM_AUTHORIZATION_DOC_MAP.md`
 - `docs/TINY_PLATFORM_AUTHORIZATION_MODEL.md`
 - `docs/TINY_PLATFORM_LEGACY_COMPATIBILITY_INVENTORY.md`
 - `docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md`
@@ -160,4 +165,3 @@ mvn -pl tiny-oauth-server test -Dtest=EffectiveRoleResolutionServiceTest,UserDet
 - 变更说明：影响面、风险、回滚方案
 - 自动化验证：至少 1 条允许路径 + 1 条拒绝路径（跨租户/缺权限）
 - 数据迁移：changelog + 校验 SQL（或校验脚本）
-

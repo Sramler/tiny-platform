@@ -1,5 +1,8 @@
 # Tiny Platform 授权模型第一阶段主交付技术设计
 
+> 状态更新：本文件保留为 **Phase1 历史技术设计基线 / 非当前运行态真相**。  
+> 当前仓库的运行态授权主链、权限重构封版状态与当前真相，请以 [TINY_PLATFORM_AUTHORIZATION_MODEL.md](./TINY_PLATFORM_AUTHORIZATION_MODEL.md) 和 [TINY_PLATFORM_PERMISSION_REFACTOR_FINAL_APPROVAL.md](./TINY_PLATFORM_PERMISSION_REFACTOR_FINAL_APPROVAL.md) 为准。
+
 > 状态：技术设计基线  
 > 适用范围：`auth / oauth / security / tenant / role / resource / menu / user`  
 > 关联文档：
@@ -16,7 +19,7 @@
 2. 把 `PLATFORM` 从“默认租户兼容语义”中拆出来，变成正式作用域；
 3. 收口运行态会话与 JWT 契约，去掉展示型 authority；
 4. 补齐剩余控制面的方法级 RBAC，避免旧接口继续绕过新模型；
-5. 保持 `resource.permission` 作为当前运行态权限真相源，不额外引入第二套 permission 目录。
+5. 阶段一历史裁决：当时保留 `resource.permission` 作为运行态兼容字段，不额外引入第二套 permission 目录；当前真相源已演进为 `role_permission -> permission`。
 
 ### 第一阶段明确不做
 
@@ -330,7 +333,7 @@ ALTER TABLE resource
 1. 用户输入 `username + credential + tenantCode`；
 2. 先按全局 `username` 加载平台账号；
 3. 再校验该账号是否存在有效 `tenant_user` membership；
-4. 再基于该租户展开 `role_assignment -> role_resource -> resource.permission`；
+4. （Phase1 当时口径）再基于该租户展开 `role_assignment -> role_resource -> resource.permission`；当前仓库运行态已切换为 `role_assignment -> role_permission -> permission -> resource`；
 5. 生成带当前活动上下文的 `SecurityUser`。
 
 平台控制面登录：
@@ -520,7 +523,7 @@ for each user_role row:
 
 1. 新登录链路已不再依赖 `findUserByUsernameAndTenantId`；
 2. `SecurityUser` authority 不再包含 `role.name`；
-3. 运行态权限已由 `role_assignment -> role_resource -> resource.permission` 生成；
+3. （Phase1 完成口径）运行态权限已由 `role_assignment -> role_resource -> resource.permission` 生成；当前仓库已进一步收口为 `role_assignment -> role_permission -> permission -> resource`；
 4. `RoleController` 与 `ResourceController` 已补方法级 RBAC；
 5. 新代码不再直接读取 `user.tenant_id` 或 `user_role` 作为真相源；
 6. 菜单下发和后端控制器使用同一套 permissions。

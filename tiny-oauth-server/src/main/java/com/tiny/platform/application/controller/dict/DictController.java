@@ -13,6 +13,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -39,6 +40,7 @@ public class DictController {
      * 分页查询字典类型
      */
     @GetMapping("/types")
+    @PreAuthorize("@dictManagementAccessGuard.canReadType(authentication)")
     public ResponseEntity<PageResponse<DictTypeResponseDto>> getDictTypes(
             @Valid DictTypeQueryDto query,
             @PageableDefault(size = 10, sort = "sortOrder", direction = Sort.Direction.ASC) Pageable pageable
@@ -51,6 +53,7 @@ public class DictController {
      * 根据ID获取字典类型详情
      */
     @GetMapping("/types/{id}")
+    @PreAuthorize("@dictManagementAccessGuard.canReadType(authentication)")
     public ResponseEntity<DictType> getDictType(@PathVariable("id") Long id) {
         return dictTypeService.findById(id)
                 .map(ResponseEntity::ok)
@@ -71,6 +74,7 @@ public class DictController {
      * 创建字典类型
      */
     @PostMapping("/types")
+    @PreAuthorize("@dictManagementAccessGuard.canCreateType(authentication)")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<DictType> createDictType(@Valid @RequestBody DictTypeCreateUpdateDto dto) {
         DictType dictType = dictTypeService.create(dto);
@@ -81,6 +85,7 @@ public class DictController {
      * 更新字典类型
      */
     @PutMapping("/types/{id}")
+    @PreAuthorize("@dictManagementAccessGuard.canUpdateType(authentication)")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<DictType> updateDictType(
             @PathVariable("id") Long id,
@@ -94,6 +99,7 @@ public class DictController {
      * 删除字典类型
      */
     @DeleteMapping("/types/{id}")
+    @PreAuthorize("@dictManagementAccessGuard.canDeleteType(authentication)")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Void> deleteDictType(@PathVariable("id") Long id) {
         dictTypeService.delete(id);
@@ -104,6 +110,7 @@ public class DictController {
      * 批量删除字典类型
      */
     @PostMapping("/types/batch/delete")
+    @PreAuthorize("@dictManagementAccessGuard.canDeleteType(authentication)")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Void> batchDeleteDictTypes(@RequestBody List<Long> ids) {
         dictTypeService.batchDelete(ids);
@@ -125,6 +132,7 @@ public class DictController {
      * 分页查询字典项
      */
     @GetMapping("/items")
+    @PreAuthorize("@dictManagementAccessGuard.canReadItem(authentication)")
     public ResponseEntity<PageResponse<DictItemResponseDto>> getDictItems(
             @Valid DictItemQueryDto query,
             @PageableDefault(size = 10, sort = "sortOrder", direction = Sort.Direction.ASC) Pageable pageable
@@ -137,6 +145,7 @@ public class DictController {
      * 根据ID获取字典项详情
      */
     @GetMapping("/items/{id}")
+    @PreAuthorize("@dictManagementAccessGuard.canReadItem(authentication)")
     public ResponseEntity<DictItem> getDictItem(@PathVariable("id") Long id) {
         return dictItemService.findById(id)
                 .map(ResponseEntity::ok)
@@ -147,6 +156,7 @@ public class DictController {
      * 根据字典类型ID获取字典项列表
      */
     @GetMapping("/items/type/{dictTypeId}")
+    @PreAuthorize("@dictManagementAccessGuard.canReadItem(authentication)")
     public ResponseEntity<List<DictItem>> getDictItemsByType(@PathVariable("dictTypeId") Long dictTypeId) {
         List<DictItem> items = dictItemService.findByDictTypeId(dictTypeId);
         return ResponseEntity.ok(items);
@@ -186,6 +196,7 @@ public class DictController {
      * 创建字典项
      */
     @PostMapping("/items")
+    @PreAuthorize("@dictManagementAccessGuard.canCreateItem(authentication)")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<DictItem> createDictItem(@Valid @RequestBody DictItemCreateUpdateDto dto) {
         DictItem dictItem = dictItemService.create(dto);
@@ -196,6 +207,7 @@ public class DictController {
      * 更新字典项
      */
     @PutMapping("/items/{id}")
+    @PreAuthorize("@dictManagementAccessGuard.canUpdateItem(authentication)")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<DictItem> updateDictItem(
             @PathVariable("id") Long id,
@@ -209,6 +221,7 @@ public class DictController {
      * 删除字典项
      */
     @DeleteMapping("/items/{id}")
+    @PreAuthorize("@dictManagementAccessGuard.canDeleteItem(authentication)")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Void> deleteDictItem(@PathVariable("id") Long id) {
         dictItemService.delete(id);
@@ -219,6 +232,7 @@ public class DictController {
      * 批量删除字典项
      */
     @PostMapping("/items/batch/delete")
+    @PreAuthorize("@dictManagementAccessGuard.canDeleteItem(authentication)")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Void> batchDeleteDictItems(@RequestBody List<Long> ids) {
         dictItemService.batchDelete(ids);

@@ -2,9 +2,6 @@ package com.tiny.web.sys.model;
 
 import jakarta.persistence.*;
 
-import java.util.HashSet;
-import java.util.Set;
-
 @Entity
 @Table(name = "resource")
 public class Resource {
@@ -27,9 +24,6 @@ public class Resource {
 
     @Column(name = "parent_id")
     private Long parentId; // 菜单结构层级
-
-    @ManyToMany(mappedBy = "resources", fetch = FetchType.LAZY)
-    private Set<Role> roles = new HashSet<>();
 
     // getter/setter
 
@@ -80,13 +74,5 @@ public class Resource {
 
     public void setParentId(Long parentId) {
         this.parentId = parentId;
-    }
-
-    public Set<Role> getRoles() {
-        return roles;
-    }
-
-    public void setRoles(Set<Role> roles) {
-        this.roles = roles;
     }
 }

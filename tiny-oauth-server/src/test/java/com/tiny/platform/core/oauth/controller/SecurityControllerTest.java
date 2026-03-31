@@ -4,6 +4,8 @@ import com.tiny.platform.core.oauth.config.FrontendProperties;
 import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationSessionManager;
+import com.tiny.platform.core.oauth.session.UserSessionService;
+import com.tiny.platform.core.oauth.session.UserSessionView;
 import com.tiny.platform.core.oauth.service.AuthenticationAuditService;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
@@ -30,6 +32,7 @@ class SecurityControllerTest {
     private UserRepository userRepository;
     private SecurityService securityService;
     private AuthUserResolutionService authUserResolutionService;
+    private UserSessionService userSessionService;
     private SecurityController controller;
 
     @BeforeEach
@@ -37,6 +40,7 @@ class SecurityControllerTest {
         userRepository = mock(UserRepository.class);
         securityService = mock(SecurityService.class);
         authUserResolutionService = mock(AuthUserResolutionService.class);
+        userSessionService = mock(UserSessionService.class);
         UserAuthenticationMethodRepository authMethodRepo = mock(UserAuthenticationMethodRepository.class);
         FrontendProperties frontendProperties = mock(FrontendProperties.class);
         MultiFactorAuthenticationSessionManager sessionManager = mock(MultiFactorAuthenticationSessionManager.class);
@@ -48,7 +52,8 @@ class SecurityControllerTest {
             frontendProperties,
             sessionManager,
             authUserResolutionService,
-            auditService
+            auditService,
+            userSessionService
         );
         SecurityContextHolder.clearContext();
         TenantContext.clear();
@@ -126,7 +131,8 @@ class SecurityControllerTest {
                 frontendProperties,
                 sessionManager,
                 authUserResolutionService,
-                auditService
+                auditService,
+                userSessionService
         );
 
         SecurityUser principal = new SecurityUser(21L, 7L, "shared.alice", "", List.of(), true, true, true, true);
@@ -201,5 +207,49 @@ class SecurityControllerTest {
         assertEquals(HttpStatus.BAD_REQUEST, resp.getStatusCode());
         assertEquals(Boolean.FALSE, resp.getBody().get("success"));
         assertActiveTenantResponse(resp.getBody(), 9L);
+    }
+
+    @Test
+    void listSessions_shouldReturnCurrentUserSessions() {
+        TenantContext.setActiveTenantId(9L);
+        var request = new org.springframework.mock.web.MockHttpServletRequest();
+        request.setSession(new org.springframework.mock.web.MockHttpSession(null, "sid-current"));
+        SecurityContextHolder.getContext().setAuthentication(
+            new UsernamePasswordAuthenticationToken("alice", "n/a", List.of())
+        );
+        User user = mock(User.class);
+        when(user.getId()).thenReturn(10L);
+        when(user.getUsername()).thenReturn("alice");
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("alice", 9L)).thenReturn(Optional.of(user));
+        when(userSessionService.listCurrentUserSessions(10L, 9L, "sid-current")).thenReturn(List.of(
+            new UserSessionView("sid-current", true, "LOCAL", "PASSWORD", "127.0.0.1", "Chrome", null, null, null)
+        ));
+
+        ResponseEntity<Map<String, Object>> resp = controller.listSessions(request);
+
+        assertEquals(HttpStatus.OK, resp.getStatusCode());
+        assertEquals(Boolean.TRUE, resp.getBody().get("success"));
+        assertEquals("sid-current", resp.getBody().get("currentSessionId"));
+        assertActiveTenantResponse(resp.getBody(), 9L);
+    }
+
+    @Test
+    void revokeSession_shouldRejectCurrentSession() {
+        TenantContext.setActiveTenantId(9L);
+        var request = new org.springframework.mock.web.MockHttpServletRequest();
+        request.setSession(new org.springframework.mock.web.MockHttpSession(null, "sid-current"));
+        SecurityContextHolder.getContext().setAuthentication(
+            new UsernamePasswordAuthenticationToken("alice", "n/a", List.of())
+        );
+        User user = mock(User.class);
+        when(user.getId()).thenReturn(10L);
+        when(user.getUsername()).thenReturn("alice");
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("alice", 9L)).thenReturn(Optional.of(user));
+
+        ResponseEntity<Map<String, Object>> resp = controller.revokeSession("sid-current", request);
+
+        assertEquals(HttpStatus.BAD_REQUEST, resp.getStatusCode());
+        assertEquals(Boolean.FALSE, resp.getBody().get("success"));
+        verify(userSessionService, never()).revokeSession(any(), any(), any(), any(), any());
     }
 }

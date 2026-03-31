@@ -52,7 +52,7 @@
         <div class="table-title">资源管理</div>
         <div class="table-actions">
           <div v-if="selectedRowKeys.length > 0" class="batch-actions">
-            <a-button v-if="canDeleteResourceManagement" type="primary" danger @click="throttledBatchDelete" class="toolbar-btn">
+            <a-button v-if="canBatchDeleteResourceManagement" type="primary" danger @click="throttledBatchDelete" class="toolbar-btn">
               批量删除 ({{ selectedRowKeys.length }})
             </a-button>
             <a-button @click="clearSelection" class="toolbar-btn">取消选择</a-button>
@@ -115,6 +115,11 @@
           </a-popover>
         </div>
       </div>
+
+      <div class="carrier-transition-note">
+        当前管理面已进入拆分载体过渡期：目录/菜单来自 <code>menu</code>，按钮来自 <code>ui_action</code>，接口来自
+        <code>api_endpoint</code>。
+      </div>
       
       <!-- 表格区域 -->
       <div class="table-container" ref="tableContentRef">
@@ -157,6 +162,11 @@
               <template v-else-if="column.dataIndex === 'type'">
                 <a-tag :color="getTypeColor(record.type)">
                   {{ getTypeText(record.type) }}
+                </a-tag>
+              </template>
+              <template v-else-if="column.dataIndex === 'carrierKind'">
+                <a-tag :color="getCarrierKindColor(record.carrierKind)">
+                  {{ getCarrierKindText(record.carrierKind, record.type) }}
                 </a-tag>
               </template>
               <template v-else-if="column.dataIndex === 'icon'">
@@ -209,7 +219,8 @@
 import { ref, computed, onMounted, watch, nextTick, onBeforeUnmount } from 'vue'
 import { useAuth } from '@/auth/auth'
 // 引入资源API
-import { getResourceTree, createResource, updateResource, deleteResource, batchDeleteResources, type ResourceItem, type ResourceQuery, ResourceType } from '@/api/resource'
+import { getResourceTree, getRuntimeUiActions, createResource, updateResource, deleteResource, batchDeleteResources, type ResourceItem, type ResourceQuery, ResourceType } from '@/api/resource'
+import { ACTIVE_SCOPE_CHANGED_EVENT } from '@/utils/activeScopeEvents'
 // 引入Antd组件和图标
 import { message, Modal } from 'ant-design-vue'
 import { 
@@ -225,6 +236,7 @@ import VueDraggable from 'vuedraggable'
 import ResourceForm from './ResourceForm.vue'
 import Icon from '@/components/Icon.vue'
 import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import { RESOURCE_MANAGEMENT_READ_AUTHORITIES } from '@/constants/permission'
 
 // 查询条件
 const query = ref<ResourceQuery>({ 
@@ -235,19 +247,26 @@ const query = ref<ResourceQuery>({
 })
 const { user } = useAuth()
 const resourceAuthorities = computed(() => new Set(extractAuthoritiesFromJwt(user.value?.access_token)))
-const RESOURCE_MANAGEMENT_READ_AUTHORITIES = ['ROLE_ADMIN', 'system:resource:list']
-const RESOURCE_MANAGEMENT_CREATE_AUTHORITIES = ['ROLE_ADMIN', 'system:resource:create']
-const RESOURCE_MANAGEMENT_UPDATE_AUTHORITIES = ['ROLE_ADMIN', 'system:resource:edit']
-const RESOURCE_MANAGEMENT_DELETE_AUTHORITIES = ['ROLE_ADMIN', 'system:resource:delete', 'system:resource:batch-delete']
 
 function hasAnyResourceAuthority(requiredAuthorities: string[]) {
   return requiredAuthorities.some((authority) => resourceAuthorities.value.has(authority))
 }
 
 const canReadResourceManagement = computed(() => hasAnyResourceAuthority(RESOURCE_MANAGEMENT_READ_AUTHORITIES))
-const canCreateResourceManagement = computed(() => hasAnyResourceAuthority(RESOURCE_MANAGEMENT_CREATE_AUTHORITIES))
-const canUpdateResourceManagement = computed(() => hasAnyResourceAuthority(RESOURCE_MANAGEMENT_UPDATE_AUTHORITIES))
-const canDeleteResourceManagement = computed(() => hasAnyResourceAuthority(RESOURCE_MANAGEMENT_DELETE_AUTHORITIES))
+const runtimeUiActionPermissions = ref<Set<string>>(new Set())
+const runtimeUiActionsLoaded = ref(false)
+
+function hasRuntimeUiAction(permission: string) {
+  if (!runtimeUiActionsLoaded.value) {
+    return false
+  }
+  return runtimeUiActionPermissions.value.has(permission)
+}
+
+const canCreateResourceManagement = computed(() => hasRuntimeUiAction('system:resource:create'))
+const canUpdateResourceManagement = computed(() => hasRuntimeUiAction('system:resource:edit'))
+const canDeleteResourceManagement = computed(() => hasRuntimeUiAction('system:resource:delete'))
+const canBatchDeleteResourceManagement = computed(() => hasRuntimeUiAction('system:resource:batch-delete'))
 
 // 表格数据（树形结构）
 const tableData = ref<ResourceItem[]>([])
@@ -271,6 +290,7 @@ const INITIAL_COLUMNS = [
   { title: '请求方法', dataIndex: 'method', width: 100, align: 'center' },
   { title: '权限标识', dataIndex: 'permission', width: 200 },
   { title: '资源类型', dataIndex: 'type', width: 100, align: 'center' },
+  { title: '载体', dataIndex: 'carrierKind', width: 120, align: 'center' },
   { title: '排序', dataIndex: 'sort', width: 80, align: 'center' },
   { title: '图标', dataIndex: 'icon', width: 60, align: 'center' },
   { title: '操作', dataIndex: 'action', width: 160, fixed: 'right', align: 'center' }
@@ -376,6 +396,35 @@ function fixLeafAndChildren(nodes: ResourceItem[]) {
   })
 }
 
+function resolveRuntimePagePath() {
+  const currentPath = window?.location?.pathname
+  if (currentPath && currentPath !== '/') {
+    return currentPath
+  }
+  return '/system/resource'
+}
+
+async function loadRuntimeUiActions() {
+  if (!canReadResourceManagement.value) {
+    runtimeUiActionsLoaded.value = false
+    runtimeUiActionPermissions.value = new Set()
+    return
+  }
+  try {
+    const actions = await getRuntimeUiActions(resolveRuntimePagePath())
+    runtimeUiActionPermissions.value = new Set(
+      (actions || [])
+        .map((action) => action.permission)
+        .filter((permission): permission is string => Boolean(permission)),
+    )
+    runtimeUiActionsLoaded.value = true
+  } catch (error) {
+    console.error('加载运行时按钮载体失败:', error)
+    runtimeUiActionsLoaded.value = false
+    runtimeUiActionPermissions.value = new Set()
+  }
+}
+
 // 加载树形数据
 async function loadData() {
   if (!canReadResourceManagement.value) {
@@ -384,6 +433,7 @@ async function loadData() {
   }
   loading.value = true
   try {
+    await loadRuntimeUiActions()
     const res = await getResourceTree()
     fixLeafAndChildren(res) // 递归修正 leaf 和 children 字段
     removeEmptyChildren(res) // 递归删除空 children 字段
@@ -474,8 +524,8 @@ const throttledDelete = handleDelete
 
 // 批量删除
 function handleBatchDelete() {
-  if (!canDeleteResourceManagement.value) {
-    message.warning('缺少资源删除权限')
+  if (!canBatchDeleteResourceManagement.value) {
+    message.warning('缺少资源批量删除权限')
     return
   }
   if (selectedRowKeys.value.length === 0) {
@@ -572,6 +622,12 @@ async function handleFormSubmit(formData: any) {
   }
 }
 
+function handleActiveScopeChanged() {
+  if (canReadResourceManagement.value) {
+    loadData()
+  }
+}
+
 // 生命周期钩子
 onMounted(() => {
   if (canReadResourceManagement.value) {
@@ -579,16 +635,20 @@ onMounted(() => {
   }
   updateTableBodyHeight()
   window.addEventListener('resize', updateTableBodyHeight)
+  window.addEventListener(ACTIVE_SCOPE_CHANGED_EVENT, handleActiveScopeChanged)
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', updateTableBodyHeight)
+  window.removeEventListener(ACTIVE_SCOPE_CHANGED_EVENT, handleActiveScopeChanged)
 })
 watch(canReadResourceManagement, (enabled) => {
   if (enabled) {
     loadData()
     return
   }
+  runtimeUiActionsLoaded.value = false
+  runtimeUiActionPermissions.value = new Set()
   tableData.value = []
   selectedRowKeys.value = []
 })
@@ -625,6 +685,25 @@ function getTypeText(type: number) {
     [ResourceType.API]: 'API'
   }
   return textMap[type] || '未知'
+}
+
+function getCarrierKindText(carrierKind?: ResourceItem['carrierKind'], type?: number) {
+  if (carrierKind === 'menu') return 'menu'
+  if (carrierKind === 'ui_action') return 'ui_action'
+  if (carrierKind === 'api_endpoint') return 'api_endpoint'
+  if (type === ResourceType.DIRECTORY || type === ResourceType.MENU) return 'menu'
+  if (type === ResourceType.BUTTON) return 'ui_action'
+  if (type === ResourceType.API) return 'api_endpoint'
+  return 'unknown'
+}
+
+function getCarrierKindColor(carrierKind?: ResourceItem['carrierKind']) {
+  const colorMap: Record<string, string> = {
+    menu: 'blue',
+    ui_action: 'green',
+    api_endpoint: 'purple',
+  }
+  return colorMap[carrierKind || ''] || 'default'
 }
 
 function removeEmptyChildren(nodes: ResourceItem[]) {
@@ -681,6 +760,14 @@ function removeEmptyChildren(nodes: ResourceItem[]) {
   flex-direction: column;
   flex: 1;
   min-height: 0;
+}
+
+.carrier-transition-note {
+  padding: 10px 24px;
+  font-size: 13px;
+  color: #595959;
+  background: #fafafa;
+  border-bottom: 1px solid #f0f0f0;
 }
 
 .table-scroll-container {

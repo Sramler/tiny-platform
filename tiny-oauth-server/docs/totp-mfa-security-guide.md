@@ -549,7 +549,7 @@ RS --> Browser: Access Granted
    - `JwtTokenCustomizer` 根据授权快照中的 `MultiFactorAuthenticationToken.completedFactors` 计算 `amr`：
      - `completedFactors=[PASSWORD]` → `amr=["password"]`
      - `completedFactors=[PASSWORD, TOTP]` → `amr=["password","totp"]`
-   - 返回 Access/ID/Refresh Token（包含 `amr` 声明）。
+   - 返回 Access/ID/Refresh Token。当前实现除 `amr` 外，还会写入权限与租户作用域相关 claims（如 `authorities`、`permissions`、`permissionsVersion`、`activeTenantId`、`activeScopeType`、`activeScopeId`，具体按 scope 类型计算）。
 
 9. **调用业务 API**
    - 携带 Access Token（含 `amr`）访问 Resource Server，验证通过后返回数据。
@@ -1042,7 +1042,7 @@ if (mode == NONE) {
 
 **问题描述**：当前配置是否支持 CSRF 防护？
 
-**答案**：当前配置已禁用 CSRF（`csrf.disable()`），适用于前后端分离场景。如需启用 CSRF，需要调整配置。
+**答案**：当前实现已启用 CSRF，并对关键表单链路收敛保护范围（`POST /login`、`POST /self/security/**`）。使用 `CookieCsrfTokenRepository`，Cookie 名为 `XSRF-TOKEN`，请求头名为 `X-XSRF-TOKEN`。
 
 ---
 
@@ -1751,26 +1751,18 @@ if (authentication instanceof MultiFactorAuthenticationToken mfaToken) {
 - 字符集：A-Z + 0-9（避免易混淆字符 I、O）
 - 示例：`K9M7-P2QW-X8Y3`
 
-#### 3. 用户偏好持久化 ❌
+#### 3. 用户偏好持久化（`skipMfaRemind`）⚠️ 部分实现
 
-**问题**：`skipMfaRemind` 功能没有真正保存到数据库。
+**当前状态（与代码一致）**：
 
-**当前状态**：
+- `skipMfaRemind` 已落库：使用 `user_authentication_method` 中 `LOCAL + MFA_REMIND` 记录保存 `skipMfaRemind/skipUntil/deviceFingerprint`。
+- `getSecurityStatus()` 已读取该记录并参与 `skipMfaRemind` 决策。
+- `CustomLoginSuccessHandler` 已消费 `skipMfaRemind`，用于 OPTIONAL 模式下是否提示绑定页。
 
-```java
-// SecurityServiceImpl.java:249-251
-public Map<String, Object> skipMfaRemind(User user, boolean skip) {
-    return Map.of("success", true, "message", skip ? "已设置跳过二次验证绑定提醒" : "已启用二次验证绑定提醒");
-    // TODO: 持久化用户偏好
-}
-```
+**仍待优化**：
 
-**需要实现**：
-
-- [ ] 创建用户偏好表或扩展用户表
-- [ ] 保存 `skipMfaRemind` 状态
-- [ ] 在 `getSecurityStatus()` 中读取用户偏好
-- [ ] 在 `CustomLoginSuccessHandler` 中检查用户偏好，决定是否跳过绑定提醒
+- [ ] 将提醒偏好从认证方法表拆分为专用用户偏好模型（当前实现可用但语义上是复用存储）。
+- [ ] 增加后台可观测性（例如提醒偏好查询/变更的审计与统计视图）。
 
 **数据库设计**：
 
@@ -1906,7 +1898,7 @@ CREATE TABLE trusted_device (
 - `GET /admin/security/totp/users` - 获取所有用户的 TOTP 状态
 - `POST /admin/security/totp/unbind/{userId}` - 强制解绑用户 TOTP
 
-#### 10. 安全性增强 ❌
+#### 10. 安全性增强 ⚠️ 部分实现
 
 **功能列表**：
 
@@ -1914,7 +1906,7 @@ CREATE TABLE trusted_device (
 - [ ] 异地登录检测
 - [ ] 会话并发控制
 - [x] 账号锁定机制（密码失败 5 次临时锁定 15 分钟；TOTP 失败 5 次临时锁定 10 分钟）
-- [ ] 审计日志（登录/TOTP 操作）
+- [x] 审计日志（登录/TOTP 操作）
 - [ ] 设备指纹识别
 
 #### 11. 高级配置 ❌
@@ -1968,7 +1960,9 @@ CREATE TABLE trusted_device (
 | `pin`    | Personal Identification Number（PIN 码）  | 数字密码                       |
 | `pop`    | Proof-of-Possession（拥有证明）           | 持有特定令牌/证书              |
 
-**现状**: 当前 JWT 生成未包含 `acr`、`amr` 声明
+**现状（与当前代码一致）**：
+- `amr`：已由 `JwtTokenCustomizer` 按 `completedFactors` 写入（如 `["password"]`、`["password","totp"]`）。
+- `acr`：当前仍未统一写入标准化分级值（如 `urn:mace:...`），属于后续可增强项。
 
 **示例**：
 
@@ -2022,14 +2016,17 @@ Map<String, Object> claims = Map.of(
 
 ---
 
-## 完成度统计
+## 完成度统计（2026-03 对账后）
 
-| 类别         | 已完成 | 未完成 | 完成度    |
-| ------------ | ------ | ------ | --------- |
-| **核心功能** | 3/5    | 2      | 60%       |
-| **功能完善** | 0/5    | 5      | 0%        |
-| **高级功能** | 0/9    | 9      | 0%        |
-| **总计**     | 3/19   | 16     | **15.8%** |
+> 说明：历史“3/19（15.8%）”统计已过期，不再准确反映当前实现。
+> 本节改为按状态分层，不再给出误导性的旧比例。
+
+| 类别 | 状态 | 说明 |
+| --- | --- | --- |
+| 登录 MFA 主链（密码→TOTP challenge→会话升级→OIDC） | ✅ 已实现 | 包含 partial token、授权端拦截、`amr` 写入。 |
+| `skipMfaRemind` 用户偏好 | ⚠️ 部分实现 | 已落库并生效（`MFA_REMIND`），但仍建议后续拆分为专用偏好模型。 |
+| 备份码 / 记住设备 / 管理员工具 / WebAuthn | ❌ 未实现 | 仍属于后续能力建设。 |
+| 认证审计（登录/TOTP） | ✅ 已实现 | 已有审计服务与查询链路。 |
 
 **更新说明**：
 
@@ -2054,15 +2051,15 @@ Map<String, Object> claims = Map.of(
 
 ### 近期实现（P1）
 
-4. ✅ **进度引导** - 降低设置门槛，提高完成率
-5. ✅ **TOTP 重新绑定** - 支持用户更换设备
-6. ✅ **"记住此设备"** - 提升用户体验
+4. ⏳ **进度引导** - 降低设置门槛，提高完成率
+5. ⏳ **TOTP 重新绑定** - 支持用户更换设备
+6. ⏳ **"记住此设备"** - 提升用户体验
 
 ### 长期规划（P2）
 
-7. ✅ **管理员工具** - 便于运维管理
-8. ✅ **安全性增强** - 提高系统安全性
-9. ✅ **监控与运维** - 便于问题排查
+7. ⏳ **管理员工具** - 便于运维管理
+8. ⏳ **安全性增强** - 提高系统安全性
+9. ⏳ **监控与运维** - 便于问题排查
 
 ---
 

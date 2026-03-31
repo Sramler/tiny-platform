@@ -20,16 +20,75 @@ export interface SecurityStatusResponse {
   [key: string]: unknown
 }
 
-export async function getSecurityStatus(): Promise<SecurityStatusResponse> {
-  const response = await fetchWithTraceId(`${getApiBaseUrl()}/self/security/status`, {
-    method: 'GET',
+export interface UserSessionRecord {
+  sessionId: string
+  current: boolean
+  authenticationProvider?: string | null
+  authenticationFactor?: string | null
+  ipAddress?: string | null
+  userAgent?: string | null
+  createdAt?: string | null
+  lastSeenAt?: string | null
+  expiresAt?: string | null
+}
+
+export interface SecuritySessionListResponse {
+  success?: boolean
+  activeTenantId?: number
+  currentSessionId?: string | null
+  content: UserSessionRecord[]
+  [key: string]: unknown
+}
+
+async function requestSecurityJson<T>(path: string, options: RequestInit): Promise<T> {
+  const response = await fetchWithTraceId(`${getApiBaseUrl()}${path}`, {
     credentials: 'include',
     headers: { Accept: 'application/json' },
+    ...options,
   })
   if (!response.ok) {
-    throw new Error('无法获取安全状态')
+    let errorMessage = '请求失败'
+    try {
+      const data = await response.json() as { error?: string }
+      if (data?.error) {
+        errorMessage = data.error
+      }
+    } catch {
+      // ignore
+    }
+    throw new Error(errorMessage)
   }
-  const data = await response.json() as SecurityStatusResponse
-  syncTenantContextFromClaims(data)
+  const data = await response.json() as T
+  syncTenantContextFromClaims(data as Record<string, unknown>)
   return data
+}
+
+export async function getSecurityStatus(): Promise<SecurityStatusResponse> {
+  return requestSecurityJson<SecurityStatusResponse>('/self/security/status', {
+    method: 'GET',
+  })
+}
+
+export async function getSecuritySessions(): Promise<SecuritySessionListResponse> {
+  return requestSecurityJson<SecuritySessionListResponse>('/self/security/sessions', {
+    method: 'GET',
+  })
+}
+
+export async function revokeSecuritySession(sessionId: string): Promise<{ success?: boolean; message?: string }> {
+  return requestSecurityJson<{ success?: boolean; message?: string }>(
+    `/self/security/sessions/${encodeURIComponent(sessionId)}`,
+    {
+      method: 'DELETE',
+    },
+  )
+}
+
+export async function revokeOtherSecuritySessions(): Promise<{ success?: boolean; message?: string; revokedCount?: number }> {
+  return requestSecurityJson<{ success?: boolean; message?: string; revokedCount?: number }>(
+    '/self/security/sessions/revoke-others',
+    {
+      method: 'POST',
+    },
+  )
 }

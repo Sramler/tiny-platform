@@ -1,0 +1,34 @@
+databaseChangeLog:
+  - changeSet:
+      id: 061-organization-unit
+      author: tiny
+      comment: Phase3：新增 organization_unit 组织/部门树表（单表自引用树模型）
+      preConditions:
+        - onFail: CONTINUE
+        - onError: HALT
+        - dbms:
+            type: mysql
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              CREATE TABLE IF NOT EXISTS `organization_unit` (
+                `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+                `tenant_id` BIGINT NOT NULL COMMENT '租户ID，组织树严格租户隔离',
+                `parent_id` BIGINT NULL COMMENT '上级节点ID，根节点为 NULL',
+                `unit_type` VARCHAR(16) NOT NULL COMMENT '节点类型：ORG 组织 / DEPT 部门',
+                `code` VARCHAR(64) NOT NULL COMMENT '编码，租户内唯一',
+                `name` VARCHAR(128) NOT NULL COMMENT '显示名称',
+                `sort_order` INT NOT NULL DEFAULT 0 COMMENT '同级排序序号',
+                `status` VARCHAR(16) NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE/DISABLED',
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                `created_by` BIGINT NULL COMMENT '创建人ID',
+                `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uk_org_unit_tenant_code` (`tenant_id`, `code`),
+                KEY `idx_org_unit_parent` (`tenant_id`, `parent_id`),
+                KEY `idx_org_unit_type` (`tenant_id`, `unit_type`),
+                CONSTRAINT `chk_org_unit_type` CHECK (`unit_type` IN ('ORG', 'DEPT'))
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='组织/部门树表（Phase3）';

@@ -12,7 +12,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/sys/roles")
@@ -85,8 +88,10 @@ public class RoleController {
      */
     @GetMapping("/{id}/users")
     @PreAuthorize("@roleManagementAccessGuard.canAssignUsers(authentication)")
-    public ResponseEntity<List<Long>> getRoleUsers(@PathVariable("id") Long id) {
-        return ResponseEntity.ok(roleService.getUserIdsByRoleId(id));
+    public ResponseEntity<List<Long>> getRoleUsers(@PathVariable("id") Long id,
+                                                   @RequestParam(value = "scopeType", required = false) String scopeType,
+                                                   @RequestParam(value = "scopeId", required = false) Long scopeId) {
+        return ResponseEntity.ok(roleService.getDirectUserIdsByRoleId(id, scopeType, scopeId));
     }
 
     /**
@@ -95,8 +100,9 @@ public class RoleController {
     @PostMapping("/{id}/users")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     @PreAuthorize("@roleManagementAccessGuard.canAssignUsers(authentication)")
-    public ResponseEntity<?> updateRoleUsers(@PathVariable("id") Long id, @RequestBody List<Long> userIds) {
-        roleService.updateRoleUsers(id, userIds);
+    public ResponseEntity<?> updateRoleUsers(@PathVariable("id") Long id, @RequestBody Object body) {
+        var request = parseUserAssignmentRequest(body);
+        roleService.updateRoleUsers(id, request.scopeType(), request.scopeId(), request.userIds());
         return ResponseEntity.ok().build();
     }
 
@@ -123,8 +129,66 @@ public class RoleController {
     @PostMapping("/{id}/resources")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     @PreAuthorize("@roleManagementAccessGuard.canAssignPermissions(authentication)")
-    public ResponseEntity<?> updateRoleResources(@PathVariable("id") Long id, @RequestBody List<Long> resourceIds) {
-        roleService.updateRoleResources(id, resourceIds);
+    public ResponseEntity<?> updateRoleResources(@PathVariable("id") Long id, @RequestBody Object body) {
+        PermissionAssignmentRequest request = parsePermissionAssignmentRequest(body);
+        if (request.permissionIds() != null && !request.permissionIds().isEmpty()) {
+            roleService.updateRolePermissions(id, request.permissionIds());
+        } else {
+            // Backward compatibility alias: resourceIds is accepted, but no longer the main runtime contract.
+            roleService.updateRoleResources(id, request.resourceIds());
+        }
         return ResponseEntity.ok().build();
     }
-} 
+
+    private PermissionAssignmentRequest parsePermissionAssignmentRequest(Object body) {
+        if (body instanceof List<?> rawResourceIds) {
+            return new PermissionAssignmentRequest(List.of(), parseIdList(rawResourceIds));
+        }
+        if (body instanceof Map<?, ?> requestMap) {
+            List<Long> permissionIds = requestMap.get("permissionIds") instanceof List<?> rawPermissionIds
+                ? parseIdList(rawPermissionIds)
+                : List.of();
+            List<Long> resourceIds = requestMap.get("resourceIds") instanceof List<?> rawResourceIds
+                ? parseIdList(rawResourceIds)
+                : List.of();
+            return new PermissionAssignmentRequest(permissionIds, resourceIds);
+        }
+        throw new IllegalArgumentException("请求体格式不正确");
+    }
+
+    private UserAssignmentRequest parseUserAssignmentRequest(Object body) {
+        if (body instanceof List<?> rawUserIds) {
+            return new UserAssignmentRequest(null, null, parseIdList(rawUserIds));
+        }
+        if (body instanceof Map<?, ?> requestMap) {
+            Object userIds = requestMap.get("userIds");
+            return new UserAssignmentRequest(
+                requestMap.get("scopeType") != null ? String.valueOf(requestMap.get("scopeType")) : null,
+                parseNullableLong(requestMap.get("scopeId")),
+                userIds instanceof List<?> rawUserIds ? parseIdList(rawUserIds) : List.of()
+            );
+        }
+        throw new IllegalArgumentException("请求体格式不正确");
+    }
+
+    private List<Long> parseIdList(List<?> rawIds) {
+        List<Long> ids = new ArrayList<>();
+        for (Object rawId : rawIds) {
+            ids.add(parseNullableLong(rawId));
+        }
+        return ids;
+    }
+
+    private Long parseNullableLong(Object rawValue) {
+        if (rawValue == null) {
+            return null;
+        }
+        if (rawValue instanceof Number number) {
+            return number.longValue();
+        }
+        return Long.valueOf(String.valueOf(rawValue));
+    }
+
+    private record UserAssignmentRequest(String scopeType, Long scopeId, List<Long> userIds) {}
+    private record PermissionAssignmentRequest(List<Long> permissionIds, List<Long> resourceIds) {}
+}

@@ -3,9 +3,12 @@ package com.tiny.platform.core.oauth.service.impl;
 import com.tiny.platform.core.oauth.config.MfaProperties;
 import com.tiny.platform.core.oauth.security.TotpService;
 import com.tiny.platform.core.oauth.security.TotpVerificationGuard;
+import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationMethod;
 import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
@@ -18,6 +21,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.*;
 
 class SecurityServiceImplTotpThrottleTest {
+
+    @BeforeEach
+    void setUp() {
+        TenantContext.setActiveTenantId(1L);
+    }
+
+    @AfterEach
+    void tearDown() {
+        TenantContext.clear();
+    }
 
     @Test
     void checkTotpShouldReturnLockMessageWhenMethodIsLocked() {
@@ -36,8 +49,7 @@ class SecurityServiceImplTotpThrottleTest {
                 TotpVerificationGuard.LOCKED_UNTIL_KEY, LocalDateTime.now().plusMinutes(5).toString()
         )));
 
-        when(repository.findByUserIdAndTenantIdAndAuthenticationProviderAndAuthenticationType(1L, 1L, "LOCAL", "TOTP"))
-                .thenReturn(Optional.of(method));
+        when(repository.findEffectiveAuthenticationMethod(1L, 1L, "LOCAL", "TOTP")).thenReturn(Optional.of(method));
 
         Map<String, Object> result = service.checkTotp(user, "123456");
 
@@ -59,8 +71,7 @@ class SecurityServiceImplTotpThrottleTest {
 
         User user = user();
         UserAuthenticationMethod method = totpMethod();
-        when(repository.findByUserIdAndTenantIdAndAuthenticationProviderAndAuthenticationType(1L, 1L, "LOCAL", "TOTP"))
-                .thenReturn(Optional.of(method));
+        when(repository.findEffectiveAuthenticationMethod(1L, 1L, "LOCAL", "TOTP")).thenReturn(Optional.of(method));
 
         for (int i = 0; i < 4; i++) {
             Map<String, Object> result = service.checkTotp(user, "000000");

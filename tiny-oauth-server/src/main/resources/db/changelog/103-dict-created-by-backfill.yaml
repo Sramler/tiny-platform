@@ -1,0 +1,83 @@
+databaseChangeLog:
+  - changeSet:
+      id: 103-dict-created-by-backfill
+      author: tiny
+      comment: 回填租户字典 created_by/updated_by，供字典管理 DataScope owner 过滤使用
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - tableExists:
+            tableName: dict_type
+        - tableExists:
+            tableName: dict_item
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              UPDATE `dict_type` dt
+              LEFT JOIN (
+                SELECT
+                  ra.`tenant_id`,
+                  MIN(u.`username`) AS `admin_username`
+                FROM `role_assignment` ra
+                INNER JOIN `role` ro ON ro.`id` = ra.`role_id`
+                INNER JOIN `user` u ON u.`id` = ra.`principal_id`
+                WHERE ra.`principal_type` = 'USER'
+                  AND ra.`scope_type` = 'TENANT'
+                  AND ra.`status` = 'ACTIVE'
+                  AND ro.`code` = 'ROLE_ADMIN'
+                GROUP BY ra.`tenant_id`
+              ) admin_map ON admin_map.`tenant_id` = dt.`tenant_id`
+              LEFT JOIN (
+                SELECT
+                  tu.`tenant_id`,
+                  MIN(u.`username`) AS `fallback_username`
+                FROM `tenant_user` tu
+                INNER JOIN `user` u ON u.`id` = tu.`user_id`
+                WHERE tu.`status` = 'ACTIVE'
+                GROUP BY tu.`tenant_id`
+              ) tenant_user_map ON tenant_user_map.`tenant_id` = dt.`tenant_id`
+              SET
+                dt.`created_by` = COALESCE(NULLIF(TRIM(dt.`created_by`), ''), admin_map.`admin_username`, tenant_user_map.`fallback_username`),
+                dt.`updated_by` = COALESCE(NULLIF(TRIM(dt.`updated_by`), ''), NULLIF(TRIM(dt.`created_by`), ''), admin_map.`admin_username`, tenant_user_map.`fallback_username`)
+              WHERE dt.`tenant_id` IS NOT NULL
+                AND (
+                  dt.`created_by` IS NULL OR TRIM(dt.`created_by`) = ''
+                  OR dt.`updated_by` IS NULL OR TRIM(dt.`updated_by`) = ''
+                );
+
+              UPDATE `dict_item` di
+              LEFT JOIN (
+                SELECT
+                  ra.`tenant_id`,
+                  MIN(u.`username`) AS `admin_username`
+                FROM `role_assignment` ra
+                INNER JOIN `role` ro ON ro.`id` = ra.`role_id`
+                INNER JOIN `user` u ON u.`id` = ra.`principal_id`
+                WHERE ra.`principal_type` = 'USER'
+                  AND ra.`scope_type` = 'TENANT'
+                  AND ra.`status` = 'ACTIVE'
+                  AND ro.`code` = 'ROLE_ADMIN'
+                GROUP BY ra.`tenant_id`
+              ) admin_map ON admin_map.`tenant_id` = di.`tenant_id`
+              LEFT JOIN (
+                SELECT
+                  tu.`tenant_id`,
+                  MIN(u.`username`) AS `fallback_username`
+                FROM `tenant_user` tu
+                INNER JOIN `user` u ON u.`id` = tu.`user_id`
+                WHERE tu.`status` = 'ACTIVE'
+                GROUP BY tu.`tenant_id`
+              ) tenant_user_map ON tenant_user_map.`tenant_id` = di.`tenant_id`
+              SET
+                di.`created_by` = COALESCE(NULLIF(TRIM(di.`created_by`), ''), admin_map.`admin_username`, tenant_user_map.`fallback_username`),
+                di.`updated_by` = COALESCE(NULLIF(TRIM(di.`updated_by`), ''), NULLIF(TRIM(di.`created_by`), ''), admin_map.`admin_username`, tenant_user_map.`fallback_username`)
+              WHERE di.`tenant_id` IS NOT NULL
+                AND (
+                  di.`created_by` IS NULL OR TRIM(di.`created_by`) = ''
+                  OR di.`updated_by` IS NULL OR TRIM(di.`updated_by`) = ''
+                );

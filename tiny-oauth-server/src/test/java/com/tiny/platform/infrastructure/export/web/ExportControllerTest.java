@@ -150,11 +150,11 @@ class ExportControllerTest {
         ExportController controller = new ExportController(exportService, exportTaskService);
         ExportTaskEntity adminTask = task("admin-task", "u-admin", ExportTaskStatus.SUCCESS);
         ExportTaskEntity userTask = task("user-task", "u-1", ExportTaskStatus.RUNNING);
-        when(exportTaskService.findAllTasks()).thenReturn(List.of(adminTask));
+        when(exportTaskService.findReadableTasks()).thenReturn(List.of(adminTask));
         when(exportTaskService.findUserTasks("u-1")).thenReturn(List.of(userTask));
 
         SecurityContextHolder.getContext().setAuthentication(
-            new UsernamePasswordAuthenticationToken("admin", "N/A", List.of(new SimpleGrantedAuthority("ROLE_ADMIN")))
+            new UsernamePasswordAuthenticationToken("admin", "N/A", List.of(new SimpleGrantedAuthority("system:export:manage")))
         );
         ResponseEntity<?> adminResponse = controller.listTasks();
         assertEquals(List.of(adminTask), adminResponse.getBody());

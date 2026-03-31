@@ -118,8 +118,8 @@ public class RoleConstraintRuleAdminService {
         requirePositive(tenantId, "tenantId");
         requirePositive(roleId, "roleId");
         String st = scopeType == null ? "" : scopeType.trim();
-        if (!"TENANT".equals(st) && !"PLATFORM".equals(st)) {
-            throw new BusinessException(ErrorCode.INVALID_PARAMETER, "role_cardinality 暂仅支持 scope_type=TENANT/PLATFORM");
+        if (!"TENANT".equals(st) && !"PLATFORM".equals(st) && !"ORG".equals(st) && !"DEPT".equals(st)) {
+            throw new BusinessException(ErrorCode.INVALID_PARAMETER, "role_cardinality scope_type 仅支持 PLATFORM/TENANT/ORG/DEPT");
         }
         if (maxAssignments <= 0) {
             throw new BusinessException(ErrorCode.INVALID_PARAMETER, "role_cardinality.max_assignments 必须为正整数");

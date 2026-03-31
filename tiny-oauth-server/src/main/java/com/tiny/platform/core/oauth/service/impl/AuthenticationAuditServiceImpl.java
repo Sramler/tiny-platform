@@ -1,5 +1,7 @@
 package com.tiny.platform.core.oauth.service.impl;
 
+import com.tiny.platform.core.oauth.service.AuthenticationAuditQuery;
+import com.tiny.platform.core.oauth.service.AuthenticationAuditSummary;
 import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationAudit;
 import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationAuditRepository;
 import com.tiny.platform.core.oauth.service.AuthenticationAuditService;
@@ -10,12 +12,21 @@ import com.tiny.platform.core.oauth.tenant.TenantContextFilter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
+import jakarta.persistence.criteria.Predicate;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 
 /**
  * 认证审计服务实现
@@ -155,6 +166,113 @@ public class AuthenticationAuditServiceImpl implements AuthenticationAuditServic
         } catch (Exception e) {
             logger.error("记录Token撤销审计失败: username={}, error={}", username, e.getMessage(), e);
         }
+    }
+
+    @Override
+    public void recordSessionRevoke(String username, Long userId, String sessionId,
+                                    HttpServletRequest request) {
+        UserAuthenticationAudit audit = new UserAuthenticationAudit();
+        audit.setUsername(username != null ? username : "unknown");
+        audit.setUserId(userId);
+        TenantResolution tenantResolution = resolveActiveTenant(request);
+        audit.setTenantId(tenantResolution.activeTenantId());
+        audit.setTenantResolutionCode(tenantResolution.code());
+        audit.setTenantResolutionSource(tenantResolution.source());
+        audit.setEventType("SESSION_REVOKE");
+        audit.setSuccess(true);
+        audit.setSessionId(sessionId);
+
+        if (request != null) {
+            audit.setIpAddress(IpUtils.getClientIp(request));
+            audit.setUserAgent(request.getHeader("User-Agent"));
+        }
+
+        try {
+            auditRepository.save(audit);
+        } catch (Exception e) {
+            logger.error("记录会话强制下线审计失败: username={}, sessionId={}, error={}",
+                username, sessionId, e.getMessage(), e);
+        }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<UserAuthenticationAudit> search(AuthenticationAuditQuery query, Pageable pageable) {
+        Specification<UserAuthenticationAudit> specification = (root, criteriaQuery, criteriaBuilder) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            if (query.tenantId() != null) {
+                predicates.add(criteriaBuilder.equal(root.get("tenantId"), query.tenantId()));
+            }
+            if (query.userId() != null) {
+                predicates.add(criteriaBuilder.equal(root.get("userId"), query.userId()));
+            }
+            if (StringUtils.hasText(query.username())) {
+                predicates.add(criteriaBuilder.like(
+                    criteriaBuilder.lower(root.get("username")),
+                    "%" + query.username().trim().toLowerCase(Locale.ROOT) + "%"
+                ));
+            }
+            if (StringUtils.hasText(query.eventType())) {
+                predicates.add(criteriaBuilder.equal(root.get("eventType"), query.eventType().trim().toUpperCase(Locale.ROOT)));
+            }
+            if (query.success() != null) {
+                predicates.add(criteriaBuilder.equal(root.get("success"), query.success()));
+            }
+            if (query.startTime() != null) {
+                predicates.add(criteriaBuilder.greaterThanOrEqualTo(root.get("createdAt"), query.startTime()));
+            }
+            if (query.endTime() != null) {
+                predicates.add(criteriaBuilder.lessThanOrEqualTo(root.get("createdAt"), query.endTime()));
+            }
+            return predicates.isEmpty()
+                ? criteriaBuilder.conjunction()
+                : criteriaBuilder.and(predicates.toArray(new Predicate[0]));
+        };
+        return auditRepository.findAll(specification, pageable);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AuthenticationAuditSummary summarize(AuthenticationAuditQuery query) {
+        Long tenantId = query != null ? query.tenantId() : null;
+        Long userId = query != null ? query.userId() : null;
+        String username = query != null ? query.username() : null;
+        String eventType = query != null ? query.eventType() : null;
+        Boolean success = query != null ? query.success() : null;
+        var startTime = query != null ? query.startTime() : null;
+        var endTime = query != null ? query.endTime() : null;
+
+        long totalCount = auditRepository.countByFilters(tenantId, userId, username, eventType, success, startTime, endTime);
+        long successCount =
+            auditRepository.countSuccessfulByFilters(tenantId, userId, username, eventType, startTime, endTime);
+        long failureCount =
+            auditRepository.countFailedByFilters(tenantId, userId, username, eventType, startTime, endTime);
+        long loginSuccessCount =
+            auditRepository.countSuccessfulLoginsByFilters(tenantId, userId, username, eventType, startTime, endTime);
+        long loginFailureCount =
+            auditRepository.countFailedLoginsByFilters(tenantId, userId, username, eventType, startTime, endTime);
+        List<AuthenticationAuditSummary.EventTypeCount> eventTypeCounts =
+            auditRepository.countGroupedByEventType(tenantId, userId, username, eventType, success, startTime, endTime)
+                .stream()
+                .map(row -> new AuthenticationAuditSummary.EventTypeCount(
+                    row[0] == null ? "UNKNOWN" : row[0].toString(),
+                    row[1] instanceof Number number ? number.longValue() : 0L
+                ))
+                .toList();
+        return new AuthenticationAuditSummary(
+            totalCount,
+            successCount,
+            failureCount,
+            loginSuccessCount,
+            loginFailureCount,
+            eventTypeCounts
+        );
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Page<UserAuthenticationAudit> listCurrentUserLoginHistory(Long userId, Pageable pageable) {
+        return auditRepository.findByUserIdAndEventTypeOrderByCreatedAtDesc(userId, "LOGIN", pageable);
     }
 
     private TenantResolution resolveActiveTenant(HttpServletRequest request) {

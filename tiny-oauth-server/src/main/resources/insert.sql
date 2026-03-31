@@ -52,19 +52,7 @@ SELECT
 FROM user u
 WHERE u.username IN ('admin','user001','user002','user003','user004','user005','user006','user007','user008','user009','user010');
 
--- 插入用户-角色关联数据
-INSERT INTO user_role (user_id, role_id) VALUES
-(1, 1), -- admin -> ROLE_ADMIN
-(2, 2), -- user001 -> ROLE_USER
-(3, 2), -- user002 -> ROLE_USER
-(4, 2), -- user003 -> ROLE_USER
-(5, 2), -- user004 -> ROLE_USER
-(6, 2), -- user005 -> ROLE_USER
-(7, 2), -- user006 -> ROLE_USER
-(8, 2), -- user007 -> ROLE_USER
-(9, 2), -- user008 -> ROLE_USER
-(10, 2), -- user009 -> ROLE_USER
-(11, 3); -- user010 -> ROLE_GUEST
+-- user_role 已下线，角色赋权通过 role_assignment 管理（参考 data.sql）
 
 INSERT INTO `tiny-web`.
     `oauth2_registered_client`

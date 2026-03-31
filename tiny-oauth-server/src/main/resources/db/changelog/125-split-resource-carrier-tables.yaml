@@ -1,0 +1,374 @@
+databaseChangeLog:
+  - changeSet:
+      id: 125-split-resource-carrier-tables
+      author: codex
+      comment: Create split carrier tables menu/ui_action/api_endpoint and backfill from legacy resource carriers
+      preConditions:
+        onFail: MARK_RAN
+        and:
+          - tableExists:
+              tableName: resource
+          - tableExists:
+              tableName: permission
+      changes:
+        - sql:
+            dbms: mysql
+            sql: |
+              CREATE TABLE IF NOT EXISTS `menu` (
+                `id` BIGINT NOT NULL COMMENT '与 legacy resource.id 对齐的载体ID',
+                `tenant_id` BIGINT DEFAULT NULL COMMENT '租户ID，NULL=平台模板',
+                `resource_level` VARCHAR(16) NOT NULL DEFAULT 'TENANT' COMMENT '模板层级：PLATFORM/TENANT',
+                `name` VARCHAR(100) NOT NULL COMMENT '菜单内部名',
+                `title` VARCHAR(100) NOT NULL COMMENT '菜单标题',
+                `path` VARCHAR(200) NOT NULL DEFAULT '' COMMENT '前端路由路径',
+                `icon` VARCHAR(200) NOT NULL DEFAULT '' COMMENT '图标',
+                `show_icon` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否显示图标',
+                `sort` INT NOT NULL DEFAULT 0 COMMENT '排序',
+                `component` VARCHAR(200) NOT NULL DEFAULT '' COMMENT '组件路径',
+                `redirect` VARCHAR(200) NOT NULL DEFAULT '' COMMENT '重定向路径',
+                `hidden` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否隐藏',
+                `keep_alive` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否缓存',
+                `permission` VARCHAR(100) NOT NULL DEFAULT '' COMMENT '兼容权限码字段',
+                `required_permission_id` BIGINT DEFAULT NULL COMMENT '显式绑定的 permission.id',
+                `type` TINYINT NOT NULL DEFAULT 1 COMMENT '菜单类型：0-目录，1-菜单',
+                `parent_id` BIGINT DEFAULT NULL COMMENT '父菜单ID',
+                `enabled` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '启用状态',
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                `created_by` BIGINT DEFAULT NULL COMMENT '创建人',
+                `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+                `updated_by` BIGINT DEFAULT NULL COMMENT '更新人',
+                PRIMARY KEY (`id`)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='菜单载体表';
+
+              SET @db_name = DATABASE();
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema = @db_name AND table_name = 'menu' AND column_name = 'tenant_id'),
+                  'SELECT 1',
+                  'ALTER TABLE `menu` ADD COLUMN `tenant_id` BIGINT DEFAULT NULL COMMENT ''租户ID，NULL=平台模板'''
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema = @db_name AND table_name = 'menu' AND column_name = 'resource_level'),
+                  'SELECT 1',
+                  'ALTER TABLE `menu` ADD COLUMN `resource_level` VARCHAR(16) NOT NULL DEFAULT ''TENANT'' COMMENT ''模板层级：PLATFORM/TENANT'''
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema = @db_name AND table_name = 'menu' AND column_name = 'required_permission_id'),
+                  'SELECT 1',
+                  'ALTER TABLE `menu` ADD COLUMN `required_permission_id` BIGINT DEFAULT NULL COMMENT ''显式绑定的 permission.id'''
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema = @db_name AND table_name = 'menu' AND column_name = 'type'),
+                  'SELECT 1',
+                  'ALTER TABLE `menu` ADD COLUMN `type` TINYINT NOT NULL DEFAULT 1 COMMENT ''菜单类型：0-目录，1-菜单'''
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema = @db_name AND table_name = 'menu' AND column_name = 'enabled'),
+                  'SELECT 1',
+                  'ALTER TABLE `menu` ADD COLUMN `enabled` TINYINT(1) NOT NULL DEFAULT 1 COMMENT ''启用状态'''
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema = @db_name AND table_name = 'menu' AND column_name = 'created_at'),
+                  'SELECT 1',
+                  'ALTER TABLE `menu` ADD COLUMN `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT ''创建时间'''
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema = @db_name AND table_name = 'menu' AND column_name = 'created_by'),
+                  'SELECT 1',
+                  'ALTER TABLE `menu` ADD COLUMN `created_by` BIGINT DEFAULT NULL COMMENT ''创建人'''
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema = @db_name AND table_name = 'menu' AND column_name = 'updated_at'),
+                  'SELECT 1',
+                  'ALTER TABLE `menu` ADD COLUMN `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT ''更新时间'''
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema = @db_name AND table_name = 'menu' AND column_name = 'updated_by'),
+                  'SELECT 1',
+                  'ALTER TABLE `menu` ADD COLUMN `updated_by` BIGINT DEFAULT NULL COMMENT ''更新人'''
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+              CREATE TABLE IF NOT EXISTS `ui_action` (
+                `id` BIGINT NOT NULL COMMENT '与 legacy resource.id 对齐的载体ID',
+                `tenant_id` BIGINT DEFAULT NULL COMMENT '租户ID，NULL=平台模板',
+                `resource_level` VARCHAR(16) NOT NULL DEFAULT 'TENANT' COMMENT '模板层级：PLATFORM/TENANT',
+                `name` VARCHAR(100) NOT NULL COMMENT '按钮内部名',
+                `title` VARCHAR(100) NOT NULL DEFAULT '' COMMENT '按钮标题',
+                `action_key` VARCHAR(100) NOT NULL DEFAULT '' COMMENT '前端动作标识',
+                `page_path` VARCHAR(200) NOT NULL DEFAULT '' COMMENT '所属页面路径',
+                `permission` VARCHAR(100) NOT NULL DEFAULT '' COMMENT '兼容权限码字段',
+                `required_permission_id` BIGINT DEFAULT NULL COMMENT '显式绑定的 permission.id',
+                `parent_menu_id` BIGINT DEFAULT NULL COMMENT '归属菜单ID',
+                `sort` INT NOT NULL DEFAULT 0 COMMENT '排序',
+                `enabled` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '启用状态',
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                `created_by` BIGINT DEFAULT NULL COMMENT '创建人',
+                `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+                `updated_by` BIGINT DEFAULT NULL COMMENT '更新人',
+                PRIMARY KEY (`id`)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='页面按钮/动作载体表';
+
+              CREATE TABLE IF NOT EXISTS `api_endpoint` (
+                `id` BIGINT NOT NULL COMMENT '与 legacy resource.id 对齐的载体ID',
+                `tenant_id` BIGINT DEFAULT NULL COMMENT '租户ID，NULL=平台模板',
+                `resource_level` VARCHAR(16) NOT NULL DEFAULT 'TENANT' COMMENT '模板层级：PLATFORM/TENANT',
+                `name` VARCHAR(100) NOT NULL COMMENT '接口内部名',
+                `title` VARCHAR(100) NOT NULL DEFAULT '' COMMENT '接口标题',
+                `uri` VARCHAR(200) NOT NULL DEFAULT '' COMMENT 'API 路径模板',
+                `method` VARCHAR(10) NOT NULL DEFAULT '' COMMENT 'HTTP 方法',
+                `permission` VARCHAR(100) NOT NULL DEFAULT '' COMMENT '兼容权限码字段',
+                `required_permission_id` BIGINT DEFAULT NULL COMMENT '显式绑定的 permission.id',
+                `enabled` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '启用状态',
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                `created_by` BIGINT DEFAULT NULL COMMENT '创建人',
+                `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+                `updated_by` BIGINT DEFAULT NULL COMMENT '更新人',
+                PRIMARY KEY (`id`)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='API 端点载体表';
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM information_schema.statistics WHERE table_schema = @db_name AND table_name = 'menu' AND index_name = 'idx_menu_tenant_parent_sort'),
+                  'SELECT 1',
+                  'ALTER TABLE `menu` ADD INDEX `idx_menu_tenant_parent_sort` (`tenant_id`, `parent_id`, `sort`)'
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM information_schema.statistics WHERE table_schema = @db_name AND table_name = 'menu' AND index_name = 'idx_menu_required_permission'),
+                  'SELECT 1',
+                  'ALTER TABLE `menu` ADD INDEX `idx_menu_required_permission` (`required_permission_id`)'
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM information_schema.statistics WHERE table_schema = @db_name AND table_name = 'menu' AND index_name = 'idx_menu_type'),
+                  'SELECT 1',
+                  'ALTER TABLE `menu` ADD INDEX `idx_menu_type` (`type`)'
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM information_schema.statistics WHERE table_schema = @db_name AND table_name = 'ui_action' AND index_name = 'idx_ui_action_tenant_parent'),
+                  'SELECT 1',
+                  'ALTER TABLE `ui_action` ADD INDEX `idx_ui_action_tenant_parent` (`tenant_id`, `parent_menu_id`)'
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM information_schema.statistics WHERE table_schema = @db_name AND table_name = 'ui_action' AND index_name = 'idx_ui_action_required_permission'),
+                  'SELECT 1',
+                  'ALTER TABLE `ui_action` ADD INDEX `idx_ui_action_required_permission` (`required_permission_id`)'
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM information_schema.statistics WHERE table_schema = @db_name AND table_name = 'ui_action' AND index_name = 'idx_ui_action_action_key'),
+                  'SELECT 1',
+                  'ALTER TABLE `ui_action` ADD INDEX `idx_ui_action_action_key` (`action_key`)'
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM information_schema.statistics WHERE table_schema = @db_name AND table_name = 'api_endpoint' AND index_name = 'idx_api_endpoint_tenant_uri_method'),
+                  'SELECT 1',
+                  'ALTER TABLE `api_endpoint` ADD INDEX `idx_api_endpoint_tenant_uri_method` (`tenant_id`, `uri`, `method`)'
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM information_schema.statistics WHERE table_schema = @db_name AND table_name = 'api_endpoint' AND index_name = 'idx_api_endpoint_required_permission'),
+                  'SELECT 1',
+                  'ALTER TABLE `api_endpoint` ADD INDEX `idx_api_endpoint_required_permission` (`required_permission_id`)'
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM information_schema.table_constraints WHERE table_schema = @db_name AND table_name = 'menu' AND constraint_name = 'fk_menu_required_permission'),
+                  'SELECT 1',
+                  'ALTER TABLE `menu` ADD CONSTRAINT `fk_menu_required_permission` FOREIGN KEY (`required_permission_id`) REFERENCES `permission` (`id`)'
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM information_schema.table_constraints WHERE table_schema = @db_name AND table_name = 'ui_action' AND constraint_name = 'fk_ui_action_required_permission'),
+                  'SELECT 1',
+                  'ALTER TABLE `ui_action` ADD CONSTRAINT `fk_ui_action_required_permission` FOREIGN KEY (`required_permission_id`) REFERENCES `permission` (`id`)'
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM information_schema.table_constraints WHERE table_schema = @db_name AND table_name = 'api_endpoint' AND constraint_name = 'fk_api_endpoint_required_permission'),
+                  'SELECT 1',
+                  'ALTER TABLE `api_endpoint` ADD CONSTRAINT `fk_api_endpoint_required_permission` FOREIGN KEY (`required_permission_id`) REFERENCES `permission` (`id`)'
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+              DELETE m
+              FROM `menu` m
+              LEFT JOIN `resource` r
+                ON r.`id` = m.`id`
+               AND r.`type` IN (0, 1)
+              WHERE r.`id` IS NULL;
+
+              INSERT INTO `menu` (
+                `id`, `tenant_id`, `resource_level`, `name`, `title`, `path`, `icon`, `show_icon`,
+                `sort`, `component`, `redirect`, `hidden`, `keep_alive`, `permission`,
+                `required_permission_id`, `type`, `parent_id`, `enabled`,
+                `created_at`, `created_by`, `updated_at`, `updated_by`
+              )
+              SELECT
+                r.`id`, r.`tenant_id`, IFNULL(r.`resource_level`, 'TENANT'), r.`name`, r.`title`, r.`url`,
+                IFNULL(r.`icon`, ''), IFNULL(r.`show_icon`, 0),
+                IFNULL(r.`sort`, 0), IFNULL(r.`component`, ''), IFNULL(r.`redirect`, ''),
+                IFNULL(r.`hidden`, 0), IFNULL(r.`keep_alive`, 0), IFNULL(r.`permission`, ''),
+                r.`required_permission_id`, r.`type`, r.`parent_id`, IFNULL(r.`enabled`, 1),
+                IFNULL(r.`created_at`, NOW()), r.`created_by`, IFNULL(r.`updated_at`, NOW()), NULL
+              FROM `resource` r
+              WHERE r.`type` IN (0, 1)
+              ON DUPLICATE KEY UPDATE
+                `tenant_id` = VALUES(`tenant_id`),
+                `resource_level` = VALUES(`resource_level`),
+                `name` = VALUES(`name`),
+                `title` = VALUES(`title`),
+                `path` = VALUES(`path`),
+                `icon` = VALUES(`icon`),
+                `show_icon` = VALUES(`show_icon`),
+                `sort` = VALUES(`sort`),
+                `component` = VALUES(`component`),
+                `redirect` = VALUES(`redirect`),
+                `hidden` = VALUES(`hidden`),
+                `keep_alive` = VALUES(`keep_alive`),
+                `permission` = VALUES(`permission`),
+                `required_permission_id` = VALUES(`required_permission_id`),
+                `type` = VALUES(`type`),
+                `parent_id` = VALUES(`parent_id`),
+                `enabled` = VALUES(`enabled`),
+                `created_at` = VALUES(`created_at`),
+                `created_by` = VALUES(`created_by`),
+                `updated_at` = VALUES(`updated_at`);
+
+              DELETE ua
+              FROM `ui_action` ua
+              LEFT JOIN `resource` r
+                ON r.`id` = ua.`id`
+               AND r.`type` = 2
+              WHERE r.`id` IS NULL;
+
+              INSERT INTO `ui_action` (
+                `id`, `tenant_id`, `resource_level`, `name`, `title`, `action_key`, `page_path`,
+                `permission`, `required_permission_id`, `parent_menu_id`, `sort`, `enabled`,
+                `created_at`, `created_by`, `updated_at`, `updated_by`
+              )
+              SELECT
+                r.`id`, r.`tenant_id`, IFNULL(r.`resource_level`, 'TENANT'), r.`name`, r.`title`,
+                IFNULL(r.`name`, ''), IFNULL(r.`url`, ''),
+                IFNULL(r.`permission`, ''), r.`required_permission_id`, r.`parent_id`,
+                IFNULL(r.`sort`, 0), IFNULL(r.`enabled`, 1),
+                IFNULL(r.`created_at`, NOW()), r.`created_by`, IFNULL(r.`updated_at`, NOW()), NULL
+              FROM `resource` r
+              WHERE r.`type` = 2
+              ON DUPLICATE KEY UPDATE
+                `tenant_id` = VALUES(`tenant_id`),
+                `resource_level` = VALUES(`resource_level`),
+                `name` = VALUES(`name`),
+                `title` = VALUES(`title`),
+                `action_key` = VALUES(`action_key`),
+                `page_path` = VALUES(`page_path`),
+                `permission` = VALUES(`permission`),
+                `required_permission_id` = VALUES(`required_permission_id`),
+                `parent_menu_id` = VALUES(`parent_menu_id`),
+                `sort` = VALUES(`sort`),
+                `enabled` = VALUES(`enabled`),
+                `created_at` = VALUES(`created_at`),
+                `created_by` = VALUES(`created_by`),
+                `updated_at` = VALUES(`updated_at`);
+
+              DELETE ae
+              FROM `api_endpoint` ae
+              LEFT JOIN `resource` r
+                ON r.`id` = ae.`id`
+               AND r.`type` = 3
+              WHERE r.`id` IS NULL;
+
+              INSERT INTO `api_endpoint` (
+                `id`, `tenant_id`, `resource_level`, `name`, `title`, `uri`, `method`,
+                `permission`, `required_permission_id`, `enabled`,
+                `created_at`, `created_by`, `updated_at`, `updated_by`
+              )
+              SELECT
+                r.`id`, r.`tenant_id`, IFNULL(r.`resource_level`, 'TENANT'), r.`name`, r.`title`,
+                IFNULL(r.`uri`, ''), IFNULL(r.`method`, ''),
+                IFNULL(r.`permission`, ''), r.`required_permission_id`, IFNULL(r.`enabled`, 1),
+                IFNULL(r.`created_at`, NOW()), r.`created_by`, IFNULL(r.`updated_at`, NOW()), NULL
+              FROM `resource` r
+              WHERE r.`type` = 3
+              ON DUPLICATE KEY UPDATE
+                `tenant_id` = VALUES(`tenant_id`),
+                `resource_level` = VALUES(`resource_level`),
+                `name` = VALUES(`name`),
+                `title` = VALUES(`title`),
+                `uri` = VALUES(`uri`),
+                `method` = VALUES(`method`),
+                `permission` = VALUES(`permission`),
+                `required_permission_id` = VALUES(`required_permission_id`),
+                `enabled` = VALUES(`enabled`),
+                `created_at` = VALUES(`created_at`),
+                `created_by` = VALUES(`created_by`),
+                `updated_at` = VALUES(`updated_at`);

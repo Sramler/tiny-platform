@@ -108,18 +108,18 @@ async function main() {
     await page.getByRole('heading', { name: '欢迎登录' }).waitFor({ timeout: 90_000 })
 
     // 显式填充租户编码，避免依赖本地缓存或页面默认值
+    // 使用 force:true：某些登录页会在渲染阶段短暂不可见/被遮挡，但仍需要提交时带上 tenantCode。
     try {
       const tenantInput = page.getByLabel('租户编码')
-      if (await tenantInput.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await tenantInput.fill(tenantCode)
-      }
+      await tenantInput.fill(tenantCode, { force: true })
     } catch {
       // 如果页面上不存在租户编码输入框，则退化为依赖 initScript 注入的 app_tenant_code
     }
 
     await page.getByLabel('用户名').fill(username)
     await page.getByLabel('密码').fill(password)
-    await page.getByRole('button', { name: '登录' }).click()
+    // 避免匹配到“租户登录/平台登录”页签按钮，精确点击提交按钮。
+    await page.getByRole('button', { name: /^登录(租户|平台)?$/ }).click()
 
     await page.waitForURL(/\/(callback|self\/security\/totp-(bind|verify)|OIDCDebug)/, {
       timeout: 90_000,

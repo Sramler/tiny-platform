@@ -1,0 +1,75 @@
+package com.tiny.platform.core.oauth.security;
+
+import com.tiny.platform.infrastructure.auth.resource.service.ApiEndpointRequirementDecision;
+import com.tiny.platform.infrastructure.auth.resource.service.ResourceService;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.util.StringUtils;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import java.io.IOException;
+
+/**
+ * Unified api_endpoint requirement guard (fail-closed).
+ *
+ * <p>Behavior:
+ * - Only enforces for requests that match an enabled api_endpoint by exact method+uri within current tenant scope.
+ * - When matched, require api_endpoint_permission_requirement to be present and satisfied (including permission.enabled).
+ * - When not registered, keep legacy behavior (do not block).
+ */
+public class ApiEndpointRequirementFilter extends OncePerRequestFilter {
+
+    private final ResourceService resourceService;
+
+    public ApiEndpointRequirementFilter(ResourceService resourceService) {
+        this.resourceService = resourceService;
+    }
+
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String path = request.getServletPath();
+        if (!StringUtils.hasText(path)) {
+            path = request.getRequestURI();
+        }
+        if (!StringUtils.hasText(path)) {
+            return false;
+        }
+        return "/login".equals(path)
+            || "/csrf".equals(path)
+            || "/favicon.ico".equals(path)
+            || "/error".equals(path)
+            || path.startsWith("/webjars/")
+            || path.startsWith("/assets/")
+            || path.startsWith("/css/")
+            || path.startsWith("/js/");
+    }
+
+    @Override
+    protected boolean shouldNotFilterErrorDispatch() {
+        return true;
+    }
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest request,
+                                    HttpServletResponse response,
+                                    FilterChain filterChain) throws ServletException, IOException {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
+        ApiEndpointRequirementDecision decision =
+            resourceService.evaluateApiEndpointRequirement(request.getMethod(), request.getRequestURI());
+
+        if (decision == ApiEndpointRequirementDecision.DENIED) {
+            response.sendError(HttpServletResponse.SC_FORBIDDEN, "api_endpoint requirement denied");
+            return;
+        }
+        filterChain.doFilter(request, response);
+    }
+}

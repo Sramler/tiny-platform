@@ -1,0 +1,113 @@
+databaseChangeLog:
+  - changeSet:
+      id: 128-carrier-id-autoincrement-safe-migration
+      author: codex
+      comment: Enable carrier independent id generation with safe FK detach/reattach
+      preConditions:
+        onFail: MARK_RAN
+        and:
+          - tableExists:
+              tableName: menu
+          - tableExists:
+              tableName: ui_action
+          - tableExists:
+              tableName: api_endpoint
+          - tableExists:
+              tableName: menu_permission_requirement
+          - tableExists:
+              tableName: ui_action_permission_requirement
+          - tableExists:
+              tableName: api_endpoint_permission_requirement
+      changes:
+        - sql:
+            dbms: mysql
+            sql: |
+              SET @db_name = DATABASE();
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM information_schema.table_constraints
+                    WHERE table_schema = @db_name
+                      AND table_name = 'menu_permission_requirement'
+                      AND constraint_name = 'fk_menu_permission_requirement_menu'
+                  ),
+                  'ALTER TABLE `menu_permission_requirement` DROP FOREIGN KEY `fk_menu_permission_requirement_menu`',
+                  'SELECT 1'
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM information_schema.table_constraints
+                    WHERE table_schema = @db_name
+                      AND table_name = 'ui_action_permission_requirement'
+                      AND constraint_name = 'fk_ui_action_permission_requirement_action'
+                  ),
+                  'ALTER TABLE `ui_action_permission_requirement` DROP FOREIGN KEY `fk_ui_action_permission_requirement_action`',
+                  'SELECT 1'
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM information_schema.table_constraints
+                    WHERE table_schema = @db_name
+                      AND table_name = 'api_endpoint_permission_requirement'
+                      AND constraint_name = 'fk_api_endpoint_permission_requirement_endpoint'
+                  ),
+                  'ALTER TABLE `api_endpoint_permission_requirement` DROP FOREIGN KEY `fk_api_endpoint_permission_requirement_endpoint`',
+                  'SELECT 1'
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+              ALTER TABLE `menu` MODIFY COLUMN `id` BIGINT NOT NULL AUTO_INCREMENT;
+              ALTER TABLE `ui_action` MODIFY COLUMN `id` BIGINT NOT NULL AUTO_INCREMENT;
+              ALTER TABLE `api_endpoint` MODIFY COLUMN `id` BIGINT NOT NULL AUTO_INCREMENT;
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM information_schema.table_constraints
+                    WHERE table_schema = @db_name
+                      AND table_name = 'menu_permission_requirement'
+                      AND constraint_name = 'fk_menu_permission_requirement_menu'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `menu_permission_requirement` ADD CONSTRAINT `fk_menu_permission_requirement_menu` FOREIGN KEY (`menu_id`) REFERENCES `menu` (`id`) ON DELETE CASCADE'
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM information_schema.table_constraints
+                    WHERE table_schema = @db_name
+                      AND table_name = 'ui_action_permission_requirement'
+                      AND constraint_name = 'fk_ui_action_permission_requirement_action'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `ui_action_permission_requirement` ADD CONSTRAINT `fk_ui_action_permission_requirement_action` FOREIGN KEY (`ui_action_id`) REFERENCES `ui_action` (`id`) ON DELETE CASCADE'
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM information_schema.table_constraints
+                    WHERE table_schema = @db_name
+                      AND table_name = 'api_endpoint_permission_requirement'
+                      AND constraint_name = 'fk_api_endpoint_permission_requirement_endpoint'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `api_endpoint_permission_requirement` ADD CONSTRAINT `fk_api_endpoint_permission_requirement_endpoint` FOREIGN KEY (`api_endpoint_id`) REFERENCES `api_endpoint` (`id`) ON DELETE CASCADE'
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;

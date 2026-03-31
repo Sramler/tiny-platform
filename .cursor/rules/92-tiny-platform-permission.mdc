@@ -18,6 +18,7 @@ globs:
 - 适用于：权限标识定义、`@PreAuthorize` / AccessGuard 鉴权、菜单/资源初始化数据、前端路由权限与按钮权限、权限字典文档
 - 典型文件：`**/auth/**`、`**/security/**`、`**/resource/**`、`**/menu/**`、`**/*AccessGuard.java`、`**/*Controller.java`、`**/*.sql`、`**/*.vue`
 - 不适用于：`ROLE_*` 角色码、`SCOPE_*` OAuth2 Scope、第三方系统原生权限/Scope 命名
+- 配套文档：`docs/TINY_PLATFORM_AUTHORIZATION_DOC_MAP.md`（阅读入口与冲突裁决）、`docs/TINY_PLATFORM_PERMISSION_IDENTIFIER_SPEC.md`（权限码规范）、`docs/TINY_PLATFORM_AUTHORIZATION_MODEL.md`（授权模型主线）、`docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md`（当前完成度）
 
 ## 禁止（Must Not）
 
@@ -41,7 +42,7 @@ globs:
 - ✅ 新增关系类权限时，默认使用三段式动作表达，如 `system:user:assign-role`、`system:role:assign-permission`；仅当子资源需要独立授权体系时才升级到四段式。
 - ✅ 每个新增权限码都必须在后端鉴权、前端声明、初始化数据/字典、相关文档中保持一致。
 - ✅ 运行时代码、JWT authority、菜单资源、前端 `v-permission` 和对外文档只允许使用规范码。
-- ✅ 在未完成统一迁移前，运行态权限真相源仍以 `resource.permission` 为准；若拟引入独立 `permission` 目录，必须先更新 `docs/TINY_PLATFORM_AUTHORIZATION_MODEL.md` 并给出迁移方案。
+- ✅ 运行态功能权限真相源已统一为 `role_permission -> permission`；`resource.permission` 仅保留兼容字段、运营可读字段和历史回填输入，新增逻辑不得再把它当唯一真相源。
 
 ## 应该（Should）
 
@@ -67,6 +68,7 @@ globs:
 - 运行态收口：Controller、AccessGuard、前端权限判断、JWT authority、初始化数据不得继续接受或下发旧权限码。
 - 角色/Scope：`ROLE_ADMIN`、`SCOPE_profile` 等不受本规范约束，分别遵循角色命名与 OAuth2 规范。
 - 授权模型：角色分配、Scope、Data Scope、`role_assignment`、`tenant_user` 等授权结构不由本规范定义，统一遵循 `docs/TINY_PLATFORM_AUTHORIZATION_MODEL.md` 与 `93-tiny-platform-authorization-model.rules.md`。
+- 若争议不是“权限码格式/命名”，而是“当前模型是否已落地、carrier/runtime 是否已闭合、`api_endpoint` 证据等级到哪一档”，应按 `docs/TINY_PLATFORM_AUTHORIZATION_DOC_MAP.md` 回到 `docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md`、`docs/TINY_PLATFORM_AUTHORIZATION_LAYERED_MODEL.md`、`docs/TINY_PLATFORM_API_ENDPOINT_GUARD_COVERAGE.md` 与 `93-tiny-platform-authorization-model.rules.md` 裁决。
 - 冲突时：`90-tiny-platform.rules.md` 优先级最高；认证链路相关内容由 `91-tiny-platform-auth.rules.md` 约束；权限命名本身由本规范收口。
 
 ## 示例

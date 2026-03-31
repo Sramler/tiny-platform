@@ -4,6 +4,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.security.AuthenticationFactorAuthorities;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
+import com.tiny.platform.infrastructure.auth.datascope.framework.DataScope;
+import com.tiny.platform.infrastructure.auth.datascope.framework.DataScopeContext;
+import com.tiny.platform.infrastructure.auth.datascope.framework.ResolvedDataScope;
+import com.tiny.platform.infrastructure.auth.org.repository.UserUnitRepository;
+import com.tiny.platform.infrastructure.auth.user.repository.TenantUserRepository;
+import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.infrastructure.scheduling.dto.*;
 import com.tiny.platform.infrastructure.scheduling.exception.SchedulingExceptions;
 import com.tiny.platform.infrastructure.scheduling.model.*;
@@ -50,6 +56,9 @@ public class SchedulingService {
     private final SchedulingTaskInstanceRepository taskInstanceRepository;
     private final SchedulingTaskHistoryRepository taskHistoryRepository;
     private final SchedulingAuditRepository auditRepository;
+    private final TenantUserRepository tenantUserRepository;
+    private final UserUnitRepository userUnitRepository;
+    private final UserRepository userRepository;
     private final QuartzSchedulerService quartzSchedulerService;
     private final TaskExecutorRegistry taskExecutorRegistry;
     private final JsonSchemaValidationService jsonSchemaValidationService;
@@ -67,6 +76,9 @@ public class SchedulingService {
             SchedulingTaskInstanceRepository taskInstanceRepository,
             SchedulingTaskHistoryRepository taskHistoryRepository,
             SchedulingAuditRepository auditRepository,
+            TenantUserRepository tenantUserRepository,
+            UserUnitRepository userUnitRepository,
+            UserRepository userRepository,
             QuartzSchedulerService quartzSchedulerService,
             TaskExecutorRegistry taskExecutorRegistry,
             JsonSchemaValidationService jsonSchemaValidationService,
@@ -82,6 +94,9 @@ public class SchedulingService {
         this.taskInstanceRepository = taskInstanceRepository;
         this.taskHistoryRepository = taskHistoryRepository;
         this.auditRepository = auditRepository;
+        this.tenantUserRepository = tenantUserRepository;
+        this.userUnitRepository = userUnitRepository;
+        this.userRepository = userRepository;
         this.quartzSchedulerService = quartzSchedulerService;
         this.taskExecutorRegistry = taskExecutorRegistry;
         this.jsonSchemaValidationService = jsonSchemaValidationService;
@@ -426,11 +441,13 @@ public class SchedulingService {
         return taskTypeRepository.findByIdAndTenantId(id, requireCurrentTenantId());
     }
 
+    @DataScope(module = "scheduling")
     public Page<SchedulingTaskType> listTaskTypes(String code, String name, Pageable pageable) {
         Long currentTenantId = requireCurrentTenantId();
         Specification<SchedulingTaskType> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.equal(root.get("tenantId"), currentTenantId));
+            appendSchedulingOwnerScopePredicate(predicates, root.get("createdBy").as(String.class), cb, currentTenantId);
             if (code != null && !code.isEmpty()) {
                 predicates.add(cb.like(cb.lower(root.get("code")), "%" + code.toLowerCase() + "%"));
             }
@@ -539,11 +556,13 @@ public class SchedulingService {
         return taskRepository.findByIdAndTenantId(id, requireCurrentTenantId());
     }
 
+    @DataScope(module = "scheduling")
     public Page<SchedulingTask> listTasks(Long typeId, String code, String name, Pageable pageable) {
         Long currentTenantId = requireCurrentTenantId();
         Specification<SchedulingTask> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.equal(root.get("tenantId"), currentTenantId));
+            appendSchedulingOwnerScopePredicate(predicates, root.get("createdBy").as(String.class), cb, currentTenantId);
             if (typeId != null) {
                 predicates.add(cb.equal(root.get("typeId"), typeId));
             }
@@ -810,11 +829,13 @@ public class SchedulingService {
                 .map(this::enrichDagCurrentVersionId);
     }
 
+    @DataScope(module = "scheduling")
     public Page<SchedulingDag> listDags(String code, String name, Pageable pageable) {
         Long currentTenantId = requireCurrentTenantId();
         Specification<SchedulingDag> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.equal(root.get("tenantId"), currentTenantId));
+            appendSchedulingOwnerScopePredicate(predicates, root.get("createdBy").as(String.class), cb, currentTenantId);
             if (code != null && !code.isEmpty()) {
                 predicates.add(cb.like(cb.lower(root.get("code")), "%" + code.toLowerCase() + "%"));
             }
@@ -1790,6 +1811,14 @@ public class SchedulingService {
 
     /**
      * 分页查询 DAG 运行历史，支持按状态、触发类型、运行编号、开始时间范围筛选。
+     *
+     * <p><b>可见性契约（正式产品边界，刻意不接 {@code @DataScope}）</b>：本方法<strong>不</strong>读取
+     * {@link com.tiny.platform.infrastructure.auth.datascope.framework.DataScopeContext}，不按 Header 活动组织/部门收缩结果。
+     * 访问控制 = 租户上下文（{@link #requireCurrentTenantId()}）+ {@link #requireDagInTenant(Long, Long)} 校验 DAG 归属当前租户；
+     * 查询谓词仅按 {@code dagId} 与筛选条件过滤运行记录。运行历史承载编排运维、排障与审计只读语义，当前产品未将 Run 与
+     * 「DAG owner / 数据范围可见用户集」建立唯一稳定映射；若用 owner 型 DataScope 收窄，会静默损害排障视野。
+     * 前端 {@code DagHistory.vue} 不监听 {@code active-scope-changed}。若未来改为按 active scope 收缩，须先定义 Run 级可见性
+     * 契约并补后端 query-time 与前端联动测试（选项与扩面指南一致）。</p>
      */
     public Page<SchedulingDagRun> getDagRuns(Long dagId, Pageable pageable,
             String status, String triggerType, String runNo,
@@ -1887,6 +1916,86 @@ public class SchedulingService {
             return predicates.isEmpty() ? cb.conjunction() : cb.and(predicates.toArray(new Predicate[0]));
         };
         return auditRepository.findAll(spec, pageable);
+    }
+
+    private void appendSchedulingOwnerScopePredicate(List<Predicate> predicates,
+                                                     jakarta.persistence.criteria.Expression<String> createdByPath,
+                                                     jakarta.persistence.criteria.CriteriaBuilder cb,
+                                                     Long tenantId) {
+        if (!requiresSchedulingDataScopeFilter()) {
+            return;
+        }
+        LinkedHashSet<String> visibleOwnerKeys = resolveVisibleSchedulingOwnerKeysForRead(tenantId);
+        if (visibleOwnerKeys.isEmpty()) {
+            predicates.add(cb.disjunction());
+            return;
+        }
+        predicates.add(createdByPath.in(visibleOwnerKeys));
+    }
+
+    private LinkedHashSet<String> resolveVisibleSchedulingOwnerKeysForRead(Long tenantId) {
+        LinkedHashSet<Long> tenantVisibleUserIds = new LinkedHashSet<>(
+            tenantUserRepository.findUserIdsByTenantIdAndStatus(tenantId, "ACTIVE")
+        );
+        ResolvedDataScope scope = DataScopeContext.get();
+        if (scope == null || scope.isUnrestricted()) {
+            return new LinkedHashSet<>();
+        }
+
+        LinkedHashSet<Long> scopedUserIds = new LinkedHashSet<>();
+        Long currentUserId = extractCurrentUserIdAsLong();
+        if (scope.isSelfOnly() && currentUserId != null) {
+            scopedUserIds.add(currentUserId);
+        }
+        scopedUserIds.addAll(scope.getVisibleUserIds());
+        if (!scope.getVisibleUnitIds().isEmpty()) {
+            scopedUserIds.addAll(userUnitRepository.findUserIdsByTenantIdAndUnitIdInAndStatus(
+                tenantId,
+                scope.getVisibleUnitIds(),
+                "ACTIVE"
+            ));
+        }
+
+        if (scopedUserIds.isEmpty()) {
+            return new LinkedHashSet<>();
+        }
+
+        scopedUserIds.retainAll(tenantVisibleUserIds);
+        if (scopedUserIds.isEmpty()) {
+            return new LinkedHashSet<>();
+        }
+
+        LinkedHashSet<String> ownerKeys = new LinkedHashSet<>();
+        for (Long userId : scopedUserIds) {
+            ownerKeys.add(String.valueOf(userId));
+        }
+        for (String username : userRepository.findUsernamesByIdIn(scopedUserIds)) {
+            if (StringUtils.hasText(username)) {
+                ownerKeys.add(username);
+            }
+        }
+        return ownerKeys;
+    }
+
+    private boolean requiresSchedulingDataScopeFilter() {
+        ResolvedDataScope scope = DataScopeContext.get();
+        return scope != null && !scope.isUnrestricted();
+    }
+
+    private Long extractCurrentUserIdAsLong() {
+        Authentication authentication = currentAuthentication();
+        if (!hasAuthenticatedPrincipal(authentication)) {
+            return null;
+        }
+        Object principal = authentication.getPrincipal();
+        if (principal instanceof SecurityUser securityUser) {
+            return securityUser.getUserId();
+        }
+        Object details = authentication.getDetails();
+        if (details instanceof SecurityUser securityUser) {
+            return securityUser.getUserId();
+        }
+        return null;
     }
 
     /**

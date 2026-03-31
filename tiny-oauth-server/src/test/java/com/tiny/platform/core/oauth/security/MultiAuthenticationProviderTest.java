@@ -10,6 +10,7 @@ import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationMethod;
 import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
+import com.tiny.platform.infrastructure.tenant.config.PlatformTenantResolver;
 import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -32,7 +33,10 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -81,7 +85,7 @@ class MultiAuthenticationProviderTest {
             .hasMessageContaining("缺少租户信息");
 
         TenantContext.setActiveTenantId(1L);
-        when(tenantRepository.isTenantFrozen(1L)).thenReturn(false);
+        when(tenantRepository.findLoginBlockedLifecycleStatus(1L)).thenReturn(Optional.empty());
         when(authUserResolutionService.resolveUserRecordInActiveTenant("alice", 1L)).thenReturn(Optional.empty());
         assertThatThrownBy(() -> provider.authenticate(auth))
             .isInstanceOf(BadCredentialsException.class)
@@ -105,6 +109,38 @@ class MultiAuthenticationProviderTest {
         assertThatThrownBy(() -> provider.authenticate(invalid))
             .isInstanceOf(BadCredentialsException.class)
             .hasMessageContaining("认证参数格式错误");
+    }
+
+    @Test
+    void should_reject_when_tenant_decommissioned() {
+        UserRepository userRepository = mock(UserRepository.class);
+        UserAuthenticationMethodRepository methodRepository = mock(UserAuthenticationMethodRepository.class);
+        TenantRepository tenantRepository = mock(TenantRepository.class);
+        MultiAuthenticationProvider provider = newProvider(userRepository, tenantRepository, methodRepository, mock(PasswordEncoder.class),
+            mock(UserDetailsService.class), mock(TotpService.class), mock(SecurityService.class));
+
+        TenantContext.setActiveTenantId(1L);
+        when(tenantRepository.findLoginBlockedLifecycleStatus(1L)).thenReturn(Optional.of("DECOMMISSIONED"));
+
+        assertThatThrownBy(() -> provider.authenticate(auth("alice", "raw", "LOCAL", "PASSWORD")))
+            .isInstanceOf(BadCredentialsException.class)
+            .hasMessageContaining("租户已下线");
+    }
+
+    @Test
+    void should_reject_when_tenant_frozen() {
+        UserRepository userRepository = mock(UserRepository.class);
+        UserAuthenticationMethodRepository methodRepository = mock(UserAuthenticationMethodRepository.class);
+        TenantRepository tenantRepository = mock(TenantRepository.class);
+        MultiAuthenticationProvider provider = newProvider(userRepository, tenantRepository, methodRepository, mock(PasswordEncoder.class),
+            mock(UserDetailsService.class), mock(TotpService.class), mock(SecurityService.class));
+
+        TenantContext.setActiveTenantId(1L);
+        when(tenantRepository.findLoginBlockedLifecycleStatus(1L)).thenReturn(Optional.of("FROZEN"));
+
+        assertThatThrownBy(() -> provider.authenticate(auth("alice", "raw", "LOCAL", "PASSWORD")))
+            .isInstanceOf(BadCredentialsException.class)
+            .hasMessageContaining("租户已冻结");
     }
 
     @Test
@@ -357,9 +393,12 @@ class MultiAuthenticationProviderTest {
         com.tiny.platform.core.oauth.config.LoginProtectionProperties loginProtectionProperties =
                 new com.tiny.platform.core.oauth.config.LoginProtectionProperties();
         LoginFailurePolicy loginFailurePolicy = new LoginFailurePolicy(loginProtectionProperties);
+        PlatformTenantResolver platformTenantResolver = mock(PlatformTenantResolver.class);
+        when(platformTenantResolver.getPlatformTenantId()).thenReturn(1L);
         MultiAuthenticationProvider provider = new MultiAuthenticationProvider(
                 userRepository,
                 tenantRepository,
+                platformTenantResolver,
                 methodRepository,
                 passwordEncoder,
                 userDetailsService,
@@ -380,7 +419,7 @@ class MultiAuthenticationProviderTest {
         SecurityUser securityUser = new SecurityUser(user, "", 1L, Set.of());
 
         when(authUserResolutionService.resolveUserRecordInActiveTenant("shared.alice", 1L)).thenReturn(Optional.of(user));
-        when(tenantRepository.isTenantFrozen(1L)).thenReturn(false);
+        when(tenantRepository.findLoginBlockedLifecycleStatus(1L)).thenReturn(Optional.empty());
         when(methodRepository.findEnabledMethodsByUserId(3L, 1L)).thenReturn(List.of(passwordMethod));
         when(passwordEncoder.matches("raw", "{bcrypt}encoded")).thenReturn(true);
         when(userDetailsService.loadUserByUsername("shared.alice")).thenReturn(securityUser);
@@ -391,6 +430,61 @@ class MultiAuthenticationProviderTest {
 
         assertThat(result.isAuthenticated()).isTrue();
         verify(authUserResolutionService).resolveUserRecordInActiveTenant("shared.alice", 1L);
+    }
+
+    /**
+     * 回归：PLATFORM 登录查询 user_authentication_method 时必须使用 {@link PlatformTenantResolver} 解析的租户 ID，
+     * 不能写死 tenant.code=default，否则与 ensure-platform-admin / tiny.platform.tenant.platform-tenant-code 不一致时会误报密码错误或未配置认证方式。
+     */
+    @Test
+    void should_query_password_method_for_platform_scope_using_configured_platform_tenant_id() {
+        UserRepository userRepository = mock(UserRepository.class);
+        TenantRepository tenantRepository = mock(TenantRepository.class);
+        PlatformTenantResolver platformTenantResolver = mock(PlatformTenantResolver.class);
+        UserAuthenticationMethodRepository methodRepository = mock(UserAuthenticationMethodRepository.class);
+        PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
+        UserDetailsService userDetailsService = mock(UserDetailsService.class);
+        SecurityService securityService = mock(SecurityService.class);
+        AuthUserResolutionService resolution = mock(AuthUserResolutionService.class);
+        TotpVerificationGuard guard = new TotpVerificationGuard(methodRepository, new MfaProperties(), mock(TotpService.class));
+        LoginFailurePolicy policy = new LoginFailurePolicy(new com.tiny.platform.core.oauth.config.LoginProtectionProperties());
+
+        when(platformTenantResolver.getPlatformTenantId()).thenReturn(42L);
+
+        User user = user(8L, "platform_admin");
+        UserAuthenticationMethod pwd = method(21L, "LOCAL", "PASSWORD", Map.of("password", "{bcrypt}x"));
+        pwd.setUserId(8L);
+        pwd.setTenantId(42L);
+
+        when(resolution.resolveUserRecordInPlatform("platform_admin")).thenReturn(Optional.of(user));
+        when(methodRepository.findEnabledMethodsByUserId(8L, 42L)).thenReturn(List.of(pwd));
+        when(passwordEncoder.matches("admin", "{bcrypt}x")).thenReturn(true);
+        when(userDetailsService.loadUserByUsername("platform_admin")).thenReturn(securityUser(user));
+
+        TenantContext.clear();
+        TenantContext.setActiveTenantId(null);
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_PLATFORM);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("127.0.0.1");
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
+
+        MultiAuthenticationProvider provider = new MultiAuthenticationProvider(
+                userRepository,
+                tenantRepository,
+                platformTenantResolver,
+                methodRepository,
+                passwordEncoder,
+                userDetailsService,
+                securityService,
+                resolution,
+                guard,
+                policy
+        );
+
+        Authentication result = provider.authenticate(auth("platform_admin", "admin", "LOCAL", "PASSWORD"));
+        assertThat(result.isAuthenticated()).isTrue();
+        verify(methodRepository).findEnabledMethodsByUserId(8L, 42L);
+        verify(tenantRepository, never()).findByCode(any());
     }
 
     private MultiAuthenticationProvider newProvider() {
@@ -410,9 +504,14 @@ class MultiAuthenticationProviderTest {
         com.tiny.platform.core.oauth.config.LoginProtectionProperties loginProtectionProperties =
             new com.tiny.platform.core.oauth.config.LoginProtectionProperties();
         LoginFailurePolicy loginFailurePolicy = new LoginFailurePolicy(loginProtectionProperties);
+        PlatformTenantResolver platformTenantResolver = mock(PlatformTenantResolver.class);
+        when(platformTenantResolver.getPlatformTenantId()).thenReturn(1L);
+        lenient().when(methodRepository.findByUserIdAndTenantIdIsNullAndIsMethodEnabledTrueOrderByAuthenticationPriorityAsc(anyLong()))
+                .thenReturn(List.of());
         return new MultiAuthenticationProvider(
                 userRepository,
                 tenantRepository,
+                platformTenantResolver,
                 methodRepository,
                 passwordEncoder,
                 userDetailsService,

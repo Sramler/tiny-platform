@@ -47,6 +47,9 @@ type ResourceTreeNode = {
   id?: number | string
   title?: string
   name?: string
+  type?: number
+  carrierKind?: 'menu' | 'ui_action' | 'api_endpoint'
+  requiredPermissionId?: number | null
   children?: ResourceTreeNode[]
 }
 
@@ -83,6 +86,7 @@ type TreeEventInfo = {
 }
 
 const treeNodeMap = new Map<number, TreeNodeInfo>()
+const permissionIdByResourceKey = new Map<number, number>()
 
 const onTreeCheck = (_: unknown, info: unknown) => handleTreeCheck(info as TreeEventInfo)
 const onTreeSelect = (_: unknown, info: unknown) => handleTreeSelect(info as TreeEventInfo)
@@ -94,6 +98,8 @@ async function loadResourceTree() {
     const tree = await getResourceTree()
     // 转换数据格式，确保key为number类型
     originalTreeData.value = transformTreeData(tree)
+    permissionIdByResourceKey.clear()
+    collectPermissionBindings(tree)
     // 扁平化数据用于transfer组件
     flattenTreeData(originalTreeData.value)
     treeNodeMap.clear()
@@ -126,9 +132,35 @@ async function loadRoleResources(targetRoleId?: number) {
 function transformTreeData(nodes: ResourceTreeNode[]): TransferTreeNode[] {
   return nodes.map(node => ({
     key: Number(node.id), // 确保key为number类型
-    title: node.title || node.name || '', // 优先使用title，备选使用name
+    title: formatTreeTitle(node),
     children: node.children ? transformTreeData(node.children) : undefined
   }))
+}
+
+function collectPermissionBindings(nodes: ResourceTreeNode[] = []) {
+  nodes.forEach((node) => {
+    const key = Number(node.id)
+    const permissionId = node.requiredPermissionId == null ? null : Number(node.requiredPermissionId)
+    if (Number.isFinite(key) && permissionId != null && Number.isFinite(permissionId)) {
+      permissionIdByResourceKey.set(key, permissionId)
+    }
+    if (node.children) {
+      collectPermissionBindings(node.children)
+    }
+  })
+}
+
+function formatTreeTitle(node: ResourceTreeNode): string {
+  const baseTitle = node.title || node.name || ''
+  const carrierKind = node.carrierKind
+    || (node.type === 0 || node.type === 1
+      ? 'menu'
+      : node.type === 2
+        ? 'ui_action'
+        : node.type === 3
+          ? 'api_endpoint'
+          : undefined)
+  return carrierKind ? `${baseTitle} [${carrierKind}]` : baseTitle
 }
 
 // 扁平化树形数据为transfer组件需要的格式
@@ -289,7 +321,12 @@ const handleTreeSelect = (info: TreeEventInfo) => {
 
 // 点击确定
 function handleOk() {
-  emit('submit', rightKeys.value) // rightKeys.value 是已分配资源key数组
+  const permissionIds = Array.from(new Set(
+    rightKeys.value
+      .map((resourceId) => permissionIdByResourceKey.get(resourceId))
+      .filter((permissionId): permissionId is number => permissionId != null)
+  ))
+  emit('submit', { resourceIds: rightKeys.value, permissionIds })
   visible.value = false
 }
 

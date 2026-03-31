@@ -25,9 +25,44 @@ function readEnv(names: string[], fallback: string) {
   return fallback
 }
 
+function readEnvOptional(names: string[]): string | undefined {
+  for (const name of names) {
+    const value = process.env[name]
+    if (value && value.trim() !== '') {
+      return value.trim()
+    }
+  }
+  return undefined
+}
+
+/**
+ * Playwright 会用 E2E_FRONTEND_PORT 启动 Vite；若 .env.e2e.local 里仍写着 E2E_FRONTEND_BASE_URL=http://localhost:5173，
+ * 会与动态端口冲突并误复用本机 5173（API 仍指向 9000，后端未就绪时出现 CSRF connection refused）。
+ * 当 BASE_URL 的端口与 FRONTEND_PORT 不一致时，以端口为准生成 baseURL。
+ */
+function resolveFrontendBaseURL(port: number, configuredBaseURL: string | undefined): string {
+  const fallback = `http://localhost:${port}`
+  if (!configuredBaseURL) {
+    return fallback
+  }
+  try {
+    const parsed = new URL(configuredBaseURL)
+    const urlPort = parsed.port || (parsed.protocol === 'https:' ? '443' : '80')
+    if (urlPort === String(port)) {
+      return configuredBaseURL
+    }
+  } catch {
+    return fallback
+  }
+  return fallback
+}
+
 const frontendPort = Number(readEnv(['E2E_FRONTEND_PORT'], '5173'))
 const backendPort = Number(readEnv(['E2E_BACKEND_PORT'], '9000'))
-const frontendBaseURL = readEnv(['E2E_FRONTEND_BASE_URL'], `http://localhost:${frontendPort}`)
+const frontendBaseURL = resolveFrontendBaseURL(
+  frontendPort,
+  readEnvOptional(['E2E_FRONTEND_BASE_URL']),
+)
 const backendBaseURL = readEnv(['E2E_BACKEND_BASE_URL'], `http://localhost:${backendPort}`)
 const authStatePath = path.resolve(webappRoot, 'e2e/.auth/scheduling-user.json')
 const secondaryAuthStatePath = path.resolve(webappRoot, 'e2e/.auth/tenant-b-user.json')
@@ -69,6 +104,8 @@ export default defineConfig({
           env: {
             ...process.env,
             SPRING_PROFILES_ACTIVE: backendProfile,
+            // 与 Vite webServer 端口对齐，避免 dev profile 硬编码 5173 导致 MFA/登录重定向走错前端
+            E2E_FRONTEND_BASE_URL: frontendBaseURL,
             E2E_DB_HOST: dbHost,
             E2E_DB_PORT: dbPort,
             E2E_DB_NAME: dbName,
@@ -98,9 +135,9 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      // 依赖主自动化身份 storageState 的 real-link 用例（调度、post-login 安全中心等）
+      // 依赖主自动化身份 storageState 的 real-link 用例（调度、HeaderBar active-scope + silent renew 等）
       testMatch:
-        /real\/(?!mfa-login-flow|mfa-bind-flow|cross-tenant-a-to-b|cross-tenant-b-to-a|scheduling-rbac-readonly).*\.spec\.ts/,
+        /real\/(?!mfa-login-flow|mfa-bind-flow|platform-vue-login|cross-tenant-a-to-b|cross-tenant-b-to-a|scheduling-rbac-readonly).*\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
         storageState: authStatePath,
@@ -109,7 +146,7 @@ export default defineConfig({
     {
       name: 'chromium-mfa',
       // 从 /login 起步的 MFA 真实链路，不依赖预生成 storageState。
-      testMatch: /real\/mfa-login-flow\.spec\.ts/,
+      testMatch: /real\/(mfa-login-flow|platform-vue-login|platform-menu-tree)\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
         storageState: undefined,

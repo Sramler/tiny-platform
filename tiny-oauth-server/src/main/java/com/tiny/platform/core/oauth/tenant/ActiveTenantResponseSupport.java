@@ -4,6 +4,7 @@ import com.tiny.platform.core.oauth.model.SecurityUser;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import java.util.Map;
+import java.util.Locale;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.context.request.RequestContextHolder;
@@ -11,6 +12,10 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 
 /**
  * 统一处理当前活动租户的响应回写与运行时解析。
+ *
+ * <p>与 {@link com.tiny.platform.core.oauth.security.CurrentActorResolver} 分工：
+ * 本类负责租户 / active scope 的运行态与请求上下文；CurrentActorResolver 负责从 Session 主体与 JWT 主体解析
+ * userId、permissionsVersion 等身份快照字段（供控制面响应稳定输出）。</p>
  */
 public final class ActiveTenantResponseSupport {
 
@@ -69,6 +74,68 @@ public final class ActiveTenantResponseSupport {
         return resolveActiveTenantId(attributes.getRequest());
     }
 
+    public static String resolveActiveScopeTypeFromRequestContext() {
+        String scopeType = TenantContext.getActiveScopeType();
+        if (scopeType != null && !scopeType.isBlank()) {
+            return scopeType;
+        }
+        ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        if (attributes == null) {
+            return null;
+        }
+        HttpSession session = attributes.getRequest().getSession(false);
+        if (session == null) {
+            return null;
+        }
+        Object raw = session.getAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_TYPE_KEY);
+        return raw != null ? String.valueOf(raw) : null;
+    }
+
+    public static Long resolveActiveScopeIdFromRequestContext() {
+        Long scopeId = TenantContext.getActiveScopeId();
+        if (scopeId != null && scopeId > 0) {
+            return scopeId;
+        }
+        ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        if (attributes == null) {
+            return null;
+        }
+        HttpSession session = attributes.getRequest().getSession(false);
+        if (session == null) {
+            return null;
+        }
+        scopeId = toLong(session.getAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_ID_KEY));
+        if (scopeId != null && scopeId > 0) {
+            return scopeId;
+        }
+        Long tenantId = resolveActiveTenantId(attributes.getRequest());
+        if (tenantId != null && tenantId > 0) {
+            return tenantId;
+        }
+        return null;
+    }
+
+    public static String resolveSignalSourceFromRequestContext() {
+        ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        if (attributes != null) {
+            HttpServletRequest request = attributes.getRequest();
+            String headerValue = normalizeSignalSource(request.getHeader(TenantContextContract.SIGNAL_SOURCE_HEADER));
+            if (headerValue != null) {
+                return headerValue;
+            }
+        }
+
+        String propertyValue = normalizeSignalSource(System.getProperty("permission.signal.source"));
+        if (propertyValue != null) {
+            return propertyValue;
+        }
+        String envValue = normalizeSignalSource(System.getenv("PERMISSION_SIGNAL_SOURCE"));
+        if (envValue != null) {
+            return envValue;
+        }
+        return TenantContextContract.SIGNAL_SOURCE_RUNTIME;
+    }
+
     private static Long resolveFromAuthentication(Authentication authentication) {
         if (authentication == null) {
             return null;
@@ -108,6 +175,20 @@ public final class ActiveTenantResponseSupport {
             } catch (NumberFormatException ignored) {
                 return null;
             }
+        }
+        return null;
+    }
+
+    private static String normalizeSignalSource(String rawValue) {
+        if (rawValue == null || rawValue.isBlank()) {
+            return null;
+        }
+        String normalized = rawValue.trim().toUpperCase(Locale.ROOT);
+        if (TenantContextContract.SIGNAL_SOURCE_TEST.equals(normalized)) {
+            return TenantContextContract.SIGNAL_SOURCE_TEST;
+        }
+        if (TenantContextContract.SIGNAL_SOURCE_RUNTIME.equals(normalized)) {
+            return TenantContextContract.SIGNAL_SOURCE_RUNTIME;
         }
         return null;
     }

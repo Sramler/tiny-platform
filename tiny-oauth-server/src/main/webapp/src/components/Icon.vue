@@ -1,61 +1,41 @@
 <template>
-  <!-- 动态渲染官方 icons-vue 图标，未找到时兜底为 MenuOutlined -->
-  <component :is="iconComponent" :class="iconClass" v-if="iconComponent" />
+  <!-- 动态渲染官方 icons-vue 图标，未找到时兜底为 MenuOutlined（按文件懒加载，不整包 import *） -->
+  <component :is="resolvedIcon" :class="iconClass" v-if="resolvedIcon" />
 </template>
 
 <script setup lang="ts">
-// 引入 vue 相关方法
-import { computed } from 'vue'
-// 引入 ant-design-vue 所有图标
-import * as allIcons from '@ant-design/icons-vue'
+import { computed, shallowRef, watch } from 'vue'
+import type { Component } from 'vue'
 
-// 定义 props，icon 为图标名，className 为自定义类名
 const props = defineProps<{
-  icon: string, // 图标名称
-  className?: string // 可选自定义类名
+  icon: string
+  className?: string
 }>()
 
-// 计算实际要渲染的图标组件，找不到时兜底为 MenuOutlined
-const iconComponent = computed(() => {
-  try {
-    if (!props.icon || typeof props.icon !== 'string') {
-      return allIcons.MenuOutlined
-    }
-    
-    const iconName = props.icon.trim()
-    if (!iconName) {
-      return allIcons.MenuOutlined
-    }
-    
-    const component = (allIcons as any)[iconName]
-    if (component && (typeof component === 'object' || typeof component === 'function')) {
-      return component
-    }
-    
-    return allIcons.MenuOutlined
-  } catch (error) {
-    console.warn('Icon component error:', error)
-    return allIcons.MenuOutlined
-  }
-})
+const resolvedIcon = shallowRef<Component | null>(null)
 
-// 组合 class，支持外部传入 className
+watch(
+  () => props.icon,
+  async (name) => {
+    /** 动态导入含 import.meta.glob 的模块，避免把 glob 映射打进 BasicLayout 入口 chunk */
+    const { getAntdIconLoaderOrFallback } = await import('@/utils/antdIconLoaders')
+    const loader = getAntdIconLoaderOrFallback(name)
+    const mod = await loader()
+    resolvedIcon.value = mod.default
+  },
+  { immediate: true },
+)
+
 const iconClass = computed(() => {
-  try {
-    const baseClass = 'icon-vue'
-    return props.className ? `${baseClass} ${props.className}` : baseClass
-  } catch (error) {
-    console.warn('Icon class error:', error)
-    return 'icon-vue'
-  }
+  const baseClass = 'icon-vue'
+  return props.className ? `${baseClass} ${props.className}` : baseClass
 })
 </script>
 
 <style scoped>
-/* 通用图标样式，可根据需要覆盖 */
 .icon-vue {
-  font-size: 18px; /* 默认大小 */
-  color: inherit;  /* 继承父元素的颜色 */
+  font-size: 18px;
+  color: inherit;
   vertical-align: middle;
 }
-</style> 
+</style>

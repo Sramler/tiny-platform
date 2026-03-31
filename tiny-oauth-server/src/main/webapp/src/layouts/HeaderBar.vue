@@ -31,6 +31,10 @@
                 <SettingOutlined class="menu-icon" />
                 个人设置
               </a-menu-item>
+              <a-menu-item v-if="canSwitchScopeEntry" :key="MENU_KEYS.SCOPE">
+                <SettingOutlined class="menu-icon" />
+                切换作用域
+              </a-menu-item>
               <a-menu-item :key="MENU_KEYS.LOGOUT">
                 <LogoutOutlined class="menu-icon" />
                 退出登录
@@ -38,10 +42,37 @@
             </a-menu>
           </template>
         </a-dropdown>
+        <a-tag v-if="activeScopeLabel" class="scope-tag" color="blue">{{ activeScopeLabel }}</a-tag>
       </div>
     </div>
     <!-- 标签页导航插槽 -->
     <slot name="tags"></slot>
+
+    <a-modal
+      v-model:open="scopeModalOpen"
+      title="切换作用域"
+      ok-text="切换"
+      cancel-text="取消"
+      :confirm-loading="scopeSwitching"
+      @ok="confirmSwitchScope"
+    >
+      <a-space direction="vertical" style="width: 100%">
+        <a-radio-group v-model:value="nextScopeType" @change="onScopeTypeRadioChange">
+          <a-radio-button value="TENANT">TENANT</a-radio-button>
+          <a-radio-button value="ORG">ORG</a-radio-button>
+          <a-radio-button value="DEPT">DEPT</a-radio-button>
+        </a-radio-group>
+        <a-select
+          v-if="nextScopeType !== 'TENANT'"
+          v-model:value="nextScopeId"
+          placeholder="选择 org/dept"
+          style="width: 100%"
+          :options="scopeUnitOptions"
+          show-search
+          :filter-option="filterScopeOption"
+        />
+      </a-space>
+    </a-modal>
   </div>
 </template>
 
@@ -49,9 +80,12 @@
 import { UserOutlined, SettingOutlined, LogoutOutlined, DownOutlined } from '@ant-design/icons-vue'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useAuth } from '@/auth/auth'
-import { getCurrentUser } from '@/api/user'
+import { useAuth, refreshTokenAfterActiveScopeSwitch } from '@/auth/auth'
+import { getCurrentUser, switchActiveScope, type ActiveScopeType } from '@/api/user'
+import { notifyActiveScopeChanged } from '@/utils/activeScopeEvents'
+import { getOrgList, type OrgUnit } from '@/api/org'
 import { generateAvatarStyleObject } from '@/utils/avatar'
+import { getActiveTenantId, setActiveTenantId } from '@/utils/tenant'
 import { message } from 'ant-design-vue'
 import type { MenuProps } from 'ant-design-vue'
 
@@ -65,6 +99,7 @@ import type { MenuProps } from 'ant-design-vue'
 const MENU_KEYS = {
   PROFILE: 'profile', // 个人中心
   SETTINGS: 'settings', // 个人设置
+  SCOPE: 'scope', // 切换作用域
   LOGOUT: 'logout' // 退出登录
 } as const
 
@@ -121,6 +156,49 @@ const username = ref<string>(DEFAULT_USERNAME)
 const avatarUrl = ref<string>('')
 // 用户 ID
 const userId = ref<string>('')
+const activeScopeType = ref<string>('TENANT')
+const activeScopeId = ref<number | null>(null)
+
+const scopeModalOpen = ref(false)
+const scopeSwitching = ref(false)
+const nextScopeType = ref<ActiveScopeType>('TENANT')
+const nextScopeId = ref<number | null>(null)
+const orgUnits = ref<OrgUnit[]>([])
+
+/** 平台态（activeScopeType=PLATFORM）且本地没有 activeTenantId 时，不允许打开作用域切换入口。 */
+const canSwitchScopeEntry = computed(() => {
+  if (activeScopeType.value !== 'PLATFORM') return true
+  return Boolean(getActiveTenantId())
+})
+
+/** 仅在用户切换到 ORG/DEPT 时拉取组织列表（不在弹窗打开时请求，避免当前活动 scope 为 ORG 时误触发 GET /sys/org/list） */
+async function onScopeTypeRadioChange() {
+  const type = nextScopeType.value
+  if (type === 'TENANT' || orgUnits.value.length > 0) return
+  try {
+    orgUnits.value = await getOrgList()
+  } catch {
+    message.error('加载组织列表失败')
+  }
+}
+
+const activeScopeLabel = computed(() => {
+  if (!activeScopeType.value) return ''
+  if (activeScopeType.value === 'TENANT') return 'TENANT'
+  if (!activeScopeId.value) return activeScopeType.value
+  return `${activeScopeType.value}:${activeScopeId.value}`
+})
+
+const scopeUnitOptions = computed(() => {
+  const type = nextScopeType.value
+  const filtered = orgUnits.value.filter((u) => (type === 'ORG' ? u.unitType === 'ORG' : u.unitType === 'DEPT'))
+  return filtered.map((u) => ({ value: u.id, label: `${u.name} (#${u.id})` }))
+})
+
+function filterScopeOption(input: string, option?: { label: string }) {
+  if (!option?.label) return false
+  return option.label.toLowerCase().includes((input || '').toLowerCase())
+}
 
 /**
  * 工具函数
@@ -179,6 +257,15 @@ async function handleMenuClick(action: string) {
       // 跳转到个人设置页面
       router.push(ROUTES.PROFILE_SETTING)
       break
+    case MENU_KEYS.SCOPE:
+      if (!canSwitchScopeEntry.value) {
+        message.warning('当前平台态不支持在此处切换作用域')
+        return
+      }
+      scopeModalOpen.value = true
+      nextScopeType.value = (activeScopeType.value as ActiveScopeType) || 'TENANT'
+      nextScopeId.value = activeScopeId.value
+      break
     case MENU_KEYS.LOGOUT:
       // 执行退出登录逻辑
       try {
@@ -194,6 +281,44 @@ async function handleMenuClick(action: string) {
   }
 }
 
+async function confirmSwitchScope() {
+  if (!canSwitchScopeEntry.value) {
+    message.warning('当前平台态不支持在此处切换作用域')
+    scopeModalOpen.value = false
+    return
+  }
+  try {
+    scopeSwitching.value = true
+    const switchResult = await switchActiveScope({
+      scopeType: nextScopeType.value,
+      scopeId: nextScopeType.value === 'TENANT' ? undefined : (nextScopeId.value ?? undefined),
+    })
+
+    if (switchResult.tokenRefreshRequired === true) {
+      const renew = await refreshTokenAfterActiveScopeSwitch()
+      if (!renew.ok) {
+        message.warning('作用域已在服务端更新，但未能刷新访问令牌。请重新登录后再继续使用。')
+        scopeModalOpen.value = false
+        return
+      }
+    }
+
+    const profileOk = await loadUserInfo({ suppressErrorToast: true })
+    if (!profileOk) {
+      message.warning('作用域已在服务端更新，但未能加载当前用户信息。请刷新页面或重新登录后再试。')
+      scopeModalOpen.value = false
+      return
+    }
+    notifyActiveScopeChanged()
+    message.success('作用域已切换')
+    scopeModalOpen.value = false
+  } catch {
+    message.error('切换作用域失败')
+  } finally {
+    scopeSwitching.value = false
+  }
+}
+
 /**
  * 菜单选择处理函数
  * 适配 Ant Design Vue Menu 组件的点击事件
@@ -205,21 +330,32 @@ const handleMenuSelect: MenuProps['onClick'] = (info) => {
 /**
  * 加载用户信息
  * 从后端 API 获取当前用户信息并更新显示
+ * @returns 是否成功拉取并更新展示字段（失败时回退展示占位；默认 toast，可抑制以避免与作用域切换提示重复）
  */
-async function loadUserInfo() {
+async function loadUserInfo(options?: { suppressErrorToast?: boolean }): Promise<boolean> {
   try {
     const data = await getCurrentUser()
+    const tid = (data as { activeTenantId?: unknown }).activeTenantId
+    if (tid != null && tid !== '') {
+      setActiveTenantId(tid as string | number)
+    }
     // 优先使用昵称，其次用户名，最后使用备用用户名
     username.value = data.nickname || data.username || FALLBACK_USERNAME
     userId.value = String(data.id || '')
+    activeScopeType.value = (data as any).activeScopeType || 'TENANT'
+    activeScopeId.value = typeof (data as any).activeScopeId === 'number' ? (data as any).activeScopeId : null
     updateAvatarUrl()
+    return true
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : '未知错误'
-    message.error(`加载用户信息失败：${errorMessage}`)
+    if (!options?.suppressErrorToast) {
+      message.error(`加载用户信息失败：${errorMessage}`)
+    }
     // 加载失败时使用备用值
     username.value = FALLBACK_USERNAME
     userId.value = ''
     avatarUrl.value = ''
+    return false
   }
 }
 
@@ -264,7 +400,7 @@ function handleAvatarUploaded(event: Event) {
 
 // 组件挂载时加载用户信息和监听事件
 onMounted(() => {
-  loadUserInfo()
+  void loadUserInfo()
   // 监听全局头像上传成功事件
   window.addEventListener('avatar-uploaded', handleAvatarUploaded)
 })
@@ -272,6 +408,11 @@ onMounted(() => {
 // 组件卸载时移除事件监听
 onUnmounted(() => {
   window.removeEventListener('avatar-uploaded', handleAvatarUploaded)
+})
+
+/** 供单元测试直接编排 `confirmSwitchScope`，勿在生产业务代码中依赖。 */
+defineExpose({
+  confirmSwitchScope,
 })
 </script>
 
@@ -304,6 +445,10 @@ onUnmounted(() => {
   /* 确保布局正确 */
   width: 100%;
   box-sizing: border-box;
+}
+
+.scope-tag {
+  margin-left: 12px;
 }
 
 /* 左侧占位区域 */

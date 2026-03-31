@@ -31,6 +31,8 @@ public interface ResourceService {
      * @return 资源对象
      */
     Optional<Resource> findById(Long id);
+
+    Optional<ResourceResponseDto> findDetailById(Long id);
     
     /**
      * 创建资源
@@ -79,6 +81,29 @@ public interface ResourceService {
      * @return 资源列表
      */
     List<Resource> findByType(ResourceType type);
+
+    List<ResourceResponseDto> findDtosByType(ResourceType type);
+
+    /**
+     * 获取当前用户在指定页面路径下可见的 ui_action 载体。
+     * 这是从直接权限码门控迁移到 requirement 求值的运行时读面。
+     */
+    List<ResourceResponseDto> findAllowedUiActionDtos(String pagePath);
+
+    /**
+     * 判断当前用户是否可访问指定 API 载体。
+     * 供统一路由守卫迁移期使用。
+     */
+    boolean canAccessApiEndpoint(String method, String uri);
+
+    /**
+     * Unified api_endpoint requirement guard.
+     * <p>
+     * - Only enforces when request matches an enabled api_endpoint by exact method+uri under current tenant scope.
+     * - When matched, must fail-closed unless requirement rows exist and are satisfied (including permission.enabled).
+     * - When not registered, keep legacy behavior (do not block).
+     */
+    ApiEndpointRequirementDecision evaluateApiEndpointRequirement(String method, String uri);
     
     /**
      * 根据多个资源类型查找资源
@@ -93,12 +118,22 @@ public interface ResourceService {
      * @return 子资源列表
      */
     List<Resource> findByParentId(Long parentId);
+
+    List<ResourceResponseDto> findChildDtos(Long parentId);
     
     /**
      * 查找顶级资源
      * @return 顶级资源列表
      */
     List<Resource> findTopLevel();
+
+    List<ResourceResponseDto> findTopLevelDtos();
+
+    /**
+     * 直接返回资源树 DTO，避免控制器基于 legacy Resource 递归拼树。
+     * @return 树形结构的资源 DTO
+     */
+    List<ResourceResponseDto> findResourceTreeDtos();
     
     /**
      * 构建资源树结构
@@ -134,6 +169,8 @@ public interface ResourceService {
      * @return 资源列表
      */
     List<Resource> findByPermission(String permission);
+
+    List<ResourceResponseDto> findDtosByPermission(String permission);
     
     /**
      * 检查资源名称是否存在

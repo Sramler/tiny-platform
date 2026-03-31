@@ -26,6 +26,15 @@
 - 不要为了 coverage 使用用户不可达路径
 - 不要新增纯 getter/setter 测试
 - 如果是 real-link E2E，不要 mock first-party 业务 API
+- **不要**对同一 Maven 模块（如 `tiny-oauth-server`）**并发**执行 `compile` 与 `test`（共享 `target/` 会产生噪声）；顺序跑或用 `tiny-oauth-server/scripts/mvn-tiny-oauth-server-gate-sequential.sh`；见 `TINY_PLATFORM_TESTING_PLAYBOOK.md` §1.3
+- 如需本机数据库密码、启动命令或路径，只能读取 **白名单环境变量**；`DB_*` 为主变量，`E2E_DB_*` 可作为兼容别名；不要 `cat ~/.zprofile` / `~/.zshrc` / `~/.bashrc`
+- tiny-platform 本地认证 / 租户 / dev-stack 验证默认先用：
+  - `tiny-oauth-server/scripts/verify-platform-local-dev-stack.sh`
+  只有在明确不需要前端联动时，才降级为：
+  - `tiny-oauth-server/scripts/verify-platform-dev-bootstrap.sh`
+  仅纯 Maven 编译/定向测试门禁时再用：
+  - `tiny-oauth-server/scripts/mvn-tiny-oauth-server-gate-sequential.sh`
+  `exit 2` 记为环境未满足，不得写成代码失败
 
 输出要求：
 - 给出新增/修改的测试文件清单

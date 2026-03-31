@@ -99,7 +99,7 @@ spring:
     open-in-view: false # 避免延迟加载导致的 session 泄露警告
 
     hibernate:
-      ddl-auto: update # JPA 自动建表策略，update为自动更新表结构,生产环境建议改为 none
+      ddl-auto: none # schema 由 Liquibase 统一管理，JPA 不再自动变更表结构
     show-sql: false # 是否显示SQL语句，开发时建议开启
     properties:
       hibernate:
@@ -233,6 +233,17 @@ http:
     response-body-passthrough-path-prefixes:
       - /export
 
+permission-refactor:
+  authority-diff-log-enabled: true
+  permission-version-debug-enabled: false
+  fail-closed-strict-enabled: true
+  # 为空表示不限制租户灰度范围；建议在环境级配置中按需收敛
+  gray-tenant-allow-list: []
+  # 默认允许 PLATFORM/TENANT/ORG/DEPT 四类桶输出观测日志
+  gray-scope-type-allow-list: [PLATFORM, TENANT, ORG, DEPT]
+  # 1.0 表示全量采样；生产可按需降低减少日志量
+  diff-sample-rate: 1.0
+
 export:
   sync:
     max-rows: 100000
@@ -263,6 +274,8 @@ tiny:
   platform:
     tenant:
       platform-tenant-code: default
+      # 缺省 false：缺少 tenant_id IS NULL 平台模板时不要自动写库；开发见 application-dev.yaml
+      auto-initialize-platform-template-if-missing: false
   idempotent:
     ops:
       # 平台级幂等治理指标默认仅对该租户下的平台管理员开放

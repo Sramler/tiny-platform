@@ -28,6 +28,8 @@
 - ❌ 测试依赖当前时间、随机数、系统时区、系统语言、端口占用、共享外部状态而不做控制。
 - ❌ 测试用例之间相互依赖（执行顺序影响结果）。
 - ❌ 异步测试没有超时上限、结束条件或重试边界。
+- ❌ 对同一 Maven 模块（如 `tiny-oauth-server`）并发执行 `compile`、`test`、`package` 等会共享 `target/` 的命令；这类 `NoSuchFileException` / 半写入 `.class` 属执行噪声，不得直接当作代码回归结论。
+- ❌ 为了读取本地测试凭证或启动路径，直接 `cat ~/.zprofile`、`cat ~/.zshrc`、`cat ~/.bashrc` 或把 shell 初始化文件内容打印到日志。
 
 ### 3) 实现质量
 
@@ -47,6 +49,7 @@
 - ❌ E2E 依赖不可重置的共享脏数据、人工手工前置步骤、个人账号状态或不受控的外部环境漂移。
 - ❌ 用“接口返回 200”代替对用户可观察结果的断言，如页面状态、列表变化、错误提示、最终状态收敛、审计记录或下载结果。
 - ❌ 在真实链路 E2E 中只验证 happy path，不覆盖关键拒绝路径、失败路径、取消路径、幂等或重复点击路径。
+- ❌ 在 tiny-platform 本地验证中，把脚本 **exit 2**（环境前置未满足）误报为“代码失败”；`verify-platform-dev-bootstrap.sh` / `verify-platform-local-dev-stack.sh` 的 `exit 2` 只能记为环境缺口。
 
 ---
 
@@ -87,6 +90,14 @@
 - ✅ 默认快速测试链路必须可在干净工作区自举运行，不依赖开发者本地手工准备的数据库状态。
 - ✅ 慢测试、外部依赖测试、真实基础设施测试必须通过 tag、profile、独立任务或独立 CI job 隔离。
 - ✅ 数据库行为确实依赖 MySQL 方言时，必须使用真实 MySQL、Testcontainers 或 CI 提供的等价服务验证；H2 仅可用于方言无关场景。
+- ✅ tiny-platform 本地验证若依赖 MySQL/后端/前端，**默认入口**必须是 `tiny-oauth-server/scripts/verify-platform-local-dev-stack.sh`；只有在明确说明“本轮只验证后端/数据库、不需要前端”时，才允许降级使用 `tiny-oauth-server/scripts/verify-platform-dev-bootstrap.sh`；仅 Maven 编译/定向测试门禁时再使用 `tiny-oauth-server/scripts/mvn-tiny-oauth-server-gate-sequential.sh`。不要让 AI 先口头要求人工逐个启动服务，再开始验证。
+- ✅ 需要读取本机已导出的凭证或路径时，只允许通过**白名单环境变量**读取（例如 `DB_PASSWORD`、`DB_HOST`、`DB_PORT`、`DB_NAME`、`DB_USER`、兼容别名 `E2E_DB_*`、`MYSQL_BIN`、`MYSQL_START_CMD`、`FRONTEND_START_CMD` 等）；读取方式应为 login shell 子进程中的 `printenv` 或等价白名单提取，不得打印 shell 配置全文。
+- ✅ `verify-platform-dev-bootstrap.sh` / `verify-platform-local-dev-stack.sh` 的结果语义必须按退出码区分：
+  - `0`：验证通过
+  - `1`：前置满足，但验证失败
+  - `2`：环境前置未满足（非代码失败）
+  - 未执行：脚本未运行，不得写成“已验证”
+- ✅ 对 `tiny-oauth-server` 同模块的 Maven 本地门禁，必须顺序执行；优先使用 `tiny-oauth-server/scripts/mvn-tiny-oauth-server-gate-sequential.sh`，需要可信 JaCoCo 报告时再加 `GATE_CLEAN_FIRST=1` 或直接 `mvn clean test`。
 
 ### 5) 测试身份与账号
 
@@ -95,6 +106,9 @@
 - ✅ 测试账号、测试密码、TOTP secret、client secret、测试租户 ID 等敏感值必须来自测试环境种子数据、CI secret 或受控配置，不能硬编码在测试代码和仓库明文文件中。
 - ✅ 自动化测试身份必须可初始化、可重置、可重复使用；测试结束后不应留下污染后续执行的状态。
 - ✅ 禁止使用开发者个人账号、共享人工管理员账号、生产账号或生产租户进行自动化测试。
+- ✅ 集成测试临时账号必须与 Seed/E2E 账号命名空间隔离；清理资格由“受控前缀白名单 + `_user_` 结构约束”决定，禁止用模糊匹配推断删除资格。
+- ✅ 涉及真实 MySQL 的集成测试在创建临时账号时，必须在 `finally` 做回收；共享库清理脚本仅作为兜底，不可替代测试内清理。
+- ✅ 维护测试账号命名与清理规则时，必须区分“现状兼容口径”和“未来推荐规范”；新增前缀时需同步更新测试代码、清理脚本与统计校验脚本。
 
 ### 6) E2E 设计要求
 
@@ -108,6 +122,7 @@
 - ✅ 如果使用 `storageState`、cookie 预置、session 预置，它们必须来源于真实登录 setup，而不是手写伪造状态；当测试目标本身是登录/MFA/OIDC 时，必须直接覆盖真实登录步骤。
 - ✅ 真实认证链路的 helper、setup script、seed script、auth-state 生成器一旦引入多身份、多租户、TOTP/MFA 环境变量覆盖，必须补单元回归测试，至少锁住：主身份与次身份 secret / one-time code 不串用、输出状态文件不串用、缺失配置时失败信息明确。
 - ✅ 首绑 MFA、post-login 安全中心、OIDC callback 相关 real-link 测试必须遵循真实页面契约：优先通过页面可见信息或浏览器已认证 session 调 first-party API，不能假设 `localStorage` 中的 OIDC token 一定已经存在。
+- ✅ 如果本地 real-link / smoke / dev-stack 验证需要自动拉起 MySQL、后端或前端，脚本必须在拉起后做**二次健康检查**；“启动命令返回 0”本身不算验证通过。
 
 ### 7) 前端测试要求
 
@@ -157,6 +172,7 @@
 - ⚠️ 自动化测试身份建议使用稳定命名和固定职责，如 `e2e-user`、`e2e-tenant-admin`、`e2e-mfa-user`、`e2e-cross-tenant-deny`。
 - ⚠️ 测试身份矩阵建议集中维护在种子脚本、fixture 或文档中，避免各测试文件各自散落创建。
 - ⚠️ 启用 MFA、OIDC、Session / JWT 切换的模块，建议提供一键初始化测试身份和测试租户的脚本。
+- ⚠️ 建议维护独立文档统一定义测试账号分层（Seed/E2E/Integration）、历史兼容前缀白名单、推荐新命名模板及收敛策略。
 
 ### 5) 数据库与外部依赖
 

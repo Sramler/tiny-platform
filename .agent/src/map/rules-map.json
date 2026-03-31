@@ -218,6 +218,24 @@
             ]
           }
         }
+      },
+      "94-tiny-platform-tenant-governance.rules.md": {
+        "cursor": {
+          "id": "94-tiny-platform-tenant-governance",
+          "frontmatter": {
+            "description": "tiny-platform 租户治理修复基线（平台特定）",
+            "globs": [
+              "**/tenant/**",
+              "**/auth/audit/**",
+              "**/oauth/session/**",
+              "**/export/**",
+              "**/webapp/src/views/tenant/**",
+              "**/webapp/src/views/audit/**",
+              "**/*.yaml",
+              "**/*.md"
+            ]
+          }
+        }
       }
     },
     "cursor": {
@@ -243,7 +261,8 @@
         "90-tiny-platform.rules.md",
         "91-tiny-platform-auth.rules.md",
         "92-tiny-platform-permission.rules.md",
-        "93-tiny-platform-authorization-model.rules.md"
+        "93-tiny-platform-authorization-model.rules.md",
+        "94-tiny-platform-tenant-governance.rules.md"
       ]
     }
   }

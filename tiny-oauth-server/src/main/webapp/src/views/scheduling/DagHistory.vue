@@ -59,6 +59,14 @@
         </a-form>
       </div>
 
+      <a-alert
+        type="info"
+        show-icon
+        message="运行历史说明"
+        description="本页为租户内运维/排障视图：展示所选 DAG 的全部运行记录，不按顶部「活动组织/部门」收缩。DAG 管理列表会随活动范围变化。"
+        style="margin-bottom: 16px"
+      />
+
       <div class="toolbar-container">
         <div class="table-title">运行历史列表</div>
         <div class="table-actions">
@@ -363,6 +371,7 @@ import {
 } from '@/api/scheduling'
 import { useAuth } from '@/auth/auth'
 import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import { SCHEDULING_RUN_CONTROL, SCHEDULING_WILDCARD } from '@/constants/permission'
 
 const router = useRouter()
 const route = useRoute()
@@ -372,8 +381,8 @@ const schedulingAuthorities = computed(() =>
   extractAuthoritiesFromJwt(user.value?.access_token).filter((a) => a.startsWith('scheduling:')),
 )
 const canOperateSchedulingRun = computed(() =>
-  schedulingAuthorities.value.includes('scheduling:run:control') ||
-  schedulingAuthorities.value.includes('scheduling:*'),
+  schedulingAuthorities.value.includes(SCHEDULING_RUN_CONTROL) ||
+  schedulingAuthorities.value.includes(SCHEDULING_WILDCARD),
 )
 
 function resolveNavigationTenantId() {

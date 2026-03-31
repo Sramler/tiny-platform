@@ -5,6 +5,7 @@ import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationSessionManager;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
+import com.tiny.platform.core.oauth.session.UserSessionService;
 import com.tiny.platform.core.oauth.service.AuthenticationAuditService;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
@@ -27,6 +28,7 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -46,17 +48,25 @@ class SecurityControllerRedirectTest {
     void shouldFallbackToRootWhenSkipTotpReceivesExternalRedirect() {
         UserRepository userRepository = mock(UserRepository.class);
         SecurityService securityService = mock(SecurityService.class);
+        MultiFactorAuthenticationSessionManager sessionManager = mock(MultiFactorAuthenticationSessionManager.class);
+        User user = user();
+        when(sessionManager.tryPromoteToFullyAuthenticated(
+                eq(user),
+                any(MockHttpServletRequest.class),
+                any(MockHttpServletResponse.class),
+                isNull()
+        )).thenReturn(true);
+
         SecurityController controller = new SecurityController(
                 userRepository,
                 securityService,
                 mock(UserAuthenticationMethodRepository.class),
                 frontendProperties(),
-                mock(MultiFactorAuthenticationSessionManager.class),
+                sessionManager,
                 authUserResolutionService,
-                mock(AuthenticationAuditService.class)
+                mock(AuthenticationAuditService.class),
+                mock(UserSessionService.class)
         );
-
-        User user = user();
         when(authUserResolutionService.resolveUserRecordInActiveTenant("admin", 1L)).thenReturn(Optional.of(user));
         when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
                 "disableMfa", false,
@@ -68,9 +78,11 @@ class SecurityControllerRedirectTest {
         SecurityContextHolder.getContext().setAuthentication(partialAuthentication());
 
         MockHttpServletRequest request = request();
-        String view = controller.skipTotp("https://evil.com/callback", request);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        String view = controller.skipTotp("https://evil.com/callback", request, response);
 
         verify(securityService).skipMfaRemind(user, true);
+        verify(sessionManager).tryPromoteToFullyAuthenticated(eq(user), eq(request), eq(response), isNull());
         assertThat(view).isEqualTo("redirect:http://localhost:5173/");
     }
 
@@ -85,7 +97,8 @@ class SecurityControllerRedirectTest {
                 frontendProperties(),
                 mock(MultiFactorAuthenticationSessionManager.class),
                 authUserResolutionService,
-                mock(AuthenticationAuditService.class)
+                mock(AuthenticationAuditService.class),
+                mock(UserSessionService.class)
         );
 
         User user = user();
@@ -100,10 +113,53 @@ class SecurityControllerRedirectTest {
         SecurityContextHolder.getContext().setAuthentication(partialAuthentication());
 
         MockHttpServletRequest request = request();
-        String view = controller.skipTotp("/oauth2/authorize?client_id=vue-client", request);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        String view = controller.skipTotp("/oauth2/authorize?client_id=vue-client", request, response);
 
         verify(securityService, never()).skipMfaRemind(user, true);
         assertThat(view).isEqualTo("redirect:/self/security/totp-bind?redirect=%2Foauth2%2Fauthorize%3Fclient_id%3Dvue-client&error=%E5%BD%93%E5%89%8D%E7%8A%B6%E6%80%81%E4%B8%8D%E5%85%81%E8%AE%B8%E8%B7%B3%E8%BF%87%E4%BA%8C%E6%AC%A1%E9%AA%8C%E8%AF%81%E7%BB%91%E5%AE%9A%E6%8F%90%E9%86%92");
+    }
+
+    @Test
+    void shouldRedirectToLoginWhenSessionPromotionFailsAfterSkipTotp() {
+        UserRepository userRepository = mock(UserRepository.class);
+        SecurityService securityService = mock(SecurityService.class);
+        MultiFactorAuthenticationSessionManager sessionManager = mock(MultiFactorAuthenticationSessionManager.class);
+        User user = user();
+        when(sessionManager.tryPromoteToFullyAuthenticated(
+                eq(user),
+                any(MockHttpServletRequest.class),
+                any(MockHttpServletResponse.class),
+                isNull()
+        )).thenReturn(false);
+
+        SecurityController controller = new SecurityController(
+                userRepository,
+                securityService,
+                mock(UserAuthenticationMethodRepository.class),
+                frontendProperties(),
+                sessionManager,
+                authUserResolutionService,
+                mock(AuthenticationAuditService.class),
+                mock(UserSessionService.class)
+        );
+
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("admin", 1L)).thenReturn(Optional.of(user));
+        when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
+                "disableMfa", false,
+                "forceMfa", false,
+                "totpActivated", false
+        ));
+
+        TenantContext.setActiveTenantId(1L);
+        SecurityContextHolder.getContext().setAuthentication(partialAuthentication());
+
+        MockHttpServletRequest request = request();
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        String view = controller.skipTotp("/", request, response);
+
+        verify(securityService).skipMfaRemind(user, true);
+        assertThat(view).isEqualTo("redirect:/login?redirect=%2F&error=%E7%99%BB%E5%BD%95%E7%8A%B6%E6%80%81%E6%9B%B4%E6%96%B0%E5%A4%B1%E8%B4%A5%EF%BC%8C%E8%AF%B7%E9%87%8D%E6%96%B0%E7%99%BB%E5%BD%95");
     }
 
     @Test
@@ -119,7 +175,8 @@ class SecurityControllerRedirectTest {
                 frontendProperties(),
                 sessionManager,
                 authUserResolutionService,
-                auditService
+                auditService,
+                mock(UserSessionService.class)
         );
 
         User user = user();
@@ -163,7 +220,8 @@ class SecurityControllerRedirectTest {
                 frontendProperties(),
                 mock(MultiFactorAuthenticationSessionManager.class),
                 authUserResolutionService,
-                mock(AuthenticationAuditService.class)
+                mock(AuthenticationAuditService.class),
+                mock(UserSessionService.class)
         );
 
         User user = user();
@@ -197,7 +255,8 @@ class SecurityControllerRedirectTest {
                 frontendProperties(),
                 sessionManager,
                 authUserResolutionService,
-                mock(AuthenticationAuditService.class)
+                mock(AuthenticationAuditService.class),
+                mock(UserSessionService.class)
         );
 
         User user = user();
@@ -228,7 +287,8 @@ class SecurityControllerRedirectTest {
                 frontendProperties(),
                 sessionManager,
                 authUserResolutionService,
-                auditService
+                auditService,
+                mock(UserSessionService.class)
         );
 
         User user = user();

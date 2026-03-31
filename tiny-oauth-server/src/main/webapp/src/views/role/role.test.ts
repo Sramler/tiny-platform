@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const apiMocks = vi.hoisted(() => ({
   roleList: vi.fn(),
   getAllRoles: vi.fn(),
+  getRuntimeUiActions: vi.fn(),
 }))
 
 const authMocks = vi.hoisted(() => ({
@@ -24,6 +25,14 @@ vi.mock('@/api/role', () => ({
   getRoleResources: vi.fn(),
   updateRoleResources: vi.fn(),
 }))
+
+vi.mock('@/api/resource', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/resource')>()
+  return {
+    ...actual,
+    getRuntimeUiActions: apiMocks.getRuntimeUiActions,
+  }
+})
 
 vi.mock('@/utils/debounce', () => ({
   useThrottle: (fn: (...args: unknown[]) => unknown) => fn,
@@ -86,9 +95,11 @@ describe('role.vue', () => {
       totalElements: 1,
     })
     apiMocks.getAllRoles.mockResolvedValue([])
+    apiMocks.getRuntimeUiActions.mockResolvedValue([])
     authMocks.authUser.value = {
       access_token: createToken(['system:role:list']),
     }
+    window.history.replaceState({}, '', '/system/role')
   })
 
   it('should display role list title and load data on mount', async () => {
@@ -165,5 +176,57 @@ describe('role.vue', () => {
 
     expect(apiMocks.roleList).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('角色管理需要额外授权')
+  })
+
+  it('should hide write buttons when runtime ui actions are missing (fail-closed)', async () => {
+    apiMocks.getRuntimeUiActions.mockResolvedValue([])
+    authMocks.authUser.value = {
+      access_token: createToken([
+        'system:role:list',
+        'system:role:create',
+        'system:role:edit',
+        'system:role:delete',
+        'system:role:batch-delete',
+        'system:user:role:assign',
+        'system:role:permission:assign',
+      ]),
+    }
+
+    const wrapper = mount(Role, {
+      global: {
+        stubs: {
+          'a-table': defineComponent({
+            props: ['dataSource'],
+            template: '<div class="role-table-stub">table rows: {{ (dataSource || []).length }}</div>',
+          }),
+          'a-form': PassThrough,
+          'a-form-item': PassThrough,
+          'a-input': PassThrough,
+          'a-button': PassThrough,
+          'a-tooltip': PassThrough,
+          'a-tag': PassThrough,
+          'a-pagination': PassThrough,
+          'a-modal': defineComponent({ props: ['open'], template: '<div v-if="open"><slot /></div>' }),
+          'a-drawer': defineComponent({ props: ['open'], template: '<div v-if="open"><slot /></div>' }),
+          'a-popover': PassThrough,
+          'a-checkbox': PassThrough,
+          'a-transfer': PassThrough,
+          VueDraggable: PassThrough,
+          PlusOutlined: PassThrough,
+          ReloadOutlined: PassThrough,
+          EditOutlined: PassThrough,
+          DeleteOutlined: PassThrough,
+          SettingOutlined: PassThrough,
+          HolderOutlined: PassThrough,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(apiMocks.getRuntimeUiActions).toHaveBeenCalledWith('/system/role')
+    expect(wrapper.text()).not.toContain('新建角色')
+    expect(wrapper.text()).not.toContain('批量删除')
+    expect(wrapper.text()).not.toContain('编辑')
+    expect(wrapper.text()).not.toContain('删除')
   })
 })

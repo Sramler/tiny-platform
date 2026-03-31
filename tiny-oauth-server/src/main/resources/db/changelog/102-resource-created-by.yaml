@@ -1,0 +1,50 @@
+databaseChangeLog:
+  - changeSet:
+      id: 102-resource-created-by
+      author: tiny
+      comment: resource 增加 created_by，用于资源列表 DataScope 过滤
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - tableExists:
+            tableName: resource
+        - not:
+            columnExists:
+              tableName: resource
+              columnName: created_by
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              ALTER TABLE `resource`
+                ADD COLUMN `created_by` BIGINT NULL COMMENT '创建人ID' AFTER `created_at`,
+                ADD KEY `idx_resource_tenant_created_by` (`tenant_id`, `created_by`);
+
+              UPDATE `resource` r
+              LEFT JOIN (
+                SELECT
+                  ra.tenant_id,
+                  MIN(ra.principal_id) AS admin_user_id
+                FROM `role_assignment` ra
+                INNER JOIN `role` ro ON ro.id = ra.role_id
+                WHERE ra.principal_type = 'USER'
+                  AND ra.scope_type = 'TENANT'
+                  AND ra.status = 'ACTIVE'
+                  AND ro.code = 'ROLE_ADMIN'
+                GROUP BY ra.tenant_id
+              ) admin_map ON admin_map.tenant_id = r.tenant_id
+              LEFT JOIN (
+                SELECT
+                  tu.tenant_id,
+                  MIN(tu.user_id) AS fallback_user_id
+                FROM `tenant_user` tu
+                WHERE tu.status = 'ACTIVE'
+                GROUP BY tu.tenant_id
+              ) tenant_user_map ON tenant_user_map.tenant_id = r.tenant_id
+              SET r.created_by = COALESCE(admin_map.admin_user_id, tenant_user_map.fallback_user_id)
+              WHERE r.tenant_id IS NOT NULL
+                AND r.created_by IS NULL;

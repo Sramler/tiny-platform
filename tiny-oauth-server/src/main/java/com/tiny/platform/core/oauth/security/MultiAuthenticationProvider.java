@@ -5,8 +5,13 @@ import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationMethod;
 import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
+import com.tiny.platform.infrastructure.auth.user.support.UserAuthenticationMethodMerge;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.core.oauth.tenant.ActiveTenantResponseSupport;
+import com.tiny.platform.core.oauth.tenant.TenantContext;
+import com.tiny.platform.core.oauth.tenant.TenantContextContract;
+import com.tiny.platform.infrastructure.tenant.config.PlatformTenantResolver;
+import com.tiny.platform.infrastructure.tenant.domain.Tenant;
 import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import com.tiny.platform.infrastructure.core.util.IpUtils;
 import org.slf4j.Logger;
@@ -52,6 +57,7 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
 
     private final UserRepository userRepository;
     private final TenantRepository tenantRepository;
+    private final PlatformTenantResolver platformTenantResolver;
     private final AuthUserResolutionService authUserResolutionService;
     private final UserAuthenticationMethodRepository authenticationMethodRepository;
     private final PasswordEncoder passwordEncoder;
@@ -63,6 +69,7 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
     @Autowired
     public MultiAuthenticationProvider(UserRepository userRepository,
                                        TenantRepository tenantRepository,
+                                       PlatformTenantResolver platformTenantResolver,
                                        UserAuthenticationMethodRepository authenticationMethodRepository,
                                        PasswordEncoder passwordEncoder,
                                        UserDetailsService userDetailsService,
@@ -72,6 +79,7 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
                                        LoginFailurePolicy loginFailurePolicy) {
         this.userRepository = userRepository;
         this.tenantRepository = tenantRepository;
+        this.platformTenantResolver = platformTenantResolver;
         this.authUserResolutionService = authUserResolutionService;
         this.authenticationMethodRepository = authenticationMethodRepository;
         this.passwordEncoder = passwordEncoder;
@@ -116,36 +124,59 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
         }
 
         Long activeTenantId = resolveActiveTenantId();
+        String activeScopeType = resolveActiveScopeType();
         if (logger.isDebugEnabled()) {
             logger.debug(
-                    "[auth-login] 解析登录租户上下文: username='{}', activeTenantId={}",
+                    "[auth-login] 解析登录上下文: username='{}', activeTenantId={}, activeScopeType={}",
                     username,
-                    activeTenantId
+                    activeTenantId,
+                    activeScopeType
             );
         }
-        if (activeTenantId == null) {
-            logger.warn("[auth-login] 缺少登录租户信息，将返回 BadCredentialsException(username='{}')", username);
-            throw new BadCredentialsException("缺少租户信息");
+        boolean platformScope = TenantContextContract.SCOPE_TYPE_PLATFORM.equalsIgnoreCase(activeScopeType);
+        Optional<String> blockedLifecycleStatus = Optional.empty();
+        if (!platformScope && activeTenantId != null && tenantRepository != null) {
+            blockedLifecycleStatus = tenantRepository.findLoginBlockedLifecycleStatus(activeTenantId);
+            if (blockedLifecycleStatus == null) {
+                blockedLifecycleStatus = Optional.empty();
+            }
         }
-        if (tenantRepository != null && tenantRepository.isTenantFrozen(activeTenantId)) {
+        if (blockedLifecycleStatus.isPresent()) {
+            String lifecycleStatus = blockedLifecycleStatus.get();
             logger.warn(
-                    "[auth-login] 活动租户已冻结，将拒绝登录 username='{}', activeTenantId={}",
+                    "[auth-login] 活动租户不可登录，将拒绝登录 username='{}', activeTenantId={}, lifecycleStatus={}",
                     username,
-                    activeTenantId
+                    activeTenantId,
+                    lifecycleStatus
             );
+            if ("DECOMMISSIONED".equalsIgnoreCase(lifecycleStatus)) {
+                throw new BadCredentialsException("租户已下线");
+            }
             throw new BadCredentialsException("租户已冻结");
         }
 
         // 先查用户（单次）
-        User user = resolveUserInActiveTenant(username, activeTenantId)
-            .orElseThrow(() -> {
-                logger.warn(
-                        "[auth-login] 在活动租户下未找到用户记录，将返回 BadCredentialsException(username='{}', activeTenantId={})",
-                        username,
-                        activeTenantId
-                );
-                return new BadCredentialsException("用户不存在");
-            });
+        Optional<User> resolvedUser = resolveUserByScope(username, activeTenantId, activeScopeType);
+        if (resolvedUser.isEmpty()) {
+            if (activeTenantId == null && !TenantContextContract.SCOPE_TYPE_PLATFORM.equalsIgnoreCase(activeScopeType)) {
+                logger.warn("[auth-login] 缺少登录租户信息，将返回 BadCredentialsException(username='{}')", username);
+                throw new BadCredentialsException("缺少租户信息");
+            }
+            logger.warn(
+                    "[auth-login] 在当前作用域下未找到用户记录，将返回 BadCredentialsException(username='{}', activeTenantId={}, activeScopeType={})",
+                    username,
+                    activeTenantId,
+                    activeScopeType
+            );
+            throw new BadCredentialsException("用户不存在");
+        }
+        User user = resolvedUser.get();
+        if (activeTenantId == null && !platformScope) {
+            platformScope = true;
+            activeScopeType = TenantContextContract.SCOPE_TYPE_PLATFORM;
+            TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_PLATFORM);
+            TenantContext.setActiveTenantId(null);
+        }
         LocalDateTime now = LocalDateTime.now();
         if (loginFailurePolicy.isManuallyLocked(user)) {
             throw new LockedException(loginFailurePolicy.buildManualLockMessage());
@@ -160,7 +191,8 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
         Supplier<UserDetails> userDetailsSupplier = memoizedUserDetailsLoader(user.getUsername());
 
         // 读取所有已启用的方法（只查询一次）
-        List<UserAuthenticationMethod> enabledMethods = authenticationMethodRepository.findEnabledMethodsByUserId(user.getId(), activeTenantId);
+        Long authenticationTenantId = resolveAuthenticationTenantId(activeTenantId, activeScopeType);
+        List<UserAuthenticationMethod> enabledMethods = loadEnabledMethodsWithGlobalFallback(user.getId(), authenticationTenantId);
         if (enabledMethods == null) {
             enabledMethods = Collections.emptyList();
         }
@@ -384,12 +416,61 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
         return finalToken;
     }
 
-    private Optional<User> resolveUserInActiveTenant(String username, Long activeTenantId) {
+    private Optional<User> resolveUserByScope(String username, Long activeTenantId, String activeScopeType) {
+        if (TenantContextContract.SCOPE_TYPE_PLATFORM.equalsIgnoreCase(activeScopeType)) {
+            return requireAuthUserResolutionService().resolveUserRecordInPlatform(username);
+        }
         return requireAuthUserResolutionService().resolveUserRecordInActiveTenant(username, activeTenantId);
     }
 
     private Long resolveActiveTenantId() {
         return ActiveTenantResponseSupport.resolveActiveTenantIdFromRequestContext();
+    }
+
+    private String resolveActiveScopeType() {
+        String scopeType = ActiveTenantResponseSupport.resolveActiveScopeTypeFromRequestContext();
+        if (scopeType == null || scopeType.isBlank()) {
+            return TenantContextContract.SCOPE_TYPE_TENANT;
+        }
+        return scopeType.trim().toUpperCase(Locale.ROOT);
+    }
+
+    /**
+     * 解析「租户内认证方法」查询主键：PLATFORM 登录使用平台租户 id（与 platform-tenant-code 对齐），用于命中租户内覆盖行；
+     * {@code user_authentication_method.tenant_id IS NULL} 的全局行由 loadEnabledMethodsWithGlobalFallback 另行并入。
+     */
+    private Long resolveAuthenticationTenantId(Long activeTenantId, String activeScopeType) {
+        if (!TenantContextContract.SCOPE_TYPE_PLATFORM.equalsIgnoreCase(activeScopeType)) {
+            return activeTenantId;
+        }
+        if (platformTenantResolver != null) {
+            Long platformTenantId = platformTenantResolver.getPlatformTenantId();
+            if (platformTenantId != null) {
+                if (logger.isDebugEnabled()) {
+                    logger.debug("[auth-login] PLATFORM 登录：按配置解析认证租户维度 tenantId={}", platformTenantId);
+                }
+                return platformTenantId;
+            }
+        }
+        if (tenantRepository == null) {
+            return null;
+        }
+        logger.warn(
+                "[auth-login] PLATFORM 登录：PlatformTenantResolver 未解析到平台租户 ID，回退 tenant.code=default；"
+                        + "请确认 tiny.platform.tenant.platform-tenant-code 与 tenant 表及 user_authentication_method 一致"
+        );
+        return tenantRepository.findByCode("default").map(Tenant::getId).orElse(activeTenantId);
+    }
+
+    private List<UserAuthenticationMethod> loadEnabledMethodsWithGlobalFallback(Long userId, Long authenticationTenantId) {
+        if (authenticationTenantId == null) {
+            return authenticationMethodRepository.findByUserIdAndTenantIdIsNullAndIsMethodEnabledTrueOrderByAuthenticationPriorityAsc(
+                    userId);
+        }
+        List<UserAuthenticationMethod> tenantRows = authenticationMethodRepository.findEnabledMethodsByUserId(userId, authenticationTenantId);
+        List<UserAuthenticationMethod> globalRows =
+                authenticationMethodRepository.findByUserIdAndTenantIdIsNullAndIsMethodEnabledTrueOrderByAuthenticationPriorityAsc(userId);
+        return UserAuthenticationMethodMerge.mergePreferTenantScoped(tenantRows, globalRows);
     }
 
     private AuthUserResolutionService requireAuthUserResolutionService() {
@@ -498,7 +579,12 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
 
         boolean matches = passwordEncoder.matches(password, encoded);
         if (!matches) {
-            logger.warn("用户 {} 密码验证失败", user.getUsername());
+            logger.warn(
+                    "用户 {} 密码验证失败（uam.id={}, uam.tenant_id={}, storedHashLen={}；明文与库内哈希不一致或哈希格式无法被 DelegatingPasswordEncoder 识别，可核对 user_authentication_method 或执行 scripts/ensure-platform-admin.sh）",
+                    user.getUsername(),
+                    method.getId(),
+                    method.getTenantId(),
+                    encoded.length());
             throw new BadCredentialsException("密码错误");
         }
 

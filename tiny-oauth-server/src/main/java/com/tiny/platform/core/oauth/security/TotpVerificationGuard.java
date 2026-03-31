@@ -119,7 +119,8 @@ public class TotpVerificationGuard {
     }
 
     private void save(UserAuthenticationMethod method) {
-        if (method.getUserId() == null || method.getTenantId() == null
+        // tenant_id 可为 NULL：表示用户级全局认证方式，仍需持久化 TOTP 锁定/失败计数等状态
+        if (method.getUserId() == null
                 || method.getAuthenticationProvider() == null || method.getAuthenticationType() == null) {
             return;
         }

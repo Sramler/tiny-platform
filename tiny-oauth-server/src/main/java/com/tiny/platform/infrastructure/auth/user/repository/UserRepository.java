@@ -9,6 +9,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 @Repository
@@ -21,11 +22,9 @@ public interface UserRepository extends JpaRepository<User, Long>, JpaSpecificat
     @Query("select u.id from User u where u.username = :username")
     Optional<Long> findUserIdByUsername(@Param("username") String username);
 
+    @Query("select u.username from User u where u.id in :userIds")
+    List<String> findUsernamesByIdIn(@Param("userIds") Collection<Long> userIds);
+
     @Override
     Optional<User> findById(@NonNull Long id);
-
-    /**
-     * 兼容：按租户+ID 查用户（租户内用户模型）。新逻辑优先用 tenant_user + findById。
-     */
-    Optional<User> findByIdAndTenantId(@NonNull Long id, @NonNull Long tenantId);
 }

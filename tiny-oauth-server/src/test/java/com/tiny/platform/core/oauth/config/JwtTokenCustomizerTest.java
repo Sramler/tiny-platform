@@ -3,7 +3,7 @@ package com.tiny.platform.core.oauth.config;
 import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
 import com.tiny.platform.core.oauth.security.PermissionVersionService;
-import com.tiny.platform.infrastructure.auth.resource.domain.Resource;
+import com.tiny.platform.core.oauth.tenant.TenantContextContract;
 import com.tiny.platform.infrastructure.auth.role.domain.Role;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
@@ -27,6 +27,8 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.InstanceOfAssertFactories.collection;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -49,16 +51,9 @@ class JwtTokenCustomizerTest {
         user.setAccountNonLocked(true);
         user.setCredentialsNonExpired(true);
 
-        Resource dictResource = new Resource();
-        dictResource.setPermission("dict:type:view");
-
-        Resource schedulingResource = new Resource();
-        schedulingResource.setPermission("scheduling:console:view");
-
         Role role = new Role();
         role.setCode("ROLE_ADMIN");
         role.setName("系统管理员");
-        role.setResources(Set.of(dictResource, schedulingResource));
 
         SecurityUser securityUser = new SecurityUser(user, "", 9L, Set.of(role));
         UsernamePasswordAuthenticationToken principal = UsernamePasswordAuthenticationToken.authenticated(
@@ -88,7 +83,8 @@ class JwtTokenCustomizerTest {
                 .build();
 
         PermissionVersionService permissionVersionService = mock(PermissionVersionService.class);
-        when(permissionVersionService.resolvePermissionsVersion(7L, 9L)).thenReturn("perm-v1");
+        when(permissionVersionService.resolvePermissionsVersion(
+            eq(7L), eq(9L), eq(TenantContextContract.SCOPE_TYPE_TENANT))).thenReturn("perm-v1");
 
         JwtEncodingContext context = JwtEncodingContext.with(
                         JwsHeader.with(SignatureAlgorithm.RS256),
@@ -109,11 +105,9 @@ class JwtTokenCustomizerTest {
         assertThat(claims).containsEntry("permissionsVersion", "perm-v1");
         assertThat(claims).containsKey("authorities");
         assertThat(claims).containsKey("permissions");
-        assertThat(claims.get("authorities")).asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.set(String.class))
-                .contains("ROLE_ADMIN", "dict:type:view", "scheduling:console:view");
-        assertThat(claims.get("permissions")).asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.set(String.class))
-                .contains("dict:type:view", "scheduling:console:view")
-                .doesNotContain("ROLE_ADMIN");
+        assertThat(claims.get("authorities")).asInstanceOf(collection(String.class))
+                .containsExactly("ROLE_ADMIN");
+        assertThat(claims.get("permissions")).asInstanceOf(collection(String.class)).isEmpty();
     }
 
     @Test

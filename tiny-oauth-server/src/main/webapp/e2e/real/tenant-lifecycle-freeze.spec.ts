@@ -52,15 +52,32 @@ async function getPrimaryAccessToken(): Promise<string | null> {
   return getAccessTokenFromStatePath(primaryAuthPath)
 }
 
-async function getTenantIdByCode(accessToken: string, tenantCode: string): Promise<number | null> {
+type TenantLookupResult = {
+  status: number
+  tenantId: number | null
+  body: string
+}
+
+async function getTenantIdByCode(accessToken: string, tenantCode: string): Promise<TenantLookupResult> {
   const url = `${backendBaseUrl}/sys/tenants?code=${encodeURIComponent(tenantCode)}&page=0&size=1`
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
-  if (!res.ok) return null
-  const data = (await res.json()) as { content?: Array<{ id?: number }> }
+  const body = await res.text()
+  if (!res.ok) {
+    return {
+      status: res.status,
+      tenantId: null,
+      body,
+    }
+  }
+  const data = JSON.parse(body) as { content?: Array<{ id?: number }> }
   const first = data.content?.[0]
-  return first?.id ?? null
+  return {
+    status: res.status,
+    tenantId: first?.id ?? null,
+    body,
+  }
 }
 
 async function getTenant(accessToken: string, tenantId: number): Promise<Record<string, unknown> | null> {
@@ -71,22 +88,35 @@ async function getTenant(accessToken: string, tenantId: number): Promise<Record<
   return (await res.json()) as Record<string, unknown>
 }
 
-async function setTenantLifecycleStatus(
+async function transitionTenantLifecycle(
   accessToken: string,
   tenantId: number,
-  tenantPayload: Record<string, unknown>,
-  lifecycleStatus: string,
+  action: 'freeze' | 'unfreeze',
 ): Promise<boolean> {
-  const body = { ...tenantPayload, lifecycleStatus }
-  const res = await fetch(`${backendBaseUrl}/sys/tenants/${tenantId}`, {
-    method: 'PUT',
+  const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const res = await fetch(`${backendBaseUrl}/sys/tenants/${tenantId}/${action}`, {
+    method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
+      'X-Idempotency-Key': `e2e-tenant-lifecycle:${tenantId}:${action}:${requestId}`,
     },
-    body: JSON.stringify(body),
   })
   return res.ok
+}
+
+async function fetchAuditSummary(accessToken: string, tenantId: number) {
+  return fetch(`${backendBaseUrl}/sys/audit/authentication/summary?tenantId=${tenantId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+}
+
+async function exportAuthenticationAudit(accessToken: string, tenantId: number) {
+  return fetch(
+    `${backendBaseUrl}/sys/audit/authentication/export?tenantId=${tenantId}&reason=${encodeURIComponent('freeze-e2e-check')}&ticketId=${encodeURIComponent('E2E-FREEZE-1')}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  )
 }
 
 function isConfigured(value: string | undefined): boolean {
@@ -132,14 +162,30 @@ test.describe('real-link: tenant lifecycle freeze', () => {
     )
 
     const tenantCode = process.env.E2E_TENANT_CODE!.trim()
-    const tenantId = await getTenantIdByCode(adminToken!, tenantCode)
+    const tenantLookup = await getTenantIdByCode(adminToken!, tenantCode)
+    test.skip(
+      tenantLookup.status === 403,
+      '平台自动化身份缺少 /sys/tenants 访问能力，当前拿到的不是 PLATFORM scope 或缺少 system:tenant:view'
+    )
+    test.skip(
+      tenantLookup.status >= 400,
+      `查询租户失败: HTTP ${tenantLookup.status} ${tenantLookup.body.slice(0, 120)}`
+    )
+    const tenantId = tenantLookup.tenantId
     test.skip(tenantId === null, `未找到租户: ${tenantCode}`)
 
     const tenantPayload = await getTenant(adminToken!, tenantId!)
     test.skip(tenantPayload === null, `无法读取租户 ${tenantId} 详情`)
+    test.skip(
+      String(tenantPayload!.lifecycleStatus ?? 'ACTIVE').toUpperCase() === 'DECOMMISSIONED',
+      '测试租户已下线，无法在 real-link 中恢复为 ACTIVE',
+    )
 
     // 1) 确保 ACTIVE
-    await setTenantLifecycleStatus(adminToken!, tenantId!, tenantPayload!, 'ACTIVE')
+    if (String(tenantPayload!.lifecycleStatus ?? 'ACTIVE').toUpperCase() === 'FROZEN') {
+      const unfreezeOk = await transitionTenantLifecycle(adminToken!, tenantId!, 'unfreeze')
+      expect(unfreezeOk).toBe(true)
+    }
 
     // 2) 租户用户写操作成功
     await openOidcDebug(page)
@@ -147,10 +193,21 @@ test.describe('real-link: tenant lifecycle freeze', () => {
     expect(created.id).toBeTruthy()
 
     // 3) 冻结租户
-    const frozenOk = await setTenantLifecycleStatus(adminToken!, tenantId!, tenantPayload!, 'FROZEN')
+    const frozenOk = await transitionTenantLifecycle(adminToken!, tenantId!, 'freeze')
     expect(frozenOk).toBe(true)
 
     try {
+      // 3a) 平台治理只读白名单仍可用
+      const tenantAfterFreeze = await getTenant(adminToken!, tenantId!)
+      expect(tenantAfterFreeze?.id).toBe(tenantId)
+      expect(String(tenantAfterFreeze?.lifecycleStatus ?? '')).toBe('FROZEN')
+
+      const summaryAfterFreeze = await fetchAuditSummary(adminToken!, tenantId!)
+      expect(summaryAfterFreeze.status).toBe(200)
+
+      const exportAfterFreeze = await exportAuthenticationAudit(adminToken!, tenantId!)
+      expect(exportAfterFreeze.status).toBe(200)
+
       // 4a) 调度写操作在 FROZEN 下必须被拒绝（403）
       const writeAfterFreeze = await fetchSchedulingApi<Record<string, unknown>>(page, '/scheduling/task-type', {
         method: 'POST',
@@ -215,7 +272,7 @@ test.describe('real-link: tenant lifecycle freeze', () => {
       }
     } finally {
       // 5) 恢复 ACTIVE
-      await setTenantLifecycleStatus(adminToken!, tenantId!, tenantPayload!, 'ACTIVE')
+      await transitionTenantLifecycle(adminToken!, tenantId!, 'unfreeze')
     }
   })
 })

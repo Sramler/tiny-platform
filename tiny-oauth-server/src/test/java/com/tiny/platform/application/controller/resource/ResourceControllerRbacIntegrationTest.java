@@ -27,17 +27,15 @@ import org.springframework.security.test.context.support.WithAnonymousUser;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
-import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.mockito.ArgumentMatchers.eq;
 
 @SpringBootTest(webEnvironment = WebEnvironment.MOCK, classes = ResourceControllerRbacIntegrationTest.RbacTestApp.class)
 @AutoConfigureMockMvc
@@ -62,6 +60,8 @@ class ResourceControllerRbacIntegrationTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    
+
     @Nested
     @DisplayName("RESOURCE READ")
     class ReadAccess {
@@ -69,6 +69,8 @@ class ResourceControllerRbacIntegrationTest {
         @Test
         void list_allowsReadAuthority() throws Exception {
             when(resourceService.resources(any(), any())).thenReturn(new PageImpl<>(List.of(sampleResponse())));
+            when(resourceService.evaluateApiEndpointRequirement(eq("GET"), eq("/sys/resources")))
+                .thenReturn(com.tiny.platform.infrastructure.auth.resource.service.ApiEndpointRequirementDecision.ALLOWED);
 
             mockMvc.perform(get("/sys/resources")
                     .with(user("resource-reader").authorities(new SimpleGrantedAuthority("system:resource:list"))))
@@ -76,13 +78,32 @@ class ResourceControllerRbacIntegrationTest {
         }
 
         @Test
-        void tree_allowsAdminAuthority() throws Exception {
-            when(resourceService.findTopLevel()).thenReturn(List.of(sampleResource(1L, "root")));
-            when(resourceService.findByParentId(1L)).thenReturn(List.of());
-            when(resourceService.buildResourceTree(any())).thenReturn(List.of(sampleResponse()));
+        void registeredEndpoint_deniesWhenRequirementNotSatisfied() throws Exception {
+            when(resourceService.evaluateApiEndpointRequirement(eq("GET"), eq("/sys/resources")))
+                .thenReturn(com.tiny.platform.infrastructure.auth.resource.service.ApiEndpointRequirementDecision.DENIED);
+            mockMvc.perform(get("/sys/resources")
+                    .with(user("resource-reader").authorities(new SimpleGrantedAuthority("system:resource:list"))))
+                .andExpect(status().isForbidden());
+        }
+
+        @Test
+        void unregisteredEndpoint_shouldNotBeBlockedByUnifiedGuard() throws Exception {
+            when(resourceService.getResourceTypes()).thenReturn(List.of(ResourceType.values()));
+            when(resourceService.evaluateApiEndpointRequirement(eq("GET"), eq("/sys/resources/types")))
+                .thenReturn(com.tiny.platform.infrastructure.auth.resource.service.ApiEndpointRequirementDecision.NOT_REGISTERED);
+            mockMvc.perform(get("/sys/resources/types")
+                    .with(user("resource-reader").authorities(new SimpleGrantedAuthority("system:resource:list"))))
+                .andExpect(status().isOk());
+        }
+
+        @Test
+        void tree_allowsResourceListAuthority() throws Exception {
+            when(resourceService.findResourceTreeDtos()).thenReturn(List.of(sampleResponse()));
+            when(resourceService.evaluateApiEndpointRequirement(eq("GET"), eq("/sys/resources/tree")))
+                .thenReturn(com.tiny.platform.infrastructure.auth.resource.service.ApiEndpointRequirementDecision.NOT_REGISTERED);
 
             mockMvc.perform(get("/sys/resources/tree")
-                    .with(user("admin").authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
+                    .with(user("admin").authorities(new SimpleGrantedAuthority("system:resource:list"))))
                 .andExpect(status().isOk());
         }
 
@@ -108,6 +129,8 @@ class ResourceControllerRbacIntegrationTest {
         @Test
         void create_allowsCreateAuthority() throws Exception {
             when(resourceService.createFromDto(any(ResourceCreateUpdateDto.class))).thenReturn(sampleResource(5L, "res"));
+            when(resourceService.evaluateApiEndpointRequirement(eq("POST"), eq("/sys/resources")))
+                .thenReturn(com.tiny.platform.infrastructure.auth.resource.service.ApiEndpointRequirementDecision.ALLOWED);
 
             mockMvc.perform(post("/sys/resources")
                     .contentType(MediaType.APPLICATION_JSON)
@@ -119,6 +142,8 @@ class ResourceControllerRbacIntegrationTest {
         @Test
         void updateSort_allowsEditAuthority() throws Exception {
             when(resourceService.updateSort(5L, 6)).thenReturn(sampleResource(5L, "res"));
+            when(resourceService.evaluateApiEndpointRequirement(eq("PUT"), eq("/sys/resources/5/sort")))
+                .thenReturn(com.tiny.platform.infrastructure.auth.resource.service.ApiEndpointRequirementDecision.ALLOWED);
 
             mockMvc.perform(put("/sys/resources/5/sort")
                     .param("sort", "6")
@@ -128,6 +153,8 @@ class ResourceControllerRbacIntegrationTest {
 
         @Test
         void batchDelete_deniesReadOnlyAuthority() throws Exception {
+            when(resourceService.evaluateApiEndpointRequirement(eq("POST"), eq("/sys/resources/batch/delete")))
+                .thenReturn(com.tiny.platform.infrastructure.auth.resource.service.ApiEndpointRequirementDecision.ALLOWED);
             mockMvc.perform(post("/sys/resources/batch/delete")
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(List.of(1L, 2L)))

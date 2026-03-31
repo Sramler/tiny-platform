@@ -1,0 +1,139 @@
+databaseChangeLog:
+  - changeSet:
+      id: 126-carrier-permission-requirement-tables
+      author: codex
+      comment: Create carrier permission requirement tables and backfill compatibility group from required_permission_id
+      preConditions:
+        onFail: MARK_RAN
+        and:
+          - tableExists:
+              tableName: permission
+          - tableExists:
+              tableName: menu
+          - tableExists:
+              tableName: ui_action
+          - tableExists:
+              tableName: api_endpoint
+      changes:
+        - sql:
+            dbms: mysql
+            sql: |
+              CREATE TABLE IF NOT EXISTS `menu_permission_requirement` (
+                `id` BIGINT NOT NULL AUTO_INCREMENT,
+                `tenant_id` BIGINT DEFAULT NULL COMMENT '租户ID，NULL=平台模板',
+                `menu_id` BIGINT NOT NULL COMMENT '载体菜单ID',
+                `requirement_group` INT NOT NULL DEFAULT 0 COMMENT '组合组号；0=与 required_permission_id 对齐的兼容组',
+                `sort_order` INT NOT NULL DEFAULT 1 COMMENT '组内排序',
+                `permission_id` BIGINT NOT NULL COMMENT '命中的 permission.id',
+                `negated` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否为排除条件',
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                `created_by` BIGINT DEFAULT NULL,
+                `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                `updated_by` BIGINT DEFAULT NULL,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uk_menu_permission_requirement_rule` (`menu_id`, `requirement_group`, `sort_order`, `permission_id`, `negated`),
+                KEY `idx_menu_permission_requirement_menu` (`menu_id`),
+                KEY `idx_menu_permission_requirement_permission` (`permission_id`),
+                CONSTRAINT `fk_menu_permission_requirement_menu`
+                  FOREIGN KEY (`menu_id`) REFERENCES `menu` (`id`) ON DELETE CASCADE,
+                CONSTRAINT `fk_menu_permission_requirement_permission`
+                  FOREIGN KEY (`permission_id`) REFERENCES `permission` (`id`) ON DELETE CASCADE
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='菜单载体组合权限需求';
+
+              CREATE TABLE IF NOT EXISTS `ui_action_permission_requirement` (
+                `id` BIGINT NOT NULL AUTO_INCREMENT,
+                `tenant_id` BIGINT DEFAULT NULL COMMENT '租户ID，NULL=平台模板',
+                `ui_action_id` BIGINT NOT NULL COMMENT '载体按钮ID',
+                `requirement_group` INT NOT NULL DEFAULT 0 COMMENT '组合组号；0=与 required_permission_id 对齐的兼容组',
+                `sort_order` INT NOT NULL DEFAULT 1 COMMENT '组内排序',
+                `permission_id` BIGINT NOT NULL COMMENT '命中的 permission.id',
+                `negated` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否为排除条件',
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                `created_by` BIGINT DEFAULT NULL,
+                `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                `updated_by` BIGINT DEFAULT NULL,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uk_ui_action_permission_requirement_rule` (`ui_action_id`, `requirement_group`, `sort_order`, `permission_id`, `negated`),
+                KEY `idx_ui_action_permission_requirement_action` (`ui_action_id`),
+                KEY `idx_ui_action_permission_requirement_permission` (`permission_id`),
+                CONSTRAINT `fk_ui_action_permission_requirement_action`
+                  FOREIGN KEY (`ui_action_id`) REFERENCES `ui_action` (`id`) ON DELETE CASCADE,
+                CONSTRAINT `fk_ui_action_permission_requirement_permission`
+                  FOREIGN KEY (`permission_id`) REFERENCES `permission` (`id`) ON DELETE CASCADE
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='按钮载体组合权限需求';
+
+              CREATE TABLE IF NOT EXISTS `api_endpoint_permission_requirement` (
+                `id` BIGINT NOT NULL AUTO_INCREMENT,
+                `tenant_id` BIGINT DEFAULT NULL COMMENT '租户ID，NULL=平台模板',
+                `api_endpoint_id` BIGINT NOT NULL COMMENT '载体接口ID',
+                `requirement_group` INT NOT NULL DEFAULT 0 COMMENT '组合组号；0=与 required_permission_id 对齐的兼容组',
+                `sort_order` INT NOT NULL DEFAULT 1 COMMENT '组内排序',
+                `permission_id` BIGINT NOT NULL COMMENT '命中的 permission.id',
+                `negated` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否为排除条件',
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                `created_by` BIGINT DEFAULT NULL,
+                `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                `updated_by` BIGINT DEFAULT NULL,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uk_api_endpoint_permission_requirement_rule` (`api_endpoint_id`, `requirement_group`, `sort_order`, `permission_id`, `negated`),
+                KEY `idx_api_endpoint_permission_requirement_endpoint` (`api_endpoint_id`),
+                KEY `idx_api_endpoint_permission_requirement_permission` (`permission_id`),
+                CONSTRAINT `fk_api_endpoint_permission_requirement_endpoint`
+                  FOREIGN KEY (`api_endpoint_id`) REFERENCES `api_endpoint` (`id`) ON DELETE CASCADE,
+                CONSTRAINT `fk_api_endpoint_permission_requirement_permission`
+                  FOREIGN KEY (`permission_id`) REFERENCES `permission` (`id`) ON DELETE CASCADE
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='接口载体组合权限需求';
+
+              INSERT IGNORE INTO `menu_permission_requirement` (
+                `tenant_id`, `menu_id`, `requirement_group`, `sort_order`, `permission_id`, `negated`,
+                `created_at`, `created_by`, `updated_at`, `updated_by`
+              )
+              SELECT
+                m.`tenant_id`,
+                m.`id`,
+                0,
+                1,
+                m.`required_permission_id`,
+                0,
+                COALESCE(m.`created_at`, NOW()),
+                m.`created_by`,
+                COALESCE(m.`updated_at`, NOW()),
+                m.`updated_by`
+              FROM `menu` m
+              WHERE m.`required_permission_id` IS NOT NULL;
+
+              INSERT IGNORE INTO `ui_action_permission_requirement` (
+                `tenant_id`, `ui_action_id`, `requirement_group`, `sort_order`, `permission_id`, `negated`,
+                `created_at`, `created_by`, `updated_at`, `updated_by`
+              )
+              SELECT
+                a.`tenant_id`,
+                a.`id`,
+                0,
+                1,
+                a.`required_permission_id`,
+                0,
+                COALESCE(a.`created_at`, NOW()),
+                a.`created_by`,
+                COALESCE(a.`updated_at`, NOW()),
+                a.`updated_by`
+              FROM `ui_action` a
+              WHERE a.`required_permission_id` IS NOT NULL;
+
+              INSERT IGNORE INTO `api_endpoint_permission_requirement` (
+                `tenant_id`, `api_endpoint_id`, `requirement_group`, `sort_order`, `permission_id`, `negated`,
+                `created_at`, `created_by`, `updated_at`, `updated_by`
+              )
+              SELECT
+                e.`tenant_id`,
+                e.`id`,
+                0,
+                1,
+                e.`required_permission_id`,
+                0,
+                COALESCE(e.`created_at`, NOW()),
+                e.`created_by`,
+                COALESCE(e.`updated_at`, NOW()),
+                e.`updated_by`
+              FROM `api_endpoint` e
+              WHERE e.`required_permission_id` IS NOT NULL;

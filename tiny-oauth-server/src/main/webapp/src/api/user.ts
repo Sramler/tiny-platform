@@ -40,6 +40,14 @@ export type UserSummary = {
   lockRemainingMinutes?: number
 }
 
+export type RoleAssignmentScopeType = 'TENANT' | 'ORG' | 'DEPT'
+
+export type UserRoleAssignmentPayload = {
+  scopeType?: RoleAssignmentScopeType
+  scopeId?: number
+  roleIds: number[]
+}
+
 type PageResponse<T> = {
   content?: T[]
   totalElements?: number
@@ -89,6 +97,36 @@ export function getCurrentUser() {
     syncTenantContextFromClaims(user)
     return user
   })
+}
+
+export type ActiveScopeType = 'TENANT' | 'ORG' | 'DEPT'
+
+export type ActiveScopeSwitchPayload = {
+  scopeType: ActiveScopeType
+  scopeId?: number
+}
+
+/**
+ * `POST /sys/users/current/active-scope` 成功响应体（与后端 UserController 对齐）。
+ * 调用方在 `tokenRefreshRequired === true` 时须先完成 OIDC silent renew，再调用 {@link getCurrentUser}，
+ * 避免 Bearer 显式 claims 陈旧导致下一请求 M5 fail-closed。
+ */
+export type ActiveScopeSwitchResult = {
+  success?: boolean
+  tokenRefreshRequired?: boolean
+  newActiveScopeType?: ActiveScopeType
+  newActiveScopeId?: number | null
+  tokenRefreshReason?: string
+  activeTenantId?: number
+  activeScopeType?: string
+  activeScopeId?: number | null
+}
+
+/**
+ * 切换当前会话 active scope。仅返回 POST 响应体，不隐式拉取 `/sys/users/current`。
+ */
+export function switchActiveScope(payload: ActiveScopeSwitchPayload) {
+  return request.post<ActiveScopeSwitchResult>('/sys/users/current/active-scope', payload)
 }
 
 // 创建用户
@@ -175,16 +213,24 @@ export function checkUsernameExists(username: string) {
 }
 
 // 获取指定用户已绑定的角色ID列表
-export function getUserRoles(userId: number) {
-  return request.get(`/sys/users/${userId}/roles`)
+export function getUserRoles(
+  userId: number,
+  scope?: { scopeType?: RoleAssignmentScopeType; scopeId?: number | null },
+) {
+  return request.get(`/sys/users/${userId}/roles`, {
+    params: {
+      scopeType: scope?.scopeType,
+      scopeId: scope?.scopeId ?? undefined,
+    },
+  })
 }
 
 // 保存用户角色绑定
-export function updateUserRoles(userId: number, roleIds: number[]) {
-  return request.post(`/sys/users/${userId}/roles`, roleIds, {
+export function updateUserRoles(userId: number, payload: number[] | UserRoleAssignmentPayload) {
+  return request.post(`/sys/users/${userId}/roles`, payload, {
     idempotency: {
       scope: `sys-users:roles:update:${userId}`,
-      payload: roleIds,
+      payload,
     },
   })
 }

@@ -5,6 +5,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.beans.factory.annotation.Autowired;
 import java.security.Principal;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -31,6 +32,7 @@ public class ProcessController {
      * 部署流程（传入 BPMN XML 字符串）
      */
     @PostMapping("/deploy")
+    @PreAuthorize("@workflowAccessGuard.canConfig(authentication)")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> deploy(@RequestBody String bpmnXml) {
         try {
@@ -53,6 +55,7 @@ public class ProcessController {
      * 部署流程（传入 BPMN XML 字符串和流程信息）
      */
     @PostMapping("/deploy-with-info")
+    @PreAuthorize("@workflowAccessGuard.canConfig(authentication)")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> deployWithInfo(@RequestBody Map<String, Object> request, Principal principal) {
         try {
@@ -85,6 +88,7 @@ public class ProcessController {
      * 查询部署列表（分页 + 按租户过滤）
      */
     @GetMapping("/deployments")
+    @PreAuthorize("@workflowAccessGuard.canView(authentication)")
     public ResponseEntity<Object> listDeployments(@RequestParam(value = "recordTenantId", required = false) String recordTenantId) {
         try {
             Object result = processEngineService.listDeployments(recordTenantId);
@@ -101,6 +105,7 @@ public class ProcessController {
      * 删除部署（默认级联删除历史数据）
      */
     @DeleteMapping("/deployment/{deploymentId}")
+    @PreAuthorize("@workflowAccessGuard.canConfig(authentication)")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> deleteDeployment(@PathVariable String deploymentId) {
         try {
@@ -123,6 +128,7 @@ public class ProcessController {
      * 启动流程实例
      */
     @PostMapping("/start")
+    @PreAuthorize("@workflowAccessGuard.canControlInstance(authentication)")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> start(@RequestParam(value = "processKey") String processKey,
                         @RequestBody(required = false) Map<String, Object> variables) {
@@ -146,6 +152,7 @@ public class ProcessController {
      * 查询流程实例列表
      */
     @GetMapping("/instances")
+    @PreAuthorize("@workflowAccessGuard.canView(authentication)")
     public ResponseEntity<Object> listInstances(@RequestParam(value = "recordTenantId", required = false) String recordTenantId,
                                 @RequestParam(value = "state", required = false) String state) {
         try {
@@ -163,6 +170,7 @@ public class ProcessController {
      * 挂起 / 激活 流程实例
      */
     @PostMapping("/instance/{instanceId}/suspend")
+    @PreAuthorize("@workflowAccessGuard.canControlInstance(authentication)")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> suspendInstance(@PathVariable String instanceId) {
         try {
@@ -180,6 +188,7 @@ public class ProcessController {
     }
 
     @PostMapping("/instance/{instanceId}/activate")
+    @PreAuthorize("@workflowAccessGuard.canControlInstance(authentication)")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> activateInstance(@PathVariable String instanceId) {
         try {
@@ -200,6 +209,7 @@ public class ProcessController {
      * 删除流程实例
      */
     @DeleteMapping("/instance/{instanceId}")
+    @PreAuthorize("@workflowAccessGuard.canControlInstance(authentication)")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> deleteInstance(@PathVariable String instanceId) {
         try {
@@ -220,6 +230,7 @@ public class ProcessController {
      * 获取流程实例的任务列表
      */
     @GetMapping("/instance/{instanceId}/tasks")
+    @PreAuthorize("@workflowAccessGuard.canView(authentication)")
     public ResponseEntity<Object> getInstanceTasks(@PathVariable String instanceId) {
         try {
             Object result = processEngineService.getInstanceTasks(instanceId);
@@ -238,6 +249,7 @@ public class ProcessController {
      * 查询任务列表（按处理人）
      */
     @GetMapping("/tasks")
+    @PreAuthorize("@workflowAccessGuard.canView(authentication)")
     public ResponseEntity<Object> tasks(@RequestParam(value = "assignee", required = false) String assignee) {
         try {
             String activeTenantId = TenantContext.getCurrentTenant();
@@ -255,6 +267,7 @@ public class ProcessController {
      * 领取任务
      */
     @PostMapping("/task/{taskId}/claim")
+    @PreAuthorize("@workflowAccessGuard.canControlInstance(authentication)")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> claimTask(@PathVariable String taskId, @RequestParam(value = "userId") String userId) {
         try {
@@ -275,6 +288,7 @@ public class ProcessController {
      * 完成任务
      */
     @PostMapping("/task/{taskId}/complete")
+    @PreAuthorize("@workflowAccessGuard.canControlInstance(authentication)")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> completeTask(@PathVariable String taskId,
                                @RequestBody(required = false) Map<String, Object> variables) {
@@ -298,6 +312,7 @@ public class ProcessController {
      * 查询历史流程实例
      */
     @GetMapping("/history/instances")
+    @PreAuthorize("@workflowAccessGuard.canView(authentication)")
     public ResponseEntity<Object> historyInstances(@RequestParam(value = "recordTenantId", required = false) String recordTenantId) {
         try {
             Object result = processEngineService.listHistoricInstances(recordTenantId);
@@ -314,6 +329,7 @@ public class ProcessController {
      * 查询历史任务记录
      */
     @GetMapping("/history/tasks")
+    @PreAuthorize("@workflowAccessGuard.canView(authentication)")
     public ResponseEntity<Object> historyTasks(@RequestParam(value = "processInstanceId") String processInstanceId) {
         try {
             Object result = processEngineService.listHistoricTasks(processInstanceId);
@@ -332,6 +348,7 @@ public class ProcessController {
      * 注册新租户
      */
     @PostMapping("/tenant")
+    @PreAuthorize("@workflowAccessGuard.canManageTenant(authentication)")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> createTenant(@RequestBody Map<String, Object> tenantInfo) {
         try {
@@ -353,6 +370,7 @@ public class ProcessController {
      * 查询租户列表
      */
     @GetMapping("/tenants")
+    @PreAuthorize("@workflowAccessGuard.canManageTenant(authentication)")
     public ResponseEntity<Object> listTenants() {
         try {
             Object result = processEngineService.listTenants();
@@ -371,6 +389,7 @@ public class ProcessController {
      * 获取引擎信息（版本、数据库等）
      */
     @GetMapping("/engine/info")
+    @PreAuthorize("@workflowAccessGuard.canView(authentication)")
     public ResponseEntity<Object> engineInfo() {
         try {
             Object result = processEngineService.getEngineInfo();
@@ -401,6 +420,7 @@ public class ProcessController {
      * 获取流程定义列表
      */
     @GetMapping("/definitions")
+    @PreAuthorize("@workflowAccessGuard.canView(authentication)")
     public ResponseEntity<Object> listProcessDefinitions(@RequestParam(value = "recordTenantId", required = false) String recordTenantId) {
         try {
             Object result = processEngineService.listProcessDefinitions(recordTenantId);
@@ -417,6 +437,7 @@ public class ProcessController {
      * 获取流程定义的 BPMN XML
      */
     @GetMapping("/definition/{processDefinitionId}/xml")
+    @PreAuthorize("@workflowAccessGuard.canView(authentication)")
     public ResponseEntity<Map<String, Object>> getProcessDefinitionXml(@PathVariable String processDefinitionId) {
         try {
             String bpmnXml = processEngineService.getProcessDefinitionXml(processDefinitionId);
@@ -436,6 +457,7 @@ public class ProcessController {
      * 删除流程定义（通过部署ID删除整个部署）
      */
     @DeleteMapping("/definition/{processDefinitionId}")
+    @PreAuthorize("@workflowAccessGuard.canConfig(authentication)")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> deleteProcessDefinition(@PathVariable String processDefinitionId) {
         try {
@@ -457,6 +479,7 @@ public class ProcessController {
      * 验证 BPMN XML 格式
      */
     @PostMapping("/validate")
+    @PreAuthorize("@workflowAccessGuard.canConfig(authentication)")
     public ResponseEntity<Map<String, Object>> validateBpmnXml(@RequestBody String bpmnXml) {
         try {
             BpmnValidationHelper.BpmnValidationResult result = bpmnValidationHelper.validateBpmnXml(bpmnXml);
@@ -478,6 +501,7 @@ public class ProcessController {
      * 修复 BPMN XML 验证错误
      */
     @PostMapping("/fix-validation-errors")
+    @PreAuthorize("@workflowAccessGuard.canConfig(authentication)")
     public ResponseEntity<Map<String, Object>> fixBpmnValidationErrors(@RequestBody String bpmnXml) {
         try {
             String fixedBpmnXml = bpmnValidationHelper.fixBpmnValidationErrors(bpmnXml);

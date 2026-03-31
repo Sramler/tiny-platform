@@ -59,14 +59,14 @@ describe('user.ts', () => {
     const { deleteUser, batchDeleteUsers, batchEnableUsers, batchDisableUsers, updateUserRoles } =
       await import('@/api/user')
     const ids = ['11', '12']
-    const roleIds = [3, 4]
+    const payload = { scopeType: 'DEPT' as const, scopeId: 200, roleIds: [3, 4] }
     mocks.post.mockResolvedValue({ message: 'ok' })
 
     await deleteUser('11')
     await batchDeleteUsers(ids)
     await batchEnableUsers(ids)
     await batchDisableUsers(ids)
-    await updateUserRoles(9, roleIds)
+    await updateUserRoles(9, payload)
 
     expect(mocks.delete).toHaveBeenCalledWith('/sys/users/11', {
       idempotency: {
@@ -92,12 +92,27 @@ describe('user.ts', () => {
         payload: ids,
       },
     })
-    expect(mocks.post).toHaveBeenCalledWith('/sys/users/9/roles', roleIds, {
+    expect(mocks.post).toHaveBeenCalledWith('/sys/users/9/roles', payload, {
       idempotency: {
         scope: 'sys-users:roles:update:9',
-        payload: roleIds,
+        payload,
       },
     })
+  })
+
+  it('should request scoped user roles with query params', async () => {
+    mocks.get.mockResolvedValue([3, 4])
+    const { getUserRoles } = await import('@/api/user')
+
+    const result = await getUserRoles(9, { scopeType: 'DEPT', scopeId: 200 })
+
+    expect(mocks.get).toHaveBeenCalledWith('/sys/users/9/roles', {
+      params: {
+        scopeType: 'DEPT',
+        scopeId: 200,
+      },
+    })
+    expect(result).toEqual([3, 4])
   })
 
   it('should request current user and sync active tenant context', async () => {
@@ -110,5 +125,24 @@ describe('user.ts', () => {
     expect(mocks.get).toHaveBeenCalledWith('/sys/users/current')
     expect(mocks.syncTenantContextFromClaims).toHaveBeenCalledWith(payload)
     expect(result.activeTenantId).toBe(9)
+  })
+
+  it('should switch active scope and return POST body without implicit getCurrentUser', async () => {
+    const postBody = {
+      success: true,
+      tokenRefreshRequired: true,
+      newActiveScopeType: 'DEPT' as const,
+      newActiveScopeId: 200,
+      activeTenantId: 9,
+    }
+    mocks.post.mockResolvedValue(postBody)
+
+    const { switchActiveScope } = await import('@/api/user')
+    const result = await switchActiveScope({ scopeType: 'DEPT', scopeId: 200 })
+
+    expect(mocks.post).toHaveBeenCalledWith('/sys/users/current/active-scope', { scopeType: 'DEPT', scopeId: 200 })
+    expect(mocks.get).not.toHaveBeenCalled()
+    expect(result.tokenRefreshRequired).toBe(true)
+    expect(result.newActiveScopeId).toBe(200)
   })
 })

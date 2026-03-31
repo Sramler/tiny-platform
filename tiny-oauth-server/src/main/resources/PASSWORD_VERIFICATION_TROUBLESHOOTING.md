@@ -22,6 +22,10 @@
   - 密码哈希规范化过程
   - 密码验证结果
 
+### 4. 平台登录（无 tenantCode）误用硬编码 default 租户查认证方式
+- **问题**：`MultiAuthenticationProvider` 在 PLATFORM 作用域下曾用 `tenant.code=default` 解析 `user_authentication_method.tenant_id`，与 `tiny.platform.tenant.platform-tenant-code`、`ensure-platform-admin.sh` 的 `PLATFORM_TENANT_CODE` 不一致时，会查错行或查不到行，表现为「密码错误」或「未配置认证方式」。
+- **修复**：PLATFORM 登录改为使用 `PlatformTenantResolver.getPlatformTenantId()`（与配置一致）；仅在解析失败时回退 `default` 并打 WARN 日志（见 `[auth-login] PLATFORM 登录`）。
+
 ## 排查步骤
 
 ### 步骤 1: 检查数据库中的数据

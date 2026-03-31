@@ -2,7 +2,14 @@ package com.tiny.platform.infrastructure.auth.user.service;
 
 import com.tiny.platform.core.oauth.security.LoginFailurePolicy;
 import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
+import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
+import com.tiny.platform.core.oauth.tenant.TenantContextContract;
+import com.tiny.platform.infrastructure.auth.datascope.framework.DataScope;
+import com.tiny.platform.infrastructure.auth.datascope.framework.DataScopeContext;
+import com.tiny.platform.infrastructure.auth.datascope.framework.ResolvedDataScope;
+import com.tiny.platform.infrastructure.auth.org.repository.UserUnitRepository;
+import com.tiny.platform.infrastructure.auth.org.service.UserUnitService;
 import com.tiny.platform.infrastructure.core.exception.code.ErrorCode;
 import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
@@ -18,9 +25,12 @@ import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationM
 import com.tiny.platform.infrastructure.auth.user.repository.TenantUserRepository;
 import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationMethod;
 import com.tiny.platform.infrastructure.tenant.guard.TenantLifecycleGuard;
+import com.tiny.platform.infrastructure.tenant.service.TenantQuotaService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -35,7 +45,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import java.util.HashSet;
 import java.util.HashMap;
 import java.time.LocalDateTime;
-import com.tiny.platform.core.oauth.tenant.TenantContext;
 
 @Service
 public class UserServiceImpl implements UserService {
@@ -50,8 +59,11 @@ public class UserServiceImpl implements UserService {
     private final RoleAssignmentSyncService roleAssignmentSyncService;
     private final EffectiveRoleResolutionService effectiveRoleResolutionService;
     private final TenantUserRepository tenantUserRepository;
+    private final UserUnitRepository userUnitRepository;
+    private final UserUnitService userUnitService;
     private final AuthUserResolutionService authUserResolutionService;
     private final TenantLifecycleGuard tenantLifecycleGuard;
+    private final TenantQuotaService tenantQuotaService;
 
     @Autowired
     public UserServiceImpl(UserRepository userRepository, PasswordEncoder passwordEncoder,
@@ -60,8 +72,11 @@ public class UserServiceImpl implements UserService {
                           RoleAssignmentSyncService roleAssignmentSyncService,
                           EffectiveRoleResolutionService effectiveRoleResolutionService,
                           TenantUserRepository tenantUserRepository,
+                          UserUnitRepository userUnitRepository,
+                          UserUnitService userUnitService,
                           AuthUserResolutionService authUserResolutionService,
-                          TenantLifecycleGuard tenantLifecycleGuard) {
+                          TenantLifecycleGuard tenantLifecycleGuard,
+                          TenantQuotaService tenantQuotaService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.roleRepository = roleRepository;
@@ -70,19 +85,76 @@ public class UserServiceImpl implements UserService {
         this.roleAssignmentSyncService = roleAssignmentSyncService;
         this.effectiveRoleResolutionService = effectiveRoleResolutionService;
         this.tenantUserRepository = tenantUserRepository;
+        this.userUnitRepository = userUnitRepository;
+        this.userUnitService = userUnitService;
         this.authUserResolutionService = authUserResolutionService;
         this.tenantLifecycleGuard = tenantLifecycleGuard;
+        this.tenantQuotaService = tenantQuotaService;
+    }
+
+    public UserServiceImpl(UserRepository userRepository, PasswordEncoder passwordEncoder,
+                           RoleRepository roleRepository, UserAuthenticationMethodRepository authenticationMethodRepository,
+                           LoginFailurePolicy loginFailurePolicy,
+                           RoleAssignmentSyncService roleAssignmentSyncService,
+                           EffectiveRoleResolutionService effectiveRoleResolutionService,
+                           TenantUserRepository tenantUserRepository,
+                           UserUnitRepository userUnitRepository,
+                           UserUnitService userUnitService,
+                           AuthUserResolutionService authUserResolutionService,
+                           TenantLifecycleGuard tenantLifecycleGuard) {
+        this(
+            userRepository,
+            passwordEncoder,
+            roleRepository,
+            authenticationMethodRepository,
+            loginFailurePolicy,
+            roleAssignmentSyncService,
+            effectiveRoleResolutionService,
+            tenantUserRepository,
+            userUnitRepository,
+            userUnitService,
+            authUserResolutionService,
+            tenantLifecycleGuard,
+            null
+        );
+    }
+
+    public UserServiceImpl(UserRepository userRepository, PasswordEncoder passwordEncoder,
+                           RoleRepository roleRepository, UserAuthenticationMethodRepository authenticationMethodRepository,
+                           LoginFailurePolicy loginFailurePolicy,
+                           RoleAssignmentSyncService roleAssignmentSyncService,
+                           EffectiveRoleResolutionService effectiveRoleResolutionService,
+                           TenantUserRepository tenantUserRepository,
+                           UserUnitRepository userUnitRepository,
+                           AuthUserResolutionService authUserResolutionService,
+                           TenantLifecycleGuard tenantLifecycleGuard) {
+        this(
+            userRepository,
+            passwordEncoder,
+            roleRepository,
+            authenticationMethodRepository,
+            loginFailurePolicy,
+            roleAssignmentSyncService,
+            effectiveRoleResolutionService,
+            tenantUserRepository,
+            userUnitRepository,
+            null,
+            authUserResolutionService,
+            tenantLifecycleGuard,
+            null
+        );
     }
 
 
     @Override
+    @DataScope(module = "user")
     public Page<UserResponseDto> users(UserRequestDto query, Pageable pageable) {
         Long tenantId = requireTenantId();
-        var visibleUserIds = resolveVisibleUserIdsForTenant(tenantId);
+        var visibleUserIds = resolveVisibleUserIdsForRead(tenantId);
+        if (visibleUserIds.isEmpty()) {
+            return Page.empty(pageable);
+        }
         Page<User> users = userRepository.findAll((Specification<User>) (root, q, cb) -> {
-            if (visibleUserIds.isEmpty()) {
-                return cb.disjunction();
-            }
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(root.get("id").in(visibleUserIds));
 
@@ -124,14 +196,21 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public Optional<User> findByUsername(String username) {
+        if (TenantContext.isPlatformScope()) {
+            return requireAuthUserResolutionService().resolveUserRecordInPlatform(username);
+        }
         Long tenantId = requireTenantId();
         return requireAuthUserResolutionService().resolveUserRecordInActiveTenant(username, tenantId);
     }
 
     @Override
     public User create(User user) {
+        tenantLifecycleGuard.assertNotFrozenForWrite("user", "create");
         Long tenantId = requireTenantId();
-        // 不再写入 user.tenant_id；仅写入 tenant_user membership（见 AUTHORIZATION_LEGACY_REMOVAL_PLAN §3.2）
+        if (tenantQuotaService != null) {
+            tenantQuotaService.assertCanCreateUsers(tenantId, 1, "创建用户");
+        }
+        // user.tenant_id 双写已停止（044/045 迁移）；归属以 tenant_user membership 为准
         User saved = userRepository.save(user);
         roleAssignmentSyncService.ensureTenantMembership(saved.getId(), tenantId, true);
         return saved;
@@ -163,6 +242,9 @@ public class UserServiceImpl implements UserService {
     public User createFromDto(UserCreateUpdateDto userDto) {
         tenantLifecycleGuard.assertNotFrozenForWrite("user", "create");
         Long tenantId = requireTenantId();
+        if (tenantQuotaService != null) {
+            tenantQuotaService.assertCanCreateUsers(tenantId, 1, "创建用户");
+        }
         // 检查用户名是否已存在
         if (findByUsername(userDto.getUsername()).isPresent()) {
             throw new BusinessException(
@@ -171,11 +253,11 @@ public class UserServiceImpl implements UserService {
             );
         }
         
-        // 创建新用户（不设置密码）
         User user = new User();
-        user.setTenantId(tenantId);
         user.setUsername(userDto.getUsername());
         user.setNickname(userDto.getNickname());
+        user.setEmail(trimToNull(userDto.getEmail()));
+        user.setPhone(trimToNull(userDto.getPhone()));
         user.setEnabled(userDto.getEnabled());
         user.setAccountNonExpired(userDto.getAccountNonExpired());
         user.setAccountNonLocked(userDto.getAccountNonLocked());
@@ -199,6 +281,8 @@ public class UserServiceImpl implements UserService {
         if (userDto.getRoleIds() != null && !userDto.getRoleIds().isEmpty()) {
             roleAssignmentSyncService.replaceUserTenantRoleAssignments(user.getId(), tenantId, userDto.getRoleIds());
         }
+
+        syncUserUnitsIfPresent(tenantId, user.getId(), userDto);
         
         // 创建认证方法（将密码存储在 user_authentication_method 表中）
         createPasswordAuthenticationMethod(user.getId(), tenantId, userDto.getPassword());
@@ -230,13 +314,9 @@ public class UserServiceImpl implements UserService {
         existingUser.setUsername(userDto.getUsername());
         existingUser.setNickname(userDto.getNickname());
         // 更新邮箱（允许设置为null来清空）
-        existingUser.setEmail(userDto.getEmail() != null && !userDto.getEmail().trim().isEmpty() 
-            ? userDto.getEmail().trim() 
-            : null);
+        existingUser.setEmail(trimToNull(userDto.getEmail()));
         // 更新手机号（允许设置为null来清空）
-        existingUser.setPhone(userDto.getPhone() != null && !userDto.getPhone().trim().isEmpty() 
-            ? userDto.getPhone().trim() 
-            : null);
+        existingUser.setPhone(trimToNull(userDto.getPhone()));
         existingUser.setEnabled(userDto.getEnabled());
         existingUser.setAccountNonExpired(userDto.getAccountNonExpired());
         boolean unlockingUser = !existingUser.isAccountNonLocked() && Boolean.TRUE.equals(userDto.getAccountNonLocked());
@@ -263,8 +343,10 @@ public class UserServiceImpl implements UserService {
             }
             roleAssignmentSyncService.replaceUserTenantRoleAssignments(existingUser.getId(), tenantId, userDto.getRoleIds());
         }
-        
-        return userRepository.save(existingUser);
+
+        User savedUser = userRepository.save(existingUser);
+        syncUserUnitsIfPresent(tenantId, existingUser.getId(), userDto);
+        return savedUser;
     }
     
     /**
@@ -305,7 +387,7 @@ public class UserServiceImpl implements UserService {
     private void updatePasswordAuthenticationMethod(Long userId, Long tenantId, String plainPassword) {
         // 查找现有的认证方法
         Optional<UserAuthenticationMethod> existingMethod = authenticationMethodRepository
-                .findByUserIdAndTenantIdAndAuthenticationProviderAndAuthenticationType(userId, tenantId, "LOCAL", "PASSWORD");
+                .findEffectiveAuthenticationMethod(userId, tenantId, "LOCAL", "PASSWORD");
         
         if (existingMethod.isPresent()) {
             // 更新现有认证方法
@@ -365,6 +447,12 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public void updateUserRoles(Long userId, List<Long> roleIds) {
+        updateUserRoles(userId, "TENANT", null, roleIds);
+    }
+
+    @Override
+    @Transactional
+    public void updateUserRoles(Long userId, String scopeType, Long scopeId, List<Long> roleIds) {
         tenantLifecycleGuard.assertNotFrozenForWrite("user", "updateUserRoles");
         Long tenantId = requireTenantId();
         User user = findById(userId)
@@ -379,7 +467,7 @@ public class UserServiceImpl implements UserService {
                 "部分角色不存在"
             );
         }
-        roleAssignmentSyncService.replaceUserTenantRoleAssignments(user.getId(), tenantId, roleIds);
+        roleAssignmentSyncService.replaceUserScopedRoleAssignments(user.getId(), tenantId, scopeType, scopeId, roleIds);
     }
 
     @Override
@@ -392,7 +480,36 @@ public class UserServiceImpl implements UserService {
             );
         }
 
+        return resolveEffectiveRoleIdsRespectingActiveScope(userId, tenantId);
+    }
+
+    /**
+     * 与 {@link TenantContext} active scope 对齐的有效角色（工作流/服务侧展示与 TENANT 默认兼容）。
+     */
+    private List<Long> resolveEffectiveRoleIdsRespectingActiveScope(Long userId, Long tenantId) {
+        if (TenantContext.isPlatformScope()) {
+            return effectiveRoleResolutionService.findEffectiveRoleIdsForUserInTenant(userId, tenantId);
+        }
+        String ast = TenantContext.getActiveScopeType();
+        Long asid = TenantContext.getActiveScopeId();
+        if ((TenantContextContract.SCOPE_TYPE_ORG.equals(ast) || TenantContextContract.SCOPE_TYPE_DEPT.equals(ast))
+            && asid != null && asid > 0) {
+            return effectiveRoleResolutionService.findEffectiveRoleIdsForUserInTenant(userId, tenantId, ast, asid);
+        }
         return effectiveRoleResolutionService.findEffectiveRoleIdsForUserInTenant(userId, tenantId);
+    }
+
+    @Override
+    public List<Long> getDirectRoleIdsByUserId(Long userId, String scopeType, Long scopeId) {
+        Long tenantId = requireTenantId();
+        if (findById(userId).isEmpty()) {
+            throw new BusinessException(
+                ErrorCode.NOT_FOUND,
+                "用户不存在: " + userId
+            );
+        }
+
+        return roleAssignmentSyncService.findActiveRoleIdsForUserInScope(userId, tenantId, scopeType, scopeId);
     }
 
     private Long requireTenantId() {
@@ -441,5 +558,68 @@ public class UserServiceImpl implements UserService {
 
     private LinkedHashSet<Long> resolveVisibleUserIdsForTenant(Long tenantId, LinkedHashSet<Long> candidateIds) {
         return new LinkedHashSet<>(tenantUserRepository.findUserIdsByTenantIdAndUserIdInAndStatus(tenantId, candidateIds, ACTIVE));
+    }
+
+    private LinkedHashSet<Long> resolveVisibleUserIdsForRead(Long tenantId) {
+        LinkedHashSet<Long> tenantVisibleUserIds = resolveVisibleUserIdsForTenant(tenantId);
+        ResolvedDataScope scope = DataScopeContext.get();
+        if (scope == null || scope.isUnrestricted()) {
+            return tenantVisibleUserIds;
+        }
+
+        LinkedHashSet<Long> scopedUserIds = new LinkedHashSet<>();
+        Long currentUserId = extractCurrentUserId();
+        if (scope.isSelfOnly() && currentUserId != null) {
+            scopedUserIds.add(currentUserId);
+        }
+        scopedUserIds.addAll(scope.getVisibleUserIds());
+
+        if (!scope.getVisibleUnitIds().isEmpty()) {
+            scopedUserIds.addAll(userUnitRepository.findUserIdsByTenantIdAndUnitIdInAndStatus(
+                tenantId,
+                scope.getVisibleUnitIds(),
+                ACTIVE
+            ));
+        }
+
+        if (scopedUserIds.isEmpty()) {
+            return new LinkedHashSet<>();
+        }
+
+        scopedUserIds.retainAll(tenantVisibleUserIds);
+        return scopedUserIds;
+    }
+
+    private Long extractCurrentUserId() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !authentication.isAuthenticated()) {
+            return null;
+        }
+        Object principal = authentication.getPrincipal();
+        if (principal instanceof SecurityUser securityUser) {
+            return securityUser.getUserId();
+        }
+        Object details = authentication.getDetails();
+        if (details instanceof SecurityUser securityUser) {
+            return securityUser.getUserId();
+        }
+        return null;
+    }
+
+    private void syncUserUnitsIfPresent(Long tenantId, Long userId, UserCreateUpdateDto userDto) {
+        if (userDto.getUnitIds() == null && userDto.getPrimaryUnitId() == null) {
+            return;
+        }
+        if (userUnitService == null) {
+            throw new IllegalStateException("UserUnitService 未配置");
+        }
+        userUnitService.replaceUserUnits(tenantId, userId, userDto.getUnitIds(), userDto.getPrimaryUnitId());
+    }
+
+    private String trimToNull(String value) {
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        return value.trim();
     }
 }

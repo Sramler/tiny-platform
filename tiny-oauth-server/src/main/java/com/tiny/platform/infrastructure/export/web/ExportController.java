@@ -1,6 +1,5 @@
 package com.tiny.platform.infrastructure.export.web;
 
-import com.tiny.platform.core.oauth.security.LegacyAuthConstants;
 import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
 import com.tiny.platform.infrastructure.export.core.ExportRequest;
 import com.tiny.platform.infrastructure.export.persistence.ExportTaskEntity;
@@ -47,8 +46,8 @@ public class ExportController {
 
     private static final Logger log = LoggerFactory.getLogger(ExportController.class);
 
-    /** 规范权限码：具备导出能力（提交/查看本人任务）；与 {@link LegacyAuthConstants#isAdminAuthority} 兼容。 */
     private static final String EXPORT_VIEW_AUTHORITY = "system:export:view";
+    private static final String EXPORT_MANAGE_AUTHORITY = "system:export:manage";
 
     private final ExportService exportService;
     private final ExportTaskService exportTaskService;
@@ -119,7 +118,7 @@ public class ExportController {
         boolean isAdmin = hasAdminAuthority(auth);
         String uid = currentUserId(auth);
         if (isAdmin) {
-            return ResponseEntity.ok(exportTaskService.findAllTasks());
+            return ResponseEntity.ok(exportTaskService.findReadableTasks());
         }
         return ResponseEntity.ok(exportTaskService.findUserTasks(uid));
     }
@@ -304,7 +303,7 @@ public class ExportController {
         }
         return authentication.getAuthorities().stream()
             .map(GrantedAuthority::getAuthority)
-            .anyMatch(a -> EXPORT_VIEW_AUTHORITY.equals(a) || LegacyAuthConstants.isAdminAuthority(a));
+            .anyMatch(a -> EXPORT_VIEW_AUTHORITY.equals(a) || EXPORT_MANAGE_AUTHORITY.equals(a));
     }
 
     private void assertCanExport(Authentication authentication) {
@@ -319,6 +318,6 @@ public class ExportController {
         }
         return authentication.getAuthorities().stream()
             .map(GrantedAuthority::getAuthority)
-            .anyMatch(LegacyAuthConstants::isAdminAuthority);
+            .anyMatch(EXPORT_MANAGE_AUTHORITY::equals);
     }
 }

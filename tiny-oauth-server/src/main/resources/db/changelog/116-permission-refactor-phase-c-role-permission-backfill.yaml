@@ -1,0 +1,48 @@
+databaseChangeLog:
+  - changeSet:
+      id: 116-backfill-role-permission-from-role-resource
+      author: codex
+      comment: PermissionRefactor Phase C - backfill role_permission from role_resource and permission
+      preConditions:
+        onFail: MARK_RAN
+        and:
+          - tableExists:
+              tableName: role_resource
+          - tableExists:
+              tableName: role
+          - tableExists:
+              tableName: resource
+          - tableExists:
+              tableName: permission
+          - tableExists:
+              tableName: role_permission
+      changes:
+        - sql:
+            dbms: mysql
+            sql: |
+              INSERT IGNORE INTO `role_permission` (
+                `role_id`,
+                `permission_id`,
+                `tenant_id`,
+                `created_by`,
+                `created_at`
+              )
+              SELECT
+                rr.role_id,
+                p.id AS permission_id,
+                rr.tenant_id,
+                NULL AS created_by,
+                NOW() AS created_at
+              FROM `role_resource` rr
+              JOIN `role` r
+                ON r.id = rr.role_id
+               AND (r.tenant_id <=> rr.tenant_id)
+              JOIN `resource` re
+                ON re.id = rr.resource_id
+               AND (re.tenant_id <=> rr.tenant_id)
+              JOIN `permission` p
+                ON (p.tenant_id <=> rr.tenant_id)
+               AND p.permission_code = TRIM(re.permission)
+              WHERE re.permission IS NOT NULL
+                AND TRIM(re.permission) <> ''
+                AND p.enabled = 1;

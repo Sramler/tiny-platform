@@ -418,6 +418,7 @@ import { PlusOutlined } from '@ant-design/icons-vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuth } from '@/auth/auth'
 import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import { SCHEDULING_CONSOLE_VIEW, SCHEDULING_CONSOLE_CONFIG, SCHEDULING_RUN_CONTROL, SCHEDULING_WILDCARD } from '@/constants/permission'
 import { getActiveTenantId, resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
 import {
   getDag,
@@ -450,15 +451,15 @@ const schedulingAuthorities = computed(() =>
   extractAuthoritiesFromJwt(user.value?.access_token).filter((a) => a.startsWith('scheduling:')),
 )
 const canReadScheduling = computed(() =>
-  schedulingAuthorities.value.includes('scheduling:console:view') || schedulingAuthorities.value.includes('scheduling:*'),
+  schedulingAuthorities.value.includes(SCHEDULING_CONSOLE_VIEW) || schedulingAuthorities.value.includes(SCHEDULING_WILDCARD),
 )
 const canManageSchedulingConfig = computed(() =>
-  schedulingAuthorities.value.includes('scheduling:console:config') ||
-  schedulingAuthorities.value.includes('scheduling:*'),
+  schedulingAuthorities.value.includes(SCHEDULING_CONSOLE_CONFIG) ||
+  schedulingAuthorities.value.includes(SCHEDULING_WILDCARD),
 )
 const canOperateSchedulingRun = computed(() =>
-  schedulingAuthorities.value.includes('scheduling:run:control') ||
-  schedulingAuthorities.value.includes('scheduling:*'),
+  schedulingAuthorities.value.includes(SCHEDULING_RUN_CONTROL) ||
+  schedulingAuthorities.value.includes(SCHEDULING_WILDCARD),
 )
 
 // 支持 query.id 或 query.dagId（与 DAG 列表跳转及菜单链接保持一致）

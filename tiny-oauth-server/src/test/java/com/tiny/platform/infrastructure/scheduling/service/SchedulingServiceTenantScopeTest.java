@@ -3,6 +3,12 @@ package com.tiny.platform.infrastructure.scheduling.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
+import com.tiny.platform.infrastructure.auth.datascope.framework.DataScope;
+import com.tiny.platform.infrastructure.auth.datascope.framework.DataScopeContext;
+import com.tiny.platform.infrastructure.auth.datascope.framework.ResolvedDataScope;
+import com.tiny.platform.infrastructure.auth.org.repository.UserUnitRepository;
+import com.tiny.platform.infrastructure.auth.user.repository.TenantUserRepository;
+import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.infrastructure.scheduling.dto.SchedulingDagCreateUpdateDto;
 import com.tiny.platform.infrastructure.scheduling.dto.SchedulingDagEdgeCreateDto;
 import com.tiny.platform.infrastructure.scheduling.dto.SchedulingDagTaskCreateUpdateDto;
@@ -37,6 +43,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -44,10 +51,17 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.CriteriaQuery;
+import jakarta.persistence.criteria.Expression;
+import jakarta.persistence.criteria.Path;
+import jakarta.persistence.criteria.Root;
+import jakarta.persistence.criteria.Predicate;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -75,6 +89,9 @@ class SchedulingServiceTenantScopeTest {
     private SchedulingTaskInstanceRepository taskInstanceRepository;
     private SchedulingTaskHistoryRepository taskHistoryRepository;
     private SchedulingAuditRepository auditRepository;
+    private TenantUserRepository tenantUserRepository;
+    private UserUnitRepository userUnitRepository;
+    private UserRepository userRepository;
     private QuartzSchedulerService quartzSchedulerService;
     private TaskExecutorRegistry taskExecutorRegistry;
     private SchedulingService schedulingService;
@@ -91,6 +108,9 @@ class SchedulingServiceTenantScopeTest {
         taskInstanceRepository = mock(SchedulingTaskInstanceRepository.class);
         taskHistoryRepository = mock(SchedulingTaskHistoryRepository.class);
         auditRepository = mock(SchedulingAuditRepository.class);
+        tenantUserRepository = mock(TenantUserRepository.class);
+        userUnitRepository = mock(UserUnitRepository.class);
+        userRepository = mock(UserRepository.class);
         quartzSchedulerService = mock(QuartzSchedulerService.class);
         taskExecutorRegistry = mock(TaskExecutorRegistry.class);
         TenantRepository tenantRepository = mock(TenantRepository.class);
@@ -106,6 +126,9 @@ class SchedulingServiceTenantScopeTest {
                 taskInstanceRepository,
                 taskHistoryRepository,
                 auditRepository,
+                tenantUserRepository,
+                userUnitRepository,
+                userRepository,
                 quartzSchedulerService,
                 taskExecutorRegistry,
                 new JsonSchemaValidationService(new ObjectMapper()),
@@ -119,6 +142,7 @@ class SchedulingServiceTenantScopeTest {
             TransactionSynchronizationManager.clearSynchronization();
         }
         SecurityContextHolder.clearContext();
+        DataScopeContext.clear();
         TenantContext.clear();
     }
 
@@ -229,6 +253,91 @@ class SchedulingServiceTenantScopeTest {
         assertThat(dags.get(1).getCurrentVersionId()).isEqualTo(201L);
         assertThat(dags.get(1).getHasRunningRun()).isFalse();
         assertThat(dags.get(1).getHasRetryableRun()).isTrue();
+    }
+
+    @Test
+    void listDagsShouldNotResolveUnitMembersWhenDataScopeUnrestricted() {
+        authenticate(8L, 88L, "alice");
+        DataScopeContext.set(ResolvedDataScope.all());
+        SchedulingDag dagOne = new SchedulingDag();
+        dagOne.setId(10L);
+        dagOne.setTenantId(88L);
+        when(dagRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(dagOne), PageRequest.of(0, 10), 1));
+        when(dagVersionRepository.findByDagIdInAndStatusAndTenantId(List.of(10L), "ACTIVE", 88L))
+                .thenReturn(List.of());
+        when(dagRunRepository.findByDagIdInAndStatusInOrderByIdDesc(
+                List.of(10L), List.of("RUNNING", "FAILED", "PARTIAL_FAILED")))
+                .thenReturn(List.of());
+
+        schedulingService.listDags(null, null, PageRequest.of(0, 10));
+
+        verify(userUnitRepository, never()).findUserIdsByTenantIdAndUnitIdInAndStatus(any(), any(), any());
+    }
+
+    @Test
+    void listDagsShouldResolveOwnerKeysFromOrgVisibleUnits() {
+        authenticate(8L, 88L, "alice");
+        DataScopeContext.set(ResolvedDataScope.ofUnitsAndUsers(Set.of(600L), Set.of(), false));
+        when(tenantUserRepository.findUserIdsByTenantIdAndStatus(88L, "ACTIVE")).thenReturn(List.of(8L, 10L));
+        when(userUnitRepository.findUserIdsByTenantIdAndUnitIdInAndStatus(88L, Set.of(600L), "ACTIVE"))
+                .thenReturn(List.of(10L));
+        when(userRepository.findUsernamesByIdIn(Set.of(10L))).thenReturn(List.of("bob"));
+        when(dagRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        ArgumentCaptor<Specification<SchedulingDag>> specCaptor = ArgumentCaptor.forClass(Specification.class);
+        schedulingService.listDags(null, null, PageRequest.of(0, 10));
+        verify(dagRepository).findAll(specCaptor.capture(), isA(Pageable.class));
+        evaluateSpecification(specCaptor.getValue());
+
+        verify(userUnitRepository).findUserIdsByTenantIdAndUnitIdInAndStatus(88L, Set.of(600L), "ACTIVE");
+    }
+
+    @Test
+    void listDagsShouldResolveOwnerKeysFromDeptVisibleUnits() {
+        authenticate(8L, 88L, "alice");
+        DataScopeContext.set(ResolvedDataScope.ofUnitsAndUsers(Set.of(701L), Set.of(), false));
+        when(tenantUserRepository.findUserIdsByTenantIdAndStatus(88L, "ACTIVE")).thenReturn(List.of(8L, 11L));
+        when(userUnitRepository.findUserIdsByTenantIdAndUnitIdInAndStatus(88L, Set.of(701L), "ACTIVE"))
+                .thenReturn(List.of(11L));
+        when(userRepository.findUsernamesByIdIn(Set.of(11L))).thenReturn(List.of("dept-user"));
+        when(dagRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        ArgumentCaptor<Specification<SchedulingDag>> specCaptor = ArgumentCaptor.forClass(Specification.class);
+        schedulingService.listDags(null, null, PageRequest.of(0, 10));
+        verify(dagRepository).findAll(specCaptor.capture(), isA(Pageable.class));
+        evaluateSpecification(specCaptor.getValue());
+
+        verify(userUnitRepository).findUserIdsByTenantIdAndUnitIdInAndStatus(88L, Set.of(701L), "ACTIVE");
+    }
+
+    /**
+     * Contract B: {@code DataScopeResolverService} under ORG active scope + DEPT-shaped rules yields primary-dept unit
+     * ids (e.g. 50L), not active ORG (600L). {@code listDags} owner-key expansion must follow resolved unit ids.
+     */
+    @Test
+    void listDags_contract_b_org_active_scope_dept_rule_uses_primary_dept_visible_units_not_active_org() {
+        authenticate(8L, 88L, "alice");
+        TenantContext.setActiveScopeType("ORG");
+        TenantContext.setActiveScopeId(600L);
+        DataScopeContext.set(ResolvedDataScope.ofUnitsAndUsers(Set.of(50L), Set.of(), false));
+        when(tenantUserRepository.findUserIdsByTenantIdAndStatus(88L, "ACTIVE")).thenReturn(List.of(8L, 10L));
+        when(userUnitRepository.findUserIdsByTenantIdAndUnitIdInAndStatus(88L, Set.of(50L), "ACTIVE"))
+                .thenReturn(List.of(10L));
+        when(userRepository.findUsernamesByIdIn(Set.of(10L))).thenReturn(List.of("bob"));
+        when(dagRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        ArgumentCaptor<Specification<SchedulingDag>> specCaptor = ArgumentCaptor.forClass(Specification.class);
+        schedulingService.listDags(null, null, PageRequest.of(0, 10));
+        verify(dagRepository).findAll(specCaptor.capture(), isA(Pageable.class));
+        evaluateSpecification(specCaptor.getValue());
+
+        verify(userUnitRepository).findUserIdsByTenantIdAndUnitIdInAndStatus(88L, Set.of(50L), "ACTIVE");
+        verify(userUnitRepository, never()).findUserIdsByTenantIdAndUnitIdInAndStatus(
+                eq(88L), eq(Set.of(600L)), eq("ACTIVE"));
     }
 
     @Test
@@ -1746,10 +1855,130 @@ class SchedulingServiceTenantScopeTest {
         assertThat(page.getContent().get(0).getTenantId()).isEqualTo(88L);
     }
 
+    @Test
+    void listTaskTypesShouldResolveOwnerKeysFromScopedUsers() {
+        authenticate(8L, 88L, "alice");
+        DataScopeContext.set(ResolvedDataScope.ofUnitsAndUsers(Set.of(300L), Set.of(9L), false));
+
+        SchedulingTaskType tt = new SchedulingTaskType();
+        tt.setId(2L);
+        tt.setTenantId(88L);
+        tt.setCreatedBy("bob");
+
+        when(tenantUserRepository.findUserIdsByTenantIdAndStatus(88L, "ACTIVE")).thenReturn(List.of(8L, 9L, 10L));
+        when(userUnitRepository.findUserIdsByTenantIdAndUnitIdInAndStatus(88L, Set.of(300L), "ACTIVE"))
+                .thenReturn(List.of(10L));
+        when(userRepository.findUsernamesByIdIn(any())).thenReturn(List.of("bob", "charlie"));
+        when(taskTypeRepository.findAll(isA(Specification.class), isA(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(tt)));
+
+        ArgumentCaptor<Specification<SchedulingTaskType>> specCaptor = ArgumentCaptor.forClass(Specification.class);
+        var page = schedulingService.listTaskTypes(null, null, PageRequest.of(0, 10));
+        verify(taskTypeRepository).findAll(specCaptor.capture(), isA(Pageable.class));
+        evaluateSpecification(specCaptor.getValue());
+
+        assertThat(page.getContent()).hasSize(1);
+        verify(userUnitRepository).findUserIdsByTenantIdAndUnitIdInAndStatus(88L, Set.of(300L), "ACTIVE");
+        verify(userRepository).findUsernamesByIdIn(any());
+    }
+
+    @Test
+    void listTasksShouldResolveOwnerKeysFromSelfScope() {
+        authenticate(8L, 88L, "alice");
+        DataScopeContext.set(ResolvedDataScope.selfOnly());
+
+        SchedulingTask task = new SchedulingTask();
+        task.setId(3L);
+        task.setTenantId(88L);
+        task.setCreatedBy("alice");
+
+        when(tenantUserRepository.findUserIdsByTenantIdAndStatus(88L, "ACTIVE")).thenReturn(List.of(8L, 9L));
+        when(userRepository.findUsernamesByIdIn(any())).thenReturn(List.of("alice"));
+        when(taskRepository.findAll(isA(Specification.class), isA(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(task)));
+
+        ArgumentCaptor<Specification<SchedulingTask>> specCaptor = ArgumentCaptor.forClass(Specification.class);
+        var page = schedulingService.listTasks(null, null, null, PageRequest.of(0, 10));
+        verify(taskRepository).findAll(specCaptor.capture(), isA(Pageable.class));
+        evaluateSpecification(specCaptor.getValue());
+
+        assertThat(page.getContent()).hasSize(1);
+        verify(userUnitRepository, never()).findUserIdsByTenantIdAndUnitIdInAndStatus(any(), any(), any());
+        verify(userRepository).findUsernamesByIdIn(any());
+    }
+
+    /**
+     * 正式契约：运行历史为租户内运维视图，不消费 {@link DataScopeContext}；与 {@code listDags} 的 owner 谓词不同。
+     */
+    @Test
+    void getDagRuns_contract_operational_view_ignores_data_scope_context() {
+        authenticate(8L, 88L, "alice");
+        DataScopeContext.set(ResolvedDataScope.selfOnly());
+
+        SchedulingDag dag = new SchedulingDag();
+        dag.setId(10L);
+        dag.setTenantId(88L);
+        when(dagRepository.findByIdAndTenantId(10L, 88L)).thenReturn(Optional.of(dag));
+
+        SchedulingDagRun run = new SchedulingDagRun();
+        run.setId(501L);
+        run.setDagId(10L);
+        when(dagRunRepository.findAll(any(Specification.class), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(run)));
+
+        Page<SchedulingDagRun> page = schedulingService.getDagRuns(
+                10L, PageRequest.of(0, 10), null, null, null, null, null);
+
+        assertThat(page.getContent()).hasSize(1);
+        assertThat(page.getContent().getFirst().getId()).isEqualTo(501L);
+        verify(dagRunRepository).findAll(any(Specification.class), any(Pageable.class));
+        verify(userUnitRepository, never()).findUserIdsByTenantIdAndUnitIdInAndStatus(any(), any(), any());
+    }
+
+    /**
+     * 文档化边界：运行历史分页刻意不接 {@link DataScope}，避免在未定义「运行级归属」契约前用 owner 语义收窄排障视野。
+     */
+    @Test
+    void getDagRunsMethodShouldNotDeclareDataScopeAnnotation() throws Exception {
+        assertThat(SchedulingService.class.getMethod(
+                "getDagRuns",
+                Long.class,
+                Pageable.class,
+                String.class,
+                String.class,
+                String.class,
+                LocalDateTime.class,
+                LocalDateTime.class
+            ).getAnnotation(DataScope.class))
+            .isNull();
+    }
+
     private void authenticate(Long userId, Long tenantId, String username) {
         TenantContext.setActiveTenantId(tenantId);
         SecurityUser securityUser = new SecurityUser(userId, tenantId, username, "", List.of(), true, true, true, true);
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(securityUser, "N/A", List.of()));
+    }
+
+    @SuppressWarnings({"rawtypes", "unchecked"})
+    private <T> void evaluateSpecification(Specification<T> specification) {
+        Root<T> root = mock(Root.class);
+        CriteriaQuery<?> query = mock(CriteriaQuery.class);
+        CriteriaBuilder cb = mock(CriteriaBuilder.class);
+        Path tenantPath = mock(Path.class);
+        Path createdByPath = mock(Path.class);
+        Expression<String> createdByExpression = mock(Expression.class);
+        Predicate tenantPredicate = mock(Predicate.class);
+        Predicate ownerPredicate = mock(Predicate.class);
+        Predicate combinedPredicate = mock(Predicate.class);
+
+        when(root.get("tenantId")).thenReturn(tenantPath);
+        when(root.get("createdBy")).thenReturn(createdByPath);
+        when(createdByPath.as(String.class)).thenReturn(createdByExpression);
+        when(cb.equal(tenantPath, 88L)).thenReturn(tenantPredicate);
+        when(createdByExpression.in(any(java.util.Collection.class))).thenReturn(ownerPredicate);
+        when(cb.and(any(Predicate[].class))).thenReturn(combinedPredicate);
+
+        specification.toPredicate(root, query, cb);
     }
 }

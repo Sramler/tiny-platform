@@ -9,6 +9,12 @@ import com.tiny.platform.core.dict.repository.DictItemRepository;
 import com.tiny.platform.core.dict.repository.DictTypeRepository;
 import com.tiny.platform.core.dict.service.DictItemService;
 import com.tiny.platform.core.dict.support.DictTenantScope;
+import com.tiny.platform.infrastructure.auth.datascope.framework.DataScope;
+import com.tiny.platform.infrastructure.auth.datascope.framework.DataScopeContext;
+import com.tiny.platform.infrastructure.auth.datascope.framework.ResolvedDataScope;
+import com.tiny.platform.infrastructure.auth.org.repository.UserUnitRepository;
+import com.tiny.platform.infrastructure.auth.user.repository.TenantUserRepository;
+import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.infrastructure.core.exception.code.ErrorCode;
 import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
 import com.tiny.platform.infrastructure.core.exception.exception.NotFoundException;
@@ -24,6 +30,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,22 +42,42 @@ import java.util.function.Function;
  */
 @Service
 public class DictItemServiceImpl implements DictItemService {
+    private static final String ACTIVE = "ACTIVE";
 
     private final DictItemRepository dictItemRepository;
     private final DictTypeRepository dictTypeRepository;
+    private final TenantUserRepository tenantUserRepository;
+    private final UserUnitRepository userUnitRepository;
+    private final UserRepository userRepository;
 
-    public DictItemServiceImpl(DictItemRepository dictItemRepository, DictTypeRepository dictTypeRepository) {
+    public DictItemServiceImpl(DictItemRepository dictItemRepository,
+                               DictTypeRepository dictTypeRepository,
+                               TenantUserRepository tenantUserRepository,
+                               UserUnitRepository userUnitRepository,
+                               UserRepository userRepository) {
         this.dictItemRepository = dictItemRepository;
         this.dictTypeRepository = dictTypeRepository;
+        this.tenantUserRepository = tenantUserRepository;
+        this.userUnitRepository = userUnitRepository;
+        this.userRepository = userRepository;
     }
 
+    /**
+     * 字典项分页查询（租户控制面）；与 {@link DictTypeServiceImpl#query} 共享 {@code dict} 模块 {@code @DataScope} 与 Contract B 语义。
+     */
     @Override
+    @DataScope(module = "dict")
     @Transactional(readOnly = true)
     public Page<DictItemResponseDto> query(DictItemQueryDto query, Pageable pageable) {
         // 租户隔离仅以 TenantContext 为准，不使用 query 中的 tenantId
         Long currentTenantId = DictTenantScope.requireCurrentTenantId();
         if (query.getDictTypeId() != null && !isVisibleType(query.getDictTypeId(), currentTenantId)) {
             return new PageImpl<>(List.of(), pageable, 0);
+        }
+
+        if (requiresDataScopeFilter()) {
+            List<DictItem> filtered = queryVisibleItemsUnderDataScope(query, currentTenantId, pageable);
+            return toPage(filtered.stream().map(DictItemResponseDto::new).toList(), pageable);
         }
 
         if (query.getDictTypeId() == null) {
@@ -81,7 +108,8 @@ public class DictItemServiceImpl implements DictItemService {
     public Optional<DictItem> findById(Long id) {
         Long currentTenantId = DictTenantScope.requireCurrentTenantId();
         Optional<DictItem> item = dictItemRepository.findById(id)
-                .filter(dictItem -> isVisibleItem(dictItem, currentTenantId));
+                .filter(dictItem -> isVisibleItem(dictItem, currentTenantId))
+                .filter(dictItem -> isReadableItem(dictItem, currentTenantId, resolveVisibleCreatorNamesForRead(currentTenantId)));
         item.ifPresent(this::preloadDictType);
         return item;
     }
@@ -93,7 +121,17 @@ public class DictItemServiceImpl implements DictItemService {
         DictType dictType = findAccessibleType(dictTypeId, currentTenantId);
         List<DictItem> items = dictItemRepository.findVisibleByDictTypeId(dictTypeId, currentTenantId);
         preloadDictType(items);
-        return mergeVisibleItems(dictType, items);
+        if (!requiresDataScopeFilter()) {
+            return mergeVisibleItems(dictType, items);
+        }
+        LinkedHashSet<String> visibleCreatorNames = resolveVisibleCreatorNamesForRead(currentTenantId);
+        if (!isReadableType(dictType, currentTenantId, visibleCreatorNames)) {
+            return List.of();
+        }
+        List<DictItem> readableItems = items.stream()
+                .filter(item -> isReadableItem(item, currentTenantId, visibleCreatorNames))
+                .toList();
+        return mergeVisibleItems(dictType, readableItems);
     }
 
     @Override
@@ -147,6 +185,8 @@ public class DictItemServiceImpl implements DictItemService {
         dictItem.setLabel(dto.getLabel());
         dictItem.setTenantId(currentTenantId);
         dictItem.setIsBuiltin(false);
+        dictItem.setCreatedBy(DictTenantScope.currentUsername());
+        dictItem.setUpdatedBy(DictTenantScope.currentUsername());
         if (platformBaseItem != null) {
             applyOverlayDefaults(dictItem, platformBaseItem);
         } else {
@@ -199,6 +239,7 @@ public class DictItemServiceImpl implements DictItemService {
             dictItem.setSortOrder(dto.getSortOrder() != null ? dto.getSortOrder() : 0);
         }
         dictItem.setUpdatedAt(LocalDateTime.now());
+        dictItem.setUpdatedBy(DictTenantScope.currentUsername());
 
         return dictItemRepository.save(dictItem);
     }
@@ -230,7 +271,34 @@ public class DictItemServiceImpl implements DictItemService {
         if (tenantType.isPresent()) {
             return tenantType;
         }
-        return dictTypeRepository.findByDictCodeAndTenantId(dictCode, DictTenantScope.PLATFORM_TENANT_ID);
+        return dictTypeRepository.findByDictCodeAndTenantIdIsNull(dictCode);
+    }
+
+    private List<DictItem> queryVisibleItemsUnderDataScope(DictItemQueryDto query, Long currentTenantId, Pageable pageable) {
+        LinkedHashSet<String> visibleCreatorNames = resolveVisibleCreatorNamesForRead(currentTenantId);
+        List<DictItem> visibleItems = dictItemRepository.findVisibleByConditions(
+                currentTenantId,
+                query.getDictTypeId(),
+                StringUtils.hasText(query.getValue()) ? query.getValue() : null,
+                StringUtils.hasText(query.getLabel()) ? query.getLabel() : null,
+                query.getEnabled(),
+                mergedQuerySort(pageable)
+        );
+        preloadDictType(visibleItems);
+        List<DictItem> readableItems = visibleItems.stream()
+                .filter(item -> isReadableItem(item, currentTenantId, visibleCreatorNames))
+                .toList();
+        List<DictItem> mergedItems;
+        if (query.getDictTypeId() == null) {
+            mergedItems = mergeVisibleItems(readableItems);
+        } else {
+            DictType dictType = findAccessibleType(query.getDictTypeId(), currentTenantId);
+            if (!isReadableType(dictType, currentTenantId, visibleCreatorNames)) {
+                return List.of();
+            }
+            mergedItems = mergeVisibleItems(dictType, readableItems);
+        }
+        return sortItems(mergedItems, pageable);
     }
 
     private DictType findAccessibleType(Long dictTypeId, Long currentTenantId) {
@@ -274,11 +342,8 @@ public class DictItemServiceImpl implements DictItemService {
     }
 
     private DictItem findPlatformBaseItem(Long dictTypeId, String value) {
-        return dictItemRepository.findByDictTypeIdAndValueAndTenantId(
-                dictTypeId,
-                value,
-                DictTenantScope.PLATFORM_TENANT_ID
-        ).orElseThrow(() -> new BusinessException(ErrorCode.INVALID_PARAMETER, "平台字典仅允许覆盖既有 value: " + value));
+        return dictItemRepository.findByDictTypeIdAndValueAndTenantIdIsNull(dictTypeId, value)
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_PARAMETER, "平台字典仅允许覆盖既有 value: " + value));
     }
 
     private void applyOverlayDefaults(DictItem target, DictItem platformBaseItem) {
@@ -432,5 +497,70 @@ public class DictItemServiceImpl implements DictItemService {
 
     private void preloadDictType(List<DictItem> items) {
         items.forEach(this::preloadDictType);
+    }
+
+    private boolean isReadableType(DictType dictType, Long currentTenantId, LinkedHashSet<String> visibleCreatorNames) {
+        if (dictType == null || !DictTenantScope.isVisibleTenant(dictType.getTenantId(), currentTenantId)) {
+            return false;
+        }
+        if (!requiresDataScopeFilter()) {
+            return true;
+        }
+        if (DictTenantScope.isPlatformTenant(dictType.getTenantId())) {
+            return true;
+        }
+        return visibleCreatorNames.contains(dictType.getCreatedBy());
+    }
+
+    private boolean isReadableItem(DictItem item, Long currentTenantId, LinkedHashSet<String> visibleCreatorNames) {
+        if (!isVisibleItem(item, currentTenantId)) {
+            return false;
+        }
+        if (!requiresDataScopeFilter()) {
+            return true;
+        }
+        if (DictTenantScope.isPlatformTenant(item.getTenantId())) {
+            return true;
+        }
+        return visibleCreatorNames.contains(item.getCreatedBy());
+    }
+
+    private LinkedHashSet<String> resolveVisibleCreatorNamesForRead(Long currentTenantId) {
+        ResolvedDataScope scope = DataScopeContext.get();
+        if (scope == null) {
+            return new LinkedHashSet<>();
+        }
+
+        LinkedHashSet<Long> visibleUserIds = new LinkedHashSet<>();
+        if (!scope.getVisibleUserIds().isEmpty()) {
+            visibleUserIds.addAll(
+                    tenantUserRepository.findUserIdsByTenantIdAndUserIdInAndStatus(
+                            currentTenantId,
+                            scope.getVisibleUserIds(),
+                            ACTIVE
+                    )
+            );
+        }
+        if (!scope.getVisibleUnitIds().isEmpty()) {
+            visibleUserIds.addAll(
+                    userUnitRepository.findUserIdsByTenantIdAndUnitIdInAndStatus(
+                            currentTenantId,
+                            scope.getVisibleUnitIds(),
+                            ACTIVE
+                    )
+            );
+        }
+        Long currentUserId = DictTenantScope.currentUserId();
+        if (scope.isSelfOnly() && currentUserId != null) {
+            visibleUserIds.add(currentUserId);
+        }
+        return userRepository.findUsernamesByIdIn(visibleUserIds).stream()
+                .filter(StringUtils::hasText)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    private boolean requiresDataScopeFilter() {
+        ResolvedDataScope scope = DataScopeContext.get();
+        return scope != null && !scope.isUnrestricted();
     }
 }

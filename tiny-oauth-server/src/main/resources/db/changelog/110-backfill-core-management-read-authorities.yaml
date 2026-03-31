@@ -1,0 +1,44 @@
+databaseChangeLog:
+  - changeSet:
+      id: 110-backfill-core-management-read-authorities
+      author: codex
+      comment: 回填核心管理 READ 权限资源并绑定到各租户 ROLE_TENANT_ADMIN
+      changes:
+        - sql:
+            sql: |
+              INSERT IGNORE INTO `resource`
+              (`tenant_id`, `name`, `url`, `uri`, `method`, `icon`, `show_icon`, `sort`, `component`, `redirect`, `hidden`, `keep_alive`, `title`, `permission`, `type`, `parent_id`, `enabled`)
+              SELECT tenant_scope.tenant_id, authority_seed.name, '', '', '', '', 0, authority_seed.sort, '', '', 1, 0, authority_seed.title, authority_seed.permission, 2, system_dir.id, 1
+              FROM (
+                SELECT DISTINCT tenant_id
+                FROM `role`
+                WHERE tenant_id IS NOT NULL
+              ) tenant_scope
+              JOIN `resource` system_dir
+                ON system_dir.tenant_id = tenant_scope.tenant_id
+               AND system_dir.name = 'system'
+               AND system_dir.type = 0
+              JOIN (
+                SELECT 'system-user-list-authority' AS name, '用户管理读取权限' AS title, 'system:user:list' AS permission, 1401 AS sort
+                UNION ALL SELECT 'system-role-list-authority', '角色管理读取权限', 'system:role:list', 1402
+                UNION ALL SELECT 'system-menu-list-authority', '菜单管理读取权限', 'system:menu:list', 1403
+                UNION ALL SELECT 'system-resource-list-authority', '资源管理读取权限', 'system:resource:list', 1404
+              ) authority_seed
+              ON 1 = 1;
+
+              INSERT IGNORE INTO `role_resource` (`tenant_id`, `role_id`, `resource_id`)
+              SELECT
+                role_entity.tenant_id,
+                role_entity.id,
+                resource_entity.id
+              FROM `role` role_entity
+              JOIN `resource` resource_entity
+                ON resource_entity.tenant_id = role_entity.tenant_id
+              WHERE role_entity.tenant_id IS NOT NULL
+                AND role_entity.code = 'ROLE_ADMIN'
+                AND resource_entity.permission IN (
+                  'system:user:list',
+                  'system:role:list',
+                  'system:menu:list',
+                  'system:resource:list'
+                );

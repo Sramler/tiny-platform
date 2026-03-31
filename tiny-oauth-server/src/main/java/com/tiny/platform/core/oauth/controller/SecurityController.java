@@ -5,11 +5,14 @@ import com.tiny.platform.core.oauth.config.FrontendProperties;
 import com.tiny.platform.core.oauth.tenant.IssuerTenantSupport;
 import com.tiny.platform.core.oauth.tenant.ActiveTenantResponseSupport;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
+import com.tiny.platform.core.oauth.tenant.TenantContextContract;
 import com.tiny.platform.core.oauth.security.RedirectPathSanitizer;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationSessionManager;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
 import com.tiny.platform.core.oauth.security.AuthenticationFactorAuthorities;
 import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
+import com.tiny.platform.core.oauth.session.UserSessionService;
+import com.tiny.platform.core.oauth.session.UserSessionView;
 import com.tiny.platform.core.oauth.service.AuthenticationAuditService;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
@@ -28,6 +31,7 @@ import org.springframework.web.bind.annotation.*;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import jakarta.servlet.http.HttpServletRequest;
 
@@ -48,6 +52,7 @@ public class SecurityController {
     private final MultiFactorAuthenticationSessionManager sessionManager;
     private final AuthenticationAuditService auditService;
     private final AuthUserResolutionService authUserResolutionService;
+    private final UserSessionService userSessionService;
 
     @Autowired
     public SecurityController(UserRepository userRepository,
@@ -56,7 +61,8 @@ public class SecurityController {
                              FrontendProperties frontendProperties,
                              MultiFactorAuthenticationSessionManager sessionManager,
                              AuthUserResolutionService authUserResolutionService,
-                             AuthenticationAuditService auditService) {
+                             AuthenticationAuditService auditService,
+                             UserSessionService userSessionService) {
         this.userRepository = userRepository;
         this.securityService = securityService;
         this.authenticationMethodRepository = authenticationMethodRepository;
@@ -64,6 +70,7 @@ public class SecurityController {
         this.sessionManager = sessionManager;
         this.authUserResolutionService = authUserResolutionService;
         this.auditService = auditService;
+        this.userSessionService = userSessionService;
     }
 
     /** 查询当前用户的安全状态 */
@@ -78,6 +85,95 @@ public class SecurityController {
                 ActiveTenantResponseSupport.resolveActiveTenantId(SecurityContextHolder.getContext().getAuthentication())
         );
         return ResponseEntity.ok(status);
+    }
+
+    @GetMapping("/sessions")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> listSessions(HttpServletRequest request) {
+        User user = getCurrentUser();
+        if (user == null) {
+            return ResponseEntity.status(401).body(Map.of("success", false, "error", "未登录"));
+        }
+        Long activeTenantId = ActiveTenantResponseSupport.resolveActiveTenantId(
+                SecurityContextHolder.getContext().getAuthentication()
+        );
+        String currentSessionId = request.getSession(false) != null ? request.getSession(false).getId() : null;
+        List<UserSessionView> sessions = userSessionService.listCurrentUserSessions(
+                user.getId(),
+                activeTenantId,
+                currentSessionId
+        );
+        Map<String, Object> result = new HashMap<>();
+        result.put("success", true);
+        result.put("content", sessions);
+        result.put("currentSessionId", currentSessionId);
+        ActiveTenantResponseSupport.putTenantFields(result, activeTenantId);
+        return ResponseEntity.ok(result);
+    }
+
+    @DeleteMapping("/sessions/{sessionId}")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> revokeSession(@PathVariable("sessionId") String sessionId,
+                                                             HttpServletRequest request) {
+        User user = getCurrentUser();
+        if (user == null) {
+            return ResponseEntity.status(401).body(Map.of("success", false, "error", "未登录"));
+        }
+        String currentSessionId = request.getSession(false) != null ? request.getSession(false).getId() : null;
+        if (currentSessionId != null && currentSessionId.equals(sessionId)) {
+            return ResponseEntity.badRequest().body(withActiveTenant(
+                    Map.of("success", false, "error", "当前会话请使用正常退出登录流程"),
+                    user
+            ));
+        }
+        Long activeTenantId = ActiveTenantResponseSupport.resolveActiveTenantId(
+                SecurityContextHolder.getContext().getAuthentication()
+        );
+        boolean revoked = userSessionService.revokeSession(
+                user.getId(),
+                activeTenantId,
+                sessionId,
+                user.getUsername(),
+                request
+        );
+        if (!revoked) {
+            return ResponseEntity.status(404).body(withActiveTenant(
+                    Map.of("success", false, "error", "未找到可下线的活跃会话"),
+                    user
+            ));
+        }
+        return ResponseEntity.ok(withActiveTenant(
+                Map.of("success", true, "message", "会话已强制下线"),
+                user
+        ));
+    }
+
+    @PostMapping("/sessions/revoke-others")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> revokeOtherSessions(HttpServletRequest request) {
+        User user = getCurrentUser();
+        if (user == null) {
+            return ResponseEntity.status(401).body(Map.of("success", false, "error", "未登录"));
+        }
+        Long activeTenantId = ActiveTenantResponseSupport.resolveActiveTenantId(
+                SecurityContextHolder.getContext().getAuthentication()
+        );
+        String currentSessionId = request.getSession(false) != null ? request.getSession(false).getId() : null;
+        int revokedCount = userSessionService.revokeOtherSessions(
+                user.getId(),
+                activeTenantId,
+                currentSessionId,
+                user.getUsername(),
+                request
+        );
+        return ResponseEntity.ok(withActiveTenant(
+                Map.of(
+                        "success", true,
+                        "message", revokedCount > 0 ? "其他会话已强制下线" : "当前没有其他活跃会话",
+                        "revokedCount", revokedCount
+                ),
+                user
+        ));
     }
 
     /**
@@ -136,7 +232,7 @@ public class SecurityController {
                     SecurityContextHolder.getContext().getAuthentication()
             );
             boolean hasLocalPassword = authenticationMethodRepository
-                    .existsByUserIdAndTenantIdAndAuthenticationProviderAndAuthenticationType(user.getId(), activeTenantId, "LOCAL", "PASSWORD");
+                    .existsEffectiveAuthenticationMethod(user.getId(), activeTenantId, "LOCAL", "PASSWORD");
             if (hasLocalPassword) {
                 // 推荐提供密码，但不强制（为了兼容性）
                 plainPassword = req.get("password");
@@ -268,9 +364,14 @@ public class SecurityController {
      * 支持携带 PASSWORD 因子 authority、等待 TOTP 的部分认证 Token。
      * 该入口只服务于“未绑定/未激活 TOTP 的提醒页跳过”，
      * 不是已激活 TOTP 用户的 step-up 绕过通道。
+     * <p>
+     * 登录后经绑定引导进入本页时会话多为「部分 MFA」（仅完成密码）；跳过必须与 bind-form 一样调用会话升级逻辑，
+     * 否则重定向后仍视为未完全登录而被踢回登录页。
      */
     @PostMapping("/totp/skip")
-    public String skipTotp(@RequestParam String redirect, HttpServletRequest request) {
+    public String skipTotp(@RequestParam String redirect,
+                           HttpServletRequest request,
+                           jakarta.servlet.http.HttpServletResponse response) {
         User user = getCurrentUser();
         String safeRedirect = RedirectPathSanitizer.sanitize(redirect, request);
         if (user == null) {
@@ -284,6 +385,11 @@ public class SecurityController {
             return "redirect:/self/security/totp-bind?redirect=" + encodedRedirect + "&error=" + encodedError;
         }
         securityService.skipMfaRemind(user, true);
+        // 与 bind-form / totp/check-form 一致：从「仅完成密码」的部分 MFA 升级会话，否则重定向后仍视为未完全登录而被踢回登录页
+        if (!promoteToFullyAuthenticated(user, request, response, false)) {
+            return buildSessionPromotionFailureRedirect(safeRedirect);
+        }
+        recordLoginInfo(user, request);
         return buildRedirectUrl(safeRedirect, request);
     }
 
@@ -343,7 +449,11 @@ public class SecurityController {
             return null;
         }
         Long activeTenantId = ActiveTenantResponseSupport.resolveActiveTenantId(authentication);
-        if (activeTenantId == null) {
+        String activeScopeType = TenantContext.getActiveScopeType();
+        if (activeScopeType == null || activeScopeType.isBlank()) {
+            activeScopeType = TenantContextContract.SCOPE_TYPE_TENANT;
+        }
+        if (activeTenantId == null && !TenantContextContract.SCOPE_TYPE_PLATFORM.equalsIgnoreCase(activeScopeType)) {
             return null;
         }
 
@@ -352,20 +462,23 @@ public class SecurityController {
         if (authentication instanceof com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken mfaToken) {
             if (AuthenticationFactorAuthorities.hasAnyFactor(mfaToken) || mfaToken.isAuthenticated()) {
                 String username = mfaToken.getUsername();
-                return resolveUserInActiveTenant(username, activeTenantId);
+                return resolveUserInScope(username, activeTenantId, activeScopeType);
             }
         }
 
         // 完全认证的 Token
         if (authentication.isAuthenticated()) {
             String username = authentication.getName();
-            return resolveUserInActiveTenant(username, activeTenantId);
+            return resolveUserInScope(username, activeTenantId, activeScopeType);
         }
 
         return null;
     }
 
-    private User resolveUserInActiveTenant(String username, Long activeTenantId) {
+    private User resolveUserInScope(String username, Long activeTenantId, String activeScopeType) {
+        if (TenantContextContract.SCOPE_TYPE_PLATFORM.equalsIgnoreCase(activeScopeType)) {
+            return requireAuthUserResolutionService().resolveUserRecordInPlatform(username).orElse(null);
+        }
         return requireAuthUserResolutionService().resolveUserRecordInActiveTenant(username, activeTenantId).orElse(null);
     }
 

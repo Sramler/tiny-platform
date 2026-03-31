@@ -1,0 +1,75 @@
+databaseChangeLog:
+  - changeSet:
+      id: platform-template-tenant-mgmt-permission-chain
+      author: codex
+      comment: Fill platform template for ROLE_PLATFORM_ADMIN grant system:tenant:list/view
+      preConditions:
+        onFail: MARK_RAN
+        and:
+          - tableExists:
+              tableName: role
+          - tableExists:
+              tableName: permission
+          - tableExists:
+              tableName: role_permission
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              -- 1) Ensure platform template permission master data exists
+              INSERT IGNORE INTO `permission` (
+                `permission_code`,
+                `permission_name`,
+                `module_code`,
+                `action_code`,
+                `permission_type`,
+                `description`,
+                `enabled`,
+                `built_in_flag`,
+                `tenant_id`,
+                `created_by`,
+                `created_at`,
+                `updated_by`,
+                `updated_at`
+              )
+              SELECT
+                src.`permission_code`,
+                src.`permission_name`,
+                src.`module_code`,
+                src.`action_code`,
+                src.`permission_type`,
+                src.`description`,
+                src.`enabled`,
+                src.`built_in_flag`,
+                NULL AS `tenant_id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`,
+                NULL AS `updated_by`,
+                NOW() AS `updated_at`
+              FROM `permission` src
+              WHERE src.`tenant_id` IS NOT NULL
+                AND src.`permission_code` IN ('system:tenant:list', 'system:tenant:view');
+
+              -- 2) Bind platform template ROLE_PLATFORM_ADMIN to platform tenant-management permissions (role_permission)
+              INSERT IGNORE INTO `role_permission` (
+                `tenant_id`,
+                `role_id`,
+                `permission_id`,
+                `created_by`,
+                `created_at`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                r_admin.`id` AS `role_id`,
+                p.`id` AS `permission_id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`
+              FROM `role` r_admin
+              JOIN `permission` p
+                ON p.`tenant_id` IS NULL
+               AND p.`permission_code` IN ('system:tenant:list', 'system:tenant:view')
+              WHERE r_admin.`tenant_id` IS NULL
+                AND r_admin.`code` = 'ROLE_PLATFORM_ADMIN';
+

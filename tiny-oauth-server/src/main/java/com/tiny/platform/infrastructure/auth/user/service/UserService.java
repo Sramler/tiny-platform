@@ -33,7 +33,17 @@ public interface UserService {
     void updateUserRoles(Long userId, List<Long> roleIds);
 
     /**
+     * 按作用域更新用户角色绑定。
+     */
+    void updateUserRoles(Long userId, String scopeType, Long scopeId, List<Long> roleIds);
+
+    /**
      * 查询用户当前绑定的角色ID列表。
      */
     List<Long> getRoleIdsByUserId(Long userId);
+
+    /**
+     * 查询用户在指定作用域下的直接角色绑定。
+     */
+    List<Long> getDirectRoleIdsByUserId(Long userId, String scopeType, Long scopeId);
 }

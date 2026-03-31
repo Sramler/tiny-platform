@@ -224,9 +224,9 @@ class ExportControllerMockMvcTest {
     void listTasksShouldReturnAllTasksWhenAdmin() throws Exception {
         ExportTaskEntity adminTask = new ExportTaskEntity();
         adminTask.setTaskId("admin-task");
-        when(exportTaskService.findAllTasks()).thenReturn(List.of(adminTask));
+        when(exportTaskService.findReadableTasks()).thenReturn(List.of(adminTask));
         SecurityContextHolder.getContext().setAuthentication(
-            new UsernamePasswordAuthenticationToken("admin", "N/A", List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))));
+            new UsernamePasswordAuthenticationToken("admin", "N/A", List.of(new SimpleGrantedAuthority("system:export:manage"))));
 
         mockMvc.perform(get("/export/task"))
             .andExpect(status().isOk())

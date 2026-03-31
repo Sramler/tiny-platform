@@ -120,6 +120,58 @@
                 </div>
               </a-space>
             </a-card>
+
+            <a-card title="活跃会话" size="small">
+              <a-space direction="vertical" style="width: 100%">
+                <div class="session-toolbar">
+                  <span class="session-toolbar-text">查看当前账号在本租户下的服务端活跃会话，并可强制下线其他设备。</span>
+                  <a-button
+                    danger
+                    :disabled="!hasOtherSessions"
+                    :loading="revokeOthersLoading"
+                    @click="handleRevokeOtherSessions"
+                  >
+                    下线其他会话
+                  </a-button>
+                </div>
+
+                <div v-if="sessionLoading">
+                  <a-spin tip="加载活跃会话中..." />
+                </div>
+                <a-empty v-else-if="activeSessions.length === 0" description="暂无活跃会话" />
+                <div v-else class="session-list">
+                  <div
+                    v-for="session in activeSessions"
+                    :key="session.sessionId"
+                    class="session-item"
+                  >
+                    <div class="session-main">
+                      <div class="session-title-row">
+                        <span class="session-title">{{ session.current ? '当前会话' : '活跃会话' }}</span>
+                        <a-tag v-if="session.current" color="blue">当前</a-tag>
+                        <a-tag v-if="session.authenticationFactor" color="green">{{ session.authenticationFactor }}</a-tag>
+                      </div>
+                      <div class="session-meta">IP：{{ session.ipAddress || '-' }}</div>
+                      <div class="session-meta">设备：{{ session.userAgent || '-' }}</div>
+                      <div class="session-meta">最近活动：{{ formatDateTime(session.lastSeenAt) }}</div>
+                      <div class="session-meta">预计过期：{{ formatDateTime(session.expiresAt) }}</div>
+                    </div>
+                    <div class="session-actions">
+                      <a-tag v-if="session.current" color="green">当前设备</a-tag>
+                      <a-button
+                        v-else
+                        danger
+                        size="small"
+                        :loading="sessionRevokingId === session.sessionId"
+                        @click="handleRevokeSession(session.sessionId)"
+                      >
+                        强制下线
+                      </a-button>
+                    </div>
+                  </div>
+                </div>
+              </a-space>
+            </a-card>
           </a-space>
         </a-tab-pane>
       </a-tabs>
@@ -175,10 +227,17 @@ import type { Rule } from 'ant-design-vue/es/form'
 import type { FormInstance } from 'ant-design-vue'
 import type { UploadRequestOption } from 'rc-upload/es/interface'
 import { message } from 'ant-design-vue'
-import { getSecurityStatus } from '@/api/security'
+import {
+  getSecuritySessions,
+  getSecurityStatus,
+  revokeOtherSecuritySessions,
+  revokeSecuritySession,
+  type UserSessionRecord,
+} from '@/api/security'
 import { getCurrentUser, updateUser } from '@/api/user'
 import { generateAvatarStyleObject } from '@/utils/avatar'
 import { getActiveTenantId, resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
+import { fetchWithTraceId } from '@/utils/traceId'
 
 // 路由
 const route = useRoute()
@@ -291,6 +350,10 @@ const passwordLoading = ref(false)
 const totpBound = ref(false)
 const totpActivated = ref(false)
 const securityLoading = ref(false)
+const sessionLoading = ref(false)
+const revokeOthersLoading = ref(false)
+const sessionRevokingId = ref<string | null>(null)
+const activeSessions = ref<UserSessionRecord[]>([])
 
 // 解绑模态框状态
 const unbindModalVisible = ref(false)
@@ -315,6 +378,8 @@ const unbindRules: Record<string, Rule[]> = {
   ]
 }
 
+const hasOtherSessions = computed(() => activeSessions.value.some((session) => !session.current))
+
 // 加载安全状态
 const loadSecurityStatus = async () => {
   securityLoading.value = true
@@ -331,6 +396,60 @@ const loadSecurityStatus = async () => {
     }
   } finally {
     securityLoading.value = false
+  }
+}
+
+const loadSecuritySessions = async () => {
+  sessionLoading.value = true
+  try {
+    const data = await getSecuritySessions()
+    activeSessions.value = Array.isArray(data.content) ? data.content : []
+  } catch (error: any) {
+    console.error('加载活跃会话失败:', error)
+    if (!error.message?.includes('未授权') && !error.message?.includes('超时') && !error.message?.includes('网络错误')) {
+      message.error(error.message || '加载活跃会话失败')
+    }
+  } finally {
+    sessionLoading.value = false
+  }
+}
+
+const formatDateTime = (value?: string | null) => {
+  if (!value) {
+    return '-'
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+  return date.toLocaleString('zh-CN', { hour12: false })
+}
+
+const handleRevokeSession = async (sessionId: string) => {
+  sessionRevokingId.value = sessionId
+  try {
+    const result = await revokeSecuritySession(sessionId)
+    message.success(result.message || '会话已强制下线')
+    await loadSecuritySessions()
+  } catch (error: any) {
+    console.error('强制下线会话失败:', error)
+    message.error(error.message || '强制下线会话失败')
+  } finally {
+    sessionRevokingId.value = null
+  }
+}
+
+const handleRevokeOtherSessions = async () => {
+  revokeOthersLoading.value = true
+  try {
+    const result = await revokeOtherSecuritySessions()
+    message.success(result.message || '其他会话已强制下线')
+    await loadSecuritySessions()
+  } catch (error: any) {
+    console.error('下线其他会话失败:', error)
+    message.error(error.message || '下线其他会话失败')
+  } finally {
+    revokeOthersLoading.value = false
   }
 }
 
@@ -356,8 +475,7 @@ const handleUnbindSubmit = async () => {
     unbindLoading.value = true
     const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000'
     const baseUrl = apiBaseUrl.endsWith('/') ? apiBaseUrl.slice(0, -1) : apiBaseUrl
-    const { fetchWithTraceId } = await import('@/utils/traceId')
-    
+
     const response = await fetchWithTraceId(`${baseUrl}/self/security/totp/unbind`, {
       method: 'POST',
       credentials: 'include',
@@ -464,7 +582,6 @@ const handleAvatarUpload = async (options: UploadRequestOption) => {
       formData.append('file', file as any)
     }
 
-    const { fetchWithTraceId } = await import('@/utils/traceId')
     const response = await fetchWithTraceId(`${baseUrl}/sys/users/current/avatar`, {
       method: 'POST',
       credentials: 'include',
@@ -598,6 +715,7 @@ const handleBindTotp = () => {
 onMounted(() => {
   loadUserInfo()
   loadSecurityStatus()
+  loadSecuritySessions()
 })
 </script>
 
@@ -643,5 +761,61 @@ onMounted(() => {
 .upload-hint {
   font-size: 12px;
   color: rgba(0, 0, 0, 0.45);
+}
+
+.session-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.session-toolbar-text {
+  color: rgba(0, 0, 0, 0.65);
+}
+
+.session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.session-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.session-main {
+  min-width: 0;
+}
+
+.session-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.session-title {
+  font-weight: 600;
+  color: rgba(0, 0, 0, 0.88);
+}
+
+.session-meta {
+  color: rgba(0, 0, 0, 0.65);
+  font-size: 13px;
+  line-height: 1.7;
+  word-break: break-all;
+}
+
+.session-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
 }
 </style>

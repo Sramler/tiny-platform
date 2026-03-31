@@ -6,6 +6,7 @@ import com.tiny.platform.infrastructure.auth.resource.dto.ResourceProjection;
 import com.tiny.platform.infrastructure.auth.resource.dto.ResourceResponseDto;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
@@ -16,16 +17,122 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * 资源数据访问层
- * 提供资源的CRUD操作和自定义查询方法
+ * 兼容总表 resource 的数据访问层。
+ *
+ * <p><b>注意</b>：运行时主线的业务读写已退出对 {@code resource} 表的依赖。
+ * 本仓储保留给历史资产（可观测/迁移输入/运营可读字段）与少量兼容查询；
+ * 新代码应优先使用 {@code menu/ui_action/api_endpoint} 及其 repository。</p>
  */
 @Repository
 public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSpecificationExecutor<Resource> {
 
     List<Resource> findByTenantIdOrderBySortAscIdAsc(Long tenantId);
 
+    boolean existsByTenantId(Long tenantId);
+
     /** 平台模板：tenant_id IS NULL，见 §4 平台模板与 default 解耦 */
     List<Resource> findByTenantIdIsNullOrderBySortAscIdAsc();
+
+    @Query(value = """
+        SELECT c.id AS id,
+               c.tenant_id AS tenantId,
+               c.resource_level AS resourceLevel,
+               c.name AS name,
+               c.url AS url,
+               c.uri AS uri,
+               c.method AS method,
+               c.icon AS icon,
+               c.show_icon AS showIcon,
+               c.sort AS sort,
+               c.component AS component,
+               c.redirect AS redirect,
+               c.hidden AS hidden,
+               c.keep_alive AS keepAlive,
+               c.title AS title,
+               c.permission AS permission,
+               c.required_permission_id AS requiredPermissionId,
+               c.type_code AS typeCode,
+               c.parent_id AS parentId,
+               c.enabled AS enabled
+        FROM (
+            SELECT m.id,
+                   m.tenant_id,
+                   CONVERT(m.resource_level USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS resource_level,
+                   CONVERT(m.name USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS name,
+                   CONVERT(m.path USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS url,
+                   CONVERT('' USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS uri,
+                   CONVERT('' USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS method,
+                   CONVERT(m.icon USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS icon,
+                   m.show_icon,
+                   m.sort,
+                   CONVERT(m.component USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS component,
+                   CONVERT(m.redirect USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS redirect,
+                   m.hidden,
+                   m.keep_alive,
+                   CONVERT(m.title USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS title,
+                   CONVERT(m.permission USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS permission,
+                   m.required_permission_id,
+                   m.type AS type_code,
+                   m.parent_id,
+                   m.enabled
+            FROM menu m
+            WHERE ((:tenantId IS NULL AND m.tenant_id IS NULL) OR m.tenant_id = :tenantId)
+              AND LOWER(m.resource_level) = LOWER(:resourceLevel)
+            UNION ALL
+            SELECT a.id,
+                   a.tenant_id,
+                   CONVERT(a.resource_level USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS resource_level,
+                   CONVERT(a.name USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS name,
+                   CONVERT(a.page_path USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS url,
+                   CONVERT('' USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS uri,
+                   CONVERT('' USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS method,
+                   CONVERT('' USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS icon,
+                   FALSE AS show_icon,
+                   a.sort,
+                   CONVERT('' USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS component,
+                   CONVERT('' USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS redirect,
+                   FALSE AS hidden,
+                   FALSE AS keep_alive,
+                   CONVERT(a.title USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS title,
+                   CONVERT(a.permission USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS permission,
+                   a.required_permission_id,
+                   2 AS type_code,
+                   a.parent_menu_id AS parent_id,
+                   a.enabled
+            FROM ui_action a
+            WHERE ((:tenantId IS NULL AND a.tenant_id IS NULL) OR a.tenant_id = :tenantId)
+              AND LOWER(a.resource_level) = LOWER(:resourceLevel)
+            UNION ALL
+            SELECT e.id,
+                   e.tenant_id,
+                   CONVERT(e.resource_level USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS resource_level,
+                   CONVERT(e.name USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS name,
+                   CONVERT('' USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS url,
+                   CONVERT(e.uri USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS uri,
+                   CONVERT(e.method USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS method,
+                   CONVERT('' USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS icon,
+                   FALSE AS show_icon,
+                   0 AS sort,
+                   CONVERT('' USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS component,
+                   CONVERT('' USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS redirect,
+                   FALSE AS hidden,
+                   FALSE AS keep_alive,
+                   CONVERT(e.title USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS title,
+                   CONVERT(e.permission USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS permission,
+                   e.required_permission_id,
+                   3 AS type_code,
+                   NULL AS parent_id,
+                   e.enabled
+            FROM api_endpoint e
+            WHERE ((:tenantId IS NULL AND e.tenant_id IS NULL) OR e.tenant_id = :tenantId)
+              AND LOWER(e.resource_level) = LOWER(:resourceLevel)
+        ) c
+        ORDER BY c.sort ASC, c.id ASC
+        """, nativeQuery = true)
+    List<CarrierTemplateResourceSnapshotView> findCarrierTemplateSnapshotViewsByScope(
+        @Param("tenantId") Long tenantId,
+        @Param("resourceLevel") String resourceLevel
+    );
 
     /**
      * 根据资源类型查找资源
@@ -89,7 +196,68 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
 
     Optional<Resource> findByUriAndTenantId(String uri, Long tenantId);
 
+    Optional<Resource> findByTenantIdAndResourceLevelAndCarrierTypeAndCarrierSourceId(
+        Long tenantId,
+        String resourceLevel,
+        String carrierType,
+        Long carrierSourceId
+    );
+
     List<Resource> findByIdInAndTenantId(List<Long> ids, Long tenantId);
+
+    @Query("""
+        SELECT
+          r.id AS id,
+          r.permission AS permission,
+          r.requiredPermissionId AS requiredPermissionId
+        FROM Resource r
+        WHERE r.id IN :ids
+          AND ((:tenantId IS NULL AND r.tenantId IS NULL) OR r.tenantId = :tenantId)
+          AND LOWER(r.resourceLevel) = LOWER(:resourceLevel)
+        """)
+    List<RoleResourcePermissionBindingView> findRolePermissionBindingViewsByIdsAndScope(
+        @Param("ids") List<Long> ids,
+        @Param("tenantId") Long tenantId,
+        @Param("resourceLevel") String resourceLevel
+    );
+
+    @Query(value = """
+        SELECT c.id AS id, c.permission AS permission, c.required_permission_id AS requiredPermissionId
+        FROM (
+            SELECT m.id,
+                   CONVERT(m.permission USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS permission,
+                   m.required_permission_id
+            FROM menu m
+            WHERE m.id IN (:ids)
+              AND ((:tenantId IS NULL AND m.tenant_id IS NULL) OR m.tenant_id = :tenantId)
+              AND LOWER(m.resource_level) = LOWER(:resourceLevel)
+            UNION ALL
+            SELECT a.id,
+                   CONVERT(a.permission USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS permission,
+                   a.required_permission_id
+            FROM ui_action a
+            WHERE a.id IN (:ids)
+              AND ((:tenantId IS NULL AND a.tenant_id IS NULL) OR a.tenant_id = :tenantId)
+              AND LOWER(a.resource_level) = LOWER(:resourceLevel)
+            UNION ALL
+            SELECT e.id,
+                   CONVERT(e.permission USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS permission,
+                   e.required_permission_id
+            FROM api_endpoint e
+            WHERE e.id IN (:ids)
+              AND ((:tenantId IS NULL AND e.tenant_id IS NULL) OR e.tenant_id = :tenantId)
+              AND LOWER(e.resource_level) = LOWER(:resourceLevel)
+        ) c
+        """, nativeQuery = true)
+    List<RoleResourcePermissionBindingView> findCarrierPermissionBindingViewsByIdsAndScope(
+        @Param("ids") List<Long> ids,
+        @Param("tenantId") Long tenantId,
+        @Param("resourceLevel") String resourceLevel
+    );
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("DELETE FROM Resource r WHERE r.id = :id AND r.tenantId = :tenantId")
+    int deleteByIdAndTenantId(@Param("id") Long id, @Param("tenantId") Long tenantId);
     
     /**
      * 根据权限标识查找资源
@@ -99,6 +267,8 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
     List<Resource> findByPermission(String permission);
 
     List<Resource> findByPermissionAndTenantId(String permission, Long tenantId);
+
+    boolean existsByRequiredPermissionIdAndTenantId(Long requiredPermissionId, Long tenantId);
     
     /**
      * 根据HTTP方法查找资源
@@ -218,43 +388,6 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
      */
     @Query("SELECT COALESCE(MAX(r.sort), 0) FROM Resource r WHERE r.type = :type AND r.tenantId = :tenantId")
     Integer findMaxSortByType(@Param("type") ResourceType type, @Param("tenantId") Long tenantId);
-    
-    /**
-     * 复合查询：根据多个条件查询资源
-     * @param name 资源名称（可选）
-     * @param url 前端路径（可选）
-     * @param uri 后端API路径（可选）
-     * @param permission 权限标识（可选）
-     * @param title 显示标题（可选）
-     * @param type 资源类型（可选）
-     * @param parentId 父级资源ID（可选）
-     * @param hidden 是否隐藏（可选）
-     * @param pageable 分页参数
-     * @return 分页结果
-     */
-    @Query("SELECT r FROM Resource r WHERE " +
-           //"(:name IS NULL OR r.name LIKE %:name%) AND " +
-           //"(:url IS NULL OR r.url LIKE %:url%) AND " +
-           //"(:uri IS NULL OR r.uri LIKE %:uri%) AND " +
-           //"(:permission IS NULL OR r.permission LIKE %:permission%) AND " +
-           //"(:title IS NULL OR r.title LIKE %:title%) AND " +
-           //"(:hidden IS NULL OR r.hidden = :hidden) AND " +
-            "r.tenantId = :tenantId AND " +
-            "(:type IS NULL OR r.type = :type) AND " +
-           "r.parentId = :parentId " +
-           "ORDER BY r.sort ASC")
-    Page<Resource> findByConditions(
-            @Param("name") String name,
-            @Param("url") String url,
-            @Param("uri") String uri,
-            @Param("permission") String permission,
-            @Param("title") String title,
-            @Param("type") ResourceType type,
-            @Param("parentId") Long parentId,
-            @Param("hidden") Boolean hidden,
-            @Param("tenantId") Long tenantId,
-            Pageable pageable
-    );
     
     /**
      * 根据资源类型列表删除资源
@@ -418,72 +551,6 @@ public interface ResourceRepository extends JpaRepository<Resource, Long>, JpaSp
 
     List<Resource> findByTypeInAndParentIdIsNullAndTenantIdOrderBySortAsc(List<ResourceType> types, Long tenantId);
 
-    @Query(value = """
-    SELECT DISTINCT r.*
-    FROM `user` u
-    JOIN `tenant_user` tu
-      ON tu.user_id = u.id
-     AND tu.tenant_id = :tenantId
-     AND tu.status = 'ACTIVE'
-    JOIN `role_assignment` ra
-      ON ra.principal_type = 'USER'
-     AND ra.principal_id = u.id
-     AND ra.scope_type = 'TENANT'
-     AND ra.tenant_id = tu.tenant_id
-     AND ra.status = 'ACTIVE'
-    JOIN `role` role_entity
-      ON role_entity.id = ra.role_id
-     AND role_entity.tenant_id = tu.tenant_id
-    JOIN `role_resource` rr
-      ON rr.role_id = role_entity.id
-     AND rr.tenant_id = tu.tenant_id
-    JOIN `resource` r
-      ON r.id = rr.resource_id
-     AND r.tenant_id = tu.tenant_id
-    WHERE u.username = :username
-      AND r.type IN (:types)
-    ORDER BY r.sort ASC, r.id ASC
-    """, nativeQuery = true)
-    List<Resource> findGrantedResourcesByUsernameAndTenantId(
-        @Param("username") String username,
-        @Param("tenantId") Long tenantId,
-        @Param("types") List<Integer> types
-    );
-
-    @Query(value = """
-    SELECT DISTINCT r.*
-    FROM `user` u
-    JOIN `tenant_user` tu
-      ON tu.user_id = u.id
-     AND tu.tenant_id = :tenantId
-     AND tu.status = 'ACTIVE'
-    JOIN `role_assignment` ra
-      ON ra.principal_type = 'USER'
-     AND ra.principal_id = u.id
-     AND ra.scope_type = 'TENANT'
-     AND ra.tenant_id = tu.tenant_id
-     AND ra.status = 'ACTIVE'
-    JOIN `role` role_entity
-      ON role_entity.id = ra.role_id
-     AND role_entity.tenant_id = tu.tenant_id
-    JOIN `role_resource` rr
-      ON rr.role_id = role_entity.id
-     AND rr.tenant_id = tu.tenant_id
-    JOIN `resource` r
-      ON r.id = rr.resource_id
-     AND r.tenant_id = tu.tenant_id
-    WHERE u.username = :username
-      AND r.type IN (:types)
-      AND ((:parentId IS NULL AND r.parent_id IS NULL) OR r.parent_id = :parentId)
-    ORDER BY r.sort ASC, r.id ASC
-    """, nativeQuery = true)
-    List<Resource> findGrantedResourcesByUsernameAndTenantIdAndParentId(
-        @Param("username") String username,
-        @Param("tenantId") Long tenantId,
-        @Param("types") List<Integer> types,
-        @Param("parentId") Long parentId
-    );
-    
     /**
      * 根据父级ID列表查询资源（用于批量判断叶子节点）
      * @param parentIds 父级ID列表

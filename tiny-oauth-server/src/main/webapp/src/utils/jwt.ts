@@ -23,20 +23,26 @@ export function decodeJwtPayload<T extends JwtClaims = JwtClaims>(token?: string
   }
 }
 
-export function extractAuthoritiesFromJwt(token?: string | null): string[] {
-  const claims = decodeJwtPayload<{ authorities?: unknown }>(token)
-  const authorities = claims?.authorities
-
-  if (Array.isArray(authorities)) {
-    return authorities.filter((value): value is string => typeof value === 'string' && value.length > 0)
+function extractStringList(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === 'string' && item.length > 0)
   }
 
-  if (typeof authorities === 'string') {
-    return authorities
+  if (typeof value === 'string') {
+    return value
       .split(/[\s,]+/)
-      .map((value) => value.trim())
+      .map((item) => item.trim())
       .filter(Boolean)
   }
 
   return []
+}
+
+export function extractAuthoritiesFromJwt(token?: string | null): string[] {
+  const claims = decodeJwtPayload<{ permissions?: unknown; authorities?: unknown }>(token)
+  const permissions = extractStringList(claims?.permissions)
+  if (permissions.length > 0) {
+    return permissions
+  }
+  return extractStringList(claims?.authorities)
 }

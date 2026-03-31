@@ -94,6 +94,7 @@ import { useRoute } from 'vue-router'
 import { getSecurityStatus } from '@/api/security'
 import { ensureCsrfToken } from '@/utils/csrf'
 import { sanitizeInternalRedirect } from '@/utils/redirect'
+import { fetchWithTraceId } from '@/utils/traceId'
 
 const route = useRoute()
 
@@ -193,7 +194,6 @@ async function fetchSecurityStatus() {
 
 async function fetchTotpInfo() {
   try {
-    const { fetchWithTraceId } = await import('@/utils/traceId')
     const response = await fetchWithTraceId(`${baseUrl}/self/security/totp/pre-bind`, {
       method: 'GET',
       credentials: 'include',

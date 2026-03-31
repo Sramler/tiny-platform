@@ -42,8 +42,8 @@ public class DictItem implements Serializable {
     @Column(name = "description", length = 255)
     private String description;
 
-    @Column(name = "tenant_id", nullable = false)
-    private Long tenantId = 0L; // 0表示平台字典项，>0表示租户自定义字典项
+    @Column(name = "tenant_id", nullable = true)
+    private Long tenantId; // NULL=平台字典项，>0=租户自定义字典项
 
     @Column(name = "is_builtin", nullable = false)
     private Boolean isBuiltin = false; // 是否平台内置（1=内置）

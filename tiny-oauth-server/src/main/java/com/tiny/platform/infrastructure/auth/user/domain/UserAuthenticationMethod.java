@@ -20,7 +20,10 @@ public class UserAuthenticationMethod implements Serializable {
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(name = "tenant_id", nullable = false)
+    /**
+     * 租户作用域；{@code null} 表示用户级全局认证方式（与任意租户登录上下文均可匹配，见 {@code MultiAuthenticationProvider} 回退逻辑）。
+     */
+    @Column(name = "tenant_id", nullable = true)
     private Long tenantId;
 
     @ManyToOne(fetch = FetchType.LAZY)

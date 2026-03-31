@@ -5,6 +5,7 @@ import com.tiny.platform.application.controller.idempotent.controller.Idempotent
 import com.tiny.platform.application.controller.menu.MenuController;
 import com.tiny.platform.application.controller.role.RoleController;
 import com.tiny.platform.application.controller.tenant.TenantController;
+import com.tiny.platform.core.oauth.tenant.TenantLifecycleAccessGuard;
 import com.tiny.platform.infrastructure.auth.resource.domain.Resource;
 import com.tiny.platform.infrastructure.auth.resource.dto.ResourceCreateUpdateDto;
 import com.tiny.platform.infrastructure.auth.resource.dto.ResourceRequestDto;
@@ -117,7 +118,7 @@ class ApplicationControllerCoverageTest {
         when(roleService.findById(99L)).thenReturn(Optional.empty());
         when(roleService.create(dto)).thenReturn(responseDto);
         when(roleService.update(3L, dto)).thenReturn(responseDto);
-        when(roleService.getUserIdsByRoleId(1L)).thenReturn(List.of(10L, 11L));
+        when(roleService.getDirectUserIdsByRoleId(1L, null, null)).thenReturn(List.of(10L, 11L));
         when(roleService.getResourceIdsByRoleId(1L)).thenReturn(List.of(20L, 21L));
         when(roleService.roles(any(RoleRequestDto.class), eq(Pageable.unpaged()))).thenReturn(page);
 
@@ -140,9 +141,9 @@ class ApplicationControllerCoverageTest {
 
         assertThat(controller.getAllRoles().getBody()).containsExactly(responseDto);
 
-        assertThat(controller.getRoleUsers(1L).getBody()).containsExactly(10L, 11L);
+        assertThat(controller.getRoleUsers(1L, null, null).getBody()).containsExactly(10L, 11L);
         assertThat(controller.updateRoleUsers(1L, List.of(10L)).getStatusCode().value()).isEqualTo(200);
-        verify(roleService).updateRoleUsers(1L, List.of(10L));
+        verify(roleService).updateRoleUsers(1L, null, null, List.of(10L));
 
         assertThat(controller.getRoleResources(1L).getBody()).containsExactly(20L, 21L);
         assertThat(controller.updateRoleResources(1L, List.of(20L)).getStatusCode().value()).isEqualTo(200);
@@ -152,7 +153,8 @@ class ApplicationControllerCoverageTest {
     @Test
     void tenantController_should_cover_crud_and_optional_mapping() {
         TenantService tenantService = mock(TenantService.class);
-        TenantController controller = new TenantController(tenantService);
+        TenantLifecycleAccessGuard tenantLifecycleAccessGuard = mock(TenantLifecycleAccessGuard.class);
+        TenantController controller = new TenantController(tenantService, tenantLifecycleAccessGuard);
         TenantRequestDto query = new TenantRequestDto();
         Pageable pageable = PageRequest.of(0, 5);
         TenantCreateUpdateDto dto = new TenantCreateUpdateDto();

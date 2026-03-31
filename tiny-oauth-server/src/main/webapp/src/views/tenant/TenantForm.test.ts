@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { defineComponent } from 'vue'
+import { defineComponent, h } from 'vue'
 import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('ant-design-vue', () => ({
@@ -7,9 +7,10 @@ vi.mock('ant-design-vue', () => ({
 }))
 
 const FormStub = defineComponent({
-  setup(_, { slots, expose }) {
+  inheritAttrs: false,
+  setup(_, { slots, expose, attrs }) {
     expose({ validate: () => Promise.resolve() })
-    return () => slots.default?.()
+    return () => h('form', attrs, slots.default?.())
   },
 })
 
@@ -31,6 +32,7 @@ describe('TenantForm.vue', () => {
           'a-form': FormStub,
           'a-form-item': PassThrough,
           'a-input': PassThrough,
+          'a-input-password': PassThrough,
           'a-input-number': PassThrough,
           'a-textarea': PassThrough,
           'a-switch': PassThrough,
@@ -49,5 +51,36 @@ describe('TenantForm.vue', () => {
     expect(emitted).toBeTruthy()
     expect(emitted?.[0]?.[0]).toEqual(expect.objectContaining({ code: 't1', name: 'Tenant 1' }))
   })
-})
 
+  it('should include initial admin defaults in create mode payload', async () => {
+    const wrapper = mount(TenantForm, {
+      props: {
+        mode: 'create',
+      },
+      global: {
+        stubs: {
+          'a-form': FormStub,
+          'a-form-item': PassThrough,
+          'a-input': PassThrough,
+          'a-input-password': PassThrough,
+          'a-input-number': PassThrough,
+          'a-textarea': PassThrough,
+          'a-switch': PassThrough,
+          'a-button': defineComponent({
+            emits: ['click'],
+            template: `<button @click="$emit('click')"><slot /></button>`,
+          }),
+        },
+      },
+    })
+
+    await wrapper.findAll('button')[1]!.trigger('click')
+
+    const emitted = wrapper.emitted('submit')
+    expect(emitted).toBeTruthy()
+    expect(emitted?.[0]?.[0]).toEqual(expect.objectContaining({
+      initialAdminNickname: '租户管理员',
+      initialAdminUsername: '',
+    }))
+  })
+})

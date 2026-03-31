@@ -1,13 +1,10 @@
 package com.tiny.platform.infrastructure.auth.role.domain;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.tiny.platform.infrastructure.auth.resource.domain.Resource;
 import jakarta.persistence.*;
 
 import java.io.Serializable;
 import java.time.LocalDateTime;
-import java.util.HashSet;
-import java.util.Set;
 
 @Entity
 @Table(name = "role",
@@ -28,7 +25,7 @@ public class Role implements Serializable {
     private String roleLevel = "TENANT"; // 模板层级：PLATFORM/TENANT，见 Phase1 技术设计 §4.4
 
     @Column(nullable = false, length = 50)
-    private String code; // 权限标识：ROLE_ADMIN
+    private String code; // 权限标识：例如 ROLE_TENANT_ADMIN / ROLE_PLATFORM_ADMIN
 
     @Column(nullable = false, length = 50)
     private String name; // 展示名称：管理员
@@ -47,12 +44,6 @@ public class Role implements Serializable {
 
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
-
-    @ManyToMany(fetch = FetchType.LAZY)
-    @JoinTable(name = "role_resource",
-            joinColumns = @JoinColumn(name = "role_id"),
-            inverseJoinColumns = @JoinColumn(name = "resource_id"))
-    private Set<Resource> resources = new HashSet<>();
 
     @PrePersist
     public void onCreate() {
@@ -144,14 +135,6 @@ public class Role implements Serializable {
 
     public void setUpdatedAt(LocalDateTime updatedAt) {
         this.updatedAt = updatedAt;
-    }
-
-    public Set<Resource> getResources() {
-        return resources;
-    }
-
-    public void setResources(Set<Resource> resources) {
-        this.resources = resources;
     }
 
 }

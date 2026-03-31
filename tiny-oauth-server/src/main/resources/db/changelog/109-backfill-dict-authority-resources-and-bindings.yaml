@@ -1,0 +1,46 @@
+databaseChangeLog:
+  - changeSet:
+      id: 109-backfill-dict-authority-resources-and-bindings
+      author: codex
+      comment: 回填缺失的字典细粒度权限资源，并绑定到各租户 ROLE_TENANT_ADMIN
+      changes:
+        - sql:
+            sql: |
+              INSERT IGNORE INTO `resource`
+              (`tenant_id`, `name`, `url`, `uri`, `method`, `icon`, `show_icon`, `sort`, `component`, `redirect`, `hidden`, `keep_alive`, `title`, `permission`, `type`, `parent_id`, `enabled`)
+              SELECT tenant_scope.tenant_id, authority_seed.name, '', '', '', '', 0, authority_seed.sort, '', '', 1, 0, authority_seed.title, authority_seed.permission, 2, system_dir.id, 1
+              FROM (
+                SELECT DISTINCT tenant_id
+                FROM `role`
+                WHERE tenant_id IS NOT NULL
+              ) tenant_scope
+              JOIN `resource` system_dir
+                ON system_dir.tenant_id = tenant_scope.tenant_id
+               AND system_dir.name = 'system'
+               AND system_dir.type = 0
+              JOIN (
+                SELECT 'dict-type-list-authority' AS name, '字典类型查看' AS title, 'dict:type:list' AS permission, 601 AS sort
+                UNION ALL SELECT 'dict-type-create-authority', '字典类型新增', 'dict:type:create', 602
+                UNION ALL SELECT 'dict-type-edit-authority', '字典类型编辑', 'dict:type:edit', 603
+                UNION ALL SELECT 'dict-type-delete-authority', '字典类型删除', 'dict:type:delete', 604
+                UNION ALL SELECT 'dict-item-list-authority', '字典项查看', 'dict:item:list', 605
+                UNION ALL SELECT 'dict-item-create-authority', '字典项新增', 'dict:item:create', 606
+                UNION ALL SELECT 'dict-item-edit-authority', '字典项编辑', 'dict:item:edit', 607
+                UNION ALL SELECT 'dict-item-delete-authority', '字典项删除', 'dict:item:delete', 608
+              ) authority_seed
+              ON 1 = 1;
+
+              INSERT IGNORE INTO `role_resource` (`tenant_id`, `role_id`, `resource_id`)
+              SELECT
+                role_entity.tenant_id,
+                role_entity.id,
+                resource_entity.id
+              FROM `role` role_entity
+              JOIN `resource` resource_entity
+                ON resource_entity.tenant_id = role_entity.tenant_id
+              WHERE role_entity.tenant_id IS NOT NULL
+                AND role_entity.code = 'ROLE_ADMIN'
+                AND resource_entity.permission IN (
+                  'dict:type:list', 'dict:type:create', 'dict:type:edit', 'dict:type:delete',
+                  'dict:item:list', 'dict:item:create', 'dict:item:edit', 'dict:item:delete'
+                );

@@ -11,12 +11,25 @@ public interface TenantRepository extends JpaRepository<Tenant, Long>, JpaSpecif
     boolean existsByCode(String code);
     boolean existsByDomain(String domain);
 
-    default boolean isTenantFrozen(Long tenantId) {
+    default Optional<String> findLoginBlockedLifecycleStatus(Long tenantId) {
         if (tenantId == null) {
-            return false;
+            return Optional.empty();
         }
         return findById(tenantId)
-            .filter(t -> "FROZEN".equalsIgnoreCase(t.getLifecycleStatus()))
+            .map(Tenant::getLifecycleStatus)
+            .filter(status -> "FROZEN".equalsIgnoreCase(status)
+                || "DECOMMISSIONED".equalsIgnoreCase(status));
+    }
+
+    default boolean isTenantFrozen(Long tenantId) {
+        return findLoginBlockedLifecycleStatus(tenantId)
+            .filter(status -> "FROZEN".equalsIgnoreCase(status))
+            .isPresent();
+    }
+
+    default boolean isTenantDecommissioned(Long tenantId) {
+        return findLoginBlockedLifecycleStatus(tenantId)
+            .filter(status -> "DECOMMISSIONED".equalsIgnoreCase(status))
             .isPresent();
     }
 }

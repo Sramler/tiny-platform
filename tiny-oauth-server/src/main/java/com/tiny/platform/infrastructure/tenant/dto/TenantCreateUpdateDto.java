@@ -6,8 +6,8 @@ public class TenantCreateUpdateDto {
     private String domain;
     private Boolean enabled;
     /**
-     * 可选：租户生命周期状态（仅平台控制面可修改）：ACTIVE/FROZEN/DECOMMISSIONED。
-     * 当前阶段若为空则保持现状或默认 ACTIVE。
+     * 保留字段：生命周期流转需走 freeze/unfreeze/decommission 专用接口。
+     * 普通 create/update 不应直接修改该字段。
      */
     private String lifecycleStatus;
     private String planCode;
@@ -18,6 +18,12 @@ public class TenantCreateUpdateDto {
     private String contactEmail;
     private String contactPhone;
     private String remark;
+    private String initialAdminUsername;
+    private String initialAdminNickname;
+    private String initialAdminEmail;
+    private String initialAdminPhone;
+    private String initialAdminPassword;
+    private String initialAdminConfirmPassword;
 
     public String getCode() {
         return code;
@@ -121,5 +127,53 @@ public class TenantCreateUpdateDto {
 
     public void setRemark(String remark) {
         this.remark = remark;
+    }
+
+    public String getInitialAdminUsername() {
+        return initialAdminUsername;
+    }
+
+    public void setInitialAdminUsername(String initialAdminUsername) {
+        this.initialAdminUsername = initialAdminUsername;
+    }
+
+    public String getInitialAdminNickname() {
+        return initialAdminNickname;
+    }
+
+    public void setInitialAdminNickname(String initialAdminNickname) {
+        this.initialAdminNickname = initialAdminNickname;
+    }
+
+    public String getInitialAdminEmail() {
+        return initialAdminEmail;
+    }
+
+    public void setInitialAdminEmail(String initialAdminEmail) {
+        this.initialAdminEmail = initialAdminEmail;
+    }
+
+    public String getInitialAdminPhone() {
+        return initialAdminPhone;
+    }
+
+    public void setInitialAdminPhone(String initialAdminPhone) {
+        this.initialAdminPhone = initialAdminPhone;
+    }
+
+    public String getInitialAdminPassword() {
+        return initialAdminPassword;
+    }
+
+    public void setInitialAdminPassword(String initialAdminPassword) {
+        this.initialAdminPassword = initialAdminPassword;
+    }
+
+    public String getInitialAdminConfirmPassword() {
+        return initialAdminConfirmPassword;
+    }
+
+    public void setInitialAdminConfirmPassword(String initialAdminConfirmPassword) {
+        this.initialAdminConfirmPassword = initialAdminConfirmPassword;
     }
 }

@@ -1,6 +1,6 @@
 # Tiny Platform 授权模型与重构方案
 
-> 状态：设计与实施基线文档  
+> 状态：授权模型与边界基线文档  
 > 适用范围：`auth / oauth / security / tenant / menu / resource / role / user / scheduling / dict`  
 > 配套规则：`.agent/src/rules/91-tiny-platform-auth.rules.md`、`.agent/src/rules/92-tiny-platform-permission.rules.md`、`.agent/src/rules/93-tiny-platform-authorization-model.rules.md`
 
@@ -10,19 +10,32 @@
 
 本文件用于回答四件事：
 
-1. 当前 tiny-platform 的授权模型到底做到哪一步；
+1. 当前 tiny-platform 的授权模型和运行时边界到底是什么；
 2. `RBAC3 + Scope + Data Scope` 在 tiny-platform 中应该如何落地，而不是停留在抽象设计；
-3. 当前项目哪些已经完成，哪些尚未开始，哪些必须继续改进；
-4. 后续实现应按什么顺序拆解，避免一次性重构过重。
+3. 哪些约束属于必须长期保持的模型约束，不能在模块实现里被破坏；
+4. 后续实现应围绕什么目标态推进，避免局部优化反向制造第二套模型。
 
-本文件是“授权模型总设计文档”，与 [TINY_PLATFORM_PERMISSION_IDENTIFIER_SPEC.md](./TINY_PLATFORM_PERMISSION_IDENTIFIER_SPEC.md) 的关系如下：
+本文件是“授权模型总设计文档”，与其它文档的职责关系如下：
 
 - `TINY_PLATFORM_PERMISSION_IDENTIFIER_SPEC.md`：只定义权限码命名与迁移规范；
-- 本文件：定义角色、授权关系、作用域、数据权限、会话上下文、实施路线。
+- 本文件：定义角色、授权关系、作用域、数据权限、会话上下文和模型边界；
+- `TINY_PLATFORM_AUTHORIZATION_LAYERED_MODEL.md`：给出功能权限层、载体层、数据权限层的分层总图与当前过渡口径；
+- `TINY_PLATFORM_SESSION_BEARER_AUTH_MATRIX.md`：定义 Session / Bearer 认证来源、active scope 成对解析与冲突处理矩阵；
+- `TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md`：维护当前完成度、优先级和真实剩余项；
+- `TINY_PLATFORM_MODULE_GAP_ANALYSIS.md`：保留模块视角盘点，不再作为并行状态真相源；
+- `TINY_PLATFORM_AUTHORIZATION_NEXT_PHASE_AND_IMPROVEMENTS.md`：维护中长期路线图与后续改进方向；
+- `TINY_PLATFORM_LEGACY_COMPATIBILITY_INVENTORY.md`：维护遗留兼容与收口台账。
+- `TINY_PLATFORM_TENANT_GOVERNANCE.md`：维护租户生命周期、治理动作、平台模板与治理审计的专题约束；
+- `TINY_PLATFORM_TENANT_NAMING_GUIDELINES.md`：维护 `activeTenantId/recordTenantId/executionTenantId/createdTenantId` 的命名拆分契约；
+- `TINY_PLATFORM_RBAC3_ENFORCE_ROLLOUT_SOP.md`：维护 RBAC3 从 dry-run 到 enforce 的灰度、观测与回滚操作手册。
+- `TINY_PLATFORM_DATASCOPE_EXPANSION_GUIDE.md`：维护 `@DataScope` 扩面准入条件、接入步骤、禁止事项与验证清单。
 
 如需进入实现，请继续阅读：
 
 - [TINY_PLATFORM_AUTHORIZATION_PHASE1_TECHNICAL_DESIGN.md](./TINY_PLATFORM_AUTHORIZATION_PHASE1_TECHNICAL_DESIGN.md)：第一阶段主交付的字段级技术设计、迁移顺序和运行时改造范围。
+- [TINY_PLATFORM_AUTHORIZATION_LAYERED_MODEL.md](./TINY_PLATFORM_AUTHORIZATION_LAYERED_MODEL.md)：当前推荐的功能权限 + 数据权限分层总图，以及 `resource.required_permission_id` 过渡方案。
+
+当前“做到了哪一步、下一步先做什么”的判断，应以 [TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md](./TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md) 为准；本文件不再独立维护逐项执行口径。
 
 ---
 
@@ -54,12 +67,16 @@
    - 运行时已有 `TenantContext`，请求处理按当前租户执行。
    - 多数核心表已经补 `tenant_id`，并持续收口租户隔离。
 
-2. **用户、角色、资源三层模型**
-   - 当前核心关系是：`user -> user_role -> role -> role_resource -> resource.permission`
-   - 角色和资源都已经是租户内数据。
+2. **用户、角色、能力、载体四层模型**
+   - **当前核心关系（运行态）**：`user -> tenant_user -> role_assignment -> role -> role_permission -> permission`；
+   - 载体层已进入过渡拆分态：`resource` 仍作为兼容总表存在，同时 `menu / ui_action / api_endpoint` 已落库并承接主要读路径；
+   - `resource.required_permission_id` 与 carrier 表的 `required_permission_id` 负责显式绑定 `permission`；
+   - `resource.permission` 仍保留为兼容字段与运营可读字段，不再鼓励作为新逻辑的主 join 键；
+   - requirement 层已落地：`menu_permission_requirement / ui_action_permission_requirement / api_endpoint_permission_requirement` 已建表，当前菜单运行时已消费 requirement；
+   - **不再使用** `role_resource` 表（Liquibase 117 已删除）。
 
 3. **权限码规范化**
-   - 运行态逐步统一到 `resource.permission` 和规范权限码；
+   - 运行态已统一到 `role_permission -> permission` 与规范权限码；`resource.permission` 仅保留兼容字段语义；
    - 已开始清理历史 `menu:view`、`user:update`、`scheduling:read` 等旧值。
 
 4. **控制面 RBAC 收口**
@@ -72,29 +89,39 @@
 
 ### 3.2 当前实现的真实结构
 
-当前并不是 `RBAC3 + Scope + Data Scope`，而是：
+当前已经不再是 `user_role -> role -> role_resource` 的旧模型，而是：
 
-- **RBAC0/RBAC1 增强版**
-- **租户上下文 + 角色直挂资源**
-- **权限点来源于 `resource.permission`**
+- **membership + role_assignment 主链已落地**
+- **权限主数据以 `permission` 为表级真相源；角色绑定以 `role_permission` 为关系真相源**（兼容层仍保留 `resource.permission` 可读字段）
+- **carrier split 已落地到过渡态**：`menu / ui_action / api_endpoint` 表、`required_permission_id` 显式绑定、carrier projection 双写与管理面主要读链已就绪
+- **requirement 层已落地最小语义**：三张 `*_permission_requirement` 表 + compatibility group 回填 + `AND/OR/negated` evaluator；当前菜单运行时已消费 requirement
+- **RBAC3 / 组织部门 / 数据范围 / 审计基座已进入运行态**
 
-当前数据库和运行时更接近：
+**主授权关系（permission 重构收口后）**：角色到可授权能力的关系以 **`role_permission → permission`** 为关系表真相源；菜单/接口/按钮等载体通过 **`resource.required_permission_id → permission.id`** 进行显式绑定。`resource.permission` 当前仅保留为兼容字段与迁移输入。遗留表 **`role_resource` 已由 Liquibase 117 删除**（新环境不再存在）；迁移与验证见 [PERMISSION_REFACTOR_LIQUIBASE_117_RUNBOOK.md](./PERMISSION_REFACTOR_LIQUIBASE_117_RUNBOOK.md)。
+
+历史叙述（表仍存在时的结构示意）：
 
 ```text
 user
-  -> user_role
+  -> tenant_user
+  -> role_assignment(scope_type/scope_id)
+  -> role_hierarchy(optional expansion)
   -> role
-  -> role_resource
+  -> role_resource   -- 已废止：由 role_permission 替代，117 后表删除
   -> resource.permission
 ```
 
-当前 `SecurityUser` 的 authority 来源也仍然是：
+其中，用户列表与资源列表已开始叠加 `role_data_scope` 的模块级解析结果。
 
-- `role.code`
-- `role.name`
-- `resource.permission`
+当前 `SecurityUser` / JWT / Session 的授权契约是：
 
-这意味着当前模型的重点是“控制功能访问”，还不是完整的“作用域授权 + 数据范围授权”。
+- authority 保留 `role.code`（兼容）与 `resource.permission`
+- 不再把 `role.name` 放入 authority / JWT / Session
+- claims 已包含 `permissions`、`activeTenantId`、`activeScopeType`、`permissionsVersion`
+
+**User 控制面与 M4（Bearer + Session 一致）的读/写分口径**：矩阵 **M4** 描述的是过滤器层对「Bearer 与 Session 成对一致」的放行；**同一矩阵行不等价于** `GET /sys/users/current`（只读）与 `POST /sys/users/current/active-scope`（会话 active scope 写）的**同一套**产品语义。**读**仅返回当前快照；**写**以 **HttpSession** 为权威落点，Bearer 写成功后须按响应 `tokenRefreshRequired` / `newActiveScope*` 处理 token 刷新，避免写后显式 JWT claims 与 Session 漂移触发 **M5**。正式契约见 [TINY_PLATFORM_SESSION_BEARER_AUTH_MATRIX.md](./TINY_PLATFORM_SESSION_BEARER_AUTH_MATRIX.md) §8。
+
+这意味着当前模型已经进入“作用域授权 + 数据范围逐步接入”的阶段，而不只是控制面功能访问。
 
 ### 3.3 当前已做 / 未做 / 待改进
 
@@ -104,36 +131,36 @@ user
 | --- | --- |
 | 租户上下文 | 已有 `TenantContext` |
 | 用户、角色、资源 | 已有基础模型 |
-| 用户-角色关系 | 已有 `user_role` |
-| 角色-权限关系 | 已有 `role_resource`，运行态权限来自 `resource.permission` |
+| `tenant_user` | 已实现并作为租户 membership 真相源 |
+| `organization_unit` / `user_unit` | 已实现 |
+| `role_assignment` | 已实现并作为运行态授权主来源 |
+| `role_hierarchy` / `role_mutex` / `role_prerequisite` / `role_cardinality` | 已实现，含控制面与 enforce/dry-run |
+| `role_data_scope` / `role_data_scope_item` | 已实现 |
+| 角色-权限关系 | 已有 `role_permission`；主授权关系为 `role_permission → permission`（permission_code 与 `resource.permission` 对齐）；运行态权限由 `role_permission → permission` 计算 |
 | 权限码规范 | 已有专门规范文档与迁移收口 |
-| 控制面 RBAC | 调度、菜单、租户、用户管理已在推进或完成 |
-| 平台入口隔离 | 已开始收口平台菜单与平台接口 |
+| 控制面 RBAC | 菜单、资源、用户、角色、租户、组织、数据范围、审计、RBAC3 页面均已接入 Guard |
+| 平台入口隔离 | 已用 `TenantContext.isPlatformScope()` 收口大部分平台控制面 |
+| 按模块的数据权限过滤框架 | 已实现，`user` / `resource` / `menu` / `org` / `scheduling` / `export` / `dict` 已接入运行态；资源控制面 **树/top/child** 读与分页读一致在库侧按 `created_by` 收缩；**dict** 租户控制面列表按 `created_by` 用户名与可见用户集收缩，平台字典行只读展示。**正式边界**：调度 `SchedulingService.getDagRuns`（DAG 运行历史）**不**挂 `@DataScope`，为租户内运维/排障视图，见 `TINY_PLATFORM_DATASCOPE_EXPANSION_GUIDE.md`「运行历史契约」。 |
 
 #### 未做
 
 | 项 | 当前状态 |
 | --- | --- |
-| `tenant_user` | 未实现 |
-| `organization_unit` / `user_unit` | 未实现 |
-| `role_assignment` | 未实现 |
-| `role_hierarchy` | 未实现 |
-| `role_mutex` | 未实现 |
-| `role_prerequisite` | 未实现 |
-| `role_cardinality` | 未实现 |
-| `role_data_scope` / `role_data_scope_item` | 未实现 |
-| 统一授权上下文（tenant + unit + assignment） | 未实现 |
-| 按模块的数据权限过滤框架 | 未实现 |
+| 平台模板层级（`role_level` / `resource_level`） | 已实现字段、平台 scope 读写切换和显式模板初始化入口；剩余缺口是只读治理与租户副本派生生命周期 |
+| 平台模板只读 + 租户副本派生策略 | 未完全落地 |
+| ORG/DEPT scope 的更广泛业务消费 | 未完全落地 |
+| 更多业务模块接入 `@DataScope` | 已扩到 `user/resource/menu/org/scheduling/export/dict`，但仍未覆盖全部核心业务 |
 
 #### 需要继续改进
 
 | 项 | 改进方向 |
 | --- | --- |
-| `user_role` 直接分配 | 逐步过渡到 `role_assignment` |
-| authority 组成 | 长期应减少对 `role.name` 这种展示值的依赖 |
-| 控制面 RBAC | 继续覆盖 `role` / `resource` 等剩余控制面 |
-| 仓储层隔离 | 从 Service 校验继续推进到 Repository 双保险 |
-| 菜单/资源/权限初始化 | 继续消除历史命名漂移 |
+| 平台模板与默认租户回退 | 继续从 `default` 模板回退演进为“平台模板 + 租户派生” |
+| JWT / Session 最小契约 | 长期逐步缩到 `permissions` 为主，减少对 `role.code` 的兼容依赖 |
+| 数据范围接入面 | 在 `user` / `resource` / `menu` / `org` / `scheduling` / `export` 基础上继续扩展到更多核心业务查询 |
+| 组织/部门 scope | 在更多运行态授权与查询场景真正消费 `scope_type/scope_id` |
+| authority 组成 | 长期应减少对 `role.code` 这种兼容 authority 的依赖 |
+| 菜单/资源/权限初始化 | 继续消除历史命名漂移，并保持文档/seed/前端常量一致 |
 
 ---
 
@@ -149,8 +176,8 @@ user
 
 但 tiny-platform 不应直接照搬一套全新 ACL/ABAC 体系，而应保持以下约束：
 
-1. **权限点仍以 `resource.permission` 为运行态真相源，直到显式迁移**
-2. **先补授权关系模型，再补组织/部门，再补数据权限**
+1. **功能权限真相源已固定为 `role_permission -> permission`，`resource.permission` 仅保留兼容字段与迁移输入**
+2. **先稳住授权关系与载体边界，再继续补组织/部门与数据权限**
 3. **约束应在分配时校验，不在运行时静默忽略**
 4. **Data Scope 不应塞进角色码、权限码或业务 SQL 特判里**
 
@@ -196,18 +223,15 @@ user
 
 ### 4.3 关于 `permission` 表的取舍
 
-通用模型通常会引入独立 `permission` 表，但对 tiny-platform 当前阶段，不建议马上新增独立权限表。
+当前仓库实现已经引入并落地独立 `permission` 与 `role_permission`：
 
-理由：
+说明：
 
-1. 当前权限点已经挂在 `resource.permission` 上，并贯通菜单、前端、后端、初始化数据；
-2. 现在再引入一个独立 `permission` 表，会让“权限定义真相源”变成双份；
-3. 更合理的顺序是：先把授权关系与作用域建起来，再评估是否拆分“资源目录”和“权限目录”。
+1. `permission.permission_code` 的命名口径直接复用 `resource.permission`（由 resource.permission 抽取并同步初始化）。
+2. 运行态权限的主判定链路为：`role_permission → permission`，并以 `permission_code` 作为 authority 的能力标识。
+3. `resource.permission` 仍作为兼容字段保留，用于最小风险迁移与初始化映射；但不再是“计算真相源”的唯一入口。
 
-因此，当前阶段的推荐策略是：
-
-- **短中期**：`resource.permission` 继续作为运行态权限真相源；
-- **长期**：如果按钮/API/菜单生命周期显著分离，再考虑引入独立 `permission` 目录并做统一迁移。
+结论：本项目当前阶段应以 `permission / role_permission` 作为运行态权限主链路表述口径。
 
 ---
 
@@ -265,6 +289,22 @@ user
 2. 租户如需自定义平台模板能力，应创建一条 `tenant_id` 非空的租户副本；
 3. 运行态引用时优先使用租户副本，其次回退到平台模板。
 
+#### 5.2.1 单入口登录与平台作用域判定（新增约束）
+
+为兼顾统一入口与安全边界，登录策略明确为：
+
+1. 前端可保持单一 `/login` 入口；
+2. 运行态 `activeScopeType` 不得由普通请求参数直接驱动；
+3. 平台作用域必须由后端受信链路判定（认证上下文/JWT/Session）；
+4. 平台登录必须校验主体是否存在 `scope_type=PLATFORM` 的有效 `role_assignment`；
+5. 平台作用域下默认不绑定业务租户上下文，`activeTenantId` 应为空或缺失。
+
+实现口径：
+
+- `platform_admin` 一类平台身份应使用 `role_assignment(scope_type=PLATFORM, tenant_id=NULL, scope_id=NULL)`；
+- 不再依赖 “`activeScopeType` 请求参数 + 后置兜底校验” 作为长期方案；
+- 登录入口可以统一，但作用域决策必须后端单点收敛，避免前端可构造输入扩散成运行态事实。
+
 ### 5.3 运行态 Authority / JWT / Session 最终契约
 
 已确定：
@@ -298,7 +338,7 @@ user
 已确定：
 
 - `role` 是角色模板，不直接代表某次授权；
-- `role_resource` 表达“角色模板拥有哪些功能权限”；
+- `role_permission` 表达“角色模板拥有哪些功能权限”（通过 `permission.permission_code` 与 `resource.permission` 对齐）；
 - 新增的 `role_assignment` 表达“谁在什么作用域下拥有哪些角色模板”。
 
 因此：
@@ -491,9 +531,9 @@ user
 
 ## 7. 当前阶段不建议做的事
 
-1. **不建议立即引入独立 `permission` 表**
-   - 当前运行态真相源仍是 `resource.permission`；
-   - 现在拆第二套权限目录会形成双真相源。
+1. **不建议重新引入第二套权限目录真相源**
+   - `permission` 表已经是当前运行态真相源；
+   - 后续不应再把 `resource.permission`、menu 字符串或 API 元数据重新做成并行权限目录。
 
 2. **不建议把 `DENY` 作为第一阶段必做能力**
    - 先把 ALLOW-only 的功能权限、Data Scope 和授权关系模型做稳。
@@ -628,7 +668,7 @@ user
 1. 完成本文件；
 2. 补 `.agent` 授权模型规则；
 3. 明确权限码规范与授权模型规范的边界；
-4. 明确当前阶段“不立即引入独立 permission 表”；
+4. 明确当前阶段“`permission / role_permission` 已落地并作为运行态主链路”；
 5. 明确已定决策、待定决策和当前阶段不建议项。
 
 ### 第二批：控制面与权限模型收口
@@ -674,36 +714,34 @@ user
 
 ### 10.1 已经完成的部分
 
-- 权限码规范开始统一；
-- `resource.permission` 作为当前运行态权限真相源；
+- 权限码规范已统一到 `permission` / 规范权限码体系；
+- `role_assignment -> role_permission -> permission` 已成为当前运行态功能权限真相源；
+- `menu / ui_action / api_endpoint` 与 `*_permission_requirement` 已进入运行态；
 - 多租户隔离基础存在；
 - 控制面 RBAC 已在多个模块推进；
 - 平台控制面与普通租户入口开始分离。
 
 ### 10.2 尚未完成的部分
 
-- 还没有 `tenant_user` membership 模型
-- 还没有真正的 `role_assignment`
-- 还没有 RBAC3 治理表
-- 还没有组织/部门作用域
-- 还没有统一数据权限模型
-- 平台作用域仍未真正从默认租户语义中独立出来
-- JWT / Session 契约仍未完全收口到最终形态
-- **角色/资源模板层级**：`role` 表、`resource` 表的 `role_level`、`resource_level` 字段及平台模板只读/租户派生读写策略，留待第二阶段（平台模板与租户模板共表）时实现。
+- 平台模板与 `default` 回退语义仍未完全拆离
+- ORG/DEPT scope 的运行态消费还没有覆盖到所有核心业务
+- `@DataScope` 已接入 `user` / `resource` / `menu` / `org` / `scheduling` / `export`，但尚未覆盖更多业务查询
+- JWT / Session 仍保留 `role.code` 兼容 authority
+- **角色/资源模板层级**：`role` 表、`resource` 表的 `role_level`、`resource_level` 字段已落地，平台 scope 下的角色/资源管理已切到 `tenant_id IS NULL` 模板行；`/sys/tenants/platform-template/initialize` 已补显式初始化/回填入口；`TenantBootstrapServiceImpl` 已补平台模板快照合法性校验与“目标租户存在副本时拒绝重复派生”保护。剩余缺口主要是副本差异审计、回退与同步策略。
 
 ### 10.3 最需要改进的部分
 
 1. 不要继续让各模块各自发明授权结构；
 2. 不要在业务模块里手写“伪数据权限”；
-3. 不要在没有统一模型前引入第二套权限目录表；
-4. 先完成 membership + role_assignment + 平台作用域分离，再做数据范围。
+3. 继续完成 `ui_action/api_endpoint` 的统一运行时消费与 requirement-aware 审计；
+4. 继续完成平台模板语义拆分，并把 `@DataScope` 扩到更多业务查询。
 
 ---
 
 ## 11. 对后续实现的硬约束
 
 1. 新增授权模型能力必须先更新本文件和对应 `.agent` 规则。
-2. 未完成统一迁移前，运行态权限真相源仍以 `resource.permission` 为准。
+2. 兼容期内允许保留 `resource.permission`，但新增运行时逻辑必须以 `role_permission -> permission` 和 `*_permission_requirement` 为准。
 3. 角色继承、互斥、先决条件、基数限制必须在授权时校验。
 4. Data Scope 必须按模块建模，不得以“角色名约定”代替。
 5. `tenant_user` 的引入必须同步改登录态、claims、菜单、审计，不允许只改表不改运行时。

@@ -13,16 +13,25 @@
 - **AI 测试任务模板**：`docs/TINY_PLATFORM_AI_TEST_TASK_TEMPLATE.md`
 - **门禁豁免政策**：`docs/TINY_PLATFORM_CI_WAIVER_POLICY.md`
 - **权限标识规范**：`docs/TINY_PLATFORM_PERMISSION_IDENTIFIER_SPEC.md`
+- **测试账号命名与清理规范**：`docs/TINY_PLATFORM_TEST_ACCOUNT_NAMING_AND_CLEANUP_RULES.md`
 - **授权模型与重构方案**：`docs/TINY_PLATFORM_AUTHORIZATION_MODEL.md`
+- **Session / Bearer 认证来源矩阵**：`docs/TINY_PLATFORM_SESSION_BEARER_AUTH_MATRIX.md`（含 **`/sys/users/current` 读 vs `/active-scope` 写的 M4 分口径**，§8）
+- **功能权限 + 数据权限分层总图**：`docs/TINY_PLATFORM_AUTHORIZATION_LAYERED_MODEL.md`
 - **下一阶段变更与改进清单**：`docs/TINY_PLATFORM_AUTHORIZATION_NEXT_PHASE_AND_IMPROVEMENTS.md`
 - **权限/授权可执行任务清单**：`docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md`
+- **`@DataScope` 扩面指南**：`docs/TINY_PLATFORM_DATASCOPE_EXPANSION_GUIDE.md`
+- **构建与技术债台账**：`docs/TINY_PLATFORM_BUILD_TECH_DEBT_LEDGER.md`
+- **租户治理专题**：`docs/TINY_PLATFORM_TENANT_GOVERNANCE.md`
+- **租户治理修复 Prompt**：`docs/TINY_PLATFORM_TENANT_GOVERNANCE_CURSOR_FIX_PROMPT.md`
 - **租户命名拆分规范**：`docs/TINY_PLATFORM_TENANT_NAMING_GUIDELINES.md`
+- **RBAC3 enforce 灰度 SOP**：`docs/TINY_PLATFORM_RBAC3_ENFORCE_ROLLOUT_SOP.md`
 - **测试规则源**：`.agent/src/rules/50-testing.rules.md`
 - **CI/CD 规则源**：`.agent/src/rules/58-cicd.rules.md`
 - **平台规则源**：`.agent/src/rules/90-tiny-platform.rules.md`
 - **认证规则源**：`.agent/src/rules/91-tiny-platform-auth.rules.md`
 - **权限标识规则源**：`.agent/src/rules/92-tiny-platform-permission.rules.md`
 - **授权模型规则源**：`.agent/src/rules/93-tiny-platform-authorization-model.rules.md`
+- **租户治理规则源**：`.agent/src/rules/94-tiny-platform-tenant-governance.rules.md`
 - **构建**：`.agent/build/build.sh --target cursor`
 - **校验**：`.agent/build/validate.sh --target cursor --cursor-format mdc`
 
@@ -50,6 +59,7 @@
 3. **安全/权限/多租户不可弱化**：任何削弱必须明确说明并请求确认
 4. **输出必须可执行**：给出可执行命令/路径/文件清单
 5. **产物禁止手改**：`.cursor/rules/**` 等生成物不手工编辑（只改 `.agent/src/**`）
+6. **可自动化先验证再下结论**：凡仓库内已有命令/测试能影响结论（如平台登录、租户解析、密码校验链），助手应先执行对应验证并写明结果；无法自动化部分（个人库数据、未注入密钥的 Playwright real-link）须明确标注缺口。平台登录相关快速门禁：`bash tiny-oauth-server/scripts/verify-platform-login-auth-chain.sh`（可选 `VERIFY_PLATFORM_LOGIN_E2E=1` 且设置 `E2E_DB_PASSWORD` 跑 Tier2 MockMvc 全链路）。平台模板行数（需本机 MySQL 与 `DB_PASSWORD`）：`DB_PASSWORD='…' bash tiny-oauth-server/scripts/verify-platform-template-row-counts.sh`（可选 `VERIFY_PLATFORM_TEMPLATE_MIN_ROWS=1` 要求两类计数均 > 0）。**tiny-platform 本地 AI 验证默认入口（先跑这个）**：`bash tiny-oauth-server/scripts/verify-platform-local-dev-stack.sh`。仅在**明确不需要前端联动**时，才降级到 **后端/数据库自举入口**：`DB_PASSWORD='…' bash tiny-oauth-server/scripts/verify-platform-dev-bootstrap.sh`。仅在**纯 Maven 编译/定向测试门禁**时，才使用顺序门禁：`bash tiny-oauth-server/scripts/mvn-tiny-oauth-server-gate-sequential.sh`。`SKIP_MVN=1`、`SKIP_OAUTH_SERVER_START=1` / `FORCE_START_OAUTH_SERVER=1`、`SKIP_FRONTEND_START=1` / `FORCE_START_FRONTEND=1` 见脚本头注释。**退出码**：`0` 通过；`1` 验证失败；`2` **环境前置未满足**（无 `DB_PASSWORD`/无 `mysql`/无 `npm`/连不上库）— **非代码失败**，详见 `docs/TINY_PLATFORM_TESTING_PLAYBOOK.md` §1.2、§1.4。**本地环境读取**：只允许从 login shell 白名单环境变量读取 `DB_*` / `E2E_DB_*` / `MYSQL_*` / `FRONTEND_*`；其中 `DB_*` 为 dev/bootstrap 主变量，`E2E_DB_*` 可作为兼容别名回填，禁止打印 `~/.zprofile` / `~/.zshrc` / `~/.bashrc` 全文。**Maven**：勿对 `tiny-oauth-server` 同模块并发 `compile`/`test`；顺序门禁见 `tiny-oauth-server/scripts/mvn-tiny-oauth-server-gate-sequential.sh`。
 
 ---
 

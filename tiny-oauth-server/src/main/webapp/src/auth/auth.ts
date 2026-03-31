@@ -6,7 +6,7 @@ import type { User } from 'oidc-client-ts'
 import { jwtVerify, createRemoteJWKSet } from 'jose'
 import { logger, persistentLogger } from '@/utils/logger'
 import { sanitizeInternalRedirect } from '@/utils/redirect'
-import { clearTraceId, createNewTraceId } from '@/utils/traceId'
+import { addTraceIdToFetchOptions, clearTraceId, createNewTraceId } from '@/utils/traceId'
 import {
   clearActiveTenantId,
   getTenantCode,
@@ -14,6 +14,10 @@ import {
   syncTenantContextFromAccessToken,
   syncTenantContextFromClaims,
 } from '@/utils/tenant'
+
+export type ActiveScopePostSwitchRenewResult =
+  | { ok: true; user: User }
+  | { ok: false }
 
 const OIDC_TRACE_ENABLED =
   import.meta.env.VITE_ENABLE_OIDC_TRACE === 'true' || !import.meta.env.PROD
@@ -204,9 +208,15 @@ export const logout = async () => {
 
 let renewInProgress = false
 
-async function safeSilentRenew() {
-  if (renewInProgress) return null
-  renewInProgress = true
+type SigninSilentOptions = {
+  /**
+   * 为 true 时：renew 异常不触发强制登出跳转（用于 active-scope 写后的受控 refresh，
+   * 由调用方展示提示并决定是否引导重新登录）。
+   */
+  suppressForceLogoutOnError?: boolean
+}
+
+async function signinSilentAndSyncUser(options?: SigninSilentOptions): Promise<User | null> {
   try {
     const renewed = await userManager.signinSilent()
     if (!renewed) {
@@ -225,7 +235,7 @@ async function safeSilentRenew() {
   } catch (e) {
     logger.error('[OIDC] Silent renew 失败', e)
     oidcTrace('silentRenew.error', e)
-    if (authRuntimeConfig.forceLogoutOnRenewFail) {
+    if (!options?.suppressForceLogoutOnError && authRuntimeConfig.forceLogoutOnRenewFail) {
       await userManager.removeUser()
       user.value = null
       clearTraceId()
@@ -233,12 +243,76 @@ async function safeSilentRenew() {
       window.location.href = '/login'
     }
     return null
+  }
+}
+
+async function safeSilentRenew() {
+  if (renewInProgress) return null
+  renewInProgress = true
+  try {
+    return await signinSilentAndSyncUser()
+  } finally {
+    renewInProgress = false
+  }
+}
+
+/**
+ * 在 `POST /sys/users/current/active-scope` 返回 `tokenRefreshRequired: true` 后调用：
+ * 通过 OIDC silent renew 获取与 Session 新作用域一致的 access token，并同步 `user` 与租户上下文。
+ * 失败时不触发强制跳转登录页（与 {@link safeSilentRenew} 区分），由 UI 提示用户重新获取登录态。
+ */
+export async function refreshTokenAfterActiveScopeSwitch(): Promise<ActiveScopePostSwitchRenewResult> {
+  if (renewInProgress) {
+    oidcTrace('activeScopePostSwitchRenew.skip', { reason: 'renew_in_progress' })
+    persistentLogger.warn('[Auth] active-scope 后续 renew 跳过：已有 renew 进行中')
+    return { ok: false }
+  }
+  renewInProgress = true
+  try {
+    const renewed = await signinSilentAndSyncUser({ suppressForceLogoutOnError: true })
+    if (renewed && !renewed.expired) {
+      oidcTrace('activeScopePostSwitchRenew.success', {
+        expires_at: renewed.expires_at,
+        hasRefreshToken: !!renewed.refresh_token,
+      })
+      return { ok: true, user: renewed }
+    }
+    oidcTrace('activeScopePostSwitchRenew.miss', {})
+    persistentLogger.warn('[Auth] active-scope 后续 silent renew 未获得有效访问令牌')
+    return { ok: false }
   } finally {
     renewInProgress = false
   }
 }
 
 // 初始化恢复用户状态
+/**
+ * 平台 Session 登录（无本地 tenantCode、仅有 JSESSIONID）后，前端尚无 OIDC User。
+ * 在访问需登录路由前调用：尝试 {@link UserManager.signinSilent}，利用授权服务器上已有会话换取 token，
+ * 避免路由守卫误跳 `/login?redirect=/`（典型：平台账号 → totp-bind → 跳过 → 回首页）。
+ */
+export async function trySilentLoginFromPlatformSession(): Promise<boolean> {
+  if (getTenantCode()) {
+    return false
+  }
+  try {
+    const renewed = await userManager.signinSilent()
+    if (renewed && !renewed.expired) {
+      user.value = renewed
+      syncTenantContextFromClaims(renewed.profile as Record<string, unknown>)
+      syncTenantContextFromAccessToken(renewed.access_token)
+      oidcTrace('trySilentLoginFromPlatformSession.success', {
+        hasRefreshToken: !!renewed.refresh_token,
+        expires_at: renewed.expires_at,
+      })
+      return true
+    }
+  } catch (error) {
+    oidcTrace('trySilentLoginFromPlatformSession.miss', { message: String(error) })
+  }
+  return false
+}
+
 export async function initAuth() {
   try {
     oidcTrace('initAuth.start')
@@ -306,7 +380,6 @@ export function useAuth(): AuthContext {
 
     try {
       // 添加 TRACE_ID 和 Authorization headers
-      const { addTraceIdToFetchOptions } = await import('@/utils/traceId')
       const headers = new Headers(options.headers)
       headers.set('Authorization', `Bearer ${token}`)
       appendTenantHeader(headers)

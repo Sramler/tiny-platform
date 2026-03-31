@@ -144,7 +144,7 @@ databaseChangeLog:
       file: 036-add-tenant-id-to-scheduling-dag-metadata.yaml
       relativeToChangelogFile: true
 
-  # 为默认租户补充调度 RBAC authority 资源，并授予 ROLE_ADMIN 调度全权限
+  # 为默认租户补充调度 RBAC authority 资源，并授予 ROLE_TENANT_ADMIN 调度全权限
   - include:
       file: 037-add-scheduling-rbac-authorities.yaml
       relativeToChangelogFile: true
@@ -222,6 +222,181 @@ databaseChangeLog:
   # 为 tenant 表增加 lifecycle_status 字段，用于冻结/下线治理（ACTIVE/FROZEN/DECOMMISSIONED）
   - include:
       file: 048-tenant-lifecycle-status.yaml
+      relativeToChangelogFile: true
+
+  # Phase 3 - 组织/部门树与用户归属
+  - include:
+      file: 061-organization-unit.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: 062-user-unit.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: 063-role-assignment-extend-org-dept-scope.yaml
+      relativeToChangelogFile: true
+
+  # Phase 4 - 数据范围（role_data_scope + role_data_scope_item）
+  - include:
+      file: 071-role-data-scope.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: 072-role-data-scope-item.yaml
+      relativeToChangelogFile: true
+
+  # Phase 5 - 授权审计日志
+  - include:
+      file: 081-authorization-audit-log.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: 082-user-session.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: 083-seed-admin-data-scope.yaml
+      relativeToChangelogFile: true
+
+  # 遗留下线 - Legacy cleanup
+  - include:
+      file: 091-cleanup-legacy-admin-code.yaml
+      relativeToChangelogFile: true
+
+  # 平台语义统一：dict tenant_id=0 → NULL，与 role/resource 对齐
+  - include:
+      file: 101-dict-platform-tenant-null.yaml
+      relativeToChangelogFile: true
+
+  # 资源创建者字段：为资源列表 DataScope 提供 owner 维度
+  - include:
+      file: 102-resource-created-by.yaml
+      relativeToChangelogFile: true
+
+  # 回填 dict created_by/updated_by：为字典管理 DataScope 提供 owner 维度
+  - include:
+      file: 103-dict-created-by-backfill.yaml
+      relativeToChangelogFile: true
+
+  # 导出任务补 tenant_id / file_size_bytes：为配额和租户治理提供统计维度
+  - include:
+      file: 104-export-task-tenant-and-file-size.yaml
+      relativeToChangelogFile: true
+
+  # 修复默认租户租户管理员 seed（ROLE_TENANT_ADMIN）与兼容 tenant_id 残留
+  - include:
+      file: 105-repair-default-tenant-role-admin-and-legacy-tenant-id.yaml
+      relativeToChangelogFile: true
+
+  # 修复默认租户内置账号 admin/user 的基础角色赋权
+  - include:
+      file: 106-repair-default-tenant-builtins-role-assignment.yaml
+      relativeToChangelogFile: true
+
+  # 回填各租户 ROLE_TENANT_ADMIN 缺失资源绑定，保证细粒度权限可下发
+  - include:
+      file: 107-backfill-role-admin-resource-bindings.yaml
+      relativeToChangelogFile: true
+
+  # 回填各租户 ROLE_TENANT_ADMIN 的平台模板权限绑定（排除平台专属权限）
+  - include:
+      file: 108-backfill-role-admin-platform-template-bindings.yaml
+      relativeToChangelogFile: true
+
+  # 回填字典细粒度权限资源并绑定 ROLE_TENANT_ADMIN
+  - include:
+      file: 109-backfill-dict-authority-resources-and-bindings.yaml
+      relativeToChangelogFile: true
+
+  # 回填用户/角色/菜单/资源管理 READ 权限并绑定 ROLE_TENANT_ADMIN
+  - include:
+      file: 110-backfill-core-management-read-authorities.yaml
+      relativeToChangelogFile: true
+
+  # user_authentication_method：tenant_id 可空（全局认证方式）+ auth_scope_key 唯一约束 + 查询回退语义
+  - include:
+      file: 111-user-auth-method-global-tenant-fallback.yaml
+      relativeToChangelogFile: true
+
+  # 平台角色严格收口：平台模板统一 ROLE_PLATFORM_*，移除平台侧 ROLE_ADMIN/ROLE_SYSTEM_ADMIN 别名
+  - include:
+      file: 112-platform-role-strict-normalization.yaml
+      relativeToChangelogFile: true
+
+  # 租户角色严格收口：TENANT 侧管理员统一 ROLE_TENANT_ADMIN，移除 tenant 侧 ROLE_ADMIN
+  - include:
+      file: 113-tenant-admin-role-strict-normalization.yaml
+      relativeToChangelogFile: true
+
+  # PermissionRefactor Phase A：新增 permission / role_permission 表（仅结构，不切运行时链路）
+  - include:
+      file: 114-permission-refactor-phase-a-ddl.yaml
+      relativeToChangelogFile: true
+
+  # PermissionRefactor Phase B：从 resource.permission 抽取 permission 主数据（仅数据就绪，不切运行时链路）
+  - include:
+      file: 115-permission-refactor-phase-b-backfill.yaml
+      relativeToChangelogFile: true
+
+  # PermissionRefactor Phase C：回填 role_permission（仅关系数据就绪，不切运行时链路）
+  - include:
+      file: 116-permission-refactor-phase-c-role-permission-backfill.yaml
+      relativeToChangelogFile: true
+
+  # PermissionRefactor：删除遗留 role_resource 表（应用已切 role_permission 主链路）
+  - include:
+      file: 117-drop-role-resource-legacy.yaml
+      relativeToChangelogFile: true
+
+  # 资源表归一化 tenant 键（normalized_tenant_id），用于平台模板克隆的 join 口径一致性
+  - include:
+      file: 118-resource-normalized-tenant-id.yaml
+      relativeToChangelogFile: true
+
+  # 平台模板补齐：ROLE_TENANT_ADMIN 授权 system:org:list/view 所需的 permission/resource/role_permission 链路
+  - include:
+      file: 119-platform-template-org-permission-chain.yaml
+      relativeToChangelogFile: true
+
+  # 平台模板补齐：ROLE_PLATFORM_ADMIN 授权 system:tenant:list/view 所需的 permission/role_permission 链路
+  - include:
+      file: 120-platform-template-tenant-mgmt-permission-chain.yaml
+      relativeToChangelogFile: true
+
+  # 平台模板补齐：ROLE_PLATFORM_ADMIN 授权 system:tenant:create 所需的 permission/role_permission 链路
+  - include:
+      file: 121-platform-template-tenant-create-permission-chain.yaml
+      relativeToChangelogFile: true
+
+  # 平台模板补齐：ROLE_PLATFORM_ADMIN 授权 system:tenant:create 所需的 permission/role_permission 链路（兜底插入）
+  - include:
+      file: 122-platform-template-tenant-create-explicit-permission.yaml
+      relativeToChangelogFile: true
+
+  # 资源载体与权限主数据显式绑定（resource.required_permission_id）
+  - include:
+      file: 123-resource-required-permission-id.yaml
+      relativeToChangelogFile: true
+
+  # 历史资源补修：补齐缺失 permission 主数据并修复 required_permission_id 绑定
+  - include:
+      file: 124-backfill-missing-resource-permission-bindings.yaml
+      relativeToChangelogFile: true
+
+  # 拆分载体层：menu / ui_action / api_endpoint，并从 legacy resource 回填
+  - include:
+      file: 125-split-resource-carrier-tables.yaml
+      relativeToChangelogFile: true
+
+  # 载体组合权限需求表（menu/ui_action/api_endpoint）及 group=0 兼容回填
+  - include:
+      file: 126-carrier-permission-requirement-tables.yaml
+      relativeToChangelogFile: true
+
+  # 共享 ID 解耦前置：resource 兼容 locator + carrier id 自增化
+  - include:
+      file: 127-resource-carrier-locator-decoupling.yaml
+      relativeToChangelogFile: true
+
+  # 共享 ID 真解耦：在 requirement 外键不变前提下启用 carrier 主键自增
+  - include:
+      file: 128-carrier-id-autoincrement-safe-migration.yaml
       relativeToChangelogFile: true
 
   # 数据修复：修复资源 URL 格式

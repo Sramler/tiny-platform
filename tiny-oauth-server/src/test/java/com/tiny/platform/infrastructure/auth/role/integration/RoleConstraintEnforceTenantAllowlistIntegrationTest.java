@@ -10,6 +10,7 @@ import com.tiny.platform.infrastructure.auth.role.repository.RoleMutexRepository
 import com.tiny.platform.infrastructure.auth.role.repository.RoleRepository;
 import com.tiny.platform.infrastructure.auth.role.service.RoleAssignmentSyncService;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
+import com.tiny.platform.infrastructure.auth.user.repository.TenantUserRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -51,6 +52,9 @@ class RoleConstraintEnforceTenantAllowlistIntegrationTest {
     private UserRepository userRepository;
 
     @Autowired
+    private TenantUserRepository tenantUserRepository;
+
+    @Autowired
     private RoleRepository roleRepository;
 
     @Test
@@ -85,26 +89,43 @@ class RoleConstraintEnforceTenantAllowlistIntegrationTest {
         Long leftRoleId = leftRole.getId();
         Long rightRoleId = rightRole.getId();
 
-        roleAssignmentRepository.deleteUserAssignmentsInTenant(userId, tenantId);
-        roleMutexRepository.deleteByTenantIdAndLeftRoleIdAndRightRoleId(tenantId, leftRoleId, rightRoleId);
+        try {
+            roleAssignmentRepository.deleteUserAssignmentsInTenant(userId, tenantId);
+            roleMutexRepository.deleteByTenantIdAndLeftRoleIdAndRightRoleId(tenantId, leftRoleId, rightRoleId);
 
-        RoleMutex mutex = new RoleMutex();
-        mutex.setTenantId(tenantId);
-        mutex.setLeftRoleId(leftRoleId);
-        mutex.setRightRoleId(rightRoleId);
-        roleMutexRepository.save(mutex);
+            RoleMutex mutex = new RoleMutex();
+            mutex.setTenantId(tenantId);
+            mutex.setLeftRoleId(leftRoleId);
+            mutex.setRightRoleId(rightRoleId);
+            roleMutexRepository.save(mutex);
 
-        // Should not throw because tenantId=1 is NOT in enforce allowlist.
-        roleAssignmentSyncService.replaceUserTenantRoleAssignments(userId, tenantId, List.of(leftRoleId, rightRoleId));
+            // Should not throw because tenantId=1 is NOT in enforce allowlist.
+            roleAssignmentSyncService.replaceUserTenantRoleAssignments(userId, tenantId, List.of(leftRoleId, rightRoleId));
 
-        var assigned = roleAssignmentRepository.findAll().stream()
-            .filter(ra -> tenantId.equals(ra.getTenantId()))
-            .filter(ra -> "USER".equals(ra.getPrincipalType()) && userId.equals(ra.getPrincipalId()))
-            .filter(ra -> "TENANT".equals(ra.getScopeType()) && tenantId.equals(ra.getScopeId()))
-            .filter(ra -> "ACTIVE".equals(ra.getStatus()))
-            .map(ra -> ra.getRoleId())
-            .toList();
-        assertThat(assigned).contains(leftRoleId, rightRoleId);
+            var assigned = roleAssignmentRepository.findAll().stream()
+                .filter(ra -> tenantId.equals(ra.getTenantId()))
+                .filter(ra -> "USER".equals(ra.getPrincipalType()) && userId.equals(ra.getPrincipalId()))
+                .filter(ra -> "TENANT".equals(ra.getScopeType()) && tenantId.equals(ra.getScopeId()))
+                .filter(ra -> "ACTIVE".equals(ra.getStatus()))
+                .map(ra -> ra.getRoleId())
+                .toList();
+            assertThat(assigned).contains(leftRoleId, rightRoleId);
+        } finally {
+            Rbac3RoleConstraintIntegrationTestCleanup.purgeUserTenantArtifacts(
+                tenantId,
+                userId,
+                roleAssignmentRepository,
+                tenantUserRepository,
+                userRepository
+            );
+            try {
+                roleMutexRepository.deleteByTenantIdAndLeftRoleIdAndRightRoleId(tenantId, leftRoleId, rightRoleId);
+            } catch (RuntimeException ignored) {
+                // best-effort
+            }
+            Rbac3RoleConstraintIntegrationTestCleanup.deleteRoleBestEffort(roleRepository, leftRoleId);
+            Rbac3RoleConstraintIntegrationTestCleanup.deleteRoleBestEffort(roleRepository, rightRoleId);
+        }
     }
 }
 

@@ -29,6 +29,7 @@ import java.util.Optional;
 
 /**
  * 平台字典管理服务实现。
+ * 平台字典的 tenant_id IS NULL，与 role/resource 的平台模板模式统一。
  */
 @Service
 public class DictPlatformAdminServiceImpl implements DictPlatformAdminService {
@@ -44,10 +45,9 @@ public class DictPlatformAdminServiceImpl implements DictPlatformAdminService {
     @Override
     @Transactional(readOnly = true)
     public Page<DictTypeResponseDto> queryTypes(DictTypeQueryDto query, Pageable pageable) {
-        return dictTypeRepository.findVisibleByConditions(
+        return dictTypeRepository.findPlatformByConditions(
                 StringUtils.hasText(query.getDictCode()) ? query.getDictCode() : null,
                 StringUtils.hasText(query.getDictName()) ? query.getDictName() : null,
-                DictTenantScope.PLATFORM_TENANT_ID,
                 query.getEnabled(),
                 pageable
         ).map(DictTypeResponseDto::new);
@@ -63,13 +63,13 @@ public class DictPlatformAdminServiceImpl implements DictPlatformAdminService {
     @Override
     @Transactional(readOnly = true)
     public Optional<DictType> findTypeByCode(String dictCode) {
-        return dictTypeRepository.findByDictCodeAndTenantId(dictCode, DictTenantScope.PLATFORM_TENANT_ID);
+        return dictTypeRepository.findByDictCodeAndTenantIdIsNull(dictCode);
     }
 
     @Override
     @Transactional
     public DictType createType(DictTypeCreateUpdateDto dto) {
-        if (dictTypeRepository.existsByDictCodeAndTenantId(dto.getDictCode(), DictTenantScope.PLATFORM_TENANT_ID)) {
+        if (dictTypeRepository.existsByDictCodeAndTenantIdIsNull(dto.getDictCode())) {
             throw new BusinessException(ErrorCode.RESOURCE_ALREADY_EXISTS, "平台字典编码已存在: " + dto.getDictCode());
         }
 
@@ -77,7 +77,7 @@ public class DictPlatformAdminServiceImpl implements DictPlatformAdminService {
         dictType.setDictCode(dto.getDictCode());
         dictType.setDictName(dto.getDictName());
         dictType.setDescription(dto.getDescription());
-        dictType.setTenantId(DictTenantScope.PLATFORM_TENANT_ID);
+        dictType.setTenantId(null);
         dictType.setCategoryId(dto.getCategoryId());
         dictType.setEnabled(dto.getEnabled() != null ? dto.getEnabled() : true);
         dictType.setSortOrder(dto.getSortOrder() != null ? dto.getSortOrder() : 0);
@@ -91,7 +91,7 @@ public class DictPlatformAdminServiceImpl implements DictPlatformAdminService {
     public DictType updateType(Long id, DictTypeCreateUpdateDto dto) {
         DictType dictType = findMutablePlatformType(id);
         if (!dictType.getDictCode().equals(dto.getDictCode())
-                && dictTypeRepository.existsByDictCodeAndTenantId(dto.getDictCode(), DictTenantScope.PLATFORM_TENANT_ID)) {
+                && dictTypeRepository.existsByDictCodeAndTenantIdIsNull(dto.getDictCode())) {
             throw new BusinessException(ErrorCode.RESOURCE_ALREADY_EXISTS, "平台字典编码已存在: " + dto.getDictCode());
         }
 
@@ -127,8 +127,7 @@ public class DictPlatformAdminServiceImpl implements DictPlatformAdminService {
         if (query.getDictTypeId() != null && !isPlatformType(query.getDictTypeId())) {
             return Page.empty(pageable);
         }
-        Page<DictItem> page = dictItemRepository.findVisibleByConditions(
-                DictTenantScope.PLATFORM_TENANT_ID,
+        Page<DictItem> page = dictItemRepository.findPlatformByConditions(
                 query.getDictTypeId(),
                 StringUtils.hasText(query.getValue()) ? query.getValue() : null,
                 StringUtils.hasText(query.getLabel()) ? query.getLabel() : null,
@@ -153,7 +152,7 @@ public class DictPlatformAdminServiceImpl implements DictPlatformAdminService {
     @Transactional(readOnly = true)
     public List<DictItem> findItemsByType(Long dictTypeId) {
         findPlatformType(dictTypeId);
-        List<DictItem> items = dictItemRepository.findVisibleByDictTypeId(dictTypeId, DictTenantScope.PLATFORM_TENANT_ID);
+        List<DictItem> items = dictItemRepository.findPlatformByDictTypeId(dictTypeId);
         preloadDictType(items);
         return items;
     }
@@ -165,10 +164,7 @@ public class DictPlatformAdminServiceImpl implements DictPlatformAdminService {
         if (dictType.isEmpty()) {
             return List.of();
         }
-        List<DictItem> items = dictItemRepository.findVisibleByDictTypeId(
-                dictType.get().getId(),
-                DictTenantScope.PLATFORM_TENANT_ID
-        );
+        List<DictItem> items = dictItemRepository.findPlatformByDictTypeId(dictType.get().getId());
         preloadDictType(items);
         return items;
     }
@@ -193,11 +189,7 @@ public class DictPlatformAdminServiceImpl implements DictPlatformAdminService {
     @Transactional
     public DictItem createItem(DictItemCreateUpdateDto dto) {
         DictType dictType = findMutablePlatformType(dto.getDictTypeId());
-        if (dictItemRepository.existsByDictTypeIdAndValueAndTenantId(
-                dictType.getId(),
-                dto.getValue(),
-                DictTenantScope.PLATFORM_TENANT_ID
-        )) {
+        if (dictItemRepository.existsByDictTypeIdAndValueAndTenantIdIsNull(dictType.getId(), dto.getValue())) {
             throw new BusinessException(ErrorCode.RESOURCE_ALREADY_EXISTS, "平台字典项值已存在: " + dto.getValue());
         }
 
@@ -206,7 +198,7 @@ public class DictPlatformAdminServiceImpl implements DictPlatformAdminService {
         dictItem.setValue(dto.getValue());
         dictItem.setLabel(dto.getLabel());
         dictItem.setDescription(dto.getDescription());
-        dictItem.setTenantId(DictTenantScope.PLATFORM_TENANT_ID);
+        dictItem.setTenantId(null);
         dictItem.setIsBuiltin(false);
         dictItem.setEnabled(dto.getEnabled() != null ? dto.getEnabled() : true);
         dictItem.setSortOrder(dto.getSortOrder() != null ? dto.getSortOrder() : 0);
@@ -226,10 +218,9 @@ public class DictPlatformAdminServiceImpl implements DictPlatformAdminService {
         }
 
         if (!dictItem.getValue().equals(dto.getValue())
-                && dictItemRepository.existsByDictTypeIdAndValueAndTenantIdAndIdNot(
+                && dictItemRepository.existsByDictTypeIdAndValueAndTenantIdIsNullAndIdNot(
                         dictType.getId(),
                         dto.getValue(),
-                        DictTenantScope.PLATFORM_TENANT_ID,
                         id
         )) {
             throw new BusinessException(ErrorCode.RESOURCE_ALREADY_EXISTS, "平台字典项值已被使用: " + dto.getValue());

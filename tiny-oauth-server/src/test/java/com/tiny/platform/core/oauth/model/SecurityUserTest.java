@@ -2,7 +2,6 @@ package com.tiny.platform.core.oauth.model;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
-import com.tiny.platform.infrastructure.auth.resource.domain.Resource;
 import com.tiny.platform.infrastructure.auth.role.domain.Role;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import org.junit.jupiter.api.AfterEach;
@@ -23,19 +22,10 @@ class SecurityUserTest {
     }
 
     @Test
-    void shouldExposeRoleCodeAndResourcePermissionAsAuthorities() {
-        Resource resource = new Resource();
-        resource.setName("idempotentOps");
-        resource.setPermission("idempotent:ops:view");
-
-        Resource schedulingResource = new Resource();
-        schedulingResource.setName("schedulingAuthority");
-        schedulingResource.setPermission("scheduling:console:view");
-
+    void shouldExposeRoleCodeAsAuthorities_fromRoles() {
         Role role = new Role();
         role.setCode("ROLE_ADMIN");
         role.setName("系统管理员");
-        role.setResources(Set.of(resource, schedulingResource));
 
         User user = new User();
         user.setId(1L);
@@ -50,11 +40,7 @@ class SecurityUserTest {
 
         assertThat(securityUser.getAuthorities())
                 .extracting(authority -> authority.getAuthority())
-                .contains(
-                        "ROLE_ADMIN",
-                        "idempotent:ops:view",
-                        "scheduling:console:view"
-                );
+                .containsExactly("ROLE_ADMIN");
         assertThat(securityUser.getPermissionsVersion()).isEqualTo("perm-v1");
         assertThat(securityUser.getActiveTenantId()).isEqualTo(1L);
     }

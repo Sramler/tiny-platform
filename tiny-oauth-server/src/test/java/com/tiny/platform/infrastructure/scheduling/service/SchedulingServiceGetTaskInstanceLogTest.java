@@ -2,6 +2,9 @@ package com.tiny.platform.infrastructure.scheduling.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
+import com.tiny.platform.infrastructure.auth.org.repository.UserUnitRepository;
+import com.tiny.platform.infrastructure.auth.user.repository.TenantUserRepository;
+import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.infrastructure.scheduling.model.SchedulingTaskHistory;
 import com.tiny.platform.infrastructure.scheduling.model.SchedulingTaskInstance;
 import com.tiny.platform.infrastructure.scheduling.repository.*;
@@ -42,6 +45,9 @@ class SchedulingServiceGetTaskInstanceLogTest {
         SchedulingDagEdgeRepository dagEdgeRepository = mock(SchedulingDagEdgeRepository.class);
         SchedulingDagRunRepository dagRunRepository = mock(SchedulingDagRunRepository.class);
         SchedulingAuditRepository auditRepository = mock(SchedulingAuditRepository.class);
+        TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
+        UserUnitRepository userUnitRepository = mock(UserUnitRepository.class);
+        UserRepository userRepository = mock(UserRepository.class);
         QuartzSchedulerService quartzSchedulerService = mock(QuartzSchedulerService.class);
         TaskExecutorRegistry taskExecutorRegistry = mock(TaskExecutorRegistry.class);
         TenantRepository tenantRepository = mock(TenantRepository.class);
@@ -49,7 +55,8 @@ class SchedulingServiceGetTaskInstanceLogTest {
         schedulingService = new SchedulingService(
                 taskTypeRepository, taskRepository, dagRepository, dagVersionRepository,
                 dagTaskRepository, dagEdgeRepository, dagRunRepository, taskInstanceRepository,
-                taskHistoryRepository, auditRepository, quartzSchedulerService, taskExecutorRegistry,
+                taskHistoryRepository, auditRepository, tenantUserRepository, userUnitRepository, userRepository,
+                quartzSchedulerService, taskExecutorRegistry,
                 new JsonSchemaValidationService(new ObjectMapper()), new ObjectMapper(), tenantLifecycleGuard);
         TenantContext.setActiveTenantId(TENANT_ID);
     }

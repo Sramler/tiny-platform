@@ -1,0 +1,21 @@
+databaseChangeLog:
+  - changeSet:
+      id: 108-backfill-role-admin-platform-template-bindings
+      author: codex
+      comment: 为各租户 ROLE_TENANT_ADMIN 补齐平台模板权限绑定，排除平台专属控制面权限
+      changes:
+        - sql:
+            sql: |
+              INSERT IGNORE INTO `role_resource` (`tenant_id`, `role_id`, `resource_id`)
+              SELECT
+                role_entity.`tenant_id`,
+                role_entity.`id`,
+                resource_entity.`id`
+              FROM `role` role_entity
+              JOIN `resource` resource_entity
+                ON resource_entity.`tenant_id` IS NULL
+              WHERE role_entity.`tenant_id` IS NOT NULL
+                AND role_entity.`code` = 'ROLE_ADMIN'
+                AND resource_entity.`permission` IS NOT NULL
+                AND TRIM(resource_entity.`permission`) <> ''
+                AND resource_entity.`permission` NOT IN ('system:tenant:list', 'idempotent:ops:view');

@@ -1,5 +1,7 @@
 import request from '@/utils/request'
 
+export type RoleAssignmentScopeType = 'TENANT' | 'ORG' | 'DEPT'
+
 export type Role = {
   id: string
   code?: string
@@ -9,6 +11,12 @@ export type Role = {
    * 角色记录所属租户ID，不是当前活动租户上下文。
    */
   recordTenantId?: number
+}
+
+export type RoleUserAssignmentPayload = {
+  scopeType?: RoleAssignmentScopeType
+  scopeId?: number
+  userIds: number[]
 }
 
 export function roleList(params: { current?: number; pageSize?: number; name?: string; code?: string }) {
@@ -52,18 +60,26 @@ export function getAllRoles() {
 }
 
 // 获取某角色下已分配用户（返回用户ID数组或用户列表，需后端实现）
-export function getRoleUsers(roleId: number) {
+export function getRoleUsers(
+  roleId: number,
+  scope?: { scopeType?: RoleAssignmentScopeType; scopeId?: number | null },
+) {
   // 向后端请求该角色下所有已分配用户
-  return request.get(`/sys/roles/${roleId}/users`)
+  return request.get(`/sys/roles/${roleId}/users`, {
+    params: {
+      scopeType: scope?.scopeType,
+      scopeId: scope?.scopeId ?? undefined,
+    },
+  })
 }
 
 // 保存角色与用户的关系（需后端实现）
-export function updateRoleUsers(roleId: number, userIds: number[]) {
+export function updateRoleUsers(roleId: number, payload: number[] | RoleUserAssignmentPayload) {
   // 向后端提交该角色分配的所有用户ID
-  return request.post(`/sys/roles/${roleId}/users`, userIds, {
+  return request.post(`/sys/roles/${roleId}/users`, payload, {
     idempotency: {
       scope: `sys-roles:users:update:${roleId}`,
-      payload: userIds,
+      payload,
     },
   })
 }
@@ -75,12 +91,15 @@ export function getRoleResources(roleId: number) {
 }
 
 // 保存角色与资源的关系（需后端实现）
-export function updateRoleResources(roleId: number, resourceIds: number[]) {
-  // 向后端提交该角色分配的所有资源ID
-  return request.post(`/sys/roles/${roleId}/resources`, resourceIds, {
+export function updateRoleResources(
+  roleId: number,
+  payload: number[] | { permissionIds?: number[]; resourceIds?: number[] },
+) {
+  // 主契约: permissionIds；resourceIds 仅兼容 alias
+  return request.post(`/sys/roles/${roleId}/resources`, payload, {
     idempotency: {
       scope: `sys-roles:resources:update:${roleId}`,
-      payload: resourceIds,
+      payload,
     },
   })
 }

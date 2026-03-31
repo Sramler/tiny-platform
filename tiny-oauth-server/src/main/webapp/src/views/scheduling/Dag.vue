@@ -187,7 +187,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount, computed } from 'vue'
 import CronDesigner from '@/components/scheduling/CronDesigner.vue'
 import { message } from 'ant-design-vue'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
@@ -196,7 +196,9 @@ import { dagList, createDag, updateDag, deleteDag, triggerDag, stopDag, retryDag
 import { throttle } from '@/utils/debounce'
 import { useAuth } from '@/auth/auth'
 import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import { SCHEDULING_CONSOLE_CONFIG, SCHEDULING_RUN_CONTROL, SCHEDULING_WILDCARD } from '@/constants/permission'
 import { getActiveTenantId, resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
+import { ACTIVE_SCOPE_CHANGED_EVENT } from '@/utils/activeScopeEvents'
 
 const route = useRoute()
 const router = useRouter()
@@ -205,12 +207,12 @@ const schedulingAuthorities = computed(() =>
   extractAuthoritiesFromJwt(user.value?.access_token).filter((a) => a.startsWith('scheduling:')),
 )
 const canManageSchedulingConfig = computed(() =>
-  schedulingAuthorities.value.includes('scheduling:console:config') ||
-  schedulingAuthorities.value.includes('scheduling:*'),
+  schedulingAuthorities.value.includes(SCHEDULING_CONSOLE_CONFIG) ||
+  schedulingAuthorities.value.includes(SCHEDULING_WILDCARD),
 )
 const canOperateSchedulingRun = computed(() =>
-  schedulingAuthorities.value.includes('scheduling:run:control') ||
-  schedulingAuthorities.value.includes('scheduling:*'),
+  schedulingAuthorities.value.includes(SCHEDULING_RUN_CONTROL) ||
+  schedulingAuthorities.value.includes(SCHEDULING_WILDCARD),
 )
 const loading = ref(false)
 const refreshing = ref(false)
@@ -554,8 +556,17 @@ const handleDelete = async (id: number) => {
   }
 }
 
+function handleActiveScopeChanged() {
+  void loadData()
+}
+
 onMounted(() => {
   loadData()
+  window.addEventListener(ACTIVE_SCOPE_CHANGED_EVENT, handleActiveScopeChanged)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener(ACTIVE_SCOPE_CHANGED_EVENT, handleActiveScopeChanged)
 })
 </script>
 

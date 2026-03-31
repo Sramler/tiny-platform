@@ -57,8 +57,8 @@ public class ResourceController {
      */
     @GetMapping("/{id}")
     @PreAuthorize("@resourceManagementAccessGuard.canRead(authentication)")
-    public ResponseEntity<Resource> getResource(@PathVariable("id") Long id) {
-        return resourceService.findById(id)
+    public ResponseEntity<ResourceResponseDto> getResource(@PathVariable("id") Long id) {
+        return resourceService.findDetailById(id)
             .map(ResponseEntity::ok)
             .orElse(ResponseEntity.notFound().build());
     }
@@ -245,9 +245,9 @@ public class ResourceController {
      */
     @GetMapping("/type/{type}")
     @PreAuthorize("@resourceManagementAccessGuard.canRead(authentication)")
-    public ResponseEntity<List<Resource>> getResourcesByType(@PathVariable("type") Integer type) {
+    public ResponseEntity<List<ResourceResponseDto>> getResourcesByType(@PathVariable("type") Integer type) {
         ResourceType resourceType = ResourceType.fromCode(type);
-        List<Resource> resources = resourceService.findByType(resourceType);
+        List<ResourceResponseDto> resources = resourceService.findDtosByType(resourceType);
         return ResponseEntity.ok(resources);
     }
     
@@ -258,8 +258,8 @@ public class ResourceController {
      */
     @GetMapping("/parent/{parentId}")
     @PreAuthorize("@resourceManagementAccessGuard.canRead(authentication)")
-    public ResponseEntity<List<Resource>> getResourcesByParentId(@PathVariable("parentId") Long parentId) {
-        List<Resource> resources = resourceService.findByParentId(parentId);
+    public ResponseEntity<List<ResourceResponseDto>> getResourcesByParentId(@PathVariable("parentId") Long parentId) {
+        List<ResourceResponseDto> resources = resourceService.findChildDtos(parentId);
         return ResponseEntity.ok(resources);
     }
     
@@ -269,8 +269,8 @@ public class ResourceController {
      */
     @GetMapping("/top-level")
     @PreAuthorize("@resourceManagementAccessGuard.canRead(authentication)")
-    public ResponseEntity<List<Resource>> getTopLevelResources() {
-        List<Resource> resources = resourceService.findTopLevel();
+    public ResponseEntity<List<ResourceResponseDto>> getTopLevelResources() {
+        List<ResourceResponseDto> resources = resourceService.findTopLevelDtos();
         return ResponseEntity.ok(resources);
     }
     
@@ -281,11 +281,29 @@ public class ResourceController {
     @GetMapping("/tree")
     @PreAuthorize("@resourceManagementAccessGuard.canRead(authentication)")
     public ResponseEntity<List<ResourceResponseDto>> getResourceTree() {
-        List<Resource> allResources = resourceService.findTopLevel();
-        // 递归获取所有子资源
-        List<Resource> allResourcesWithChildren = getAllResourcesRecursively(allResources);
-        List<ResourceResponseDto> tree = resourceService.buildResourceTree(allResourcesWithChildren);
-        return ResponseEntity.ok(tree);
+        return ResponseEntity.ok(resourceService.findResourceTreeDtos());
+    }
+
+    /**
+     * 获取当前用户在指定页面下可见的运行时按钮载体。
+     * <p>迁移期由前端管理页消费，用于替代直接基于权限码的按钮显隐判断。</p>
+     */
+    @GetMapping("/runtime/ui-actions")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<List<ResourceResponseDto>> getRuntimeUiActions(@RequestParam("pagePath") String pagePath) {
+        return ResponseEntity.ok(resourceService.findAllowedUiActionDtos(pagePath));
+    }
+
+    /**
+     * 判断当前用户是否可访问指定 API 载体。
+     * <p>迁移期供统一路由守卫和调试用途消费。</p>
+     */
+    @GetMapping("/runtime/api-access")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Map<String, Boolean>> getRuntimeApiAccess(
+            @RequestParam("method") String method,
+            @RequestParam("uri") String uri) {
+        return ResponseEntity.ok(Map.of("allowed", resourceService.canAccessApiEndpoint(method, uri)));
     }
     
     /**
@@ -320,8 +338,8 @@ public class ResourceController {
      */
     @GetMapping("/permission/{permission}")
     @PreAuthorize("@resourceManagementAccessGuard.canRead(authentication)")
-    public ResponseEntity<List<Resource>> getResourcesByPermission(@PathVariable("permission") String permission) {
-        List<Resource> resources = resourceService.findByPermission(permission);
+    public ResponseEntity<List<ResourceResponseDto>> getResourcesByPermission(@PathVariable("permission") String permission) {
+        List<ResourceResponseDto> resources = resourceService.findDtosByPermission(permission);
         return ResponseEntity.ok(resources);
     }
     
@@ -370,19 +388,4 @@ public class ResourceController {
         return ResponseEntity.ok(Map.of("exists", exists));
     }
     
-    /**
-     * 递归获取所有子资源
-     * @param resources 资源列表
-     * @return 包含子资源的完整列表
-     */
-    private List<Resource> getAllResourcesRecursively(List<Resource> resources) {
-        List<Resource> allResources = new java.util.ArrayList<>(resources);
-        for (Resource resource : resources) {
-            List<Resource> children = resourceService.findByParentId(resource.getId());
-            if (!children.isEmpty()) {
-                allResources.addAll(getAllResourcesRecursively(children));
-            }
-        }
-        return allResources;
-    }
-} 
+}

@@ -11,6 +11,7 @@ import com.tiny.platform.infrastructure.auth.role.domain.RoleHierarchy;
 import com.tiny.platform.infrastructure.auth.role.domain.RoleMutex;
 import com.tiny.platform.infrastructure.auth.role.domain.RolePrerequisite;
 import com.tiny.platform.infrastructure.auth.role.domain.RoleCardinality;
+import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
 import com.tiny.platform.infrastructure.auth.role.repository.RoleAssignmentRepository;
 import com.tiny.platform.infrastructure.auth.role.repository.RoleCardinalityRepository;
 import com.tiny.platform.infrastructure.auth.role.repository.RoleHierarchyRepository;
@@ -23,6 +24,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @ExtendWith(MockitoExtension.class)
 class RoleConstraintServiceImplTest {
@@ -154,5 +158,76 @@ class RoleConstraintServiceImplTest {
         verify(roleAssignmentRepository).findActiveRoleIdsForUserInTenant(any(), any(), any(LocalDateTime.class));
         verify(roleAssignmentRepository).findActiveUserIdsForRoleInTenant(any(), any(), any(LocalDateTime.class));
     }
-}
 
+    @Test
+    void validateAssignmentsBeforeGrant_shouldThrowDetailedMessage_whenEnforceEnabledForTenant() {
+        RoleMutex mutex = new RoleMutex();
+        mutex.setTenantId(1L);
+        mutex.setLeftRoleId(10L);
+        mutex.setRightRoleId(20L);
+        when(roleHierarchyRepository.findByTenantIdAndChildRoleIdIn(any(), any())).thenReturn(List.of());
+        when(roleMutexRepository.findByTenantIdAndRoleIds(any(), any())).thenReturn(List.of(mutex));
+        when(rolePrerequisiteRepository.findByTenantIdAndRoleIdIn(any(), any())).thenReturn(List.of());
+        when(roleCardinalityRepository.findByTenantIdAndScopeTypeAndRoleIdIn(any(), any(), any())).thenReturn(List.of());
+        ReflectionTestUtils.setField(service, "rbac3Enforce", true);
+        ReflectionTestUtils.setField(service, "rbac3EnforceTenantIds", "1");
+        ReflectionTestUtils.setField(service, "rbac3EnforceTenantIdSet", null);
+
+        assertThatThrownBy(() ->
+            service.validateAssignmentsBeforeGrant("USER", 1L, 1L, "TENANT", 1L, List.of(10L, 20L))
+        ).isInstanceOf(BusinessException.class)
+            .hasMessageContaining("RBAC3 enforce 已阻断本次赋权")
+            .hasMessageContaining("互斥角色冲突");
+    }
+
+    @Test
+    void validateAssignmentsBeforeGrant_shouldStayDryRun_whenTenantNotInEnforceAllowlist() {
+        RoleMutex mutex = new RoleMutex();
+        mutex.setTenantId(1L);
+        mutex.setLeftRoleId(10L);
+        mutex.setRightRoleId(20L);
+        when(roleHierarchyRepository.findByTenantIdAndChildRoleIdIn(any(), any())).thenReturn(List.of());
+        when(roleMutexRepository.findByTenantIdAndRoleIds(any(), any())).thenReturn(List.of(mutex));
+        when(rolePrerequisiteRepository.findByTenantIdAndRoleIdIn(any(), any())).thenReturn(List.of());
+        when(roleCardinalityRepository.findByTenantIdAndScopeTypeAndRoleIdIn(any(), any(), any())).thenReturn(List.of());
+        ReflectionTestUtils.setField(service, "rbac3Enforce", true);
+        ReflectionTestUtils.setField(service, "rbac3EnforceTenantIds", "999");
+        ReflectionTestUtils.setField(service, "rbac3EnforceTenantIdSet", null);
+
+        service.validateAssignmentsBeforeGrant("USER", 1L, 1L, "TENANT", 1L, List.of(10L, 20L));
+
+        verify(violationLogWriteService).write(any());
+    }
+
+    @Test
+    void validateAssignmentsBeforeGrant_should_throw_when_grant_frozen_compat_roles() {
+        ReflectionTestUtils.setField(service, "freezeCompatRoleIds", "5,6");
+        ReflectionTestUtils.setField(service, "freezeCompatRoleIdSet", null);
+
+        assertThatThrownBy(() ->
+                service.validateAssignmentsBeforeGrant(
+                    "USER",
+                    100L,
+                    1L,
+                    "TENANT",
+                    1L,
+                    List.of(5L)
+                )
+            )
+            .isInstanceOf(BusinessException.class)
+            .hasMessageContaining("兼容性角色已冻结");
+
+        assertThatThrownBy(() ->
+                service.validateAssignmentsBeforeGrant(
+                    "USER",
+                    100L,
+                    1L,
+                    "TENANT",
+                    1L,
+                    List.of(6L)
+                )
+            )
+            .isInstanceOf(BusinessException.class)
+            .hasMessageContaining("兼容性角色已冻结");
+    }
+}

@@ -202,7 +202,12 @@ import {
 import VueDraggable from 'vuedraggable'
 import MenuForm from './MenuForm.vue'
 import Icon from '@/components/Icon.vue' // 通用图标回显组件
+import { getRuntimeUiActions } from '@/api/resource'
 import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import {
+  MENU_MANAGEMENT_READ_AUTHORITIES,
+} from '@/constants/permission'
+import { ACTIVE_SCOPE_CHANGED_EVENT } from '@/utils/activeScopeEvents'
 
 // MenuItem 类型补充 expanded 和 _childrenLoaded 字段，消除TS报错
 type MenuItemEx = MenuItem & {
@@ -226,20 +231,24 @@ const tableData = ref<MenuItemEx[]>([])
 const { user } = useAuth()
 const menuAuthorities = computed(() => new Set(extractAuthoritiesFromJwt(user.value?.access_token)))
 
-// 与后端 MenuManagementAccessGuard + LegacyAuthConstants 一致，勿扩散硬编码；规范码见 TINY_PLATFORM_PERMISSION_IDENTIFIER_SPEC
-const MENU_MANAGEMENT_READ_AUTHORITIES = ['ROLE_ADMIN', 'system:menu:list']
-const MENU_MANAGEMENT_CREATE_AUTHORITIES = ['ROLE_ADMIN', 'system:menu:create']
-const MENU_MANAGEMENT_UPDATE_AUTHORITIES = ['ROLE_ADMIN', 'system:menu:edit']
-const MENU_MANAGEMENT_DELETE_AUTHORITIES = ['ROLE_ADMIN', 'system:menu:delete', 'system:menu:batch-delete']
-
 function hasAnyMenuAuthority(requiredAuthorities: string[]) {
   return requiredAuthorities.some((authority) => menuAuthorities.value.has(authority))
 }
 
 const canReadMenuManagement = computed(() => hasAnyMenuAuthority(MENU_MANAGEMENT_READ_AUTHORITIES))
-const canCreateMenuManagement = computed(() => hasAnyMenuAuthority(MENU_MANAGEMENT_CREATE_AUTHORITIES))
-const canUpdateMenuManagement = computed(() => hasAnyMenuAuthority(MENU_MANAGEMENT_UPDATE_AUTHORITIES))
-const canDeleteMenuManagement = computed(() => hasAnyMenuAuthority(MENU_MANAGEMENT_DELETE_AUTHORITIES))
+const runtimeUiActionPermissions = ref<Set<string>>(new Set())
+const runtimeUiActionsLoaded = ref(false)
+
+function hasRuntimeUiAction(permission: string) {
+  if (!runtimeUiActionsLoaded.value) {
+    return false
+  }
+  return runtimeUiActionPermissions.value.has(permission)
+}
+
+const canCreateMenuManagement = computed(() => hasRuntimeUiAction('system:menu:create'))
+const canUpdateMenuManagement = computed(() => hasRuntimeUiAction('system:menu:edit'))
+const canDeleteMenuManagement = computed(() => hasRuntimeUiAction('system:menu:delete') || hasRuntimeUiAction('system:menu:batch-delete'))
 
 // 加载状态
 const loading = ref(false)
@@ -475,10 +484,13 @@ async function loadData() {
     tableData.value = []
     loading.value = false
     expandedRowKeys.value = []
+    runtimeUiActionsLoaded.value = false
+    runtimeUiActionPermissions.value = new Set()
     return
   }
   try {
     loading.value = true
+    await loadRuntimeUiActions()
     const params: any = {
       name: query.value.name?.trim() || '',
       title: query.value.title?.trim() || '',
@@ -516,6 +528,35 @@ async function loadData() {
     message.error('加载菜单数据失败')
   } finally {
     loading.value = false
+  }
+}
+
+function resolveRuntimePagePath() {
+  const currentPath = window?.location?.pathname
+  if (currentPath && currentPath !== '/') {
+    return currentPath
+  }
+  return '/system/menu'
+}
+
+async function loadRuntimeUiActions() {
+  if (!canReadMenuManagement.value) {
+    runtimeUiActionsLoaded.value = false
+    runtimeUiActionPermissions.value = new Set()
+    return
+  }
+  try {
+    const actions = await getRuntimeUiActions(resolveRuntimePagePath())
+    runtimeUiActionPermissions.value = new Set(
+      (actions || [])
+        .map((action) => action.permission)
+        .filter((permission): permission is string => Boolean(permission)),
+    )
+    runtimeUiActionsLoaded.value = true
+  } catch (error) {
+    console.error('加载菜单页运行时按钮载体失败:', error)
+    runtimeUiActionsLoaded.value = false
+    runtimeUiActionPermissions.value = new Set()
   }
 }
 
@@ -835,11 +876,18 @@ async function handleFormSubmit(formData: any) {
 }
 
 // 生命周期钩子
+function handleActiveScopeChanged() {
+  if (canReadMenuManagement.value) {
+    loadData()
+  }
+}
+
 onMounted(() => {
   try {
     loadData()
     updateTableBodyHeight()
     window.addEventListener('resize', updateTableBodyHeight)
+    window.addEventListener(ACTIVE_SCOPE_CHANGED_EVENT, handleActiveScopeChanged)
   } catch (error) {
     console.warn('Menu onMounted error:', error)
   }
@@ -849,6 +897,7 @@ onBeforeUnmount(() => {
   try {
     // 清理事件监听器
     window.removeEventListener('resize', updateTableBodyHeight)
+    window.removeEventListener(ACTIVE_SCOPE_CHANGED_EVENT, handleActiveScopeChanged)
 
     // 清理响应式数据，避免卸载时访问已销毁的数据
     selectedRowKeys.value = []

@@ -1,0 +1,90 @@
+databaseChangeLog:
+  - changeSet:
+      id: 082-create-user-session
+      author: codex
+      changes:
+        - createTable:
+            tableName: user_session
+            columns:
+              - column:
+                  name: id
+                  type: BIGINT
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    primaryKeyName: pk_user_session
+                    nullable: false
+              - column:
+                  name: session_id
+                  type: VARCHAR(128)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: tenant_id
+                  type: BIGINT
+              - column:
+                  name: username
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: authentication_provider
+                  type: VARCHAR(50)
+              - column:
+                  name: authentication_factor
+                  type: VARCHAR(50)
+              - column:
+                  name: ip_address
+                  type: VARCHAR(45)
+              - column:
+                  name: user_agent
+                  type: VARCHAR(255)
+              - column:
+                  name: last_seen_at
+                  type: DATETIME
+              - column:
+                  name: expires_at
+                  type: DATETIME
+              - column:
+                  name: ended_at
+                  type: DATETIME
+              - column:
+                  name: created_at
+                  type: DATETIME
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: DATETIME
+                  constraints:
+                    nullable: false
+        - addUniqueConstraint:
+            tableName: user_session
+            columnNames: session_id
+            constraintName: uk_user_session_session_id
+        - createIndex:
+            tableName: user_session
+            indexName: idx_user_session_user_tenant_status
+            columns:
+              - column:
+                  name: user_id
+              - column:
+                  name: tenant_id
+              - column:
+                  name: status
+        - createIndex:
+            tableName: user_session
+            indexName: idx_user_session_last_seen
+            columns:
+              - column:
+                  name: last_seen_at

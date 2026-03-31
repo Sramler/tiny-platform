@@ -1,7 +1,6 @@
 package com.tiny.platform.core.oauth.model;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.annotation.JsonTypeName;
@@ -13,6 +12,7 @@ import com.tiny.platform.core.oauth.tenant.ActiveTenantResponseSupport;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.auth.role.domain.Role;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -84,11 +84,19 @@ public class SecurityUser implements UserDetails {
     }
 
     public SecurityUser(User user, String password, Long activeTenantId, Set<Role> roles, String permissionsVersion) {
+        this(user, password, activeTenantId, buildAuthorities(roles), permissionsVersion);
+    }
+
+    public SecurityUser(User user,
+                        String password,
+                        Long activeTenantId,
+                        Collection<? extends GrantedAuthority> authorities,
+                        String permissionsVersion) {
         this.userId = user.getId();
         this.activeTenantId = activeTenantId;
         this.username = user.getUsername();
         this.password = password != null ? password : "";
-        this.authorities = buildAuthorities(roles);
+        this.authorities = authorities != null ? authorities : java.util.List.of();
         this.permissionsVersion = permissionsVersion;
         this.accountNonExpired = user.isAccountNonExpired();
         this.accountNonLocked = user.isAccountNonLocked();
@@ -155,18 +163,18 @@ public class SecurityUser implements UserDetails {
     }
 
     /**
-     * 构建 authority 列表：仅使用 role.code 与 resource.permission，不使用 role.name。
-     * 与授权模型契约一致：JWT/Session 不包含展示用 role.name，鉴权以规范码为准。
+     * 构建 authority 列表：仅使用 role.code，不使用 role.name。
+     * 历史 role.resources 授权聚合已迁移到 SecurityUserAuthorityService（role_permission 主链路）。
      */
     private static Collection<? extends GrantedAuthority> buildAuthorities(Set<Role> roles) {
         Set<Role> effectiveRoles = roles != null ? roles : Set.of();
         return effectiveRoles.stream()
-                .flatMap(role -> Stream.concat(
-                        authorityStream(role.getCode()),
-                        role.getResources().stream().flatMap(resource ->
-                                authorityStream(resource.getPermission()))
-                ))
+                .flatMap(role -> authorityStream(role.getCode()))
                 .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    public static Collection<? extends GrantedAuthority> buildAuthoritiesFromRoles(Set<Role> roles) {
+        return buildAuthorities(roles);
     }
 
     private static Stream<org.springframework.security.core.authority.SimpleGrantedAuthority> authorityStream(String... candidates) {
@@ -175,7 +183,7 @@ public class SecurityUser implements UserDetails {
             addAuthorityValue(normalizedValues, value);
         }
         return normalizedValues.stream()
-                .map(org.springframework.security.core.authority.SimpleGrantedAuthority::new);
+                .map(SimpleGrantedAuthority::new);
     }
 
     private static void addAuthorityValue(Set<String> values, String value) {

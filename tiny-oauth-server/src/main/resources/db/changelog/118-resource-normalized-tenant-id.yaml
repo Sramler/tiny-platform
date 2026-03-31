@@ -1,0 +1,23 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-resource-normalized-tenant-id
+      author: codex
+      comment: Add generated resource.normalized_tenant_id for platform template joins
+      preConditions:
+        onFail: MARK_RAN
+        not:
+          - columnExists:
+              tableName: resource
+              columnName: normalized_tenant_id
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              ALTER TABLE `resource`
+                ADD COLUMN `normalized_tenant_id` BIGINT GENERATED ALWAYS AS (IFNULL(`tenant_id`, 0)) STORED
+                COMMENT '归一化租户ID';
+              ALTER TABLE `resource`
+                ADD KEY `idx_resource_normalized_tenant_id` (`normalized_tenant_id`);
+

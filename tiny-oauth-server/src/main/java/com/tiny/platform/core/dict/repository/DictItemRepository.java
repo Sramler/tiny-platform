@@ -18,10 +18,10 @@ import java.util.Optional;
 @Repository
 public interface DictItemRepository extends JpaRepository<DictItem, Long> {
 
-    /**
-     * 根据字典类型ID、值和租户ID查找
-     */
     Optional<DictItem> findByDictTypeIdAndValueAndTenantId(Long dictTypeId, String value, Long tenantId);
+
+    /** 平台字典项查询：tenant_id IS NULL */
+    Optional<DictItem> findByDictTypeIdAndValueAndTenantIdIsNull(Long dictTypeId, String value);
 
     /**
      * 查询当前租户在指定字典类型下可见的字典项。
@@ -29,9 +29,9 @@ public interface DictItemRepository extends JpaRepository<DictItem, Long> {
     @Query("SELECT di FROM DictItem di " +
            "JOIN di.dictType dt " +
            "WHERE di.dictTypeId = :dictTypeId " +
-           "AND ((dt.tenantId = 0 AND (di.tenantId = 0 OR di.tenantId = :tenantId)) " +
+           "AND ((dt.tenantId IS NULL AND (di.tenantId IS NULL OR di.tenantId = :tenantId)) " +
            "  OR (dt.tenantId = :tenantId AND di.tenantId = :tenantId)) " +
-           "ORDER BY di.tenantId ASC, di.sortOrder ASC, di.id ASC")
+           "ORDER BY CASE WHEN di.tenantId IS NULL THEN 0 ELSE 1 END ASC, di.sortOrder ASC, di.id ASC")
     List<DictItem> findVisibleByDictTypeId(@Param("dictTypeId") Long dictTypeId, @Param("tenantId") Long tenantId);
 
     /**
@@ -39,7 +39,7 @@ public interface DictItemRepository extends JpaRepository<DictItem, Long> {
      */
     @Query("SELECT di FROM DictItem di " +
            "JOIN di.dictType dt " +
-           "WHERE ((dt.tenantId = 0 AND (di.tenantId = 0 OR di.tenantId = :tenantId)) " +
+           "WHERE ((dt.tenantId IS NULL AND (di.tenantId IS NULL OR di.tenantId = :tenantId)) " +
            "   OR (dt.tenantId = :tenantId AND di.tenantId = :tenantId)) AND " +
            "(:dictTypeId IS NULL OR di.dictTypeId = :dictTypeId) AND " +
            "(:value IS NULL OR di.value LIKE %:value%) AND " +
@@ -59,7 +59,7 @@ public interface DictItemRepository extends JpaRepository<DictItem, Long> {
      */
     @Query("SELECT di FROM DictItem di " +
            "JOIN di.dictType dt " +
-           "WHERE ((dt.tenantId = 0 AND (di.tenantId = 0 OR di.tenantId = :tenantId)) " +
+           "WHERE ((dt.tenantId IS NULL AND (di.tenantId IS NULL OR di.tenantId = :tenantId)) " +
            "   OR (dt.tenantId = :tenantId AND di.tenantId = :tenantId)) AND " +
            "(:dictTypeId IS NULL OR di.dictTypeId = :dictTypeId) AND " +
            "(:value IS NULL OR di.value LIKE %:value%) AND " +
@@ -74,18 +74,43 @@ public interface DictItemRepository extends JpaRepository<DictItem, Long> {
             Sort sort
     );
 
-    /**
-     * 检查字典项是否存在（同一字典类型下，同一租户内value唯一）
-     */
     boolean existsByDictTypeIdAndValueAndTenantIdAndIdNot(Long dictTypeId, String value, Long tenantId, Long id);
 
-    /**
-     * 检查字典项是否存在
-     */
     boolean existsByDictTypeIdAndValueAndTenantId(Long dictTypeId, String value, Long tenantId);
 
     /**
-     * 根据字典类型ID删除所有字典项
+     * 查询平台字典类型下的平台字典项（dt.tenantId IS NULL AND di.tenantId IS NULL）。
      */
+    @Query("SELECT di FROM DictItem di " +
+           "JOIN di.dictType dt " +
+           "WHERE di.dictTypeId = :dictTypeId " +
+           "AND dt.tenantId IS NULL AND di.tenantId IS NULL " +
+           "ORDER BY di.sortOrder ASC, di.id ASC")
+    List<DictItem> findPlatformByDictTypeId(@Param("dictTypeId") Long dictTypeId);
+
+    /**
+     * 分页查询平台字典项（dt.tenantId IS NULL AND di.tenantId IS NULL）。
+     */
+    @Query("SELECT di FROM DictItem di " +
+           "JOIN di.dictType dt " +
+           "WHERE dt.tenantId IS NULL AND di.tenantId IS NULL AND " +
+           "(:dictTypeId IS NULL OR di.dictTypeId = :dictTypeId) AND " +
+           "(:value IS NULL OR di.value LIKE %:value%) AND " +
+           "(:label IS NULL OR di.label LIKE %:label%) AND " +
+           "(:enabled IS NULL OR di.enabled = :enabled)")
+    Page<DictItem> findPlatformByConditions(
+            @Param("dictTypeId") Long dictTypeId,
+            @Param("value") String value,
+            @Param("label") String label,
+            @Param("enabled") Boolean enabled,
+            Pageable pageable
+    );
+
+    /** 平台字典项唯一性检查：tenant_id IS NULL */
+    boolean existsByDictTypeIdAndValueAndTenantIdIsNull(Long dictTypeId, String value);
+
+    /** 平台字典项唯一性检查（排除指定 ID）：tenant_id IS NULL */
+    boolean existsByDictTypeIdAndValueAndTenantIdIsNullAndIdNot(Long dictTypeId, String value, Long id);
+
     void deleteByDictTypeId(Long dictTypeId);
 }

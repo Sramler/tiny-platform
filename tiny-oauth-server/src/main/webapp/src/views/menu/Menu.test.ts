@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const apiMocks = vi.hoisted(() => ({
   menuList: vi.fn(),
   getMenusByParentId: vi.fn(),
+  getRuntimeUiActions: vi.fn(),
 }))
 
 const authMocks = vi.hoisted(() => ({
@@ -29,13 +30,23 @@ vi.mock('@/utils/debounce', () => ({
 vi.mock('@/auth/auth', () => ({
   useAuth: () => ({
     user: authMocks.authUser,
+    isAuthenticated: { value: true },
+    login: vi.fn(),
+    logout: vi.fn(),
+    getAccessToken: vi.fn(),
+    fetchWithAuth: vi.fn(),
   }),
+}))
+
+vi.mock('@/api/resource', () => ({
+  getRuntimeUiActions: apiMocks.getRuntimeUiActions,
 }))
 
 const PassThrough = defineComponent({
   template: '<div><slot /></div>',
 })
 
+import { ACTIVE_SCOPE_CHANGED_EVENT } from '@/utils/activeScopeEvents'
 import Menu from '@/views/menu/Menu.vue'
 
 function createToken(authorities: string[]) {
@@ -58,9 +69,11 @@ describe('Menu.vue', () => {
       { id: 1, name: 'sys', title: '系统', type: 0, parentId: null, enabled: true },
     ])
     apiMocks.getMenusByParentId.mockResolvedValue([])
+    apiMocks.getRuntimeUiActions.mockResolvedValue([])
     authMocks.authUser.value = {
       access_token: createToken(['system:menu:list']),
     }
+    window.history.replaceState({}, '', '/system/menu')
   })
 
   it('should display menu list title and load data on mount', async () => {
@@ -97,6 +110,45 @@ describe('Menu.vue', () => {
 
     expect(wrapper.text()).toContain('菜单列表')
     expect(apiMocks.menuList).toHaveBeenCalled()
+  })
+
+  it('should refetch menu list when active scope changes', async () => {
+    const wrapper = mount(Menu, {
+      global: {
+        stubs: {
+          'a-table': defineComponent({
+            props: ['dataSource'],
+            template: '<div class="menu-table-stub">table rows: {{ (dataSource || []).length }}</div>',
+          }),
+          'a-form': PassThrough,
+          'a-form-item': PassThrough,
+          'a-input': PassThrough,
+          'a-select': PassThrough,
+          'a-select-option': PassThrough,
+          'a-button': PassThrough,
+          'a-tooltip': PassThrough,
+          'a-popover': PassThrough,
+          'a-checkbox': PassThrough,
+          'a-tag': PassThrough,
+          'a-modal': defineComponent({ props: ['open'], template: '<div v-if="open"><slot /></div>' }),
+          'a-drawer': defineComponent({ props: ['open'], template: '<div v-if="open"><slot /></div>' }),
+          VueDraggable: PassThrough,
+          PlusOutlined: PassThrough,
+          ReloadOutlined: PassThrough,
+          EditOutlined: PassThrough,
+          DeleteOutlined: PassThrough,
+          SettingOutlined: PassThrough,
+          HolderOutlined: PassThrough,
+        },
+      },
+    })
+    await flushPromises()
+    const callsAfterMount = apiMocks.menuList.mock.calls.length
+    expect(callsAfterMount).toBeGreaterThanOrEqual(1)
+    window.dispatchEvent(new CustomEvent(ACTIVE_SCOPE_CHANGED_EVENT))
+    await flushPromises()
+    expect(apiMocks.menuList.mock.calls.length).toBeGreaterThan(callsAfterMount)
+    wrapper.unmount()
   })
 
   it('should not request menu list without menu management authority', async () => {
@@ -137,5 +189,55 @@ describe('Menu.vue', () => {
 
     expect(apiMocks.menuList).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('菜单管理需要额外授权')
+  })
+
+  it('should hide write buttons when runtime ui actions are missing (fail-closed)', async () => {
+    apiMocks.getRuntimeUiActions.mockResolvedValue([])
+    authMocks.authUser.value = {
+      access_token: createToken([
+        'system:menu:list',
+        'system:menu:create',
+        'system:menu:edit',
+        'system:menu:delete',
+        'system:menu:batch-delete',
+      ]),
+    }
+
+    const wrapper = mount(Menu, {
+      global: {
+        stubs: {
+          'a-table': defineComponent({
+            props: ['dataSource'],
+            template: '<div class="menu-table-stub">table rows: {{ (dataSource || []).length }}</div>',
+          }),
+          'a-form': PassThrough,
+          'a-form-item': PassThrough,
+          'a-input': PassThrough,
+          'a-select': PassThrough,
+          'a-select-option': PassThrough,
+          'a-button': PassThrough,
+          'a-tooltip': PassThrough,
+          'a-popover': PassThrough,
+          'a-checkbox': PassThrough,
+          'a-tag': PassThrough,
+          'a-modal': defineComponent({ props: ['open'], template: '<div v-if="open"><slot /></div>' }),
+          'a-drawer': defineComponent({ props: ['open'], template: '<div v-if="open"><slot /></div>' }),
+          VueDraggable: PassThrough,
+          PlusOutlined: PassThrough,
+          ReloadOutlined: PassThrough,
+          EditOutlined: PassThrough,
+          DeleteOutlined: PassThrough,
+          SettingOutlined: PassThrough,
+          HolderOutlined: PassThrough,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(apiMocks.getRuntimeUiActions).toHaveBeenCalledWith('/system/menu')
+    expect(wrapper.text()).not.toContain('新建菜单')
+    expect(wrapper.text()).not.toContain('批量删除')
+    expect(wrapper.text()).not.toContain('编辑')
+    expect(wrapper.text()).not.toContain('删除')
   })
 })

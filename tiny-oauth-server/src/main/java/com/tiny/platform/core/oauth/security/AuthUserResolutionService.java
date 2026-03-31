@@ -6,6 +6,7 @@ import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.TenantUserRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
+import com.tiny.platform.core.oauth.tenant.TenantContextContract;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -44,10 +45,27 @@ public class AuthUserResolutionService {
         }
 
         User user = resolvedUser.get();
-        // 仅使用 role_assignment 解析有效角色，不再从 user_role 回退（见 AUTHORIZATION_LEGACY_REMOVAL_PLAN）
+        // user_role 已移除（043/047 迁移），角色解析仅通过 role_assignment
         Set<Role> effectiveRoles = resolveEffectiveRoles(user.getId(), activeTenantId);
 
         return Optional.of(new AuthResolvedUser(user, activeTenantId, effectiveRoles));
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<AuthResolvedUser> resolveUserInScope(String username, Long activeTenantId, String activeScopeType) {
+        String normalizedScopeType = activeScopeType == null
+            ? TenantContextContract.SCOPE_TYPE_TENANT
+            : activeScopeType.trim().toUpperCase(java.util.Locale.ROOT);
+        if (TenantContextContract.SCOPE_TYPE_PLATFORM.equals(normalizedScopeType)) {
+            Optional<User> resolvedUser = resolveUserRecordInPlatform(username);
+            if (resolvedUser.isEmpty()) {
+                return Optional.empty();
+            }
+            User user = resolvedUser.get();
+            Set<Role> effectiveRoles = effectiveRoleResolutionService.findEffectiveRolesForUserInPlatform(user.getId());
+            return Optional.of(new AuthResolvedUser(user, null, effectiveRoles));
+        }
+        return resolveUserInActiveTenant(username, activeTenantId);
     }
 
     @Transactional(readOnly = true)
@@ -63,11 +81,16 @@ public class AuthUserResolutionService {
             return Optional.empty();
         }
 
-        if (tenantRepository.isTenantFrozen(activeTenantId)) {
+        Optional<String> blockedLifecycleStatus = tenantRepository.findLoginBlockedLifecycleStatus(activeTenantId);
+        if (blockedLifecycleStatus == null) {
+            blockedLifecycleStatus = Optional.empty();
+        }
+        if (blockedLifecycleStatus.isPresent()) {
             if (log.isDebugEnabled()) {
                 log.debug(
-                        "[auth-resolve] 跳过用户解析：租户已冻结 activeTenantId={}",
-                        activeTenantId
+                        "[auth-resolve] 跳过用户解析：租户不可登录 activeTenantId={}, lifecycleStatus={}",
+                        activeTenantId,
+                        blockedLifecycleStatus.get()
                 );
             }
             return Optional.empty();
@@ -110,6 +133,27 @@ public class AuthUserResolutionService {
             );
         }
         return Optional.of(resolvedUser);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<User> resolveUserRecordInPlatform(String username) {
+        if (username == null || username.isBlank()) {
+            return Optional.empty();
+        }
+        List<User> candidates = userRepository.findAllByUsername(username.trim());
+        if (candidates.isEmpty()) {
+            return Optional.empty();
+        }
+        if (candidates.size() > 1) {
+            log.error("用户名 {} 在 PLATFORM 作用域下命中多条用户记录，拒绝解析", username);
+            return Optional.empty();
+        }
+        User resolved = candidates.get(0);
+        if (effectiveRoleResolutionService.findEffectiveRoleIdsForUserInPlatform(resolved.getId()).isEmpty()) {
+            log.warn("用户 {} 不具备 PLATFORM 作用域赋权，拒绝平台登录", username);
+            return Optional.empty();
+        }
+        return Optional.of(resolved);
     }
 
     private User resolveUserCandidate(String username, Long activeTenantId, List<User> membershipMatches) {

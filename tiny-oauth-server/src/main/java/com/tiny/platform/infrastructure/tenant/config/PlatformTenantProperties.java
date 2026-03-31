@@ -20,11 +20,29 @@ public class PlatformTenantProperties {
      */
     private String platformTenantCode = "default";
 
+    /**
+     * 启动时若检测到不存在平台模板（无 {@code tenant_id IS NULL} 的角色/资源），是否从
+     * {@link #platformTenantCode} 指向的租户自动复制一份。
+     *
+     * <p>默认 {@code false}：生产环境应由受控流程或 {@code POST /sys/tenants/platform-template/initialize}
+     *（平台身份）执行。开发环境可在 {@code application-dev.yaml} 中开启，避免历史库从未触发过
+     * bootstrap 时 {@code ensure-platform-admin.sh} 因缺少平台模板 {@code ROLE_PLATFORM_ADMIN} 而失败。</p>
+     */
+    private boolean autoInitializePlatformTemplateIfMissing = false;
+
     public String getPlatformTenantCode() {
         return StringUtils.hasText(platformTenantCode) ? platformTenantCode.trim() : "default";
     }
 
     public void setPlatformTenantCode(String platformTenantCode) {
         this.platformTenantCode = platformTenantCode;
+    }
+
+    public boolean isAutoInitializePlatformTemplateIfMissing() {
+        return autoInitializePlatformTemplateIfMissing;
+    }
+
+    public void setAutoInitializePlatformTemplateIfMissing(boolean autoInitializePlatformTemplateIfMissing) {
+        this.autoInitializePlatformTemplateIfMissing = autoInitializePlatformTemplateIfMissing;
     }
 }

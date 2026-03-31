@@ -1,0 +1,73 @@
+databaseChangeLog:
+  - changeSet:
+      id: platform-template-tenant-create-explicit-permission
+      author: codex
+      comment: Explicitly insert system:tenant:create into platform template
+      preConditions:
+        onFail: MARK_RAN
+        and:
+          - tableExists:
+              tableName: role
+          - tableExists:
+              tableName: permission
+          - tableExists:
+              tableName: role_permission
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              -- 1) Permission master data (platform template)
+              INSERT IGNORE INTO `permission` (
+                `permission_code`,
+                `permission_name`,
+                `module_code`,
+                `action_code`,
+                `permission_type`,
+                `description`,
+                `enabled`,
+                `built_in_flag`,
+                `tenant_id`,
+                `created_by`,
+                `created_at`,
+                `updated_by`,
+                `updated_at`
+              )
+              VALUES (
+                'system:tenant:create',
+                'system:tenant:create',
+                'system',
+                'create',
+                'BUTTON',
+                '从 resource.permission 抽取生成',
+                1,
+                0,
+                NULL,
+                NULL,
+                NOW(),
+                NULL,
+                NOW()
+              );
+
+              -- 2) Bind platform template ROLE_PLATFORM_ADMIN to system:tenant:create
+              INSERT IGNORE INTO `role_permission` (
+                `tenant_id`,
+                `role_id`,
+                `permission_id`,
+                `created_by`,
+                `created_at`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                r_admin.`id` AS `role_id`,
+                p.`id` AS `permission_id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`
+              FROM `role` r_admin
+              JOIN `permission` p
+                ON p.`tenant_id` IS NULL
+               AND p.`permission_code` = 'system:tenant:create'
+              WHERE r_admin.`tenant_id` IS NULL
+                AND r_admin.`code` = 'ROLE_PLATFORM_ADMIN';
+

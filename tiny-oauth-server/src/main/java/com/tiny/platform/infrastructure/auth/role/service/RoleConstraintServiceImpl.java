@@ -41,6 +41,20 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
 
     private static final Logger logger = LoggerFactory.getLogger(RoleConstraintServiceImpl.class);
 
+    /**
+     * Freeze compatibility roles (legacy semantics) by default.
+     *
+     * <p>Requirement: keep {@code enabled=1} in DB for compatibility, but prevent any <b>new</b>
+     * role assignment from being created.</p>
+     *
+     * <p>We block earlier (before any delete) via this method contract, so existing assignments are
+     * not revoked by a failed "replace" request.</p>
+     */
+    @Value("${tiny.platform.auth.freeze-compat-role-ids:5,6}")
+    private String freezeCompatRoleIds;
+
+    private volatile Set<Long> freezeCompatRoleIdSet;
+
     @Value("${tiny.platform.auth.rbac3.enforce:false}")
     private boolean rbac3Enforce;
 
@@ -85,6 +99,21 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
         Long scopeId,
         List<Long> roleIdsToGrant
     ) {
+        // --- Compatibility role freezing (prevent new grants) ---
+        if (roleIdsToGrant != null && !roleIdsToGrant.isEmpty()) {
+            Set<Long> frozenIds = getFreezeCompatRoleIdSet();
+            if (!frozenIds.isEmpty()) {
+                for (Long rid : roleIdsToGrant) {
+                    if (rid != null && frozenIds.contains(rid)) {
+                        throw new BusinessException(
+                            ErrorCode.RESOURCE_STATE_INVALID,
+                            "兼容性角色已冻结（ROLE_SYSTEM_ADMIN / ROLE_TENANT_USER），不允许新增授权"
+                        );
+                    }
+                }
+            }
+        }
+
         // Phase 2 最小落地：仅实现 role_mutex 互斥检查。
         // 当前阶段不抛出异常（不改变现有行为）；仅输出 debug 日志，供后续 dry-run / enforce 演进。
         if (tenantId == null || roleIdsToGrant == null || roleIdsToGrant.isEmpty()) {
@@ -92,6 +121,7 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
         }
 
         boolean violated = false;
+        List<String> violationSummaries = new ArrayList<>();
 
         Set<Long> directRoleIds = new LinkedHashSet<>(roleIdsToGrant);
         Set<Long> effectiveRoleIds = expandRoleHierarchy(tenantId, directRoleIds);
@@ -147,6 +177,7 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
                 log.setDetails("{\"conflicts\":\"" + String.join(",", conflicts) + "\"}");
                 violationLogWriteService.write(log);
                 violated = true;
+                violationSummaries.add("互斥角色冲突: " + String.join(", ", conflicts));
             }
         }
 
@@ -191,18 +222,24 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
                 log.setDetails("{\"missingByRole\":\"" + missingByRole + "\"}");
                 violationLogWriteService.write(log);
                 violated = true;
+                violationSummaries.add("缺少前置角色: " + formatMissingByRole(missingByRole));
             }
         }
 
         // role_cardinality: limit number of active assignments within scope.
-        // Phase2 dry-run: only supports USER + TENANT path with best-effort counting.
-        if ("USER".equals(principalType) && principalId != null && "TENANT".equals(scopeType) && scopeId != null) {
+        // Supports USER principal with TENANT/ORG/DEPT scope types.
+        if ("USER".equals(principalType) && principalId != null && scopeType != null && scopeId != null) {
             String st = scopeType;
             List<RoleCardinality> limits =
                 roleCardinalityRepository.findByTenantIdAndScopeTypeAndRoleIdIn(tenantId, st, effectiveRoleIds);
             if (!limits.isEmpty()) {
                 LocalDateTime now = LocalDateTime.now();
-                List<Long> existingRoleIds = roleAssignmentRepository.findActiveRoleIdsForUserInTenant(principalId, tenantId, now);
+                List<Long> existingRoleIds;
+                if ("TENANT".equals(st)) {
+                    existingRoleIds = roleAssignmentRepository.findActiveRoleIdsForUserInTenant(principalId, tenantId, now);
+                } else {
+                    existingRoleIds = roleAssignmentRepository.findActiveRoleIdsForUserInScope(principalId, tenantId, st, scopeId, now);
+                }
 
                 List<String> exceeded = new ArrayList<>();
                 for (RoleCardinality limit : limits) {
@@ -212,9 +249,15 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
                         continue;
                     }
 
-                    int current = roleAssignmentRepository
-                        .findActiveUserIdsForRoleInTenant(roleId, tenantId, now)
-                        .size();
+                    long current;
+                    if ("TENANT".equals(st)) {
+                        current = roleAssignmentRepository
+                            .findActiveUserIdsForRoleInTenant(roleId, tenantId, now)
+                            .size();
+                    } else {
+                        current = roleAssignmentRepository
+                            .countActiveUsersForRoleInScope(roleId, tenantId, st, scopeId, now);
+                    }
                     int delta = existingRoleIds.contains(roleId) ? 0 : 1;
                     if (current + delta > max) {
                         exceeded.add(roleId + ":" + (current + delta) + "/" + max);
@@ -223,7 +266,7 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
 
                 if (!exceeded.isEmpty()) {
                     logger.debug(
-                        "RBAC3 role_cardinality exceeded (dry-run): tenantId={}, principalType={}, principalId={}, scopeType={}, scopeId={}, exceeded={}",
+                        "RBAC3 role_cardinality exceeded: tenantId={}, principalType={}, principalId={}, scopeType={}, scopeId={}, exceeded={}",
                         tenantId,
                         principalType,
                         principalId,
@@ -245,12 +288,23 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
                     log.setDetails("{\"exceeded\":\"" + String.join(",", exceeded) + "\"}");
                     violationLogWriteService.write(log);
                     violated = true;
+                    violationSummaries.add("角色基数超限: " + String.join(", ", exceeded));
                 }
             }
         }
 
         if (violated && shouldEnforceForTenant(tenantId)) {
-            throw new BusinessException(ErrorCode.RESOURCE_CONFLICT, "角色约束冲突，禁止赋权");
+            String detail = buildEnforceMessage(scopeType, scopeId, violationSummaries);
+            logger.info(
+                "RBAC3 enforce blocked assignment: tenantId={}, principalType={}, principalId={}, scopeType={}, scopeId={}, detail={}",
+                tenantId,
+                principalType,
+                principalId,
+                scopeType,
+                scopeId,
+                detail
+            );
+            throw new BusinessException(ErrorCode.RESOURCE_CONFLICT, detail);
         }
     }
 
@@ -301,6 +355,39 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
         return ids.isEmpty() ? Collections.emptySet() : Collections.unmodifiableSet(ids);
     }
 
+    private Set<Long> getFreezeCompatRoleIdSet() {
+        Set<Long> cached = freezeCompatRoleIdSet;
+        if (cached != null) {
+            return cached;
+        }
+        synchronized (this) {
+            if (freezeCompatRoleIdSet != null) {
+                return freezeCompatRoleIdSet;
+            }
+            freezeCompatRoleIdSet = parseCsvLongIds(freezeCompatRoleIds);
+            return freezeCompatRoleIdSet;
+        }
+    }
+
+    private Set<Long> parseCsvLongIds(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return Collections.emptySet();
+        }
+        Set<Long> ids = new HashSet<>();
+        for (String part : raw.split(",")) {
+            String s = part == null ? "" : part.trim();
+            if (s.isEmpty()) {
+                continue;
+            }
+            try {
+                ids.add(Long.parseLong(s));
+            } catch (NumberFormatException ignored) {
+                // fail-safe: ignore invalid entries
+            }
+        }
+        return ids.isEmpty() ? Collections.emptySet() : Collections.unmodifiableSet(ids);
+    }
+
     private String joinIds(Collection<Long> ids) {
         if (ids == null || ids.isEmpty()) {
             return null;
@@ -313,6 +400,32 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
         }
         String joined = joiner.toString();
         return joined.isBlank() ? null : joined;
+    }
+
+    private String formatMissingByRole(Map<Long, List<Long>> missingByRole) {
+        if (missingByRole == null || missingByRole.isEmpty()) {
+            return "";
+        }
+        List<String> entries = new ArrayList<>();
+        for (Map.Entry<Long, List<Long>> entry : missingByRole.entrySet()) {
+            entries.add(entry.getKey() + " <- " + joinIds(entry.getValue()));
+        }
+        return String.join("; ", entries);
+    }
+
+    private String buildEnforceMessage(String scopeType, Long scopeId, List<String> violationSummaries) {
+        StringBuilder message = new StringBuilder("RBAC3 enforce 已阻断本次赋权");
+        if (scopeType != null && !scopeType.isBlank()) {
+            message.append("（scope=").append(scopeType);
+            if (scopeId != null) {
+                message.append(":").append(scopeId);
+            }
+            message.append("）");
+        }
+        if (violationSummaries != null && !violationSummaries.isEmpty()) {
+            message.append(": ").append(String.join("；", violationSummaries));
+        }
+        return message.toString();
     }
 
     private Set<Long> expandRoleHierarchy(Long tenantId, Collection<Long> directRoleIds) {
@@ -347,4 +460,3 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
         return effective;
     }
 }
-

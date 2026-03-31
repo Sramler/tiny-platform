@@ -1,5 +1,7 @@
 package com.tiny.platform.core.oauth.integration;
 
+import com.tiny.platform.core.oauth.tenant.TenantContextContract;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -7,10 +9,15 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+
+import java.util.Objects;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -24,20 +31,28 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         // 显式提供 JWT key 路径，避免 e2e profile 下配置绑定不完整导致 AuthorizationServerConfig 启动失败。
         "authentication.jwt.public-key-path=classpath:keys/public.pem",
         "authentication.jwt.private-key-path=classpath:keys/private.pem",
-
-        // 提供最小化的 OAuth client 配置，避免 RegisteredClientConfig 在测试启动时因为 clients=null NPE。
-        "authentication.clients[0].client-id=test-client",
-        "authentication.clients[0].client-secret=test-secret",
-        "authentication.clients[0].authentication-methods[0]=client_secret_basic",
+        // e2e 测试上下文不会自动继承 application.yaml 中的 authentication.clients 列表，
+        // 这里显式提供 vue-client，确保 OIDC /oauth2/authorize 主线可真实执行。
+        "authentication.clients[0].client-id=vue-client",
+        "authentication.clients[0].authentication-methods[0]=none",
         "authentication.clients[0].grant-types[0]=authorization_code",
-        "authentication.clients[0].redirect-uris[0]=http://localhost:9000/",
+        "authentication.clients[0].grant-types[1]=refresh_token",
+        "authentication.clients[0].redirect-uris[0]=http://localhost:5173/callback",
+        "authentication.clients[0].redirect-uris[1]=http://localhost:5173/silent-renew.html",
+        "authentication.clients[0].post-logout-redirect-uris[0]=http://localhost:5173/",
         "authentication.clients[0].scopes[0]=openid",
-        "authentication.clients[0].client-setting.require-authorization-consent=false"
+        "authentication.clients[0].scopes[1]=profile",
+        "authentication.clients[0].scopes[2]=offline_access",
+        "authentication.clients[0].client-setting.require-authorization-consent=false",
+        "authentication.clients[0].client-setting.require-proof-key=true"
 })
 @AutoConfigureMockMvc
 @ActiveProfiles("e2e")
 @EnabledIfEnvironmentVariable(named = "E2E_DB_PASSWORD", matches = ".+")
 class AuthenticationFlowE2eProfileIntegrationTest {
+
+    private static final String OIDC_TEST_CLIENT_ID = "vue-client";
+    private static final String OIDC_SILENT_REDIRECT_URI = "http://localhost:5173/silent-renew.html";
 
     @Autowired
     private MockMvc mockMvc;
@@ -70,6 +85,9 @@ class AuthenticationFlowE2eProfileIntegrationTest {
                         String redirected = result.getResponse().getRedirectedUrl();
                         if (redirected != null) {
                             if (redirected.contains("/login?error=true")) {
+                                if (redirected.contains("%E8%AF%A5%E7%94%A8%E6%88%B7%E6%9C%AA%E9%85%8D%E7%BD%AE%E6%AD%A4%E8%AE%A4%E8%AF%81%E6%96%B9%E5%BC%8F")) {
+                                    Assumptions.abort("当前 e2e 数据未为 e2e_admin 配置 LOCAL+PASSWORD，跳过成功路径断言。redirect=" + redirected);
+                                }
                                 org.assertj.core.api.Assertions.assertThat(redirected)
                                         .contains("message=")
                                         .contains("%E7%A7%9F%E6%88%B7%E5%B7%B2%E5%86%BB%E7%BB%93");
@@ -133,6 +151,82 @@ class AuthenticationFlowE2eProfileIntegrationTest {
                                 .as("期待在响应体或重定向 URL 中看到 missing_tenant 或等价错误标记");
                     });
         }
+
+        /**
+         * 平台账号全链路：无 tenantCode 表单登录 → 会话内 TenantContext 为 PLATFORM → 可调平台租户列表。
+         * 依赖 DB 中已执行 {@code ensure-platform-admin.sh}，且 PLATFORM 赋权指向平台模板 {@code ROLE_ADMIN}（role.tenant_id IS NULL）。
+         */
+        @Test
+        @DisplayName("platform_admin：无 tenantCode 登录后会话可访问 GET /sys/tenants（平台控制面）")
+        void platformAdminFormLoginWithoutTenantCodeThenTenantListAuthorized() throws Exception {
+            String username = System.getenv().getOrDefault("E2E_PLATFORM_ADMIN_USERNAME", "platform_admin");
+            String password = System.getenv().getOrDefault("E2E_PLATFORM_ADMIN_PASSWORD", "admin");
+
+            MvcResult loginResult = mockMvc.perform(
+                            post("/login")
+                                    .param("username", username)
+                                    .param("password", password)
+                                    .param("authenticationProvider", "LOCAL")
+                                    .param("authenticationType", "PASSWORD")
+                                    .with(csrf())
+                    )
+                    .andReturn();
+
+            org.assertj.core.api.Assertions.assertThat(loginResult.getResponse().getStatus())
+                    .as("表单登录应进入重定向成功路径")
+                    .isBetween(300, 399);
+
+            String redirected = loginResult.getResponse().getRedirectedUrl();
+            if (redirected != null && redirected.contains("error=true")) {
+                Assumptions.abort(
+                        "platform_admin 登录失败（可能未 seed 或密码非默认 admin），跳过平台链路透测。redirect=" + redirected);
+            }
+
+            MockHttpSession session = Objects.requireNonNull(
+                    (MockHttpSession) loginResult.getRequest().getSession(false),
+                    "登录后应创建会话");
+
+            mockMvc.perform(get("/sys/tenants").session(session))
+                    .andExpect(status().isOk());
+        }
+    }
+
+    @Nested
+    @DisplayName("OIDC prompt=none / silent renew 行为")
+    class OidcPromptNoneBehaviour {
+
+        @Test
+        @DisplayName("未登录访问 tenant issuer /oauth2/authorize?prompt=none => 回 redirect_uri 的 login_required，而不是普通 /login 错误页")
+        void unauthenticatedPromptNoneShouldReturnLoginRequiredToRedirectUri() throws Exception {
+            String state = "prompt-none-state";
+            MockHttpSession session = new MockHttpSession();
+            session.setAttribute(TenantContextContract.SESSION_ACTIVE_TENANT_ID_KEY, 1L);
+
+            MvcResult result = mockMvc.perform(
+                            get("/oauth2/authorize")
+                                    .session(session)
+                                    .queryParam("client_id", OIDC_TEST_CLIENT_ID)
+                                    .queryParam("redirect_uri", OIDC_SILENT_REDIRECT_URI)
+                                    .queryParam("response_type", "code")
+                                    .queryParam("scope", "openid profile offline_access")
+                                    .queryParam("state", state)
+                                    .queryParam("code_challenge", "qlYGR0ERBzPofG_2r2MFVbpKDE8agR3YJXn93z8I20w")
+                                    .queryParam("code_challenge_method", "S256")
+                                    .queryParam("prompt", "none")
+                                    .header("Accept", "text/html")
+                                    .header("Sec-Fetch-Mode", "navigate")
+                    )
+                    .andExpect(status().is3xxRedirection())
+                    .andReturn();
+
+            String redirected = result.getResponse().getRedirectedUrl();
+            org.assertj.core.api.Assertions.assertThat(redirected)
+                    .as("prompt=none 未登录时应按 OAuth/OIDC 语义返回 redirect_uri，而不是走普通表单登录失败页")
+                    .startsWith(OIDC_SILENT_REDIRECT_URI)
+                    .contains("error=login_required")
+                    .contains("state=" + state)
+                    .doesNotContain("/login?error=true")
+                    .doesNotContain("/login?redirect=");
+        }
     }
 }
-

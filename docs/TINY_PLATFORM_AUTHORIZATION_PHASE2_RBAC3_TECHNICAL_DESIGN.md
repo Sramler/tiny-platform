@@ -1,10 +1,15 @@
 # Tiny Platform 授权模型第二阶段：RBAC3 角色治理技术设计
 
+> 状态更新：本文件保留为 **Phase2 历史技术设计草案 / 参考文档 / 非当前运行态真相源**。  
+> 当前仓库的授权主链、当前完成度与文档读取入口，请优先以 [TINY_PLATFORM_AUTHORIZATION_DOC_MAP.md](./TINY_PLATFORM_AUTHORIZATION_DOC_MAP.md)、[TINY_PLATFORM_AUTHORIZATION_MODEL.md](./TINY_PLATFORM_AUTHORIZATION_MODEL.md) 与 [TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md](./TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md) 为准。  
+> 本文中若出现 `resource.permission`、阶段性非目标或历史演进口径，应按“Phase2 当时设计假设”理解，不作为当前运行态默认结论。  
+>
 > 状态：技术设计草案（Phase 2）  
 > 适用范围：`auth / role / resource / tenant / security`
 >
 > 关联文档：
 >
+> - [TINY_PLATFORM_AUTHORIZATION_DOC_MAP.md](./TINY_PLATFORM_AUTHORIZATION_DOC_MAP.md)
 > - `docs/TINY_PLATFORM_AUTHORIZATION_MODEL.md`（总设计，§4.2、§4.3、§7.2、§8.4）
 > - `docs/TINY_PLATFORM_AUTHORIZATION_PHASE1_TECHNICAL_DESIGN.md`（Phase1）
 > - `.agent/src/rules/93-tiny-platform-authorization-model.rules.md`

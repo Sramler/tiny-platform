@@ -28,10 +28,10 @@ describe('tenant API', () => {
     })
     const { tenantList } = await import('@/api/tenant')
 
-    const result = await tenantList({ code: 't1', page: 1, size: 10 })
+    const result = await tenantList({ code: 't1', lifecycleStatus: 'FROZEN', page: 1, size: 10 })
 
     expect(requestMocks.get).toHaveBeenCalledWith('/sys/tenants', {
-      params: { code: 't1', page: 1, size: 10 },
+      params: { code: 't1', lifecycleStatus: 'FROZEN', page: 1, size: 10 },
     })
     expect(result.content).toHaveLength(1)
     expect(result.content?.[0]?.code).toBe('t1')
@@ -50,7 +50,13 @@ describe('tenant API', () => {
   it('should create tenant with idempotency', async () => {
     requestMocks.post.mockResolvedValue({ id: 3, code: 't3' })
     const { createTenant } = await import('@/api/tenant')
-    const data = { code: 't3', name: 'Tenant 3' }
+    const data = {
+      code: 't3',
+      name: 'Tenant 3',
+      initialAdminUsername: 'tenant3_admin',
+      initialAdminPassword: 'Secret123',
+      initialAdminConfirmPassword: 'Secret123',
+    }
 
     await createTenant(data)
 
@@ -77,6 +83,20 @@ describe('tenant API', () => {
     })
   })
 
+  it('should initialize platform template with idempotency', async () => {
+    requestMocks.post.mockResolvedValue({ initialized: true, message: 'ok' })
+    const { initializePlatformTemplate } = await import('@/api/tenant')
+
+    await initializePlatformTemplate()
+
+    expect(requestMocks.post).toHaveBeenCalledWith('/sys/tenants/platform-template/initialize', null, {
+      idempotency: {
+        scope: 'sys-tenants:platform-template:initialize',
+        payload: {},
+      },
+    })
+  })
+
   it('should delete tenant with idempotency', async () => {
     requestMocks.delete.mockResolvedValue(undefined)
     const { deleteTenant } = await import('@/api/tenant')
@@ -87,6 +107,48 @@ describe('tenant API', () => {
       idempotency: {
         scope: 'sys-tenants:delete:5',
         payload: { id: 5 },
+      },
+    })
+  })
+
+  it('should freeze tenant with idempotency', async () => {
+    requestMocks.post.mockResolvedValue({ id: 6, lifecycleStatus: 'FROZEN' })
+    const { freezeTenant } = await import('@/api/tenant')
+
+    await freezeTenant(6)
+
+    expect(requestMocks.post).toHaveBeenCalledWith('/sys/tenants/6/freeze', null, {
+      idempotency: {
+        scope: 'sys-tenants:freeze:6',
+        payload: { id: 6 },
+      },
+    })
+  })
+
+  it('should unfreeze tenant with idempotency', async () => {
+    requestMocks.post.mockResolvedValue({ id: 7, lifecycleStatus: 'ACTIVE' })
+    const { unfreezeTenant } = await import('@/api/tenant')
+
+    await unfreezeTenant(7)
+
+    expect(requestMocks.post).toHaveBeenCalledWith('/sys/tenants/7/unfreeze', null, {
+      idempotency: {
+        scope: 'sys-tenants:unfreeze:7',
+        payload: { id: 7 },
+      },
+    })
+  })
+
+  it('should decommission tenant with idempotency', async () => {
+    requestMocks.post.mockResolvedValue({ id: 8, lifecycleStatus: 'DECOMMISSIONED' })
+    const { decommissionTenant } = await import('@/api/tenant')
+
+    await decommissionTenant(8)
+
+    expect(requestMocks.post).toHaveBeenCalledWith('/sys/tenants/8/decommission', null, {
+      idempotency: {
+        scope: 'sys-tenants:decommission:8',
+        payload: { id: 8 },
       },
     })
   })

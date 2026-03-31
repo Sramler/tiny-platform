@@ -12,6 +12,7 @@ import java.util.Objects;
 @Entity
 @Table(name = "export_task",
     indexes = {
+        @Index(name = "idx_export_task_tenant", columnList = "tenant_id"),
         @Index(name = "idx_export_task_user", columnList = "user_id"),
         @Index(name = "idx_export_task_status", columnList = "status"),
         @Index(name = "idx_export_task_created_at", columnList = "created_at"),
@@ -25,6 +26,9 @@ public class ExportTaskEntity {
 
     @Column(name = "task_id", nullable = false, unique = true, length = 64)
     private String taskId;
+
+    @Column(name = "tenant_id")
+    private Long tenantId;
 
     @Column(name = "user_id", nullable = false, length = 64)
     private String userId;
@@ -53,6 +57,9 @@ public class ExportTaskEntity {
 
     @Column(name = "download_url", length = 1024)
     private String downloadUrl;
+
+    @Column(name = "file_size_bytes")
+    private Long fileSizeBytes;
 
     @Column(name = "error_msg", columnDefinition = "TEXT")
     private String errorMsg;
@@ -117,6 +124,14 @@ public class ExportTaskEntity {
         this.userId = userId;
     }
 
+    public Long getTenantId() {
+        return tenantId;
+    }
+
+    public void setTenantId(Long tenantId) {
+        this.tenantId = tenantId;
+    }
+
     public String getUsername() {
         return username;
     }
@@ -179,6 +194,14 @@ public class ExportTaskEntity {
 
     public void setDownloadUrl(String downloadUrl) {
         this.downloadUrl = downloadUrl;
+    }
+
+    public Long getFileSizeBytes() {
+        return fileSizeBytes;
+    }
+
+    public void setFileSizeBytes(Long fileSizeBytes) {
+        this.fileSizeBytes = fileSizeBytes;
     }
 
     public String getErrorMsg() {
@@ -265,4 +288,3 @@ public class ExportTaskEntity {
         return Objects.hash(taskId);
     }
 }
-

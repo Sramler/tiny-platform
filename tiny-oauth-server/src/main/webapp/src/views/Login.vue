@@ -10,6 +10,28 @@
 
       <form ref="formRef" :action="loginActionUrl" method="post" class="login-form" @submit="handleSubmit">
         <div class="form-group">
+          <label>登录模式</label>
+          <div class="scope-tabs">
+            <button
+              type="button"
+              class="scope-tab"
+              :class="{ active: loginMode === 'TENANT' }"
+              @click="setLoginMode('TENANT')"
+            >
+              租户登录
+            </button>
+            <button
+              type="button"
+              class="scope-tab"
+              :class="{ active: loginMode === 'PLATFORM' }"
+              @click="setLoginMode('PLATFORM')"
+            >
+              平台登录
+            </button>
+          </div>
+        </div>
+
+        <div v-if="loginMode === 'TENANT'" class="form-group">
           <label for="tenantCode">租户编码</label>
           <input
             ref="tenantRef"
@@ -42,7 +64,7 @@
         <input v-if="csrfParameterName" type="hidden" :name="csrfParameterName" :value="csrfToken" />
 
         <button type="submit" class="login-button" :class="{ loading: isSubmitting }" :disabled="isSubmitting">
-          {{ isSubmitting ? '登录中...' : '登录' }}
+          {{ isSubmitting ? '登录中...' : (loginMode === 'PLATFORM' ? '登录平台' : '登录租户') }}
         </button>
       </form>
 
@@ -54,11 +76,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ensureCsrfToken } from '@/utils/csrf'
 import { sanitizeInternalRedirect } from '@/utils/redirect'
-import { clearActiveTenantId, getTenantCode, isValidTenantCode, setTenantCode } from '@/utils/tenant'
+import { clearActiveTenantId, clearTenantCode, getTenantCode, isValidTenantCode, setTenantCode } from '@/utils/tenant'
 
 defineOptions({
   name: 'LoginPage',
@@ -73,10 +95,25 @@ const passwordRef = ref<HTMLInputElement | null>(null)
 const errorMessage = ref('')
 const csrfToken = ref('')
 const csrfParameterName = ref('_csrf')
+const LOGIN_MODE_STORAGE_KEY = 'app_login_mode'
+const loginMode = ref<'TENANT' | 'PLATFORM'>('TENANT')
 
-const defaultCredentials = {
-  username: 'admin',
-  password: 'admin',
+/**
+ * 仅用于本地/开发联调占位，与后端 seed 对齐：
+ * - 租户：`data.sql` 等默认 admin
+ * - 平台：`ensure-platform-admin.sh` 默认创建 platform_admin，密码哈希与 admin 相同（明文多为 admin）
+ */
+const tenantDevDefaults = { username: 'admin', password: 'admin' }
+const platformDevDefaults = { username: 'platform_admin', password: 'admin' }
+
+function applyDevDefaultsForMode(mode: 'TENANT' | 'PLATFORM') {
+  const creds = mode === 'PLATFORM' ? platformDevDefaults : tenantDevDefaults
+  if (usernameRef.value) {
+    usernameRef.value.value = creds.username
+  }
+  if (passwordRef.value) {
+    passwordRef.value.value = creds.password
+  }
 }
 
 // 获取后端 API 基础 URL，如果没有配置则使用默认值
@@ -110,54 +147,92 @@ const loadCsrfToken = async () => {
   csrfParameterName.value = csrf.parameterName
 }
 
+const setLoginMode = async (mode: 'TENANT' | 'PLATFORM') => {
+  loginMode.value = mode
+  try {
+    window.localStorage.setItem(LOGIN_MODE_STORAGE_KEY, mode)
+  } catch {
+    // ignore storage errors
+  }
+  await nextTick()
+  // 切回租户模式后 v-if 已挂载输入框，再回填本地记忆的租户编码
+  if (mode === 'TENANT') {
+    const stored = getTenantCode()
+    if (tenantRef.value && stored) {
+      tenantRef.value.value = stored
+    }
+  }
+  applyDevDefaultsForMode(mode)
+}
+
 const handleSubmit = async (event: Event) => {
   errorMessage.value = ''
   event.preventDefault()
-  const rawTenantCode = tenantRef.value?.value?.trim() ?? ''
-  if (!rawTenantCode) {
-    errorMessage.value = '请先输入租户编码'
-    return
-  }
-  if (!isValidTenantCode(rawTenantCode)) {
-    errorMessage.value = '租户编码格式错误：仅支持小写字母、数字和中划线，长度 2-32'
-    return
-  }
-  const normalizedTenantCode = rawTenantCode.toLowerCase()
-  if (tenantRef.value) tenantRef.value.value = normalizedTenantCode
-  setTenantCode(normalizedTenantCode)
-  // 登录前清理旧租户ID，避免沿用上一会话租户导致后续链路冲突
-  clearActiveTenantId()
-
-  if (!csrfToken.value) {
-    try {
-      await loadCsrfToken()
-    } catch (error) {
-      console.error('获取 CSRF token 失败:', error)
-      errorMessage.value = '安全校验初始化失败，请刷新页面重试'
+  if (loginMode.value === 'TENANT') {
+    const rawTenantCode = tenantRef.value?.value?.trim() ?? ''
+    if (!rawTenantCode) {
+      errorMessage.value = '请先输入租户编码'
       return
     }
+    if (!isValidTenantCode(rawTenantCode)) {
+      errorMessage.value = '租户编码格式错误：仅支持小写字母、数字和中划线，长度 2-32'
+      return
+    }
+    const normalizedTenantCode = rawTenantCode.toLowerCase()
+    if (tenantRef.value) tenantRef.value.value = normalizedTenantCode
+    setTenantCode(normalizedTenantCode)
+  } else {
+    if (tenantRef.value) tenantRef.value.value = ''
+    // 平台登录不携带租户：同步清理本地 tenantCode，避免后续 OIDC/authorize 仍读到历史租户
+    clearTenantCode()
   }
+  // 登录前清理旧租户ID，避免沿用上一会话租户导致后续链路冲突（平台/租户都需要）
+  clearActiveTenantId()
+
+  // 提交前始终同步一次 CSRF：避免 onMounted 竞态导致 ref 仍为空、或缓存与 Cookie 会话不一致。
+  // ensureCsrfToken 有模块级缓存，重复调用成本很低。
+  try {
+    await loadCsrfToken()
+  } catch (error) {
+    console.error('获取 CSRF token 失败:', error)
+    errorMessage.value = '安全校验初始化失败，请刷新页面重试'
+    return
+  }
+  if (!csrfToken.value) {
+    errorMessage.value = '安全校验初始化失败，请刷新页面重试'
+    return
+  }
+
+  // 等待隐藏域与 csrfToken ref 同步，避免原生 form.submit() 读到空的 _csrf。
+  await nextTick()
 
   isSubmitting.value = true
   formRef.value?.submit()
 }
 
-onMounted(() => {
+onMounted(async () => {
   loadCsrfToken().catch((error) => {
     console.error('初始化 CSRF token 失败:', error)
   })
-  if (tenantRef.value) {
+  try {
+    const storedMode = window.localStorage.getItem(LOGIN_MODE_STORAGE_KEY)
+    if (storedMode === 'PLATFORM' || storedMode === 'TENANT') {
+      loginMode.value = storedMode
+    }
+  } catch {
+    // ignore storage errors
+  }
+  // 与 v-if 对齐：先等 DOM 更新再操作 tenantRef，避免 PLATFORM 仍短暂持有已卸载的租户输入框引用
+  await nextTick()
+  if (tenantRef.value && loginMode.value === 'TENANT') {
     const storedTenantCode = getTenantCode()
     if (storedTenantCode) {
       tenantRef.value.value = storedTenantCode
     }
   }
+  applyDevDefaultsForMode(loginMode.value)
   if (usernameRef.value) {
     usernameRef.value.focus()
-    usernameRef.value.value = defaultCredentials.username
-  }
-  if (passwordRef.value) {
-    passwordRef.value.value = defaultCredentials.password
   }
 })
 </script>
@@ -201,6 +276,33 @@ onMounted(() => {
 
 .form-group {
   margin-bottom: 20px;
+}
+
+.scope-tabs {
+  display: flex;
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.scope-tab {
+  flex: 1;
+  border: none;
+  padding: 10px 12px;
+  background: #fff;
+  color: #666;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.scope-tab + .scope-tab {
+  border-left: 1px solid #d9d9d9;
+}
+
+.scope-tab.active {
+  background: #667eea;
+  color: #fff;
 }
 
 .form-group label {

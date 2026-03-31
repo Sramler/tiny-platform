@@ -120,12 +120,15 @@ class RoleControllerTest {
 
     @Test
     void roleUsers_and_resources_shouldDelegate() {
-        when(roleService.getUserIdsByRoleId(10L)).thenReturn(List.of(1L, 2L));
-        ResponseEntity<List<Long>> users = controller.getRoleUsers(10L);
+        when(roleService.getDirectUserIdsByRoleId(10L, null, null)).thenReturn(List.of(1L, 2L));
+        ResponseEntity<List<Long>> users = controller.getRoleUsers(10L, null, null);
         assertEquals(List.of(1L, 2L), users.getBody());
 
         controller.updateRoleUsers(10L, List.of(3L));
-        verify(roleService).updateRoleUsers(10L, List.of(3L));
+        verify(roleService).updateRoleUsers(10L, null, null, List.of(3L));
+
+        controller.updateRoleUsers(10L, java.util.Map.of("scopeType", "DEPT", "scopeId", 200L, "userIds", List.of(3L)));
+        verify(roleService).updateRoleUsers(10L, "DEPT", 200L, List.of(3L));
 
         when(roleService.getResourceIdsByRoleId(10L)).thenReturn(List.of(7L));
         ResponseEntity<List<Long>> resources = controller.getRoleResources(10L);

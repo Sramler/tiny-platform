@@ -1,0 +1,20 @@
+databaseChangeLog:
+  - changeSet:
+      id: 107-backfill-role-admin-resource-bindings
+      author: codex
+      comment: 为各租户 ROLE_TENANT_ADMIN 回填缺失的 role_resource 绑定，确保细粒度权限可下发
+      changes:
+        - sql:
+            sql: |
+              INSERT IGNORE INTO `role_resource` (`tenant_id`, `role_id`, `resource_id`)
+              SELECT
+                role_entity.`tenant_id`,
+                role_entity.`id`,
+                resource_entity.`id`
+              FROM `role` role_entity
+              JOIN `resource` resource_entity
+                ON resource_entity.`tenant_id` = role_entity.`tenant_id`
+              WHERE role_entity.`tenant_id` IS NOT NULL
+                AND role_entity.`code` = 'ROLE_ADMIN'
+                AND resource_entity.`permission` IS NOT NULL
+                AND TRIM(resource_entity.`permission`) <> '';

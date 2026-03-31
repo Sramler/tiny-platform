@@ -1,16 +1,29 @@
 package com.tiny.platform.core.dict.service.impl;
 
 import com.tiny.platform.core.dict.dto.DictItemCreateUpdateDto;
+import com.tiny.platform.core.dict.dto.DictItemQueryDto;
+import com.tiny.platform.core.dict.dto.DictItemResponseDto;
 import com.tiny.platform.core.dict.model.DictItem;
 import com.tiny.platform.core.dict.model.DictType;
 import com.tiny.platform.core.dict.repository.DictItemRepository;
 import com.tiny.platform.core.dict.repository.DictTypeRepository;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
+import com.tiny.platform.infrastructure.auth.datascope.framework.DataScopeContext;
+import com.tiny.platform.infrastructure.auth.datascope.framework.ResolvedDataScope;
+import com.tiny.platform.infrastructure.auth.org.repository.UserUnitRepository;
+import com.tiny.platform.infrastructure.auth.user.repository.TenantUserRepository;
+import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.infrastructure.core.exception.code.ErrorCode;
 import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
 import com.tiny.platform.infrastructure.core.exception.exception.NotFoundException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.util.List;
 import java.util.Map;
@@ -19,26 +32,40 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class DictItemServiceImplTest {
 
     private final DictItemRepository dictItemRepository = mock(DictItemRepository.class);
     private final DictTypeRepository dictTypeRepository = mock(DictTypeRepository.class);
-    private final DictItemServiceImpl service = new DictItemServiceImpl(dictItemRepository, dictTypeRepository);
+    private final TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
+    private final UserUnitRepository userUnitRepository = mock(UserUnitRepository.class);
+    private final UserRepository userRepository = mock(UserRepository.class);
+    private final DictItemServiceImpl service = new DictItemServiceImpl(
+            dictItemRepository,
+            dictTypeRepository,
+            tenantUserRepository,
+            userUnitRepository,
+            userRepository
+    );
 
     @AfterEach
     void tearDown() {
         TenantContext.clear();
+        DataScopeContext.clear();
+        SecurityContextHolder.clearContext();
     }
 
     @Test
     void should_create_platform_overlay_using_current_tenant_context() {
         TenantContext.setActiveTenantId(7L);
 
-        DictType platformType = dictType(10L, 0L, "ENABLE_STATUS");
-        DictItem platformItem = dictItem(1L, 10L, 0L, "ENABLED", "启用", platformType);
+        DictType platformType = dictType(10L, null, "ENABLE_STATUS");
+        DictItem platformItem = dictItem(1L, 10L, null, "ENABLED", "启用", platformType);
         platformItem.setDescription("平台描述");
         DictItemCreateUpdateDto dto = new DictItemCreateUpdateDto();
         dto.setDictTypeId(10L);
@@ -46,7 +73,7 @@ class DictItemServiceImplTest {
         dto.setLabel("可用");
 
         when(dictTypeRepository.findById(10L)).thenReturn(Optional.of(platformType));
-        when(dictItemRepository.findByDictTypeIdAndValueAndTenantId(10L, "ENABLED", 0L))
+        when(dictItemRepository.findByDictTypeIdAndValueAndTenantIdIsNull(10L, "ENABLED"))
                 .thenReturn(Optional.of(platformItem));
         when(dictItemRepository.existsByDictTypeIdAndValueAndTenantId(10L, "ENABLED", 7L)).thenReturn(false);
         when(dictItemRepository.save(any(DictItem.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -59,17 +86,40 @@ class DictItemServiceImplTest {
     }
 
     @Test
+    void should_capture_current_username_when_creating_item() {
+        TenantContext.setActiveTenantId(7L);
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("dict-admin", "n/a", List.of())
+        );
+
+        DictType tenantType = dictType(10L, 7L, "CUSTOM_STATUS");
+        DictItemCreateUpdateDto dto = new DictItemCreateUpdateDto();
+        dto.setDictTypeId(10L);
+        dto.setValue("OPEN");
+        dto.setLabel("开启");
+
+        when(dictTypeRepository.findById(10L)).thenReturn(Optional.of(tenantType));
+        when(dictItemRepository.existsByDictTypeIdAndValueAndTenantId(10L, "OPEN", 7L)).thenReturn(false);
+        when(dictItemRepository.save(any(DictItem.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        DictItem created = service.create(dto);
+
+        assertThat(created.getCreatedBy()).isEqualTo("dict-admin");
+        assertThat(created.getUpdatedBy()).isEqualTo("dict-admin");
+    }
+
+    @Test
     void should_reject_unknown_platform_overlay_value() {
         TenantContext.setActiveTenantId(7L);
 
-        DictType platformType = dictType(10L, 0L, "ENABLE_STATUS");
+        DictType platformType = dictType(10L, null, "ENABLE_STATUS");
         DictItemCreateUpdateDto dto = new DictItemCreateUpdateDto();
         dto.setDictTypeId(10L);
         dto.setValue("UNKNOWN");
         dto.setLabel("未知");
 
         when(dictTypeRepository.findById(10L)).thenReturn(Optional.of(platformType));
-        when(dictItemRepository.findByDictTypeIdAndValueAndTenantId(10L, "UNKNOWN", 0L))
+        when(dictItemRepository.findByDictTypeIdAndValueAndTenantIdIsNull(10L, "UNKNOWN"))
                 .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.create(dto))
@@ -82,8 +132,8 @@ class DictItemServiceImplTest {
     void should_keep_platform_metadata_when_updating_platform_overlay() {
         TenantContext.setActiveTenantId(7L);
 
-        DictType platformType = dictType(10L, 0L, "ENABLE_STATUS");
-        DictItem platformItem = dictItem(1L, 10L, 0L, "ENABLED", "启用", platformType);
+        DictType platformType = dictType(10L, null, "ENABLE_STATUS");
+        DictItem platformItem = dictItem(1L, 10L, null, "ENABLED", "启用", platformType);
         platformItem.setDescription("平台描述");
         platformItem.setEnabled(false);
         platformItem.setSortOrder(9);
@@ -99,7 +149,7 @@ class DictItemServiceImplTest {
 
         when(dictItemRepository.findById(2L)).thenReturn(Optional.of(tenantOverlay));
         when(dictTypeRepository.findById(10L)).thenReturn(Optional.of(platformType));
-        when(dictItemRepository.findByDictTypeIdAndValueAndTenantId(10L, "ENABLED", 0L))
+        when(dictItemRepository.findByDictTypeIdAndValueAndTenantIdIsNull(10L, "ENABLED"))
                 .thenReturn(Optional.of(platformItem));
         when(dictItemRepository.save(any(DictItem.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -112,15 +162,43 @@ class DictItemServiceImplTest {
     }
 
     @Test
+    void query_withoutDataScopeRestriction_usesPagedRepositoryPath_forTenantDictType() {
+        TenantContext.setActiveTenantId(7L);
+        DataScopeContext.clear();
+
+        DictType tenantType = dictType(20L, 7L, "TENANT_ITEMS");
+        when(dictTypeRepository.findById(20L)).thenReturn(Optional.of(tenantType));
+
+        DictItemQueryDto query = new DictItemQueryDto();
+        query.setDictTypeId(20L);
+        Pageable pageable = PageRequest.of(0, 10);
+        DictItem row = dictItem(99L, 20L, 7L, "V1", "L1", tenantType);
+        when(dictItemRepository.findVisibleByConditions(
+                eq(7L),
+                eq(20L),
+                isNull(),
+                isNull(),
+                isNull(),
+                eq(pageable)))
+                .thenReturn(new PageImpl<>(List.of(row), pageable, 1));
+
+        Page<DictItemResponseDto> result = service.query(query, pageable);
+
+        assertThat(result.getContent()).singleElement()
+                .satisfies(dto -> assertThat(dto.getValue()).isEqualTo("V1"));
+        verify(dictItemRepository).findVisibleByConditions(7L, 20L, null, null, null, pageable);
+    }
+
+    @Test
     void should_prefer_tenant_overlay_when_building_dict_map() {
         TenantContext.setActiveTenantId(7L);
 
-        DictType platformType = dictType(10L, 0L, "ENABLE_STATUS");
-        DictItem platformItem = dictItem(1L, 10L, 0L, "ENABLED", "启用", platformType);
+        DictType platformType = dictType(10L, null, "ENABLE_STATUS");
+        DictItem platformItem = dictItem(1L, 10L, null, "ENABLED", "启用", platformType);
         DictItem tenantOverlay = dictItem(2L, 10L, 7L, "ENABLED", "可用", platformType);
 
         when(dictTypeRepository.findByDictCodeAndTenantId("ENABLE_STATUS", 7L)).thenReturn(Optional.empty());
-        when(dictTypeRepository.findByDictCodeAndTenantId("ENABLE_STATUS", 0L)).thenReturn(Optional.of(platformType));
+        when(dictTypeRepository.findByDictCodeAndTenantIdIsNull("ENABLE_STATUS")).thenReturn(Optional.of(platformType));
         when(dictItemRepository.findVisibleByDictTypeId(10L, 7L)).thenReturn(List.of(platformItem, tenantOverlay));
 
         Map<String, String> dictMap = service.getDictMap("ENABLE_STATUS");
@@ -129,14 +207,38 @@ class DictItemServiceImplTest {
     }
 
     @Test
+    void findByDictTypeId_should_fall_back_to_platform_item_when_hidden_overlay_is_filtered() {
+        TenantContext.setActiveTenantId(7L);
+        DataScopeContext.set(ResolvedDataScope.ofUnitsAndUsers(java.util.Set.of(), java.util.Set.of(2L), false));
+
+        DictType platformType = dictType(10L, null, "ENABLE_STATUS");
+        DictItem platformItem = dictItem(1L, 10L, null, "ENABLED", "平台启用", platformType);
+        DictItem hiddenOverlay = dictItem(2L, 10L, 7L, "ENABLED", "租户启用", platformType);
+        hiddenOverlay.setCreatedBy("bob");
+
+        when(dictTypeRepository.findById(10L)).thenReturn(Optional.of(platformType));
+        when(dictItemRepository.findVisibleByDictTypeId(10L, 7L)).thenReturn(List.of(platformItem, hiddenOverlay));
+        when(tenantUserRepository.findUserIdsByTenantIdAndUserIdInAndStatus(7L, java.util.Set.of(2L), "ACTIVE"))
+                .thenReturn(List.of(2L));
+        when(userRepository.findUsernamesByIdIn(java.util.Set.of(2L))).thenReturn(List.of("alice"));
+
+        List<DictItem> result = service.findByDictTypeId(10L);
+
+        assertThat(result).singleElement().satisfies(item -> {
+            assertThat(item.getTenantId()).isNull();
+            assertThat(item.getLabel()).isEqualTo("平台启用");
+        });
+    }
+
+    @Test
     void getLabel_returns_tenant_overlay_when_same_value_exists_in_platform_and_tenant() {
         TenantContext.setActiveTenantId(7L);
-        DictType platformType = dictType(10L, 0L, "ENABLE_STATUS");
-        DictItem platformItem = dictItem(1L, 10L, 0L, "ENABLED", "启用", platformType);
+        DictType platformType = dictType(10L, null, "ENABLE_STATUS");
+        DictItem platformItem = dictItem(1L, 10L, null, "ENABLED", "启用", platformType);
         DictItem tenantOverlay = dictItem(2L, 10L, 7L, "ENABLED", "可用", platformType);
 
         when(dictTypeRepository.findByDictCodeAndTenantId("ENABLE_STATUS", 7L)).thenReturn(Optional.empty());
-        when(dictTypeRepository.findByDictCodeAndTenantId("ENABLE_STATUS", 0L)).thenReturn(Optional.of(platformType));
+        when(dictTypeRepository.findByDictCodeAndTenantIdIsNull("ENABLE_STATUS")).thenReturn(Optional.of(platformType));
         when(dictItemRepository.findVisibleByDictTypeId(10L, 7L)).thenReturn(List.of(platformItem, tenantOverlay));
 
         String label = service.getLabel("ENABLE_STATUS", "ENABLED");
@@ -147,16 +249,16 @@ class DictItemServiceImplTest {
     @Test
     void findByDictCode_returns_merged_platform_and_tenant_items_with_tenant_override() {
         TenantContext.setActiveTenantId(7L);
-        DictType platformType = dictType(10L, 0L, "ENABLE_STATUS");
-        DictItem platformA = dictItem(1L, 10L, 0L, "A", "平台A", platformType);
-        DictItem platformB = dictItem(2L, 10L, 0L, "B", "平台B", platformType);
+        DictType platformType = dictType(10L, null, "ENABLE_STATUS");
+        DictItem platformA = dictItem(1L, 10L, null, "A", "平台A", platformType);
+        DictItem platformB = dictItem(2L, 10L, null, "B", "平台B", platformType);
         DictItem tenantB = dictItem(3L, 10L, 7L, "B", "租户B", platformType);
         platformB.setDescription("平台描述");
         platformB.setEnabled(false);
         platformB.setSortOrder(7);
 
         when(dictTypeRepository.findByDictCodeAndTenantId("ENABLE_STATUS", 7L)).thenReturn(Optional.empty());
-        when(dictTypeRepository.findByDictCodeAndTenantId("ENABLE_STATUS", 0L)).thenReturn(Optional.of(platformType));
+        when(dictTypeRepository.findByDictCodeAndTenantIdIsNull("ENABLE_STATUS")).thenReturn(Optional.of(platformType));
         when(dictItemRepository.findVisibleByDictTypeId(10L, 7L))
                 .thenReturn(List.of(platformA, platformB, tenantB));
 
@@ -177,8 +279,8 @@ class DictItemServiceImplTest {
     void should_reject_deleting_platform_item() {
         TenantContext.setActiveTenantId(7L);
 
-        DictType platformType = dictType(10L, 0L, "ENABLE_STATUS");
-        DictItem platformItem = dictItem(1L, 10L, 0L, "ENABLED", "启用", platformType);
+        DictType platformType = dictType(10L, null, "ENABLE_STATUS");
+        DictItem platformItem = dictItem(1L, 10L, null, "ENABLED", "启用", platformType);
 
         when(dictItemRepository.findById(1L)).thenReturn(Optional.of(platformItem));
         when(dictTypeRepository.findById(10L)).thenReturn(Optional.of(platformType));
@@ -252,6 +354,7 @@ class DictItemServiceImplTest {
         dictType.setTenantId(tenantId);
         dictType.setDictCode(dictCode);
         dictType.setDictName(dictCode + "-name");
+        dictType.setSortOrder(id.intValue());
         return dictType;
     }
 

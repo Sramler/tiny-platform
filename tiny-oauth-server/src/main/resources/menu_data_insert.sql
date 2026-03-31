@@ -40,7 +40,22 @@ INSERT INTO resource (name, title, url, uri, method, icon, show_icon, sort, comp
 ('resource', '资源管理', '/system/resource', '/sys/resources', 'GET', '', false, 3, '/views/resource/resource.vue', '', false, false, 'system:resource:list', 1, @system_id, NOW(), NOW()),
 
 -- 用户管理
-('user', '用户管理', '/system/user', '/sys/users', 'GET', '', false, 4, '/views/user/User.vue', '', false, false, 'system:user:list', 1, @system_id, NOW(), NOW());
+('user', '用户管理', '/system/user', '/sys/users', 'GET', '', false, 4, '/views/user/User.vue', '', false, false, 'system:user:list', 1, @system_id, NOW(), NOW()),
+
+-- 认证审计
+('authentication-audit', '认证审计', '/system/audit/authentication', '/sys/audit/authentication', 'GET', '', false, 5, '/views/audit/AuthenticationAudit.vue', '', false, false, 'system:audit:authentication:view', 1, @system_id, NOW(), NOW()),
+
+-- 组织管理
+('organization', '组织管理', '/system/org', '/sys/org/list', 'GET', '', false, 6, '/views/org/Organization.vue', '', false, false, 'system:org:list', 1, @system_id, NOW(), NOW()),
+
+-- 数据范围
+('data-scope', '数据范围', '/system/datascope', '/sys/data-scope', 'GET', '', false, 7, '/views/datascope/DataScope.vue', '', false, false, 'system:datascope:view', 1, @system_id, NOW(), NOW()),
+
+-- 授权审计
+('authorization-audit', '授权审计', '/system/audit/authorization', '/sys/audit/authorization', 'GET', '', false, 8, '/views/audit/AuthorizationAudit.vue', '', false, false, 'system:audit:auth:view', 1, @system_id, NOW(), NOW()),
+
+-- RBAC3 约束
+('role-constraint', 'RBAC3 约束', '/system/role/constraint', '/sys/role-constraints/hierarchy', 'GET', '', false, 9, '/views/constraint/RoleConstraint.vue', '', false, false, 'system:role:constraint:view', 1, @system_id, NOW(), NOW());
 
 -- 插入个人页子菜单
 INSERT INTO resource (name, title, url, uri, method, icon, show_icon, sort, component, redirect, hidden, keep_alive, permission, type, parent_id, created_at, updated_at) VALUES

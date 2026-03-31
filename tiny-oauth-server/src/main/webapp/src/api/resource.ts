@@ -20,8 +20,10 @@ export interface ResourceItem {
   hidden?: boolean
   keepAlive?: boolean
   permission?: string
+  requiredPermissionId?: number
   type: number
   typeName?: string
+  carrierKind?: 'menu' | 'ui_action' | 'api_endpoint'
   parentId?: number | null
   children?: ResourceItem[]
   createdAt?: string
@@ -166,6 +168,16 @@ export function updateResourceSort(id: number | string, sort: number): Promise<R
 // 获取资源树
 export function getResourceTree(): Promise<ResourceItem[]> {
   return request.get('/sys/resources/tree')
+}
+
+// 获取当前页面运行时可见按钮
+export function getRuntimeUiActions(pagePath: string): Promise<ResourceItem[]> {
+  return request.get('/sys/resources/runtime/ui-actions', { params: { pagePath } })
+}
+
+// 检查当前用户是否可访问指定 API 载体
+export function getRuntimeApiAccess(method: string, uri: string): Promise<{ allowed: boolean }> {
+  return request.get('/sys/resources/runtime/api-access', { params: { method, uri } })
 }
 
 // 根据资源类型获取资源列表

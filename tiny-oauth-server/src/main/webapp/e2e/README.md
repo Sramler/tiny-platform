@@ -14,6 +14,7 @@
   - 配置：`playwright.real.config.ts`
   - 测试目录：`e2e/real/*.spec.ts`
   - 特点：真实 Spring Boot + Vite dev server、真实 MySQL（可选种子）、真实 OIDC/MFA/多租户链路，不再 mock first-party API。
+  - **端口与 `E2E_FRONTEND_BASE_URL`**：若在 shell 中设置了 `E2E_FRONTEND_PORT`（例如动态端口避免与本机 5173 冲突），但 `.env.e2e.local` 仍写死 `E2E_FRONTEND_BASE_URL=http://localhost:5173`，`playwright.real.config.ts` 会以**端口为准**重写 `baseURL`，并向后端进程传入对应的 `E2E_FRONTEND_BASE_URL`，避免误连本机旧 Vite、而后端未就绪时出现 `GET /csrf` `ERR_CONNECTION_REFUSED`。
 
 > 当前没有单独的 shared-env smoke / nightly/full-chain 套件，后续如有新增应在本表中补充。
 
@@ -21,6 +22,7 @@
 
 - Workflow：`.github/workflows/verify-scheduling-real-e2e.yml`
 - 当前固定清单：
+  - `e2e/real/platform-vue-login.spec.ts`（`verify-scheduling-real-e2e.yml`）
   - `e2e/real/scheduling-dag-orchestration.spec.ts`
   - `e2e/real/cross-tenant-a-to-b.spec.ts`
   - `e2e/real/cross-tenant-b-to-a.spec.ts`
@@ -100,7 +102,7 @@
     - 代表第二自动化租户（`E2E_TENANT_CODE_B`）和第二自动化管理员用户（`E2E_USERNAME_B` / `E2E_PASSWORD_B`）
   - `chromium-mfa`
     - 不使用 `storageState`
-    - 从 `/login` 起步，使用主自动化身份走真实 MFA 链路
+    - 从 `/login` 起步：`mfa-login-flow`（租户登录 + MFA）、`platform-vue-login`（平台登录 + 平台 MFA）
   - 如启用 MFA，则由 `E2E_TOTP_SECRET` / `E2E_TOTP_CODE` 和 `E2E_TOTP_SECRET_B` / `E2E_TOTP_CODE_B` 驱动真实 TOTP 校验链路。
 
 > 以上身份和数据库凭证均从环境变量注入；`.env.e2e.example` 仅提供占位符，禁止填入真实生产账号。
@@ -111,6 +113,7 @@
 |---------------------------------------------|---------------|-------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|
 | `real/scheduling-dag-orchestration.spec.ts` | isolated real-link | 通过真实 OIDC 登录态 + 专用调度租户，创建 DAG、触发 run、观察并行归并/串行推进/重试/取消/暂停恢复等拓扑（当前断言偏行为与状态，不覆盖所有边界条件） | 使用真实 `/scheduling/**` API 与真实 MySQL/H2 schema，不再 mock first-party API；依赖真实 OIDC/JWT/tenant 头 |
 | `real/mfa-login-flow.spec.ts`               | isolated real-link | 从 `/login` 起步，使用主自动化账号走 “/login → /self/security/totp-verify → /self/security” 的已绑定 TOTP 用户登录链路；当前仅覆盖单租户、单身份场景 | 通过真实 `/api/login` 与 `/self/security/**`，不使用 storageState；依赖 `.env.e2e.local` 中的 E2E_TENANT_CODE/E2E_USERNAME/E2E_PASSWORD 以及 `E2E_TOTP_CODE` 或 `E2E_TOTP_SECRET` |
+| `real/platform-vue-login.spec.ts`           | isolated real-link | 从 `/login` 点击「平台登录」、提交「登录平台」，验证无 `tenantCode` 的真实 Session 登录（含平台身份 MFA）；断言不回到带错误的 `/login` | 依赖 `E2E_PLATFORM_USERNAME` / `E2E_PLATFORM_PASSWORD` 与 `E2E_PLATFORM_TOTP_SECRET`（或 `E2E_PLATFORM_TOTP_CODE`）；补全 Vitest 无法覆盖的 Login.vue 平台提交链路 |
 | `real/mfa-bind-flow.spec.ts`                | isolated real-link | 从 `/login` 起步，使用专用首绑身份登录未绑定 TOTP 的用户，走 “/login → /self/security/totp-bind → /self/security → 清理会话 → /login → /self/security/totp-verify → /self/security” 的完整首绑 + 校验链路 | 通过真实 `/api/login` 与 `/self/security/totp/*`，不使用 storageState；依赖 `.env.e2e.local` 中的 E2E_USERNAME_BIND/E2E_PASSWORD_BIND 以及可选的 E2E_TENANT_CODE_BIND；TOTP secret 由真实 `/self/security/totp/pre-bind` 返回 |
 | `real/cross-tenant-a-to-b.spec.ts`          | isolated real-link | 以 tenant A 身份登录，由 tenant B 先创建真实调度资源，再验证 tenant A 直接读取其他租户资源会得到 404，伪造 tenant B 头会得到 403 `tenant_mismatch` | 使用两套真实 storageState 与真实 `/scheduling/**` API，不再停留在单身份 forged header；要求第二租户身份已 bootstrap |
 | `real/cross-tenant-b-to-a.spec.ts`          | isolated real-link | 以 tenant B 身份登录，由 tenant A 先创建真实调度资源，再验证 tenant B 直接读取其他租户资源会得到 404，伪造 tenant A 头会得到 403 `tenant_mismatch` | 使用两套真实 storageState 与真实 `/scheduling/**` API，覆盖反向跨租户拒绝路径；要求第二租户身份已 bootstrap |

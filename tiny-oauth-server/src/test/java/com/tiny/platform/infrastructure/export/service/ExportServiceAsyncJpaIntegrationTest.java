@@ -9,8 +9,12 @@ import com.tiny.platform.infrastructure.export.core.ExportRequest;
 import com.tiny.platform.infrastructure.export.core.FilterAwareDataProvider;
 import com.tiny.platform.infrastructure.export.core.SheetConfig;
 import com.tiny.platform.infrastructure.export.core.TopInfoDecorator;
+import com.tiny.platform.infrastructure.auth.org.repository.UserUnitRepository;
+import com.tiny.platform.infrastructure.auth.user.repository.TenantUserRepository;
+import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.infrastructure.export.persistence.ExportTaskEntity;
 import com.tiny.platform.infrastructure.export.persistence.ExportTaskRepository;
+import com.tiny.platform.infrastructure.tenant.service.TenantQuotaService;
 import com.tiny.platform.infrastructure.export.writer.WriterAdapter;
 import com.tiny.platform.infrastructure.export.writer.poi.POIWriterAdapter;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -18,6 +22,7 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
@@ -29,6 +34,7 @@ import org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfigurat
 import org.springframework.boot.autoconfigure.transaction.TransactionAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
@@ -156,7 +162,32 @@ class ExportServiceAsyncJpaIntegrationTest {
     static class TestApplication {
     }
 
+    @Configuration
     static class TestBeans {
+        @Bean
+        @Primary
+        TenantUserRepository tenantUserRepository() {
+            return Mockito.mock(TenantUserRepository.class);
+        }
+
+        @Bean
+        @Primary
+        UserUnitRepository userUnitRepository() {
+            return Mockito.mock(UserUnitRepository.class);
+        }
+
+        @Bean
+        @Primary
+        UserRepository userRepository() {
+            return Mockito.mock(UserRepository.class);
+        }
+
+        @Bean
+        @Primary
+        TenantQuotaService tenantQuotaService() {
+            return Mockito.mock(TenantQuotaService.class);
+        }
+
         @Bean
         @Primary
         public WriterAdapter writerAdapter() {

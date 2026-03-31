@@ -77,7 +77,7 @@
               取消选择
             </a-button>
             <!-- 分配角色按钮，仅单选时可用，否则禁用并提示 -->
-            <a-tooltip v-if="canUpdateUserManagement && selectedRowKeys.length !== 1" title="请仅选择一个用户进行角色分配">
+            <a-tooltip v-if="canAssignUserRoles && selectedRowKeys.length !== 1" title="请仅选择一个用户进行角色分配">
               <span>
                 <a-button type="primary" class="toolbar-btn" disabled style="pointer-events: auto;">
                   <template #icon>
@@ -87,7 +87,7 @@
                 </a-button>
               </span>
             </a-tooltip>
-            <a-button v-else-if="canUpdateUserManagement" type="primary" class="toolbar-btn" @click="openBatchRoleTransfer">
+            <a-button v-else-if="canAssignUserRoles" type="primary" class="toolbar-btn" @click="openBatchRoleTransfer">
               <template #icon>
                 <SettingOutlined />
               </template>
@@ -202,7 +202,7 @@
               </template>
               <template v-else-if="column.dataIndex === 'action'">
                 <div class="action-buttons">
-                  <a-button v-if="canUpdateUserManagement" type="link" size="small" @click.stop="throttledEdit(record)" class="action-btn">
+                  <a-button v-if="canEditUserManagement" type="link" size="small" @click.stop="throttledEdit(record)" class="action-btn">
                     <template #icon>
                       <EditOutlined />
                     </template>
@@ -269,9 +269,20 @@
         @cancel="handleDrawerClose" />
     </a-drawer>
 
-    <RoleTransfer v-if="showBatchRoleTransfer" :open="showBatchRoleTransfer" :all-roles="allRoles"
-      :model-value="batchSelectedRoleIds" @update:open="showBatchRoleTransfer = $event"
-      @update:modelValue="handleBatchRoleAssign" />
+    <RoleTransfer
+      v-if="showBatchRoleTransfer"
+      :open="showBatchRoleTransfer"
+      :all-roles="allRoles"
+      :model-value="batchSelectedRoleIds"
+      :scope-type="batchRoleScopeType"
+      :scope-id="batchRoleScopeId ?? undefined"
+      :org-options="roleScopeOrgOptions"
+      :dept-options="roleScopeDeptOptions"
+      @update:open="showBatchRoleTransfer = $event"
+      @update:modelValue="handleBatchRoleAssign"
+      @update:scopeType="handleBatchRoleScopeTypeChange"
+      @update:scopeId="handleBatchRoleScopeIdChange"
+    />
   </div>
 </template>
 
@@ -279,6 +290,7 @@
 import { ref, computed, onMounted, watch, h, onBeforeUnmount, nextTick } from 'vue'
 import { useAuth } from '@/auth/auth'
 import { userList, createUser, updateUser, deleteUser, batchDeleteUsers, batchEnableUsers, batchDisableUsers } from '@/api/user'
+import { getRuntimeUiActions } from '@/api/resource'
 import { PlusOutlined, ReloadOutlined, SettingOutlined, HolderOutlined, DeleteOutlined, CheckCircleOutlined, StopOutlined, CloseOutlined, EditOutlined, EyeOutlined, InfoCircleOutlined, QuestionCircleOutlined, PoweroffOutlined, DownloadOutlined, ColumnHeightOutlined, CopyOutlined } from '@ant-design/icons-vue'
 import VueDraggable from 'vuedraggable'
 import UserForm from '@/views/user/UserForm.vue'
@@ -287,8 +299,13 @@ import { useThrottle } from '@/utils/debounce'
 import RoleTransfer from './RoleTransfer.vue'
 import { getAllRoles, getRoleById } from '@/api/role'
 import { getUserRoles, updateUserRoles } from '@/api/user'
+import { getOrgList } from '@/api/org'
 import request from '@/utils/request'
 import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import {
+  USER_MANAGEMENT_READ_AUTHORITIES,
+} from '@/constants/permission'
+import { ACTIVE_SCOPE_CHANGED_EVENT } from '@/utils/activeScopeEvents'
 import dayjs from 'dayjs'
 
 const query = ref({
@@ -300,23 +317,27 @@ const tableData = ref<any[]>([])
 const { user } = useAuth()
 const userAuthorities = computed(() => new Set(extractAuthoritiesFromJwt(user.value?.access_token)))
 
-const USER_MANAGEMENT_READ_AUTHORITIES = ['ROLE_ADMIN', 'system:user:list']
-const USER_MANAGEMENT_CREATE_AUTHORITIES = ['ROLE_ADMIN', 'system:user:create']
-const USER_MANAGEMENT_UPDATE_AUTHORITIES = ['ROLE_ADMIN', 'system:user:edit', 'system:user:assign-role', 'system:user:role:assign']
-const USER_MANAGEMENT_DELETE_AUTHORITIES = ['ROLE_ADMIN', 'system:user:delete', 'system:user:batch-delete']
-const USER_MANAGEMENT_ENABLE_AUTHORITIES = ['ROLE_ADMIN', 'system:user:batch-enable', 'system:user:enable']
-const USER_MANAGEMENT_DISABLE_AUTHORITIES = ['ROLE_ADMIN', 'system:user:batch-disable', 'system:user:disable']
-
 function hasAnyUserAuthority(requiredAuthorities: string[]) {
   return requiredAuthorities.some((authority) => userAuthorities.value.has(authority))
 }
 
 const canReadUserManagement = computed(() => hasAnyUserAuthority(USER_MANAGEMENT_READ_AUTHORITIES))
-const canCreateUserManagement = computed(() => hasAnyUserAuthority(USER_MANAGEMENT_CREATE_AUTHORITIES))
-const canUpdateUserManagement = computed(() => hasAnyUserAuthority(USER_MANAGEMENT_UPDATE_AUTHORITIES))
-const canDeleteUserManagement = computed(() => hasAnyUserAuthority(USER_MANAGEMENT_DELETE_AUTHORITIES))
-const canEnableUserManagement = computed(() => hasAnyUserAuthority(USER_MANAGEMENT_ENABLE_AUTHORITIES))
-const canDisableUserManagement = computed(() => hasAnyUserAuthority(USER_MANAGEMENT_DISABLE_AUTHORITIES))
+const runtimeUiActionPermissions = ref<Set<string>>(new Set())
+const runtimeUiActionsLoaded = ref(false)
+
+function hasRuntimeUiAction(permission: string) {
+  if (!runtimeUiActionsLoaded.value) {
+    return false
+  }
+  return runtimeUiActionPermissions.value.has(permission)
+}
+
+const canCreateUserManagement = computed(() => hasRuntimeUiAction('system:user:create'))
+const canEditUserManagement = computed(() => hasRuntimeUiAction('system:user:edit'))
+const canAssignUserRoles = computed(() => hasRuntimeUiAction('system:user:role:assign'))
+const canDeleteUserManagement = computed(() => hasRuntimeUiAction('system:user:delete') || hasRuntimeUiAction('system:user:batch-delete'))
+const canEnableUserManagement = computed(() => hasRuntimeUiAction('system:user:enable') || hasRuntimeUiAction('system:user:batch-enable'))
+const canDisableUserManagement = computed(() => hasRuntimeUiAction('system:user:disable') || hasRuntimeUiAction('system:user:batch-disable'))
 
 const loading = ref(false)
 const exporting = ref(false)
@@ -482,11 +503,14 @@ async function loadData() {
   if (!canReadUserManagement.value) {
     tableData.value = []
     pagination.value.total = 0
+    runtimeUiActionsLoaded.value = false
+    runtimeUiActionPermissions.value = new Set()
     loading.value = false
     return
   }
   loading.value = true
   try {
+    await loadRuntimeUiActions()
     const params = {
       username: query.value.username.trim(),
       nickname: query.value.nickname.trim(),
@@ -501,6 +525,35 @@ async function loadData() {
     pagination.value.total = 0
   } finally {
     loading.value = false
+  }
+}
+
+function resolveRuntimePagePath() {
+  const currentPath = window?.location?.pathname
+  if (currentPath && currentPath !== '/') {
+    return currentPath
+  }
+  return '/system/user'
+}
+
+async function loadRuntimeUiActions() {
+  if (!canReadUserManagement.value) {
+    runtimeUiActionsLoaded.value = false
+    runtimeUiActionPermissions.value = new Set()
+    return
+  }
+  try {
+    const actions = await getRuntimeUiActions(resolveRuntimePagePath())
+    runtimeUiActionPermissions.value = new Set(
+      (actions || [])
+        .map((action) => action.permission)
+        .filter((permission): permission is string => Boolean(permission)),
+    )
+    runtimeUiActionsLoaded.value = true
+  } catch (error) {
+    console.error('加载用户页运行时按钮载体失败:', error)
+    runtimeUiActionsLoaded.value = false
+    runtimeUiActionPermissions.value = new Set()
   }
 }
 
@@ -567,6 +620,10 @@ function handleCreate() {
   currentUser.value = {
     username: '',
     nickname: '',
+    email: '',
+    phone: '',
+    unitIds: [],
+    primaryUnitId: undefined,
     enabled: true,
     accountNonExpired: true,
     accountNonLocked: true,
@@ -684,15 +741,23 @@ function updateTableBodyHeight() {
   });
 }
 
+function handleActiveScopeChanged() {
+  if (canReadUserManagement.value) {
+    loadData()
+  }
+}
+
 onMounted(() => {
   if (canReadUserManagement.value) {
     loadData()
   }
   updateTableBodyHeight()
   window.addEventListener('resize', updateTableBodyHeight)
+  window.addEventListener(ACTIVE_SCOPE_CHANGED_EVENT, handleActiveScopeChanged)
 })
 onBeforeUnmount(() => {
   window.removeEventListener('resize', updateTableBodyHeight)
+  window.removeEventListener(ACTIVE_SCOPE_CHANGED_EVENT, handleActiveScopeChanged)
 })
 
 watch(() => pagination.value.pageSize, () => {
@@ -706,6 +771,8 @@ watch(canReadUserManagement, (enabled) => {
   }
   tableData.value = []
   pagination.value.total = 0
+  runtimeUiActionsLoaded.value = false
+  runtimeUiActionPermissions.value = new Set()
   loading.value = false
 })
 
@@ -860,7 +927,7 @@ const drawerMode = ref<'create' | 'edit' | 'view'>('edit')
 const currentUser = ref<any | null>(null)
 
 function handleEdit(record: any) {
-  if (!canUpdateUserManagement.value) {
+  if (!canEditUserManagement.value) {
     return
   }
   drawerMode.value = 'edit'
@@ -881,7 +948,7 @@ async function handleFormSubmit(formData: any) {
       await createUser(formData)
       message.success('用户创建成功')
     } else if (drawerMode.value === 'edit') {
-      if (!canUpdateUserManagement.value) {
+      if (!canEditUserManagement.value) {
         return
       }
       // 更新用户
@@ -1073,9 +1140,61 @@ async function handleExportAsync() {
 const showBatchRoleTransfer = ref(false)
 const allRoles = ref<any[]>([])
 const batchSelectedRoleIds = ref<string[]>([])
+const batchRoleScopeType = ref<'TENANT' | 'ORG' | 'DEPT'>('TENANT')
+const batchRoleScopeId = ref<number | null>(null)
+const roleScopeUnits = ref<any[]>([])
+
+const roleScopeOrgOptions = computed(() =>
+  roleScopeUnits.value
+    .filter((unit: any) => unit.status === 'ACTIVE' && unit.unitType === 'ORG')
+    .map((unit: any) => ({ value: Number(unit.id), label: unit.name })),
+)
+
+const roleScopeDeptOptions = computed(() =>
+  roleScopeUnits.value
+    .filter((unit: any) => unit.status === 'ACTIVE' && unit.unitType === 'DEPT')
+    .map((unit: any) => ({ value: Number(unit.id), label: unit.name })),
+)
+
+function defaultScopeIdForType(scopeType: 'ORG' | 'DEPT') {
+  const options = scopeType === 'ORG' ? roleScopeOrgOptions.value : roleScopeDeptOptions.value
+  const firstOption = options[0]
+  return firstOption ? Number(firstOption.value) : null
+}
+
+async function ensureRoleScopeUnitsLoaded() {
+  if (roleScopeUnits.value.length > 0) {
+    return
+  }
+  try {
+    roleScopeUnits.value = await getOrgList()
+  } catch (error: any) {
+    roleScopeUnits.value = []
+    message.warning(error?.message || '组织/部门列表加载失败，当前仅可配置租户级角色')
+  }
+}
+
+async function loadBatchRoleSelectionForScope() {
+  if (selectedRowKeys.value.length === 0) {
+    batchSelectedRoleIds.value = []
+    return
+  }
+  if (batchRoleScopeType.value !== 'TENANT' && batchRoleScopeId.value == null) {
+    batchSelectedRoleIds.value = []
+    return
+  }
+  const userId = Number(selectedRowKeys.value[0])
+  const userRoleIds = await getUserRoles(
+    userId,
+    batchRoleScopeType.value === 'TENANT'
+      ? undefined
+      : { scopeType: batchRoleScopeType.value, scopeId: batchRoleScopeId.value },
+  )
+  batchSelectedRoleIds.value = (userRoleIds || []).map((id: any) => String(id))
+}
 
 async function openBatchRoleTransfer() {
-  if (!canUpdateUserManagement.value) {
+  if (!canAssignUserRoles.value) {
     return
   }
   // 获取所有角色
@@ -1085,33 +1204,46 @@ async function openBatchRoleTransfer() {
     title: r.name + (r.description ? `（${r.description}）` : ''),
     ...r
   }))
-  // 获取选中用户的角色交集（如需自定义可改为并集或第一个用户的角色）
-  if (selectedRowKeys.value.length > 0) {
-    // 这里只取第一个用户的角色作为默认
-    const userId = Number(selectedRowKeys.value[0])
-    const userRoleIds = await getUserRoles(userId)
-    batchSelectedRoleIds.value = (userRoleIds || []).map((id: any) => String(id))
-  } else {
-    batchSelectedRoleIds.value = []
-  }
+  await ensureRoleScopeUnitsLoaded()
+  batchRoleScopeType.value = 'TENANT'
+  batchRoleScopeId.value = null
+  await loadBatchRoleSelectionForScope()
   showBatchRoleTransfer.value = true
 }
 
+async function handleBatchRoleScopeTypeChange(scopeType: 'TENANT' | 'ORG' | 'DEPT') {
+  batchRoleScopeType.value = scopeType
+  batchRoleScopeId.value = scopeType === 'TENANT' ? null : defaultScopeIdForType(scopeType)
+  await loadBatchRoleSelectionForScope()
+}
+
+async function handleBatchRoleScopeIdChange(scopeId: number) {
+  batchRoleScopeId.value = scopeId != null ? Number(scopeId) : null
+  await loadBatchRoleSelectionForScope()
+}
+
 async function handleBatchRoleAssign(newRoleIds: string[]) {
-  if (!canUpdateUserManagement.value) {
+  if (!canAssignUserRoles.value) {
     return
   }
-  // 这里可以实现批量分配角色逻辑，如循环调用后端接口
-  // 示例：对每个选中用户调用 updateUser/updateUserRoles
-  for (const userIdStr of selectedRowKeys.value) {
-    const userId = Number(userIdStr)
-    const userRoleIds = await getUserRoles(userId)
-    await updateUserRoles(userId, newRoleIds.map(id => Number(id)))
+  try {
+    const payload = batchRoleScopeType.value === 'TENANT'
+      ? newRoleIds.map(id => Number(id))
+      : {
+          scopeType: batchRoleScopeType.value,
+          scopeId: batchRoleScopeId.value ?? undefined,
+          roleIds: newRoleIds.map(id => Number(id)),
+        }
+    for (const userIdStr of selectedRowKeys.value) {
+      const userId = Number(userIdStr)
+      await updateUserRoles(userId, payload)
+    }
+    message.success('批量分配角色成功')
+    showBatchRoleTransfer.value = false
+    loadData()
+  } catch (error: any) {
+    message.error('批量分配角色失败: ' + (error?.message || '未知错误'))
   }
-  message.success('批量分配角色成功')
-  showBatchRoleTransfer.value = false
-  // 可选：刷新表格数据
-  loadData()
 }
 </script>
 

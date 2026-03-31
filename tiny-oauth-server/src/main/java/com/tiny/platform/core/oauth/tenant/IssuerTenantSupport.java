@@ -83,6 +83,27 @@ public final class IssuerTenantSupport {
                 || requestPath.matches("^/[a-z0-9][a-z0-9-]{1,31}/oauth2/jwks(?:/.*)?$");
     }
 
+    /**
+     * 默认 issuer（非 /{tenantCode}/… 前缀）下的 OAuth2 授权服务器「客户端认证 + 表单」类 POST 端点。
+     * <p>
+     * 此类请求进入过滤器链时 SecurityContext 往往是 Registered Client 认证而非业务用户主体，
+     * 且静默换票等场景可能无法依赖会话冻结租户；JWT 内租户与 scope 由 token 定制器从授权记录解析。
+     * 带租户前缀的 issuer 路径仍应走租户上下文过滤器常规则。
+     */
+    public static boolean isDefaultIssuerOAuth2ProtocolPostEndpoint(String requestPath) {
+        if (requestPath == null) {
+            return false;
+        }
+        return switch (requestPath) {
+            case "/oauth2/token",
+                 "/oauth2/introspect",
+                 "/oauth2/revoke",
+                 "/oauth2/device_authorization",
+                 "/oauth2/par" -> true;
+            default -> false;
+        };
+    }
+
     private static String normalizeTenantCode(String raw) {
         if (raw == null || raw.isBlank()) {
             return null;

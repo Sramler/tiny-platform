@@ -5,6 +5,9 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
+import java.util.Collection;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 /**
  * 用户头像 Repository
@@ -16,6 +19,9 @@ public interface UserAvatarRepository extends JpaRepository<UserAvatar, Long> {
      * 根据用户ID查找头像
      */
     Optional<UserAvatar> findByUserId(Long userId);
+
+    @Query("select coalesce(sum(a.fileSize), 0) from UserAvatar a where a.userId in :userIds")
+    Long sumFileSizeByUserIdIn(@Param("userIds") Collection<Long> userIds);
 
     /**
      * 根据内容哈希查找头像（用于去重）

@@ -1,0 +1,38 @@
+databaseChangeLog:
+  - changeSet:
+      id: 081-authorization-audit-log
+      author: tiny
+      comment: Phase5：新增 authorization_audit_log 授权审计日志表
+      preConditions:
+        - onFail: CONTINUE
+        - onError: HALT
+        - dbms:
+            type: mysql
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              CREATE TABLE IF NOT EXISTS `authorization_audit_log` (
+                `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+                `tenant_id` BIGINT NULL COMMENT '租户ID（平台级事件可为NULL）',
+                `event_type` VARCHAR(64) NOT NULL COMMENT '事件类型：ROLE_ASSIGNMENT_GRANT/REVOKE, DATA_SCOPE_UPSERT/DELETE, CONSTRAINT_RULE_UPSERT/DELETE, ORG_UNIT_CREATE/UPDATE/DELETE, USER_UNIT_ASSIGN/REMOVE, CONSTRAINT_VIOLATION 等',
+                `actor_user_id` BIGINT NULL COMMENT '执行操作的用户ID',
+                `target_user_id` BIGINT NULL COMMENT '受影响的用户ID（如被赋权/撤权用户）',
+                `scope_type` VARCHAR(16) NULL COMMENT '作用域类型：PLATFORM/TENANT/ORG/DEPT',
+                `scope_id` BIGINT NULL COMMENT '作用域ID',
+                `role_id` BIGINT NULL COMMENT '涉及的角色ID',
+                `module` VARCHAR(64) NULL COMMENT '涉及的业务模块（数据范围事件时使用）',
+                `resource_permission` VARCHAR(128) NULL COMMENT '涉及的权限标识符',
+                `event_detail` JSON NULL COMMENT '事件详细信息（JSON，包含变更前后值等）',
+                `result` VARCHAR(16) NOT NULL DEFAULT 'SUCCESS' COMMENT '操作结果：SUCCESS/DENIED/ERROR',
+                `result_reason` VARCHAR(512) NULL COMMENT '结果原因（如拒绝原因、错误信息）',
+                `ip_address` VARCHAR(64) NULL COMMENT '操作者IP地址',
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                PRIMARY KEY (`id`),
+                KEY `idx_aal_tenant_event` (`tenant_id`, `event_type`, `created_at`),
+                KEY `idx_aal_actor` (`actor_user_id`, `created_at`),
+                KEY `idx_aal_target` (`target_user_id`, `created_at`),
+                KEY `idx_aal_created` (`created_at`)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='授权审计日志表（Phase5）';

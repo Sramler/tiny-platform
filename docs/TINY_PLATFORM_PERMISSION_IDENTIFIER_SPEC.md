@@ -1,5 +1,13 @@
 # Tiny Platform 权限标识符命名规范
 
+> 状态：权限命名主线规范文档  
+> 适用范围：后端鉴权、前端权限点、菜单资源、初始化数据、权限字典  
+> 关联主线：`TINY_PLATFORM_AUTHORIZATION_MODEL.md`、`TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md`、`.agent/src/rules/92-tiny-platform-permission.rules.md`
+
+> 说明：
+> - 本文件只负责“权限码如何命名、如何迁移、如何避免旧码并存”。
+> - 当前完成度、优先级与真实剩余项，以 `TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md` 为准。
+
 ## 1. 目标
 
 本规范用于统一 tiny-platform 的权限标识命名，约束后端鉴权、前端权限点、菜单资源、初始化数据和权限字典，避免出现以下问题：

@@ -1,0 +1,18 @@
+databaseChangeLog:
+  - changeSet:
+      id: 117-drop-role-resource-legacy
+      author: tiny
+      comment: |
+        删除遗留 role_resource 表；运行态授权以 role_permission 为唯一关系表（W-Off-004）。
+        前置：116 等变更已完成 role_permission 回填；应用代码不再访问 role_resource。
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - tableExists:
+            tableName: role_resource
+      changes:
+        - dropTable:
+            tableName: role_resource
+            cascadeConstraints: true

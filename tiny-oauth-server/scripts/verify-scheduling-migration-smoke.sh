@@ -122,10 +122,19 @@ default_admin_role_count=$(query_value "
   SELECT COUNT(*)
   FROM role
   WHERE tenant_id = ${default_tenant_id}
+    AND code = 'ROLE_TENANT_ADMIN';
+")
+[[ "${default_admin_role_count:-0}" -ge 1 ]] || fail "默认租户缺少 ROLE_TENANT_ADMIN，无法提供权限模板"
+echo "  [OK] bootstrap: 默认租户存在 ROLE_TENANT_ADMIN"
+
+default_legacy_admin_count=$(query_value "
+  SELECT COUNT(*)
+  FROM role
+  WHERE tenant_id = ${default_tenant_id}
     AND code = 'ROLE_ADMIN';
 ")
-[[ "${default_admin_role_count:-0}" -ge 1 ]] || fail "默认租户缺少 ROLE_ADMIN，无法提供权限模板"
-echo "  [OK] bootstrap: 默认租户存在 ROLE_ADMIN"
+[[ "${default_legacy_admin_count:-0}" -eq 0 ]] || fail "默认租户仍存在 ROLE_ADMIN（应已严格收口到 ROLE_TENANT_ADMIN）"
+echo "  [OK] bootstrap: 默认租户无 ROLE_ADMIN 残留"
 
 for permission in \
   'scheduling:console:view' \
@@ -145,21 +154,43 @@ do
 done
 echo "  [OK] 037: 默认租户调度 authority 资源已存在"
 
-wildcard_binding_count=$(query_value "
+rr_table_exists=$(query_value "
   SELECT COUNT(*)
-  FROM role_resource rr
-  JOIN role role_entity
-    ON role_entity.id = rr.role_id
-   AND role_entity.tenant_id = rr.tenant_id
-  JOIN resource resource_entity
-    ON resource_entity.id = rr.resource_id
-   AND resource_entity.tenant_id = rr.tenant_id
-  WHERE rr.tenant_id = ${default_tenant_id}
-    AND role_entity.code = 'ROLE_ADMIN'
-    AND resource_entity.permission = 'scheduling:*';
+  FROM information_schema.tables
+  WHERE table_schema = DATABASE()
+    AND table_name = 'role_resource';
 ")
-[[ "${wildcard_binding_count:-0}" -ge 1 ]] || fail "默认租户 ROLE_ADMIN 未绑定 scheduling:*，新租户 bootstrap 模板不完整"
-echo "  [OK] 037: 默认租户 ROLE_ADMIN 已绑定 scheduling:*"
+if [[ "${rr_table_exists:-0}" -ge 1 ]]; then
+  wildcard_binding_count=$(query_value "
+    SELECT COUNT(*)
+    FROM role_resource rr
+    JOIN role role_entity
+      ON role_entity.id = rr.role_id
+     AND role_entity.tenant_id = rr.tenant_id
+    JOIN resource resource_entity
+      ON resource_entity.id = rr.resource_id
+     AND resource_entity.tenant_id = rr.tenant_id
+    WHERE rr.tenant_id = ${default_tenant_id}
+      AND role_entity.code = 'ROLE_TENANT_ADMIN'
+      AND resource_entity.permission = 'scheduling:*';
+  ")
+else
+  wildcard_binding_count=$(query_value "
+    SELECT COUNT(*)
+    FROM role_permission rp
+    JOIN role role_entity
+      ON role_entity.id = rp.role_id
+     AND role_entity.tenant_id = rp.tenant_id
+    JOIN permission perm
+      ON perm.id = rp.permission_id
+     AND perm.normalized_tenant_id = rp.normalized_tenant_id
+    WHERE rp.tenant_id = ${default_tenant_id}
+      AND role_entity.code = 'ROLE_TENANT_ADMIN'
+      AND perm.permission_code = 'scheduling:*';
+  ")
+fi
+[[ "${wildcard_binding_count:-0}" -ge 1 ]] || fail "默认租户 ROLE_TENANT_ADMIN 未绑定 scheduling:*，新租户 bootstrap 模板不完整"
+echo "  [OK] 037: 默认租户 ROLE_TENANT_ADMIN 已绑定 scheduling:*"
 
 non_default_platform_menu_count=$(query_value "
   SELECT COUNT(*)

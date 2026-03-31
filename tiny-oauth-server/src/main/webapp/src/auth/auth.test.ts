@@ -212,3 +212,54 @@ describe('auth login flow', () => {
     expect(window.location.href).toBe('http://localhost:5173/')
   })
 })
+
+describe('refreshTokenAfterActiveScopeSwitch', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    vi.clearAllMocks()
+    window.history.replaceState({}, '', '/')
+    mocks.getUser.mockResolvedValue(null)
+    mocks.signinSilent.mockResolvedValue(null)
+    mocks.getTenantCode.mockReturnValue('tiny-prod')
+    mocks.getActiveTenantId.mockReturnValue(null)
+  })
+
+  it('should return ok when signinSilent yields a non-expired user', async () => {
+    const fakeUser = {
+      expired: false,
+      expires_at: 9999999999,
+      access_token: 'at',
+      refresh_token: 'rt',
+      profile: { sub: 'u1' },
+    }
+    mocks.signinSilent.mockResolvedValue(fakeUser)
+    const authModule = await import('@/auth/auth')
+    await authModule.initPromise
+
+    const result = await authModule.refreshTokenAfterActiveScopeSwitch()
+
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.user).toBe(fakeUser)
+    }
+    expect(mocks.syncTenantContextFromClaims).toHaveBeenCalled()
+    expect(mocks.syncTenantContextFromAccessToken).toHaveBeenCalledWith('at')
+  })
+
+  it('should return ok false on silent renew failure without forcing login redirect', async () => {
+    mocks.signinSilent.mockRejectedValue(new Error('iframe blocked'))
+    const assignSpy = vi.fn()
+    vi.stubGlobal('location', {
+      ...window.location,
+      href: 'http://localhost:5173/app',
+      assign: assignSpy,
+    })
+    const authModule = await import('@/auth/auth')
+    await authModule.initPromise
+
+    const result = await authModule.refreshTokenAfterActiveScopeSwitch()
+
+    expect(result.ok).toBe(false)
+    expect(window.location.href).toBe('http://localhost:5173/app')
+  })
+})

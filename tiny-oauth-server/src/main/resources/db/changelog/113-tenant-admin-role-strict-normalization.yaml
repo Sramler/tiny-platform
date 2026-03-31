@@ -1,0 +1,136 @@
+databaseChangeLog:
+  - changeSet:
+      id: 113-tenant-admin-role-strict-normalization
+      author: codex
+      comment: 租户侧管理员角色严格收口为 ROLE_TENANT_ADMIN，不再使用 ROLE_ADMIN
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - tableExists:
+            tableName: role
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              -- 1) 收口：把 tenant 侧 ROLE_ADMIN（tenant_id != NULL）直接改 code 为 ROLE_TENANT_ADMIN
+              --    仅在该 tenant 尚不存在 ROLE_TENANT_ADMIN 时执行，避免 code/唯一冲突。
+              UPDATE `role` r
+              JOIN (
+                SELECT legacy.`id` AS legacy_role_id
+                FROM `role` legacy
+                LEFT JOIN `role` normalized
+                  ON normalized.`tenant_id` = legacy.`tenant_id`
+                 AND normalized.`code` = 'ROLE_TENANT_ADMIN'
+                WHERE legacy.`tenant_id` IS NOT NULL
+                  AND legacy.`code` = 'ROLE_ADMIN'
+                  AND normalized.`id` IS NULL
+              ) x ON r.`id` = x.legacy_role_id
+              SET r.`code` = 'ROLE_TENANT_ADMIN',
+                  r.`role_level` = 'TENANT',
+                  r.`description` = '租户管理员，负责本租户内用户、角色、组织、资源与业务配置管理';
+
+              -- 2) 兜底：统一 ROLE_TENANT_ADMIN 的 role_level/description（不动 name：role.name 可能全局唯一）
+              UPDATE `role`
+              SET `description` = '租户管理员，负责本租户内用户、角色、组织、资源与业务配置管理',
+                  `role_level` = 'TENANT'
+              WHERE `tenant_id` IS NOT NULL
+                AND `code` = 'ROLE_TENANT_ADMIN';
+
+
+              -- 3) 对仍残留的 tenant 侧 ROLE_ADMIN（说明该 tenant 已存在 ROLE_TENANT_ADMIN），先迁移依赖关系再删除旧 ROLE_ADMIN。
+              -- 3.1 role_assignment（TENANT scope）
+              INSERT IGNORE INTO `role_assignment` (
+                `principal_type`, `principal_id`, `role_id`, `tenant_id`, `scope_type`, `scope_id`,
+                `status`, `start_time`, `end_time`, `granted_by`, `granted_at`, `updated_at`
+              )
+              SELECT
+                ra.`principal_type`,
+                ra.`principal_id`,
+                new_role.`id`,
+                ra.`tenant_id`,
+                ra.`scope_type`,
+                ra.`scope_id`,
+                ra.`status`,
+                ra.`start_time`,
+                ra.`end_time`,
+                ra.`granted_by`,
+                ra.`granted_at`,
+                ra.`updated_at`
+              FROM `role_assignment` ra
+              JOIN `role` old_role
+                ON old_role.`id` = ra.`role_id`
+               AND old_role.`tenant_id` IS NOT NULL
+               AND old_role.`code` = 'ROLE_ADMIN'
+              JOIN `role` new_role
+                ON new_role.`tenant_id` = old_role.`tenant_id`
+               AND new_role.`code` = 'ROLE_TENANT_ADMIN'
+              WHERE ra.`scope_type` = 'TENANT';
+
+              DELETE ra
+              FROM `role_assignment` ra
+              JOIN `role` old_role
+                ON old_role.`id` = ra.`role_id`
+              WHERE ra.`scope_type` = 'TENANT'
+                AND old_role.`tenant_id` IS NOT NULL
+                AND old_role.`code` = 'ROLE_ADMIN';
+
+              -- 3.2 role_resource
+              INSERT IGNORE INTO `role_resource` (`tenant_id`, `role_id`, `resource_id`)
+              SELECT
+                old_link.`tenant_id`,
+                new_role.`id`,
+                old_link.`resource_id`
+              FROM `role_resource` old_link
+              JOIN `role` old_role
+                ON old_role.`id` = old_link.`role_id`
+               AND old_role.`tenant_id` IS NOT NULL
+               AND old_role.`code` = 'ROLE_ADMIN'
+              JOIN `role` new_role
+                ON new_role.`tenant_id` = old_role.`tenant_id`
+               AND new_role.`code` = 'ROLE_TENANT_ADMIN';
+
+              DELETE old_link
+              FROM `role_resource` old_link
+              JOIN `role` old_role
+                ON old_role.`id` = old_link.`role_id`
+              WHERE old_role.`tenant_id` IS NOT NULL
+                AND old_role.`code` = 'ROLE_ADMIN';
+
+              -- 3.3 role_data_scope
+              INSERT IGNORE INTO `role_data_scope` (
+                `tenant_id`, `role_id`, `module`, `scope_type`, `access_type`,
+                `created_by`, `created_at`, `updated_at`
+              )
+              SELECT
+                rds.`tenant_id`,
+                new_role.`id`,
+                rds.`module`,
+                rds.`scope_type`,
+                rds.`access_type`,
+                rds.`created_by`,
+                rds.`created_at`,
+                rds.`updated_at`
+              FROM `role_data_scope` rds
+              JOIN `role` old_role
+                ON old_role.`id` = rds.`role_id`
+               AND old_role.`tenant_id` IS NOT NULL
+               AND old_role.`code` = 'ROLE_ADMIN'
+              JOIN `role` new_role
+                ON new_role.`tenant_id` = old_role.`tenant_id`
+               AND new_role.`code` = 'ROLE_TENANT_ADMIN';
+
+              DELETE rds
+              FROM `role_data_scope` rds
+              JOIN `role` old_role
+                ON old_role.`id` = rds.`role_id`
+              WHERE old_role.`tenant_id` IS NOT NULL
+                AND old_role.`code` = 'ROLE_ADMIN';
+
+              -- 4) 清理 tenant 侧 ROLE_ADMIN（平台模板 ROLE_ADMIN 已在 112 收口）
+              DELETE FROM `role`
+              WHERE `tenant_id` IS NOT NULL
+                AND `code` = 'ROLE_ADMIN';

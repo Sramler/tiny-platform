@@ -7,6 +7,9 @@ import com.tiny.platform.core.dict.model.DictType;
 import com.tiny.platform.core.dict.repository.DictItemRepository;
 import com.tiny.platform.core.dict.repository.DictTypeRepository;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
+import com.tiny.platform.infrastructure.auth.org.repository.UserUnitRepository;
+import com.tiny.platform.infrastructure.auth.user.repository.TenantUserRepository;
+import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,10 +22,12 @@ import org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerA
 import org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration;
 import org.springframework.boot.autoconfigure.transaction.TransactionAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -60,16 +65,27 @@ class DictServiceJpaIntegrationTest {
     @Autowired
     private DictItemRepository dictItemRepository;
 
+    @MockBean
+    private TenantUserRepository tenantUserRepository;
+
+    @MockBean
+    private UserUnitRepository userUnitRepository;
+
+    @MockBean
+    private UserRepository userRepository;
+
     @AfterEach
     void tearDown() {
         TenantContext.clear();
+        com.tiny.platform.infrastructure.auth.datascope.framework.DataScopeContext.clear();
+        SecurityContextHolder.clearContext();
     }
 
     @Test
     void findVisibleTypes_should_only_return_platform_and_current_tenant_types() {
         TenantContext.setActiveTenantId(7L);
 
-        saveType("PLATFORM_STATUS", 0L, 1);
+        saveType("PLATFORM_STATUS", null, 1);
         saveType("CURRENT_STATUS", 7L, 2);
         saveType("OTHER_STATUS", 8L, 3);
 
@@ -84,8 +100,8 @@ class DictServiceJpaIntegrationTest {
     void findByDictCode_should_merge_overlay_label_but_keep_platform_metadata() {
         TenantContext.setActiveTenantId(7L);
 
-        DictType platformType = saveType("ENABLE_STATUS", 0L, 1);
-        saveItem(platformType, 0L, "ENABLED", "启用", "平台描述", false, 9);
+        DictType platformType = saveType("ENABLE_STATUS", null, 1);
+        saveItem(platformType, null, "ENABLED", "启用", "平台描述", false, 9);
         saveItem(platformType, 7L, "ENABLED", "租户可用", "租户描述", true, 1);
 
         List<DictItem> items = dictItemService.findByDictCode("ENABLE_STATUS");
@@ -103,8 +119,8 @@ class DictServiceJpaIntegrationTest {
     void query_for_platform_type_should_return_merged_page_under_h2() {
         TenantContext.setActiveTenantId(7L);
 
-        DictType platformType = saveType("ORDER_STATUS", 0L, 1);
-        saveItem(platformType, 0L, "PAID", "已支付", "平台说明", false, 6);
+        DictType platformType = saveType("ORDER_STATUS", null, 1);
+        saveItem(platformType, null, "PAID", "已支付", "平台说明", false, 6);
         saveItem(platformType, 7L, "PAID", "租户已支付", "租户说明", true, 1);
 
         DictItemQueryDto query = new DictItemQueryDto();
@@ -125,8 +141,8 @@ class DictServiceJpaIntegrationTest {
     void query_without_type_filter_should_return_merged_page_under_h2() {
         TenantContext.setActiveTenantId(7L);
 
-        DictType platformType = saveType("PAY_STATUS", 0L, 1);
-        saveItem(platformType, 0L, "PAID", "已支付", "平台说明", false, 6);
+        DictType platformType = saveType("PAY_STATUS", null, 1);
+        saveItem(platformType, null, "PAID", "已支付", "平台说明", false, 6);
         saveItem(platformType, 7L, "PAID", "租户已支付", "租户说明", true, 1);
 
         DictItemQueryDto query = new DictItemQueryDto();

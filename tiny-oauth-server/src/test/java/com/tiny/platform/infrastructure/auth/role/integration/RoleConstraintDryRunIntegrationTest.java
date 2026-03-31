@@ -18,6 +18,7 @@ import com.tiny.platform.infrastructure.auth.role.repository.RolePrerequisiteRep
 import com.tiny.platform.infrastructure.auth.role.repository.RoleRepository;
 import com.tiny.platform.infrastructure.auth.role.service.RoleAssignmentSyncService;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
+import com.tiny.platform.infrastructure.auth.user.repository.TenantUserRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -58,6 +59,9 @@ class RoleConstraintDryRunIntegrationTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private TenantUserRepository tenantUserRepository;
 
     @Autowired
     private RoleRepository roleRepository;
@@ -102,40 +106,63 @@ class RoleConstraintDryRunIntegrationTest {
         Long childRoleId = childRole.getId();
         Long parentRoleId = parentRole.getId();
 
-        // Clean up test artifacts (best-effort).
-        violationLogRepository.findAll().stream()
-            .filter(v -> tenantId.equals(v.getTenantId()) && userId.equals(v.getPrincipalId()))
-            .map(RoleConstraintViolationLog::getId)
-            .forEach(violationLogRepository::deleteById);
+        try {
+            // Clean up test artifacts (best-effort).
+            violationLogRepository.findAll().stream()
+                .filter(v -> tenantId.equals(v.getTenantId()) && userId.equals(v.getPrincipalId()))
+                .map(RoleConstraintViolationLog::getId)
+                .forEach(violationLogRepository::deleteById);
 
-        // Make the test idempotent across local runs.
-        roleHierarchyRepository.deleteByTenantIdAndChildRoleIdAndParentRoleId(tenantId, childRoleId, parentRoleId);
-        roleMutexRepository.deleteByTenantIdAndLeftRoleIdAndRightRoleId(tenantId, childRoleId, parentRoleId);
+            // Make the test idempotent across local runs.
+            roleHierarchyRepository.deleteByTenantIdAndChildRoleIdAndParentRoleId(tenantId, childRoleId, parentRoleId);
+            roleMutexRepository.deleteByTenantIdAndLeftRoleIdAndRightRoleId(tenantId, childRoleId, parentRoleId);
 
-        RoleHierarchy edge = new RoleHierarchy();
-        edge.setTenantId(tenantId);
-        edge.setChildRoleId(childRoleId);
-        edge.setParentRoleId(parentRoleId);
-        roleHierarchyRepository.save(edge);
+            RoleHierarchy edge = new RoleHierarchy();
+            edge.setTenantId(tenantId);
+            edge.setChildRoleId(childRoleId);
+            edge.setParentRoleId(parentRoleId);
+            roleHierarchyRepository.save(edge);
 
-        RoleMutex mutex = new RoleMutex();
-        mutex.setTenantId(tenantId);
-        mutex.setLeftRoleId(childRoleId);
-        mutex.setRightRoleId(parentRoleId);
-        roleMutexRepository.save(mutex);
+            RoleMutex mutex = new RoleMutex();
+            mutex.setTenantId(tenantId);
+            mutex.setLeftRoleId(childRoleId);
+            mutex.setRightRoleId(parentRoleId);
+            roleMutexRepository.save(mutex);
 
-        // Should not throw (dry-run).
-        roleAssignmentSyncService.replaceUserTenantRoleAssignments(userId, tenantId, List.of(childRoleId));
+            // Should not throw (dry-run).
+            roleAssignmentSyncService.replaceUserTenantRoleAssignments(userId, tenantId, List.of(childRoleId));
 
-        var logs = violationLogRepository.findAll().stream()
-            .filter(v -> tenantId.equals(v.getTenantId()) && userId.equals(v.getPrincipalId()))
-            .toList();
+            var logs = violationLogRepository.findAll().stream()
+                .filter(v -> tenantId.equals(v.getTenantId()) && userId.equals(v.getPrincipalId()))
+                .toList();
 
-        assertThat(logs).isNotEmpty();
-        assertThat(logs.get(0).getViolationType()).isEqualTo("MUTEX");
-        assertThat(logs.get(0).getViolationCode()).isEqualTo("ROLE_CONFLICT_MUTEX");
-        assertThat(logs.get(0).getDirectRoleIds()).contains(String.valueOf(childRoleId));
-        assertThat(logs.get(0).getEffectiveRoleIds()).contains(String.valueOf(parentRoleId));
+            assertThat(logs).isNotEmpty();
+            assertThat(logs.get(0).getViolationType()).isEqualTo("MUTEX");
+            assertThat(logs.get(0).getViolationCode()).isEqualTo("ROLE_CONFLICT_MUTEX");
+            assertThat(logs.get(0).getDirectRoleIds()).contains(String.valueOf(childRoleId));
+            assertThat(logs.get(0).getEffectiveRoleIds()).contains(String.valueOf(parentRoleId));
+        } finally {
+            Rbac3RoleConstraintIntegrationTestCleanup.purgeUserTenantArtifacts(
+                tenantId,
+                userId,
+                roleAssignmentRepository,
+                violationLogRepository,
+                tenantUserRepository,
+                userRepository
+            );
+            try {
+                roleHierarchyRepository.deleteByTenantIdAndChildRoleIdAndParentRoleId(tenantId, childRoleId, parentRoleId);
+            } catch (RuntimeException ignored) {
+                // best-effort
+            }
+            try {
+                roleMutexRepository.deleteByTenantIdAndLeftRoleIdAndRightRoleId(tenantId, childRoleId, parentRoleId);
+            } catch (RuntimeException ignored) {
+                // best-effort
+            }
+            Rbac3RoleConstraintIntegrationTestCleanup.deleteRoleBestEffort(roleRepository, childRoleId);
+            Rbac3RoleConstraintIntegrationTestCleanup.deleteRoleBestEffort(roleRepository, parentRoleId);
+        }
     }
 
     @Test
@@ -166,35 +193,60 @@ class RoleConstraintDryRunIntegrationTest {
         requiredRole.setBuiltin(false);
         requiredRole = roleRepository.save(requiredRole);
 
-        // Ensure clean.
-        violationLogRepository.findAll().stream()
-            .filter(v -> tenantId.equals(v.getTenantId()) && userId.equals(v.getPrincipalId()))
-            .map(RoleConstraintViolationLog::getId)
-            .forEach(violationLogRepository::deleteById);
+        Long targetRoleId = targetRole.getId();
+        Long requiredRoleId = requiredRole.getId();
 
-        // Configure prerequisite: target requires requiredRole.
-        // We only grant target, so prerequisite should be missing.
-        rolePrerequisiteRepository.deleteByTenantIdAndRoleIdAndRequiredRoleId(
-            tenantId,
-            targetRole.getId(),
-            requiredRole.getId()
-        );
+        try {
+            // Ensure clean.
+            violationLogRepository.findAll().stream()
+                .filter(v -> tenantId.equals(v.getTenantId()) && userId.equals(v.getPrincipalId()))
+                .map(RoleConstraintViolationLog::getId)
+                .forEach(violationLogRepository::deleteById);
 
-        com.tiny.platform.infrastructure.auth.role.domain.RolePrerequisite rp =
-            new com.tiny.platform.infrastructure.auth.role.domain.RolePrerequisite();
-        rp.setTenantId(tenantId);
-        rp.setRoleId(targetRole.getId());
-        rp.setRequiredRoleId(requiredRole.getId());
-        rolePrerequisiteRepository.save(rp);
+            // Configure prerequisite: target requires requiredRole.
+            // We only grant target, so prerequisite should be missing.
+            rolePrerequisiteRepository.deleteByTenantIdAndRoleIdAndRequiredRoleId(
+                tenantId,
+                targetRoleId,
+                requiredRoleId
+            );
 
-        // Should not throw (dry-run).
-        roleAssignmentSyncService.replaceUserTenantRoleAssignments(userId, tenantId, List.of(targetRole.getId()));
+            com.tiny.platform.infrastructure.auth.role.domain.RolePrerequisite rp =
+                new com.tiny.platform.infrastructure.auth.role.domain.RolePrerequisite();
+            rp.setTenantId(tenantId);
+            rp.setRoleId(targetRoleId);
+            rp.setRequiredRoleId(requiredRoleId);
+            rolePrerequisiteRepository.save(rp);
 
-        var logs = violationLogRepository.findAll().stream()
-            .filter(v -> tenantId.equals(v.getTenantId()) && userId.equals(v.getPrincipalId()))
-            .toList();
+            // Should not throw (dry-run).
+            roleAssignmentSyncService.replaceUserTenantRoleAssignments(userId, tenantId, List.of(targetRoleId));
 
-        assertThat(logs.stream().anyMatch(v -> "PREREQUISITE".equals(v.getViolationType()))).isTrue();
+            var logs = violationLogRepository.findAll().stream()
+                .filter(v -> tenantId.equals(v.getTenantId()) && userId.equals(v.getPrincipalId()))
+                .toList();
+
+            assertThat(logs.stream().anyMatch(v -> "PREREQUISITE".equals(v.getViolationType()))).isTrue();
+        } finally {
+            Rbac3RoleConstraintIntegrationTestCleanup.purgeUserTenantArtifacts(
+                tenantId,
+                userId,
+                roleAssignmentRepository,
+                violationLogRepository,
+                tenantUserRepository,
+                userRepository
+            );
+            try {
+                rolePrerequisiteRepository.deleteByTenantIdAndRoleIdAndRequiredRoleId(
+                    tenantId,
+                    targetRoleId,
+                    requiredRoleId
+                );
+            } catch (RuntimeException ignored) {
+                // best-effort
+            }
+            Rbac3RoleConstraintIntegrationTestCleanup.deleteRoleBestEffort(roleRepository, targetRoleId);
+            Rbac3RoleConstraintIntegrationTestCleanup.deleteRoleBestEffort(roleRepository, requiredRoleId);
+        }
     }
 
     @Test
@@ -227,56 +279,73 @@ class RoleConstraintDryRunIntegrationTest {
 
         Long roleId = role.getId();
 
-        // Clean up best-effort.
-        violationLogRepository.findAll().stream()
-            .filter(v -> tenantId.equals(v.getTenantId())
-                && (userAId.equals(v.getPrincipalId()) || userBId.equals(v.getPrincipalId())))
-            .map(RoleConstraintViolationLog::getId)
-            .forEach(violationLogRepository::deleteById);
+        try {
+            // Clean up best-effort.
+            violationLogRepository.findAll().stream()
+                .filter(v -> tenantId.equals(v.getTenantId())
+                    && (userAId.equals(v.getPrincipalId()) || userBId.equals(v.getPrincipalId())))
+                .map(RoleConstraintViolationLog::getId)
+                .forEach(violationLogRepository::deleteById);
 
-        // Ensure role assignments clean for these users.
-        roleAssignmentRepository.deleteUserAssignmentsInTenant(userAId, tenantId);
-        roleAssignmentRepository.deleteUserAssignmentsInTenant(userBId, tenantId);
+            // Ensure role assignments clean for these users.
+            roleAssignmentRepository.deleteUserAssignmentsInTenant(userAId, tenantId);
+            roleAssignmentRepository.deleteUserAssignmentsInTenant(userBId, tenantId);
 
-        // Configure cardinality: within TENANT scope, max 1 assignment.
-        roleCardinalityRepository.deleteByTenantIdAndRoleIdAndScopeType(tenantId, roleId, "TENANT");
+            // Configure cardinality: within TENANT scope, max 1 assignment.
+            roleCardinalityRepository.deleteByTenantIdAndRoleIdAndScopeType(tenantId, roleId, "TENANT");
 
-        com.tiny.platform.infrastructure.auth.role.domain.RoleCardinality c =
-            new com.tiny.platform.infrastructure.auth.role.domain.RoleCardinality();
-        c.setTenantId(tenantId);
-        c.setRoleId(roleId);
-        c.setScopeType("TENANT");
-        c.setMaxAssignments(1);
-        roleCardinalityRepository.save(c);
+            com.tiny.platform.infrastructure.auth.role.domain.RoleCardinality c =
+                new com.tiny.platform.infrastructure.auth.role.domain.RoleCardinality();
+            c.setTenantId(tenantId);
+            c.setRoleId(roleId);
+            c.setScopeType("TENANT");
+            c.setMaxAssignments(1);
+            roleCardinalityRepository.save(c);
 
-        assertThat(
-            roleCardinalityRepository.findByTenantIdAndScopeTypeAndRoleIdIn(tenantId, "TENANT", List.of(roleId))
-        ).isNotEmpty();
+            assertThat(
+                roleCardinalityRepository.findByTenantIdAndScopeTypeAndRoleIdIn(tenantId, "TENANT", List.of(roleId))
+            ).isNotEmpty();
 
-        // Occupy the quota with userA by inserting an ACTIVE assignment that is definitely effective.
-        roleAssignmentSyncService.ensureTenantMembership(userAId, tenantId, false);
-        RoleAssignment existing = new RoleAssignment();
-        existing.setPrincipalType("USER");
-        existing.setPrincipalId(userAId);
-        existing.setRoleId(roleId);
-        existing.setTenantId(tenantId);
-        existing.setScopeType("TENANT");
-        existing.setScopeId(tenantId);
-        existing.setStatus("ACTIVE");
-        LocalDateTime past = LocalDateTime.now().minusDays(1);
-        existing.setStartTime(past);
-        existing.setEndTime(null);
-        existing.setGrantedAt(past);
-        roleAssignmentRepository.save(existing);
+            // Occupy the quota with userA by inserting an ACTIVE assignment that is definitely effective.
+            roleAssignmentSyncService.ensureTenantMembership(userAId, tenantId, false);
+            RoleAssignment existing = new RoleAssignment();
+            existing.setPrincipalType("USER");
+            existing.setPrincipalId(userAId);
+            existing.setRoleId(roleId);
+            existing.setTenantId(tenantId);
+            existing.setScopeType("TENANT");
+            existing.setScopeId(tenantId);
+            existing.setStatus("ACTIVE");
+            LocalDateTime past = LocalDateTime.now().minusDays(1);
+            existing.setStartTime(past);
+            existing.setEndTime(null);
+            existing.setGrantedAt(past);
+            roleAssignmentRepository.save(existing);
 
-        // Exceed with userB (should not throw, but should log).
-        roleAssignmentSyncService.replaceUserTenantRoleAssignments(userBId, tenantId, List.of(roleId));
+            // Exceed with userB (should not throw, but should log).
+            roleAssignmentSyncService.replaceUserTenantRoleAssignments(userBId, tenantId, List.of(roleId));
 
-        var logsB = violationLogRepository.findAll().stream()
-            .filter(v -> tenantId.equals(v.getTenantId()) && userBId.equals(v.getPrincipalId()))
-            .toList();
+            var logsB = violationLogRepository.findAll().stream()
+                .filter(v -> tenantId.equals(v.getTenantId()) && userBId.equals(v.getPrincipalId()))
+                .toList();
 
-        assertThat(logsB.stream().anyMatch(v -> "CARDINALITY".equals(v.getViolationType()))).isTrue();
+            assertThat(logsB.stream().anyMatch(v -> "CARDINALITY".equals(v.getViolationType()))).isTrue();
+        } finally {
+            Rbac3RoleConstraintIntegrationTestCleanup.purgeUserTenantArtifactsBatch(
+                tenantId,
+                List.of(userAId, userBId),
+                roleAssignmentRepository,
+                violationLogRepository,
+                tenantUserRepository,
+                userRepository
+            );
+            try {
+                roleCardinalityRepository.deleteByTenantIdAndRoleIdAndScopeType(tenantId, roleId, "TENANT");
+            } catch (RuntimeException ignored) {
+                // best-effort
+            }
+            Rbac3RoleConstraintIntegrationTestCleanup.deleteRoleBestEffort(roleRepository, roleId);
+        }
     }
 }
 

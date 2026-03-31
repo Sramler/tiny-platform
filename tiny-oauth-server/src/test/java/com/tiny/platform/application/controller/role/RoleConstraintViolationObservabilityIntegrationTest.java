@@ -10,13 +10,15 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.tiny.platform.OauthServerApplication;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.auth.role.domain.Role;
-import com.tiny.platform.infrastructure.auth.role.domain.RoleConstraintViolationLog;
 import com.tiny.platform.infrastructure.auth.role.domain.RoleMutex;
+import com.tiny.platform.infrastructure.auth.role.integration.Rbac3RoleConstraintIntegrationTestCleanup;
+import com.tiny.platform.infrastructure.auth.role.repository.RoleAssignmentRepository;
 import com.tiny.platform.infrastructure.auth.role.repository.RoleConstraintViolationLogRepository;
 import com.tiny.platform.infrastructure.auth.role.repository.RoleMutexRepository;
 import com.tiny.platform.infrastructure.auth.role.repository.RoleRepository;
 import com.tiny.platform.infrastructure.auth.role.service.RoleAssignmentSyncService;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
+import com.tiny.platform.infrastructure.auth.user.repository.TenantUserRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import java.util.List;
 import org.junit.jupiter.api.AfterEach;
@@ -69,6 +71,12 @@ class RoleConstraintViolationObservabilityIntegrationTest {
     private RoleAssignmentSyncService roleAssignmentSyncService;
 
     @Autowired
+    private RoleAssignmentRepository roleAssignmentRepository;
+
+    @Autowired
+    private TenantUserRepository tenantUserRepository;
+
+    @Autowired
     private RoleConstraintViolationLogRepository violationLogRepository;
 
     private Long userId;
@@ -79,23 +87,31 @@ class RoleConstraintViolationObservabilityIntegrationTest {
     void cleanup() {
         TenantContext.clear();
         if (userId != null) {
-            violationLogRepository.findAll().stream()
-                .filter(v -> TENANT_ID.equals(v.getTenantId()) && userId.equals(v.getPrincipalId()))
-                .map(RoleConstraintViolationLog::getId)
-                .forEach(violationLogRepository::deleteById);
+            Rbac3RoleConstraintIntegrationTestCleanup.purgeUserTenantArtifacts(
+                TENANT_ID,
+                userId,
+                roleAssignmentRepository,
+                violationLogRepository,
+                tenantUserRepository,
+                userRepository
+            );
+            userId = null;
         }
         if (roleAId != null && roleBId != null) {
-            roleMutexRepository.deleteByTenantIdAndLeftRoleIdAndRightRoleId(TENANT_ID, Math.min(roleAId, roleBId), Math.max(roleAId, roleBId));
+            try {
+                roleMutexRepository.deleteByTenantIdAndLeftRoleIdAndRightRoleId(
+                    TENANT_ID,
+                    Math.min(roleAId, roleBId),
+                    Math.max(roleAId, roleBId)
+                );
+            } catch (RuntimeException ignored) {
+                // best-effort
+            }
         }
-        if (roleAId != null) {
-            roleRepository.deleteById(roleAId);
-        }
-        if (roleBId != null) {
-            roleRepository.deleteById(roleBId);
-        }
-        if (userId != null) {
-            userRepository.deleteById(userId);
-        }
+        Rbac3RoleConstraintIntegrationTestCleanup.deleteRoleBestEffort(roleRepository, roleAId);
+        Rbac3RoleConstraintIntegrationTestCleanup.deleteRoleBestEffort(roleRepository, roleBId);
+        roleAId = null;
+        roleBId = null;
     }
 
     @Test

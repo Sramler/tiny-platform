@@ -1,0 +1,105 @@
+name: Verify scheduling seed/reset (Nightly)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '25 2 * * *'
+
+jobs:
+  verify-scheduling-seed-reset:
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ${{ secrets.E2E_DB_PASSWORD }}
+          MYSQL_DATABASE: tiny_web
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -p${MYSQL_ROOT_PASSWORD}"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=20
+
+    defaults:
+      run:
+        working-directory: ${{ github.workspace }}
+
+    env:
+      E2E_BACKEND_PORT: 9000
+      E2E_BACKEND_BASE_URL: http://localhost:9000
+      E2E_BACKEND_PROFILE: e2e
+      E2E_DB_HOST: 127.0.0.1
+      E2E_DB_PORT: 3306
+      E2E_DB_NAME: tiny_web
+      E2E_DB_USER: root
+      E2E_DB_PASSWORD: ${{ secrets.E2E_DB_PASSWORD }}
+      MYSQL_ROOT_PASSWORD: ${{ secrets.E2E_DB_PASSWORD }}
+
+      E2E_OIDC_CLIENT_ID: vue-client
+
+      # Required by scripts/e2e/ensure-scheduling-e2e-auth.sh
+      E2E_TENANT_CODE: ${{ secrets.E2E_TENANT_CODE }}
+      E2E_USERNAME: ${{ secrets.E2E_USERNAME }}
+      E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+      E2E_TOTP_SECRET: ${{ secrets.E2E_TOTP_SECRET }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Prime backend Maven dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          mvn -pl tiny-oauth-server -DskipTests test-compile
+
+      - name: Start backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/tiny-platform-scheduling-seed-reset
+          mvn -pl tiny-oauth-server spring-boot:run \
+            > /tmp/tiny-platform-scheduling-seed-reset/backend.log 2>&1 &
+          echo $! > /tmp/tiny-platform-scheduling-seed-reset/backend.pid
+
+          for _ in $(seq 1 120); do
+            if curl -fsS "http://127.0.0.1:${E2E_BACKEND_PORT}/login" >/dev/null 2>&1; then
+              exit 0
+            fi
+            if ! kill -0 "$(cat /tmp/tiny-platform-scheduling-seed-reset/backend.pid)" 2>/dev/null; then
+              echo "Backend exited before becoming ready."
+              tail -n 200 /tmp/tiny-platform-scheduling-seed-reset/backend.log || true
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "Backend did not become ready in time."
+          tail -n 200 /tmp/tiny-platform-scheduling-seed-reset/backend.log || true
+          exit 1
+
+      - name: Run scheduling seed/reset bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tiny-oauth-server/scripts/e2e/ensure-scheduling-e2e-auth.sh
+
+      - name: Stop started backend
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -f /tmp/tiny-platform-scheduling-seed-reset/backend.pid ]; then
+            pid="$(cat /tmp/tiny-platform-scheduling-seed-reset/backend.pid)"
+            kill "$pid" 2>/dev/null || true
+          fi
+

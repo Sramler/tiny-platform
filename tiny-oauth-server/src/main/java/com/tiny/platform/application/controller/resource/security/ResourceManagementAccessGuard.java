@@ -1,6 +1,5 @@
 package com.tiny.platform.application.controller.resource.security;
 
-import com.tiny.platform.core.oauth.security.LegacyAuthConstants;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 
@@ -9,7 +8,6 @@ import java.util.Set;
 @Component("resourceManagementAccessGuard")
 public class ResourceManagementAccessGuard {
 
-    private static final Set<String> ADMIN_AUTHORITIES = LegacyAuthConstants.ADMIN_AUTHORITIES;
     private static final Set<String> READ_AUTHORITIES = Set.of("system:resource:list");
     private static final Set<String> CREATE_AUTHORITIES = Set.of("system:resource:create");
     private static final Set<String> UPDATE_AUTHORITIES = Set.of("system:resource:edit");
@@ -40,6 +38,6 @@ public class ResourceManagementAccessGuard {
         }
         return authentication.getAuthorities().stream()
             .map(grantedAuthority -> grantedAuthority.getAuthority())
-            .anyMatch(authority -> ADMIN_AUTHORITIES.contains(authority) || requiredAuthorities.contains(authority));
+            .anyMatch(requiredAuthorities::contains);
     }
 }

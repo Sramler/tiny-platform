@@ -1,0 +1,96 @@
+databaseChangeLog:
+  # user_authentication_method：tenant_id 可空表示「用户级全局认证方式」；
+  # 通过生成列 auth_scope_key=IFNULL(tenant_id,0)（0=全局）重建唯一约束，避免 MySQL 下 UNIQUE(tenant_id,...) 对 NULL 语义松散。
+  # 查询侧：租户上下文优先命中 tenant_id=当前租户 的行，否则回退 tenant_id IS NULL（见 UserAuthenticationMethodMerge）。
+  - changeSet:
+      id: 111-drop-fk-user-auth-method-tenant
+      author: tiny
+      comment: 删除 user_authentication_method.tenant_id 外键以便改为可空
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - foreignKeyConstraintExists:
+            foreignKeyName: fk_user_auth_method_tenant
+            foreignKeyTableName: user_authentication_method
+      changes:
+        - dropForeignKeyConstraint:
+            baseTableName: user_authentication_method
+            constraintName: fk_user_auth_method_tenant
+
+  - changeSet:
+      id: 111-drop-uk-user-auth-method-legacy
+      author: tiny
+      comment: 删除旧联合唯一 uk_user_auth_method(tenant_id,user_id,...)
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - uniqueConstraintExists:
+            tableName: user_authentication_method
+            constraintName: uk_user_auth_method
+      changes:
+        - dropUniqueConstraint:
+            tableName: user_authentication_method
+            constraintName: uk_user_auth_method
+
+  - changeSet:
+      id: 111-add-auth-scope-key-and-uk
+      author: tiny
+      comment: 生成列 auth_scope_key + 新唯一键；tenant_id 改为可空；回填外键
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - tableExists:
+            tableName: user_authentication_method
+        - not:
+            - columnExists:
+                tableName: user_authentication_method
+                columnName: auth_scope_key
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: false
+            stripComments: false
+            sql: |
+              ALTER TABLE `user_authentication_method`
+                ADD COLUMN `auth_scope_key` BIGINT
+                  GENERATED ALWAYS AS (IFNULL(`tenant_id`, 0)) STORED
+                  COMMENT '0=全局(tenant_id IS NULL)，否则等于 tenant_id，用于唯一约束',
+                MODIFY COLUMN `tenant_id` BIGINT NULL COMMENT '租户作用域；NULL 表示用户级全局认证方式',
+                ADD UNIQUE KEY `uk_user_auth_method_scope` (
+                  `auth_scope_key`,
+                  `user_id`,
+                  `authentication_provider`,
+                  `authentication_type`
+                ),
+                ADD CONSTRAINT `fk_user_auth_method_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`);
+
+  - changeSet:
+      id: 111-backfill-platform-admin-auth-to-global-tenant
+      author: tiny
+      comment: 将 platform_admin 的 LOCAL+PASSWORD 行归为全局(tenant_id NULL)，与 ensure-platform-admin 新写入语义一致
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - columnExists:
+            tableName: user_authentication_method
+            columnName: auth_scope_key
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: false
+            stripComments: false
+            sql: |
+              UPDATE `user_authentication_method` uam
+              INNER JOIN `user` u ON u.id = uam.user_id
+              SET uam.tenant_id = NULL
+              WHERE u.username = 'platform_admin'
+                AND uam.authentication_provider = 'LOCAL'
+                AND uam.authentication_type = 'PASSWORD';

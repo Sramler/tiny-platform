@@ -1,0 +1,101 @@
+databaseChangeLog:
+  - changeSet:
+      id: 124-backfill-missing-resource-permission-bindings
+      author: codex
+      comment: Backfill missing permission master rows for historical resources and repair required_permission_id bindings
+      preConditions:
+        onFail: MARK_RAN
+        and:
+          - tableExists:
+              tableName: resource
+          - tableExists:
+              tableName: permission
+          - columnExists:
+              tableName: resource
+              columnName: required_permission_id
+      changes:
+        - sql:
+            dbms: mysql
+            sql: |
+              INSERT IGNORE INTO `permission` (
+                `permission_code`,
+                `permission_name`,
+                `module_code`,
+                `action_code`,
+                `permission_type`,
+                `description`,
+                `enabled`,
+                `built_in_flag`,
+                `tenant_id`,
+                `created_by`,
+                `created_at`,
+                `updated_by`,
+                `updated_at`
+              )
+              SELECT
+                grouped.`permission_code` AS `permission_code`,
+                grouped.`permission_code` AS `permission_name`,
+                CASE WHEN grouped.`is_abnormal` = 1 THEN NULL ELSE grouped.`module_code` END AS `module_code`,
+                CASE WHEN grouped.`is_abnormal` = 1 THEN NULL ELSE grouped.`action_code` END AS `action_code`,
+                CASE WHEN grouped.`is_abnormal` = 1 THEN 'OTHER' ELSE grouped.`permission_type` END AS `permission_type`,
+                CASE
+                  WHEN grouped.`is_abnormal` = 1 THEN CONCAT('异常样本补修：待人工治理（', grouped.`abnormal_reason`, '）')
+                  ELSE '从历史 resource.permission 缺口补修生成'
+                END AS `description`,
+                CASE WHEN grouped.`is_abnormal` = 1 THEN 0 ELSE 1 END AS `enabled`,
+                0 AS `built_in_flag`,
+                grouped.`tenant_id` AS `tenant_id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`,
+                NULL AS `updated_by`,
+                NOW() AS `updated_at`
+              FROM (
+                SELECT
+                  src.`tenant_id`,
+                  src.`permission_code`,
+                  SUBSTRING_INDEX(src.`permission_code`, ':', 1) AS `module_code`,
+                  SUBSTRING_INDEX(src.`permission_code`, ':', -1) AS `action_code`,
+                  CASE
+                    WHEN MAX(CASE WHEN src.`resource_type` = 3 THEN 1 ELSE 0 END) = 1 THEN 'API'
+                    WHEN MAX(CASE WHEN src.`resource_type` = 2 THEN 1 ELSE 0 END) = 1 THEN 'BUTTON'
+                    WHEN MAX(CASE WHEN src.`resource_type` IN (0, 1) THEN 1 ELSE 0 END) = 1 THEN 'MENU'
+                    ELSE 'OTHER'
+                  END AS `permission_type`,
+                  CASE
+                    WHEN src.`permission_code` IS NULL OR src.`permission_code` = '' THEN 1
+                    WHEN src.`permission_code` NOT REGEXP '^[^:[:space:]]+(:[^:[:space:]]+){2,}$' THEN 1
+                    WHEN SUBSTRING_INDEX(src.`permission_code`, ':', 1) = '' THEN 1
+                    WHEN SUBSTRING_INDEX(src.`permission_code`, ':', -1) = '' THEN 1
+                    ELSE 0
+                  END AS `is_abnormal`,
+                  CASE
+                    WHEN src.`permission_code` IS NULL OR src.`permission_code` = '' THEN 'EMPTY_PERMISSION'
+                    WHEN src.`permission_code` NOT REGEXP '^[^:[:space:]]+(:[^:[:space:]]+){2,}$' THEN 'INVALID_FORMAT'
+                    WHEN SUBSTRING_INDEX(src.`permission_code`, ':', 1) = ''
+                      OR SUBSTRING_INDEX(src.`permission_code`, ':', -1) = '' THEN 'PARSE_FAILED'
+                    ELSE NULL
+                  END AS `abnormal_reason`
+                FROM (
+                  SELECT
+                    r.`tenant_id`,
+                    TRIM(r.`permission`) AS `permission_code`,
+                    r.`type` AS `resource_type`
+                  FROM `resource` r
+                  LEFT JOIN `permission` p
+                    ON p.`normalized_tenant_id` = r.`normalized_tenant_id`
+                   AND p.`permission_code` = TRIM(r.`permission`)
+                  WHERE r.`permission` IS NOT NULL
+                    AND TRIM(r.`permission`) <> ''
+                    AND p.`id` IS NULL
+                ) src
+                GROUP BY src.`tenant_id`, src.`permission_code`
+              ) grouped;
+
+              UPDATE `resource` r
+              JOIN `permission` p
+                ON p.`normalized_tenant_id` = r.`normalized_tenant_id`
+               AND p.`permission_code` = TRIM(r.`permission`)
+              SET r.`required_permission_id` = p.`id`
+              WHERE r.`permission` IS NOT NULL
+                AND TRIM(r.`permission`) <> ''
+                AND (r.`required_permission_id` IS NULL OR r.`required_permission_id` <> p.`id`);

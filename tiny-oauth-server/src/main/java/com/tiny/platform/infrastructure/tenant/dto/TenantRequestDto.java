@@ -5,6 +5,7 @@ public class TenantRequestDto {
     private String name;
     private Boolean enabled;
     private String domain;
+    private String lifecycleStatus;
     private Boolean includeDeleted;
 
     public String getCode() {
@@ -37,6 +38,14 @@ public class TenantRequestDto {
 
     public void setDomain(String domain) {
         this.domain = domain;
+    }
+
+    public String getLifecycleStatus() {
+        return lifecycleStatus;
+    }
+
+    public void setLifecycleStatus(String lifecycleStatus) {
+        this.lifecycleStatus = lifecycleStatus;
     }
 
     public Boolean getIncludeDeleted() {

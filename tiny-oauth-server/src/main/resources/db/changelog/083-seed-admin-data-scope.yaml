@@ -1,0 +1,39 @@
+databaseChangeLog:
+  - changeSet:
+      id: 083-seed-admin-data-scope
+      author: tiny
+      comment: 为默认租户 ROLE_TENANT_ADMIN 回填核心模块 READ 数据范围 ALL，避免无规则时退回 SELF
+      preConditions:
+        - onFail: CONTINUE
+        - onError: HALT
+        - dbms:
+            type: mysql
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT IGNORE INTO `role_data_scope`
+              (`tenant_id`, `role_id`, `module`, `scope_type`, `access_type`, `created_by`, `created_at`, `updated_at`)
+              SELECT
+                1,
+                role_entity.id,
+                module_mapping.module,
+                'ALL',
+                'READ',
+                1,
+                NOW(),
+                NOW()
+              FROM `role` role_entity
+              JOIN (
+                SELECT 'user' AS module
+                UNION ALL SELECT 'resource'
+                UNION ALL SELECT 'menu'
+                UNION ALL SELECT 'org'
+                UNION ALL SELECT 'scheduling'
+                UNION ALL SELECT 'export'
+                UNION ALL SELECT 'dict'
+              ) module_mapping
+              WHERE role_entity.tenant_id = 1
+                AND role_entity.code = 'ROLE_ADMIN';

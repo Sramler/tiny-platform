@@ -165,14 +165,15 @@ import { taskList, createTask, updateTask, deleteTask, getTask, taskTypeList } f
 import { throttle } from '@/utils/debounce'
 import { useAuth } from '@/auth/auth'
 import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import { SCHEDULING_CONSOLE_CONFIG, SCHEDULING_WILDCARD } from '@/constants/permission'
 
 const { user } = useAuth()
 const schedulingAuthorities = computed(() =>
   extractAuthoritiesFromJwt(user.value?.access_token).filter((a) => a.startsWith('scheduling:')),
 )
 const canManageSchedulingConfig = computed(() =>
-  schedulingAuthorities.value.includes('scheduling:console:config') ||
-  schedulingAuthorities.value.includes('scheduling:*'),
+  schedulingAuthorities.value.includes(SCHEDULING_CONSOLE_CONFIG) ||
+  schedulingAuthorities.value.includes(SCHEDULING_WILDCARD),
 )
 
 const loading = ref(false)

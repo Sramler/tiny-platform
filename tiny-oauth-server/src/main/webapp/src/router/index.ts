@@ -3,22 +3,10 @@ import { createRouter, createWebHistory } from 'vue-router'
 import type { NavigationGuard } from 'vue-router'
 import { watch } from 'vue'
 import { message } from 'ant-design-vue'
-import HomeView from '@/views/HomeView.vue'
-import Login from '@/views/Login.vue'
-import OidcCallback from '@/views/OidcCallback.vue'
-import BasicLayout from '@/layouts/BasicLayout.vue'
-import { useAuth, initPromise } from '@/auth/auth' // 确保路径正确
-import DefaultView from '@/views/default.vue'
-import Error401 from '@/views/exception/401.vue' // 引入 401 页面
-import Error400 from '@/views/exception/400.vue' // 引入 400 页面
-import Error403 from '@/views/exception/403.vue' // 引入 403 页面
-import Error404 from '@/views/exception/404.vue' // 引入 404 页面
-import Error500 from '@/views/exception/500.vue' // 引入 500 页面
-import Debug from '@/views/OIDCDebug.vue' // 引入调试页面
-import TotpBind from '@/views/security/TotpBind.vue'
-import TotpVerify from '@/views/security/TotpVerify.vue'
+import { useAuth, initPromise, trySilentLoginFromPlatformSession } from '@/auth/auth'
 import { menuTree, type MenuItem } from '@/api/menu' // 引入菜单 API
 import logger from '@/utils/logger' // 引入日志工具
+import { getCurrentTraceId } from '@/utils/traceId'
 import { useMenuRouteState, updateMenuRouteState } from './menuState'
 import { getTenantCode } from '@/utils/tenant'
 
@@ -62,8 +50,8 @@ function generateMenuRoutes(menuList: MenuItem[]) {
         //console.log('注册路由:', item.url, '组件路径:', compPath) // 调试输出
         component = () => import(/* @vite-ignore */ compPath)
       } else {
-        // 没有 component 字段时 fallback 到 DefaultView
-        component = DefaultView
+        // 没有 component 字段时 fallback 到 DefaultView（异步，避免打入入口 chunk）
+        component = () => import('@/views/default.vue')
       }
       // 确保路由路径以 / 开头
       const routePath = item.url.startsWith('/') ? item.url : `/${item.url}`
@@ -87,61 +75,66 @@ function generateMenuRoutes(menuList: MenuItem[]) {
 // 路由配置
 const routes = [
   // 登录页和回调页不使用主布局
-  { path: '/login', name: 'Login', component: Login, meta: { title: '登录', requiresAuth: false } },
+  {
+    path: '/login',
+    name: 'Login',
+    component: () => import('@/views/Login.vue'),
+    meta: { title: '登录', requiresAuth: false },
+  },
   {
     path: '/self/security/totp-bind',
     name: 'TotpBind',
-    component: TotpBind,
+    component: () => import('@/views/security/TotpBind.vue'),
     meta: { title: '绑定二步验证', requiresAuth: false },
   },
   {
     path: '/self/security/totp-verify',
     name: 'TotpVerify',
-    component: TotpVerify,
+    component: () => import('@/views/security/TotpVerify.vue'),
     meta: { title: '二步验证', requiresAuth: false },
   },
-  { path: '/callback', name: 'OidcCallback', component: OidcCallback },
+  { path: '/callback', name: 'OidcCallback', component: () => import('@/views/OidcCallback.vue') },
   // 错误页面保持独立（不需要主布局，全屏显示）
   {
     path: '/exception/401',
     name: 'Error401',
-    component: Error401,
+    component: () => import('@/views/exception/401.vue'),
     meta: { title: '401', requiresAuth: false },
   },
   {
     path: '/exception/400',
     name: 'Error400',
-    component: Error400,
+    component: () => import('@/views/exception/400.vue'),
     meta: { title: '400', requiresAuth: false }, // 允许未登录用户看到 400 错误
   },
   {
     path: '/exception/403',
     name: 'Error403',
-    component: Error403,
+    component: () => import('@/views/exception/403.vue'),
     meta: { title: '403', requiresAuth: false }, // 允许未登录用户看到 403 错误
   },
   {
     path: '/exception/404',
     name: 'Error404',
-    component: Error404,
+    component: () => import('@/views/exception/404.vue'),
     meta: { title: '404', requiresAuth: false }, // 允许未登录用户看到 404 错误
   },
   {
     path: '/exception/500',
     name: 'Error500',
-    component: Error500,
+    component: () => import('@/views/exception/500.vue'),
     meta: { title: '500', requiresAuth: false }, // 允许未登录用户看到 500 错误
   },
   // 主框架路由，所有需要布局的页面作为子路由
   {
     path: '/',
     name: 'mainLayout', // 给主布局路由命名，便于动态添加子路由
-    component: BasicLayout, // 使用主布局
+    component: () => import('@/layouts/BasicLayout.vue'),
     children: [
       {
         path: '',
         name: 'Home',
-        component: HomeView,
+        component: () => import('@/views/HomeView.vue'),
         meta: { requiresAuth: true, title: '工作台' },
       },
       {
@@ -149,6 +142,12 @@ const routes = [
         name: 'IdempotentOverview',
         component: () => import('@/views/idempotent/Overview.vue'),
         meta: { requiresAuth: true, title: '幂等治理' },
+      },
+      {
+        path: 'system/audit/authentication',
+        name: 'AuthenticationAudit',
+        component: () => import('@/views/audit/AuthenticationAudit.vue'),
+        meta: { requiresAuth: true, title: '认证审计' },
       },
       // {
       //   path: 'about',
@@ -184,7 +183,7 @@ const routes = [
       {
         path: 'OIDCDebug',
         name: 'OIDCDebug',
-        component: Debug,
+        component: () => import('@/views/OIDCDebug.vue'),
         meta: { requiresAuth: true, title: 'OIDC 调试工具' },
       },
       // 调度 DAG 详情/历史（子页无菜单项，需静态注册避免 404）
@@ -258,13 +257,19 @@ async function loadMenuRoutes(): Promise<boolean> {
 
     const warnMsg = '⚠️ 菜单数据为空，无法生成路由'
     logger.warn(warnMsg)
-    updateMenuRouteState({ loading: false, error: warnMsg })
+    // 仍标记 loaded，避免 BasicLayout 永久卡在「菜单路由加载中」；主布局内静态子路由（如 /OIDCDebug）仍可访问。
+    updateMenuRouteState({
+      loading: false,
+      loaded: true,
+      error: warnMsg,
+      lastLoadedAt: Date.now(),
+    })
     message.warning({
       content: warnMsg,
       key: MENU_LOAD_MESSAGE_KEY,
       duration: 4,
     })
-    return false
+    return true
   } catch (error) {
     logger.error('❌ 加载菜单路由失败:', error)
     const errMsg = '菜单加载失败，请稍后重试'
@@ -337,6 +342,12 @@ const authGuard: NavigationGuard = async (to, _from, next) => {
   try {
     const tenantCode = getTenantCode()
     if (!tenantCode) {
+      // 平台表单登录清除了 tenantCode；若后端 Session 已就绪（含 totp-bind 跳过后的升级），静默 OIDC 可拿到 token
+      const silentOk = await trySilentLoginFromPlatformSession()
+      if (silentOk && authContext.isAuthenticated.value) {
+        next()
+        return
+      }
       next({
         path: '/login',
         query: {
@@ -392,8 +403,6 @@ const dynamicRoutesGuard: NavigationGuard = async (to, from, next) => {
     // 如果最终还是没有匹配到路由，跳转到 404 页面并传递错误信息
     if (to.path !== '/exception/404') {
       logger.warn('[Router] 路由未找到，跳转到 404 页面:', to.fullPath)
-      // 获取当前 traceId
-      const { getCurrentTraceId } = await import('@/utils/traceId')
       const traceId = getCurrentTraceId()
       next({
         path: '/exception/404',

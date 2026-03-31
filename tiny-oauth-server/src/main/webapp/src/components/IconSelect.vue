@@ -1,6 +1,5 @@
 <template>
   <div class="icon-select">
-    <!-- 图标搜索输入框 -->
     <a-input
       v-model:value="iconSearch"
       placeholder="输入图标名称搜索"
@@ -10,73 +9,72 @@
     />
     <div class="icon-grid">
       <div
-        v-for="icon in filteredIconList"
-        :key="icon.name"
+        v-for="item in filteredIconList"
+        :key="item.name"
         class="icon-item"
-        :class="{ active: modelValue === icon.name, highlight: filteredIconList.length === 1 }"
-        @click="selectIcon(icon.name)"
+        :class="{ active: modelValue === item.name, highlight: filteredIconList.length === 1 }"
+        @click="selectIcon(item.name)"
       >
-        <component :is="icon.component" class="grid-icon" />
-        <span class="icon-name">{{ icon.name }}</span>
+        <component :is="item.asyncComp" class="grid-icon" />
+        <span class="icon-name">{{ item.name }}</span>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onBeforeUnmount } from 'vue'
-import * as allIcons from '@ant-design/icons-vue'
+import { ref, computed, onBeforeUnmount, defineAsyncComponent } from 'vue'
+import { antdIconLoaders } from '@/utils/antdIconLoaders'
 
-// 组件props
 const props = defineProps<{ modelValue: string }>()
 const emit = defineEmits(['update:modelValue', 'select'])
 
-// 图标搜索关键字
 const iconSearch = ref('')
 
-// 黑名单：新版已无效或无SVG的图标
-const iconBlacklist: string[] = [
-  // 可根据实际情况继续补充
-]
+/** 黑名单：新版已无效或无 SVG 的图标 */
+const iconBlacklist: string[] = []
 
-// 动态获取所有官方图标，排除黑名单 - 移到计算属性外部避免重复计算
-const iconList = ref(() => {
-  try {
-    return Object.keys(allIcons)
-  .filter(name => /Outlined$|TwoTone$|Filled$/.test(name))
-  .filter(name => !iconBlacklist.includes(name)) // 黑名单过滤
-  .map(name => ({
-    name,
-    component: (allIcons as any)[name]
-  }))
-  .filter(icon => typeof icon.component === 'object' || typeof icon.component === 'function')
-      .slice(0, 1000) // 限制图标数量，避免性能问题
-  } catch (error) {
-    console.warn('IconSelect iconList error:', error)
-    return []
+type IconEntry = { name: string; loader: () => Promise<{ default: import('vue').Component }> }
+
+const allIconEntries: IconEntry[] = Object.entries(antdIconLoaders)
+  .map(([path, loader]) => {
+    const name = path.match(/\/([^/]+)\.js$/)?.[1]
+    return name ? { name, loader } : null
+  })
+  .filter((x): x is IconEntry => x !== null)
+  .filter(({ name }) => /Outlined$|TwoTone$|Filled$/.test(name))
+  .filter(({ name }) => !iconBlacklist.includes(name))
+
+/** 每个名称只构建一次 defineAsyncComponent，避免重复包装 */
+const asyncCompByName = new Map<string, ReturnType<typeof defineAsyncComponent>>()
+function getAsyncIcon(loader: IconEntry['loader'], name: string) {
+  let c = asyncCompByName.get(name)
+  if (!c) {
+    c = defineAsyncComponent(loader)
+    asyncCompByName.set(name, c)
   }
-})
+  return c
+}
 
-// 过滤后的图标列表 - 优化计算属性，避免无限递归
 const filteredIconList = computed(() => {
   try {
     const searchValue = iconSearch.value?.trim() || ''
-    const icons = iconList.value()
-    
-    if (!searchValue) {
-      return icons.slice(0, 200) // 默认只显示前200个图标
+    let list = allIconEntries
+    if (searchValue) {
+      const q = searchValue.toLowerCase()
+      list = allIconEntries.filter((e) => e.name.toLowerCase().includes(q))
     }
-    
-    return icons
-      .filter(icon => icon.name.toLowerCase().includes(searchValue.toLowerCase()))
-      .slice(0, 200) // 搜索结果也限制数量
+    const sliced = list.slice(0, 200)
+    return sliced.map((e) => ({
+      name: e.name,
+      asyncComp: getAsyncIcon(e.loader, e.name),
+    }))
   } catch (error) {
     console.warn('IconSelect filter error:', error)
     return []
   }
 })
 
-// 回车时自动选中唯一匹配
 function handleIconSearchEnter() {
   try {
     const filtered = filteredIconList.value
@@ -89,19 +87,17 @@ function handleIconSearchEnter() {
   }
 }
 
-// 选中图标
 function selectIcon(name: string) {
   try {
     if (name && typeof name === 'string') {
-  emit('update:modelValue', name)
-  emit('select', name)
-}
+      emit('update:modelValue', name)
+      emit('select', name)
+    }
   } catch (error) {
     console.warn('IconSelect select error:', error)
   }
 }
 
-// 组件卸载时清理数据
 onBeforeUnmount(() => {
   iconSearch.value = ''
 })
@@ -152,4 +148,4 @@ onBeforeUnmount(() => {
   text-align: center;
   word-break: break-all;
 }
-</style> 
+</style>

@@ -1,0 +1,72 @@
+databaseChangeLog:
+  - changeSet:
+      id: 127-resource-carrier-locator-decoupling
+      author: codex
+      comment: Decouple resource compatibility row location from shared carrier id
+      preConditions:
+        onFail: MARK_RAN
+        and:
+          - tableExists:
+              tableName: resource
+          - tableExists:
+              tableName: menu
+          - tableExists:
+              tableName: ui_action
+          - tableExists:
+              tableName: api_endpoint
+      changes:
+        - sql:
+            dbms: mysql
+            sql: |
+              SET @db_name = DATABASE();
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema = @db_name AND table_name = 'resource' AND column_name = 'carrier_type'),
+                  'SELECT 1',
+                  'ALTER TABLE `resource` ADD COLUMN `carrier_type` VARCHAR(32) DEFAULT NULL COMMENT ''兼容行定位：MENU/UI_ACTION/API_ENDPOINT'''
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema = @db_name AND table_name = 'resource' AND column_name = 'carrier_source_id'),
+                  'SELECT 1',
+                  'ALTER TABLE `resource` ADD COLUMN `carrier_source_id` BIGINT DEFAULT NULL COMMENT ''兼容行定位：carrier 主键'''
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+              UPDATE `resource`
+              SET `carrier_type` = CASE `type`
+                                     WHEN 0 THEN 'MENU'
+                                     WHEN 1 THEN 'MENU'
+                                     WHEN 2 THEN 'UI_ACTION'
+                                     WHEN 3 THEN 'API_ENDPOINT'
+                                     ELSE NULL
+                                   END
+              WHERE `carrier_type` IS NULL;
+
+              UPDATE `resource`
+              SET `carrier_source_id` = `id`
+              WHERE `carrier_source_id` IS NULL;
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM information_schema.statistics WHERE table_schema = @db_name AND table_name = 'resource' AND index_name = 'idx_resource_carrier_locator'),
+                  'SELECT 1',
+                  'ALTER TABLE `resource` ADD INDEX `idx_resource_carrier_locator` (`tenant_id`, `resource_level`, `carrier_type`, `carrier_source_id`)'
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+
+              SET @sql = (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM information_schema.statistics WHERE table_schema = @db_name AND table_name = 'resource' AND index_name = 'uk_resource_carrier_locator'),
+                  'SELECT 1',
+                  'ALTER TABLE `resource` ADD UNIQUE KEY `uk_resource_carrier_locator` (`tenant_id`, `resource_level`, `carrier_type`, `carrier_source_id`)'
+                )
+              );
+              PREPARE stmt FROM @sql; EXECUTE stmt; DEALLOCATE PREPARE stmt;
+

@@ -34,20 +34,23 @@ class ResourceControllerTest {
         ResourceRequestDto query = new ResourceRequestDto();
         Pageable pageable = PageRequest.of(0, 10);
         ResourceResponseDto responseDto = responseDto(1L, "res-1");
+        ResourceResponseDto detailDto = responseDto(2L, "res-2");
         Resource resource = resource(2L, "res-2", ResourceType.API);
         ResourceCreateUpdateDto dto = createDto("res-2", 2);
 
         when(resourceService.resources(query, pageable)).thenReturn(new PageImpl<>(List.of(responseDto), pageable, 1));
-        when(resourceService.findById(2L)).thenReturn(Optional.of(resource));
-        when(resourceService.findById(99L)).thenReturn(Optional.empty());
+        when(resourceService.findDetailById(2L)).thenReturn(Optional.of(detailDto));
+        when(resourceService.findDetailById(99L)).thenReturn(Optional.empty());
         when(resourceService.createFromDto(dto)).thenReturn(resource);
         when(resourceService.updateFromDto(dto)).thenReturn(resource);
         when(resourceService.updateSort(2L, 5)).thenReturn(resource);
-        when(resourceService.findByType(ResourceType.API)).thenReturn(List.of(resource));
-        when(resourceService.findByParentId(10L)).thenReturn(List.of(resource));
-        when(resourceService.findTopLevel()).thenReturn(List.of(resource));
+        when(resourceService.findDtosByType(ResourceType.API)).thenReturn(List.of(detailDto));
+        when(resourceService.findChildDtos(10L)).thenReturn(List.of(detailDto));
+        when(resourceService.findTopLevelDtos()).thenReturn(List.of(detailDto));
+        when(resourceService.findAllowedUiActionDtos("/system/resource")).thenReturn(List.of(detailDto));
+        when(resourceService.canAccessApiEndpoint("GET", "/sys/resources")).thenReturn(true);
         when(resourceService.getResourceTypes()).thenReturn(List.of(ResourceType.values()));
-        when(resourceService.findByPermission("perm:a")).thenReturn(List.of(resource));
+        when(resourceService.findDtosByPermission("perm:a")).thenReturn(List.of(detailDto));
         when(resourceService.existsByName("res", 1L)).thenReturn(true);
         when(resourceService.existsByUrl("/a", 1L)).thenReturn(false);
         when(resourceService.existsByUri("/api/a", 1L)).thenReturn(true);
@@ -56,7 +59,7 @@ class ResourceControllerTest {
         assertThat(pageBody).isNotNull();
         assertThat(pageBody.getContent()).containsExactly(responseDto);
 
-        assertThat(controller.getResource(2L).getBody()).isEqualTo(resource);
+        assertThat(controller.getResource(2L).getBody()).isEqualTo(detailDto);
         assertThat(controller.getResource(99L).getStatusCode().value()).isEqualTo(404);
         assertThat(controller.create(dto).getBody()).isEqualTo(resource);
         assertThat(controller.update(2L, dto).getBody()).isEqualTo(resource);
@@ -70,12 +73,14 @@ class ResourceControllerTest {
             .containsEntry("message", "批量删除成功");
         verify(resourceService).batchDelete(List.of(1L, 2L));
 
-        assertThat(controller.getResourcesByType(ResourceType.API.getCode()).getBody()).containsExactly(resource);
-        assertThat(controller.getResourcesByParentId(10L).getBody()).containsExactly(resource);
-        assertThat(controller.getTopLevelResources().getBody()).containsExactly(resource);
+        assertThat(controller.getResourcesByType(ResourceType.API.getCode()).getBody()).containsExactly(detailDto);
+        assertThat(controller.getResourcesByParentId(10L).getBody()).containsExactly(detailDto);
+        assertThat(controller.getTopLevelResources().getBody()).containsExactly(detailDto);
+        assertThat(controller.getRuntimeUiActions("/system/resource").getBody()).containsExactly(detailDto);
+        assertThat(controller.getRuntimeApiAccess("GET", "/sys/resources").getBody()).containsEntry("allowed", true);
         assertThat(controller.updateSort(2L, 5).getBody()).isEqualTo(resource);
         assertThat(controller.getResourceTypes().getBody()).containsExactly(ResourceType.values());
-        assertThat(controller.getResourcesByPermission("perm:a").getBody()).containsExactly(resource);
+        assertThat(controller.getResourcesByPermission("perm:a").getBody()).containsExactly(detailDto);
         assertThat(controller.checkNameExists("res", 1L).getBody()).containsEntry("exists", true);
         assertThat(controller.checkUrlExists("/a", 1L).getBody()).containsEntry("exists", false);
         assertThat(controller.checkUriExists("/api/a", 1L).getBody()).containsEntry("exists", true);
@@ -98,10 +103,7 @@ class ResourceControllerTest {
             .thenReturn(new PageImpl<>(List.of(responseDto), pageable, 1));
         when(resourceService.findByTypeIn(List.of(ResourceType.DIRECTORY, ResourceType.MENU))).thenReturn(List.of(root));
         when(resourceService.buildResourceTree(List.of(root))).thenReturn(List.of(responseDto));
-        when(resourceService.findTopLevel()).thenReturn(List.of(root));
-        when(resourceService.findByParentId(1L)).thenReturn(List.of(child));
-        when(resourceService.findByParentId(2L)).thenReturn(List.of());
-        when(resourceService.buildResourceTree(List.of(root, child))).thenReturn(List.of(responseDto));
+        when(resourceService.findResourceTreeDtos()).thenReturn(List.of(responseDto));
         when(resourceService.createFromDto(any(ResourceCreateUpdateDto.class))).thenReturn(root);
         when(resourceService.updateFromDto(any(ResourceCreateUpdateDto.class))).thenReturn(root);
         when(resourceService.updateSort(1L, 99)).thenReturn(root);

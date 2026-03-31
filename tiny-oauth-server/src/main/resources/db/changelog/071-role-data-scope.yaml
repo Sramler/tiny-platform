@@ -1,0 +1,32 @@
+databaseChangeLog:
+  - changeSet:
+      id: 071-role-data-scope
+      author: tiny
+      comment: Phase4：新增 role_data_scope 角色数据范围表（按模块定义角色可见数据范围）
+      preConditions:
+        - onFail: CONTINUE
+        - onError: HALT
+        - dbms:
+            type: mysql
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              CREATE TABLE IF NOT EXISTS `role_data_scope` (
+                `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+                `tenant_id` BIGINT NOT NULL COMMENT '租户ID',
+                `role_id` BIGINT NOT NULL COMMENT '角色ID（引用 role.id）',
+                `module` VARCHAR(64) NOT NULL COMMENT '业务模块标识：user, scheduling, dict, workflow 等',
+                `scope_type` VARCHAR(32) NOT NULL COMMENT 'ALL/TENANT/ORG/ORG_AND_CHILD/DEPT/DEPT_AND_CHILD/SELF/CUSTOM',
+                `access_type` VARCHAR(16) NOT NULL DEFAULT 'READ' COMMENT '访问类型：READ 或 WRITE',
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                `created_by` BIGINT NULL COMMENT '创建人ID',
+                `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uk_rds_tenant_role_module_access` (`tenant_id`, `role_id`, `module`, `access_type`),
+                KEY `idx_rds_tenant_module` (`tenant_id`, `module`),
+                CONSTRAINT `chk_rds_scope_type` CHECK (`scope_type` IN ('ALL', 'TENANT', 'ORG', 'ORG_AND_CHILD', 'DEPT', 'DEPT_AND_CHILD', 'SELF', 'CUSTOM')),
+                CONSTRAINT `chk_rds_access_type` CHECK (`access_type` IN ('READ', 'WRITE'))
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='角色数据范围表（Phase4）';

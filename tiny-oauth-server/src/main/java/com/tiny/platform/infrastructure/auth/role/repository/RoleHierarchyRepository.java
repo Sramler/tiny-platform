@@ -29,6 +29,17 @@ public interface RoleHierarchyRepository extends JpaRepository<RoleHierarchy, Lo
         @Param("childRoleIds") Collection<Long> childRoleIds
     );
 
+    @Query("""
+        select rh
+        from RoleHierarchy rh
+        where rh.tenantId = :tenantId
+          and rh.parentRoleId in :parentRoleIds
+        """)
+    List<RoleHierarchy> findByTenantIdAndParentRoleIdIn(
+        @Param("tenantId") Long tenantId,
+        @Param("parentRoleIds") Collection<Long> parentRoleIds
+    );
+
     @Modifying
     @Transactional
     @Query("""
@@ -43,4 +54,3 @@ public interface RoleHierarchyRepository extends JpaRepository<RoleHierarchy, Lo
         @Param("parentRoleId") Long parentRoleId
     );
 }
-

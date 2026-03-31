@@ -17,10 +17,16 @@ public interface RoleService {
     void delete(Long id);
     // 获取该角色下所有已分配用户ID
     List<Long> getUserIdsByRoleId(Long roleId);
+    // 获取该角色在指定作用域下直接分配的用户ID
+    List<Long> getDirectUserIdsByRoleId(Long roleId, String scopeType, Long scopeId);
     // 保存角色与用户的分配关系
     void updateRoleUsers(Long roleId, List<Long> userIds);
+    // 按作用域保存角色与用户的分配关系
+    void updateRoleUsers(Long roleId, String scopeType, Long scopeId, List<Long> userIds);
     // 保存角色与资源的分配关系
     void updateRoleResources(Long roleId, List<Long> resourceIds);
+    // 保存角色与权限的分配关系（主契约）
+    void updateRolePermissions(Long roleId, List<Long> permissionIds);
 
     // 获取角色已分配资源ID列表
     List<Long> getResourceIdsByRoleId(Long roleId);

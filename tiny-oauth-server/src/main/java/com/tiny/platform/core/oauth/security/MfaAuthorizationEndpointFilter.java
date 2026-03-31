@@ -4,6 +4,8 @@ import com.tiny.platform.core.oauth.config.FrontendProperties;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.core.oauth.tenant.ActiveTenantResponseSupport;
+import com.tiny.platform.core.oauth.tenant.TenantContext;
+import com.tiny.platform.core.oauth.tenant.TenantContextContract;
 import com.tiny.platform.core.oauth.tenant.IssuerTenantSupport;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -94,7 +96,8 @@ public class MfaAuthorizationEndpointFilter extends OncePerRequestFilter {
         }
 
         Long activeTenantId = resolveActiveTenantId(authentication);
-        User user = activeTenantId != null ? resolveUserInActiveTenant(username, activeTenantId) : null;
+        String activeScopeType = TenantContext.getActiveScopeType();
+        User user = resolveUserByScope(username, activeTenantId, activeScopeType);
         if (user == null) {
             filterChain.doFilter(request, response);
             return;
@@ -200,7 +203,13 @@ public class MfaAuthorizationEndpointFilter extends OncePerRequestFilter {
         return ActiveTenantResponseSupport.resolveActiveTenantId(authentication);
     }
 
-    private User resolveUserInActiveTenant(String username, Long activeTenantId) {
+    private User resolveUserByScope(String username, Long activeTenantId, String activeScopeType) {
+        if (TenantContextContract.SCOPE_TYPE_PLATFORM.equalsIgnoreCase(activeScopeType)) {
+            return requireAuthUserResolutionService().resolveUserRecordInPlatform(username).orElse(null);
+        }
+        if (activeTenantId == null) {
+            return null;
+        }
         return requireAuthUserResolutionService().resolveUserRecordInActiveTenant(username, activeTenantId).orElse(null);
     }
 

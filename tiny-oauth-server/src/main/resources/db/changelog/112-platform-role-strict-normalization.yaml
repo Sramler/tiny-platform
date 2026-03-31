@@ -1,0 +1,203 @@
+databaseChangeLog:
+  - changeSet:
+      id: 112-platform-role-strict-normalization
+      author: codex
+      comment: 平台模板角色严格收口为 ROLE_PLATFORM_*，不再允许平台侧 ROLE_ADMIN 别名
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - tableExists:
+            tableName: role
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              -- 1) 平台模板角色统一标记为 PLATFORM（仅 tenant_id IS NULL）
+              UPDATE `role`
+              SET `role_level` = 'PLATFORM'
+              WHERE `tenant_id` IS NULL
+                AND `code` IN ('ROLE_SUPER_ADMIN', 'ROLE_PLATFORM_ADMIN', 'ROLE_PLATFORM_AUDITOR', 'ROLE_ADMIN', 'ROLE_SYSTEM_ADMIN');
+
+              -- 2) 平台模板历史别名收口：ROLE_ADMIN -> ROLE_PLATFORM_ADMIN（仅当目标不存在时重命名）
+              -- MySQL 1093：禁止在 UPDATE 目标表上直接 FROM/NOT EXISTS 子查询引用同一表。
+              -- 这里用 derived table 包一层，绕过限制。
+              UPDATE `role`
+              SET `code` = 'ROLE_PLATFORM_ADMIN',
+                  `name` = '平台管理员',
+                  `description` = '平台控制面管理员，负责租户治理、平台模板治理、平台模块治理与平台级配置维护',
+                  `role_level` = 'PLATFORM'
+              WHERE `tenant_id` IS NULL
+                AND `code` = 'ROLE_ADMIN'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM (
+                    SELECT 1 AS exists_flag
+                    FROM `role`
+                    WHERE `tenant_id` IS NULL
+                      AND `code` = 'ROLE_PLATFORM_ADMIN'
+                    LIMIT 1
+                  ) t
+                );
+
+              -- 3) 平台模板历史别名收口：ROLE_SYSTEM_ADMIN -> ROLE_PLATFORM_ADMIN（仅当目标不存在时重命名）
+              UPDATE `role`
+              SET `code` = 'ROLE_PLATFORM_ADMIN',
+                  `name` = '平台管理员',
+                  `description` = '平台控制面管理员，负责租户治理、平台模板治理、平台模块治理与平台级配置维护',
+                  `role_level` = 'PLATFORM'
+              WHERE `tenant_id` IS NULL
+                AND `code` = 'ROLE_SYSTEM_ADMIN'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM (
+                    SELECT 1 AS exists_flag
+                    FROM `role`
+                    WHERE `tenant_id` IS NULL
+                      AND `code` = 'ROLE_PLATFORM_ADMIN'
+                    LIMIT 1
+                  ) t
+                );
+
+              -- 4) 目标角色已存在时，清理平台模板旧别名，避免继续扩散
+              -- 先把依赖表里的 role_id 指向标准角色，再删除旧角色，避免外键约束失败。
+              SET @platform_role_id := (
+                SELECT id
+                FROM `role`
+                WHERE tenant_id IS NULL
+                  AND code = 'ROLE_PLATFORM_ADMIN'
+                LIMIT 1
+              );
+
+              -- 通过 INSERT IGNORE + DELETE 来规避唯一约束冲突（目标角色可能已存在同资源绑定）
+              -- role_resource
+              INSERT IGNORE INTO `role_resource` (`tenant_id`, `role_id`, `resource_id`)
+              SELECT
+                rr.`tenant_id`,
+                @platform_role_id,
+                rr.`resource_id`
+              FROM `role_resource` rr
+              WHERE rr.`role_id` IN (
+                SELECT id
+                FROM `role`
+                WHERE tenant_id IS NULL
+                  AND code IN ('ROLE_ADMIN', 'ROLE_SYSTEM_ADMIN')
+              )
+                AND @platform_role_id IS NOT NULL;
+
+              DELETE rr
+              FROM `role_resource` rr
+              WHERE rr.`role_id` IN (
+                SELECT id
+                FROM `role`
+                WHERE tenant_id IS NULL
+                  AND code IN ('ROLE_ADMIN', 'ROLE_SYSTEM_ADMIN')
+              )
+                AND @platform_role_id IS NOT NULL;
+
+              -- role_assignment（只处理 PLATFORM 作用域）
+              INSERT IGNORE INTO `role_assignment` (
+                `principal_type`, `principal_id`, `role_id`, `tenant_id`, `scope_type`, `scope_id`,
+                `status`, `start_time`, `end_time`, `granted_by`, `granted_at`, `updated_at`
+              )
+              SELECT
+                ra.`principal_type`,
+                ra.`principal_id`,
+                @platform_role_id,
+                ra.`tenant_id`,
+                ra.`scope_type`,
+                ra.`scope_id`,
+                ra.`status`,
+                ra.`start_time`,
+                ra.`end_time`,
+                ra.`granted_by`,
+                ra.`granted_at`,
+                ra.`updated_at`
+              FROM `role_assignment` ra
+              WHERE ra.`role_id` IN (
+                SELECT id
+                FROM `role`
+                WHERE tenant_id IS NULL
+                  AND code IN ('ROLE_ADMIN', 'ROLE_SYSTEM_ADMIN')
+              )
+                AND ra.`scope_type` = 'PLATFORM'
+                AND @platform_role_id IS NOT NULL;
+
+              DELETE ra
+              FROM `role_assignment` ra
+              WHERE ra.`role_id` IN (
+                SELECT id
+                FROM `role`
+                WHERE tenant_id IS NULL
+                  AND code IN ('ROLE_ADMIN', 'ROLE_SYSTEM_ADMIN')
+              )
+                AND ra.`scope_type` = 'PLATFORM'
+                AND @platform_role_id IS NOT NULL;
+
+              -- role_data_scope
+              INSERT IGNORE INTO `role_data_scope` (
+                `tenant_id`, `role_id`, `module`, `scope_type`, `access_type`,
+                `created_by`, `created_at`, `updated_at`
+              )
+              SELECT
+                rds.`tenant_id`,
+                @platform_role_id,
+                rds.`module`,
+                rds.`scope_type`,
+                rds.`access_type`,
+                rds.`created_by`,
+                rds.`created_at`,
+                rds.`updated_at`
+              FROM `role_data_scope` rds
+              WHERE rds.`role_id` IN (
+                SELECT id
+                FROM `role`
+                WHERE tenant_id IS NULL
+                  AND code IN ('ROLE_ADMIN', 'ROLE_SYSTEM_ADMIN')
+              )
+                AND @platform_role_id IS NOT NULL;
+
+              DELETE rds
+              FROM `role_data_scope` rds
+              WHERE rds.`role_id` IN (
+                SELECT id
+                FROM `role`
+                WHERE tenant_id IS NULL
+                  AND code IN ('ROLE_ADMIN', 'ROLE_SYSTEM_ADMIN')
+              )
+                AND @platform_role_id IS NOT NULL;
+
+              DELETE FROM `role`
+              WHERE tenant_id IS NULL
+                AND code IN ('ROLE_ADMIN', 'ROLE_SYSTEM_ADMIN')
+                AND @platform_role_id IS NOT NULL;
+
+              -- 这里不删除 PLATFORM 目标以外的角色；若 ROLE_PLATFORM_ADMIN 尚不存在，前置收口步骤会先重命名/补齐。
+
+              -- 5) 补齐平台标准角色（不存在则创建）
+              INSERT INTO `role` (`tenant_id`, `code`, `name`, `description`, `builtin`, `enabled`, `role_level`)
+              SELECT NULL, 'ROLE_SUPER_ADMIN', '超级管理员',
+                     '平台根管理员，拥有平台最高权限，可管理平台控制面、平台管理员、平台模板与全局治理能力',
+                     1, 1, 'PLATFORM'
+              WHERE NOT EXISTS (
+                SELECT 1 FROM `role` r WHERE r.`tenant_id` IS NULL AND r.`code` = 'ROLE_SUPER_ADMIN'
+              );
+
+              INSERT INTO `role` (`tenant_id`, `code`, `name`, `description`, `builtin`, `enabled`, `role_level`)
+              SELECT NULL, 'ROLE_PLATFORM_ADMIN', '平台管理员',
+                     '平台控制面管理员，负责租户治理、平台模板治理、平台模块治理与平台级配置维护',
+                     1, 1, 'PLATFORM'
+              WHERE NOT EXISTS (
+                SELECT 1 FROM `role` r WHERE r.`tenant_id` IS NULL AND r.`code` = 'ROLE_PLATFORM_ADMIN'
+              );
+
+              INSERT INTO `role` (`tenant_id`, `code`, `name`, `description`, `builtin`, `enabled`, `role_level`)
+              SELECT NULL, 'ROLE_PLATFORM_AUDITOR', '平台审计员',
+                     '平台级只读审计角色，负责认证、授权、安全与治理审计查看，不承担写入治理职责',
+                     1, 1, 'PLATFORM'
+              WHERE NOT EXISTS (
+                SELECT 1 FROM `role` r WHERE r.`tenant_id` IS NULL AND r.`code` = 'ROLE_PLATFORM_AUDITOR'
+              );

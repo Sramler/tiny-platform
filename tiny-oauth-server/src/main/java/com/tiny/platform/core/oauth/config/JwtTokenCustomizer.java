@@ -201,13 +201,24 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
             // 添加用户ID和用户名
             claims.claim("userId", userId);
             claims.claim("username", username);
-            applyTenantClaims(claims, activeTenantId);
+            applyTenantClaims(
+                claims,
+                activeTenantId,
+                com.tiny.platform.core.oauth.tenant.TenantContext.getActiveScopeType(),
+                com.tiny.platform.core.oauth.tenant.TenantContext.getActiveScopeId()
+            );
 
             // 兼容保留旧 authorities，同时新增 permissions 供后续最小契约迁移。
             Set<String> authorities = collectAuthorities(principal);
             claims.claim("authorities", authorities);
             claims.claim("permissions", extractPermissionAuthorities(authorities));
-            addPermissionsVersionClaim(claims, userId, activeTenantId);
+            addPermissionsVersionClaim(
+                claims,
+                userId,
+                activeTenantId,
+                com.tiny.platform.core.oauth.tenant.TenantContext.getActiveScopeType(),
+                com.tiny.platform.core.oauth.tenant.TenantContext.getActiveScopeId()
+            );
             log.debug("[JwtTokenCustomizer] Access Token - 添加 authorities: {}", authorities);
         } else if (principal != null && principal.getName() != null) {
             // 如果 details 中没有 SecurityUser，至少添加用户名（从 principal.getName() 获取）
@@ -279,7 +290,12 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
             Long activeTenantId = securityUser.getActiveTenantId();
             claims.claim("userId", userId);
             claims.claim("username", username);
-            applyTenantClaims(claims, activeTenantId);
+            applyTenantClaims(
+                claims,
+                activeTenantId,
+                com.tiny.platform.core.oauth.tenant.TenantContext.getActiveScopeType(),
+                com.tiny.platform.core.oauth.tenant.TenantContext.getActiveScopeId()
+            );
             log.info("[JwtTokenCustomizer] Refresh Token - 添加 userId: {}, username: {}", userId, username);
         } else if (principal.getName() != null) {
             claims.claim("username", principal.getName());
@@ -355,7 +371,12 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
             Long activeTenantId = securityUser.getActiveTenantId();
             claims.claim("userId", userId);
             claims.claim("username", username);
-            applyTenantClaims(claims, activeTenantId);
+            applyTenantClaims(
+                claims,
+                activeTenantId,
+                com.tiny.platform.core.oauth.tenant.TenantContext.getActiveScopeType(),
+                com.tiny.platform.core.oauth.tenant.TenantContext.getActiveScopeId()
+            );
             log.info("[JwtTokenCustomizer] ID Token - 添加 userId: {}, username: {}", userId, username);
             
             // 标准 OIDC claims: sub (subject) 通常由框架自动设置
@@ -429,8 +450,12 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
         if (userOpt.isPresent() || username == null || username.isBlank()) {
             return userOpt;
         }
-        if (activeTenantId != null && activeTenantId > 0 && authUserResolutionService != null) {
-            userOpt = authUserResolutionService.resolveUserRecordInActiveTenant(username, activeTenantId);
+        if (authUserResolutionService != null) {
+            if (activeTenantId != null && activeTenantId > 0) {
+                userOpt = authUserResolutionService.resolveUserRecordInActiveTenant(username, activeTenantId);
+            } else {
+                userOpt = authUserResolutionService.resolveUserRecordInPlatform(username);
+            }
         }
         return userOpt;
     }
@@ -478,10 +503,23 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
      * activeScopeType：有 activeTenantId 时为 TENANT，无时为 PLATFORM。
      * 契约详见 docs/TOKEN_CLAIMS_ENTERPRISE_STANDARD.md §2.3。
      */
-    private void applyTenantClaims(JwtClaimsSet.Builder claims, Long activeTenantId) {
+    private void applyTenantClaims(JwtClaimsSet.Builder claims,
+                                   Long activeTenantId,
+                                   String activeScopeType,
+                                   Long activeScopeId) {
+        String normalizedScopeType = activeScopeType == null || activeScopeType.isBlank()
+            ? null
+            : activeScopeType.trim().toUpperCase(java.util.Locale.ROOT);
         if (activeTenantId != null && activeTenantId > 0) {
             claims.claim(TenantContextContract.ACTIVE_TENANT_ID_CLAIM, activeTenantId);
-            claims.claim(TenantContextContract.ACTIVE_SCOPE_TYPE_CLAIM, TenantContextContract.SCOPE_TYPE_TENANT);
+            if (TenantContextContract.SCOPE_TYPE_ORG.equals(normalizedScopeType)
+                || TenantContextContract.SCOPE_TYPE_DEPT.equals(normalizedScopeType)) {
+                claims.claim(TenantContextContract.ACTIVE_SCOPE_TYPE_CLAIM, normalizedScopeType);
+                claims.claim(TenantContextContract.ACTIVE_SCOPE_ID_CLAIM, activeScopeId);
+            } else {
+                claims.claim(TenantContextContract.ACTIVE_SCOPE_TYPE_CLAIM, TenantContextContract.SCOPE_TYPE_TENANT);
+                claims.claim(TenantContextContract.ACTIVE_SCOPE_ID_CLAIM, activeTenantId);
+            }
         } else {
             claims.claim(TenantContextContract.ACTIVE_SCOPE_TYPE_CLAIM, TenantContextContract.SCOPE_TYPE_PLATFORM);
         }
@@ -489,11 +527,23 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
 
     private void addPermissionsVersionClaim(JwtClaimsSet.Builder claims,
                                             Long userId,
-                                            Long activeTenantId) {
+                                            Long activeTenantId,
+                                            String activeScopeType,
+                                            Long activeScopeId) {
         if (permissionVersionService == null) {
             return;
         }
-        String permissionsVersion = permissionVersionService.resolvePermissionsVersion(userId, activeTenantId);
+        String scopeType = activeScopeType == null || activeScopeType.isBlank()
+            ? (activeTenantId != null && activeTenantId > 0 ? TenantContextContract.SCOPE_TYPE_TENANT : TenantContextContract.SCOPE_TYPE_PLATFORM)
+            : activeScopeType.trim().toUpperCase(java.util.Locale.ROOT);
+        Long scopeId = activeScopeId;
+        if (TenantContextContract.SCOPE_TYPE_TENANT.equals(scopeType)) {
+            scopeId = activeTenantId;
+        }
+        if (TenantContextContract.SCOPE_TYPE_PLATFORM.equals(scopeType)) {
+            scopeId = null;
+        }
+        String permissionsVersion = permissionVersionService.resolvePermissionsVersion(userId, activeTenantId, scopeType, scopeId);
         if (permissionsVersion != null && !permissionsVersion.isBlank()) {
             claims.claim("permissionsVersion", permissionsVersion);
         }

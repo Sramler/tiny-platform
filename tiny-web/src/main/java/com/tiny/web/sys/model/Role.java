@@ -22,12 +22,6 @@ public class Role {
     @ManyToMany(mappedBy = "roles", fetch = FetchType.LAZY)
     private Set<User> users = new HashSet<>();
 
-    @ManyToMany(fetch = FetchType.LAZY)
-    @JoinTable(name = "role_resource",
-            joinColumns = @JoinColumn(name = "role_id"),
-            inverseJoinColumns = @JoinColumn(name = "resource_id"))
-    private Set<Resource> resources = new HashSet<>();
-
     // getter/setter
 
 
@@ -61,13 +55,5 @@ public class Role {
 
     public void setUsers(Set<User> users) {
         this.users = users;
-    }
-
-    public Set<Resource> getResources() {
-        return resources;
-    }
-
-    public void setResources(Set<Resource> resources) {
-        this.resources = resources;
     }
 }

@@ -9,8 +9,9 @@ import java.time.LocalDateTime;
 
 /**
  * 用户实体。授权与可见性以 tenant_user + activeTenantId 为准；
- * username 全局唯一（uk_user_username）；tenant_id 仅保留为展示/审计用（可空）。
- * 见 docs/TINY_PLATFORM_AUTHORIZATION_LEGACY_REMOVAL_PLAN.md §3。
+ * username 全局唯一（uk_user_username）。
+ * <p>tenant_id 已完全退场：不再写入（创建时不再 setTenantId），
+ * 仅作 DTO 展示（recordTenantId）保留历史值。044/045 迁移已置空。
  */
 @Entity
 @Table(name = "user",
@@ -22,7 +23,8 @@ public class User implements Serializable {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    /** 兼容/展示用，可空；授权与 membership 以 tenant_user 为准。 */
+    /** @deprecated 已退场，不再写入。历史值仅 DTO 展示用，授权以 tenant_user 为准。 */
+    @Deprecated
     @Column(name = "tenant_id", nullable = true)
     private Long tenantId;
 
@@ -64,19 +66,6 @@ public class User implements Serializable {
     @Column(name = "last_failed_login_at")
     private LocalDateTime lastFailedLoginAt;
 
-    // === UserDetails 接口实现 ===
-
-//    @Override
-//    public Collection<? extends GrantedAuthority> getAuthorities() {
-//        return roles.stream()
-//            .map(role -> new SimpleGrantedAuthority(role.getName()))
-//            .collect(Collectors.toSet());
-////        return roles.stream()
-////                .flatMap(role -> role.getResources().stream())
-////                .map(resource -> new SimpleGrantedAuthority(resource.getName()))
-////                .collect(Collectors.toSet());
-//    }
-
     // getter/setter（可用 Lombok 简化）
 
     public Long getId() {
@@ -92,6 +81,8 @@ public class User implements Serializable {
         return tenantId;
     }
 
+    /** @deprecated 不再写入。保留仅供 JPA hydration 和历史测试。 */
+    @Deprecated
     public void setTenantId(Long tenantId) {
         this.tenantId = tenantId;
     }

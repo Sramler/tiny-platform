@@ -106,15 +106,18 @@ describe('role API', () => {
     requestMocks.post.mockResolvedValue(undefined)
     const { getRoleUsers, updateRoleUsers } = await import('@/api/role')
 
-    const userResult = await getRoleUsers(1)
-    expect(requestMocks.get).toHaveBeenCalledWith('/sys/roles/1/users')
+    const userResult = await getRoleUsers(1, { scopeType: 'ORG', scopeId: 88 })
+    expect(requestMocks.get).toHaveBeenCalledWith('/sys/roles/1/users', {
+      params: { scopeType: 'ORG', scopeId: 88 },
+    })
     expect(userResult).toEqual([10, 11])
 
-    await updateRoleUsers(1, [10, 11, 12])
-    expect(requestMocks.post).toHaveBeenCalledWith('/sys/roles/1/users', [10, 11, 12], {
+    const payload = { scopeType: 'ORG' as const, scopeId: 88, userIds: [10, 11, 12] }
+    await updateRoleUsers(1, payload)
+    expect(requestMocks.post).toHaveBeenCalledWith('/sys/roles/1/users', payload, {
       idempotency: {
         scope: 'sys-roles:users:update:1',
-        payload: [10, 11, 12],
+        payload,
       },
     })
   })
@@ -128,11 +131,12 @@ describe('role API', () => {
     expect(requestMocks.get).toHaveBeenCalledWith('/sys/roles/1/resources')
     expect(resourceResult).toEqual([20, 21])
 
-    await updateRoleResources(1, [20, 21, 22])
-    expect(requestMocks.post).toHaveBeenCalledWith('/sys/roles/1/resources', [20, 21, 22], {
+    const payload = { permissionIds: [2001, 2002], resourceIds: [20, 21, 22] }
+    await updateRoleResources(1, payload)
+    expect(requestMocks.post).toHaveBeenCalledWith('/sys/roles/1/resources', payload, {
       idempotency: {
         scope: 'sys-roles:resources:update:1',
-        payload: [20, 21, 22],
+        payload,
       },
     })
   })

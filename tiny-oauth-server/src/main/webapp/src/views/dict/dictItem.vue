@@ -197,6 +197,10 @@ import { message, Modal } from 'ant-design-vue'
 import { useThrottle } from '@/utils/debounce'
 import { getActiveTenantId } from '@/utils/tenant'
 import {
+  ACTIVE_SCOPE_CHANGED_EVENT,
+  shouldReloadTenantControlPlaneOnActiveScopeChange,
+} from '@/utils/activeScopeEvents'
+import {
   getVisibleDictTypes,
   getDictItemList,
   createDictItem,
@@ -448,13 +452,13 @@ const selectedDictType = computed(() =>
 )
 
 const isPlatformOverlayCreate = computed(() =>
-  drawerMode.value === 'create' && Number(selectedDictType.value?.recordTenantId) === 0,
+  drawerMode.value === 'create' && selectedDictType.value?.recordTenantId == null,
 )
 
 const isPlatformOverlayEdit = computed(() =>
   drawerMode.value === 'edit' &&
-  Number(formState.value.recordTenantId) !== 0 &&
-  Number(selectedDictType.value?.recordTenantId) === 0,
+  formState.value.recordTenantId != null &&
+  selectedDictType.value?.recordTenantId == null,
 )
 
 const isLabelOnlyOverlayMode = computed(() => isPlatformOverlayCreate.value || isPlatformOverlayEdit.value)
@@ -584,11 +588,11 @@ function handleDelete(record: any) {
 }
 
 function isReadonlyItemRecord(record: any) {
-  return Number(record?.recordTenantId) === 0
+  return record?.recordTenantId == null
 }
 
 function getItemReadonlyReason(record: any) {
-  if (Number(record?.recordTenantId) === 0) {
+  if (record?.recordTenantId == null) {
     return '平台字典项只读，不允许修改'
   }
   return '当前字典项不允许修改'
@@ -617,10 +621,19 @@ async function handleRefresh() {
 
 const throttledRefresh = useThrottle(handleRefresh, 1000)
 
+/** 租户字典项列表：见 `shouldReloadTenantControlPlaneOnActiveScopeChange`。 */
+function handleActiveScopeChanged() {
+  if (!shouldReloadTenantControlPlaneOnActiveScopeChange()) {
+    return
+  }
+  void loadDictTypeOptions().then(() => loadData())
+}
+
 onMounted(() => {
   loadDictTypeOptions()
   updateTableBodyHeight()
   window.addEventListener('resize', updateTableBodyHeight)
+  window.addEventListener(ACTIVE_SCOPE_CHANGED_EVENT, handleActiveScopeChanged)
   // 初始化时加载数据（如果没有选择字典类型，则加载所有字典项）
   loadData()
 })
@@ -637,6 +650,7 @@ defineExpose({
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', updateTableBodyHeight)
+  window.removeEventListener(ACTIVE_SCOPE_CHANGED_EVENT, handleActiveScopeChanged)
 })
 
 watch(

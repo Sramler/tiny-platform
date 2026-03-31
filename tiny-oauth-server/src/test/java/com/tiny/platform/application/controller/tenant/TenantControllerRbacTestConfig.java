@@ -1,7 +1,6 @@
 package com.tiny.platform.application.controller.tenant;
 
 import com.tiny.platform.application.controller.tenant.security.TenantManagementAccessGuard;
-import com.tiny.platform.infrastructure.tenant.config.PlatformTenantProperties;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.data.web.PageableHandlerMethodArgumentResolver;
@@ -22,16 +21,8 @@ import java.util.List;
 public class TenantControllerRbacTestConfig {
 
     @Bean
-    public PlatformTenantProperties platformTenantProperties() {
-        return new PlatformTenantProperties();
-    }
-
-    @Bean
-    public TenantManagementAccessGuard tenantManagementAccessGuard(
-        com.tiny.platform.infrastructure.tenant.repository.TenantRepository tenantRepository,
-        PlatformTenantProperties platformTenantProperties
-    ) {
-        return new TenantManagementAccessGuard(tenantRepository, platformTenantProperties);
+    public TenantManagementAccessGuard tenantManagementAccessGuard() {
+        return new TenantManagementAccessGuard();
     }
 
     @Bean

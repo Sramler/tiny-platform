@@ -1,15 +1,16 @@
 package com.tiny.platform.application.controller.role.security;
 
-import com.tiny.platform.core.oauth.security.LegacyAuthConstants;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 
 import java.util.Set;
 
+/**
+ * 角色管理控制面权限守卫。
+ */
 @Component("roleManagementAccessGuard")
 public class RoleManagementAccessGuard {
 
-    private static final Set<String> ADMIN_AUTHORITIES = LegacyAuthConstants.ADMIN_AUTHORITIES;
     private static final Set<String> READ_AUTHORITIES = Set.of("system:role:list");
     private static final Set<String> CREATE_AUTHORITIES = Set.of("system:role:create");
     private static final Set<String> UPDATE_AUTHORITIES = Set.of("system:role:edit");
@@ -18,11 +19,9 @@ public class RoleManagementAccessGuard {
         "system:role:batch-delete"
     );
     private static final Set<String> ASSIGN_USER_AUTHORITIES = Set.of(
-        "system:user:assign-role",
         "system:user:role:assign"
     );
     private static final Set<String> ASSIGN_PERMISSION_AUTHORITIES = Set.of(
-        "system:role:assign-permission",
         "system:role:permission:assign"
     );
 
@@ -77,6 +76,6 @@ public class RoleManagementAccessGuard {
         }
         return authentication.getAuthorities().stream()
             .map(grantedAuthority -> grantedAuthority.getAuthority())
-            .anyMatch(authority -> ADMIN_AUTHORITIES.contains(authority) || requiredAuthorities.contains(authority));
+            .anyMatch(requiredAuthorities::contains);
     }
 }

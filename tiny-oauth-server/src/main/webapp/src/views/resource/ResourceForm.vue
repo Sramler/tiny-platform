@@ -228,10 +228,30 @@ const rules = {
 async function loadResourceTree() {
   try {
     const data = await getResourceTree()
-    resourceTreeData.value = data || []
+    resourceTreeData.value = decorateCarrierLabels(data || [])
   } catch (error) {
     console.error('加载资源树失败:', error)
   }
+}
+
+function decorateCarrierLabels(nodes: ResourceItem[]): ResourceItem[] {
+  return nodes.map((node) => ({
+    ...node,
+    title: `${node.title || node.name}${resolveCarrierSuffix(node)}`,
+    children: Array.isArray(node.children) ? decorateCarrierLabels(node.children) : undefined,
+  }))
+}
+
+function resolveCarrierSuffix(node: ResourceItem) {
+  const carrierKind = node.carrierKind
+    || (node.type === ResourceType.DIRECTORY || node.type === ResourceType.MENU
+      ? 'menu'
+      : node.type === ResourceType.BUTTON
+        ? 'ui_action'
+        : node.type === ResourceType.API
+          ? 'api_endpoint'
+          : undefined)
+  return carrierKind ? ` [${carrierKind}]` : ''
 }
 
 // 初始化表单数据

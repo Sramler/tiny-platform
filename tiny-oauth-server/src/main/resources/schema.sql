@@ -1,3 +1,7 @@
+-- 注意：当前仓库的数据库权威迁移路径是 Liquibase（见 db/changelog/db.changelog-master.yaml）。
+-- 本文件仅保留为历史结构参考，不应作为当前运行态权限模型的证明依据。
+-- 尤其是 permission / role_permission / role_resource 相关结构，请以 Liquibase 114-117 及后续变更为准。
+
 -- 创建租户表
 CREATE TABLE IF NOT EXISTS `tenant` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '租户ID',
@@ -62,21 +66,7 @@ CREATE TABLE IF NOT EXISTS `role` (
     CONSTRAINT `fk_role_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='角色表';
 
--- 创建用户-角色关联表
-CREATE TABLE IF NOT EXISTS `user_role` (
-    `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '关联ID',
-    `tenant_id` BIGINT NOT NULL COMMENT '租户ID',
-    `user_id` BIGINT NOT NULL COMMENT '用户ID',
-    `role_id` BIGINT NOT NULL COMMENT '角色ID',
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    UNIQUE KEY `uk_user_role_tenant` (`tenant_id`, `user_id`, `role_id`),
-    KEY `idx_user_role_tenant_id` (`tenant_id`),
-    KEY `idx_user_role_user_id` (`user_id`),
-    KEY `idx_user_role_role_id` (`role_id`),
-    FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
-    FOREIGN KEY (`role_id`) REFERENCES `role` (`id`) ON DELETE CASCADE,
-    CONSTRAINT `fk_user_role_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户-角色关联表';
+-- user_role 已下线（043 rename → 047 drop），角色赋权通过 role_assignment 表管理
 
 -- 创建用户-租户 membership 表
 CREATE TABLE IF NOT EXISTS `tenant_user` (
@@ -130,6 +120,7 @@ CREATE TABLE IF NOT EXISTS `role_assignment` (
 CREATE TABLE IF NOT EXISTS `resource` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
     `tenant_id` BIGINT NOT NULL COMMENT '租户ID',
+    `normalized_tenant_id` BIGINT GENERATED ALWAYS AS (IFNULL(`tenant_id`, 0)) STORED COMMENT '归一化租户ID',
     `name` VARCHAR(100) NOT NULL COMMENT '权限资源名（后端内部识别名）',
     `url` VARCHAR(200) NOT NULL DEFAULT '' COMMENT '前端路由路径',
     `uri` VARCHAR(200) NOT NULL DEFAULT '' COMMENT '后端 API 路径',
@@ -146,20 +137,23 @@ CREATE TABLE IF NOT EXISTS `resource` (
     `type` TINYINT NOT NULL DEFAULT 0 COMMENT '资源类型：0-目录，1-菜单，2-按钮，3-接口',
     `parent_id` BIGINT DEFAULT NULL COMMENT '父资源ID',
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `created_by` BIGINT DEFAULT NULL COMMENT '创建人ID',
     `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     `enabled` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否启用（与 Resource.enabled 实体默认 true 一致）',
     UNIQUE KEY `uk_resource_tenant_name` (`tenant_id`, `name`) COMMENT '资源名称租户内唯一',
     KEY `idx_resource_tenant_id` (`tenant_id`),
+    KEY `idx_resource_normalized_tenant_id` (`normalized_tenant_id`),
     KEY `idx_resource_parent_id` (`parent_id`),
     KEY `idx_resource_type` (`type`),
     KEY `idx_resource_sort` (`sort`),
+    KEY `idx_resource_tenant_created_by` (`tenant_id`, `created_by`),
     KEY `idx_resource_hidden` (`hidden`),
     FOREIGN KEY (`parent_id`) REFERENCES `resource` (`id`) ON DELETE CASCADE,
     CONSTRAINT `chk_resource_api_uri_method` CHECK (type <> 3 OR (uri <> '' AND method <> '')),
     CONSTRAINT `fk_resource_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='权限资源表';
 
--- 创建角色-资源关联表
+-- 创建角色-资源关联表（历史结构；全新库在 002 中创建，116 回填 role_permission 后由 Liquibase 117 删除本表）
 CREATE TABLE IF NOT EXISTS `role_resource` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '关联ID',
     `tenant_id` BIGINT NOT NULL COMMENT '租户ID',
@@ -290,6 +284,7 @@ CREATE TABLE IF NOT EXISTS `http_request_log` (
 CREATE TABLE IF NOT EXISTS `export_task` (
     `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
     `task_id` VARCHAR(64) NOT NULL UNIQUE COMMENT '任务唯一ID（UUID）',
+    `tenant_id` BIGINT DEFAULT NULL COMMENT '任务所属租户ID',
     `user_id` VARCHAR(64) NOT NULL COMMENT '任务发起用户ID',
     `username` VARCHAR(128) DEFAULT NULL COMMENT '任务发起用户名（可选）',
     `status` VARCHAR(20) NOT NULL DEFAULT 'PENDING' COMMENT '状态：PENDING/RUNNING/SUCCESS/FAILED/CANCELED',
@@ -299,6 +294,7 @@ CREATE TABLE IF NOT EXISTS `export_task` (
     `sheet_count` INT DEFAULT 1 COMMENT '总 Sheet 数（用于多Sheet导出）',
     `file_path` VARCHAR(512) DEFAULT NULL COMMENT '导出文件本地路径（或 OSS 对象key）',
     `download_url` VARCHAR(1024) DEFAULT NULL COMMENT '可选：文件下载URL（通常是 OSS 预签名URL）',
+    `file_size_bytes` BIGINT DEFAULT NULL COMMENT '导出文件大小（字节）',
     `error_msg` TEXT COMMENT '错误信息（失败时记录）',
     `error_code` VARCHAR(64) DEFAULT NULL COMMENT '错误编码（可选，便于分类统计）',
     `query_params` JSON DEFAULT NULL COMMENT '导出查询参数（JSON 持久化，用于审计和重跑）',
@@ -310,6 +306,7 @@ CREATE TABLE IF NOT EXISTS `export_task` (
     `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '任务更新时间',
     PRIMARY KEY (`id`),
     KEY `idx_user` (`user_id`),
+    KEY `idx_tenant` (`tenant_id`),
     KEY `idx_status` (`status`),
     KEY `idx_created_at` (`created_at`),
     KEY `idx_expire_at` (`expire_at`)

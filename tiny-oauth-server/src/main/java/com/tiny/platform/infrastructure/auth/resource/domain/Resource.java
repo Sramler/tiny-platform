@@ -1,8 +1,8 @@
 package com.tiny.platform.infrastructure.auth.resource.domain;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.tiny.platform.infrastructure.auth.resource.enums.ResourceType;
-import com.tiny.platform.infrastructure.auth.role.domain.Role;
 import jakarta.persistence.*;
 
 import java.io.Serializable;
@@ -10,6 +10,11 @@ import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
 
+/**
+ * 兼容总表。
+ * <p>当前仍作为主写入口和历史迁移输入存在，但功能权限真相源已经迁到
+ * role_permission -> permission，运行时载体读路径也在逐步迁往 menu/ui_action/api_endpoint。</p>
+ */
 @Entity
 @Table(name = "resource")
 public class Resource implements Serializable {
@@ -61,7 +66,16 @@ public class Resource implements Serializable {
     private String title = ""; // 前端菜单显示标题
 
     @Column(nullable = false, length = 100)
-    private String permission = ""; // 权限标识，用于前端控制
+    private String permission = ""; // 兼容权限标识：用于运营可读与历史回填输入，不再作为新增逻辑唯一真相源
+
+    @Column(name = "required_permission_id")
+    private Long requiredPermissionId; // 显式绑定的 permission.id，避免继续依赖字符串对齐
+
+    @Column(name = "carrier_type", length = 32)
+    private String carrierType; // 兼容定位：MENU/UI_ACTION/API_ENDPOINT
+
+    @Column(name = "carrier_source_id")
+    private Long carrierSourceId; // 兼容定位：carrier 主键
 
     @Convert(converter = com.tiny.platform.infrastructure.auth.resource.converter.ResourceTypeConverter.class)
     @Column(nullable = false, columnDefinition = "TINYINT DEFAULT 0")
@@ -72,6 +86,9 @@ public class Resource implements Serializable {
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
+
+    @Column(name = "created_by")
+    private Long createdBy;
 
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
@@ -89,9 +106,6 @@ public class Resource implements Serializable {
 
     @Transient
     private Set<Resource> children = new HashSet<>();
-
-    @ManyToMany(mappedBy = "resources", fetch = FetchType.LAZY)
-    private Set<Role> roles = new HashSet<>();
 
     // 构造函数
     public Resource() {
@@ -229,6 +243,31 @@ public class Resource implements Serializable {
         this.permission = permission;
     }
 
+    @JsonIgnore
+    public Long getRequiredPermissionId() {
+        return requiredPermissionId;
+    }
+
+    public void setRequiredPermissionId(Long requiredPermissionId) {
+        this.requiredPermissionId = requiredPermissionId;
+    }
+
+    public String getCarrierType() {
+        return carrierType;
+    }
+
+    public void setCarrierType(String carrierType) {
+        this.carrierType = carrierType;
+    }
+
+    public Long getCarrierSourceId() {
+        return carrierSourceId;
+    }
+
+    public void setCarrierSourceId(Long carrierSourceId) {
+        this.carrierSourceId = carrierSourceId;
+    }
+
     public ResourceType getType() {
         return type;
     }
@@ -253,6 +292,14 @@ public class Resource implements Serializable {
         this.createdAt = createdAt;
     }
 
+    public Long getCreatedBy() {
+        return createdBy;
+    }
+
+    public void setCreatedBy(Long createdBy) {
+        this.createdBy = createdBy;
+    }
+
     public LocalDateTime getUpdatedAt() {
         return updatedAt;
     }
@@ -267,14 +314,6 @@ public class Resource implements Serializable {
 
     public void setChildren(Set<Resource> children) {
         this.children = children;
-    }
-
-    public Set<Role> getRoles() {
-        return roles;
-    }
-
-    public void setRoles(Set<Role> roles) {
-        this.roles = roles;
     }
 
     @PrePersist

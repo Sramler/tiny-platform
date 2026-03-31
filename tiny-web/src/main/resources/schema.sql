@@ -48,15 +48,6 @@ CREATE TABLE resource (
   sort INT DEFAULT 0 COMMENT '排序号'
 ) COMMENT = '资源表';
 
--- 角色-资源关联表
-CREATE TABLE role_resource (
-  role_id BIGINT NOT NULL COMMENT '角色ID',
-  resource_id BIGINT NOT NULL COMMENT '资源ID',
-  PRIMARY KEY (role_id, resource_id),
-  FOREIGN KEY (role_id) REFERENCES role(id) ON DELETE CASCADE,
-  FOREIGN KEY (resource_id) REFERENCES resource(id) ON DELETE CASCADE
-) COMMENT = '角色与资源关联表';
-
 -- 用户认证方法表
 CREATE TABLE user_authentication_method (
   id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',

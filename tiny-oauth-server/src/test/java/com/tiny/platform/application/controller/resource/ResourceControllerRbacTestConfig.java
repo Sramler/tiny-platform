@@ -12,6 +12,8 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
+import com.tiny.platform.core.oauth.security.ApiEndpointRequirementFilter;
+import com.tiny.platform.infrastructure.auth.resource.service.ResourceService;
 
 import java.util.List;
 
@@ -32,9 +34,11 @@ public class ResourceControllerRbacTestConfig {
     }
 
     @Bean
-    public SecurityFilterChain testSecurityFilterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain testSecurityFilterChain(HttpSecurity http,
+                                                       ResourceService resourceService) throws Exception {
         http.csrf(csrf -> csrf.disable())
             .authorizeHttpRequests(c -> c.anyRequest().permitAll());
+        http.addFilterAfter(new ApiEndpointRequirementFilter(resourceService), org.springframework.security.web.authentication.AnonymousAuthenticationFilter.class);
         return http.build();
     }
 

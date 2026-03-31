@@ -1,0 +1,32 @@
+databaseChangeLog:
+  - changeSet:
+      id: 062-user-unit
+      author: tiny
+      comment: Phase3：新增 user_unit 用户-组织/部门归属表（多部门兼任 + 主部门标记）
+      preConditions:
+        - onFail: CONTINUE
+        - onError: HALT
+        - dbms:
+            type: mysql
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              CREATE TABLE IF NOT EXISTS `user_unit` (
+                `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+                `tenant_id` BIGINT NOT NULL COMMENT '租户ID',
+                `user_id` BIGINT NOT NULL COMMENT '用户ID（引用 user.id）',
+                `unit_id` BIGINT NOT NULL COMMENT '组织/部门节点ID（引用 organization_unit.id）',
+                `is_primary` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否主部门：同一租户同一用户最多一个 is_primary=1',
+                `status` VARCHAR(16) NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE/LEFT',
+                `joined_at` DATETIME NOT NULL COMMENT '加入时间',
+                `left_at` DATETIME NULL COMMENT '离开时间',
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uk_user_unit_tenant_user_unit` (`tenant_id`, `user_id`, `unit_id`),
+                KEY `idx_user_unit_unit` (`tenant_id`, `unit_id`, `status`),
+                KEY `idx_user_unit_user` (`user_id`, `tenant_id`, `status`)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户-组织/部门归属表（Phase3）';
