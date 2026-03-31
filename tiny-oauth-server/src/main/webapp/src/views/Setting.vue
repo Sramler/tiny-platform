@@ -203,7 +203,7 @@
           <a-input
             v-model:value="unbindForm.totpCode"
             placeholder="请输入6位动态验证码"
-            maxlength="6"
+            :maxlength="6"
           />
           <div class="form-help-text">请从您的验证器 App 中输入 6 位动态验证码</div>
         </a-form-item>
@@ -225,7 +225,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { UserOutlined } from '@ant-design/icons-vue'
 import type { Rule } from 'ant-design-vue/es/form'
 import type { FormInstance } from 'ant-design-vue'
-import type { UploadRequestOption } from 'rc-upload/es/interface'
+import type { UploadRequestOption } from 'ant-design-vue/es/vc-upload/interface'
 import { message } from 'ant-design-vue'
 import {
   getSecuritySessions,
@@ -568,7 +568,8 @@ const beforeAvatarUpload = (file: File) => {
 }
 
 // 处理头像上传
-const handleAvatarUpload = async (options: UploadRequestOption) => {
+const handleAvatarUpload = (options: UploadRequestOption) => {
+  void (async () => {
   const { file } = options
   avatarLoading.value = true
   try {
@@ -611,6 +612,7 @@ const handleAvatarUpload = async (options: UploadRequestOption) => {
   } finally {
     avatarLoading.value = false
   }
+  })()
 }
 
 // 加载用户信息

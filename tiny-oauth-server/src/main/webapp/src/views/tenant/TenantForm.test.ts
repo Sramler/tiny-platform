@@ -25,7 +25,7 @@ describe('TenantForm.vue', () => {
     const wrapper = mount(TenantForm, {
       props: {
         mode: 'edit',
-        tenantData: { id: 1, code: 't1', name: 'Tenant 1' },
+        tenantData: { id: '1', code: 't1', name: 'Tenant 1' },
       },
       global: {
         stubs: {

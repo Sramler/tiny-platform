@@ -20,7 +20,8 @@ describe('activeScopeEvents', () => {
     const spy = vi.spyOn(window, 'dispatchEvent')
     notifyActiveScopeChanged()
     expect(spy).toHaveBeenCalledTimes(1)
-    const ev = spy.mock.calls[0][0] as CustomEvent
+    expect(spy.mock.calls[0]).toBeDefined()
+    const ev = spy.mock.calls[0]![0] as CustomEvent
     expect(ev.type).toBe(ACTIVE_SCOPE_CHANGED_EVENT)
     spy.mockRestore()
   })

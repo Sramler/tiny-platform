@@ -21,7 +21,7 @@
       v-model:target-keys="localRoleIds"
       :data-source="allRoles"
       :titles="['可选角色', '已分配角色']"
-      :render="(item: any) => `${item.name}（${item.code}）`"
+      :render="renderRoleItem"
       :list-style="{ width: '200px', height: '300px' }"
     />
   </a-modal>
@@ -34,7 +34,7 @@ const props = defineProps({
   allRoles: { type: Array as () => { key: string, name: string, code: string }[], default: () => [] },
   open: Boolean,
   scopeType: { type: String as () => 'TENANT' | 'ORG' | 'DEPT', default: 'TENANT' },
-  scopeId: { type: Number, default: null },
+  scopeId: { type: Number, default: undefined },
   orgOptions: { type: Array as () => { value: number, label: string }[], default: () => [] },
   deptOptions: { type: Array as () => { value: number, label: string }[], default: () => [] },
 })
@@ -48,22 +48,34 @@ const localRoleIds = ref<string[]>([...(props.modelValue || [])])
 watch(() => props.modelValue, v => localRoleIds.value = [...(v || [])])
 
 const localScopeType = ref<'TENANT' | 'ORG' | 'DEPT'>(props.scopeType)
-const localScopeId = ref<number | null>(props.scopeId ?? null)
+const localScopeId = ref<number | undefined>(props.scopeId ?? undefined)
 watch(() => props.scopeType, v => localScopeType.value = v)
-watch(() => props.scopeId, v => localScopeId.value = v ?? null)
+watch(() => props.scopeId, v => localScopeId.value = v ?? undefined)
 
 const scopeOptions = computed(() => (
   localScopeType.value === 'ORG' ? props.orgOptions : props.deptOptions
 ))
 
-function handleScopeTypeChange(value: 'TENANT' | 'ORG' | 'DEPT') {
-  localScopeType.value = value
-  emit('update:scopeType', value)
+function renderRoleItem(item: Record<string, unknown>) {
+  return `${String(item.name ?? '')}（${String(item.code ?? '')}）`
 }
 
-function handleScopeIdChange(value: number) {
-  localScopeId.value = value
-  emit('update:scopeId', value)
+function handleScopeTypeChange(value: unknown) {
+  const normalized = value === 'ORG' || value === 'DEPT' ? value : 'TENANT'
+  localScopeType.value = normalized
+  emit('update:scopeType', normalized)
+}
+
+function handleScopeIdChange(value: unknown) {
+  if (value === undefined || value === null || value === '') {
+    localScopeId.value = undefined
+    emit('update:scopeId', undefined)
+    return
+  }
+  const normalized = Number(value)
+  if (Number.isNaN(normalized)) return
+  localScopeId.value = normalized
+  emit('update:scopeId', normalized)
 }
 
 function handleOk() {

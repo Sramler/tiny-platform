@@ -92,6 +92,7 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { message } from 'ant-design-vue'
 import { ReloadOutlined } from '@ant-design/icons-vue'
+import type { ColumnsType } from 'ant-design-vue/es/table'
 import { auditList } from '@/api/scheduling'
 import { throttle } from '@/utils/debounce'
 import { useAuth } from '@/auth/auth'
@@ -126,14 +127,14 @@ const pagination = reactive({
   showTotal: (total: number) => `共 ${total} 条`,
 })
 
-const columns = [
+const columns: ColumnsType<any> = [
   { title: 'ID', dataIndex: 'id', key: 'id', width: 80 },
   { title: '对象类型', dataIndex: 'objectType', key: 'objectType', width: 120 },
   { title: '对象ID', dataIndex: 'objectId', key: 'objectId', width: 150 },
   { title: '操作类型', key: 'action', width: 120 },
   { title: '执行人', dataIndex: 'performedBy', key: 'performedBy', width: 120 },
   { title: '操作时间', dataIndex: 'createdAt', key: 'createdAt', width: 180 },
-  { title: '详情', key: 'detail', width: 100, fixed: 'right' },
+  { title: '详情', key: 'detail', width: 100, fixed: 'right' as const },
 ]
 
 const getActionColor = (action: string) => {

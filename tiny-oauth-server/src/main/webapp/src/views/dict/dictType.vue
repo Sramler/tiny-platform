@@ -11,8 +11,8 @@
         </a-form-item>
         <a-form-item label="状态">
           <a-select v-model:value="query.enabled" allow-clear placeholder="全部状态" style="width: 160px">
-            <a-select-option :value="true">启用</a-select-option>
-            <a-select-option :value="false">禁用</a-select-option>
+            <a-select-option value="true">启用</a-select-option>
+            <a-select-option value="false">禁用</a-select-option>
           </a-select>
         </a-form-item>
         <a-form-item>
@@ -226,7 +226,7 @@ const paginationRef = ref<HTMLElement | null>(null)
 const query = ref({
   dictCode: '',
   dictName: '',
-  enabled: undefined as boolean | undefined,
+  enabled: undefined as 'true' | 'false' | undefined,
 })
 
 // 阶段5: 数据加载和CRUD操作
@@ -240,7 +240,7 @@ async function loadData() {
     const params: DictTypeQuery = {
       dictCode: query.value.dictCode?.trim() || undefined,
       dictName: query.value.dictName?.trim() || undefined,
-      enabled: query.value.enabled,
+      enabled: query.value.enabled === undefined ? undefined : query.value.enabled === 'true',
       page: currentPage - 1, // 转换为 0-based
       size: pageSize,
     }

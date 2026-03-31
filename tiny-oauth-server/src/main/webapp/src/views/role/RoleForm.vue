@@ -38,21 +38,32 @@
   </a-form>
 </template>
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
+import type { FormInstance } from 'ant-design-vue'
+import type { Rule } from 'ant-design-vue/es/form'
 import { getRoleUsers, updateRoleUsers } from '@/api/role' // 角色相关API
 import { userList } from '@/api/user' // 用户列表API
 import UserTransfer from './UserTransfer.vue'
 
+interface RoleFormModel {
+  id: string
+  name: string
+  code: string
+  description: string
+  builtin: boolean
+  enabled: boolean
+}
+
 // 定义props
 const props = defineProps<{
   mode: 'create' | 'edit', // 表单模式
-  roleData?: any           // 角色数据
+  roleData?: Partial<RoleFormModel> | null // 角色数据
 }>()
 // 定义emit
 const emit = defineEmits(['submit', 'cancel'])
 // 表单数据
-const form = ref({
+const form = ref<RoleFormModel>({
   id: '',
   name: '',
   code: '',
@@ -61,7 +72,7 @@ const form = ref({
   enabled: true
 })
 // 校验规则
-const rules = {
+const rules: Record<string, Rule[]> = {
   name: [
     { required: true, message: '角色名不能为空', trigger: 'blur' },
     { min: 2, max: 50, message: '长度2-50字符', trigger: 'blur' }
@@ -76,7 +87,7 @@ const rules = {
   ]
 }
 // 表单ref
-const formRef = ref()
+const formRef = ref<FormInstance>()
 // 用户Transfer相关响应式数据
 const userOptions = ref<{ key: string, title: string, [key: string]: any }[]>([])
 const selectedUserIds = ref<string[]>([])
@@ -86,7 +97,14 @@ const showUserTransfer = ref(false)
 // 监听props变化，回填数据
 watch(() => props.roleData, (val) => {
   if (val) {
-    form.value = { ...val }
+    form.value = {
+      id: val.id ?? '',
+      name: val.name ?? '',
+      code: val.code ?? '',
+      description: val.description ?? '',
+      builtin: Boolean(val.builtin),
+      enabled: val.enabled ?? true,
+    }
   } else {
     form.value = { id: '', name: '', code: '', description: '', builtin: false, enabled: true }
   }

@@ -54,13 +54,13 @@ type ResourceTreeNode = {
 }
 
 type TransferTreeNode = {
-  key: number
+  key: string
   title: string
   children?: TransferTreeNode[]
 }
 
 type TransferItem = {
-  key: number
+  key: string
   title: string
   disabled: boolean
 }
@@ -69,15 +69,15 @@ type TransferItem = {
 const originalTreeData = ref<TransferTreeNode[]>([]);
 
 // 已分配资源key
-const rightKeys = ref<number[]>([]);
+const rightKeys = ref<string[]>([]);
 
 // 扁平化的transfer数据源
 const transferDataSource = ref<TransferItem[]>([]);
 
 type TreeNodeInfo = {
-  key: number
-  parent?: number
-  children: number[]
+  key: string
+  parent?: string
+  children: string[]
 }
 
 type TreeEventInfo = {
@@ -85,8 +85,8 @@ type TreeEventInfo = {
   checked?: boolean
 }
 
-const treeNodeMap = new Map<number, TreeNodeInfo>()
-const permissionIdByResourceKey = new Map<number, number>()
+const treeNodeMap = new Map<string, TreeNodeInfo>()
+const permissionIdByResourceKey = new Map<string, number>()
 
 const onTreeCheck = (_: unknown, info: unknown) => handleTreeCheck(info as TreeEventInfo)
 const onTreeSelect = (_: unknown, info: unknown) => handleTreeSelect(info as TreeEventInfo)
@@ -121,7 +121,7 @@ async function loadRoleResources(targetRoleId?: number) {
   try {
     const resourceIds = await getRoleResources(roleId)
     // 确保 key 类型一致
-    rightKeys.value = (resourceIds || []).map((id: number | string) => Number(id))
+    rightKeys.value = (resourceIds || []).map((id: number | string) => String(id))
   } catch (error) {
     console.error('加载角色资源失败:', error)
     rightKeys.value = []
@@ -131,7 +131,7 @@ async function loadRoleResources(targetRoleId?: number) {
 // 转换树数据格式
 function transformTreeData(nodes: ResourceTreeNode[]): TransferTreeNode[] {
   return nodes.map(node => ({
-    key: Number(node.id), // 确保key为number类型
+    key: String(node.id), // Transfer key 使用 string
     title: formatTreeTitle(node),
     children: node.children ? transformTreeData(node.children) : undefined
   }))
@@ -139,9 +139,9 @@ function transformTreeData(nodes: ResourceTreeNode[]): TransferTreeNode[] {
 
 function collectPermissionBindings(nodes: ResourceTreeNode[] = []) {
   nodes.forEach((node) => {
-    const key = Number(node.id)
+    const key = String(node.id)
     const permissionId = node.requiredPermissionId == null ? null : Number(node.requiredPermissionId)
-    if (Number.isFinite(key) && permissionId != null && Number.isFinite(permissionId)) {
+    if (key && permissionId != null && Number.isFinite(permissionId)) {
       permissionIdByResourceKey.set(key, permissionId)
     }
     if (node.children) {
@@ -178,10 +178,10 @@ function flattenTreeData(list: TransferTreeNode[] = []) {
   });
 }
 
-function buildTreeMap(nodes: TransferTreeNode[] = [], parent?: number) {
+function buildTreeMap(nodes: TransferTreeNode[] = [], parent?: string) {
   nodes.forEach(node => {
-    const key = Number(node.key)
-    const children = node.children ? node.children.map((child) => Number(child.key)) : []
+    const key = String(node.key)
+    const children = node.children ? node.children.map((child) => String(child.key)) : []
     treeNodeMap.set(key, { key, parent, children })
     if (node.children) {
       buildTreeMap(node.children, key)
@@ -189,10 +189,10 @@ function buildTreeMap(nodes: TransferTreeNode[] = [], parent?: number) {
   })
 }
 
-function getDescendantKeys(key: number): number[] {
+function getDescendantKeys(key: string): string[] {
   const node = treeNodeMap.get(key)
   if (!node) return []
-  const result: number[] = []
+  const result: string[] = []
   node.children.forEach(childKey => {
     result.push(childKey)
     result.push(...getDescendantKeys(childKey))
@@ -200,7 +200,7 @@ function getDescendantKeys(key: number): number[] {
   return result
 }
 
-function addAncestors(key: number, keySet: Set<number>) {
+function addAncestors(key: string, keySet: Set<string>) {
   const parentKey = treeNodeMap.get(key)?.parent
   if (parentKey === undefined) return
   if (!keySet.has(parentKey)) {
@@ -209,7 +209,7 @@ function addAncestors(key: number, keySet: Set<number>) {
   addAncestors(parentKey, keySet)
 }
 
-function removeAncestorsIfNoChildren(key: number, keySet: Set<number>) {
+function removeAncestorsIfNoChildren(key: string, keySet: Set<string>) {
   const parentKey = treeNodeMap.get(key)?.parent
   if (parentKey === undefined) return
   const parentNode = treeNodeMap.get(parentKey)
@@ -221,14 +221,14 @@ function removeAncestorsIfNoChildren(key: number, keySet: Set<number>) {
   }
 }
 
-function addNodeCascade(key: number, keySet: Set<number>) {
+function addNodeCascade(key: string, keySet: Set<string>) {
   if (keySet.has(key)) return
   keySet.add(key)
   const children = treeNodeMap.get(key)?.children ?? []
   children.forEach(childKey => addNodeCascade(childKey, keySet))
 }
 
-function removeNodeCascade(key: number, keySet: Set<number>) {
+function removeNodeCascade(key: string, keySet: Set<string>) {
   if (keySet.has(key)) {
     keySet.delete(key)
   }
@@ -236,8 +236,8 @@ function removeNodeCascade(key: number, keySet: Set<number>) {
   children.forEach(childKey => removeNodeCascade(childKey, keySet))
 }
 
-function toggleCascadeSelection(key: number, checked: boolean) {
-  const nextKeys = new Set(rightKeys.value)
+function toggleCascadeSelection(key: string, checked: boolean) {
+  const nextKeys = new Set<string>(rightKeys.value)
   if (checked) {
     addNodeCascade(key, nextKeys)
     addAncestors(key, nextKeys)
@@ -308,15 +308,16 @@ const handleTreeCheck = (info: TreeEventInfo) => {
   const { eventKey } = info.node
   if (eventKey === undefined) return
   const checked = !!info.checked
-  toggleCascadeSelection(Number(eventKey), checked)
+  toggleCascadeSelection(String(eventKey), checked)
 }
 
 // 处理树节点选择事件（与勾选行为保持一致）
 const handleTreeSelect = (info: TreeEventInfo) => {
   const { eventKey } = info.node
   if (eventKey === undefined) return
-  const isSelected = rightKeys.value.includes(Number(eventKey))
-  toggleCascadeSelection(Number(eventKey), !isSelected)
+  const normalizedKey = String(eventKey)
+  const isSelected = rightKeys.value.includes(normalizedKey)
+  toggleCascadeSelection(normalizedKey, !isSelected)
 }
 
 // 点击确定
@@ -326,7 +327,7 @@ function handleOk() {
       .map((resourceId) => permissionIdByResourceKey.get(resourceId))
       .filter((permissionId): permissionId is number => permissionId != null)
   ))
-  emit('submit', { resourceIds: rightKeys.value, permissionIds })
+  emit('submit', { resourceIds: rightKeys.value.map((id) => Number(id)).filter((id) => !Number.isNaN(id)), permissionIds })
   visible.value = false
 }
 

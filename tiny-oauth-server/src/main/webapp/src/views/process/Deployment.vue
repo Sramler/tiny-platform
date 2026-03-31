@@ -75,14 +75,14 @@
                                 </span>
                             </div>
                             <VueDraggable v-model="draggableColumns"
-                                :item-key="(item: { dataIndex?: string }) => item?.dataIndex || `col_${Math.random()}`"
+                                :item-key="columnItemKey"
                                 handle=".drag-handle" @end="onDragEnd" class="draggable-columns"
                                 ghost-class="sortable-ghost" chosen-class="sortable-chosen" tag="div">
                                 <template #item="{ element: col }">
                                     <div class="draggable-column-item">
                                         <HolderOutlined class="drag-handle" />
                                         <a-checkbox :checked="showColumnKeys.includes(col.dataIndex)"
-                                            @change="(e: { target: { checked: boolean } }) => onCheckboxChange(col.dataIndex, e.target.checked)">
+                                            @change="(e) => onCheckboxChange(col.dataIndex, e.target.checked)">
                                             {{ col.title }}
                                         </a-checkbox>
                                     </div>
@@ -220,6 +220,9 @@
 import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
+import type { ColumnsType } from 'ant-design-vue/es/table'
+import type { UploadFile } from 'ant-design-vue/es/upload/interface'
+import type { UploadRequestOption } from 'ant-design-vue/es/vc-upload/interface'
 import {
     UploadOutlined,
     ReloadOutlined,
@@ -273,7 +276,7 @@ const showDeploymentDetail = ref(false)
 const selectedDeployment = ref<Deployment | null>(null)
 const showSortTooltip = ref(true)
 type UploadFileLike = { uid?: string; name?: string; type?: string; size?: number }
-const fileList = ref<UploadFileLike[]>([])
+const fileList = ref<UploadFile[]>([])
 
 const tenants = ref<Array<{ id: string; name: string }>>([])
 
@@ -313,8 +316,8 @@ const INITIAL_COLUMNS = [
         title: '操作',
         dataIndex: 'action',
         width: 200,
-        fixed: 'right',
-        align: 'center'
+        fixed: 'right' as const,
+        align: 'center' as const
     }
 ]
 
@@ -371,7 +374,11 @@ function onDragEnd(_event: unknown) {
     console.log('拖拽结束，新顺序:', draggableColumns.value.map(col => col.title))
 }
 
-const columns = computed(() => {
+function columnItemKey(item: { dataIndex?: string }) {
+    return item?.dataIndex || 'col_' + Math.random()
+}
+
+const columns = computed<ColumnsType<Deployment>>(() => {
     const filtered = allColumns.value.filter(
         col =>
             col &&
@@ -384,8 +391,8 @@ const columns = computed(() => {
             title: '序号',
             dataIndex: 'index',
             width: 80,
-            align: 'center',
-            fixed: 'left',
+            align: 'center' as const,
+            fixed: 'left' as const,
             customRender: ({ index }: { index?: number }) => {
                 const safeIndex = typeof index === 'number' && !isNaN(index) ? index : 0
                 const current = Number(pagination.value.current) || 1
@@ -399,8 +406,8 @@ const columns = computed(() => {
 
 const rowSelection = computed(() => ({
     selectedRowKeys: selectedRowKeys.value,
-    onChange: (selectedKeys: string[], selectedRows: Deployment[]) => {
-        selectedRowKeys.value = selectedKeys;
+    onChange: (selectedKeys: Array<string | number>, selectedRows: Deployment[]) => {
+        selectedRowKeys.value = selectedKeys.map(String);
     },
     checkStrictly: false,
     preserveSelectedRowKeys: true,
@@ -637,20 +644,24 @@ const beforeUpload = (file: UploadFileLike) => {
     return true
 }
 
-const handleUpload = async (options: { file: File }) => {
-    const { file } = options
-    try {
-        const formData = new FormData()
-        formData.append('file', file)
-        formData.append('name', file.name || 'process.bpmn')
-        const result = await deploymentApi.deployProcess(formData)
-        message.success('流程部署成功!')
-        loadData()
-    } catch (error: unknown) {
-        console.error('部署失败:', error)
-        const errorMessage = error instanceof Error ? error.message : '未知错误'
-        message.error('部署失败：' + errorMessage)
-    }
+const handleUpload = (options: UploadRequestOption) => {
+    const currentFile = options.file as File
+    void (async () => {
+        try {
+            const formData = new FormData()
+            formData.append('file', currentFile)
+            formData.append('name', currentFile.name || 'process.bpmn')
+            await deploymentApi.deployProcess(formData)
+            message.success('流程部署成功!')
+            options.onSuccess?.({})
+            loadData()
+        } catch (error: unknown) {
+            console.error('部署失败:', error)
+            const errorMessage = error instanceof Error ? error.message : '未知错误'
+            message.error('部署失败：' + errorMessage)
+            options.onError?.(error as Error)
+        }
+    })()
 }
 
 const formatDate = (dateString: string | Date) => {

@@ -56,6 +56,7 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
+import type { Rule } from 'ant-design-vue/es/form'
 import type { OrgUnit } from '@/api/org'
 
 interface Props {
@@ -78,15 +79,15 @@ const formRef = ref()
 const submitting = ref(false)
 
 const form = ref({
-  parentId: null as number | null,
+  parentId: undefined as number | undefined,
   code: '',
   name: '',
   unitType: 'DEPARTMENT',
-  sortOrder: 0 as number | null,
+  sortOrder: 0 as number | undefined,
   status: 'ACTIVE',
 })
 
-const rules = {
+const rules: Record<string, Rule[]> = {
   code: [
     { required: true, message: '组织编码不能为空', trigger: 'blur' },
     { min: 2, max: 50, message: '长度 2-50 字符', trigger: 'blur' },
@@ -103,7 +104,7 @@ const rules = {
 watch(() => props.orgData, (val) => {
   if (val) {
     form.value = {
-      parentId: val.parentId ?? null,
+      parentId: val.parentId ?? undefined,
       code: val.code ?? '',
       name: val.name ?? '',
       unitType: val.unitType ?? 'DEPARTMENT',
@@ -112,7 +113,7 @@ watch(() => props.orgData, (val) => {
     }
   } else {
     form.value = {
-      parentId: null,
+      parentId: undefined,
       code: '',
       name: '',
       unitType: 'DEPARTMENT',

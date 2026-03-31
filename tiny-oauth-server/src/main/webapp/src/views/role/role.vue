@@ -142,7 +142,7 @@
                     <HolderOutlined class="drag-handle" />
                     <a-checkbox
                       :checked="showColumnKeys.includes(element.dataIndex)"
-                      @change="(e: any) => onCheckboxChange(element.dataIndex, e.target.checked)"
+                      @change="onColumnCheckboxChange(element.dataIndex, $event)"
                     >
                       {{ element.title }}
                     </a-checkbox>
@@ -302,6 +302,8 @@
 // 引入Vue相关API
 import { ref, computed, onMounted, watch, nextTick, onBeforeUnmount } from 'vue'
 import { useAuth } from '@/auth/auth'
+import type { ColumnsType } from 'ant-design-vue/es/table'
+import type { CheckboxChangeEvent } from 'ant-design-vue/es/checkbox/interface'
 // 引入角色API
 import { roleList, createRole, updateRole, deleteRole, getRoleUsers, updateRoleUsers } from '@/api/role'
 // 引入Antd组件和图标
@@ -403,8 +405,11 @@ function onCheckboxChange(dataIndex: string, checked: boolean) {
     showColumnKeys.value = showColumnKeys.value.filter(key => key !== dataIndex)
   }
 }
+function onColumnCheckboxChange(dataIndex: string, e: CheckboxChangeEvent) {
+  onCheckboxChange(dataIndex, Boolean(e.target?.checked))
+}
 // 列全选
-function onCheckAllChange(e: any) {
+function onCheckAllChange(e: CheckboxChangeEvent) {
   if (e.target.checked) {
     showColumnKeys.value = INITIAL_COLUMNS.map(col => col.dataIndex)
   } else {
@@ -423,21 +428,21 @@ function resetColumnOrder() {
 // 拖拽结束
 function onDragEnd() {}
 // 计算最终表格列
-const columns = computed(() => [
+const columns = computed(() => ([
   {
     title: '序号',
     dataIndex: 'index',
     width: 80,
-    align: 'center',
-    fixed: 'left',
+    align: 'center' as const,
+    fixed: 'left' as const,
     customRender: ({ index }: { index?: number }) => {
       const current = Number(pagination.value.current) || 1
       const pageSize = Number(pagination.value.pageSize) || 10
       return (current - 1) * pageSize + (typeof index === 'number' ? index : 0) + 1
     }
   },
-  ...INITIAL_COLUMNS.filter(col => showColumnKeys.value.includes(col.dataIndex))
-])
+  ...INITIAL_COLUMNS.filter((col) => typeof col.dataIndex === 'string' && showColumnKeys.value.includes(col.dataIndex))
+] as ColumnsType<any>))
 // 多选配置，所有 id 强制转字符串，保证类型一致
 const rowSelection = computed(() => ({
   selectedRowKeys: selectedRowKeys.value,

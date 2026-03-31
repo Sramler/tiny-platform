@@ -268,6 +268,7 @@ import type { TableColumnsType } from 'ant-design-vue'
 import { generateAvatarStyleObject } from '@/utils/avatar'
 import { getActiveTenantId, resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
 import { fetchWithTraceId } from '@/utils/traceId'
+import type { Key } from 'ant-design-vue/es/_util/type'
 
 // 路由
 const route = useRoute()
@@ -492,7 +493,7 @@ const handleBindTotp = () => {
 }
 
 // 处理标签页切换
-const handleTabChange = (key: string) => {
+const handleTabChange = (key: Key) => {
   if (key === 'login' && loginHistory.value.length === 0 && !loginHistoryLoading.value) {
     // 切换到登录历史标签页时加载数据
     loadLoginHistory()

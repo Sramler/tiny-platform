@@ -18,14 +18,15 @@
 import { ref, nextTick } from 'vue'
 import DictType from './dictType.vue'
 import DictItem from './dictItem.vue'
+import type { Key } from 'ant-design-vue/es/_util/type'
 
 // Tab 切换
 const activeTab = ref('type')
 const dictTypeRef = ref<InstanceType<typeof DictType> | null>(null)
 const dictItemRef = ref<InstanceType<typeof DictItem> | null>(null)
 
-function handleTabChange(key: string) {
-  activeTab.value = key
+function handleTabChange(key: Key) {
+  activeTab.value = String(key)
 }
 
 // 处理从字典类型跳转到字典项

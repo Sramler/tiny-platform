@@ -3,6 +3,7 @@ import { ArrowLeftOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import { message } from 'ant-design-vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import type { ColumnsType } from 'ant-design-vue/es/table'
 import {
   getIdempotentMetrics,
   getIdempotentMqMetrics,
@@ -45,7 +46,7 @@ const emptyMqMetrics: IdempotentMqMetricsSnapshot = {
   duplicateRate: 0,
 }
 
-const topScopeColumns = [
+const topScopeColumns: ColumnsType<IdempotentTopKey> = [
   {
     title: '热点 Scope',
     dataIndex: 'key',
@@ -57,7 +58,7 @@ const topScopeColumns = [
     dataIndex: 'count',
     key: 'count',
     width: 120,
-    align: 'right',
+    align: 'right' as const,
   },
 ]
 
@@ -250,7 +251,7 @@ async function loadTenantOptions() {
   }
 }
 
-async function handleTenantFilterChange(value: number | string | undefined) {
+async function handleTenantFilterChange(value: unknown) {
   selectedTenantFilter.value = normalizeTenantFilterValue(value)
   await syncActiveTenantQuery(selectedTenantFilter.value)
   void loadOverview()

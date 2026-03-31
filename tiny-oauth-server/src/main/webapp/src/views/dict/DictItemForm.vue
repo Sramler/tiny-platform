@@ -24,7 +24,7 @@
         v-model:value="formData.value"
         placeholder="请输入字典值，如：MALE, FEMALE, PENDING, PAID"
         :disabled="!!formData.id"
-        maxlength="64"
+        :maxlength="64"
         show-count
       />
     </a-form-item>
@@ -33,7 +33,7 @@
       <a-input
         v-model:value="formData.label"
         placeholder="请输入字典标签，如：男, 女, 待支付, 已支付"
-        maxlength="128"
+        :maxlength="128"
         show-count
       />
     </a-form-item>
@@ -43,7 +43,7 @@
         v-model:value="formData.description"
         placeholder="请输入字典项描述"
         :rows="3"
-        maxlength="255"
+        :maxlength="255"
         show-count
       />
     </a-form-item>
@@ -67,6 +67,7 @@
 <script setup lang="ts">
 import { ref, reactive, watch, onMounted } from 'vue'
 import type { FormInstance } from 'ant-design-vue'
+import type { Rule } from 'ant-design-vue/es/form'
 import type { DictItem, DictItemCreateUpdateDto, DictTypeItem } from '@/api/dict'
 import { getVisibleDictTypes } from '@/api/dict'
 
@@ -88,7 +89,7 @@ const formData = reactive<DictItemCreateUpdateDto>({
 
 const dictTypeOptions = ref<DictTypeItem[]>([])
 
-const rules = {
+const rules: Record<string, Rule[]> = {
   dictTypeId: [
     { required: true, message: '请选择字典类型', trigger: 'change' },
   ],

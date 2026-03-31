@@ -159,6 +159,8 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed } from 'vue'
 import { message } from 'ant-design-vue'
+import type { ColumnsType } from 'ant-design-vue/es/table'
+import type { Key } from 'ant-design-vue/es/_util/type'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import Ajv from 'ajv'
 import { taskList, createTask, updateTask, deleteTask, getTask, taskTypeList } from '@/api/scheduling'
@@ -215,7 +217,7 @@ const pagination = reactive({
   showTotal: (total: number) => `共 ${total} 条`,
 })
 
-const columns = [
+const columns: ColumnsType<any> = [
   { title: 'ID', dataIndex: 'id', key: 'id', width: 80 },
   { title: '编码', dataIndex: 'code', key: 'code', width: 150 },
   { title: '名称', dataIndex: 'name', key: 'name' },
@@ -225,7 +227,7 @@ const columns = [
   { title: '并发策略', key: 'concurrencyPolicy', width: 120 },
   { title: '状态', key: 'enabled', width: 100 },
   { title: '创建时间', dataIndex: 'createdAt', key: 'createdAt', width: 180 },
-  { title: '操作', key: 'action', width: 200, fixed: 'right' },
+  { title: '操作', key: 'action', width: 200, fixed: 'right' as const },
 ]
 
 const formatJson = (str: string | null | undefined) => {
@@ -325,8 +327,8 @@ const handleTableChange = (pag: any) => {
   loadData()
 }
 
-const onSelectChange = (keys: number[]) => {
-  selectedRowKeys.value = keys
+const onSelectChange = (keys: Key[]) => {
+  selectedRowKeys.value = keys.map((k) => Number(k)).filter((k) => !Number.isNaN(k))
 }
 
 const handleTypeChange = () => {

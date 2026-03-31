@@ -88,6 +88,7 @@ import { generateAvatarStyleObject } from '@/utils/avatar'
 import { getActiveTenantId, setActiveTenantId } from '@/utils/tenant'
 import { message } from 'ant-design-vue'
 import type { MenuProps } from 'ant-design-vue'
+import type { DefaultOptionType } from 'ant-design-vue/es/select'
 
 /**
  * 常量定义
@@ -157,12 +158,12 @@ const avatarUrl = ref<string>('')
 // 用户 ID
 const userId = ref<string>('')
 const activeScopeType = ref<string>('TENANT')
-const activeScopeId = ref<number | null>(null)
+const activeScopeId = ref<number | undefined>(undefined)
 
 const scopeModalOpen = ref(false)
 const scopeSwitching = ref(false)
 const nextScopeType = ref<ActiveScopeType>('TENANT')
-const nextScopeId = ref<number | null>(null)
+const nextScopeId = ref<number | undefined>(undefined)
 const orgUnits = ref<OrgUnit[]>([])
 
 /** 平台态（activeScopeType=PLATFORM）且本地没有 activeTenantId 时，不允许打开作用域切换入口。 */
@@ -195,9 +196,9 @@ const scopeUnitOptions = computed(() => {
   return filtered.map((u) => ({ value: u.id, label: `${u.name} (#${u.id})` }))
 })
 
-function filterScopeOption(input: string, option?: { label: string }) {
-  if (!option?.label) return false
-  return option.label.toLowerCase().includes((input || '').toLowerCase())
+function filterScopeOption(input: string, option?: DefaultOptionType) {
+  const label = String(option?.label ?? '').toLowerCase()
+  return label.includes((input || '').toLowerCase())
 }
 
 /**
@@ -343,7 +344,7 @@ async function loadUserInfo(options?: { suppressErrorToast?: boolean }): Promise
     username.value = data.nickname || data.username || FALLBACK_USERNAME
     userId.value = String(data.id || '')
     activeScopeType.value = (data as any).activeScopeType || 'TENANT'
-    activeScopeId.value = typeof (data as any).activeScopeId === 'number' ? (data as any).activeScopeId : null
+    activeScopeId.value = typeof (data as any).activeScopeId === 'number' ? (data as any).activeScopeId : undefined
     updateAvatarUrl()
     return true
   } catch (error) {

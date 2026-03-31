@@ -11,7 +11,7 @@
         v-model:value="formData.dictCode"
         placeholder="请输入字典编码，如：GENDER, ORDER_STATUS"
         :disabled="!!formData.id"
-        maxlength="64"
+        :maxlength="64"
         show-count
       />
     </a-form-item>
@@ -20,7 +20,7 @@
       <a-input
         v-model:value="formData.dictName"
         placeholder="请输入字典名称，如：性别, 订单状态"
-        maxlength="128"
+        :maxlength="128"
         show-count
       />
     </a-form-item>
@@ -30,7 +30,7 @@
         v-model:value="formData.description"
         placeholder="请输入字典描述"
         :rows="3"
-        maxlength="255"
+        :maxlength="255"
         show-count
       />
     </a-form-item>
@@ -63,6 +63,7 @@
 <script setup lang="ts">
 import { ref, reactive, watch } from 'vue'
 import type { FormInstance } from 'ant-design-vue'
+import type { Rule } from 'ant-design-vue/es/form'
 import type { DictTypeItem, DictTypeCreateUpdateDto } from '@/api/dict'
 
 const props = defineProps<{
@@ -80,7 +81,7 @@ const formData = reactive<DictTypeCreateUpdateDto>({
   enabled: true,
 })
 
-const rules = {
+const rules: Record<string, Rule[]> = {
   dictCode: [
     { required: true, message: '请输入字典编码', trigger: 'blur' },
     { pattern: /^[A-Z_][A-Z0-9_]*$/, message: '字典编码只能包含大写字母、数字和下划线，且必须以字母或下划线开头', trigger: 'blur' },

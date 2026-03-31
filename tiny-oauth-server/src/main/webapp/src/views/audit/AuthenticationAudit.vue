@@ -114,7 +114,7 @@
             :loading="loading"
             :scroll="{ x: 'max-content' }"
             :expandedRowKeys="expandedRowKeys"
-            @expandedRowsChange="(keys: string[]) => (expandedRowKeys = keys)"
+            @expandedRowsChange="(keys) => (expandedRowKeys = keys)"
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.dataIndex === 'eventType'">
@@ -178,14 +178,15 @@ import {
 } from '@/constants/permission'
 import { decodeJwtPayload, extractAuthoritiesFromJwt } from '@/utils/jwt'
 import type { Dayjs } from 'dayjs'
+import type { Key } from 'ant-design-vue/es/_util/type'
 
 type QueryModel = {
   tenantId: string
   userId: string
   username: string
   eventType: string | undefined
-  success: boolean | undefined
-  dateRange: [Dayjs, Dayjs] | null
+  success: 'true' | 'false' | undefined
+  dateRange: [Dayjs, Dayjs] | undefined
 }
 
 const { user } = useAuth()
@@ -203,8 +204,8 @@ const isPlatformScope = computed(() => claims.value?.activeScopeType === 'PLATFO
 const eventTypeOptions = AUTHENTICATION_AUDIT_EVENT_OPTIONS
 
 const successOptions = [
-  { label: '成功', value: true },
-  { label: '失败', value: false },
+  { label: '成功', value: 'true' },
+  { label: '失败', value: 'false' },
 ]
 
 const query = ref<QueryModel>({
@@ -213,7 +214,7 @@ const query = ref<QueryModel>({
   username: '',
   eventType: undefined,
   success: undefined,
-  dateRange: null,
+  dateRange: undefined,
 })
 const exportContext = ref({
   reason: '',
@@ -231,7 +232,7 @@ const summary = ref<AuthenticationAuditSummary>({
 })
 const loading = ref(false)
 const exporting = ref(false)
-const expandedRowKeys = ref<string[]>([])
+const expandedRowKeys = ref<Key[]>([])
 const pagination = ref({ current: 1, pageSize: 10, total: 0 })
 
 const columns = computed(() => {
@@ -264,7 +265,9 @@ function buildQueryParams(includePaging = false): AuthenticationAuditQueryParams
   if (query.value.userId) params.userId = query.value.userId
   if (query.value.username) params.username = query.value.username
   if (query.value.eventType) params.eventType = query.value.eventType
-  if (typeof query.value.success === 'boolean') params.success = query.value.success
+  if (query.value.success === 'true' || query.value.success === 'false') {
+    params.success = query.value.success === 'true'
+  }
   if (query.value.dateRange && query.value.dateRange[0]) {
     params.startTime = query.value.dateRange[0].toISOString()
     params.endTime = query.value.dateRange[1].toISOString()
@@ -363,7 +366,7 @@ function handleReset() {
     username: '',
     eventType: undefined,
     success: undefined,
-    dateRange: null,
+    dateRange: undefined,
   }
   exportContext.value = {
     reason: '',

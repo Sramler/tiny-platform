@@ -26,8 +26,8 @@
           </a-form-item>
           <a-form-item label="是否启用">
             <a-select v-model:value="query.enabled" allow-clear placeholder="全部">
-              <a-select-option :value="true">启用</a-select-option>
-              <a-select-option :value="false">禁用</a-select-option>
+              <a-select-option value="true">启用</a-select-option>
+              <a-select-option value="false">禁用</a-select-option>
             </a-select>
           </a-form-item>
           <a-form-item>
@@ -79,7 +79,7 @@
                   <div class="draggable-column-item">
                     <HolderOutlined class="drag-handle" />
                     <a-checkbox :checked="showColumnKeys.includes(element.dataIndex)"
-                      @change="(e: any) => onCheckboxChange(element.dataIndex, e.target.checked)">
+                      @change="onColumnCheckboxChange(element.dataIndex, $event)">
                       {{ element.title }}
                     </a-checkbox>
                   </div>
@@ -99,10 +99,10 @@
           <a-table :columns="columns" :data-source="tableData" :row-key="(record: any) => String(record.id)" bordered
             :loading="loading" :row-selection="rowSelection" :custom-row="onCustomRow" :row-class-name="getRowClassName"
             :scroll="{ x: 'max-content', y: tableBodyHeight }" :expandable="expandableConfig" :pagination="false">
-            <template #expandIcon="{ record }">
-              <span v-if="!record.leaf" style="cursor:pointer; color:#1890ff; margin-right:4px;"
-                @click.stop="() => onExpandIconClick(record)">
-                <MinusOutlined v-if="expandedRowKeys.includes(String(record.id))" />
+            <template #expandIcon="slotProps">
+              <span v-if="slotProps?.record && !slotProps.record.leaf" style="cursor:pointer; color:#1890ff; margin-right:4px;"
+                @click.stop="() => onExpandIconClick(slotProps.record)">
+                <MinusOutlined v-if="expandedRowKeys.includes(String(slotProps.record.id))" />
                 <PlusOutlined v-else />
               </span>
             </template>
@@ -186,8 +186,10 @@
 // 引入Vue相关API
 import { ref, computed, onMounted, watch, nextTick, onBeforeUnmount } from 'vue'
 import { useAuth } from '@/auth/auth'
+import type { ColumnsType } from 'ant-design-vue/es/table'
+import type { CheckboxChangeEvent } from 'ant-design-vue/es/checkbox/interface'
 // 引入菜单API
-import { getMenusByParentId, createMenu, updateMenu, deleteMenu, batchDeleteMenus, type MenuItem, type MenuQuery, menuList } from '@/api/menu'
+import { getMenusByParentId, createMenu, updateMenu, deleteMenu, batchDeleteMenus, type MenuItem, menuList } from '@/api/menu'
 // 引入Antd组件和图标
 import { message, Modal } from 'ant-design-vue'
 import {
@@ -216,13 +218,21 @@ type MenuItemEx = MenuItem & {
   leaf?: boolean | number; // 添加 leaf 属性，支持 boolean 或 number 类型
   _loading?: boolean; // 添加加载状态属性
 }
+type MenuColumnConfig = { title: string; dataIndex: string; align?: 'left' | 'center' | 'right'; width?: number; fixed?: 'left' | 'right' }
+type MenuQueryState = {
+  name: string
+  title: string
+  permission: string
+  enabled: string | undefined
+  parentId: number | null
+}
 
 // 查询条件，包含parentId用于按层级查询
-const query = ref<MenuQuery & { parentId: number | null }>({
+const query = ref<MenuQueryState>({
   name: '',
   title: '',
   permission: '',
-  enabled: undefined,
+  enabled: undefined as string | undefined,
   parentId: null // 默认查询顶级菜单，允许 null
 })
 
@@ -257,7 +267,7 @@ const loading = ref(false)
 const selectedRowKeys = ref<string[]>([])
 
 // 所有列定义
-const INITIAL_COLUMNS = [
+const INITIAL_COLUMNS: MenuColumnConfig[] = [
   { title: '菜单名称', dataIndex: 'name' },
   { title: '菜单标题', dataIndex: 'title' },
   { title: '图标', dataIndex: 'icon', align: 'center' },
@@ -309,7 +319,7 @@ function onCheckboxChange(dataIndex: string, checked: boolean) {
 }
 
 // 列全选
-function onCheckAllChange(e: any) {
+function onCheckAllChange(e: CheckboxChangeEvent) {
   try {
     if (e.target.checked) {
       showColumnKeys.value = INITIAL_COLUMNS.map(col => col.dataIndex)
@@ -319,6 +329,10 @@ function onCheckAllChange(e: any) {
   } catch (error) {
     console.warn('onCheckAllChange error:', error)
   }
+}
+
+function onColumnCheckboxChange(dataIndex: string, e: CheckboxChangeEvent) {
+  onCheckboxChange(dataIndex, Boolean(e.target?.checked))
 }
 
 const DEFAULT_COLUMN_KEYS = INITIAL_COLUMNS
@@ -345,7 +359,7 @@ function onDragEnd() {
 }
 
 // 计算最终表格列
-const columns = computed(() => {
+const columns = computed<ColumnsType<MenuItemEx>>(() => {
   try {
     return [
       {
@@ -398,7 +412,7 @@ const expandedRowKeys = ref<string[]>([])
 
 // 计算菜单标题列的索引
 const expandIconColumnIndex = computed(() => {
-  return columns.value.findIndex(col => col.dataIndex === 'title')
+  return columns.value.findIndex(col => 'dataIndex' in col && col.dataIndex === 'title')
 })
 
 // 展开配置（平铺结构专用）
@@ -495,7 +509,7 @@ async function loadData() {
       name: query.value.name?.trim() || '',
       title: query.value.title?.trim() || '',
       permission: query.value.permission?.trim() || '',
-      enabled: query.value.enabled
+      enabled: query.value.enabled === undefined ? undefined : query.value.enabled === 'true'
     }
     if (query.value.parentId !== undefined && query.value.parentId !== null) {
       params.parentId = query.value.parentId

@@ -242,6 +242,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useAuth } from '@/auth/auth'
 import { message, Modal } from 'ant-design-vue'
 import { ReloadOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons-vue'
+import type { Key } from 'ant-design-vue/es/_util/type'
 import { extractAuthoritiesFromJwt } from '@/utils/jwt'
 import {
   ROLE_CONSTRAINT_VIEW,
@@ -514,7 +515,7 @@ function typeLabel(type: ConstraintType): string {
   return labels[type]
 }
 
-function handleTabChange(key: string) {
+function handleTabChange(key: Key) {
   const loaders: Record<string, () => void> = {
     hierarchy: loadHierarchies,
     mutex: loadMutexes,
@@ -522,7 +523,7 @@ function handleTabChange(key: string) {
     cardinality: loadCardinalities,
     violations: loadViolations,
   }
-  loaders[key]?.()
+  loaders[String(key)]?.()
 }
 
 function formatDateTime(dateTime: string | null | undefined): string {

@@ -118,7 +118,7 @@
               <ColumnHeightOutlined class="action-icon" />
             </a-tooltip>
             <template #overlay>
-              <a-menu @click="handleDensityMenuClick" :selected-keys="[tableSize]">
+                <a-menu @click="handleDensityMenuClick" :selected-keys="[tableSize]">
                 <a-menu-item key="default">
                   <span>默认</span>
                 </a-menu-item>
@@ -181,9 +181,9 @@
                 }}
               </template>
               <template
-                v-else-if="['enabled', 'accountNonExpired', 'accountNonLocked', 'credentialsNonExpired'].includes(column.dataIndex)">
-                <a-tag :color="record[column.dataIndex] ? 'green' : 'red'">
-                  {{ record[column.dataIndex] ? '是' : '否' }}
+                v-else-if="['enabled', 'accountNonExpired', 'accountNonLocked', 'credentialsNonExpired'].includes(String(column.dataIndex || ''))">
+                <a-tag :color="record[String(column.dataIndex || '')] ? 'green' : 'red'">
+                  {{ record[String(column.dataIndex || '')] ? '是' : '否' }}
                 </a-tag>
               </template>
               <template v-else-if="column.dataIndex === 'lockStatus'">
@@ -197,8 +197,8 @@
                 </span>
                 <span v-else>-</span>
               </template>
-              <template v-else-if="['lastLoginAt', 'lastFailedLoginAt'].includes(column.dataIndex)">
-                <span>{{ formatDateTime(record[column.dataIndex]) }}</span>
+              <template v-else-if="['lastLoginAt', 'lastFailedLoginAt'].includes(String(column.dataIndex || ''))">
+                <span>{{ formatDateTime(record[String(column.dataIndex || '')]) }}</span>
               </template>
               <template v-else-if="column.dataIndex === 'action'">
                 <div class="action-buttons">
@@ -411,8 +411,8 @@ const INITIAL_COLUMNS = [
     title: '操作',
     dataIndex: 'action',
     width: 200,
-    fixed: 'right',
-    align: 'center'
+    fixed: 'right' as const,
+    align: 'center' as const
   }
 ]
 
@@ -475,8 +475,8 @@ const columns = computed(() => {
       title: '序号',
       dataIndex: 'index',
       width: 80,
-      align: 'center',
-      fixed: 'left',
+      align: 'center' as const,
+      fixed: 'left' as const,
       customRender: ({ index }: { index?: number }) => {
         const safeIndex = typeof index === 'number' && !isNaN(index) ? index : 0
         const current = Number(pagination.value.current) || 1
@@ -490,8 +490,8 @@ const columns = computed(() => {
 
 const rowSelection = computed(() => ({
   selectedRowKeys: selectedRowKeys.value,
-  onChange: (selectedKeys: string[], selectedRows: any[]) => {
-    selectedRowKeys.value = selectedKeys;
+  onChange: (selectedKeys: Array<string | number>, selectedRows: any[]) => {
+    selectedRowKeys.value = selectedKeys.map(String);
     console.log('复选框选中变化后的行:', selectedRowKeys.value)
   },
   checkStrictly: false,
@@ -1015,9 +1015,10 @@ const allEnabled = computed(() => {
   return selectedRows.value.length > 0 && selectedRows.value.every(row => row.enabled === true)
 })
 
-function handleDensityMenuClick({ key }: { key: string }) {
-  if (key === 'default' || key === 'small' || key === 'middle' || key === 'large') {
-    tableSize.value = key as 'default' | 'small' | 'middle' | 'large'
+function handleDensityMenuClick({ key }: { key: string | number }) {
+  const nextKey = String(key)
+  if (nextKey === 'default' || nextKey === 'small' || nextKey === 'middle' || nextKey === 'large') {
+    tableSize.value = nextKey as 'default' | 'small' | 'middle' | 'large'
     updateTableBodyHeight()
   }
 }

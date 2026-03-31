@@ -30,7 +30,7 @@
           <a-spin :spinning="treeLoading">
             <a-tree
               v-if="treeData.length > 0"
-              :tree-data="treeData"
+              :tree-data="treeData as any"
               :field-names="{ title: 'name', key: 'id', children: 'children' }"
               :selected-keys="selectedKeys"
               default-expand-all
@@ -193,7 +193,7 @@ const canRemoveUser = computed(() => hasAnyAuthority(ORG_MANAGEMENT_USER_REMOVE_
 const treeData = ref<OrgUnit[]>([])
 const treeLoading = ref(false)
 const refreshing = ref(false)
-const selectedKeys = ref<number[]>([])
+const selectedKeys = ref<(string | number)[]>([])
 const selectedOrg = ref<OrgUnit | null>(null)
 
 const members = ref<UserUnit[]>([])
@@ -213,7 +213,7 @@ const formMode = ref<'create' | 'edit'>('create')
 const formOrgData = ref<Partial<OrgUnit> | null>(null)
 
 const showAddMember = ref(false)
-const addMemberUserId = ref<number | null>(null)
+const addMemberUserId = ref<number | undefined>(undefined)
 const addMemberPrimary = ref(false)
 const addMemberLoading = ref(false)
 
@@ -260,14 +260,18 @@ function findOrgById(nodes: OrgUnit[], id: number): OrgUnit | null {
   return null
 }
 
-function onTreeSelect(keys: number[]) {
+function onTreeSelect(keys: Array<string | number>) {
   if (keys.length === 0) {
     selectedKeys.value = []
     selectedOrg.value = null
     members.value = []
     return
   }
-  const id = keys[0]
+  const rawId = keys[0]
+  const id = Number(rawId)
+  if (!Number.isFinite(id)) {
+    return
+  }
   selectedKeys.value = [id]
   selectedOrg.value = findOrgById(treeData.value, id)
   loadMembers(id)
@@ -355,7 +359,7 @@ function onFormSuccess() {
   })
 }
 
-function handleRemoveMember(record: UserUnit) {
+function handleRemoveMember(record: UserUnit | Record<string, any>) {
   if (!canRemoveUser.value) {
     message.warning('缺少成员移除权限')
     return
@@ -370,7 +374,7 @@ function handleRemoveMember(record: UserUnit) {
     okText: '确认',
     cancelText: '取消',
     onOk: () => {
-      return removeUserFromUnit(unitId, record.userId).then(() => {
+      return removeUserFromUnit(unitId, Number(record.userId)).then(() => {
         message.success('移除成功')
         loadMembers(unitId)
       }).catch((error: any) => {
@@ -392,7 +396,7 @@ async function handleAddMemberSubmit() {
     await addUserToUnit(selectedOrg.value.id, addMemberUserId.value, addMemberPrimary.value)
     message.success('添加成功')
     showAddMember.value = false
-    addMemberUserId.value = null
+    addMemberUserId.value = undefined
     addMemberPrimary.value = false
     loadMembers(selectedOrg.value.id)
   } catch (error: any) {

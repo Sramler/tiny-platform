@@ -349,6 +349,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed } from 'vue'
 import { message } from 'ant-design-vue'
+import type { ColumnsType } from 'ant-design-vue/es/table'
 import { useRouter, useRoute } from 'vue-router'
 import { ReloadOutlined } from '@ant-design/icons-vue'
 import { throttle } from '@/utils/debounce'
@@ -462,7 +463,7 @@ const pagination = reactive({
   showTotal: (total: number) => `共 ${total} 条`,
 })
 
-const columns = [
+const columns: ColumnsType<any> = [
   { title: '运行ID', dataIndex: 'id', key: 'id', width: 100 },
   { title: '运行编号', dataIndex: 'runNo', key: 'runNo', width: 200 },
   { title: '版本ID', dataIndex: 'dagVersionId', key: 'dagVersionId', width: 100 },
@@ -472,10 +473,10 @@ const columns = [
   { title: '触发人', dataIndex: 'triggeredBy', key: 'triggeredBy', width: 120 },
   { title: '开始时间', dataIndex: 'startTime', key: 'startTime', width: 180 },
   { title: '结束时间', dataIndex: 'endTime', key: 'endTime', width: 180 },
-  { title: '操作', key: 'action', width: 260, fixed: 'right' },
+  { title: '操作', key: 'action', width: 260, fixed: 'right' as const },
 ]
 
-const nodeColumns = [
+const nodeColumns: ColumnsType<any> = [
   { title: '实例ID', dataIndex: 'id', key: 'id', width: 100 },
   { title: '节点编码', dataIndex: 'nodeCode', key: 'nodeCode', width: 150 },
   { title: '任务ID', dataIndex: 'taskId', key: 'taskId', width: 100 },
@@ -485,7 +486,7 @@ const nodeColumns = [
   { title: '调度时间', dataIndex: 'scheduledAt', key: 'scheduledAt', width: 180 },
   { title: '下一次重试', dataIndex: 'nextRetryAt', key: 'nextRetryAt', width: 180 },
   { title: '错误原因', dataIndex: 'errorMessage', key: 'errorMessage', width: 200, ellipsis: true },
-  { title: '操作', key: 'action', width: 470, fixed: 'right' },
+  { title: '操作', key: 'action', width: 470, fixed: 'right' as const },
 ]
 
 /** 将毫秒转为可读（如 1.2s、500ms） */
@@ -733,7 +734,7 @@ const handleTableChange = (pag: any) => {
   loadData()
 }
 
-const handleStopRun = async (record: { id: number; runNo?: string; status?: string }) => {
+const handleStopRun = async (record: { id: number; runNo?: string; status?: string } | Record<string, any>) => {
   if (!effectiveDagId.value) return
   if (!canStopRun(record)) {
     message.warning(getStopRunDisabledReason(record) || '当前运行不可停止')
@@ -752,7 +753,7 @@ const handleStopRun = async (record: { id: number; runNo?: string; status?: stri
   }
 }
 
-const handleRetryRun = async (record: { id: number; runNo?: string; status?: string }) => {
+const handleRetryRun = async (record: { id: number; runNo?: string; status?: string } | Record<string, any>) => {
   if (!effectiveDagId.value) return
   if (!canRetryRun(record)) {
     message.warning(getRetryRunDisabledReason(record) || '当前运行不可重试')

@@ -50,7 +50,7 @@
                                 <div style="display: flex; align-items: center;">
                                     <a-checkbox :checked="showColumnKeys.length === allColumns.length"
                                         :indeterminate="showColumnKeys.length > 0 && showColumnKeys.length < allColumns.length"
-                                        @change="(e: any) => onCheckAllChange(e)" />
+                                        @change="onCheckAllChange" />
                                     <span style="font-weight: bold; margin-left: 8px;">列展示/排序</span>
                                 </div>
                                 <span style="font-weight: bold; color: #1677ff; cursor: pointer;"
@@ -59,14 +59,14 @@
                                 </span>
                             </div>
                             <VueDraggable v-model="draggableColumns"
-                                :item-key="(item: any) => item?.dataIndex || `col_${Math.random()}`"
+                                :item-key="columnItemKey"
                                 handle=".drag-handle" @end="onDragEnd" class="draggable-columns"
                                 ghost-class="sortable-ghost" chosen-class="sortable-chosen" tag="div">
                                 <template #item="{ element: col }">
                                     <div class="draggable-column-item">
                                         <HolderOutlined class="drag-handle" />
                                         <a-checkbox :checked="showColumnKeys.includes(col.dataIndex)"
-                                            @change="(e: any) => onCheckboxChange(col.dataIndex, e.target.checked)">
+                                            @change="onColumnCheckboxChange(col.dataIndex, $event)">
                                             {{ col.title }}
                                         </a-checkbox>
                                     </div>
@@ -100,11 +100,10 @@
                                     <span class="ellipsis-text">{{ record.errorMsg || '-' }}</span>
                                 </a-tooltip>
                             </template>
-                            <template
-                                v-else-if="['createdAt', 'updatedAt', 'lastHeartbeat', 'expireAt'].includes(column.dataIndex)">
-                                {{ formatDateTime(record[column.dataIndex]) }}
+                            <template v-else-if="isDateColumn(column.dataIndex)">
+                                {{ formatDateTime(getRecordDateValue(record, column.dataIndex)) }}
                             </template>
-                            <template v-else-if="column.dataIndex === 'action'">
+                            <template v-else-if="isActionColumn(column.dataIndex)">
                                 <div class="action-buttons">
                                     <a-button type="link" size="small" @click.stop="throttledView(record)"
                                         class="action-btn">
@@ -187,6 +186,8 @@ import VueDraggable from 'vuedraggable'
 import { message } from 'ant-design-vue'
 import { useThrottle } from '@/utils/debounce'
 import ExportTaskExamples from './ExportTaskExamples.vue'
+import type { ColumnsType } from 'ant-design-vue/es/table'
+import type { CheckboxChangeEvent } from 'ant-design-vue/es/checkbox/interface'
 import {
     buildDownloadUrl,
     exportTaskRowKey,
@@ -258,7 +259,10 @@ const paginationConfig = computed(() => {
     }
 })
 
-const INITIAL_COLUMNS = [
+type ExportTaskRow = ExportTask & Record<string, unknown>
+type ColumnConfig = { title: string; dataIndex: string; sorter?: boolean; width?: number; fixed?: 'left' | 'right'; align?: 'left' | 'right' | 'center' }
+
+const INITIAL_COLUMNS: ColumnConfig[] = [
     { title: '任务ID', dataIndex: 'taskId', sorter: true, width: 220 },
     { title: '用户ID', dataIndex: 'userId', width: 160 },
     { title: '用户名', dataIndex: 'username', width: 160 },
@@ -278,11 +282,15 @@ const INITIAL_COLUMNS = [
     { title: '操作', dataIndex: 'action', width: 180, fixed: 'right', align: 'center' }
 ]
 
-const allColumns = ref([...INITIAL_COLUMNS])
-const draggableColumns = ref([...INITIAL_COLUMNS])
+const allColumns = ref<ColumnConfig[]>([...INITIAL_COLUMNS])
+const draggableColumns = ref<ColumnConfig[]>([...INITIAL_COLUMNS])
 const showColumnKeys = ref(
     INITIAL_COLUMNS.map(col => col.dataIndex).filter(key => typeof key === 'string' && key)
 )
+
+function columnItemKey(item: ColumnConfig) {
+    return item?.dataIndex || `col_${Math.random()}`
+}
 
 watch(allColumns, (val) => {
     showColumnKeys.value = showColumnKeys.value.filter(key =>
@@ -330,7 +338,7 @@ function onCheckboxChange(dataIndex: string, checked: boolean) {
     }
 }
 
-const columns = computed(() => {
+const columns = computed<ColumnsType<ExportTaskRow>>(() => {
     const filtered = allColumns.value.filter(
         col =>
             col &&
@@ -356,12 +364,30 @@ const columns = computed(() => {
     ]
 })
 
-function onCheckAllChange(e: any) {
+function onCheckAllChange(e: CheckboxChangeEvent) {
     if (e.target.checked) {
         showColumnKeys.value = INITIAL_COLUMNS.map(col => col.dataIndex)
     } else {
         showColumnKeys.value = []
     }
+}
+
+function onColumnCheckboxChange(dataIndex: string, e: CheckboxChangeEvent) {
+    onCheckboxChange(dataIndex, Boolean(e.target?.checked))
+}
+
+function isDateColumn(dataIndex: unknown): dataIndex is string {
+    return typeof dataIndex === 'string' && ['createdAt', 'updatedAt', 'lastHeartbeat', 'expireAt'].includes(dataIndex)
+}
+
+function isActionColumn(dataIndex: unknown): boolean {
+    return dataIndex === 'action'
+}
+
+function getRecordDateValue(record: Record<string, any>, dataIndex: unknown) {
+    if (typeof dataIndex !== 'string') return undefined
+    const value = record[dataIndex] as string | null | undefined
+    return value ?? undefined
 }
 
 function resetColumnOrder() {
@@ -471,7 +497,7 @@ function rowKey(record: ExportTask & { id?: string | number }) {
     return exportTaskRowKey(record)
 }
 
-function handleDownload(record: ExportTask) {
+function handleDownload(record: ExportTask | Record<string, any>) {
     if (record.status !== 'SUCCESS') {
         message.warning('任务未成功，无法下载')
         return

@@ -20,7 +20,7 @@
           v-if="showConfirmPassword"
           label="确认密码"
           name="confirmPassword"
-          :required="props.mode === 'create' || (props.mode === 'edit' && form.password)"
+          :required="props.mode === 'create' || (props.mode === 'edit' && Boolean(form.password))"
         >
           <a-input
             v-model:value="form.confirmPassword"

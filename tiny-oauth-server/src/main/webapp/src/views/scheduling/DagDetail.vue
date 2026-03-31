@@ -414,6 +414,7 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import CronDesigner from '@/components/scheduling/CronDesigner.vue'
 import { message } from 'ant-design-vue'
+import type { ColumnsType } from 'ant-design-vue/es/table'
 import { PlusOutlined } from '@ant-design/icons-vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuth } from '@/auth/auth'
@@ -562,27 +563,27 @@ const edgeFormData = reactive({
   condition: '',
 })
 
-const versionColumns = [
+const versionColumns: ColumnsType<any> = [
   { title: '版本号', dataIndex: 'versionNo', key: 'versionNo', width: 100 },
   { title: '状态', key: 'status', width: 120 },
   { title: '创建时间', dataIndex: 'createdAt', key: 'createdAt', width: 180 },
   { title: '操作', key: 'action', width: 300 },
 ]
 
-const nodeColumns = [
+const nodeColumns: ColumnsType<any> = [
   { title: '节点编码', dataIndex: 'nodeCode', key: 'nodeCode', width: 150 },
   { title: '节点名称', dataIndex: 'name', key: 'name' },
   { title: '任务ID', dataIndex: 'taskId', key: 'taskId', width: 100 },
   { title: '超时(秒)', dataIndex: 'timeoutSec', key: 'timeoutSec', width: 100 },
   { title: '最大重试', dataIndex: 'maxRetry', key: 'maxRetry', width: 100 },
-  { title: '操作', key: 'action', width: 250, fixed: 'right' },
+  { title: '操作', key: 'action', width: 250, fixed: 'right' as const },
 ]
 
-const edgeColumns = [
+const edgeColumns: ColumnsType<any> = [
   { title: '上游节点', dataIndex: 'fromNodeCode', key: 'fromNodeCode' },
   { title: '下游节点', dataIndex: 'toNodeCode', key: 'toNodeCode' },
   { title: '条件', dataIndex: 'condition', key: 'condition' },
-  { title: '操作', key: 'action', width: 100, fixed: 'right' },
+  { title: '操作', key: 'action', width: 100, fixed: 'right' as const },
 ]
 
 const canTriggerDag = computed(() => Boolean(dagInfo.value.enabled && dagInfo.value.currentVersionId))

@@ -541,24 +541,24 @@ const router = useRouter()
 interface DemoUsageFormState {
   id?: number
   recordTenantId: number
-  usageDate: Dayjs | null
+  usageDate?: Dayjs
   productCode: string
   productName: string
   planTier: string
   region: string
-  usageQty: number | null
+  usageQty?: number
   unit: string
-  unitPrice: number | null
-  amount: number | null
+  unitPrice?: number
+  amount?: number
   currency: string
-  taxRate: number | null
+  taxRate?: number
   billable: boolean
   status: string
   // 新增字段
   description?: string
   priority?: string
   tags?: string[]
-  usageTime?: Dayjs | null
+  usageTime?: Dayjs
   qualityScore?: number
   discountPercentage?: number
   categoryPath?: string[]
@@ -567,11 +567,11 @@ interface DemoUsageFormState {
   themeColor?: string
   apiKey?: string
   searchKeyword?: string
-  dateRange?: [Dayjs | null, Dayjs | null]
+  dateRange?: [Dayjs, Dayjs]
   selectedFeatures?: string[]
-  minValue?: number | null
-  maxValue?: number | null
-  timeRange?: [Dayjs | null, Dayjs | null]
+  minValue?: number
+  maxValue?: number
+  timeRange?: [Dayjs, Dayjs]
   paymentMethod?: string
   notes?: string
   attachmentInfo?: any[]
@@ -665,7 +665,7 @@ const INITIAL_COLUMNS = [
   { title: '支付方式', dataIndex: 'paymentMethod', width: 120 },
   { title: '备注', dataIndex: 'notes', width: 200 },
   { title: '附件信息', dataIndex: 'attachmentInfo', width: 150 },
-  { title: '操作', dataIndex: 'action', width: 160, fixed: 'right' },
+  { title: '操作', dataIndex: 'action', width: 160, fixed: 'right' as const },
 ]
 
 // 默认显示的列（基础字段 + 部分重要新字段）
@@ -789,23 +789,23 @@ const drawerVisible = ref(false)
 const drawerMode = ref<'create' | 'edit' | 'view'>('create')
 const formState = ref<DemoUsageFormState>({
   recordTenantId: 0,
-  usageDate: null,
+  usageDate: undefined,
   productCode: '',
   productName: '',
   planTier: 'standard',
   region: '',
-  usageQty: null,
+  usageQty: undefined,
   unit: '',
-  unitPrice: null,
-  amount: null,
+  unitPrice: undefined,
+  amount: undefined,
   currency: 'CNY',
-  taxRate: null,
+  taxRate: undefined,
   billable: true,
   status: 'UNBILLED',
   description: '',
   priority: 'MEDIUM',
   tags: [],
-  usageTime: null,
+  usageTime: undefined,
   qualityScore: 0,
   discountPercentage: 0,
   categoryPath: [],
@@ -814,11 +814,11 @@ const formState = ref<DemoUsageFormState>({
   themeColor: '#1890ff',
   apiKey: '',
   searchKeyword: '',
-  dateRange: [null, null],
+  dateRange: undefined,
   selectedFeatures: [],
-  minValue: null,
-  maxValue: null,
-  timeRange: [null, null],
+  minValue: undefined,
+  maxValue: undefined,
+  timeRange: undefined,
   paymentMethod: 'ALIPAY',
   notes: '',
   attachmentInfo: [],
@@ -978,18 +978,18 @@ function openCreateDrawer() {
     productName: '',
     planTier: 'standard',
     region: '',
-    usageQty: null,
+    usageQty: undefined,
     unit: '',
-    unitPrice: null,
-    amount: null,
+    unitPrice: undefined,
+    amount: undefined,
     currency: 'CNY',
-    taxRate: null,
+    taxRate: undefined,
     billable: true,
     status: 'UNBILLED',
     description: '',
     priority: 'MEDIUM',
     tags: [],
-    usageTime: null,
+    usageTime: undefined,
     qualityScore: 0,
     discountPercentage: 0,
     categoryPath: [],
@@ -998,11 +998,11 @@ function openCreateDrawer() {
     themeColor: '#1890ff',
     apiKey: '',
     searchKeyword: '',
-    dateRange: [null, null],
+    dateRange: undefined,
     selectedFeatures: [],
-    minValue: null,
-    maxValue: null,
-    timeRange: [null, null],
+    minValue: undefined,
+    maxValue: undefined,
+    timeRange: undefined,
     paymentMethod: 'ALIPAY',
     notes: '',
     attachmentInfo: [],
@@ -1015,7 +1015,7 @@ function openEditDrawer(record: any) {
   formState.value = {
     id: record.id,
     recordTenantId: record.recordTenantId ?? resolveActiveTenantId() ?? 0,
-    usageDate: record.usageDate ? dayjs(record.usageDate) : null,
+    usageDate: record.usageDate ? dayjs(record.usageDate) : undefined,
     productCode: record.productCode || '',
     productName: record.productName || '',
     planTier: record.planTier || 'standard',
@@ -1031,7 +1031,7 @@ function openEditDrawer(record: any) {
     description: record.description || '',
     priority: record.priority || 'MEDIUM',
     tags: Array.isArray(record.tags) ? record.tags : (record.tags ? JSON.parse(record.tags) : []),
-    usageTime: record.usageTime ? dayjs(record.usageTime, 'HH:mm:ss') : null,
+    usageTime: record.usageTime ? dayjs(record.usageTime, 'HH:mm:ss') : undefined,
     qualityScore: record.qualityScore ?? 0,
     discountPercentage: record.discountPercentage ?? 0,
     categoryPath: parseCategoryPath(record.categoryPath),
@@ -1040,11 +1040,11 @@ function openEditDrawer(record: any) {
     themeColor: record.themeColor || '#1890ff',
     apiKey: record.apiKey || '',
     searchKeyword: record.searchKeyword || '',
-    dateRange: record.startDate && record.endDate ? [dayjs(record.startDate), dayjs(record.endDate)] : [null, null],
+    dateRange: record.startDate && record.endDate ? [dayjs(record.startDate), dayjs(record.endDate)] : undefined,
     selectedFeatures: record.selectedFeatures ? (Array.isArray(record.selectedFeatures) ? record.selectedFeatures : JSON.parse(record.selectedFeatures)) : [],
     minValue: record.minValue,
     maxValue: record.maxValue,
-    timeRange: record.startTime && record.endTime ? [dayjs(record.startTime, 'HH:mm:ss'), dayjs(record.endTime, 'HH:mm:ss')] : [null, null],
+    timeRange: record.startTime && record.endTime ? [dayjs(record.startTime, 'HH:mm:ss'), dayjs(record.endTime, 'HH:mm:ss')] : undefined,
     paymentMethod: record.paymentMethod || 'ALIPAY',
     notes: record.notes || '',
     attachmentInfo: record.attachmentInfo ? (Array.isArray(record.attachmentInfo) ? record.attachmentInfo : JSON.parse(record.attachmentInfo)) : [],
@@ -1057,7 +1057,7 @@ function handleView(record: any) {
   formState.value = {
     id: record.id,
     recordTenantId: record.recordTenantId ?? resolveActiveTenantId() ?? 0,
-    usageDate: record.usageDate ? dayjs(record.usageDate) : null,
+    usageDate: record.usageDate ? dayjs(record.usageDate) : undefined,
     productCode: record.productCode || '',
     productName: record.productName || '',
     planTier: record.planTier || 'standard',
@@ -1073,7 +1073,7 @@ function handleView(record: any) {
     description: record.description || '',
     priority: record.priority || 'MEDIUM',
     tags: Array.isArray(record.tags) ? record.tags : (record.tags ? JSON.parse(record.tags) : []),
-    usageTime: record.usageTime ? dayjs(record.usageTime, 'HH:mm:ss') : null,
+    usageTime: record.usageTime ? dayjs(record.usageTime, 'HH:mm:ss') : undefined,
     qualityScore: record.qualityScore ?? 0,
     discountPercentage: record.discountPercentage ?? 0,
     categoryPath: parseCategoryPath(record.categoryPath),
@@ -1082,11 +1082,11 @@ function handleView(record: any) {
     themeColor: record.themeColor || '#1890ff',
     apiKey: record.apiKey || '',
     searchKeyword: record.searchKeyword || '',
-    dateRange: record.startDate && record.endDate ? [dayjs(record.startDate), dayjs(record.endDate)] : [null, null],
+    dateRange: record.startDate && record.endDate ? [dayjs(record.startDate), dayjs(record.endDate)] : undefined,
     selectedFeatures: record.selectedFeatures ? (Array.isArray(record.selectedFeatures) ? record.selectedFeatures : JSON.parse(record.selectedFeatures)) : [],
     minValue: record.minValue,
     maxValue: record.maxValue,
-    timeRange: record.startTime && record.endTime ? [dayjs(record.startTime, 'HH:mm:ss'), dayjs(record.endTime, 'HH:mm:ss')] : [null, null],
+    timeRange: record.startTime && record.endTime ? [dayjs(record.startTime, 'HH:mm:ss'), dayjs(record.endTime, 'HH:mm:ss')] : undefined,
     paymentMethod: record.paymentMethod || 'ALIPAY',
     notes: record.notes || '',
     attachmentInfo: record.attachmentInfo ? (Array.isArray(record.attachmentInfo) ? record.attachmentInfo : JSON.parse(record.attachmentInfo)) : [],
@@ -1636,9 +1636,10 @@ function getRowClassName(_record: any, index: number) {
 }
 
 // 处理表格密度菜单点击
-function handleDensityMenuClick({ key }: { key: string }) {
-  if (key === 'default' || key === 'small' || key === 'middle' || key === 'large') {
-    tableSize.value = key as 'default' | 'small' | 'middle' | 'large'
+function handleDensityMenuClick({ key }: { key: string | number }) {
+  const nextKey = String(key)
+  if (nextKey === 'default' || nextKey === 'small' || nextKey === 'middle' || nextKey === 'large') {
+    tableSize.value = nextKey as 'default' | 'small' | 'middle' | 'large'
     // 密度变化时，重新计算表格高度
     updateTableBodyHeight()
   }

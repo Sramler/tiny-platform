@@ -138,14 +138,14 @@
             defaultExpandAllRows
             :row-expandable="(record: ResourceItem) => !record.leaf"
           >
-            <template #expandIcon="{ expanded, onExpand, record }">
+            <template #expandIcon="props">
               <span
-                v-if="!record.leaf"
+                v-if="props && !props.record?.leaf"
                 class="custom-expand-icon"
-                @click="(e) => { e.stopPropagation(); onExpand(record, e) }"
+                @click="(e) => { e.stopPropagation(); props.onExpand && props.onExpand(props.record, e) }"
                 style="cursor: pointer; color: #1677ff; font-size: 16px;"
               >
-                <template v-if="expanded">
+                <template v-if="props?.expanded">
                   <MinusOutlined style="margin-right: 2px;" />
                 </template>
                 <template v-else>
@@ -287,13 +287,13 @@ const INITIAL_COLUMNS = [
   { title: '资源标题', dataIndex: 'title', width: 150 },
   { title: 'URL(路由路径)', dataIndex: 'url', width: 200 },
   { title: 'URI(API路径)', dataIndex: 'uri', width: 200 },
-  { title: '请求方法', dataIndex: 'method', width: 100, align: 'center' },
+  { title: '请求方法', dataIndex: 'method', width: 100, align: 'center' as const },
   { title: '权限标识', dataIndex: 'permission', width: 200 },
-  { title: '资源类型', dataIndex: 'type', width: 100, align: 'center' },
-  { title: '载体', dataIndex: 'carrierKind', width: 120, align: 'center' },
-  { title: '排序', dataIndex: 'sort', width: 80, align: 'center' },
-  { title: '图标', dataIndex: 'icon', width: 60, align: 'center' },
-  { title: '操作', dataIndex: 'action', width: 160, fixed: 'right', align: 'center' }
+  { title: '资源类型', dataIndex: 'type', width: 100, align: 'center' as const },
+  { title: '载体', dataIndex: 'carrierKind', width: 120, align: 'center' as const },
+  { title: '排序', dataIndex: 'sort', width: 80, align: 'center' as const },
+  { title: '图标', dataIndex: 'icon', width: 60, align: 'center' as const },
+  { title: '操作', dataIndex: 'action', width: 160, fixed: 'right' as const, align: 'center' as const }
 ]
 
 // 所有列定义

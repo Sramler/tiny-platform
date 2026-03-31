@@ -107,6 +107,8 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed } from 'vue'
 import { message } from 'ant-design-vue'
+import type { ColumnsType } from 'ant-design-vue/es/table'
+import type { Key } from 'ant-design-vue/es/_util/type'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import { taskTypeList, createTaskType, updateTaskType, deleteTaskType, getExecutors } from '@/api/scheduling'
 import { throttle } from '@/utils/debounce'
@@ -157,7 +159,7 @@ const pagination = reactive({
   showTotal: (total: number) => `共 ${total} 条`,
 })
 
-const columns = [
+const columns: ColumnsType<any> = [
   { title: 'ID', dataIndex: 'id', key: 'id', width: 80 },
   { title: '编码', dataIndex: 'code', key: 'code', width: 150 },
   { title: '名称', dataIndex: 'name', key: 'name' },
@@ -167,7 +169,7 @@ const columns = [
   { title: '默认最大重试', dataIndex: 'defaultMaxRetry', key: 'defaultMaxRetry', width: 120 },
   { title: '状态', key: 'enabled', width: 100 },
   { title: '创建时间', dataIndex: 'createdAt', key: 'createdAt', width: 180 },
-  { title: '操作', key: 'action', width: 150, fixed: 'right' },
+  { title: '操作', key: 'action', width: 150, fixed: 'right' as const },
 ]
 
 const loadExecutors = async () => {
@@ -222,8 +224,8 @@ const handleTableChange = (pag: any) => {
   loadData()
 }
 
-const onSelectChange = (keys: number[]) => {
-  selectedRowKeys.value = keys
+const onSelectChange = (keys: Key[]) => {
+  selectedRowKeys.value = keys.map((k) => Number(k)).filter((k) => !Number.isNaN(k))
 }
 
 const handleCreate = () => {

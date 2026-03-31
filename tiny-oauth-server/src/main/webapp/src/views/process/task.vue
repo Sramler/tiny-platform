@@ -199,6 +199,7 @@
 import { ref, reactive, onMounted, onBeforeUnmount, nextTick, watch, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
+import type { ColumnsType } from 'ant-design-vue/es/table'
 import {
     UserAddOutlined,
     CheckCircleOutlined,
@@ -331,13 +332,13 @@ const paginationConfig = computed(() => {
 })
 
 // 表格列配置
-const columns = [
+const columns: ColumnsType<Task> = [
     {
         title: '任务名称',
         dataIndex: 'name',
         key: 'name',
         width: 200,
-        fixed: 'left'
+        fixed: 'left' as const
     },
     {
         title: '优先级',
@@ -386,18 +387,18 @@ const columns = [
         title: '操作',
         key: 'action',
         width: 200,
-        fixed: 'right'
+        fixed: 'right' as const
     }
 ]
 
 // 行选择配置
 const rowSelection = computed(() => ({
     selectedRowKeys: selectedRowKeys.value,
-    onChange: (keys: string[]) => {
-        selectedRowKeys.value = keys
+    onChange: (keys: Array<string | number>) => {
+        selectedRowKeys.value = keys.map(String)
     },
     getCheckboxProps: (record: Task) => ({
-        disabled: record.assignee && record.assignee !== currentUser.value
+        disabled: Boolean(record.assignee && record.assignee !== currentUser.value)
     })
 }))
 
@@ -511,7 +512,7 @@ async function handleReset() {
 }
 
 // 领取任务
-async function claimTask(task: Task) {
+async function claimTask(task: Task | Record<string, any>) {
     try {
         await taskApi.claimTask(task.id, currentUser.value)
         message.success('任务领取成功')
@@ -523,7 +524,7 @@ async function claimTask(task: Task) {
 }
 
 // 完成任务
-async function completeTask(task: Task) {
+async function completeTask(task: Task | Record<string, any>) {
     try {
         await taskApi.completeTask({
             taskId: task.id,
@@ -542,8 +543,8 @@ async function completeTask(task: Task) {
 }
 
 // 查看任务详情
-function viewTaskDetail(task: Task) {
-    currentTask.value = task
+function viewTaskDetail(task: Task | Record<string, any>) {
+    currentTask.value = task as Task
     showTaskDetail.value = true
     // 重置表单
     taskForm.comment = ''
@@ -551,7 +552,7 @@ function viewTaskDetail(task: Task) {
 }
 
 // 查看流程实例
-function viewProcessInstance(task: Task) {
+function viewProcessInstance(task: Task | Record<string, any>) {
     const queryParams = withActiveTenantQuery(
         { instanceId: task.processInstanceId },
         resolveCurrentActiveTenant(),

@@ -5,7 +5,7 @@
 /** 相对路径以满足 Vite import.meta.glob 必须以 `./` 或 `/` 开头的要求 */
 export const antdIconLoaders = import.meta.glob(
   '../../node_modules/@ant-design/icons-vue/es/icons/*.js',
-)
+) as Record<string, () => Promise<{ default: import('vue').Component }>>
 
 export function resolveAntdIconLoader(
   iconName: string | undefined | null,
@@ -14,7 +14,8 @@ export function resolveAntdIconLoader(
   if (!n) return null
   const suffix = `/${n}.js`
   const key = Object.keys(antdIconLoaders).find((k) => k.endsWith(suffix))
-  return key ? antdIconLoaders[key] : null
+  if (!key) return null
+  return antdIconLoaders[key] ?? null
 }
 
 export function getAntdIconLoaderOrFallback(

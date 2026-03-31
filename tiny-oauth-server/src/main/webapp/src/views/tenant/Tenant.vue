@@ -24,8 +24,8 @@
           </a-form-item>
           <a-form-item label="是否启用">
             <a-select v-model:value="query.enabled" allow-clear placeholder="全部">
-              <a-select-option :value="true">启用</a-select-option>
-              <a-select-option :value="false">禁用</a-select-option>
+              <a-select-option value="true">启用</a-select-option>
+              <a-select-option value="false">禁用</a-select-option>
             </a-select>
           </a-form-item>
           <a-form-item label="生命周期">
@@ -252,6 +252,8 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, nextTick, computed, watch } from 'vue'
 import { message, Modal } from 'ant-design-vue'
+import type { ColumnsType } from 'ant-design-vue/es/table'
+import type { Key } from 'ant-design-vue/es/_util/type'
 import { PlusOutlined, ReloadOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons-vue'
 import { useAuth } from '@/auth/auth'
 import {
@@ -277,7 +279,7 @@ const query = ref({
   code: '',
   name: '',
   domain: '',
-  enabled: undefined as boolean | undefined,
+  enabled: undefined as string | undefined,
   lifecycleStatus: undefined as string | undefined,
   includeDeleted: false,
 })
@@ -320,7 +322,7 @@ const pagination = ref({
   showTotal: (total: number) => `共 ${total} 条`
 })
 
-const columns = [
+const columns: ColumnsType<any> = [
   { title: 'ID', dataIndex: 'id', key: 'id', width: 80 },
   { title: '租户编码', dataIndex: 'code', key: 'code', width: 140 },
   { title: '租户名称', dataIndex: 'name', key: 'name', width: 180 },
@@ -333,7 +335,7 @@ const columns = [
   { title: '启用', dataIndex: 'enabled', key: 'enabled', width: 100 },
   { title: '创建时间', dataIndex: 'createdAt', key: 'createdAt', width: 180 },
   { title: '更新时间', dataIndex: 'updatedAt', key: 'updatedAt', width: 180 },
-  { title: '操作', dataIndex: 'action', key: 'action', width: 320, fixed: 'right' }
+  { title: '操作', dataIndex: 'action', key: 'action', width: 320, fixed: 'right' as const }
 ]
 
 const selectedRowKeys = ref<string[]>([])
@@ -343,8 +345,8 @@ const rowSelection = computed(() => {
   }
   return {
     selectedRowKeys: selectedRowKeys.value,
-    onChange: (keys: string[]) => {
-      selectedRowKeys.value = keys
+    onChange: (keys: Key[]) => {
+      selectedRowKeys.value = keys.map(String)
     },
   }
 })
@@ -383,7 +385,7 @@ async function loadData() {
       code: query.value.code.trim(),
       name: query.value.name.trim(),
       domain: query.value.domain.trim(),
-      enabled: query.value.enabled,
+      enabled: query.value.enabled === undefined ? undefined : query.value.enabled === 'true',
       lifecycleStatus: query.value.lifecycleStatus || undefined,
       includeDeleted: query.value.includeDeleted,
       page: (Number(pagination.value.current) || 1) - 1,

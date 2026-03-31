@@ -96,14 +96,14 @@
                                 </span>
                             </div>
                             <VueDraggable v-model="draggableColumns"
-                                :item-key="(item: { dataIndex?: string }) => item?.dataIndex || `col_${Math.random()}`"
+                                :item-key="columnItemKey"
                                 handle=".drag-handle" @end="onDragEnd" class="draggable-columns"
                                 ghost-class="sortable-ghost" chosen-class="sortable-chosen" tag="div">
                                 <template #item="{ element: col }">
                                     <div class="draggable-column-item">
                                         <HolderOutlined class="drag-handle" />
                                         <a-checkbox :checked="showColumnKeys.includes(col.dataIndex)"
-                                            @change="(e: { target: { checked: boolean } }) => onCheckboxChange(col.dataIndex, e.target.checked)">
+                                            @change="(e) => onCheckboxChange(col.dataIndex, e.target.checked)">
                                             {{ col.title }}
                                         </a-checkbox>
                                     </div>
@@ -289,6 +289,7 @@
 import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
+import type { ColumnsType } from 'ant-design-vue/es/table'
 import {
     PlusOutlined,
     ReloadOutlined,
@@ -397,18 +398,18 @@ const INITIAL_COLUMNS = [
         title: '操作',
         dataIndex: 'action',
         width: 300,
-        fixed: 'right',
-        align: 'center'
+        fixed: 'right' as const,
+        align: 'center' as const
     }
 ]
 
 // 任务列表列配置
-const taskColumns = [
+const taskColumns: ColumnsType<Task> = [
     { title: '任务ID', dataIndex: 'id', width: 120 },
     { title: '任务名称', dataIndex: 'name', width: 150 },
     { title: '处理人', dataIndex: 'assignee', width: 120 },
     { title: '创建时间', dataIndex: 'createTime', width: 150 },
-    { title: '操作', dataIndex: 'action', width: 120, fixed: 'right' }
+    { title: '操作', dataIndex: 'action', width: 120, fixed: 'right' as const }
 ]
 
 // 用初始列顺序初始化
@@ -464,7 +465,11 @@ function onDragEnd() {
     console.log('拖拽结束，新顺序:', draggableColumns.value.map(col => col.title))
 }
 
-const columns = computed(() => {
+function columnItemKey(item: { dataIndex?: string }) {
+    return item?.dataIndex || 'col_' + Math.random()
+}
+
+const columns = computed<ColumnsType<ProcessInstance>>(() => {
     const filtered = allColumns.value.filter(
         col =>
             col &&
@@ -477,8 +482,8 @@ const columns = computed(() => {
             title: '序号',
             dataIndex: 'index',
             width: 80,
-            align: 'center',
-            fixed: 'left',
+            align: 'center' as const,
+            fixed: 'left' as const,
             customRender: ({ index }: { index?: number }) => {
                 const safeIndex = typeof index === 'number' && !isNaN(index) ? index : 0
                 const current = Number(pagination.value.current) || 1
@@ -492,8 +497,8 @@ const columns = computed(() => {
 
 const rowSelection = computed(() => ({
     selectedRowKeys: selectedRowKeys.value,
-    onChange: (selectedKeys: string[]) => {
-        selectedRowKeys.value = selectedKeys;
+    onChange: (selectedKeys: Array<string | number>) => {
+        selectedRowKeys.value = selectedKeys.map(String);
     },
     checkStrictly: false,
     preserveSelectedRowKeys: true,
@@ -852,7 +857,7 @@ function handleDelete(record: ProcessInstance) {
 
 const throttledDelete = useThrottle((record: unknown) => handleDelete(record as ProcessInstance), 500)
 
-async function claimTask(task: Task) {
+async function claimTask(task: Task | Record<string, any>) {
     try {
         await instanceApi.claimTask(task.id, 'current-user') // 这里应该获取当前用户ID
         message.success('任务领取成功')
@@ -865,7 +870,7 @@ async function claimTask(task: Task) {
     }
 }
 
-async function completeTask(task: Task) {
+async function completeTask(task: Task | Record<string, any>) {
     try {
         await instanceApi.completeTask(task.id, {})
         message.success('任务完成成功')

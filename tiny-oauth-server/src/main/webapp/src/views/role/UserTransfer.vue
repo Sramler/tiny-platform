@@ -22,8 +22,8 @@
       v-model:target-keys="localUserIds"
       :data-source="allUsers"
       :titles="transferTitles"
-      :render="(item: any) => item.title"
-      :row-key="(item: any) => item.key"
+      :render="renderUserItem"
+      :row-key="rowKeyOfUser"
       show-search
       :filter-option="filterUser"
       :list-style="{ width: '220px', height: '320px' }"
@@ -39,7 +39,7 @@ const props = defineProps({
   open: Boolean,
   title: { type: String, default: '配置用户' },
   scopeType: { type: String as () => 'TENANT' | 'ORG' | 'DEPT', default: 'TENANT' },
-  scopeId: { type: Number, default: null },
+  scopeId: { type: Number, default: undefined },
   orgOptions: { type: Array as () => { value: number, label: string }[], default: () => [] },
   deptOptions: { type: Array as () => { value: number, label: string }[], default: () => [] },
 })
@@ -53,9 +53,9 @@ watch(visible, v => emit('update:open', v))
 const localUserIds = ref<string[]>([...(props.modelValue || [])])
 watch(() => props.modelValue, v => localUserIds.value = [...(v || [])])
 const localScopeType = ref<'TENANT' | 'ORG' | 'DEPT'>(props.scopeType)
-const localScopeId = ref<number | null>(props.scopeId ?? null)
+const localScopeId = ref<number | undefined>(props.scopeId ?? undefined)
 watch(() => props.scopeType, v => localScopeType.value = v)
-watch(() => props.scopeId, v => localScopeId.value = v ?? null)
+watch(() => props.scopeId, v => localScopeId.value = v ?? undefined)
 const scopeOptions = computed(() => (
   localScopeType.value === 'ORG' ? props.orgOptions : props.deptOptions
 ))
@@ -67,16 +67,30 @@ const transferTitles = computed(() => [
 // 未分配用户数量
 const allUsersUnselected = computed(() => props.allUsers.length - localUserIds.value.length)
 // 搜索过滤
-function filterUser(input: string, item: { title: string }) {
-  return item.title.toLowerCase().includes(input.toLowerCase())
+function renderUserItem(item: Record<string, unknown>) {
+  return String(item.title ?? '')
 }
-function handleScopeTypeChange(value: 'TENANT' | 'ORG' | 'DEPT') {
-  localScopeType.value = value
-  emit('update:scopeType', value)
+function rowKeyOfUser(item: Record<string, unknown>) {
+  return String(item.key ?? '')
 }
-function handleScopeIdChange(value: number) {
-  localScopeId.value = value
-  emit('update:scopeId', value)
+function filterUser(input: string, item: Record<string, unknown>) {
+  return String(item.title ?? '').toLowerCase().includes(input.toLowerCase())
+}
+function handleScopeTypeChange(value: unknown) {
+  const normalized = value === 'ORG' || value === 'DEPT' ? value : 'TENANT'
+  localScopeType.value = normalized
+  emit('update:scopeType', normalized)
+}
+function handleScopeIdChange(value: unknown) {
+  if (value === undefined || value === null || value === '') {
+    localScopeId.value = undefined
+    emit('update:scopeId', undefined)
+    return
+  }
+  const normalized = Number(value)
+  if (Number.isNaN(normalized)) return
+  localScopeId.value = normalized
+  emit('update:scopeId', normalized)
 }
 // 确认分配
 function handleOk() {

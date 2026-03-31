@@ -64,6 +64,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, onUnmounted, reactive } from 'vue'
 import { message } from 'ant-design-vue'
+import type { Rule } from 'ant-design-vue/es/form'
 import { useRoute, useRouter } from 'vue-router'
 import {
   RocketOutlined,
@@ -232,7 +233,7 @@ const saveFormData = reactive({
 const currentProcessKey = ref('')
 
 // 表单验证规则
-const saveFormRules = {
+const saveFormRules: Record<string, Rule[]> = {
   deploymentName: [
     { required: true, message: '请输入部署名称', trigger: 'blur' },
     { min: 2, max: 100, message: '部署名称长度应在2-100个字符之间', trigger: 'blur' }

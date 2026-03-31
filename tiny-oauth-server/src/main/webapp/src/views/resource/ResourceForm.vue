@@ -15,7 +15,7 @@
         <a-input 
           v-model:value="formData.name" 
           placeholder="请输入资源名称"
-          maxlength="100"
+          :maxlength="100"
           show-count
         />
       </a-form-item>
@@ -24,7 +24,7 @@
         <a-input 
           v-model:value="formData.title" 
           placeholder="请输入资源标题"
-          maxlength="100"
+          :maxlength="100"
           show-count
         />
       </a-form-item>
@@ -65,7 +65,7 @@
         <a-input 
           v-model:value="formData.uri" 
           placeholder="请输入后端API路径，如：/api/user"
-          maxlength="200"
+          :maxlength="200"
           show-count
         />
       </a-form-item>
@@ -84,7 +84,7 @@
         <a-input 
           v-model:value="formData.permission" 
           placeholder="请输入权限标识，如：system:user:list"
-          maxlength="100"
+          :maxlength="100"
           show-count
         />
       </a-form-item>
@@ -96,7 +96,7 @@
         <a-input 
           v-model:value="formData.path" 
           placeholder="请输入前端路由路径，如：/user"
-          maxlength="200"
+          :maxlength="200"
           show-count
         />
       </a-form-item>
@@ -105,7 +105,7 @@
         <a-input 
           v-model:value="formData.component" 
           placeholder="请输入Vue组件路径，如：@/views/user/User.vue"
-          maxlength="200"
+          :maxlength="200"
           show-count
         />
       </a-form-item>
@@ -114,7 +114,7 @@
         <a-input 
           v-model:value="formData.redirect" 
           placeholder="父菜单重定向地址，如：/user/list"
-          maxlength="200"
+          :maxlength="200"
           show-count
         />
       </a-form-item>
@@ -126,7 +126,7 @@
         <a-input 
           v-model:value="formData.icon" 
           placeholder="请输入图标名称，如：UserOutlined"
-          maxlength="200"
+          :maxlength="200"
           show-count
         />
       </a-form-item>
@@ -157,6 +157,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, watch } from 'vue'
 import type { FormInstance } from 'ant-design-vue'
+import type { Rule } from 'ant-design-vue/es/form'
 // 引入资源API
 import { getResourceTree, type ResourceItem, ResourceType } from '@/api/resource'
 
@@ -206,7 +207,7 @@ const submitting = ref(false)
 const resourceTreeData = ref<ResourceItem[]>([])
 
 // 表单验证规则
-const rules = {
+const rules: Record<string, Rule[]> = {
   name: [
     { required: true, message: '请输入资源名称', trigger: 'blur' },
     { min: 2, max: 100, message: '长度在 2 到 100 个字符', trigger: 'blur' }

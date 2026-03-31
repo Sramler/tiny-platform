@@ -74,16 +74,40 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
+import type { FormInstance } from 'ant-design-vue'
+import type { Rule } from 'ant-design-vue/es/form'
+
+interface TenantFormModel {
+  id: string
+  code: string
+  name: string
+  domain: string
+  planCode: string
+  expiresAt: string
+  maxUsers: number | undefined
+  maxStorageGb: number | undefined
+  contactName: string
+  contactEmail: string
+  contactPhone: string
+  initialAdminUsername: string
+  initialAdminNickname: string
+  initialAdminEmail: string
+  initialAdminPhone: string
+  initialAdminPassword: string
+  initialAdminConfirmPassword: string
+  enabled: boolean
+  remark: string
+}
 
 const props = defineProps<{
   mode: 'create' | 'edit'
-  tenantData?: any
+  tenantData?: Partial<TenantFormModel> | null
 }>()
 
 const emit = defineEmits(['submit', 'cancel'])
 const isCreateMode = computed(() => props.mode === 'create')
 
-const form = ref({
+const form = ref<TenantFormModel>({
   id: '',
   code: '',
   name: '',
@@ -105,7 +129,7 @@ const form = ref({
   remark: ''
 })
 
-const rules = {
+const rules: Record<string, Rule[]> = {
   code: [
     { required: true, message: '租户编码不能为空', trigger: 'blur' },
     { min: 2, max: 64, message: '长度2-64字符', trigger: 'blur' }
@@ -155,7 +179,7 @@ const rules = {
   ]
 }
 
-const formRef = ref()
+const formRef = ref<FormInstance>()
 
 watch(() => props.tenantData, (val) => {
   if (val) {

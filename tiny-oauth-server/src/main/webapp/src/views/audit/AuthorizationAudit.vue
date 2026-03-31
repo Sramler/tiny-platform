@@ -140,7 +140,7 @@
             :loading="loading"
             :scroll="{ x: 'max-content' }"
             :expandedRowKeys="expandedRowKeys"
-            @expandedRowsChange="(keys: string[]) => expandedRowKeys = keys"
+            @expandedRowsChange="(keys) => (expandedRowKeys = keys)"
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.dataIndex === 'eventType'">
@@ -216,6 +216,7 @@ import {
 } from '@/api/audit'
 import type { AuditLog, AuthorizationAuditQueryParams, AuthorizationAuditSummary } from '@/api/audit'
 import type { Dayjs } from 'dayjs'
+import type { Key } from 'ant-design-vue/es/_util/type'
 
 const { user } = useAuth()
 const claims = computed(() => decodeJwtPayload<{ activeScopeType?: unknown }>(user.value?.access_token))
@@ -253,9 +254,9 @@ const query = ref<{
   resourcePermission: string
   detailReason: string
   carrierType: string | undefined
-  requirementGroup: number | string | null
+  requirementGroup: number | undefined
   decision: string | undefined
-  dateRange: [Dayjs, Dayjs] | null
+  dateRange: [Dayjs, Dayjs] | undefined
 }>({
   tenantId: '',
   eventType: undefined,
@@ -265,9 +266,9 @@ const query = ref<{
   resourcePermission: '',
   detailReason: '',
   carrierType: undefined,
-  requirementGroup: null,
+  requirementGroup: undefined,
   decision: undefined,
-  dateRange: null,
+  dateRange: undefined,
 })
 const exportContext = ref({
   reason: '',
@@ -282,7 +283,7 @@ const summary = ref<AuthorizationAuditSummary>({
   eventTypeCounts: [],
 })
 const loading = ref(false)
-const expandedRowKeys = ref<string[]>([])
+const expandedRowKeys = ref<Key[]>([])
 const pagination = ref({ current: 1, pageSize: 10, total: 0 })
 
 const columns = [
@@ -317,7 +318,7 @@ function buildQueryParams(includePaging = false): AuthorizationAuditQueryParams 
   if (query.value.resourcePermission) params.resourcePermission = query.value.resourcePermission
   if (query.value.detailReason) params.detailReason = query.value.detailReason
   if (query.value.carrierType) params.carrierType = query.value.carrierType
-  if (query.value.requirementGroup !== null && query.value.requirementGroup !== undefined) {
+  if (query.value.requirementGroup !== undefined) {
     const value = Number(query.value.requirementGroup)
     if (!Number.isNaN(value)) params.requirementGroup = value
   }
@@ -414,9 +415,9 @@ function handleReset() {
     resourcePermission: '',
     detailReason: '',
     carrierType: undefined,
-    requirementGroup: null,
+    requirementGroup: undefined,
     decision: undefined,
-    dateRange: null,
+    dateRange: undefined,
   }
   exportContext.value = {
     reason: '',

@@ -6,11 +6,11 @@
       <a-divider>基本信息</a-divider>
 
       <a-form-item label="菜单名称" name="name">
-        <a-input v-model:value="formData.name" placeholder="请输入菜单名称" maxlength="100" show-count />
+        <a-input v-model:value="formData.name" placeholder="请输入菜单名称" :maxlength="100" show-count />
       </a-form-item>
 
       <a-form-item label="菜单标题" name="title">
-        <a-input v-model:value="formData.title" placeholder="请输入菜单显示标题" maxlength="100" show-count />
+        <a-input v-model:value="formData.title" placeholder="请输入菜单显示标题" :maxlength="100" show-count />
       </a-form-item>
 
       <a-form-item label="父级菜单" name="parentId">
@@ -26,20 +26,20 @@
       <a-divider>路由配置</a-divider>
 
       <a-form-item label="前端路径" name="url">
-        <a-input v-model:value="formData.url" placeholder="请输入前端路由路径，如：/user" maxlength="200" show-count />
+        <a-input v-model:value="formData.url" placeholder="请输入前端路由路径，如：/user" :maxlength="200" show-count />
       </a-form-item>
 
       <a-form-item label="组件路径" name="component">
-        <a-input v-model:value="formData.component" placeholder="请输入Vue组件路径，如：@/views/user/User.vue" maxlength="200"
+        <a-input v-model:value="formData.component" placeholder="请输入Vue组件路径，如：@/views/user/User.vue" :maxlength="200"
           show-count />
       </a-form-item>
 
       <a-form-item label="重定向地址" name="redirect">
-        <a-input v-model:value="formData.redirect" placeholder="父菜单重定向地址，如：/user/list" maxlength="200" show-count />
+        <a-input v-model:value="formData.redirect" placeholder="父菜单重定向地址，如：/user/list" :maxlength="200" show-count />
       </a-form-item>
 
       <a-form-item label="权限标识" name="permission">
-        <a-input v-model:value="formData.permission" placeholder="请输入权限标识，如：system:user:list" maxlength="100" show-count />
+        <a-input v-model:value="formData.permission" placeholder="请输入权限标识，如：system:user:list" :maxlength="100" show-count />
       </a-form-item>
 
       <!-- 显示配置 -->
@@ -51,7 +51,7 @@
 
       <a-form-item label="菜单图标" name="icon">
         <div class="icon-selector-row">
-          <a-input v-model:value="formData.icon" placeholder="请输入图标名称" maxlength="200" style="flex: 1;">
+          <a-input v-model:value="formData.icon" placeholder="请输入图标名称" :maxlength="200" style="flex: 1;">
             <template #suffix>
               <Icon v-if="formData.icon" :icon="formData.icon" className="input-suffix-icon" />
             </template>
@@ -92,6 +92,7 @@
 import { ref, reactive, computed, onMounted, watch, onBeforeUnmount, nextTick } from 'vue'
 import { message } from 'ant-design-vue'
 import type { FormInstance } from 'ant-design-vue'
+import type { Rule } from 'ant-design-vue/es/form'
 // 引入菜单API
 import { menuTreeAll, type MenuItem } from '@/api/menu'
 import IconSelect from '../../components/IconSelect.vue' // 新增
@@ -137,7 +138,7 @@ const formData = reactive({
 })
 
 // 表单验证规则
-const rules = {
+const rules: Record<string, Rule[]> = {
   name: [
     { required: true, message: '请输入菜单名称', trigger: 'blur' },
     { min: 2, max: 100, message: '长度在 2 到 100 个字符', trigger: 'blur' }

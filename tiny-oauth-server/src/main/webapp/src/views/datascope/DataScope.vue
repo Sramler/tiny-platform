@@ -121,6 +121,7 @@ import {
 import { getAllRoles } from '@/api/role'
 import { getDataScopesByRole, upsertDataScope, deleteDataScope } from '@/api/datascope'
 import type { DataScope } from '@/api/datascope'
+import type { DefaultOptionType } from 'ant-design-vue/es/select'
 
 const { user } = useAuth()
 const authorities = computed(() => new Set(extractAuthoritiesFromJwt(user.value?.access_token)))
@@ -152,10 +153,21 @@ const columns = [
 const modalVisible = ref(false)
 const modalMode = ref<'create' | 'edit'>('create')
 const submitting = ref(false)
-const formData = ref({ id: undefined as number | undefined, module: '', scopeType: '', accessType: '' })
+type DataScopeFormModel = {
+  id: number | undefined
+  module: string
+  scopeType: string
+  accessType: string
+}
+const formData = ref<DataScopeFormModel>({
+  id: undefined,
+  module: '',
+  scopeType: '',
+  accessType: '',
+})
 
-function filterOption(input: string, option: { label: string }) {
-  return option.label.toLowerCase().includes(input.toLowerCase())
+function filterOption(input: string, option?: DefaultOptionType) {
+  return String(option?.label ?? '').toLowerCase().includes(input.toLowerCase())
 }
 
 async function loadRoles() {
@@ -196,13 +208,13 @@ function handleCreate() {
   modalVisible.value = true
 }
 
-function handleEdit(record: DataScope) {
+function handleEdit(record: DataScope | Record<string, any>) {
   modalMode.value = 'edit'
   formData.value = {
-    id: record.id,
-    module: record.module,
-    scopeType: record.scopeType,
-    accessType: record.accessType,
+    id: Number(record.id),
+    module: String(record.module ?? ''),
+    scopeType: String(record.scopeType ?? ''),
+    accessType: String(record.accessType ?? ''),
   }
   modalVisible.value = true
 }
@@ -214,9 +226,15 @@ async function handleModalOk() {
   }
   submitting.value = true
   try {
+    const payload: Partial<DataScope> = {
+      id: formData.value.id,
+      roleId: selectedRoleId.value!,
+      module: formData.value.module,
+      scopeType: formData.value.scopeType,
+      accessType: formData.value.accessType,
+    }
     await upsertDataScope({
-      ...formData.value,
-      roleId: selectedRoleId.value,
+      ...payload,
     })
     message.success(modalMode.value === 'create' ? '创建成功' : '更新成功')
     modalVisible.value = false
@@ -228,14 +246,14 @@ async function handleModalOk() {
   }
 }
 
-function handleDelete(record: DataScope) {
+function handleDelete(record: DataScope | Record<string, any>) {
   Modal.confirm({
     title: '确认删除',
-    content: `确定要删除模块 ${record.module} 的数据范围规则吗？`,
+    content: `确定要删除模块 ${String(record.module ?? '')} 的数据范围规则吗？`,
     okText: '确认',
     cancelText: '取消',
     onOk: () => {
-      return deleteDataScope(record.id).then(() => {
+      return deleteDataScope(Number(record.id)).then(() => {
         message.success('删除成功')
         loadData()
       }).catch((error: any) => {

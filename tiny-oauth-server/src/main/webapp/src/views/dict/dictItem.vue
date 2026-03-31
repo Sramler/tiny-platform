@@ -18,8 +18,8 @@
         </a-form-item>
         <a-form-item label="状态">
           <a-select v-model:value="query.enabled" allow-clear placeholder="全部状态" style="width: 160px">
-            <a-select-option :value="true">启用</a-select-option>
-            <a-select-option :value="false">禁用</a-select-option>
+            <a-select-option value="true">启用</a-select-option>
+            <a-select-option value="false">禁用</a-select-option>
           </a-select>
         </a-form-item>
         <a-form-item>
@@ -220,7 +220,7 @@ const query = ref({
   dictTypeId: undefined as number | undefined,
   value: '',
   label: '',
-  enabled: undefined as boolean | undefined,
+  enabled: undefined as 'true' | 'false' | undefined,
 })
 
 // 字典类型选项
@@ -254,7 +254,7 @@ async function loadData() {
       dictTypeId: query.value.dictTypeId,
       value: query.value.value?.trim() || undefined,
       label: query.value.label?.trim() || undefined,
-      enabled: query.value.enabled,
+      enabled: query.value.enabled === undefined ? undefined : query.value.enabled === 'true',
       page: currentPage - 1, // 转换为 0-based
       size: pageSize,
     }
