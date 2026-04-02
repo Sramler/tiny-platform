@@ -33,7 +33,7 @@ test.describe('auth flow pages', () => {
       await route.fulfill(buildCsrfResponse())
     })
 
-    await page.route('**/api/login', async (route) => {
+    await page.route('**/login', async (route) => {
       posted = new URLSearchParams(route.request().postData() ?? '')
       await route.fulfill({
         status: 302,

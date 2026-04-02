@@ -8,8 +8,14 @@ import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 public interface TenantRepository extends JpaRepository<Tenant, Long>, JpaSpecificationExecutor<Tenant> {
     Optional<Tenant> findByCode(String code);
     Optional<Tenant> findByDomain(String domain);
-    boolean existsByCode(String code);
-    boolean existsByDomain(String domain);
+
+    default boolean existsByCode(String code) {
+        return findByCode(code).isPresent();
+    }
+
+    default boolean existsByDomain(String domain) {
+        return findByDomain(domain).isPresent();
+    }
 
     default Optional<String> findLoginBlockedLifecycleStatus(Long tenantId) {
         if (tenantId == null) {
