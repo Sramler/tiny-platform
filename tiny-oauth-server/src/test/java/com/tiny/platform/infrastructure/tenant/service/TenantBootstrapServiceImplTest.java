@@ -128,9 +128,20 @@ class TenantBootstrapServiceImplTest {
 
         service.bootstrapFromPlatformTemplate(targetTenant);
 
-        verify(menuEntryRepository, times(2)).saveAll(any());
+        ArgumentCaptor<List<MenuEntry>> menuCaptor = ArgumentCaptor.forClass(List.class);
+        verify(menuEntryRepository, times(2)).saveAll(menuCaptor.capture());
+        assertThat(menuCaptor.getAllValues().getFirst())
+            .allSatisfy(menu -> {
+                assertThat(menu.getCreatedAt()).isNotNull();
+                assertThat(menu.getUpdatedAt()).isNotNull();
+            });
         ArgumentCaptor<List<UiActionEntry>> uiActionCaptor = ArgumentCaptor.forClass(List.class);
         verify(uiActionEntryRepository, times(2)).saveAll(uiActionCaptor.capture());
+        assertThat(uiActionCaptor.getAllValues().getFirst())
+            .allSatisfy(action -> {
+                assertThat(action.getCreatedAt()).isNotNull();
+                assertThat(action.getUpdatedAt()).isNotNull();
+            });
         assertThat(uiActionCaptor.getAllValues().get(1))
             .singleElement()
             .satisfies(clonedAction -> assertThat(clonedAction.getParentMenuId()).isEqualTo(100L));
@@ -205,6 +216,8 @@ class TenantBootstrapServiceImplTest {
         assertThat(clonedButton.getPagePath()).isEqualTo("/system/user");
         assertThat(clonedButton.getTitle()).isEqualTo("创建用户");
         assertThat(clonedButton.getSort()).isEqualTo(20);
+        assertThat(clonedButton.getCreatedAt()).isNotNull();
+        assertThat(clonedButton.getUpdatedAt()).isNotNull();
 
         ArgumentCaptor<List<ApiEndpointEntry>> apiCaptor = ArgumentCaptor.forClass(List.class);
         verify(apiEndpointEntryRepository).saveAll(apiCaptor.capture());
@@ -215,6 +228,8 @@ class TenantBootstrapServiceImplTest {
         assertThat(clonedApi.getUri()).isEqualTo("/sys/users");
         assertThat(clonedApi.getMethod()).isEqualTo("GET");
         assertThat(clonedApi.getTitle()).isEqualTo("用户列表接口");
+        assertThat(clonedApi.getCreatedAt()).isNotNull();
+        assertThat(clonedApi.getUpdatedAt()).isNotNull();
 
         verify(roleRepository).addRolePermissionRelationByPermissionId(9L, 200L, 9002L);
     }

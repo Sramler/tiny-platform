@@ -337,6 +337,9 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
                 clone.setType(source.getType().getCode());
                 clone.setEnabled(source.getEnabled());
                 clone.setParentId(null);
+                clone.setCreatedAt(source.getCreatedAt());
+                clone.setCreatedBy(source.getCreatedBy());
+                clone.setUpdatedAt(source.getUpdatedAt());
                 clonedMenuBySourceId.put(source.getId(), clone);
                 clonedMenus.add(clone);
                 continue;
@@ -356,6 +359,9 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
                 clone.setParentMenuId(null);
                 clone.setSort(source.getSort());
                 clone.setEnabled(source.getEnabled());
+                clone.setCreatedAt(source.getCreatedAt());
+                clone.setCreatedBy(source.getCreatedBy());
+                clone.setUpdatedAt(source.getUpdatedAt());
                 clonedUiActionBySourceId.put(source.getId(), clone);
                 clonedUiActions.add(clone);
                 continue;
@@ -371,6 +377,9 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
                 clone.setPermission(source.getPermission());
                 clone.setRequiredPermissionId(null);
                 clone.setEnabled(source.getEnabled());
+                clone.setCreatedAt(source.getCreatedAt());
+                clone.setCreatedBy(source.getCreatedBy());
+                clone.setUpdatedAt(source.getUpdatedAt());
                 clonedApiEndpointBySourceId.put(source.getId(), clone);
                 clonedApiEndpoints.add(clone);
             }
