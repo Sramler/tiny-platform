@@ -113,6 +113,26 @@ CREATE TABLE IF NOT EXISTS `role_assignment` (
     CONSTRAINT `chk_role_assignment_effective_time` CHECK (`end_time` IS NULL OR `end_time` > `start_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='角色授权关系表';
 
+-- 创建角色数据范围表
+-- 说明：003-insert-initial-data 会为 ROLE_TENANT_ADMIN 写入默认 READ 范围；
+-- fresh/CI baseline 必须在 data.sql 执行前具备该表，避免 071 之前 seed 失败。
+CREATE TABLE IF NOT EXISTS `role_data_scope` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `tenant_id` BIGINT NOT NULL COMMENT '租户ID',
+    `role_id` BIGINT NOT NULL COMMENT '角色ID（引用 role.id）',
+    `module` VARCHAR(64) NOT NULL COMMENT '业务模块标识：user, scheduling, dict, workflow 等',
+    `scope_type` VARCHAR(32) NOT NULL COMMENT 'ALL/TENANT/ORG/ORG_AND_CHILD/DEPT/DEPT_AND_CHILD/SELF/CUSTOM',
+    `access_type` VARCHAR(16) NOT NULL DEFAULT 'READ' COMMENT '访问类型：READ 或 WRITE',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `created_by` BIGINT NULL COMMENT '创建人ID',
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_rds_tenant_role_module_access` (`tenant_id`, `role_id`, `module`, `access_type`),
+    KEY `idx_rds_tenant_module` (`tenant_id`, `module`),
+    CONSTRAINT `chk_rds_scope_type` CHECK (`scope_type` IN ('ALL', 'TENANT', 'ORG', 'ORG_AND_CHILD', 'DEPT', 'DEPT_AND_CHILD', 'SELF', 'CUSTOM')),
+    CONSTRAINT `chk_rds_access_type` CHECK (`access_type` IN ('READ', 'WRITE'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='角色数据范围表';
+
 -- 创建资源表（统一的权限资源表，包含菜单和API）
 CREATE TABLE IF NOT EXISTS `resource` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
@@ -149,6 +169,53 @@ CREATE TABLE IF NOT EXISTS `resource` (
     CONSTRAINT `chk_resource_api_uri_method` CHECK (type <> 3 OR (uri <> '' AND method <> '')),
     CONSTRAINT `fk_resource_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='权限资源表';
+
+-- 创建权限主数据表
+-- 说明：003-insert-initial-data 中的 RBAC3 历史 seed 会读取 permission / role_permission；
+-- fresh/CI baseline 需要先具备结构，后续 114/115/116 仍通过 preCondition + backfill 继续生效。
+CREATE TABLE IF NOT EXISTS `permission` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+    `permission_code` VARCHAR(128) NOT NULL COMMENT '权限编码（来源于 resource.permission）',
+    `permission_name` VARCHAR(255) NOT NULL COMMENT '权限名称',
+    `module_code` VARCHAR(64) DEFAULT NULL COMMENT '模块编码（permission_code 第一段）',
+    `action_code` VARCHAR(64) DEFAULT NULL COMMENT '动作编码（permission_code 最后一段）',
+    `permission_type` VARCHAR(32) NOT NULL DEFAULT 'OTHER' COMMENT '权限类型（治理属性）',
+    `description` VARCHAR(255) DEFAULT NULL COMMENT '描述',
+    `enabled` TINYINT(1) NOT NULL DEFAULT 1 COMMENT '启用标志',
+    `built_in_flag` TINYINT(1) NOT NULL DEFAULT 0 COMMENT '内置标志',
+    `tenant_id` BIGINT DEFAULT NULL COMMENT '租户ID，NULL=平台模板',
+    `created_by` BIGINT DEFAULT NULL COMMENT '创建人',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updated_by` BIGINT DEFAULT NULL COMMENT '更新人',
+    `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    `normalized_tenant_id` BIGINT GENERATED ALWAYS AS (IFNULL(`tenant_id`, 0)) STORED COMMENT '归一化租户ID',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_permission_tenant_code` (`normalized_tenant_id`, `permission_code`),
+    KEY `idx_permission_code` (`permission_code`),
+    KEY `idx_permission_tenant_id` (`tenant_id`),
+    KEY `idx_permission_module_code` (`module_code`),
+    KEY `idx_permission_enabled` (`enabled`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='权限主数据表';
+
+-- 创建角色-权限关系表
+CREATE TABLE IF NOT EXISTS `role_permission` (
+    `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+    `role_id` BIGINT NOT NULL COMMENT '角色ID',
+    `permission_id` BIGINT NOT NULL COMMENT '权限ID',
+    `tenant_id` BIGINT DEFAULT NULL COMMENT '租户ID，NULL=平台模板',
+    `created_by` BIGINT DEFAULT NULL COMMENT '创建人',
+    `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `normalized_tenant_id` BIGINT GENERATED ALWAYS AS (IFNULL(`tenant_id`, 0)) STORED COMMENT '归一化租户ID',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_role_permission_tenant` (`normalized_tenant_id`, `role_id`, `permission_id`),
+    KEY `idx_role_permission_role_id` (`role_id`),
+    KEY `idx_role_permission_permission_id` (`permission_id`),
+    KEY `idx_role_permission_tenant_id` (`tenant_id`),
+    KEY `idx_role_permission_tenant_role` (`tenant_id`, `role_id`),
+    KEY `idx_role_permission_tenant_permission` (`tenant_id`, `permission_id`),
+    CONSTRAINT `fk_role_permission_role` FOREIGN KEY (`role_id`) REFERENCES `role` (`id`),
+    CONSTRAINT `fk_role_permission_permission` FOREIGN KEY (`permission_id`) REFERENCES `permission` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='角色-权限关系表';
 
 -- 创建角色-资源关联表（历史结构；全新库在 002 中创建，116 回填 role_permission 后由 Liquibase 117 删除本表）
 CREATE TABLE IF NOT EXISTS `role_resource` (

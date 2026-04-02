@@ -360,7 +360,7 @@ WHERE role_entity.tenant_id = 1
 INSERT IGNORE INTO `user_authentication_method` 
     (`tenant_id`, `user_id`, `authentication_provider`, `authentication_type`, `authentication_configuration`, `is_primary_method`, `is_method_enabled`, `authentication_priority`, `created_at`, `updated_at`)
 SELECT
-    COALESCE(default_membership.tenant_id, u.tenant_id, 1),
+    COALESCE(default_membership.tenant_id, 1),
     u.id,
     'LOCAL',
     'PASSWORD',
@@ -394,7 +394,7 @@ WHERE u.username IN ('admin', 'user')
   AND NOT EXISTS (
       SELECT 1 FROM user_authentication_method uam 
       WHERE uam.user_id = u.id 
-        AND uam.tenant_id = COALESCE(default_membership.tenant_id, u.tenant_id, 1)
+        AND uam.tenant_id = COALESCE(default_membership.tenant_id, 1)
         AND uam.authentication_provider = 'LOCAL' 
         AND uam.authentication_type = 'PASSWORD'
   );
