@@ -51,7 +51,8 @@ test.describe('auth flow pages', () => {
     await page.locator('button[type="submit"]').click()
 
     await page.waitForURL('**/self/security/totp-verify?redirect=%2F')
-    await expect(page.getByRole('heading', { name: '两步验证' })).toBeVisible()
+    await expect(page.getByLabel('动态验证码')).toBeVisible()
+    await expect(page.locator('form[action$="/self/security/totp/check-form"]')).toBeVisible()
 
     expect(posted?.get('tenantCode')).toBe('tiny-prod')
     expect(posted?.get('username')).toBe('alice')

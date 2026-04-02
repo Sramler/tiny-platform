@@ -14,7 +14,11 @@ public interface RoleRepository extends JpaRepository<Role, Long>, JpaSpecificat
 
     List<Role> findByTenantIdOrderByIdAsc(Long tenantId);
 
-    boolean existsByTenantId(Long tenantId);
+    long countByTenantId(Long tenantId);
+
+    default boolean existsByTenantId(Long tenantId) {
+        return countByTenantId(tenantId) > 0;
+    }
 
     /** 平台模板：tenant_id IS NULL，见 §4 平台模板与 default 解耦 */
     List<Role> findByTenantIdIsNullOrderByIdAsc();
