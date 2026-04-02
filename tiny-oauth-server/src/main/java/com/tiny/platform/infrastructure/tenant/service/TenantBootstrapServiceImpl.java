@@ -720,12 +720,12 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
         return value != null ? value : "";
     }
 
-    private boolean bool(Boolean value) {
+    private boolean bool(Long value) {
         return bool(value, false);
     }
 
-    private boolean bool(Boolean value, boolean defaultValue) {
-        return value != null ? value : defaultValue;
+    private boolean bool(Long value, boolean defaultValue) {
+        return value != null ? value != 0 : defaultValue;
     }
 
     private int intVal(Integer value) {

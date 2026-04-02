@@ -24,7 +24,7 @@ public interface CarrierTemplateResourceSnapshotView {
 
     String getIcon();
 
-    Boolean getShowIcon();
+    Long getShowIcon();
 
     Integer getSort();
 
@@ -32,9 +32,9 @@ public interface CarrierTemplateResourceSnapshotView {
 
     String getRedirect();
 
-    Boolean getHidden();
+    Long getHidden();
 
-    Boolean getKeepAlive();
+    Long getKeepAlive();
 
     String getTitle();
 
@@ -46,5 +46,5 @@ public interface CarrierTemplateResourceSnapshotView {
 
     Long getParentId();
 
-    Boolean getEnabled();
+    Long getEnabled();
 }

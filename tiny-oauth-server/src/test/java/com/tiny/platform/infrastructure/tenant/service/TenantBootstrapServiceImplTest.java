@@ -942,8 +942,8 @@ class TenantBootstrapServiceImplTest {
             }
 
             @Override
-            public Boolean getShowIcon() {
-                return source.getShowIcon();
+            public Long getShowIcon() {
+                return source.getShowIcon() == null ? null : (source.getShowIcon() ? 1L : 0L);
             }
 
             @Override
@@ -962,13 +962,13 @@ class TenantBootstrapServiceImplTest {
             }
 
             @Override
-            public Boolean getHidden() {
-                return source.getHidden();
+            public Long getHidden() {
+                return source.getHidden() == null ? null : (source.getHidden() ? 1L : 0L);
             }
 
             @Override
-            public Boolean getKeepAlive() {
-                return source.getKeepAlive();
+            public Long getKeepAlive() {
+                return source.getKeepAlive() == null ? null : (source.getKeepAlive() ? 1L : 0L);
             }
 
             @Override
@@ -997,8 +997,8 @@ class TenantBootstrapServiceImplTest {
             }
 
             @Override
-            public Boolean getEnabled() {
-                return source.getEnabled();
+            public Long getEnabled() {
+                return source.getEnabled() == null ? null : (source.getEnabled() ? 1L : 0L);
             }
         };
     }
