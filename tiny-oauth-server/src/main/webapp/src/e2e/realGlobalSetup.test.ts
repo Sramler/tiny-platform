@@ -4,6 +4,7 @@ import {
   buildSecondaryAuthStateEnv,
   extractAccessTokenFromStorageState,
   shouldCreateTenantViaApi,
+  shouldUseTenantScopedPrimaryAuthState,
 } from '../../e2e/setup/real.global.setup'
 
 describe('real.global.setup secondary auth-state env', () => {
@@ -126,5 +127,15 @@ describe('real.global.setup tenant bootstrap helpers', () => {
 
   it('does not require tenant bootstrap API when primary and readonly tenant are the same', () => {
     expect(shouldCreateTenantViaApi('tenant-a', 'tenant-a')).toBe(false)
+  })
+
+  it('switches primary storageState generation to tenant-scoped auth when primary tenant is the platform tenant', () => {
+    expect(shouldUseTenantScopedPrimaryAuthState('default', 'default')).toBe(true)
+    expect(shouldUseTenantScopedPrimaryAuthState('platform-main', 'platform-main')).toBe(true)
+    expect(shouldUseTenantScopedPrimaryAuthState('bench-1m', 'platform-main')).toBe(false)
+  })
+
+  it('does not switch primary storageState when the tenant-scoped fallback is unnecessary', () => {
+    expect(shouldUseTenantScopedPrimaryAuthState('bench-1m', 'default')).toBe(false)
   })
 })

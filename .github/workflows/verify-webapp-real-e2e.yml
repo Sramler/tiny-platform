@@ -58,6 +58,11 @@ jobs:
       E2E_TENANT_CODE_BIND: ${{ secrets.E2E_TENANT_CODE_BIND }}
       E2E_USERNAME_BIND: ${{ secrets.E2E_USERNAME_BIND }}
       E2E_PASSWORD_BIND: ${{ secrets.E2E_PASSWORD_BIND }}
+      # webapp real-link 也允许平台自动化身份回退到主租户，避免 secondary/bootstrap 阶段缺少平台态口径。
+      E2E_PLATFORM_TENANT_CODE: ${{ secrets.E2E_PLATFORM_TENANT_CODE || secrets.E2E_TENANT_CODE }}
+      E2E_PLATFORM_USERNAME: ${{ secrets.E2E_PLATFORM_USERNAME || 'e2e_platform_admin' }}
+      E2E_PLATFORM_PASSWORD: ${{ secrets.E2E_PLATFORM_PASSWORD || secrets.E2E_PASSWORD }}
+      E2E_PLATFORM_TOTP_SECRET: ${{ secrets.E2E_PLATFORM_TOTP_SECRET || secrets.E2E_TOTP_SECRET }}
 
     steps:
       - uses: actions/checkout@v6

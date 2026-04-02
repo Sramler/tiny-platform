@@ -80,6 +80,15 @@ export function shouldCreateTenantViaApi(
   return Boolean(normalizedPrimary && normalizedTarget && normalizedPrimary !== normalizedTarget)
 }
 
+export function shouldUseTenantScopedPrimaryAuthState(
+  primaryTenantCode: string | undefined,
+  platformTenantCode: string | undefined,
+) {
+  const normalizedPrimary = primaryTenantCode?.trim().toLowerCase()
+  const normalizedPlatform = (platformTenantCode ?? 'default').trim().toLowerCase()
+  return Boolean(normalizedPrimary && normalizedPrimary === normalizedPlatform)
+}
+
 async function prepareAuthState() {
   await fs.mkdir(authDir, { recursive: true })
   await fs.rm(authStatePath, { force: true })
@@ -167,6 +176,7 @@ async function ensureTenantViaApi(authStateFilePath: string, targetTenantCode: s
 
 function resolvePlatformIdentityEnv(): ResolvedIdentityEnv | null {
   const tenantCode = process.env.E2E_PLATFORM_TENANT_CODE
+  const primaryTenantCode = process.env.E2E_TENANT_CODE
   const username = process.env.E2E_PLATFORM_USERNAME
   const password = process.env.E2E_PLATFORM_PASSWORD
   const totpSecret = process.env.E2E_PLATFORM_TOTP_SECRET
@@ -191,8 +201,13 @@ function resolvePlatformIdentityEnv(): ResolvedIdentityEnv | null {
   if (!isConfiguredValue(tenantCode)) {
     throw new Error('缺少 E2E_PLATFORM_TENANT_CODE（请勿默认回退到 default，default 租户可能被冻结）')
   }
-  if (tenantCode!.trim().toLowerCase() === 'default') {
-    throw new Error('E2E_PLATFORM_TENANT_CODE 不允许使用 default：default 租户可能被冻结导致平台身份无法登录')
+  if (
+    tenantCode!.trim().toLowerCase() === 'default' &&
+    tenantCode!.trim().toLowerCase() !== primaryTenantCode?.trim().toLowerCase()
+  ) {
+    throw new Error(
+      'E2E_PLATFORM_TENANT_CODE 不允许单独硬编码为 default；仅允许与 E2E_TENANT_CODE 同值时作为 CI fallback 使用',
+    )
   }
 
   return {
@@ -419,7 +434,20 @@ export default async function globalSetup() {
 
   ensureDeterministicE2EAuth()
   await runMysqlSeed()
-  generateAuthState()
+  const primaryTenantCodeValue = process.env.E2E_TENANT_CODE!.trim()
+  const platformTenantCodeValue = (process.env.E2E_PLATFORM_TENANT_CODE ?? 'default').trim()
+  const tenantScopeTenantCode = deriveTenantCodeForTenantScope(primaryTenantCodeValue, platformTenantCodeValue)
+  const useTenantScopedPrimaryAuthState = shouldUseTenantScopedPrimaryAuthState(
+    primaryTenantCodeValue,
+    platformTenantCodeValue,
+  )
+
+  if (useTenantScopedPrimaryAuthState) {
+    ensureDeterministicE2EAuthFor({ E2E_TENANT_CODE: tenantScopeTenantCode })
+    generateAuthStateFor({ E2E_TENANT_CODE: tenantScopeTenantCode }, authStatePath)
+  } else {
+    generateAuthState()
+  }
 
   const primaryAuthExists = await fs
     .access(authStatePath)
@@ -433,11 +461,10 @@ export default async function globalSetup() {
 
   // 生成“租户态真实身份”的登录态（避免 PLATFORM 计算导致 activeTenantId 为空）。
   // 仅针对本用例派生：不改动后端契约，也不要求手工编辑 e2e/.auth/*.json。
-  const primaryTenantCodeValue = process.env.E2E_TENANT_CODE!
-  const platformTenantCodeValue = (process.env.E2E_PLATFORM_TENANT_CODE ?? 'default').trim()
-  const tenantScopeTenantCode = deriveTenantCodeForTenantScope(primaryTenantCodeValue, platformTenantCodeValue)
-
-  if (tenantScopeTenantCode.trim().toLowerCase() === primaryTenantCodeValue.trim().toLowerCase()) {
+  if (
+    useTenantScopedPrimaryAuthState ||
+    tenantScopeTenantCode.trim().toLowerCase() === primaryTenantCodeValue.trim().toLowerCase()
+  ) {
     await fs.copyFile(authStatePath, tenantScopedAuthStatePath)
   } else {
     ensureDeterministicE2EAuthFor({ E2E_TENANT_CODE: tenantScopeTenantCode })
@@ -455,7 +482,7 @@ export default async function globalSetup() {
   }
 
   const primaryTenantCode = process.env.E2E_TENANT_CODE
-  const platformTenantCode = (process.env.E2E_PLATFORM_TENANT_CODE ?? 'default').trim()
+  const platformTenantCode = platformTenantCodeValue
   const requiresPlatformBootstrapIdentity =
     shouldCreateTenantViaApi(primaryTenantCode, process.env.E2E_TENANT_CODE_B) ||
     shouldCreateTenantViaApi(

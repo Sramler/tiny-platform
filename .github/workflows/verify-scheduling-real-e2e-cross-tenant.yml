@@ -51,8 +51,8 @@ jobs:
       E2E_USERNAME: ${{ secrets.E2E_USERNAME }}
       E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
       E2E_TOTP_SECRET: ${{ secrets.E2E_TOTP_SECRET }}
-      # globalSetup 明确禁止 default 作为平台自动化 tenant（可能被冻结）；与 nightly 主 real-link 工作流保持一致。
-      E2E_PLATFORM_TENANT_CODE: ${{ secrets.E2E_PLATFORM_TENANT_CODE || 'platform-e2e' }}
+      # 优先使用显式平台租户；未单配时回退到主租户 code，避免 CI 因硬编码 platform-e2e 不存在而直接失败。
+      E2E_PLATFORM_TENANT_CODE: ${{ secrets.E2E_PLATFORM_TENANT_CODE || secrets.E2E_TENANT_CODE }}
       # 平台自动化身份允许回退到“独立用户名 + 主身份密码/TOTP”，避免 cross-tenant preflight 因独立 secret 未单配而直接失败。
       E2E_PLATFORM_USERNAME: ${{ secrets.E2E_PLATFORM_USERNAME || 'e2e_platform_admin' }}
       E2E_PLATFORM_PASSWORD: ${{ secrets.E2E_PLATFORM_PASSWORD || secrets.E2E_PASSWORD }}

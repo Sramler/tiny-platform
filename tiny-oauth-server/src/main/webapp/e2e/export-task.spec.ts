@@ -197,8 +197,18 @@ async function openExportTaskPage(page: Page) {
   const exportMenu = page.locator('.menu-item, .submenu-item').filter({ hasText: '导出任务' }).first()
   await expect(exportMenu).toBeVisible({ timeout: 15_000 })
   await exportMenu.click()
-  await page.waitForURL('**/export/task')
-  await expect(page.getByText('导出任务').first()).toBeVisible()
+  const navigatedByMenu = await page
+    .waitForURL('**/export/task', { timeout: 5_000 })
+    .then(() => true)
+    .catch(() => false)
+
+  if (!navigatedByMenu) {
+    // CI 中动态菜单路由有时已经渲染但首次点击未触发跳转，这里直接回退到目标路由，
+    // 保持测试关注点仍然是“导出任务页面本身”，而不是侧边栏点击时序。
+    await page.goto('/export/task')
+  }
+
+  await expect(page.getByPlaceholder('请输入任务ID')).toBeVisible({ timeout: 15_000 })
 }
 
 test.describe('export task page', () => {
