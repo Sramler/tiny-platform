@@ -190,37 +190,32 @@ async function mockAuthenticatedApis(page: Page, tasks: ExportTask[]) {
 
 async function openExportTaskPage(page: Page) {
   const taskIdInput = page.getByPlaceholder('请输入任务ID')
+  const waitForMenuReady = async () => {
+    await page.goto('/')
+    await page
+      .getByText('菜单路由加载中...')
+      .waitFor({ state: 'detached', timeout: 15_000 })
+      .catch(() => {})
+
+    const exportMenu = page
+      .locator('.menu-item, .submenu-item')
+      .filter({ hasText: '导出任务' })
+      .first()
+
+    await exportMenu.waitFor({ state: 'visible', timeout: 10_000 })
+    return exportMenu
+  }
   const waitForTaskPage = async (timeout: number) =>
     taskIdInput
       .waitFor({ state: 'visible', timeout })
       .then(() => true)
       .catch(() => false)
 
-  await page.goto('/')
-  await page
-    .getByText('菜单路由加载中...')
-    .waitFor({ state: 'detached', timeout: 15_000 })
-    .catch(() => {})
-
-  const exportMenu = page.locator('.menu-item, .submenu-item').filter({ hasText: '导出任务' }).first()
-  const menuVisible = await exportMenu
-    .waitFor({ state: 'visible', timeout: 10_000 })
-    .then(() => true)
-    .catch(() => false)
-
-  if (menuVisible) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const exportMenu = await waitForMenuReady()
     await exportMenu.click()
-    const renderedViaMenu = await waitForTaskPage(8_000)
-    if (renderedViaMenu) {
-      return
-    }
-  }
-
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const refreshSuffix = attempt === 0 ? '' : `?_refresh=${Date.now()}-${attempt}`
-    await page.goto(`/export/task${refreshSuffix}`)
     const rendered = await waitForTaskPage(10_000)
-    if (rendered) {
+    if (rendered && !page.url().includes('/exception/404')) {
       return
     }
   }

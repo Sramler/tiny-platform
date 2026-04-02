@@ -492,10 +492,7 @@ export default async function globalSetup() {
   let tenantBootstrapAuthStatePath = authStatePath
   let platformAuthGenerated = false
 
-  if (
-    requiresPlatformBootstrapIdentity &&
-    primaryTenantCode?.trim().toLowerCase() !== platformTenantCode.toLowerCase()
-  ) {
+  if (requiresPlatformBootstrapIdentity) {
     const platformIdentityEnv = resolvePlatformIdentityEnv()
     if (!platformIdentityEnv) {
       throw new Error(
