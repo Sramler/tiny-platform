@@ -190,8 +190,12 @@ async function mockAuthenticatedApis(page: Page, tasks: ExportTask[]) {
 
 async function openExportTaskPage(page: Page) {
   await page.goto('/')
+  await page
+    .getByText('菜单路由加载中...')
+    .waitFor({ state: 'detached', timeout: 15_000 })
+    .catch(() => {})
   const exportMenu = page.locator('.menu-item, .submenu-item').filter({ hasText: '导出任务' }).first()
-  await expect(exportMenu).toBeVisible()
+  await expect(exportMenu).toBeVisible({ timeout: 15_000 })
   await exportMenu.click()
   await page.waitForURL('**/export/task')
   await expect(page.getByText('导出任务').first()).toBeVisible()

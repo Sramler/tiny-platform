@@ -25,6 +25,7 @@ const frontendBaseURL = readEnv('E2E_FRONTEND_BASE_URL') ?? `http://localhost:${
 const tenantCode = requireEnv('E2E_TENANT_CODE')
 const username = requireEnv('E2E_USERNAME')
 const password = requireEnv('E2E_PASSWORD')
+const loginMode = (readEnv('E2E_LOGIN_MODE') ?? 'TENANT').trim().toUpperCase()
 const totpCodeOverride = readEnv('E2E_TOTP_CODE')
 const totpSecret = totpCodeOverride ? readEnv('E2E_TOTP_SECRET') : requireEnv('E2E_TOTP_SECRET')
 const authStatePath = process.env.E2E_AUTH_STATE_PATH
@@ -32,6 +33,10 @@ const landingPath = '/OIDCDebug'
 
 if (!authStatePath) {
   throw new Error('缺少 E2E_AUTH_STATE_PATH，无法生成 Playwright 登录态')
+}
+
+if (loginMode !== 'TENANT' && loginMode !== 'PLATFORM') {
+  throw new Error(`非法 E2E_LOGIN_MODE=${loginMode}，仅支持 TENANT 或 PLATFORM`)
 }
 
 function decodeBase32(secret) {
@@ -107,19 +112,18 @@ async function main() {
     await page.goto(`${frontendBaseURL}/login?redirect=${encodeURIComponent(landingPath)}`)
     await page.getByRole('heading', { name: '欢迎登录' }).waitFor({ timeout: 90_000 })
 
-    // 显式填充租户编码，避免依赖本地缓存或页面默认值
-    // 使用 force:true：某些登录页会在渲染阶段短暂不可见/被遮挡，但仍需要提交时带上 tenantCode。
-    try {
+    if (loginMode === 'PLATFORM') {
+      await page.getByRole('button', { name: '平台登录' }).click()
+      await page.getByLabel('租户编码').waitFor({ state: 'detached', timeout: 10_000 }).catch(() => {})
+    } else {
+      await page.getByRole('button', { name: '租户登录' }).click()
       const tenantInput = page.getByLabel('租户编码')
       await tenantInput.fill(tenantCode, { force: true })
-    } catch {
-      // 如果页面上不存在租户编码输入框，则退化为依赖 initScript 注入的 app_tenant_code
     }
 
     await page.getByLabel('用户名').fill(username)
     await page.getByLabel('密码').fill(password)
-    // 避免匹配到“租户登录/平台登录”页签按钮，精确点击提交按钮。
-    await page.getByRole('button', { name: /^登录(租户|平台)?$/ }).click()
+    await page.getByRole('button', { name: loginMode === 'PLATFORM' ? '登录平台' : '登录租户' }).click()
 
     await page.waitForURL(/\/(callback|self\/security\/totp-(bind|verify)|OIDCDebug)/, {
       timeout: 90_000,

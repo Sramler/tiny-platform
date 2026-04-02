@@ -289,6 +289,7 @@ export function buildAuthStateEnv(
 ): NodeJS.ProcessEnv {
   return {
     ...baseEnv,
+    E2E_LOGIN_MODE: envOverrides.E2E_LOGIN_MODE ?? 'TENANT',
     ...envOverrides,
     // 避免沿用主身份注入的 E2E_TOTP_CODE；tenant B 未显式提供 code 时应回退到自己的 secret。
     E2E_TOTP_CODE: envOverrides.E2E_TOTP_CODE ?? '',
@@ -406,7 +407,13 @@ export default async function globalSetup() {
       ...platformIdentityEnv,
       E2E_SKIP_SCHEDULING_ADMIN_AUTH: 'true',
     })
-    generateAuthStateFor(platformIdentityEnv, platformAuthStatePath)
+    generateAuthStateFor(
+      {
+        ...platformIdentityEnv,
+        E2E_LOGIN_MODE: 'PLATFORM',
+      },
+      platformAuthStatePath,
+    )
     await ensureTenantViaApi(platformAuthStatePath, primaryTenantCode)
   }
 
@@ -472,7 +479,13 @@ export default async function globalSetup() {
       ...platformIdentityEnv,
       E2E_SKIP_SCHEDULING_ADMIN_AUTH: 'true',
     })
-    generateAuthStateFor(platformIdentityEnv, platformAuthStatePath)
+    generateAuthStateFor(
+      {
+        ...platformIdentityEnv,
+        E2E_LOGIN_MODE: 'PLATFORM',
+      },
+      platformAuthStatePath,
+    )
     tenantBootstrapAuthStatePath = platformAuthStatePath
     platformAuthGenerated = true
   }
@@ -483,7 +496,13 @@ export default async function globalSetup() {
       ...platformIdentityEnv,
       E2E_SKIP_SCHEDULING_ADMIN_AUTH: 'true',
     })
-    generateAuthStateFor(platformIdentityEnv, platformAuthStatePath)
+    generateAuthStateFor(
+      {
+        ...platformIdentityEnv,
+        E2E_LOGIN_MODE: 'PLATFORM',
+      },
+      platformAuthStatePath,
+    )
   }
 
   const secondaryIdentityEnv = resolveSecondaryIdentityEnv()

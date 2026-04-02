@@ -67,6 +67,39 @@ describe('real.global.setup readonly auth-state env', () => {
   })
 })
 
+describe('real.global.setup auth-state login mode', () => {
+  it('defaults generated auth-state env to tenant login mode', () => {
+    const env = buildAuthStateEnv(
+      {
+        E2E_TOTP_SECRET: 'PRIMARYSECRET',
+      },
+      {
+        E2E_TENANT_CODE: 'bench-1m',
+        E2E_USERNAME: 'e2e_admin',
+      },
+      '/tmp/auth.json',
+    )
+
+    expect(env.E2E_LOGIN_MODE).toBe('TENANT')
+  })
+
+  it('allows overriding auth-state env to platform login mode', () => {
+    const env = buildAuthStateEnv(
+      {
+        E2E_TOTP_SECRET: 'PRIMARYSECRET',
+      },
+      {
+        E2E_TENANT_CODE: 'platform-e2e',
+        E2E_USERNAME: 'e2e_platform_admin',
+        E2E_LOGIN_MODE: 'PLATFORM',
+      },
+      '/tmp/platform-auth.json',
+    )
+
+    expect(env.E2E_LOGIN_MODE).toBe('PLATFORM')
+  })
+})
+
 describe('real.global.setup tenant bootstrap helpers', () => {
   it('extracts OIDC access token from Playwright storage state', () => {
     const accessToken = extractAccessTokenFromStorageState({
