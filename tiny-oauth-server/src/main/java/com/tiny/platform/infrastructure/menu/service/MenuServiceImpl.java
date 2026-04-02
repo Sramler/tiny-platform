@@ -10,7 +10,6 @@ import com.tiny.platform.infrastructure.core.exception.exception.BusinessExcepti
 import com.tiny.platform.infrastructure.core.exception.exception.NotFoundException;
 import com.tiny.platform.infrastructure.auth.resource.domain.Resource;
 import com.tiny.platform.infrastructure.auth.resource.dto.ResourceCreateUpdateDto;
-import com.tiny.platform.infrastructure.auth.resource.dto.ResourceProjection;
 import com.tiny.platform.infrastructure.auth.resource.dto.ResourceRequestDto;
 import com.tiny.platform.infrastructure.auth.resource.dto.ResourceResponseDto;
 import com.tiny.platform.infrastructure.auth.resource.enums.ResourceType;
@@ -31,8 +30,8 @@ import com.tiny.platform.infrastructure.menu.domain.MenuEntry;
 import com.tiny.platform.infrastructure.menu.repository.MenuEntryRepository;
 import com.tiny.platform.infrastructure.tenant.config.PlatformTenantResolver;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -46,9 +45,6 @@ import org.springframework.util.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
-import jakarta.persistence.Query;
 import jakarta.persistence.criteria.Predicate;
 
 import java.util.HashSet;
@@ -74,7 +70,6 @@ public class MenuServiceImpl implements MenuService {
     private static final Logger logger = LoggerFactory.getLogger(MenuServiceImpl.class);
     private static final String CARRIER_MENU = "MENU";
 
-    private final ResourceRepository resourceRepository;
     private final MenuEntryRepository menuEntryRepository;
     private final UiActionEntryRepository uiActionEntryRepository;
     private final ApiEndpointEntryRepository apiEndpointEntryRepository;
@@ -87,11 +82,8 @@ public class MenuServiceImpl implements MenuService {
     private final AuthorizationAuditService authorizationAuditService;
     private final RoleRepository roleRepository;
 
-    @PersistenceContext
-    private EntityManager entityManager;
-
-    public MenuServiceImpl(ResourceRepository resourceRepository,
-                           MenuEntryRepository menuEntryRepository,
+    @Autowired
+    public MenuServiceImpl(MenuEntryRepository menuEntryRepository,
                            UiActionEntryRepository uiActionEntryRepository,
                            ApiEndpointEntryRepository apiEndpointEntryRepository,
                            TenantUserRepository tenantUserRepository,
@@ -102,7 +94,6 @@ public class MenuServiceImpl implements MenuService {
                            CarrierPermissionRequirementEvaluator carrierPermissionRequirementEvaluator,
                            AuthorizationAuditService authorizationAuditService,
                            RoleRepository roleRepository) {
-        this.resourceRepository = resourceRepository;
         this.menuEntryRepository = menuEntryRepository;
         this.uiActionEntryRepository = uiActionEntryRepository;
         this.apiEndpointEntryRepository = apiEndpointEntryRepository;
@@ -114,6 +105,38 @@ public class MenuServiceImpl implements MenuService {
         this.carrierPermissionRequirementEvaluator = carrierPermissionRequirementEvaluator;
         this.authorizationAuditService = authorizationAuditService;
         this.roleRepository = roleRepository;
+    }
+
+    /**
+     * Temporary bridge constructor so tests can migrate incrementally while
+     * runtime injection no longer depends on ResourceRepository.
+     */
+    @Deprecated
+    public MenuServiceImpl(ResourceRepository ignoredResourceRepository,
+                           MenuEntryRepository menuEntryRepository,
+                           UiActionEntryRepository uiActionEntryRepository,
+                           ApiEndpointEntryRepository apiEndpointEntryRepository,
+                           TenantUserRepository tenantUserRepository,
+                           UserUnitRepository userUnitRepository,
+                           PlatformTenantResolver platformTenantResolver,
+                           ResourcePermissionBindingService resourcePermissionBindingService,
+                           CarrierCompatibilitySafetyService carrierCompatibilitySafetyService,
+                           CarrierPermissionRequirementEvaluator carrierPermissionRequirementEvaluator,
+                           AuthorizationAuditService authorizationAuditService,
+                           RoleRepository roleRepository) {
+        this(
+            menuEntryRepository,
+            uiActionEntryRepository,
+            apiEndpointEntryRepository,
+            tenantUserRepository,
+            userUnitRepository,
+            platformTenantResolver,
+            resourcePermissionBindingService,
+            carrierCompatibilitySafetyService,
+            carrierPermissionRequirementEvaluator,
+            authorizationAuditService,
+            roleRepository
+        );
     }
 
     private Long normalizeParentId(Long parentId) {
@@ -141,233 +164,6 @@ public class MenuServiceImpl implements MenuService {
         return page.map(menu -> toDto(menu, tenantId));
     }
     
-    /**
-     * 原生 Hibernate 方式分页查询菜单
-     * 使用 EntityManager 和原生 SQL，性能最优
-     */
-    private Page<ResourceResponseDto> findMenusByNativeHibernate(ResourceRequestDto query, List<Integer> typeCodes, Pageable pageable) {
-        Long tenantId = requireTenantId();
-        LinkedHashSet<Long> visibleCreatorIds = resolveVisibleCreatorIdsForRead(tenantId);
-        if (requiresDataScopeFilter() && visibleCreatorIds.isEmpty()) {
-            return Page.empty(pageable);
-        }
-        // 构建动态 SQL 查询条件
-        StringBuilder sqlBuilder = new StringBuilder();
-        StringBuilder countSqlBuilder = new StringBuilder();
-        
-        // 主查询 SQL
-        sqlBuilder.append("""
-            SELECT r.id,
-                   r.name,
-                   r.title,
-                   r.url,
-                   r.icon,
-                   r.show_icon AS showIcon,
-                   r.sort,
-                   r.component,
-                   r.redirect,
-                   r.hidden,
-                   r.keep_alive AS keepAlive,
-                   r.permission,
-                   r.type,
-                   r.parent_id AS parentId,
-                   r.enabled,
-                   CASE WHEN EXISTS (
-                       SELECT 1 FROM resource c WHERE c.parent_id = r.id AND c.tenant_id = :tenantId
-                   ) THEN 0 ELSE 1 END AS leaf
-            FROM resource r
-            WHERE 1=1
-            """);
-        
-        // 计数查询 SQL
-        countSqlBuilder.append("""
-            SELECT COUNT(*) FROM resource r WHERE 1=1
-            """);
-
-        sqlBuilder.append(" AND r.tenant_id = :tenantId");
-        countSqlBuilder.append(" AND r.tenant_id = :tenantId");
-        
-        // 动态添加查询条件
-        if (query.getParentId() != null) {
-            sqlBuilder.append(" AND r.parent_id = :parentId");
-            countSqlBuilder.append(" AND r.parent_id = :parentId");
-        }
-        
-        if (StringUtils.hasText(query.getTitle())) {
-            sqlBuilder.append(" AND r.title LIKE :title");
-            countSqlBuilder.append(" AND r.title LIKE :title");
-        }
-        
-        if (StringUtils.hasText(query.getName())) {
-            sqlBuilder.append(" AND r.name LIKE :name");
-            countSqlBuilder.append(" AND r.name LIKE :name");
-        }
-        
-        if (StringUtils.hasText(query.getPermission())) {
-            sqlBuilder.append(" AND r.permission LIKE :permission");
-            countSqlBuilder.append(" AND r.permission LIKE :permission");
-        }
-        
-        if (query.getEnabled() != null) {
-            sqlBuilder.append(" AND r.enabled = :enabled");
-            countSqlBuilder.append(" AND r.enabled = :enabled");
-        }
-        
-        // 添加类型过滤条件
-        sqlBuilder.append(" AND r.type IN (:types)");
-        countSqlBuilder.append(" AND r.type IN (:types)");
-        appendMenuDataScopeFilter(sqlBuilder, countSqlBuilder, visibleCreatorIds);
-        
-        // 添加排序
-        sqlBuilder.append(" ORDER BY r.sort ASC");
-        
-        // 创建查询对象
-        Query sqlQuery = entityManager.createNativeQuery(sqlBuilder.toString());
-        Query countQuery = entityManager.createNativeQuery(countSqlBuilder.toString());
-
-        sqlQuery.setParameter("tenantId", tenantId);
-        countQuery.setParameter("tenantId", tenantId);
-        
-        // 设置查询参数
-        if (query.getParentId() != null) {
-            sqlQuery.setParameter("parentId", query.getParentId());
-            countQuery.setParameter("parentId", query.getParentId());
-        }
-        
-        if (StringUtils.hasText(query.getTitle())) {
-            sqlQuery.setParameter("title", "%" + query.getTitle() + "%");
-            countQuery.setParameter("title", "%" + query.getTitle() + "%");
-        }
-        
-        if (StringUtils.hasText(query.getName())) {
-            sqlQuery.setParameter("name", "%" + query.getName() + "%");
-            countQuery.setParameter("name", "%" + query.getName() + "%");
-        }
-        
-        if (StringUtils.hasText(query.getPermission())) {
-            sqlQuery.setParameter("permission", "%" + query.getPermission() + "%");
-            countQuery.setParameter("permission", "%" + query.getPermission() + "%");
-        }
-        
-        if (query.getEnabled() != null) {
-            sqlQuery.setParameter("enabled", query.getEnabled());
-            countQuery.setParameter("enabled", query.getEnabled());
-        }
-        if (requiresDataScopeFilter()) {
-            sqlQuery.setParameter("visibleCreatorIds", visibleCreatorIds);
-            countQuery.setParameter("visibleCreatorIds", visibleCreatorIds);
-        }
-        
-        sqlQuery.setParameter("types", typeCodes);
-        countQuery.setParameter("types", typeCodes);
-        
-        // 设置分页参数
-        sqlQuery.setFirstResult((int) pageable.getOffset());
-        sqlQuery.setMaxResults(pageable.getPageSize());
-        
-        // 执行查询
-        List<Object[]> results = sqlQuery.getResultList();
-        Long total = ((Number) countQuery.getSingleResult()).longValue();
-        
-        // 转换结果
-        List<ResourceResponseDto> dtos = results.stream()
-            .map(this::mapToResourceResponseDto)
-            .collect(Collectors.toList());
-        
-        return new PageImpl<>(dtos, pageable, total);
-    }
-    
-    /**
-     * 将查询结果映射为 ResourceResponseDto
-     */
-    private ResourceResponseDto mapToResourceResponseDto(Object[] row) {
-        ResourceResponseDto dto = new ResourceResponseDto();
-        dto.setRecordTenantId(requireTenantId());
-        
-        // 按查询字段顺序映射（与 SQL SELECT 字段顺序一致）
-        dto.setId(((Number) row[0]).longValue()); // id
-        dto.setName((String) row[1]); // name
-        dto.setTitle((String) row[2]); // title
-        dto.setUrl((String) row[3]); // url
-        dto.setIcon((String) row[4]); // icon
-        dto.setShowIcon(Boolean.TRUE.equals(row[5])); // showIcon
-        dto.setSort(safeToInteger(row[6])); // sort - 安全转换为 Integer
-        dto.setComponent((String) row[7]); // component
-        dto.setRedirect((String) row[8]); // redirect
-        dto.setHidden(Boolean.TRUE.equals(row[9])); // hidden
-        dto.setKeepAlive(Boolean.TRUE.equals(row[10])); // keepAlive
-        dto.setPermission((String) row[11]); // permission
-        dto.setType(safeToInteger(row[12])); // type - 安全转换为 Integer
-        Integer typeCode = dto.getType();
-        if (typeCode != null) {
-            ResourceType resourceType = ResourceType.fromCode(typeCode);
-            dto.setTypeName(resourceType.getDescription());
-            dto.setCarrierKind(getCarrierKind(resourceType));
-        }
-        dto.setParentId(row[13] != null ? ((Number) row[13]).longValue() : null); // parentId
-        dto.setEnabled(safeToBoolean(row[14])); // enabled
-        dto.setLeaf(safeToBoolean(row[15])); // leaf
-        
-        return dto;
-    }
-    
-    /**
-     * 安全地将对象转换为 Integer
-     * 处理 Byte、Short、Integer 等数字类型
-     */
-    private Integer safeToInteger(Object value) {
-        if (value == null) {
-            return null;
-        }
-        if (value instanceof Integer) {
-            return (Integer) value;
-        }
-        if (value instanceof Byte) {
-            return ((Byte) value).intValue();
-        }
-        if (value instanceof Short) {
-            return ((Short) value).intValue();
-        }
-        if (value instanceof Long) {
-            return ((Long) value).intValue();
-        }
-        if (value instanceof Number) {
-            return ((Number) value).intValue();
-        }
-        // 如果是字符串，尝试解析
-        if (value instanceof String) {
-            try {
-                return Integer.parseInt((String) value);
-            } catch (NumberFormatException e) {
-                return null;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * 安全地将对象转换为 Boolean
-     * 处理 Long、Integer、Boolean 等类型
-     */
-    private Boolean safeToBoolean(Object value) {
-        if (value == null) {
-            return false;
-        }
-        if (value instanceof Boolean) {
-            return (Boolean) value;
-        }
-        if (value instanceof Number) {
-            // 数字类型：1 表示 true，0 表示 false
-            return ((Number) value).longValue() == 1L;
-        }
-        if (value instanceof String) {
-            // 字符串类型：尝试解析为布尔值
-            String str = ((String) value).trim().toLowerCase();
-            return "true".equals(str) || "1".equals(str) || "yes".equals(str);
-        }
-        return false;
-    }
-
     /**
      * 获取菜单树结构（只查 type=0/1）
      */
@@ -980,77 +776,12 @@ public class MenuServiceImpl implements MenuService {
         apiEndpointEntryRepository.deleteAllByIdInBatch(ids);
     }
 
-    /**
-     * 原生 SQL 方式分页查询菜单
-     * 使用 Repository 的 @Query 注解，直接返回 leaf 字段
-     */
-    @SuppressWarnings("unused") // retained for potential native SQL path
-    private Page<ResourceResponseDto> findMenusByNativeSql(ResourceRequestDto query, List<Integer> typeCodes, Pageable pageable) {
-        Long tenantId = requireTenantId();
-        Page<ResourceProjection> page = resourceRepository.findMenusByNativeSql(
-            typeCodes,
-            typeCodes.size(),
-            query.getParentId(),
-            StringUtils.hasText(query.getTitle()) ? query.getTitle() : null,
-            StringUtils.hasText(query.getName()) ? query.getName() : null,
-            StringUtils.hasText(query.getPermission()) ? query.getPermission() : null,
-            query.getEnabled(),
-            tenantId,
-            pageable
-        );
-        
-        return page.map(proj -> {
-            ResourceResponseDto dto = new ResourceResponseDto();
-            dto.setRecordTenantId(tenantId);
-            dto.setId(proj.getId());
-            dto.setName(proj.getName());
-            dto.setTitle(proj.getTitle());
-            dto.setUrl(proj.getUrl());
-            dto.setIcon(proj.getIcon());
-            dto.setShowIcon(Boolean.TRUE.equals(proj.getShowIcon()));
-            dto.setSort(safeToInteger(proj.getSort()));
-            dto.setComponent(proj.getComponent());
-            dto.setRedirect(proj.getRedirect());
-            dto.setHidden(Boolean.TRUE.equals(proj.getHidden()));
-            dto.setKeepAlive(Boolean.TRUE.equals(proj.getKeepAlive()));
-            dto.setPermission(proj.getPermission());
-            dto.setType(safeToInteger(proj.getType()));
-            if (dto.getType() != null) {
-                ResourceType resourceType = ResourceType.fromCode(dto.getType());
-                dto.setTypeName(resourceType.getDescription());
-                dto.setCarrierKind(getCarrierKind(resourceType));
-            }
-            dto.setParentId(proj.getParentId());
-            dto.setLeaf(proj.getLeaf() != null && proj.getLeaf() == 1);
-            return dto;
-        });
-    }
-
     private String getCarrierKind(ResourceType resourceType) {
         return switch (resourceType) {
             case DIRECTORY, MENU -> "menu";
             case BUTTON -> "ui_action";
             case API -> "api_endpoint";
         };
-    }
-    
-    /**
-     * JPQL DTO 投影方式分页查询菜单
-     * 使用 Repository 的 JPQL 查询，直接返回 DTO 对象
-     */
-    @SuppressWarnings("unused") // kept for future switch to JPQL projection query
-    private Page<ResourceResponseDto> findMenusByJpqlDto(ResourceRequestDto query, List<Integer> typeCodes, Pageable pageable) {
-        Long tenantId = requireTenantId();
-        return resourceRepository.findMenusByJpqlDto(
-            typeCodes,
-            query.getParentId(),
-            StringUtils.hasText(query.getTitle()) ? query.getTitle() : null,
-            StringUtils.hasText(query.getName()) ? query.getName() : null,
-            StringUtils.hasText(query.getPermission()) ? query.getPermission() : null,
-            query.getEnabled(),
-            tenantId,
-            pageable
-        );
     }
 
     /**

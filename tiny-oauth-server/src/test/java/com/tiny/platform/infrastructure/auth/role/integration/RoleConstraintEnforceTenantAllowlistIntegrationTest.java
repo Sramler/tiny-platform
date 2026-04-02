@@ -62,7 +62,6 @@ class RoleConstraintEnforceTenantAllowlistIntegrationTest {
         Long tenantId = 1L;
 
         User user = new User();
-        user.setTenantId(tenantId);
         user.setUsername("rbac3_enforce_allowlist_user_" + System.currentTimeMillis());
         user.setNickname("rbac3 enforce allowlist");
         user = userRepository.save(user);

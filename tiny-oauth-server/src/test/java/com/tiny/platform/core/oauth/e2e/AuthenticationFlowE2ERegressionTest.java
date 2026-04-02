@@ -245,7 +245,6 @@ class AuthenticationFlowE2ERegressionTest {
     private User loginUser() {
         User user = new User();
         user.setId(1L);
-        user.setTenantId(1L);
         user.setUsername("admin");
         user.setEnabled(true);
         user.setAccountNonExpired(true);

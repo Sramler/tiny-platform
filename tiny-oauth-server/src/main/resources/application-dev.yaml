@@ -11,6 +11,8 @@ tiny:
   platform:
     tenant:
       auto-initialize-platform-template-if-missing: true
+      # Local real-link may run under dev profile; honor E2E platform tenant override for auth-method lookup.
+      platform-tenant-code: ${E2E_PLATFORM_TENANT_CODE:default}
 
 server:
   error:

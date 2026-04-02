@@ -399,6 +399,16 @@ databaseChangeLog:
       file: 128-carrier-id-autoincrement-safe-migration.yaml
       relativeToChangelogFile: true
 
+  # user.tenant_id 正式 DROP COLUMN（外键 fk_user_tenant、索引 idx_user_tenant_id 一并清理）
+  - include:
+      file: 129-drop-user-tenant-id-column.yaml
+      relativeToChangelogFile: true
+
+  # 修复 user_authentication_method.tenant_id 仍为 NOT NULL 的漂移，对齐 111 全局认证方式语义
+  - include:
+      file: 130-repair-user-auth-method-tenant-id-nullable.yaml
+      relativeToChangelogFile: true
+
   # 数据修复：修复资源 URL 格式
   - include:
       file: 004-fix-resource-url-format.yaml
@@ -440,12 +450,19 @@ databaseChangeLog:
       author: tiny
       runOnChange: true
       comment: 创建/更新 demo_export_usage 测试数据生成存储过程
+      validCheckSum:
+        - ANY
       changes:
         - sql:
             dbms: mysql
             sql: "DROP PROCEDURE IF EXISTS sp_generate_demo_export_usage"
         - sqlFile:
-            path: classpath:db/changelog/001-create-demo-export-usage-procedure.sql
+            path: db/changelog/001-create-demo-export-usage-procedure.sql
             relativeToChangelogFile: false
             splitStatements: false
             stripComments: false
+
+  # 遗留下线：resource 总表已退化为兼容壳，最终物理删除
+  - include:
+      file: 131-drop-resource-legacy.yaml
+      relativeToChangelogFile: true

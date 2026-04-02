@@ -107,41 +107,13 @@ databaseChangeLog:
                 )
               ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='角色授权关系表';
 
-              INSERT INTO `role_assignment` (
-                `principal_type`,
-                `principal_id`,
-                `role_id`,
-                `tenant_id`,
-                `scope_type`,
-                `scope_id`,
-                `status`,
-                `start_time`,
-                `end_time`,
-                `granted_by`,
-                `granted_at`,
-                `updated_at`
-              )
-              SELECT
-                'USER',
-                ur.`user_id`,
-                ur.`role_id`,
-                ur.`tenant_id`,
-                'TENANT',
-                ur.`tenant_id`,
-                'ACTIVE',
-                NOW(),
-                NULL,
-                NULL,
-                NOW(),
-                NOW()
-              FROM `user_role` ur
-              WHERE NOT EXISTS (
-                SELECT 1
-                FROM `role_assignment` ra
-                WHERE ra.`principal_type` = 'USER'
-                  AND ra.`principal_id` = ur.`user_id`
-                  AND ra.`role_id` = ur.`role_id`
-                  AND ra.`scope_type` = 'TENANT'
-                  AND ra.`tenant_id` = ur.`tenant_id`
-                  AND ra.`scope_id` = ur.`tenant_id`
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_role'),
+                  'INSERT INTO `role_assignment` (`principal_type`,`principal_id`,`role_id`,`tenant_id`,`scope_type`,`scope_id`,`status`,`start_time`,`end_time`,`granted_by`,`granted_at`,`updated_at`) SELECT ''USER'', ur.`user_id`, ur.`role_id`, ur.`tenant_id`, ''TENANT'', ur.`tenant_id`, ''ACTIVE'', NOW(), NULL, NULL, NOW(), NOW() FROM `user_role` ur WHERE NOT EXISTS (SELECT 1 FROM `role_assignment` ra WHERE ra.`principal_type` = ''USER'' AND ra.`principal_id` = ur.`user_id` AND ra.`role_id` = ur.`role_id` AND ra.`scope_type` = ''TENANT'' AND ra.`tenant_id` = ur.`tenant_id` AND ra.`scope_id` = ur.`tenant_id`)',
+                  'SELECT 1'
+                )
               );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;

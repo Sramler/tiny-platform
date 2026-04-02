@@ -60,7 +60,6 @@ class UserDetailsServiceImplTest {
 
         User user = new User();
         user.setId(10L);
-        user.setTenantId(2L);
         user.setUsername("alice");
         user.setEnabled(true);
         user.setAccountNonExpired(true);
@@ -97,7 +96,6 @@ class UserDetailsServiceImplTest {
 
         User user = new User();
         user.setId(12L);
-        user.setTenantId(1L);
         user.setUsername("shared.alice");
         user.setEnabled(true);
         user.setAccountNonExpired(true);
@@ -139,7 +137,6 @@ class UserDetailsServiceImplTest {
 
         User user = new User();
         user.setId(10L);
-        user.setTenantId(1L);
         user.setUsername("alice");
         user.setEnabled(true);
         user.setAccountNonExpired(true);
@@ -177,7 +174,6 @@ class UserDetailsServiceImplTest {
 
         User user = new User();
         user.setId(20L);
-        user.setTenantId(9L);
         user.setUsername("org.alice");
         user.setEnabled(true);
         user.setAccountNonExpired(true);
@@ -220,7 +216,6 @@ class UserDetailsServiceImplTest {
 
         User user = new User();
         user.setId(21L);
-        user.setTenantId(9L);
         user.setUsername("dept.bob");
         user.setEnabled(true);
         user.setAccountNonExpired(true);
@@ -255,7 +250,6 @@ class UserDetailsServiceImplTest {
 
         User user = new User();
         user.setId(44L);
-        user.setTenantId(11L);
         user.setUsername("guard.user");
         user.setEnabled(true);
         user.setAccountNonExpired(true);

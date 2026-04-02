@@ -1,0 +1,64 @@
+# 正式删除 user.tenant_id：授权与成员关系以 tenant_user + activeTenantId 为准（044 停双写、045 全局 username 唯一后）。
+#
+# 为什么现在可以删：
+# - 应用层 User 实体已不再映射该列；用户 API 契约已去除 recordTenantId；E2E seed 不再写 user.tenant_id。
+#
+# 回滚策略：
+# - 不建议在生产做 Liquibase rollback 恢复该列：旧数据语义无法自动还原，且可能与已部署应用假设冲突。
+# - 若灾难回退仅允许「前滚」：重新发布仍映射 tenant_id 的旧应用 + 手工 ADD COLUMN NULL（本文件不提供自动 rollback）。
+#
+# 真实库结构依据（Liquibase 020 / 018）：
+# - fk_user_tenant：user.tenant_id -> tenant.id
+# - idx_user_tenant_id：单列二级索引
+# 处理顺序：外键 -> 索引 -> 列；各步 precondition onFail=MARK_RAN 以兼容已部分手工清理的环境。
+databaseChangeLog:
+  - changeSet:
+      id: 129-drop-user-tenant-fk
+      author: tiny
+      comment: 删除 user.fk_user_tenant，为 DROP COLUMN tenant_id 清障
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - foreignKeyConstraintExists:
+            foreignKeyName: fk_user_tenant
+            foreignKeyTableName: user
+      changes:
+        - dropForeignKeyConstraint:
+            baseTableName: user
+            constraintName: fk_user_tenant
+
+  - changeSet:
+      id: 129-drop-user-tenant-id-index
+      author: tiny
+      comment: 删除 user.idx_user_tenant_id（018 创建的单列索引）
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - indexExists:
+            indexName: idx_user_tenant_id
+            tableName: user
+      changes:
+        - dropIndex:
+            indexName: idx_user_tenant_id
+            tableName: user
+
+  - changeSet:
+      id: 129-drop-user-tenant-id-column
+      author: tiny
+      comment: DROP user.tenant_id；membership 真相源为 tenant_user
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - columnExists:
+            columnName: tenant_id
+            tableName: user
+      changes:
+        - dropColumn:
+            columnName: tenant_id
+            tableName: user

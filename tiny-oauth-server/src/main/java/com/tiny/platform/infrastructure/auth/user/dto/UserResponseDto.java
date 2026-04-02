@@ -6,9 +6,6 @@ public class UserResponseDto {
 
     private Long id;
 
-    /** 展示/审计用：记录所属租户 ID，不参与鉴权。 */
-    private Long recordTenantId;
-
     private String username;
 
     private String nickname;
@@ -51,14 +48,6 @@ public class UserResponseDto {
 
     public Long getId() {
         return id;
-    }
-
-    public Long getRecordTenantId() {
-        return recordTenantId;
-    }
-
-    public void setRecordTenantId(Long recordTenantId) {
-        this.recordTenantId = recordTenantId;
     }
 
     public String getUsername() {

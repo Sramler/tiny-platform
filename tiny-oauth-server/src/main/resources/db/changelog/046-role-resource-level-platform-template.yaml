@@ -1,10 +1,13 @@
 databaseChangeLog:
   # 平台模板与 default 租户解耦：role/resource 增加 level 字段，tenant_id 可空；平台模板行 tenant_id IS NULL。
   # 见 docs/TINY_PLATFORM_AUTHORIZATION_LEGACY_REMOVAL_PLAN.md §4、Phase1 技术设计 §4.4/4.5
+  # 幂等：全新库若 schema 已含 role_level/resource_level 或与部分执行后重跑，避免重复 ADD COLUMN / CHECK。
   - changeSet:
       id: 046-role-resource-level-platform-template
       author: tiny
       comment: role/resource 增加 role_level/resource_level，tenant_id 可空；PLATFORM 时 tenant_id 必为 NULL
+      validCheckSum:
+        - ANY
       preConditions:
         - onFail: MARK_RAN
         - onError: HALT
@@ -21,15 +24,73 @@ databaseChangeLog:
             dbms: mysql
             splitStatements: true
             stripComments: false
+            endDelimiter: ;
             sql: |
               ALTER TABLE `role`
-                MODIFY COLUMN `tenant_id` BIGINT NULL COMMENT '租户ID；PLATFORM 模板时为 NULL',
-                ADD COLUMN `role_level` VARCHAR(16) NOT NULL DEFAULT 'TENANT' COMMENT '模板层级：PLATFORM/TENANT';
+                MODIFY COLUMN `tenant_id` BIGINT NULL COMMENT '租户ID；PLATFORM 模板时为 NULL';
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'role' AND COLUMN_NAME = 'role_level'),
+                  'SELECT 1',
+                  'ALTER TABLE `role` ADD COLUMN `role_level` VARCHAR(16) NOT NULL DEFAULT ''TENANT'' COMMENT ''模板层级：PLATFORM/TENANT'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
               ALTER TABLE `resource`
-                MODIFY COLUMN `tenant_id` BIGINT NULL COMMENT '租户ID；PLATFORM 模板时为 NULL',
-                ADD COLUMN `resource_level` VARCHAR(16) NOT NULL DEFAULT 'TENANT' COMMENT '模板层级：PLATFORM/TENANT';
-              ALTER TABLE `role`   ADD CONSTRAINT `chk_role_level_tenant` CHECK (`role_level` <> 'PLATFORM' OR `tenant_id` IS NULL);
-              ALTER TABLE `role`   ADD CONSTRAINT `chk_role_level_tenant_id` CHECK (`role_level` <> 'TENANT' OR `tenant_id` IS NOT NULL);
-              ALTER TABLE `resource` ADD CONSTRAINT `chk_resource_level_tenant` CHECK (`resource_level` <> 'PLATFORM' OR `tenant_id` IS NULL);
-              ALTER TABLE `resource` ADD CONSTRAINT `chk_resource_level_tenant_id` CHECK (`resource_level` <> 'TENANT' OR `tenant_id` IS NOT NULL);
+                MODIFY COLUMN `tenant_id` BIGINT NULL COMMENT '租户ID；PLATFORM 模板时为 NULL';
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'resource' AND COLUMN_NAME = 'resource_level'),
+                  'SELECT 1',
+                  'ALTER TABLE `resource` ADD COLUMN `resource_level` VARCHAR(16) NOT NULL DEFAULT ''TENANT'' COMMENT ''模板层级：PLATFORM/TENANT'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'role' AND CONSTRAINT_NAME = 'chk_role_level_tenant' AND CONSTRAINT_TYPE = 'CHECK'),
+                  'SELECT 1',
+                  'ALTER TABLE `role` ADD CONSTRAINT `chk_role_level_tenant` CHECK (`role_level` <> ''PLATFORM'' OR `tenant_id` IS NULL)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'role' AND CONSTRAINT_NAME = 'chk_role_level_tenant_id' AND CONSTRAINT_TYPE = 'CHECK'),
+                  'SELECT 1',
+                  'ALTER TABLE `role` ADD CONSTRAINT `chk_role_level_tenant_id` CHECK (`role_level` <> ''TENANT'' OR `tenant_id` IS NOT NULL)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'resource' AND CONSTRAINT_NAME = 'chk_resource_level_tenant' AND CONSTRAINT_TYPE = 'CHECK'),
+                  'SELECT 1',
+                  'ALTER TABLE `resource` ADD CONSTRAINT `chk_resource_level_tenant` CHECK (`resource_level` <> ''PLATFORM'' OR `tenant_id` IS NULL)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'resource' AND CONSTRAINT_NAME = 'chk_resource_level_tenant_id' AND CONSTRAINT_TYPE = 'CHECK'),
+                  'SELECT 1',
+                  'ALTER TABLE `resource` ADD CONSTRAINT `chk_resource_level_tenant_id` CHECK (`resource_level` <> ''TENANT'' OR `tenant_id` IS NOT NULL)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
               ALTER TABLE `role_resource` MODIFY COLUMN `tenant_id` BIGINT NULL COMMENT '租户ID；平台模板关联时为 NULL';

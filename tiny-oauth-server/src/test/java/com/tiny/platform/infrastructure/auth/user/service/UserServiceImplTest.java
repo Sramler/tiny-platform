@@ -120,7 +120,6 @@ class UserServiceImplTest {
 
         User existingUser = new User();
         existingUser.setId(9L);
-        existingUser.setTenantId(1L);
         existingUser.setUsername("alice");
         existingUser.setNickname("Alice");
         existingUser.setEnabled(true);
@@ -176,7 +175,6 @@ class UserServiceImplTest {
         LocalDateTime failedAt = LocalDateTime.now().minusMinutes(2);
         User existingUser = new User();
         existingUser.setId(10L);
-        existingUser.setTenantId(1L);
         existingUser.setUsername("bob");
         existingUser.setNickname("Bob");
         existingUser.setEnabled(true);
@@ -232,7 +230,6 @@ class UserServiceImplTest {
         LocalDateTime lastFailedAt = now.minusMinutes(2);
         User existingUser = new User();
         existingUser.setId(11L);
-        existingUser.setTenantId(1L);
         existingUser.setUsername("carol");
         existingUser.setNickname("Carol");
         existingUser.setEnabled(true);
@@ -252,7 +249,6 @@ class UserServiceImplTest {
 
         assertThat(page.getContent()).hasSize(1);
         UserResponseDto dto = page.getContent().getFirst();
-        assertThat(dto.getRecordTenantId()).isEqualTo(1L);
         assertThat(dto.getUsername()).isEqualTo("carol");
         assertThat(dto.isAccountNonLocked()).isFalse();
         assertThat(dto.getFailedLoginCount()).isEqualTo(5);
@@ -288,7 +284,6 @@ class UserServiceImplTest {
 
         User user = new User();
         user.setId(5L);
-        user.setTenantId(1L);
         Role role = new com.tiny.platform.infrastructure.auth.role.domain.Role();
         role.setId(100L);
 
@@ -360,7 +355,6 @@ class UserServiceImplTest {
         TenantContext.setActiveTenantId(9L);
         User membershipUser = new User();
         membershipUser.setId(20L);
-        membershipUser.setTenantId(1L);
         membershipUser.setUsername("shared.alice");
         when(authUserResolutionService.resolveUserRecordInActiveTenant("shared.alice", 9L)).thenReturn(Optional.of(membershipUser));
 
@@ -429,8 +423,6 @@ class UserServiceImplTest {
 
         User membershipUser = new User();
         membershipUser.setId(22L);
-        membershipUser.setTenantId(1L);
-
         when(tenantUserRepository.existsByTenantIdAndUserIdAndStatus(9L, 22L, "ACTIVE")).thenReturn(true);
         when(userRepository.findById(22L)).thenReturn(Optional.of(membershipUser));
         when(effectiveRoleResolutionService.findEffectiveRoleIdsForUserInTenant(22L, 9L)).thenReturn(List.of(100L, 101L));
@@ -468,8 +460,6 @@ class UserServiceImplTest {
 
         User membershipUser = new User();
         membershipUser.setId(22L);
-        membershipUser.setTenantId(1L);
-
         when(tenantUserRepository.existsByTenantIdAndUserIdAndStatus(9L, 22L, "ACTIVE")).thenReturn(true);
         when(userRepository.findById(22L)).thenReturn(Optional.of(membershipUser));
         when(effectiveRoleResolutionService.findEffectiveRoleIdsForUserInTenant(22L, 9L, "ORG", 55L))
@@ -506,7 +496,6 @@ class UserServiceImplTest {
 
         User membershipUser = new User();
         membershipUser.setId(30L);
-        membershipUser.setTenantId(1L);
         membershipUser.setUsername("shared.alice");
         membershipUser.setNickname("Shared Alice");
         membershipUser.setEnabled(true);
@@ -824,7 +813,6 @@ class UserServiceImplTest {
 
         User membershipUser = new User();
         membershipUser.setId(40L);
-        membershipUser.setTenantId(1L);
         membershipUser.setUsername("shared.bob");
         membershipUser.setEnabled(false);
         membershipUser.setAccountNonExpired(true);
@@ -867,7 +855,6 @@ class UserServiceImplTest {
 
         User user = new User();
         user.setId(50L);
-        user.setTenantId(1L);
         Role role = new Role();
         role.setId(100L);
 

@@ -4,20 +4,44 @@ databaseChangeLog:
       id: add-dict-type-builtin-fields
       author: tiny
       comment: 为 dict_type 表添加 is_builtin 和 builtin_locked 字段
+      validCheckSum:
+        - ANY
       changes:
         - sql:
             dbms: mysql
+            splitStatements: true
+            stripComments: false
+            endDelimiter: ;
             sql: |
-              ALTER TABLE dict_type
-                ADD COLUMN is_builtin TINYINT NOT NULL DEFAULT 0 COMMENT '是否平台内置（1=内置）' AFTER tenant_id,
-                ADD COLUMN builtin_locked TINYINT NOT NULL DEFAULT 0 COMMENT '是否锁定（1=锁定不可删除/不可改关键字段）' AFTER is_builtin;
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'dict_type' AND COLUMN_NAME = 'is_builtin'),
+                  'SELECT 1',
+                  'ALTER TABLE dict_type ADD COLUMN is_builtin TINYINT NOT NULL DEFAULT 0 COMMENT ''是否平台内置（1=内置）'' AFTER tenant_id'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'dict_type' AND COLUMN_NAME = 'builtin_locked'),
+                  'SELECT 1',
+                  'ALTER TABLE dict_type ADD COLUMN builtin_locked TINYINT NOT NULL DEFAULT 0 COMMENT ''是否锁定（1=锁定不可删除/不可改关键字段）'' AFTER is_builtin'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
         - sql:
             dbms: mysql
+            splitStatements: true
+            stripComments: false
+            endDelimiter: ;
             sql: |
-              -- 将初始化脚本创建的字典标记为内置并锁定
-              UPDATE dict_type 
-              SET is_builtin = 1, builtin_locked = 1 
-              WHERE tenant_id = 0 
+              UPDATE dict_type
+              SET is_builtin = 1, builtin_locked = 1
+              WHERE tenant_id = 0
                 AND dict_code IN (
                   'ENABLE_STATUS', 'YES_NO', 'BOOLEAN_FLAG', 'DELETE_FLAG', 'DATA_STATUS',
                   'AUDIT_STATUS', 'USER_STATUS', 'ACCOUNT_STATUS', 'USER_TYPE', 'ROLE_TYPE',
@@ -30,18 +54,32 @@ databaseChangeLog:
       id: add-dict-item-builtin-field
       author: tiny
       comment: 为 dict_item 表添加 is_builtin 字段（注意：enabled 字段已存在，不需要重复添加）
+      validCheckSum:
+        - ANY
       changes:
         - sql:
             dbms: mysql
+            splitStatements: true
+            stripComments: false
+            endDelimiter: ;
             sql: |
-              ALTER TABLE dict_item
-                ADD COLUMN is_builtin TINYINT NOT NULL DEFAULT 0 COMMENT '是否平台内置（1=内置）' AFTER tenant_id;
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'dict_item' AND COLUMN_NAME = 'is_builtin'),
+                  'SELECT 1',
+                  'ALTER TABLE dict_item ADD COLUMN is_builtin TINYINT NOT NULL DEFAULT 0 COMMENT ''是否平台内置（1=内置）'' AFTER tenant_id'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
         - sql:
             dbms: mysql
+            splitStatements: true
+            stripComments: false
+            endDelimiter: ;
             sql: |
-              -- 将初始化脚本创建的字典项标记为内置
               UPDATE dict_item di
               INNER JOIN dict_type dt ON di.dict_type_id = dt.id
               SET di.is_builtin = 1
               WHERE dt.is_builtin = 1;
-

@@ -137,7 +137,7 @@ class RoleConstraintRuleAdminServiceIntegrationTest {
         Long roleId = r.getId();
         roleCardinalityRepository.deleteByTenantIdAndRoleIdAndScopeType(tenantId, roleId, "TENANT");
 
-        assertThatThrownBy(() -> adminService.upsertRoleCardinality(tenantId, roleId, "ORG", 1))
+        assertThatThrownBy(() -> adminService.upsertRoleCardinality(tenantId, roleId, "INVALID_SCOPE", 1))
             .isInstanceOf(BusinessException.class);
 
         assertThatThrownBy(() -> adminService.upsertRoleCardinality(tenantId, roleId, "TENANT", 0))

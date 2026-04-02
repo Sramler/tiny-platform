@@ -64,7 +64,7 @@ class CoreOauthConfigCoverageTest {
 
         assertThat(cors).isNotNull();
         assertThat(cors.getAllowedOriginPatterns())
-                .contains("http://localhost:[*]", "http://127.0.0.1:[*]", "https://*.yourdomain.com");
+                .contains("http://localhost:*", "http://127.0.0.1:*", "https://*.yourdomain.com");
         assertThat(cors.getAllowedMethods()).contains("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH");
         assertThat(cors.getAllowedHeaders())
                 .contains("X-Trace-Id", "X-Request-Id", "traceparent", "x-b3-traceid", "x-b3-spanid");

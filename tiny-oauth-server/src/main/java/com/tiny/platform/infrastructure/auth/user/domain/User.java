@@ -1,7 +1,5 @@
 package com.tiny.platform.infrastructure.auth.user.domain;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 
 import java.io.Serializable;
@@ -10,8 +8,7 @@ import java.time.LocalDateTime;
 /**
  * 用户实体。授权与可见性以 tenant_user + activeTenantId 为准；
  * username 全局唯一（uk_user_username）。
- * <p>tenant_id 已完全退场：不再写入（创建时不再 setTenantId），
- * 仅作 DTO 展示（recordTenantId）保留历史值。044/045 迁移已置空。
+ * <p>物理列 {@code user.tenant_id} 计划在后续 migration 中删除；实体不再映射该列。
  */
 @Entity
 @Table(name = "user",
@@ -22,11 +19,6 @@ public class User implements Serializable {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
-    /** @deprecated 已退场，不再写入。历史值仅 DTO 展示用，授权以 tenant_user 为准。 */
-    @Deprecated
-    @Column(name = "tenant_id", nullable = true)
-    private Long tenantId;
 
     @Column(nullable = false, length = 50)
     private String username;
@@ -74,17 +66,6 @@ public class User implements Serializable {
 
     public void setId(Long id) {
         this.id = id;
-    }
-
-    @JsonProperty("recordTenantId")
-    public Long getTenantId() {
-        return tenantId;
-    }
-
-    /** @deprecated 不再写入。保留仅供 JPA hydration 和历史测试。 */
-    @Deprecated
-    public void setTenantId(Long tenantId) {
-        this.tenantId = tenantId;
     }
 
     public String getUsername() {

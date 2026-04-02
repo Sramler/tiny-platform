@@ -3,11 +3,17 @@ databaseChangeLog:
       id: add-resource-unique-constraint
       author: tiny
       comment: 为 resource 表添加 name 字段的唯一约束，防止重复插入数据
+      validCheckSum:
+        - ANY
       preConditions:
         - onFail: MARK_RAN
         - not:
             - indexExists:
                 indexName: uk_resource_name
+                tableName: resource
+        - not:
+            - indexExists:
+                indexName: uk_resource_tenant_name
                 tableName: resource
       changes:
         - addUniqueConstraint:

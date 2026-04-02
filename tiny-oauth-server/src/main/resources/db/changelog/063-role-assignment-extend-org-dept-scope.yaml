@@ -3,6 +3,8 @@ databaseChangeLog:
       id: 063-role-assignment-extend-org-dept-scope
       author: tiny
       comment: Phase3：扩展 role_assignment CHECK 约束以支持 ORG/DEPT scope_type
+      validCheckSum:
+        - ANY
       preConditions:
         - onFail: CONTINUE
         - onError: HALT
@@ -56,11 +58,17 @@ databaseChangeLog:
               DROP PROCEDURE IF EXISTS `_063_drop_check_if_exists`;
         - sql:
             dbms: mysql
-            splitStatements: false
+            splitStatements: true
             stripComments: false
+            endDelimiter: ;
             sql: |
-              ALTER TABLE `role_assignment` ADD CONSTRAINT `chk_scope_rules` CHECK (
-                (scope_type = 'PLATFORM' AND tenant_id IS NULL AND scope_id IS NULL)
-                OR (scope_type = 'TENANT' AND tenant_id IS NOT NULL AND scope_id = tenant_id)
-                OR (scope_type IN ('ORG', 'DEPT') AND tenant_id IS NOT NULL AND scope_id IS NOT NULL)
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'role_assignment' AND CONSTRAINT_NAME = 'chk_scope_rules' AND CONSTRAINT_TYPE = 'CHECK'),
+                  'SELECT 1',
+                  'ALTER TABLE `role_assignment` ADD CONSTRAINT `chk_scope_rules` CHECK ((scope_type = ''PLATFORM'' AND tenant_id IS NULL AND scope_id IS NULL) OR (scope_type = ''TENANT'' AND tenant_id IS NOT NULL AND scope_id = tenant_id) OR (scope_type IN (''ORG'', ''DEPT'') AND tenant_id IS NOT NULL AND scope_id IS NOT NULL))'
+                )
               );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;

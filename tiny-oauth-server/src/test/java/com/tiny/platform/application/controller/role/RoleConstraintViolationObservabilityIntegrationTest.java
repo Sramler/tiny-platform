@@ -117,7 +117,6 @@ class RoleConstraintViolationObservabilityIntegrationTest {
     @Test
     void violation_shouldBeQueryable_viaViolationsEndpoint() throws Exception {
         User userEntity = new User();
-        userEntity.setTenantId(TENANT_ID);
         userEntity.setUsername("rbac3_violation_obs_user_" + System.currentTimeMillis());
         userEntity.setNickname("rbac3 violation obs");
         userEntity = userRepository.save(userEntity);

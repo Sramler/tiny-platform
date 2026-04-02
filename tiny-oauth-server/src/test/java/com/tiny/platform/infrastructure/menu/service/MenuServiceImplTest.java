@@ -39,7 +39,6 @@ import com.tiny.platform.infrastructure.menu.domain.MenuEntry;
 import com.tiny.platform.infrastructure.menu.repository.MenuEntryRepository;
 import com.tiny.platform.infrastructure.menu.repository.MenuPermissionRequirementRepository;
 import com.tiny.platform.infrastructure.tenant.config.PlatformTenantResolver;
-import jakarta.persistence.EntityManager;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -53,7 +52,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.mockito.ArgumentCaptor;
 
 class MenuServiceImplTest {
@@ -71,7 +69,6 @@ class MenuServiceImplTest {
     private UiActionPermissionRequirementRepository uiActionPermissionRequirementRepository;
     private ApiEndpointPermissionRequirementRepository apiEndpointPermissionRequirementRepository;
     private AuthorizationAuditService authorizationAuditService;
-    private EntityManager entityManager;
     private RoleRepository roleRepository;
     private MenuServiceImpl service;
 
@@ -89,7 +86,6 @@ class MenuServiceImplTest {
         menuPermissionRequirementRepository = Mockito.mock(MenuPermissionRequirementRepository.class);
         uiActionPermissionRequirementRepository = Mockito.mock(UiActionPermissionRequirementRepository.class);
         apiEndpointPermissionRequirementRepository = Mockito.mock(ApiEndpointPermissionRequirementRepository.class);
-        entityManager = Mockito.mock(EntityManager.class);
         authorizationAuditService = Mockito.mock(AuthorizationAuditService.class);
         roleRepository = Mockito.mock(RoleRepository.class);
 
@@ -112,7 +108,6 @@ class MenuServiceImplTest {
             authorizationAuditService,
             roleRepository
         );
-        ReflectionTestUtils.setField(service, "entityManager", entityManager);
 
         when(menuPermissionRequirementRepository.findRowsByMenuIdIn(anyCollection())).thenReturn(List.of());
         when(uiActionPermissionRequirementRepository.findRowsByUiActionIdIn(anyCollection())).thenReturn(List.of());
@@ -145,7 +140,6 @@ class MenuServiceImplTest {
         assertThat(page.getTotalElements()).isEqualTo(1L);
         assertThat(page.getContent()).extracting(ResourceResponseDto::getName).containsExactly("user");
         verify(menuEntryRepository).findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Pageable.class));
-        verify(entityManager, never()).createNativeQuery(any(String.class));
     }
 
     @Test
@@ -236,7 +230,6 @@ class MenuServiceImplTest {
         verify(menuEntryRepository).deleteAllByIdInBatch(List.of(9L));
         verify(uiActionEntryRepository).deleteAllByIdInBatch(List.of(9L));
         verify(apiEndpointEntryRepository).deleteAllByIdInBatch(List.of(9L));
-        verify(entityManager, never()).createNativeQuery(any(String.class));
     }
 
     @Test

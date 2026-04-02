@@ -1,0 +1,78 @@
+# 修复漂移：user_authentication_method.tenant_id 在 111 设计下应为可空（全局认证方式 tenant_id IS NULL）。
+# 根因：111-add-auth-scope-key-and-uk 仅在 auth_scope_key 不存在时执行；若该 changeset 被 MARK_RAN 跳过、
+# 或库由旧 snapshot 恢复导致列仍为 NOT NULL，则 ensure-platform-admin 等写入 NULL 会报 1048。
+# 本文件与 129 / user.tenant_id 删列无关。
+databaseChangeLog:
+  - changeSet:
+      id: 130-repair-uam-drop-fk-if-tenant-still-not-null
+      author: tiny
+      comment: 若 tenant_id 仍为 NOT NULL 且存在外键，先 DROP fk_user_auth_method_tenant 以便 MODIFY
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - sqlCheck:
+                expectedResult: "1"
+                sql: |
+                  SELECT COUNT(*) FROM information_schema.COLUMNS
+                  WHERE TABLE_SCHEMA = DATABASE()
+                    AND TABLE_NAME = 'user_authentication_method'
+                    AND COLUMN_NAME = 'tenant_id'
+                    AND IS_NULLABLE = 'NO'
+            - foreignKeyConstraintExists:
+                foreignKeyName: fk_user_auth_method_tenant
+                foreignKeyTableName: user_authentication_method
+      changes:
+        - dropForeignKeyConstraint:
+            baseTableName: user_authentication_method
+            constraintName: fk_user_auth_method_tenant
+
+  - changeSet:
+      id: 130-repair-uam-tenant-id-to-nullable
+      author: tiny
+      comment: 将 user_authentication_method.tenant_id 改为可空，对齐 111 与 UserAuthenticationMethod 映射
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - sqlCheck:
+            expectedResult: "1"
+            sql: |
+              SELECT COUNT(*) FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA = DATABASE()
+                AND TABLE_NAME = 'user_authentication_method'
+                AND COLUMN_NAME = 'tenant_id'
+                AND IS_NULLABLE = 'NO'
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: false
+            sql: |
+              ALTER TABLE `user_authentication_method`
+                MODIFY COLUMN `tenant_id` BIGINT NULL COMMENT '租户作用域；NULL 表示用户级全局认证方式'
+
+  - changeSet:
+      id: 130-repair-uam-restore-fk-if-missing
+      author: tiny
+      comment: 补回 fk_user_auth_method_tenant（130 或 111 曾删除外键后需存在）
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - tableExists:
+            tableName: user_authentication_method
+        - not:
+            foreignKeyConstraintExists:
+              foreignKeyName: fk_user_auth_method_tenant
+              foreignKeyTableName: user_authentication_method
+      changes:
+        - addForeignKeyConstraint:
+            baseTableName: user_authentication_method
+            baseColumnNames: tenant_id
+            constraintName: fk_user_auth_method_tenant
+            referencedTableName: tenant
+            referencedColumnNames: id

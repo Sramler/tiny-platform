@@ -17,11 +17,6 @@ export type UserSummary = {
   id: string
   username: string
   /**
-   * 用户记录所属租户ID，不是当前活动租户上下文。
-   * 控制面列表/详情应把它理解为记录归属。
-   */
-  recordTenantId?: number
-  /**
    * 当前活动租户主字段。
    * 页面与运行时上下文应优先消费该字段。
    */

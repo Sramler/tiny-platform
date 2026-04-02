@@ -74,6 +74,8 @@ databaseChangeLog:
       id: 111-backfill-platform-admin-auth-to-global-tenant
       author: tiny
       comment: 将 platform_admin 的 LOCAL+PASSWORD 行归为全局(tenant_id NULL)，与 ensure-platform-admin 新写入语义一致
+      validCheckSum:
+        - ANY
       preConditions:
         - onFail: MARK_RAN
         - onError: HALT
@@ -85,12 +87,17 @@ databaseChangeLog:
       changes:
         - sql:
             dbms: mysql
-            splitStatements: false
+            splitStatements: true
             stripComments: false
+            endDelimiter: ;
             sql: |
-              UPDATE `user_authentication_method` uam
-              INNER JOIN `user` u ON u.id = uam.user_id
-              SET uam.tenant_id = NULL
-              WHERE u.username = 'platform_admin'
-                AND uam.authentication_provider = 'LOCAL'
-                AND uam.authentication_type = 'PASSWORD';
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_authentication_method' AND COLUMN_NAME = 'tenant_id' AND IS_NULLABLE = 'YES'),
+                  'UPDATE `user_authentication_method` uam INNER JOIN `user` u ON u.id = uam.user_id SET uam.tenant_id = NULL WHERE u.username = ''platform_admin'' AND uam.authentication_provider = ''LOCAL'' AND uam.authentication_type = ''PASSWORD''',
+                  'SELECT 1'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;

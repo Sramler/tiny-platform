@@ -12,6 +12,7 @@ import com.tiny.platform.infrastructure.auth.resource.domain.Resource;
 import com.tiny.platform.infrastructure.auth.resource.domain.ApiEndpointEntry;
 import com.tiny.platform.infrastructure.auth.resource.domain.UiActionEntry;
 import com.tiny.platform.infrastructure.auth.resource.enums.ResourceType;
+import com.tiny.platform.infrastructure.auth.resource.repository.CarrierProjectionRepository;
 import com.tiny.platform.infrastructure.auth.resource.repository.RoleResourcePermissionBindingView;
 import com.tiny.platform.infrastructure.auth.resource.repository.ResourceRepository;
 import com.tiny.platform.infrastructure.auth.resource.repository.ApiEndpointEntryRepository;
@@ -36,6 +37,7 @@ class TenantBootstrapServiceImplTest {
 
     private TenantRepository tenantRepository;
     private ResourceRepository resourceRepository;
+    private CarrierProjectionRepository carrierProjectionRepository;
     private MenuEntryRepository menuEntryRepository;
     private UiActionEntryRepository uiActionEntryRepository;
     private ApiEndpointEntryRepository apiEndpointEntryRepository;
@@ -48,6 +50,7 @@ class TenantBootstrapServiceImplTest {
     void setUp() {
         tenantRepository = org.mockito.Mockito.mock(TenantRepository.class);
         resourceRepository = org.mockito.Mockito.mock(ResourceRepository.class);
+        carrierProjectionRepository = org.mockito.Mockito.mock(CarrierProjectionRepository.class);
         menuEntryRepository = org.mockito.Mockito.mock(MenuEntryRepository.class);
         uiActionEntryRepository = org.mockito.Mockito.mock(UiActionEntryRepository.class);
         apiEndpointEntryRepository = org.mockito.Mockito.mock(ApiEndpointEntryRepository.class);
@@ -84,7 +87,7 @@ class TenantBootstrapServiceImplTest {
         });
         service = new TenantBootstrapServiceImpl(
             tenantRepository,
-            resourceRepository,
+            carrierProjectionRepository,
             menuEntryRepository,
             uiActionEntryRepository,
             apiEndpointEntryRepository,
@@ -105,12 +108,10 @@ class TenantBootstrapServiceImplTest {
         Role sourceAdmin = role(20L, null, "ROLE_ADMIN", "管理员");
         sourceAdmin.setRoleLevel("PLATFORM");
 
-        when(resourceRepository.findByTenantIdIsNullOrderBySortAscIdAsc()).thenReturn(List.of(sourceRoot, sourceRead));
-        when(resourceRepository.findCarrierTemplateSnapshotViewsByScope(null, "PLATFORM"))
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(null, "PLATFORM"))
             .thenReturn(List.of(snapshot(sourceRoot), snapshot(sourceRead)));
         when(roleRepository.findByTenantIdIsNullOrderByIdAsc()).thenReturn(List.of(sourceAdmin));
         when(roleRepository.findGrantedRoleCarrierPairsForPlatformTemplate()).thenReturn(List.of(relation(20L, 11L)));
-        when(resourceRepository.findByTenantIdOrderBySortAscIdAsc(9L)).thenReturn(List.of());
 
         AtomicLong nextRoleId = new AtomicLong(200L);
         when(roleRepository.saveAll(any())).thenAnswer(invocation -> {
@@ -122,12 +123,11 @@ class TenantBootstrapServiceImplTest {
             }
             return roles;
         });
-        when(resourceRepository.findCarrierPermissionBindingViewsByIdsAndScope(List.of(100L, 101L), 9L, "TENANT"))
+        when(carrierProjectionRepository.findPermissionBindingViewsByIdsAndScope(List.of(100L, 101L), 9L, "TENANT"))
             .thenReturn(List.of(binding(100L, null, 9000L), binding(101L, "scheduling:console:view", 9001L)));
 
         service.bootstrapFromPlatformTemplate(targetTenant);
 
-        verify(resourceRepository, never()).saveAll(any());
         verify(menuEntryRepository, times(2)).saveAll(any());
         ArgumentCaptor<List<UiActionEntry>> uiActionCaptor = ArgumentCaptor.forClass(List.class);
         verify(uiActionEntryRepository, times(2)).saveAll(uiActionCaptor.capture());
@@ -144,11 +144,9 @@ class TenantBootstrapServiceImplTest {
         });
 
         verify(roleRepository).addRolePermissionRelationByPermissionId(9L, 200L, 9001L);
-        verify(resourceRepository, times(2)).findCarrierTemplateSnapshotViewsByScope(null, "PLATFORM");
-        verify(resourceRepository).findCarrierTemplateSnapshotViewsByScope(9L, "TENANT");
-        verify(resourceRepository).findCarrierPermissionBindingViewsByIdsAndScope(List.of(100L, 101L), 9L, "TENANT");
-        verify(resourceRepository, times(0)).findRolePermissionBindingViewsByIdsAndScope(List.of(100L, 101L), 9L, "TENANT");
-        verify(resourceRepository, never()).findByTenantIdOrderBySortAscIdAsc(9L);
+        verify(carrierProjectionRepository, times(2)).findTemplateSnapshotViewsByScope(null, "PLATFORM");
+        verify(carrierProjectionRepository).findTemplateSnapshotViewsByScope(9L, "TENANT");
+        verify(carrierProjectionRepository).findPermissionBindingViewsByIdsAndScope(List.of(100L, 101L), 9L, "TENANT");
         verify(resourcePermissionBindingService).backfillPermissionCatalogFromResources(9L);
         verify(resourcePermissionBindingService).bindRequiredPermissionIdsForResources(9L);
     }
@@ -173,12 +171,10 @@ class TenantBootstrapServiceImplTest {
         Role sourceAdmin = role(20L, null, "ROLE_ADMIN", "管理员");
         sourceAdmin.setRoleLevel("PLATFORM");
 
-        when(resourceRepository.findByTenantIdIsNullOrderBySortAscIdAsc()).thenReturn(List.of(sourceRoot, sourceButton, sourceApi));
-        when(resourceRepository.findCarrierTemplateSnapshotViewsByScope(null, "PLATFORM"))
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(null, "PLATFORM"))
             .thenReturn(List.of(snapshot(sourceRoot), snapshot(sourceButton), snapshot(sourceApi)));
         when(roleRepository.findByTenantIdIsNullOrderByIdAsc()).thenReturn(List.of(sourceAdmin));
         when(roleRepository.findGrantedRoleCarrierPairsForPlatformTemplate()).thenReturn(List.of(relation(20L, 12L)));
-        when(resourceRepository.findByTenantIdOrderBySortAscIdAsc(9L)).thenReturn(List.of());
 
         AtomicLong nextRoleId = new AtomicLong(200L);
         when(roleRepository.saveAll(any())).thenAnswer(invocation -> {
@@ -190,7 +186,7 @@ class TenantBootstrapServiceImplTest {
             }
             return roles;
         });
-        when(resourceRepository.findCarrierPermissionBindingViewsByIdsAndScope(List.of(100L, 101L, 102L), 9L, "TENANT"))
+        when(carrierProjectionRepository.findPermissionBindingViewsByIdsAndScope(List.of(100L, 101L, 102L), 9L, "TENANT"))
             .thenReturn(List.of(
                 binding(100L, "system:entry:view", 9000L),
                 binding(101L, "system:user:create", 9001L),
@@ -234,12 +230,10 @@ class TenantBootstrapServiceImplTest {
         Role sourceAdmin = role(20L, null, "ROLE_ADMIN", "管理员");
         sourceAdmin.setRoleLevel("PLATFORM");
 
-        when(resourceRepository.findByTenantIdIsNullOrderBySortAscIdAsc()).thenReturn(List.of(sourceRoot, sourceRead));
-        when(resourceRepository.findCarrierTemplateSnapshotViewsByScope(null, "PLATFORM"))
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(null, "PLATFORM"))
             .thenReturn(List.of(snapshot(sourceRoot), snapshot(sourceRead)));
         when(roleRepository.findByTenantIdIsNullOrderByIdAsc()).thenReturn(List.of(sourceAdmin));
         when(roleRepository.findGrantedRoleCarrierPairsForPlatformTemplate()).thenReturn(List.of(relation(20L, 11L)));
-        when(resourceRepository.findByTenantIdOrderBySortAscIdAsc(9L)).thenReturn(List.of());
 
         AtomicLong nextResourceId = new AtomicLong(100L);
         when(resourceRepository.saveAll(any())).thenAnswer(invocation -> {
@@ -262,14 +256,14 @@ class TenantBootstrapServiceImplTest {
             }
             return roles;
         });
-        when(resourceRepository.findCarrierPermissionBindingViewsByIdsAndScope(List.of(100L, 101L), 9L, "TENANT"))
+        when(carrierProjectionRepository.findPermissionBindingViewsByIdsAndScope(List.of(100L, 101L), 9L, "TENANT"))
             .thenReturn(List.of(binding(101L, "scheduling:console:view", 9001L)));
 
         assertThatThrownBy(() -> service.bootstrapFromPlatformTemplate(targetTenant))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("平台模板权限绑定快照不完整");
 
-        verify(resourceRepository).findCarrierPermissionBindingViewsByIdsAndScope(List.of(100L, 101L), 9L, "TENANT");
+        verify(carrierProjectionRepository).findPermissionBindingViewsByIdsAndScope(List.of(100L, 101L), 9L, "TENANT");
         verify(resourceRepository, never()).findRolePermissionBindingViewsByIdsAndScope(any(), any(), any());
     }
 
@@ -284,12 +278,10 @@ class TenantBootstrapServiceImplTest {
         Role sourceAdmin = role(20L, null, "ROLE_ADMIN", "管理员");
         sourceAdmin.setRoleLevel("PLATFORM");
 
-        when(resourceRepository.findByTenantIdIsNullOrderBySortAscIdAsc()).thenReturn(List.of(sourceRoot, sourceRead));
-        when(resourceRepository.findCarrierTemplateSnapshotViewsByScope(null, "PLATFORM"))
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(null, "PLATFORM"))
             .thenReturn(List.of(snapshot(sourceRoot), snapshot(sourceRead)));
         when(roleRepository.findByTenantIdIsNullOrderByIdAsc()).thenReturn(List.of(sourceAdmin));
         when(roleRepository.findGrantedRoleCarrierPairsForPlatformTemplate()).thenReturn(List.of(relation(20L, 11L)));
-        when(resourceRepository.findByTenantIdOrderBySortAscIdAsc(9L)).thenReturn(List.of());
 
         AtomicLong nextResourceId = new AtomicLong(100L);
         when(resourceRepository.saveAll(any())).thenAnswer(invocation -> {
@@ -312,14 +304,14 @@ class TenantBootstrapServiceImplTest {
             }
             return roles;
         });
-        when(resourceRepository.findCarrierPermissionBindingViewsByIdsAndScope(List.of(100L, 101L), 9L, "TENANT"))
+        when(carrierProjectionRepository.findPermissionBindingViewsByIdsAndScope(List.of(100L, 101L), 9L, "TENANT"))
             .thenReturn(List.of(binding(100L, null, null), binding(101L, "scheduling:console:view", 9001L)));
 
         assertThatThrownBy(() -> service.bootstrapFromPlatformTemplate(targetTenant))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("平台模板权限绑定快照不完整");
 
-        verify(resourceRepository).findCarrierPermissionBindingViewsByIdsAndScope(List.of(100L, 101L), 9L, "TENANT");
+        verify(carrierProjectionRepository).findPermissionBindingViewsByIdsAndScope(List.of(100L, 101L), 9L, "TENANT");
         verify(resourceRepository, never()).findRolePermissionBindingViewsByIdsAndScope(any(), any(), any());
     }
 
@@ -334,12 +326,10 @@ class TenantBootstrapServiceImplTest {
         Role sourceAdmin = role(20L, null, "ROLE_ADMIN", "管理员");
         sourceAdmin.setRoleLevel("PLATFORM");
 
-        when(resourceRepository.findByTenantIdIsNullOrderBySortAscIdAsc()).thenReturn(List.of(sourceRoot, sourceRead));
-        when(resourceRepository.findCarrierTemplateSnapshotViewsByScope(null, "PLATFORM"))
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(null, "PLATFORM"))
             .thenReturn(List.of(snapshot(sourceRoot), snapshot(sourceRead)));
         when(roleRepository.findByTenantIdIsNullOrderByIdAsc()).thenReturn(List.of(sourceAdmin));
         when(roleRepository.findGrantedRoleCarrierPairsForPlatformTemplate()).thenReturn(List.of(relation(20L, 11L)));
-        when(resourceRepository.findByTenantIdOrderBySortAscIdAsc(9L)).thenReturn(List.of());
 
         AtomicLong nextResourceId = new AtomicLong(100L);
         when(resourceRepository.saveAll(any())).thenAnswer(invocation -> {
@@ -362,7 +352,7 @@ class TenantBootstrapServiceImplTest {
             }
             return roles;
         });
-        when(resourceRepository.findCarrierPermissionBindingViewsByIdsAndScope(List.of(100L, 101L), 9L, "TENANT"))
+        when(carrierProjectionRepository.findPermissionBindingViewsByIdsAndScope(List.of(100L, 101L), 9L, "TENANT"))
             .thenReturn(List.of(
                 binding(101L, "scheduling:console:view", 9001L),
                 binding(101L, "scheduling:console:view", 9011L)
@@ -386,13 +376,9 @@ class TenantBootstrapServiceImplTest {
         platformUser.setRequiredPermissionId(1001L);
         Role sourceAdmin = role(20L, 1L, "ROLE_ADMIN", "管理员");
 
-        when(resourceRepository.findByTenantIdIsNullOrderBySortAscIdAsc())
-            .thenReturn(List.of())
-            .thenReturn(List.of(platformRoot, platformUser))
-            .thenReturn(List.of(platformRoot, platformUser));
-        when(resourceRepository.findCarrierTemplateSnapshotViewsByScope(1L, "TENANT"))
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(1L, "TENANT"))
             .thenReturn(List.of(snapshot(sourceRoot), snapshot(sourceUser)));
-        when(resourceRepository.findCarrierTemplateSnapshotViewsByScope(null, "PLATFORM"))
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(null, "PLATFORM"))
             .thenReturn(List.of())
             .thenReturn(List.of(snapshot(platformRoot), snapshot(platformUser)));
         when(roleRepository.findByTenantIdIsNullOrderByIdAsc())
@@ -400,8 +386,6 @@ class TenantBootstrapServiceImplTest {
             .thenReturn(List.of(role(200L, null, "ROLE_ADMIN", "管理员")));
         when(roleRepository.findGrantedRoleCarrierPairsForPlatformTemplate()).thenReturn(List.of(relation(200L, 101L)));
         when(tenantRepository.findByCode("default")).thenReturn(Optional.of(defaultTenant));
-        when(resourceRepository.findByTenantIdOrderBySortAscIdAsc(1L)).thenReturn(List.of(sourceRoot, sourceUser));
-        when(resourceRepository.findByTenantIdOrderBySortAscIdAsc(9L)).thenReturn(List.of());
         when(roleRepository.findByTenantIdOrderByIdAsc(1L)).thenReturn(List.of(sourceAdmin));
         when(roleRepository.findGrantedRoleCarrierPairsByTenantId(1L)).thenReturn(List.of(relation(20L, 11L)));
 
@@ -426,9 +410,9 @@ class TenantBootstrapServiceImplTest {
             }
             return roles;
         });
-        when(resourceRepository.findCarrierPermissionBindingViewsByIdsAndScope(List.of(100L, 101L), null, "PLATFORM"))
+        when(carrierProjectionRepository.findPermissionBindingViewsByIdsAndScope(List.of(100L, 101L), null, "PLATFORM"))
             .thenReturn(List.of(binding(100L, "system:entry:view", 1000L), binding(101L, "system:user:list", 1001L)));
-        when(resourceRepository.findCarrierPermissionBindingViewsByIdsAndScope(List.of(102L, 103L), 9L, "TENANT"))
+        when(carrierProjectionRepository.findPermissionBindingViewsByIdsAndScope(List.of(102L, 103L), 9L, "TENANT"))
             .thenReturn(List.of(binding(102L, "system:entry:view", 2000L), binding(103L, "system:user:list", 2001L)));
 
         service.bootstrapFromPlatformTemplate(targetTenant);
@@ -444,7 +428,7 @@ class TenantBootstrapServiceImplTest {
     void ensurePlatformTemplatesInitialized_whenTemplatesExist_shouldNoop() {
         Resource template = resource(100L, null, "system", null, "/system", "", "system:entry:view", ResourceType.DIRECTORY);
         template.setResourceLevel("PLATFORM");
-        when(resourceRepository.findCarrierTemplateSnapshotViewsByScope(null, "PLATFORM"))
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(null, "PLATFORM"))
             .thenReturn(List.of(snapshot(template)));
         when(roleRepository.findByTenantIdIsNullOrderByIdAsc())
             .thenReturn(List.of(role(200L, null, "ROLE_ADMIN", "管理员")));
@@ -465,11 +449,10 @@ class TenantBootstrapServiceImplTest {
         Resource sourceRoot = resource(10L, 1L, "system", null, "/system", "", "system:entry:view", ResourceType.DIRECTORY);
         Role sourceAdmin = role(20L, 1L, "ROLE_ADMIN", "管理员");
 
-        when(resourceRepository.findCarrierTemplateSnapshotViewsByScope(null, "PLATFORM")).thenReturn(List.of());
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(null, "PLATFORM")).thenReturn(List.of());
         when(roleRepository.findByTenantIdIsNullOrderByIdAsc()).thenReturn(List.of());
         when(tenantRepository.findByCode("default")).thenReturn(Optional.of(defaultTenant));
-        when(resourceRepository.findByTenantIdOrderBySortAscIdAsc(1L)).thenReturn(List.of(sourceRoot));
-        when(resourceRepository.findCarrierTemplateSnapshotViewsByScope(1L, "TENANT"))
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(1L, "TENANT"))
             .thenReturn(List.of(snapshot(sourceRoot)));
         when(roleRepository.findByTenantIdOrderByIdAsc(1L)).thenReturn(List.of(sourceAdmin));
         when(roleRepository.findGrantedRoleCarrierPairsByTenantId(1L)).thenReturn(List.of(relation(20L, 10L)));
@@ -495,7 +478,7 @@ class TenantBootstrapServiceImplTest {
             }
             return roles;
         });
-        when(resourceRepository.findCarrierPermissionBindingViewsByIdsAndScope(List.of(100L), null, "PLATFORM"))
+        when(carrierProjectionRepository.findPermissionBindingViewsByIdsAndScope(List.of(100L), null, "PLATFORM"))
             .thenReturn(List.of(binding(100L, "system:entry:view", 3001L)));
 
         boolean initialized = service.ensurePlatformTemplatesInitialized();
@@ -512,11 +495,11 @@ class TenantBootstrapServiceImplTest {
         Role dirtyAdmin = role(20L, 1L, "ROLE_ADMIN", " 超级管理员 \n\n ");
         Role userRole = role(21L, 1L, "ROLE_USER", "普通用户");
 
-        when(resourceRepository.findByTenantIdIsNullOrderBySortAscIdAsc()).thenReturn(List.of());
+
         when(roleRepository.findByTenantIdIsNullOrderByIdAsc()).thenReturn(List.of());
         when(tenantRepository.findByCode("default")).thenReturn(Optional.of(defaultTenant));
-        when(resourceRepository.findByTenantIdOrderBySortAscIdAsc(1L)).thenReturn(List.of(sourceRoot));
-        when(resourceRepository.findCarrierTemplateSnapshotViewsByScope(1L, "TENANT"))
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(null, "PLATFORM")).thenReturn(List.of());
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(1L, "TENANT"))
             .thenReturn(List.of(snapshot(sourceRoot)));
         when(roleRepository.findByTenantIdOrderByIdAsc(1L)).thenReturn(List.of(dirtyAdmin, userRole));
         when(roleRepository.findGrantedRoleCarrierPairsByTenantId(1L)).thenReturn(List.of(relation(20L, 10L)));
@@ -542,7 +525,7 @@ class TenantBootstrapServiceImplTest {
             }
             return roles;
         });
-        when(resourceRepository.findCarrierPermissionBindingViewsByIdsAndScope(List.of(100L), null, "PLATFORM"))
+        when(carrierProjectionRepository.findPermissionBindingViewsByIdsAndScope(List.of(100L), null, "PLATFORM"))
             .thenReturn(List.of(binding(100L, "system:entry:view", 3100L)));
 
         assertThat(service.ensurePlatformTemplatesInitialized()).isTrue();
@@ -565,11 +548,11 @@ class TenantBootstrapServiceImplTest {
         String longCode = "C".repeat(50);
         Role longCodeRole = role(21L, 1L, longCode, "短名");
 
-        when(resourceRepository.findByTenantIdIsNullOrderBySortAscIdAsc()).thenReturn(List.of());
+
         when(roleRepository.findByTenantIdIsNullOrderByIdAsc()).thenReturn(List.of());
         when(tenantRepository.findByCode("default")).thenReturn(Optional.of(defaultTenant));
-        when(resourceRepository.findByTenantIdOrderBySortAscIdAsc(1L)).thenReturn(List.of(sourceRoot));
-        when(resourceRepository.findCarrierTemplateSnapshotViewsByScope(1L, "TENANT"))
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(null, "PLATFORM")).thenReturn(List.of());
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(1L, "TENANT"))
             .thenReturn(List.of(snapshot(sourceRoot)));
         when(roleRepository.findByTenantIdOrderByIdAsc(1L)).thenReturn(List.of(longNameAdmin, longCodeRole));
         when(roleRepository.findGrantedRoleCarrierPairsByTenantId(1L)).thenReturn(List.of(relation(20L, 10L)));
@@ -595,7 +578,7 @@ class TenantBootstrapServiceImplTest {
             }
             return roles;
         });
-        when(resourceRepository.findCarrierPermissionBindingViewsByIdsAndScope(List.of(100L), null, "PLATFORM"))
+        when(carrierProjectionRepository.findPermissionBindingViewsByIdsAndScope(List.of(100L), null, "PLATFORM"))
             .thenReturn(List.of(binding(100L, "system:entry:view", 3200L)));
 
         assertThat(service.ensurePlatformTemplatesInitialized()).isTrue();
@@ -613,7 +596,7 @@ class TenantBootstrapServiceImplTest {
     void ensurePlatformTemplatesInitialized_whenTemplatesIncomplete_shouldFail() {
         Resource template = resource(100L, null, "system", null, "/system", "", "system:entry:view", ResourceType.DIRECTORY);
         template.setResourceLevel("PLATFORM");
-        when(resourceRepository.findCarrierTemplateSnapshotViewsByScope(null, "PLATFORM"))
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(null, "PLATFORM"))
             .thenReturn(List.of(snapshot(template)));
         when(roleRepository.findByTenantIdIsNullOrderByIdAsc()).thenReturn(List.of());
 
@@ -625,7 +608,7 @@ class TenantBootstrapServiceImplTest {
     @Test
     void bootstrapFromPlatformTemplate_whenTemplatesAndConfiguredTenantMissing_shouldFail() {
         Tenant targetTenant = tenant(9L, "tenant-9");
-        when(resourceRepository.findCarrierTemplateSnapshotViewsByScope(null, "PLATFORM")).thenReturn(List.of());
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(null, "PLATFORM")).thenReturn(List.of());
         when(roleRepository.findByTenantIdIsNullOrderByIdAsc()).thenReturn(List.of());
         when(tenantRepository.findByCode("default")).thenReturn(Optional.empty());
 
@@ -640,7 +623,7 @@ class TenantBootstrapServiceImplTest {
 
         Resource template = resource(100L, null, "system", null, "/system", "", "system:entry:view", ResourceType.DIRECTORY);
         template.setResourceLevel("PLATFORM");
-        when(resourceRepository.findCarrierTemplateSnapshotViewsByScope(null, "PLATFORM"))
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(null, "PLATFORM"))
             .thenReturn(List.of(snapshot(template)));
         Role templateRole = role(200L, null, "ROLE_ADMIN", "管理员");
         templateRole.setRoleLevel("PLATFORM");
@@ -674,7 +657,7 @@ class TenantBootstrapServiceImplTest {
         Role platformRole = role(20L, null, "ROLE_ADMIN", "管理员");
         platformRole.setRoleLevel("PLATFORM");
 
-        when(resourceRepository.findCarrierTemplateSnapshotViewsByScope(null, "PLATFORM"))
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(null, "PLATFORM"))
             .thenReturn(List.of(snapshot(platformMenu), snapshot(platformButton)));
         when(roleRepository.findByTenantIdIsNullOrderByIdAsc()).thenReturn(List.of(platformRole));
 
@@ -684,7 +667,7 @@ class TenantBootstrapServiceImplTest {
         tenantMenu.setEnabled(true);
         tenantMenu.setRequiredPermissionId(1000L);
 
-        when(resourceRepository.findCarrierTemplateSnapshotViewsByScope(tenantId, "TENANT"))
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(tenantId, "TENANT"))
             .thenReturn(List.of(snapshot(tenantMenu)));
 
         PlatformTemplateDiffResult diff = service.diffPlatformTemplateForTenant(tenantId);
@@ -718,9 +701,7 @@ class TenantBootstrapServiceImplTest {
         Role sourceAdmin = role(20L, null, "ROLE_ADMIN", "管理员");
         sourceAdmin.setRoleLevel("PLATFORM");
 
-        when(resourceRepository.findByTenantIdIsNullOrderBySortAscIdAsc())
-            .thenReturn(List.of(sourceSystem, sourceUser, sourceTenantMenu, sourceIdempotentMenu));
-        when(resourceRepository.findCarrierTemplateSnapshotViewsByScope(null, "PLATFORM"))
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(null, "PLATFORM"))
             .thenReturn(List.of(
                 snapshot(sourceSystem),
                 snapshot(sourceUser),
@@ -730,7 +711,6 @@ class TenantBootstrapServiceImplTest {
         when(roleRepository.findByTenantIdIsNullOrderByIdAsc()).thenReturn(List.of(sourceAdmin));
         when(roleRepository.findGrantedRoleCarrierPairsForPlatformTemplate())
             .thenReturn(List.of(relation(20L, 2L), relation(20L, 3L), relation(20L, 4L)));
-        when(resourceRepository.findByTenantIdOrderBySortAscIdAsc(9L)).thenReturn(List.of());
 
         AtomicLong nextResourceId = new AtomicLong(100L);
         when(resourceRepository.saveAll(any())).thenAnswer(invocation -> {
@@ -753,7 +733,7 @@ class TenantBootstrapServiceImplTest {
             }
             return roles;
         });
-        when(resourceRepository.findCarrierPermissionBindingViewsByIdsAndScope(List.of(100L, 101L), 9L, "TENANT"))
+        when(carrierProjectionRepository.findPermissionBindingViewsByIdsAndScope(List.of(100L, 101L), 9L, "TENANT"))
             .thenReturn(List.of(binding(100L, "system", 7000L), binding(101L, "system:user:list", 7001L)));
 
         service.bootstrapFromPlatformTemplate(targetTenant);
@@ -784,8 +764,7 @@ class TenantBootstrapServiceImplTest {
         Role sourceAdmin = role(20L, null, "ROLE_ADMIN", "管理员");
         sourceAdmin.setRoleLevel("PLATFORM");
 
-        when(resourceRepository.findByTenantIdIsNullOrderBySortAscIdAsc()).thenReturn(List.of(sourceRoot, sourceRead));
-        when(resourceRepository.findCarrierTemplateSnapshotViewsByScope(null, "PLATFORM"))
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(null, "PLATFORM"))
             .thenReturn(List.of(snapshot(sourceRoot), snapshot(sourceRead)));
         when(roleRepository.findByTenantIdIsNullOrderByIdAsc()).thenReturn(List.of(sourceAdmin));
         when(roleRepository.findGrantedRoleCarrierPairsForPlatformTemplate()).thenReturn(List.of(relation(20L, 11L)));
@@ -814,7 +793,7 @@ class TenantBootstrapServiceImplTest {
 
         Resource clonedBroken = resource(101L, 9L, "scheduling-authority-read", 100L, "", "", "scheduling:console:view", ResourceType.BUTTON);
         clonedBroken.setRequiredPermissionId(null);
-        when(resourceRepository.findCarrierTemplateSnapshotViewsByScope(9L, "TENANT"))
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(9L, "TENANT"))
             .thenReturn(List.of(snapshot(clonedBroken)));
 
         assertThatThrownBy(() -> service.bootstrapFromPlatformTemplate(targetTenant))
@@ -839,7 +818,7 @@ class TenantBootstrapServiceImplTest {
         Role invalidPlatformRole = role(200L, null, "ROLE_ADMIN", "管理员");
         invalidPlatformRole.setRoleLevel("TENANT");
 
-        when(resourceRepository.findCarrierTemplateSnapshotViewsByScope(null, "PLATFORM"))
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(null, "PLATFORM"))
             .thenReturn(List.of(snapshot(invalidPlatformResource)));
         when(roleRepository.findByTenantIdIsNullOrderByIdAsc()).thenReturn(List.of(invalidPlatformRole));
 

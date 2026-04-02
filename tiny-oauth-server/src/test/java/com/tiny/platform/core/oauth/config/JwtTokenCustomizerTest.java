@@ -44,7 +44,6 @@ class JwtTokenCustomizerTest {
     void accessToken_should_publish_active_tenant_claims() {
         User user = new User();
         user.setId(7L);
-        user.setTenantId(9L);
         user.setUsername("alice");
         user.setEnabled(true);
         user.setAccountNonExpired(true);
@@ -84,7 +83,7 @@ class JwtTokenCustomizerTest {
 
         PermissionVersionService permissionVersionService = mock(PermissionVersionService.class);
         when(permissionVersionService.resolvePermissionsVersion(
-            eq(7L), eq(9L), eq(TenantContextContract.SCOPE_TYPE_TENANT))).thenReturn("perm-v1");
+            eq(7L), eq(9L), eq(TenantContextContract.SCOPE_TYPE_TENANT), eq(9L))).thenReturn("perm-v1");
 
         JwtEncodingContext context = JwtEncodingContext.with(
                         JwsHeader.with(SignatureAlgorithm.RS256),
@@ -114,7 +113,6 @@ class JwtTokenCustomizerTest {
     void idToken_should_prefer_membership_aware_user_resolution_for_profile_claims() {
         User user = new User();
         user.setId(7L);
-        user.setTenantId(9L);
         user.setUsername("shared.alice");
         user.setNickname("Alice Shared");
         user.setEmail("alice@example.com");

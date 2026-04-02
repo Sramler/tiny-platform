@@ -3,6 +3,8 @@ databaseChangeLog:
       id: 048-tenant-lifecycle-status
       author: tiny
       comment: 为 tenant 表增加 lifecycle_status 字段，用于区分 ACTIVE/FROZEN/DECOMMISSIONED 等生命周期状态
+      validCheckSum:
+        - ANY
       preConditions:
         - onFail: CONTINUE
         - onError: HALT
@@ -13,7 +15,16 @@ databaseChangeLog:
             dbms: mysql
             splitStatements: true
             stripComments: false
+            endDelimiter: ;
             sql: |
-              ALTER TABLE `tenant`
-              ADD COLUMN `lifecycle_status` VARCHAR(16) NOT NULL DEFAULT 'ACTIVE' COMMENT '租户生命周期状态：ACTIVE/FROZEN/DECOMMISSIONED';
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'tenant' AND COLUMN_NAME = 'lifecycle_status'),
+                  'SELECT 1',
+                  'ALTER TABLE `tenant` ADD COLUMN `lifecycle_status` VARCHAR(16) NOT NULL DEFAULT ''ACTIVE'' COMMENT ''租户生命周期状态：ACTIVE/FROZEN/DECOMMISSIONED'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
 

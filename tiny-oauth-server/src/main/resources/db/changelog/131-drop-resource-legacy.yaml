@@ -1,0 +1,14 @@
+databaseChangeLog:
+  - changeSet:
+      id: 131-drop-resource-legacy-table
+      author: codex
+      comment: Drop legacy resource compatibility table after carrier/runtime migration completes
+      preConditions:
+        onFail: MARK_RAN
+        tableExists:
+          tableName: resource
+      changes:
+        - sql:
+            dbms: mysql
+            sql: |
+              DROP TABLE IF EXISTS `resource`;

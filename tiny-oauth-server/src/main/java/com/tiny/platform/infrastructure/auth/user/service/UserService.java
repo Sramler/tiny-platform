@@ -12,6 +12,12 @@ import java.util.Optional;
 
 public interface UserService {
     Page<UserResponseDto> users(UserRequestDto query, Pageable pageable);
+
+    /**
+     * 当前租户可见用户的详情 DTO（与列表项字段一致），不暴露实体。
+     */
+    Optional<UserResponseDto> findUserDtoById(Long id);
+
     Optional<User> findById(Long id);
     Optional<User> findByUsername(String username);
     User create(User user);

@@ -24,6 +24,8 @@ CREATE TABLE user (
 -- 角色表
 CREATE TABLE role (
   id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '角色ID',
+  tenant_id BIGINT NOT NULL DEFAULT 1 COMMENT '租户ID',
+  code VARCHAR(50) NULL COMMENT '角色编码（兼容 oauth 角色口径）',
   name VARCHAR(50) NOT NULL UNIQUE COMMENT '角色标识（如ROLE_ADMIN）',
   description VARCHAR(100) COMMENT '角色描述'
 ) COMMENT = '角色表';
@@ -37,16 +39,58 @@ CREATE TABLE user_role (
   FOREIGN KEY (role_id) REFERENCES role(id) ON DELETE CASCADE
 ) COMMENT = '用户与角色关联表';
 
--- 资源表
-CREATE TABLE resource (
-  id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '资源ID',
-  name VARCHAR(100) NOT NULL COMMENT '资源名称',
-  path VARCHAR(200) COMMENT '资源路径（如 /api/user/add）',
-  method VARCHAR(10) COMMENT 'HTTP方法（如GET、POST）',
-  type VARCHAR(20) COMMENT '资源类型（如MENU, BUTTON, API）',
-  parent_id BIGINT DEFAULT NULL COMMENT '父资源ID，用于菜单树',
-  sort INT DEFAULT 0 COMMENT '排序号'
-) COMMENT = '资源表';
+-- 权限主数据表（canonical）
+CREATE TABLE permission (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '权限ID',
+  permission_code VARCHAR(128) NOT NULL COMMENT '权限编码',
+  permission_name VARCHAR(255) NOT NULL COMMENT '权限名称',
+  permission_type VARCHAR(32) NOT NULL DEFAULT 'OTHER' COMMENT '权限类型',
+  tenant_id BIGINT DEFAULT NULL COMMENT '租户ID，NULL=平台模板',
+  normalized_tenant_id BIGINT GENERATED ALWAYS AS (IFNULL(tenant_id, 0)) STORED COMMENT '归一化租户ID',
+  enabled BOOLEAN NOT NULL DEFAULT TRUE COMMENT '是否启用',
+  UNIQUE KEY uk_permission_tenant_code (normalized_tenant_id, permission_code)
+) COMMENT = '权限主数据表';
+
+-- 角色-权限关系表（canonical）
+CREATE TABLE role_permission (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
+  role_id BIGINT NOT NULL COMMENT '角色ID',
+  permission_id BIGINT NOT NULL COMMENT '权限ID',
+  tenant_id BIGINT NOT NULL DEFAULT 1 COMMENT '租户ID',
+  normalized_tenant_id BIGINT GENERATED ALWAYS AS (IFNULL(tenant_id, 0)) STORED COMMENT '归一化租户ID',
+  UNIQUE KEY uk_role_permission_tenant (normalized_tenant_id, role_id, permission_id)
+) COMMENT = '角色-权限关系表';
+
+-- 菜单载体表
+CREATE TABLE menu (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '菜单ID',
+  tenant_id BIGINT DEFAULT NULL COMMENT '租户ID，NULL=平台模板',
+  path VARCHAR(200) NOT NULL DEFAULT '' COMMENT '前端路由路径',
+  permission VARCHAR(128) NOT NULL DEFAULT '' COMMENT '权限码（兼容可读）',
+  required_permission_id BIGINT DEFAULT NULL COMMENT '显式绑定权限ID',
+  enabled BOOLEAN NOT NULL DEFAULT TRUE COMMENT '是否启用'
+) COMMENT = '菜单载体表';
+
+-- 页面动作载体表
+CREATE TABLE ui_action (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '动作ID',
+  tenant_id BIGINT DEFAULT NULL COMMENT '租户ID，NULL=平台模板',
+  page_path VARCHAR(200) NOT NULL DEFAULT '' COMMENT '页面路径',
+  permission VARCHAR(128) NOT NULL DEFAULT '' COMMENT '权限码（兼容可读）',
+  required_permission_id BIGINT DEFAULT NULL COMMENT '显式绑定权限ID',
+  enabled BOOLEAN NOT NULL DEFAULT TRUE COMMENT '是否启用'
+) COMMENT = '页面动作载体表';
+
+-- API 端点载体表
+CREATE TABLE api_endpoint (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '端点ID',
+  tenant_id BIGINT DEFAULT NULL COMMENT '租户ID，NULL=平台模板',
+  uri VARCHAR(200) NOT NULL DEFAULT '' COMMENT '接口路径',
+  method VARCHAR(10) NOT NULL DEFAULT '' COMMENT 'HTTP方法',
+  permission VARCHAR(128) NOT NULL DEFAULT '' COMMENT '权限码（兼容可读）',
+  required_permission_id BIGINT DEFAULT NULL COMMENT '显式绑定权限ID',
+  enabled BOOLEAN NOT NULL DEFAULT TRUE COMMENT '是否启用'
+) COMMENT = 'API 端点载体表';
 
 -- 用户认证方法表
 CREATE TABLE user_authentication_method (

@@ -1,6 +1,6 @@
 # Tiny Platform `resource` 兼容层渐进退场计划
 
-> 目标：在不硬切、不降安全边界的前提下，把 `resource` 从“主写兼容层”推进为“最小兼容职责”。  
+> 目标：在不硬切、不降安全边界的前提下，把 `resource` 从“主写兼容层”推进到**运行时完全退场并物理下线**。
 > 状态术语：按 `docs/TINY_PLATFORM_AUTHORIZATION_DOC_MAP.md` 的术语字典解释（已落地 / 待闭合 / 可删除 / 暂时保留）。
 
 ---
@@ -9,8 +9,9 @@
 
 - 功能权限真相源：`role_assignment -> role_permission -> permission`
 - 载体层：`menu / ui_action / api_endpoint` 与 `*_permission_requirement` 已落地
-- 当前写链：正常 `create/update/updateSort/delete` 已不再保存 compatibility `resource` 行；写入只落到 carrier（`menu / ui_action / api_endpoint`）并维护 `compatibility group` 回填（`requirement_group=0`）；运行时主线不再依赖 `resource` 表做任何业务读写，`resource` 退化为历史兼容壳（可观测/迁移输入）
-- 当前阶段目标（仅历史资产维度）：在不硬切、不降安全边界的前提下，持续收敛 `resource` 的历史资产职责（可观测/迁移输入/运营可读字段）口径；不把“历史资产治理/物理清理”写成“运行时退场前置门槛”，也不在本文件讨论“是否已退场”的再判断。
+- 当前写链：正常 `create/update/updateSort/delete` 已不再保存 compatibility `resource` 行；写入只落到 carrier（`menu / ui_action / api_endpoint`）并维护 `compatibility group` 回填（`requirement_group=0`）
+- 当前状态：运行时主线与常规 bootstrap / smoke / e2e 脚本已退出对 `resource` 表的依赖；物理删除已通过 `131-drop-resource-legacy.yaml` 落到 Liquibase 主链末端
+- 当前剩余项：仅保留明确标记为历史用途的 pre-117 readiness SQL；它们不再属于运行时或当前门禁依赖
 
 ---
 
@@ -60,48 +61,44 @@
 - **显式 locator 字段已落地（历史资产维度）**：`resource` 新增 `carrier_type + carrier_source_id` 并完成历史 backfill；该维度仅用于历史资产治理/迁移输入/排障定位，不作为运行时主线的兼容删除或定位前提。
 - **角色授权主契约已切换（本轮）**：`/sys/roles/{id}/resources` 已支持 `permissionIds` 主契约，`resourceIds` 仅保留兼容 alias；运行时最终写入只落 `role_permission(permission_id)`。
 - **菜单父子校验与递归删除读链收缩**：`MenuServiceImpl` 已把父级合法性校验、循环引用检查、子菜单递归枚举从 `ResourceRepository` 迁到 `MenuEntryRepository`（carrier 读链优先）。
+- **carrier projection 读链已拆库（本轮）**：角色授权校验与租户 bootstrap 使用的 carrier template / permission snapshot 查询已从 `ResourceRepository` 抽到独立的 `CarrierProjectionRepository`；`ResourceRepository` 仅保留 legacy compatibility 壳与过渡 alias。
+- **菜单遗留 native `resource` 读链已清除（本轮）**：`MenuServiceImpl` 中未再使用的 `findMenusByNativeHibernate(...)` 及其 `resource` 原生 SQL 映射辅助方法已删除，避免误判为仍存在运行时主读依赖。
+- **rollout 门禁已改认 carrier 真相链（本轮）**：`verify-authorization-model-rollout.sh` 不再以 `resource` 行数或 `resource.required_permission_id` 作为 canonical 对照，改为直接核对 `menu/ui_action/api_endpoint`、`required_permission_id` 与 requirement 兼容组。
+- **平台模板自举脚本已切 carrier 计数（本轮）**：`verify-platform-template-row-counts.sh` 与 `verify-platform-dev-bootstrap.sh` 不再要求 `resource` 平台模板行数，统一改为 `role + (menu/ui_action/api_endpoint)` 总量门禁。
+- **调度 E2E seed 已切权限真相链（本轮）**：`scripts/e2e/ensure-scheduling-e2e-auth.sh` 不再创建/读取 legacy `resource` authority 行，改为直接维护 `permission + role_permission`。
+- **调度迁移 smoke 已切 permission/carrier 口径（本轮）**：`verify-scheduling-migration-smoke.sh` 对调度 authority、控制面 URI 与平台菜单残留的校验已改为 `permission / menu / ui_action / api_endpoint`，不再把 `resource` 当 canonical 校验源。
 - **删除链保持安全边界不变**：菜单删除仍执行 `existsPermissionReference` 判断，仅在最后载体时撤销 `role_permission`，未放宽权限策略。
 - **`resource` 角色明确**：删除路径只删除 carrier 记录，并保留“最后载体撤权”安全语义；不再对 `resource` 表做 locator 清理，也不再把 `resource` 当作任何运行时删除链路的一部分。
 
 ---
 
-## 4. 仍不能删除的兼容点及原因
+## 4. 最终下线结论
 
-| 兼容点 | 原因 | 风险 |
+| 结论项 | 当前状态 | 说明 |
 |---|---|---|
-| `resource` 壳（历史字段/迁移输入） | 仅保留历史可读字段与迁移输入资产；运行时主线不再读写 `resource` 表 | 物理删除前需完成历史数据迁移/归档与 ops 口径收敛 |
-| `resource.permission` | 仅作为历史可读字段/迁移输入存在，不再构成运行时依赖 | 直接移除会破坏历史可观测与回填脚本 |
-| `CarrierCompatibilitySafetyService.replaceCompatibilityRequirement(...)` | compatibility group 仍用于旧语义桥接 | 直接删会造成 requirement 回归断层 |
-| `CarrierCompatibilitySafetyService.existsPermissionReference(...)` | “最后载体撤 role_permission”仍依赖这一唯一安全判定 | 直接删会弱化删除链安全边界 |
+| `tiny-oauth-server` 运行时读写 | 已下线 | 运行时主线不再读写 `resource` 表，`Resource` 已降级为兼容 DTO，`ResourceRepository` 仅保留测试/桥接方法签名 |
+| 权限回填链路 | 已下线 | `ResourcePermissionBindingService` 已改为直接基于 `menu/ui_action/api_endpoint` 回填 `permission` 与 `required_permission_id` |
+| `tiny-web` 演示模块 | 已下线 | 访问检查已改为 JDBC 直读 canonical carrier，不再依赖 `resource` 实体、仓储或 seed |
+| 常规脚本门禁 | 已下线 | dev/bootstrap/e2e/smoke/permission 修复统计脚本已迁到 carrier / permission 口径 |
+| 物理删除 | 已落地 | `131-drop-resource-legacy.yaml` 已接入 `db.changelog-master.yaml` 末端 |
 
-当前未退场项已不再是 shared-id 阻断，也不再是 legacy projection bridge 阻断。  
-**当前兼容点已解除：正常写链不再主动维护 compatibility `resource` 行。**
+唯一保留的直接 `resource` SQL 为 **`verify-pre-liquibase-117-role-resource-readiness.sql`**，其用途是历史 pre-117 只读审计；不属于运行时、门禁或当前迁移主链。
 
-它当前具体表现为：
-
-1. 正常 create/update/updateSort/delete 仅写入 carrier 并维护 `requirement_group=0` 语义；运行时主线不再保存/读取 `resource` 行；
-2. `resource` 仅承担历史资产职责：历史可读字段承载 / 可观测性 / 迁移输入；
-3. `resource.permission` 已降级为历史字段（可读/可观测/迁移输入），不再由正常写链主动维护，也不应被运行时逻辑作为真相源消费。
-
-**结论：`resource compatibility` 已退出运行时主线；后续若继续推进，仅属于历史资产治理与物理清理议题。**
+**结论：`resource` 已完成运行时退场，并已具备物理删除路径。**
 
 ---
 
-## 5. 后续推进方向（历史资产/物理清理）
+## 5. 后续推进方向（历史审计，仅存量保留）
 
-- 本轮已完成的事实结论是：**`resource compatibility` 已退出运行时主线**。
-- 后续若再推进，不再讨论“是否退场”，只讨论与 `resource` 相关的**历史资产治理**，例如：
-  - 物理清理/归档/只读视图化（如果要做）
-  - 历史字段（如 `resource.permission`）保留边界与可观测性治理
-  - 运维/回填脚本在不依赖运行时主线的前提下如何消费历史输入
+- 仅剩历史 pre-117 readiness SQL 是否归档到单独目录，可按仓库整理节奏处理
+- 若需要为旧库补出物理删除 SOP，可在本文件之外单独补一页 DBA/回滚说明
 
 ---
 
-## 6. 下一轮建议动作（不硬切）
+## 6. 结果备注
 
-- 后续收口重点是“历史资产治理”，而不是“是否已退场”的再判断：
-  - 明确哪些脚本/报表/审计仍会读取 `resource` 历史字段（可观测/迁移输入），并保证不回流运行时主线
-  - 如要物理下线 `resource` 表，必须先补齐归档/迁移与回滚路径（不在本轮范围）
+- 由于 `131-drop-resource-legacy.yaml` 放在 master 最末端，fresh install 仍能先跑完历史 `resource` 相关 changeSet，再在链路末端安全删除总表
+- 若本地数据库尚未跑到 131，`resource` 物理表可能暂时仍存在；这属于库版本未追平，不代表当前代码仍依赖它
 
 ---
 
@@ -110,7 +107,7 @@
 | 消费者 | 主要用途 | 当前分级 | 处理结论 |
 |---|---|---|---|
 | `ResourceServiceImpl` | 资源管理控制面 / carrier 读写 | 已收缩（本轮） | 控制面主读已切 carrier；正常 create/update/updateSort/delete 仅写 carrier 并维护 `requirement_group=0`；运行时不再对 `resource` 表做任何业务读写 |
-| `MenuServiceImpl` | 菜单写链、父子关系校验、删除链 | 已落地（写链已迁） | 父子校验/递归枚举已切到 `MenuEntryRepository`；删除链 direct-delete carrier，并保持“最后载体撤权”判定 |
+| `MenuServiceImpl` | 菜单写链、父子关系校验、删除链 | 已落地（写链已迁） | 父子校验/递归枚举已切到 `MenuEntryRepository`；未使用的 `resource` native 菜单分页实现已删除；删除链 direct-delete carrier，并保持“最后载体撤权”判定 |
 | `RoleServiceImpl` | `updateRoleResources` 读取资源并写角色授权 | 已落地（主契约已切） | 主契约已切换为 `permissionIds`；`resourceIds` 仅保留兼容 alias，运行时写入统一落 `role_permission(permission_id)` |
 | `TenantBootstrapServiceImpl` | 平台模板资源快照复制、授权回放 | 已落地（主读已迁） | 模板资源主读已切到 carrier template snapshot；复制与授权回放不再依赖 `resource` 表，不保留 resource fallback |
 

@@ -94,8 +94,8 @@ public class UserController {
 
     @GetMapping("/{id}")
     @PreAuthorize("@userManagementAccessGuard.canRead(authentication)")
-    public ResponseEntity<com.tiny.platform.infrastructure.auth.user.domain.User> getUser(@PathVariable("id") Long id) {
-        return userService.findById(id)
+    public ResponseEntity<UserResponseDto> getUser(@PathVariable("id") Long id) {
+        return userService.findUserDtoById(id)
             .map(ResponseEntity::ok)
             .orElse(ResponseEntity.notFound().build());
     }

@@ -120,7 +120,6 @@ class RoleConstraintEnforceViolationLogIntegrationTest {
     @Test
     void enforce_shouldBlockAndStillWriteViolationLog_queryableViaEndpoint() throws Exception {
         User userEntity = new User();
-        userEntity.setTenantId(TENANT_ID);
         userEntity.setUsername("rbac3_enforce_obs_user_" + System.currentTimeMillis());
         userEntity.setNickname("rbac3 enforce obs");
         userEntity = userRepository.save(userEntity);

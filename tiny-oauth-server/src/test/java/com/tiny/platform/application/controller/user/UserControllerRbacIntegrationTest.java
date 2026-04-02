@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.dto.UserCreateUpdateDto;
 import com.tiny.platform.infrastructure.auth.user.dto.UserResponseDto;
+import com.tiny.platform.infrastructure.auth.org.repository.OrganizationUnitRepository;
+import com.tiny.platform.infrastructure.auth.org.repository.UserUnitRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationAuditRepository;
 import com.tiny.platform.infrastructure.auth.user.service.AvatarService;
 import com.tiny.platform.infrastructure.auth.user.service.UserService;
@@ -21,6 +23,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.test.context.support.WithAnonymousUser;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.context.ActiveProfiles;
@@ -67,6 +70,15 @@ class UserControllerRbacIntegrationTest {
     @MockBean
     private AvatarService avatarService;
 
+    @MockBean
+    private OrganizationUnitRepository organizationUnitRepository;
+
+    @MockBean
+    private UserUnitRepository userUnitRepository;
+
+    @MockBean
+    private UserDetailsService userDetailsService;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Nested
@@ -88,7 +100,9 @@ class UserControllerRbacIntegrationTest {
 
         @Test
         void get_allowsReadAuthority() throws Exception {
-            when(userService.findById(9L)).thenReturn(Optional.of(sampleUser(9L, "bob")));
+            UserResponseDto detail = new UserResponseDto(
+                9L, "bob", "bob", true, true, true, true, null, 0, null, false, null);
+            when(userService.findUserDtoById(9L)).thenReturn(Optional.of(detail));
 
             mockMvc.perform(get("/sys/users/9")
                     .with(user("reader").authorities(new SimpleGrantedAuthority("system:user:list"))))

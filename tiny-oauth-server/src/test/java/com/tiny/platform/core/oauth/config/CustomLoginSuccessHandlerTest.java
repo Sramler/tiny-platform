@@ -373,7 +373,6 @@ class CustomLoginSuccessHandlerTest {
         );
 
         User user = user();
-        user.setTenantId(88L);
         when(authUserResolutionService.resolveUserRecordInActiveTenant("admin", 1L)).thenReturn(Optional.of(user));
         when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
                 "totpBound", true,
@@ -415,7 +414,6 @@ class CustomLoginSuccessHandlerTest {
         );
 
         User user = user();
-        user.setTenantId(88L);
         when(authUserResolutionService.resolveUserRecordInActiveTenant("admin", 7L)).thenReturn(Optional.of(user));
         when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
                 "totpBound", true,
@@ -456,7 +454,6 @@ class CustomLoginSuccessHandlerTest {
     private User user() {
         User user = new User();
         user.setId(1L);
-        user.setTenantId(1L);
         user.setUsername("admin");
         return user;
     }

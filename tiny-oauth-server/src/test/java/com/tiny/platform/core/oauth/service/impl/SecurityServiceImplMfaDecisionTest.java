@@ -8,6 +8,7 @@ import com.tiny.platform.core.oauth.security.TotpVerificationGuard;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationMethod;
 import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
+import com.tiny.platform.infrastructure.tenant.config.PlatformTenantResolver;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -79,10 +80,10 @@ class SecurityServiceImplMfaDecisionTest {
         when(repository.findEffectiveAuthenticationMethod(1L, 9L, "LOCAL", "TOTP")).thenReturn(Optional.of(method));
 
         TotpVerificationGuard guard = new TotpVerificationGuard(repository, mfaProperties, totpService);
-        SecurityServiceImpl service = new SecurityServiceImpl(repository, passwordEncoder, mfaProperties, guard);
+        PlatformTenantResolver platformTenantResolver = mock(PlatformTenantResolver.class);
+        SecurityServiceImpl service = new SecurityServiceImpl(repository, passwordEncoder, mfaProperties, guard, platformTenantResolver);
 
         User user = mockUser();
-        user.setTenantId(1L);
         TenantContext.setActiveTenantId(9L);
 
         Map<String, Object> status = service.getSecurityStatus(user);
@@ -107,10 +108,10 @@ class SecurityServiceImplMfaDecisionTest {
         when(repository.findEffectiveAuthenticationMethod(1L, 9L, "LOCAL", "TOTP")).thenReturn(Optional.of(method));
 
         TotpVerificationGuard guard = new TotpVerificationGuard(repository, mfaProperties, totpService);
-        SecurityServiceImpl service = new SecurityServiceImpl(repository, passwordEncoder, mfaProperties, guard);
+        PlatformTenantResolver platformTenantResolver = mock(PlatformTenantResolver.class);
+        SecurityServiceImpl service = new SecurityServiceImpl(repository, passwordEncoder, mfaProperties, guard, platformTenantResolver);
 
         User user = mockUser();
-        user.setTenantId(1L);
         SecurityUser securityUser = new SecurityUser(user, "", 9L, Set.of());
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(securityUser, null, securityUser.getAuthorities())
@@ -139,13 +140,13 @@ class SecurityServiceImplMfaDecisionTest {
         }
 
         TotpVerificationGuard guard = new TotpVerificationGuard(repository, mfaProperties, totpService);
-        return new SecurityServiceImpl(repository, passwordEncoder, mfaProperties, guard);
+        PlatformTenantResolver platformTenantResolver = mock(PlatformTenantResolver.class);
+        return new SecurityServiceImpl(repository, passwordEncoder, mfaProperties, guard, platformTenantResolver);
     }
 
     private User mockUser() {
         User user = new User();
         user.setId(1L);
-        user.setTenantId(1L);
         user.setUsername("admin");
         return user;
     }

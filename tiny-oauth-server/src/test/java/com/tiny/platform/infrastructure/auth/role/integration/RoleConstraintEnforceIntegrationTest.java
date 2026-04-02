@@ -75,7 +75,6 @@ class RoleConstraintEnforceIntegrationTest {
         Long tenantId = 1L;
 
         User user = new User();
-        user.setTenantId(tenantId);
         user.setUsername("rbac3_enforce_user_" + System.currentTimeMillis());
         user.setNickname("rbac3 enforce");
         user = userRepository.save(user);
@@ -149,7 +148,6 @@ class RoleConstraintEnforceIntegrationTest {
         Long tenantId = 1L;
 
         User user = new User();
-        user.setTenantId(tenantId);
         user.setUsername("rbac3_enforce_user_pre_" + System.currentTimeMillis());
         user.setNickname("rbac3 enforce prereq");
         user = userRepository.save(user);
@@ -226,13 +224,11 @@ class RoleConstraintEnforceIntegrationTest {
         Long tenantId = 1L;
 
         User userA = new User();
-        userA.setTenantId(tenantId);
         userA.setUsername("rbac3_enforce_user_card_a_" + System.currentTimeMillis());
         userA.setNickname("rbac3 enforce card a");
         userA = userRepository.save(userA);
 
         User userB = new User();
-        userB.setTenantId(tenantId);
         userB.setUsername("rbac3_enforce_user_card_b_" + System.currentTimeMillis());
         userB.setNickname("rbac3 enforce card b");
         userB = userRepository.save(userB);

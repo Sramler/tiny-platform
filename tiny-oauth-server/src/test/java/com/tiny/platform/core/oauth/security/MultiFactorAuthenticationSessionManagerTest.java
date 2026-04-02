@@ -65,7 +65,6 @@ class MultiFactorAuthenticationSessionManagerTest {
         MockHttpServletResponse response = new MockHttpServletResponse();
         User domainUser = new User();
         domainUser.setId(1L);
-        domainUser.setTenantId(1L);
         domainUser.setUsername("admin");
 
         sessionManager.promoteToFullyAuthenticated(
@@ -130,7 +129,6 @@ class MultiFactorAuthenticationSessionManagerTest {
 
         User domainUser = new User();
         domainUser.setId(1L);
-        domainUser.setTenantId(1L);
         domainUser.setUsername("admin");
 
         boolean promoted = sessionManager.tryPromoteToFullyAuthenticated(

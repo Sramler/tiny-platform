@@ -134,7 +134,6 @@ class UserControllerIdempotencyIntegrationTest {
         user.setId(id);
         user.setUsername(username);
         user.setNickname("Alice");
-        user.setTenantId(200L);
         return user;
     }
 

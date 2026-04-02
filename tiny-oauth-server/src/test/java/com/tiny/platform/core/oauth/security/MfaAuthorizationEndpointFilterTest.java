@@ -212,7 +212,6 @@ class MfaAuthorizationEndpointFilterTest {
     private static User user(Long id, String username) {
         User user = new User();
         user.setId(id);
-        user.setTenantId(1L);
         user.setUsername(username);
         return user;
     }

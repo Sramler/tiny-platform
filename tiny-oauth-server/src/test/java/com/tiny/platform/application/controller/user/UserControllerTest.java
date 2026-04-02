@@ -83,6 +83,10 @@ class UserControllerTest {
         dto.setNickname("Bob");
 
         when(userService.users(query, pageable)).thenReturn(new PageImpl<>(List.of(responseDto), pageable, 1));
+        UserResponseDto detailDto = new UserResponseDto(2L, "bob", "Alice", true, true, true, true,
+            LocalDateTime.of(2026, 3, 1, 10, 0), 2, LocalDateTime.of(2026, 3, 1, 9, 0), false, null);
+        when(userService.findUserDtoById(2L)).thenReturn(Optional.of(detailDto));
+        when(userService.findUserDtoById(99L)).thenReturn(Optional.empty());
         when(userService.findById(2L)).thenReturn(Optional.of(user));
         when(userService.findById(99L)).thenReturn(Optional.empty());
         when(userService.createFromDto(dto)).thenReturn(user);
@@ -96,7 +100,7 @@ class UserControllerTest {
         assertThat(listBody.getContent().getFirst().isTemporarilyLocked()).isTrue();
         assertThat(listBody.getContent().getFirst().getLockRemainingMinutes()).isEqualTo(12);
 
-        assertThat(controller.getUser(2L).getBody()).isEqualTo(user);
+        assertThat(controller.getUser(2L).getBody()).isSameAs(detailDto);
         assertThat(controller.getUser(99L).getStatusCode().value()).isEqualTo(404);
         assertThat(controller.create(dto).getBody()).isEqualTo(user);
         assertThat(controller.update(2L, dto).getBody()).isEqualTo(user);
@@ -191,7 +195,6 @@ class UserControllerTest {
         UserController controller = new UserController(userService, mock(UserAuthenticationAuditRepository.class), mock(AvatarService.class));
 
         User user = user(1L, "alice");
-        user.setTenantId(3L);
         when(userService.findByUsername("alice")).thenReturn(Optional.of(user));
 
         SecurityUser securityUser = new SecurityUser(

@@ -25,10 +25,9 @@ CREATE TABLE IF NOT EXISTS `tenant` (
     KEY `idx_tenant_enabled` (`enabled`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='租户表';
 
--- 创建用户表
+-- 创建用户表（与 Liquibase 045+ / 129 终态对齐：username 全局唯一；无 user.tenant_id，授权以 tenant_user 为准）
 CREATE TABLE IF NOT EXISTS `user` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '用户ID',
-    `tenant_id` BIGINT NOT NULL COMMENT '租户ID',
     `username` VARCHAR(50) NOT NULL COMMENT '用户名',
     `nickname` VARCHAR(50) DEFAULT NULL COMMENT '昵称',
     `enabled` BOOLEAN NOT NULL DEFAULT TRUE COMMENT '是否启用',
@@ -44,9 +43,7 @@ CREATE TABLE IF NOT EXISTS `user` (
     `last_failed_login_at` TIMESTAMP NULL COMMENT '最后失败登录时间',
     `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    KEY `idx_user_tenant_id` (`tenant_id`),
-    UNIQUE KEY `uk_user_tenant_username` (`tenant_id`, `username`),
-    CONSTRAINT `fk_user_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`)
+    UNIQUE KEY `uk_user_username` (`username`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户表';
 
 -- 创建角色表
@@ -169,11 +166,11 @@ CREATE TABLE IF NOT EXISTS `role_resource` (
     CONSTRAINT `fk_role_resource_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='角色-资源关联表';
 
--- 创建用户认证方法表
+-- 创建用户认证方法表（tenant_id 可空=用户级全局认证方式；完整唯一键/生成列见 Liquibase 111）
 CREATE TABLE IF NOT EXISTS `user_authentication_method` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
     `user_id` BIGINT NOT NULL COMMENT '用户ID',
-    `tenant_id` BIGINT NOT NULL COMMENT '租户ID',
+    `tenant_id` BIGINT NULL COMMENT '租户作用域；NULL 表示用户级全局认证方式',
     `authentication_provider` VARCHAR(50) NOT NULL COMMENT '认证提供者',
     `authentication_type` VARCHAR(50) NOT NULL COMMENT '认证类型',
     `authentication_configuration` JSON NOT NULL COMMENT '认证配置',

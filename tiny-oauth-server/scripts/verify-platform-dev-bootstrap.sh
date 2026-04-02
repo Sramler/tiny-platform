@@ -7,7 +7,7 @@
 #
 # 步骤:
 #   1) 编译 / 必要时启动 oauth-server（dev，触发平台模板自举）
-#   2) 平台模板行数 role/resource（tenant_id IS NULL）均 > 0
+#   2) 平台模板行数 role/carrier（tenant_id IS NULL）均 > 0
 #   3) ensure-platform-admin + verify-platform-login-auth-chain（可选 Tier2）
 #
 # 用法（仓库根目录）:
@@ -246,7 +246,9 @@ read_platform_template_counts() {
   env MYSQL_PWD="${DB_PASSWORD}" "${MYSQL_BIN}" -h"${DB_HOST}" -P"${DB_PORT}" -u"${DB_USER}" -D "${DB_NAME}" -N -B <<'SQL'
 SELECT
   (SELECT COUNT(*) FROM role WHERE tenant_id IS NULL),
-  (SELECT COUNT(*) FROM resource WHERE tenant_id IS NULL);
+  (SELECT COUNT(*) FROM menu WHERE tenant_id IS NULL),
+  (SELECT COUNT(*) FROM ui_action WHERE tenant_id IS NULL),
+  (SELECT COUNT(*) FROM api_endpoint WHERE tenant_id IS NULL);
 SQL
 }
 
@@ -271,12 +273,19 @@ wait_for_platform_template_rows() {
   local deadline=$((SECONDS + TEMPLATE_WAIT_SEC))
   echo "==> Waiting for platform template rows (tenant_id IS NULL), max ${TEMPLATE_WAIT_SEC}s"
   while (( SECONDS < deadline )); do
-    local line role_cnt resource_cnt
+    local line role_cnt menu_cnt ui_action_cnt api_endpoint_cnt carrier_cnt
     line="$(read_platform_template_counts)"
     role_cnt="$(echo "${line}" | awk '{print $1}')"
-    resource_cnt="$(echo "${line}" | awk '{print $2}')"
-    if [[ "${role_cnt}" =~ ^[0-9]+$ && "${resource_cnt}" =~ ^[0-9]+$ && "${role_cnt}" -gt 0 && "${resource_cnt}" -gt 0 ]]; then
-      echo "==> platform template: role=${role_cnt} resource=${resource_cnt}"
+    menu_cnt="$(echo "${line}" | awk '{print $2}')"
+    ui_action_cnt="$(echo "${line}" | awk '{print $3}')"
+    api_endpoint_cnt="$(echo "${line}" | awk '{print $4}')"
+    if [[ "${role_cnt}" =~ ^[0-9]+$ && "${menu_cnt}" =~ ^[0-9]+$ && "${ui_action_cnt}" =~ ^[0-9]+$ && "${api_endpoint_cnt}" =~ ^[0-9]+$ ]]; then
+      carrier_cnt=$((menu_cnt + ui_action_cnt + api_endpoint_cnt))
+    else
+      carrier_cnt=-1
+    fi
+    if [[ "${role_cnt}" =~ ^[0-9]+$ && "${role_cnt}" -gt 0 && "${carrier_cnt}" -gt 0 ]]; then
+      echo "==> platform template: role=${role_cnt} carrier=${carrier_cnt} (menu=${menu_cnt}, ui_action=${ui_action_cnt}, api_endpoint=${api_endpoint_cnt})"
       return 0
     fi
     sleep 3

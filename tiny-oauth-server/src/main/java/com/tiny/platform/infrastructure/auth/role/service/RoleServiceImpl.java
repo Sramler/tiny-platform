@@ -6,8 +6,8 @@ import com.tiny.platform.infrastructure.auth.role.dto.RoleCreateUpdateDto;
 import com.tiny.platform.infrastructure.auth.role.dto.RoleRequestDto;
 import com.tiny.platform.infrastructure.auth.role.dto.RoleResponseDto;
 import com.tiny.platform.infrastructure.auth.role.repository.RoleRepository;
+import com.tiny.platform.infrastructure.auth.resource.repository.CarrierProjectionRepository;
 import com.tiny.platform.infrastructure.auth.resource.repository.RoleResourcePermissionBindingView;
-import com.tiny.platform.infrastructure.auth.resource.repository.ResourceRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.TenantUserRepository;
 import com.tiny.platform.infrastructure.core.exception.code.ErrorCode;
 import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
@@ -28,20 +28,20 @@ public class RoleServiceImpl implements RoleService {
     private static final String ROLE_LEVEL_PLATFORM = "PLATFORM";
     private static final String ROLE_LEVEL_TENANT = "TENANT";
     private final RoleRepository roleRepository;
-    private final ResourceRepository resourceRepository;
+    private final CarrierProjectionRepository carrierProjectionRepository;
     private final TenantUserRepository tenantUserRepository;
     private final RoleAssignmentSyncService roleAssignmentSyncService;
     private final EffectiveRoleResolutionService effectiveRoleResolutionService;
     private final RoleConstraintService roleConstraintService;
 
     public RoleServiceImpl(RoleRepository roleRepository,
-                           ResourceRepository resourceRepository,
+                           CarrierProjectionRepository carrierProjectionRepository,
                            TenantUserRepository tenantUserRepository,
                            RoleAssignmentSyncService roleAssignmentSyncService,
                            EffectiveRoleResolutionService effectiveRoleResolutionService,
                            RoleConstraintService roleConstraintService) {
         this.roleRepository = roleRepository;
-        this.resourceRepository = resourceRepository;
+        this.carrierProjectionRepository = carrierProjectionRepository;
         this.tenantUserRepository = tenantUserRepository;
         this.roleAssignmentSyncService = roleAssignmentSyncService;
         this.effectiveRoleResolutionService = effectiveRoleResolutionService;
@@ -283,7 +283,7 @@ public class RoleServiceImpl implements RoleService {
         }
         String resourceLevel = currentRoleLevel();
         Long tenantId = currentManagedTenantId();
-        List<RoleResourcePermissionBindingView> resources = resourceRepository.findCarrierPermissionBindingViewsByIdsAndScope(
+        List<RoleResourcePermissionBindingView> resources = carrierProjectionRepository.findPermissionBindingViewsByIdsAndScope(
             resourceIds,
             tenantId,
             resourceLevel

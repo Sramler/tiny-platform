@@ -354,7 +354,6 @@ class SecurityControllerRedirectTest {
     private static User user() {
         User user = new User();
         user.setId(1L);
-        user.setTenantId(1L);
         user.setUsername("admin");
         return user;
     }

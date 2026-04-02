@@ -3,6 +3,8 @@ databaseChangeLog:
       id: add-tenant-table-and-fks
       author: tiny
       comment: 新增租户表并补充租户外键约束
+      validCheckSum:
+        - ANY
       changes:
         - sql:
             dbms: mysql
@@ -26,24 +28,33 @@ databaseChangeLog:
               SELECT 1, 'default', '默认租户', 1, NOW(), NOW()
               WHERE NOT EXISTS (SELECT 1 FROM `tenant` WHERE `id` = 1);
 
-              INSERT INTO `tenant` (`id`, `code`, `name`, `enabled`, `created_at`, `updated_at`)
-              SELECT DISTINCT t.tenant_id,
-                              CONCAT('tenant-', t.tenant_id),
-                              CONCAT('Tenant ', t.tenant_id),
-                              1,
-                              NOW(),
-                              NOW()
-              FROM (
-                SELECT tenant_id FROM `user`
-                UNION SELECT tenant_id FROM `role`
-                UNION SELECT tenant_id FROM `resource`
-                UNION SELECT tenant_id FROM `user_role`
-                UNION SELECT tenant_id FROM `role_resource`
-                UNION SELECT tenant_id FROM `user_authentication_method`
-                UNION SELECT tenant_id FROM `user_authentication_audit`
-              ) t
-              WHERE t.tenant_id IS NOT NULL AND t.tenant_id > 0
-                AND NOT EXISTS (SELECT 1 FROM `tenant` WHERE `id` = t.tenant_id);
+              SET @frag_user_role := IF(
+                EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_role'),
+                ' UNION SELECT tenant_id FROM `user_role`',
+                ''
+              );
+              SET @frag_role_assignment := IF(
+                EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'role_assignment'),
+                ' UNION SELECT tenant_id FROM `role_assignment`',
+                ''
+              );
+              SET @sql := CONCAT(
+                'INSERT INTO `tenant` (`id`, `code`, `name`, `enabled`, `created_at`, `updated_at`) ',
+                'SELECT DISTINCT t.tenant_id, CONCAT(''tenant-'', t.tenant_id), CONCAT(''Tenant '', t.tenant_id), 1, NOW(), NOW() ',
+                'FROM (SELECT tenant_id FROM `user` ',
+                'UNION SELECT tenant_id FROM `role` ',
+                'UNION SELECT tenant_id FROM `resource` ',
+                @frag_user_role,
+                ' UNION SELECT tenant_id FROM `role_resource` ',
+                @frag_role_assignment,
+                ' UNION SELECT tenant_id FROM `user_authentication_method` ',
+                'UNION SELECT tenant_id FROM `user_authentication_audit`) t ',
+                'WHERE t.tenant_id IS NOT NULL AND t.tenant_id > 0 ',
+                'AND NOT EXISTS (SELECT 1 FROM `tenant` WHERE `id` = t.tenant_id)'
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
 
               SET @sql := (
                 SELECT IF(
@@ -89,12 +100,16 @@ databaseChangeLog:
 
               SET @sql := (
                 SELECT IF(
-                  EXISTS(
-                    SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
-                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_role' AND CONSTRAINT_NAME = 'fk_user_role_tenant'
-                  ),
+                  NOT EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_role'),
                   'SELECT 1',
-                  'ALTER TABLE `user_role` ADD CONSTRAINT `fk_user_role_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`)'
+                  IF(
+                    EXISTS(
+                      SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+                      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_role' AND CONSTRAINT_NAME = 'fk_user_role_tenant'
+                    ),
+                    'SELECT 1',
+                    'ALTER TABLE `user_role` ADD CONSTRAINT `fk_user_role_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`)'
+                  )
                 )
               );
               PREPARE stmt FROM @sql;

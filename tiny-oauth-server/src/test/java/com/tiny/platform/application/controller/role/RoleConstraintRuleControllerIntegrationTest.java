@@ -1,6 +1,5 @@
 package com.tiny.platform.application.controller.role;
 
-import static org.hamcrest.Matchers.hasItem;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -108,8 +107,8 @@ class RoleConstraintRuleControllerIntegrationTest {
         pRequired = base + 6;
         cRole = base + 7;
 
-        int normalizedLeft = (int) Math.min(mRoleA, mRoleB);
-        int normalizedRight = (int) Math.max(mRoleA, mRoleB);
+        long normalizedLeft = Math.min(mRoleA, mRoleB);
+        long normalizedRight = Math.max(mRoleA, mRoleB);
 
         RoleHierarchyEdgeUpsertDto hierarchy = new RoleHierarchyEdgeUpsertDto();
         hierarchy.setChildRoleId(hChild);
@@ -165,33 +164,28 @@ class RoleConstraintRuleControllerIntegrationTest {
                 .sessionAttr(TENANT_SESSION_KEY, TENANT_ID)
                 .with(principal))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$[*].childRoleId", hasItem(hChild.intValue())))
-            .andExpect(jsonPath("$[*].parentRoleId", hasItem(hParent.intValue())));
+            .andExpect(jsonPath("$[?(@.childRoleId == " + hChild + " && @.parentRoleId == " + hParent + ")]").exists());
 
         mockMvc.perform(get("/sys/role-constraints/mutex")
                 .header(TENANT_HEADER, TENANT_ID.toString())
                 .sessionAttr(TENANT_SESSION_KEY, TENANT_ID)
                 .with(principal))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$[*].leftRoleId", hasItem(normalizedLeft)))
-            .andExpect(jsonPath("$[*].rightRoleId", hasItem(normalizedRight)));
+            .andExpect(jsonPath("$[?(@.leftRoleId == " + normalizedLeft + " && @.rightRoleId == " + normalizedRight + ")]").exists());
 
         mockMvc.perform(get("/sys/role-constraints/prerequisite")
                 .header(TENANT_HEADER, TENANT_ID.toString())
                 .sessionAttr(TENANT_SESSION_KEY, TENANT_ID)
                 .with(principal))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$[*].roleId", hasItem(pRole.intValue())))
-            .andExpect(jsonPath("$[*].requiredRoleId", hasItem(pRequired.intValue())));
+            .andExpect(jsonPath("$[?(@.roleId == " + pRole + " && @.requiredRoleId == " + pRequired + ")]").exists());
 
         mockMvc.perform(get("/sys/role-constraints/cardinality")
                 .header(TENANT_HEADER, TENANT_ID.toString())
                 .sessionAttr(TENANT_SESSION_KEY, TENANT_ID)
                 .with(principal))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$[*].roleId", hasItem(cRole.intValue())))
-            .andExpect(jsonPath("$[*].scopeType", hasItem("TENANT")))
-            .andExpect(jsonPath("$[*].maxAssignments", hasItem(1)));
+            .andExpect(jsonPath("$[?(@.roleId == " + cRole + " && @.scopeType == 'TENANT' && @.maxAssignments == 1)]").exists());
     }
 }
 

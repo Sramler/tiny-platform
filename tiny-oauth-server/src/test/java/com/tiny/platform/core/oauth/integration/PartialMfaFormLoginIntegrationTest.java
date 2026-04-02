@@ -217,8 +217,8 @@ class PartialMfaFormLoginIntegrationTest {
         when(authUserResolutionService.resolveUserRecordInActiveTenant("admin", 1L)).thenReturn(Optional.of(user));
         when(userDetailsService.loadUserByUsername("admin")).thenReturn(securityUser);
         when(authenticationMethodRepository.findEnabledMethodsByUserId(1L, 1L)).thenReturn(List.of(
-                passwordMethod(user.getId(), user.getTenantId(), "{noop}raw-password"),
-                totpMethod(user.getId(), user.getTenantId(), "BASE32SECRET")
+                passwordMethod(user.getId(), 1L, "{noop}raw-password"),
+                totpMethod(user.getId(), 1L, "BASE32SECRET")
         ));
         when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
                 "totpBound", true,
@@ -288,7 +288,7 @@ class PartialMfaFormLoginIntegrationTest {
         User user = user();
         SecurityUser securityUser = new SecurityUser(
                 user.getId(),
-                user.getTenantId(),
+                1L,
                 user.getUsername(),
                 "",
                 List.of(
@@ -305,7 +305,7 @@ class PartialMfaFormLoginIntegrationTest {
         when(authUserResolutionService.resolveUserRecordInActiveTenant("admin", 1L)).thenReturn(Optional.of(user));
         when(userDetailsService.loadUserByUsername("admin")).thenReturn(securityUser);
         when(authenticationMethodRepository.findEnabledMethodsByUserId(1L, 1L)).thenReturn(List.of(
-                passwordMethod(user.getId(), user.getTenantId(), "{noop}raw-password")
+                passwordMethod(user.getId(), 1L, "{noop}raw-password")
         ));
         when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
                 "totpBound", false,
@@ -396,7 +396,6 @@ class PartialMfaFormLoginIntegrationTest {
     private static User user() {
         User user = new User();
         user.setId(1L);
-        user.setTenantId(1L);
         user.setUsername("admin");
         user.setEnabled(true);
         user.setAccountNonExpired(true);
@@ -408,7 +407,7 @@ class PartialMfaFormLoginIntegrationTest {
     private static SecurityUser securityUser(User user) {
         return new SecurityUser(
                 user.getId(),
-                user.getTenantId(),
+                1L,
                 user.getUsername(),
                 "",
                 List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_ADMIN")),

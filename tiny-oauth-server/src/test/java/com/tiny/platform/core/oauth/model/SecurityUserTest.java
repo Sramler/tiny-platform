@@ -29,7 +29,6 @@ class SecurityUserTest {
 
         User user = new User();
         user.setId(1L);
-        user.setTenantId(1L);
         user.setUsername("alice");
         user.setEnabled(true);
         user.setAccountNonExpired(true);
@@ -49,7 +48,6 @@ class SecurityUserTest {
     void convenienceConstructor_shouldPreferActiveTenantContext() {
         User user = new User();
         user.setId(2L);
-        user.setTenantId(1L);
         user.setUsername("shared.alice");
         user.setEnabled(true);
         user.setAccountNonExpired(true);
@@ -68,7 +66,6 @@ class SecurityUserTest {
     void convenienceConstructor_shouldFallbackToAuthenticationActiveTenant() {
         User authenticatedUser = new User();
         authenticatedUser.setId(99L);
-        authenticatedUser.setTenantId(7L);
         authenticatedUser.setUsername("session.alice");
         authenticatedUser.setEnabled(true);
         authenticatedUser.setAccountNonExpired(true);
@@ -82,7 +79,6 @@ class SecurityUserTest {
 
         User user = new User();
         user.setId(2L);
-        user.setTenantId(1L);
         user.setUsername("shared.alice");
         user.setEnabled(true);
         user.setAccountNonExpired(true);

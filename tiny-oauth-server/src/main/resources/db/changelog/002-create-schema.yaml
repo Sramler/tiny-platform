@@ -7,7 +7,7 @@ databaseChangeLog:
         - ANY
       changes:
         - sqlFile:
-            path: classpath:schema.sql
+            path: schema.sql
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: false

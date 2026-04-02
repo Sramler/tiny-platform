@@ -146,63 +146,50 @@ for permission in \
 do
   permission_count=$(query_value "
     SELECT COUNT(*)
-    FROM resource
+    FROM permission
     WHERE tenant_id = ${default_tenant_id}
-      AND permission = '${permission}';
+      AND permission_code = '${permission}';
   ")
-  [[ "${permission_count:-0}" -ge 1 ]] || fail "默认租户缺少调度 authority 资源 ${permission}"
+  [[ "${permission_count:-0}" -ge 1 ]] || fail "默认租户缺少调度 authority 权限 ${permission}"
 done
-echo "  [OK] 037: 默认租户调度 authority 资源已存在"
+echo "  [OK] 037: 默认租户调度 authority 权限已存在"
 
-rr_table_exists=$(query_value "
+wildcard_binding_count=$(query_value "
   SELECT COUNT(*)
-  FROM information_schema.tables
-  WHERE table_schema = DATABASE()
-    AND table_name = 'role_resource';
+  FROM role_permission rp
+  JOIN role role_entity
+    ON role_entity.id = rp.role_id
+   AND role_entity.tenant_id = rp.tenant_id
+  JOIN permission perm
+    ON perm.id = rp.permission_id
+   AND perm.normalized_tenant_id = rp.normalized_tenant_id
+  WHERE rp.tenant_id = ${default_tenant_id}
+    AND role_entity.code = 'ROLE_TENANT_ADMIN'
+    AND perm.permission_code = 'scheduling:*';
 ")
-if [[ "${rr_table_exists:-0}" -ge 1 ]]; then
-  wildcard_binding_count=$(query_value "
-    SELECT COUNT(*)
-    FROM role_resource rr
-    JOIN role role_entity
-      ON role_entity.id = rr.role_id
-     AND role_entity.tenant_id = rr.tenant_id
-    JOIN resource resource_entity
-      ON resource_entity.id = rr.resource_id
-     AND resource_entity.tenant_id = rr.tenant_id
-    WHERE rr.tenant_id = ${default_tenant_id}
-      AND role_entity.code = 'ROLE_TENANT_ADMIN'
-      AND resource_entity.permission = 'scheduling:*';
-  ")
-else
-  wildcard_binding_count=$(query_value "
-    SELECT COUNT(*)
-    FROM role_permission rp
-    JOIN role role_entity
-      ON role_entity.id = rp.role_id
-     AND role_entity.tenant_id = rp.tenant_id
-    JOIN permission perm
-      ON perm.id = rp.permission_id
-     AND perm.normalized_tenant_id = rp.normalized_tenant_id
-    WHERE rp.tenant_id = ${default_tenant_id}
-      AND role_entity.code = 'ROLE_TENANT_ADMIN'
-      AND perm.permission_code = 'scheduling:*';
-  ")
-fi
 [[ "${wildcard_binding_count:-0}" -ge 1 ]] || fail "默认租户 ROLE_TENANT_ADMIN 未绑定 scheduling:*，新租户 bootstrap 模板不完整"
 echo "  [OK] 037: 默认租户 ROLE_TENANT_ADMIN 已绑定 scheduling:*"
 
 non_default_platform_menu_count=$(query_value "
   SELECT COUNT(*)
-  FROM resource resource_entity
+  FROM (
+    SELECT tenant_id, name, permission, path AS route_value, '' AS uri_value
+    FROM menu
+    UNION ALL
+    SELECT tenant_id, name, permission, page_path AS route_value, '' AS uri_value
+    FROM ui_action
+    UNION ALL
+    SELECT tenant_id, name, permission, '' AS route_value, uri AS uri_value
+    FROM api_endpoint
+  ) carrier
   JOIN tenant tenant_entity
-    ON tenant_entity.id = resource_entity.tenant_id
+    ON tenant_entity.id = carrier.tenant_id
   WHERE tenant_entity.code <> 'default'
     AND (
-      resource_entity.name IN ('tenant', 'idempotentOps')
-      OR resource_entity.permission IN ('system:tenant:list', 'idempotent:ops:view')
-      OR resource_entity.url IN ('/system/tenant', '/ops/idempotent')
-      OR resource_entity.uri IN ('/sys/tenants', '/metrics/idempotent')
+      carrier.name IN ('tenant', 'idempotentOps')
+      OR carrier.permission IN ('system:tenant:list', 'idempotent:ops:view')
+      OR carrier.route_value IN ('/system/tenant', '/ops/idempotent')
+      OR carrier.uri_value IN ('/sys/tenants', '/metrics/idempotent')
     );
 ")
 [[ "${non_default_platform_menu_count:-0}" -eq 0 ]] || fail "非默认租户仍存在平台级菜单资源，038 清理未生效: ${non_default_platform_menu_count}"
@@ -211,8 +198,8 @@ echo "  [OK] 038: 非默认租户不存在 tenant / idempotentOps 平台菜单"
 # 039 迁移后，以下为历史调度权限码，表中应无残留（规范码见 039 与 scheduling:console:view 等）
 legacy_scheduling_permission_count=$(query_value "
   SELECT COUNT(*)
-  FROM resource
-  WHERE permission IN (
+  FROM permission
+  WHERE permission_code IN (
     'scheduling:dag:list',
     'scheduling:task:list',
     'scheduling:task-type:list',
@@ -225,7 +212,7 @@ legacy_scheduling_permission_count=$(query_value "
     'scheduling:view-cluster-status'
   );
 ")
-[[ "${legacy_scheduling_permission_count:-0}" -eq 0 ]] || fail "resource 表中仍残留历史调度权限码，039 规范化未生效: ${legacy_scheduling_permission_count}"
+[[ "${legacy_scheduling_permission_count:-0}" -eq 0 ]] || fail "permission 表中仍残留历史调度权限码，039 规范化未生效: ${legacy_scheduling_permission_count}"
 echo "  [OK] 039: 历史调度权限码已统一迁移为规范码"
 
 check_permission_by_name() {
@@ -234,7 +221,7 @@ check_permission_by_name() {
   local actual_permission
   actual_permission=$(query_value "
     SELECT permission
-    FROM resource
+    FROM menu
     WHERE tenant_id = ${default_tenant_id}
       AND name = '${resource_name}'
     LIMIT 1;
@@ -246,7 +233,7 @@ for resource_name in schedulingDag schedulingTask schedulingTaskType schedulingD
   check_permission_by_name "$resource_name" "scheduling:console:view"
 done
 check_permission_by_name "schedulingAudit" "scheduling:audit:view"
-echo "  [OK] 039: 默认租户调度菜单资源已使用规范权限码"
+echo "  [OK] 039: 默认租户调度菜单载体已使用规范权限码"
 
 check_uri_by_name() {
   local resource_name="$1"
@@ -254,27 +241,26 @@ check_uri_by_name() {
   local actual_uri
   actual_uri=$(query_value "
     SELECT uri
-    FROM resource
+    FROM api_endpoint
     WHERE tenant_id = ${default_tenant_id}
       AND name = '${resource_name}'
     LIMIT 1;
   ")
-  [[ "$actual_uri" == "$expected_uri" ]] || fail "默认租户资源 ${resource_name} URI 异常，期望 ${expected_uri}，实际 ${actual_uri:-<empty>}"
+  [[ "$actual_uri" == "$expected_uri" ]] || fail "默认租户接口载体 ${resource_name} URI 异常，期望 ${expected_uri}，实际 ${actual_uri:-<empty>}"
 }
 
 legacy_control_plane_uri_count=$(query_value "
   SELECT COUNT(*)
-  FROM resource
-  WHERE `type` = 1
-    AND uri IN ('/api/users', '/api/roles', '/api/resources/menus', '/api/resources');
+  FROM api_endpoint
+  WHERE uri IN ('/api/users', '/api/roles', '/api/resources/menus', '/api/resources');
 ")
-[[ "${legacy_control_plane_uri_count:-0}" -eq 0 ]] || fail "resource 表中仍残留历史控制面 URI，040 规范化未生效: ${legacy_control_plane_uri_count}"
+[[ "${legacy_control_plane_uri_count:-0}" -eq 0 ]] || fail "api_endpoint 表中仍残留历史控制面 URI，040 规范化未生效: ${legacy_control_plane_uri_count}"
 
 check_uri_by_name "user" "/sys/users"
 check_uri_by_name "role" "/sys/roles"
 check_uri_by_name "menu" "/sys/menus"
 check_uri_by_name "resource" "/sys/resources"
-echo "  [OK] 040: 历史控制面菜单 URI 已统一到当前 /sys/* 路径"
+echo "  [OK] 040: 历史控制面接口 URI 已统一到当前 /sys/* 路径"
 
 echo ""
 echo "=== 全部检查通过：035/036/037/038/039/040 调度迁移、默认租户 bootstrap 模板、平台菜单清理、权限与 URI 规范化已在真实 MySQL 上落库 ==="

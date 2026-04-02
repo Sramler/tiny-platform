@@ -9,9 +9,11 @@ databaseChangeLog:
       validCheckSum:
         - 9:51ddacb931e8b58d14ef9ebd577b72e7
         - 9:19487149e95369d870f3dc5449723aeb
+        # Liquibase 4.31+ rejects classpath: in sqlFile path; relative path changes stored checksum.
+        - ANY
       changes:
         - sqlFile:
-            path: classpath:db/migration/init_default_dicts.sql
+            path: db/migration/init_default_dicts.sql
             relativeToChangelogFile: false
             splitStatements: true
             stripComments: false

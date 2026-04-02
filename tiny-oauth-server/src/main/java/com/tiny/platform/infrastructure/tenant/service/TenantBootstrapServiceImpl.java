@@ -4,9 +4,9 @@ import com.tiny.platform.infrastructure.auth.resource.domain.Resource;
 import com.tiny.platform.infrastructure.auth.resource.domain.ApiEndpointEntry;
 import com.tiny.platform.infrastructure.auth.resource.domain.UiActionEntry;
 import com.tiny.platform.infrastructure.auth.resource.enums.ResourceType;
+import com.tiny.platform.infrastructure.auth.resource.repository.CarrierProjectionRepository;
 import com.tiny.platform.infrastructure.auth.resource.repository.CarrierTemplateResourceSnapshotView;
 import com.tiny.platform.infrastructure.auth.resource.repository.RoleResourcePermissionBindingView;
-import com.tiny.platform.infrastructure.auth.resource.repository.ResourceRepository;
 import com.tiny.platform.infrastructure.auth.resource.repository.ApiEndpointEntryRepository;
 import com.tiny.platform.infrastructure.auth.resource.repository.UiActionEntryRepository;
 import com.tiny.platform.infrastructure.auth.resource.service.ResourcePermissionBindingService;
@@ -58,7 +58,7 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
     private static final Pattern WHITESPACE_RUN = Pattern.compile("\\s+");
 
     private final TenantRepository tenantRepository;
-    private final ResourceRepository resourceRepository;
+    private final CarrierProjectionRepository carrierProjectionRepository;
     private final MenuEntryRepository menuEntryRepository;
     private final UiActionEntryRepository uiActionEntryRepository;
     private final ApiEndpointEntryRepository apiEndpointEntryRepository;
@@ -68,7 +68,7 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
 
     public TenantBootstrapServiceImpl(
         TenantRepository tenantRepository,
-        ResourceRepository resourceRepository,
+        CarrierProjectionRepository carrierProjectionRepository,
         MenuEntryRepository menuEntryRepository,
         UiActionEntryRepository uiActionEntryRepository,
         ApiEndpointEntryRepository apiEndpointEntryRepository,
@@ -77,7 +77,7 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
         ResourcePermissionBindingService resourcePermissionBindingService
     ) {
         this.tenantRepository = tenantRepository;
-        this.resourceRepository = resourceRepository;
+        this.carrierProjectionRepository = carrierProjectionRepository;
         this.menuEntryRepository = menuEntryRepository;
         this.uiActionEntryRepository = uiActionEntryRepository;
         this.apiEndpointEntryRepository = apiEndpointEntryRepository;
@@ -507,7 +507,7 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
         if (targetResourceIds.isEmpty()) {
             return Map.of();
         }
-        List<RoleResourcePermissionBindingView> carrierBindings = resourceRepository.findCarrierPermissionBindingViewsByIdsAndScope(
+        List<RoleResourcePermissionBindingView> carrierBindings = carrierProjectionRepository.findPermissionBindingViewsByIdsAndScope(
             targetResourceIds,
             targetTenantId,
             targetRoleLevel
@@ -605,7 +605,7 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
 
     private List<Resource> loadCarrierTemplateSnapshot(Long tenantId, String resourceLevel) {
         List<CarrierTemplateResourceSnapshotView> snapshotViews =
-            resourceRepository.findCarrierTemplateSnapshotViewsByScope(tenantId, resourceLevel);
+            carrierProjectionRepository.findTemplateSnapshotViewsByScope(tenantId, resourceLevel);
         List<CarrierTemplateResourceSnapshotView> safeViews = snapshotViews == null ? List.of() : snapshotViews;
         return safeViews.stream()
             .map(this::toSnapshotResource)

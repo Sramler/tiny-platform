@@ -414,7 +414,6 @@ class MultiAuthenticationProviderTest {
         RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(request));
 
         User user = user(3L, "shared.alice");
-        user.setTenantId(99L);
         UserAuthenticationMethod passwordMethod = method(13L, "LOCAL", "PASSWORD", Map.of("password", "{bcrypt}encoded"));
         SecurityUser securityUser = new SecurityUser(user, "", 1L, Set.of());
 
@@ -546,14 +545,13 @@ class MultiAuthenticationProviderTest {
     private static User user(Long id, String username) {
         User user = new User();
         user.setId(id);
-        user.setTenantId(1L);
         user.setUsername(username);
         return user;
     }
 
     private static SecurityUser securityUser(User user) {
         return new SecurityUser(
-            user.getId(), user.getTenantId(), user.getUsername(), "",
+            user.getId(), 1L, user.getUsername(), "",
             List.of(new SimpleGrantedAuthority("ROLE_USER")),
             true, true, true, true
         );

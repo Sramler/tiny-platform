@@ -8,11 +8,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 /**
- * 将资源载体与权限主数据显式绑定，避免运行态继续依赖 permission_code 字符串拼接。
+ * 将兼容资源聚合与权限主数据显式绑定，避免运行态继续依赖 permission_code 字符串拼接。
  *
- * <p>当前仍保留 {@code resource.permission} 作为兼容字段和运营可读字段，但新写链路应同步维护
- * {@code resource.required_permission_id}。这样在不拆分 resource 表的前提下，可以先把“能力真相源”
- * 和“载体层”的连接改成显式引用。</p>
+ * <p>历史方法名里仍保留 {@code Resources}，但实际回填来源已经切到
+ * {@code menu/ui_action/api_endpoint} 三类 carrier 表。这样即使 legacy
+ * {@code resource} 总表下线，权限主数据和 carrier.required_permission_id
+ * 仍可继续完整回填。</p>
  */
 @Service
 public class ResourcePermissionBindingService {
@@ -65,7 +66,7 @@ public class ResourcePermissionBindingService {
               grouped.`module_code`,
               grouped.`action_code`,
               grouped.`permission_type`,
-              '从 resource 载体同步生成' AS `description`,
+              '从 carrier 载体同步生成' AS `description`,
               grouped.`enabled`,
               0 AS `built_in_flag`,
               :tenantId AS `tenant_id`,
@@ -75,48 +76,97 @@ public class ResourcePermissionBindingService {
               NOW() AS `updated_at`
             FROM (
               SELECT
-                TRIM(r.`permission`) AS `permission_code`,
+                MIN(carriers.`permission`) AS `permission_code`,
                 CASE
-                  WHEN TRIM(r.`permission`) REGEXP '^[^:[:space:]]+(:[^:[:space:]]+){2,}$'
-                    THEN SUBSTRING_INDEX(TRIM(r.`permission`), ':', 1)
+                  WHEN MIN(carriers.`permission`) REGEXP '^[^:[:space:]]+(:[^:[:space:]]+){2,}$'
+                    THEN SUBSTRING_INDEX(MIN(carriers.`permission`), ':', 1)
                   ELSE NULL
                 END AS `module_code`,
                 CASE
-                  WHEN TRIM(r.`permission`) REGEXP '^[^:[:space:]]+(:[^:[:space:]]+){2,}$'
-                    THEN SUBSTRING_INDEX(TRIM(r.`permission`), ':', -1)
+                  WHEN MIN(carriers.`permission`) REGEXP '^[^:[:space:]]+(:[^:[:space:]]+){2,}$'
+                    THEN SUBSTRING_INDEX(MIN(carriers.`permission`), ':', -1)
                   ELSE NULL
                 END AS `action_code`,
                 CASE
-                  WHEN MAX(CASE WHEN r.`type` = 3 THEN 1 ELSE 0 END) = 1 THEN 'API'
-                  WHEN MAX(CASE WHEN r.`type` = 2 THEN 1 ELSE 0 END) = 1 THEN 'BUTTON'
-                  WHEN MAX(CASE WHEN r.`type` IN (0, 1) THEN 1 ELSE 0 END) = 1 THEN 'MENU'
+                  WHEN MAX(CASE WHEN carriers.`carrier_type` = 'API' THEN 1 ELSE 0 END) = 1 THEN 'API'
+                  WHEN MAX(CASE WHEN carriers.`carrier_type` = 'BUTTON' THEN 1 ELSE 0 END) = 1 THEN 'BUTTON'
+                  WHEN MAX(CASE WHEN carriers.`carrier_type` = 'MENU' THEN 1 ELSE 0 END) = 1 THEN 'MENU'
                   ELSE 'OTHER'
                 END AS `permission_type`,
                 CASE
-                  WHEN MAX(CASE WHEN r.`enabled` = 1 THEN 1 ELSE 0 END) = 1 THEN 1
+                  WHEN MAX(CASE WHEN carriers.`enabled` = 1 THEN 1 ELSE 0 END) = 1 THEN 1
                   ELSE 0
                 END AS `enabled`
-              FROM `resource` r
-              WHERE r.`normalized_tenant_id` = IFNULL(:tenantId, 0)
-                AND r.`permission` IS NOT NULL
-                AND TRIM(r.`permission`) <> ''
-              GROUP BY TRIM(r.`permission`)
+              FROM (
+                SELECT
+                  TRIM(m.`permission`) AS `permission`,
+                  m.`enabled`,
+                  'MENU' AS `carrier_type`
+                FROM `menu` m
+                WHERE ((:tenantId IS NULL AND m.`tenant_id` IS NULL) OR m.`tenant_id` = :tenantId)
+                  AND m.`permission` IS NOT NULL
+                  AND TRIM(m.`permission`) <> ''
+                UNION ALL
+                SELECT
+                  TRIM(a.`permission`) AS `permission`,
+                  a.`enabled`,
+                  'BUTTON' AS `carrier_type`
+                FROM `ui_action` a
+                WHERE ((:tenantId IS NULL AND a.`tenant_id` IS NULL) OR a.`tenant_id` = :tenantId)
+                  AND a.`permission` IS NOT NULL
+                  AND TRIM(a.`permission`) <> ''
+                UNION ALL
+                SELECT
+                  TRIM(e.`permission`) AS `permission`,
+                  e.`enabled`,
+                  'API' AS `carrier_type`
+                FROM `api_endpoint` e
+                WHERE ((:tenantId IS NULL AND e.`tenant_id` IS NULL) OR e.`tenant_id` = :tenantId)
+                  AND e.`permission` IS NOT NULL
+                  AND TRIM(e.`permission`) <> ''
+              ) carriers
+              GROUP BY carriers.`permission`
             ) grouped
             """, tenantParams(tenantId));
     }
 
     public int bindRequiredPermissionIdsForResources(Long tenantId) {
-        return namedParameterJdbcTemplate.update("""
-            UPDATE `resource` r
+        MapSqlParameterSource params = tenantParams(tenantId);
+        int updated = 0;
+        updated += namedParameterJdbcTemplate.update("""
+            UPDATE `menu` m
             JOIN `permission` p
-              ON p.`normalized_tenant_id` = r.`normalized_tenant_id`
-             AND p.`permission_code` = TRIM(r.`permission`)
-            SET r.`required_permission_id` = p.`id`
-            WHERE r.`normalized_tenant_id` = IFNULL(:tenantId, 0)
-              AND r.`permission` IS NOT NULL
-              AND TRIM(r.`permission`) <> ''
-              AND (r.`required_permission_id` IS NULL OR r.`required_permission_id` <> p.`id`)
-            """, tenantParams(tenantId));
+              ON p.`normalized_tenant_id` = IFNULL(m.`tenant_id`, 0)
+             AND p.`permission_code` = TRIM(m.`permission`)
+            SET m.`required_permission_id` = p.`id`
+            WHERE ((:tenantId IS NULL AND m.`tenant_id` IS NULL) OR m.`tenant_id` = :tenantId)
+              AND m.`permission` IS NOT NULL
+              AND TRIM(m.`permission`) <> ''
+              AND (m.`required_permission_id` IS NULL OR m.`required_permission_id` <> p.`id`)
+            """, params);
+        updated += namedParameterJdbcTemplate.update("""
+            UPDATE `ui_action` a
+            JOIN `permission` p
+              ON p.`normalized_tenant_id` = IFNULL(a.`tenant_id`, 0)
+             AND p.`permission_code` = TRIM(a.`permission`)
+            SET a.`required_permission_id` = p.`id`
+            WHERE ((:tenantId IS NULL AND a.`tenant_id` IS NULL) OR a.`tenant_id` = :tenantId)
+              AND a.`permission` IS NOT NULL
+              AND TRIM(a.`permission`) <> ''
+              AND (a.`required_permission_id` IS NULL OR a.`required_permission_id` <> p.`id`)
+            """, params);
+        updated += namedParameterJdbcTemplate.update("""
+            UPDATE `api_endpoint` e
+            JOIN `permission` p
+              ON p.`normalized_tenant_id` = IFNULL(e.`tenant_id`, 0)
+             AND p.`permission_code` = TRIM(e.`permission`)
+            SET e.`required_permission_id` = p.`id`
+            WHERE ((:tenantId IS NULL AND e.`tenant_id` IS NULL) OR e.`tenant_id` = :tenantId)
+              AND e.`permission` IS NOT NULL
+              AND TRIM(e.`permission`) <> ''
+              AND (e.`required_permission_id` IS NULL OR e.`required_permission_id` <> p.`id`)
+            """, params);
+        return updated;
     }
 
     private Long ensurePermissionExists(Long tenantId,
@@ -130,7 +180,7 @@ public class ResourcePermissionBindingService {
             .addValue("moduleCode", deriveModuleCode(permissionCode))
             .addValue("actionCode", deriveActionCode(permissionCode))
             .addValue("permissionType", derivePermissionType(resourceType))
-            .addValue("description", "从 resource 载体同步生成")
+            .addValue("description", "从 carrier 载体同步生成")
             .addValue("enabled", enabled ? 1 : 0)
             .addValue("actorUserId", actorUserId);
 

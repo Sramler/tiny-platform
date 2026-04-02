@@ -7,8 +7,6 @@ import com.tiny.platform.infrastructure.auth.resource.dto.ResourceResponseDto;
 import com.tiny.platform.infrastructure.auth.resource.enums.ResourceType;
 import com.tiny.platform.infrastructure.auth.role.domain.Role;
 import com.tiny.platform.infrastructure.auth.role.dto.RoleResponseDto;
-import com.tiny.platform.infrastructure.auth.user.domain.User;
-import com.tiny.platform.infrastructure.auth.user.dto.UserResponseDto;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -32,14 +30,8 @@ class TenantNamingJsonContractTest {
         resource.setTitle("Resource");
         resource.setType(ResourceType.MENU);
 
-        User user = new User();
-        user.setId(3L);
-        user.setTenantId(9L);
-        user.setUsername("alice");
-
         assertRecordTenantJson(role, 7L);
         assertRecordTenantJson(resource, 8L);
-        assertRecordTenantJson(user, 9L);
     }
 
     @Test
@@ -52,12 +44,8 @@ class TenantNamingJsonContractTest {
         resourceDto.setName("resource");
         resourceDto.setRecordTenantId(8L);
 
-        UserResponseDto userDto = new UserResponseDto(3L, "alice", "Alice", true, true, true, true, null, 0, null, false, null);
-        userDto.setRecordTenantId(9L);
-
         assertRecordTenantJson(roleDto, 7L);
         assertRecordTenantJson(resourceDto, 8L);
-        assertRecordTenantJson(userDto, 9L);
     }
 
     private void assertRecordTenantJson(Object value, long expectedTenantId) throws Exception {

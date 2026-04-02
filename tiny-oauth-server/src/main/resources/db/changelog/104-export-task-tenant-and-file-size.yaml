@@ -2,21 +2,42 @@ databaseChangeLog:
   - changeSet:
       id: 104-export-task-tenant-and-file-size
       author: codex
+      validCheckSum:
+        - ANY
       changes:
-        - addColumn:
-            tableName: export_task
-            columns:
-              - column:
-                  name: tenant_id
-                  type: BIGINT
-                  remarks: 导出任务所属租户
-              - column:
-                  name: file_size_bytes
-                  type: BIGINT
-                  remarks: 导出文件大小（字节）
-        - createIndex:
-            tableName: export_task
-            indexName: idx_export_task_tenant
-            columns:
-              - column:
-                  name: tenant_id
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            endDelimiter: ;
+            sql: |
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'export_task' AND COLUMN_NAME = 'tenant_id'),
+                  'SELECT 1',
+                  'ALTER TABLE `export_task` ADD COLUMN `tenant_id` BIGINT NULL COMMENT ''导出任务所属租户'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'export_task' AND COLUMN_NAME = 'file_size_bytes'),
+                  'SELECT 1',
+                  'ALTER TABLE `export_task` ADD COLUMN `file_size_bytes` BIGINT NULL COMMENT ''导出文件大小（字节）'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'export_task' AND INDEX_NAME = 'idx_export_task_tenant'),
+                  'SELECT 1',
+                  'CREATE INDEX `idx_export_task_tenant` ON `export_task` (`tenant_id`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;

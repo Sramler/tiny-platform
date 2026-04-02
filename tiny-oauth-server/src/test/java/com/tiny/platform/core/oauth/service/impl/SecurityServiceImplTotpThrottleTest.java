@@ -7,6 +7,7 @@ import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationMethod;
 import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
+import com.tiny.platform.infrastructure.tenant.config.PlatformTenantResolver;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -39,7 +40,8 @@ class SecurityServiceImplTotpThrottleTest {
         TotpService totpService = mock(TotpService.class);
         MfaProperties mfaProperties = new MfaProperties();
         TotpVerificationGuard guard = new TotpVerificationGuard(repository, mfaProperties, totpService);
-        SecurityServiceImpl service = new SecurityServiceImpl(repository, passwordEncoder, mfaProperties, guard);
+        PlatformTenantResolver platformTenantResolver = mock(PlatformTenantResolver.class);
+        SecurityServiceImpl service = new SecurityServiceImpl(repository, passwordEncoder, mfaProperties, guard, platformTenantResolver);
 
         User user = user();
         UserAuthenticationMethod method = totpMethod();
@@ -67,7 +69,8 @@ class SecurityServiceImplTotpThrottleTest {
 
         MfaProperties mfaProperties = new MfaProperties();
         TotpVerificationGuard guard = new TotpVerificationGuard(repository, mfaProperties, totpService);
-        SecurityServiceImpl service = new SecurityServiceImpl(repository, passwordEncoder, mfaProperties, guard);
+        PlatformTenantResolver platformTenantResolver = mock(PlatformTenantResolver.class);
+        SecurityServiceImpl service = new SecurityServiceImpl(repository, passwordEncoder, mfaProperties, guard, platformTenantResolver);
 
         User user = user();
         UserAuthenticationMethod method = totpMethod();
@@ -86,7 +89,6 @@ class SecurityServiceImplTotpThrottleTest {
     private static User user() {
         User user = new User();
         user.setId(1L);
-        user.setTenantId(1L);
         user.setUsername("admin");
         return user;
     }

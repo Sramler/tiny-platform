@@ -23,18 +23,32 @@ WHERE t.code = 'default'
   )
 ORDER BY r.code;
 
--- 3. Resources in the default tenant that share the same permission with a PLATFORM template resource
+-- 3. Carrier rows in the default tenant that share the same permission with a PLATFORM template carrier
 SELECT res.*
-FROM resource res
+FROM (
+  SELECT 'menu' AS carrier_type, m.id, m.tenant_id, m.name, m.permission
+  FROM menu m
+  UNION ALL
+  SELECT 'ui_action' AS carrier_type, a.id, a.tenant_id, a.name, a.permission
+  FROM ui_action a
+  UNION ALL
+  SELECT 'api_endpoint' AS carrier_type, e.id, e.tenant_id, e.name, e.permission
+  FROM api_endpoint e
+) res
 JOIN tenant t ON res.tenant_id = t.id
 WHERE t.code = 'default'
   AND EXISTS (
     SELECT 1
-    FROM resource p
-    WHERE p.tenant_id IS NULL
-      AND p.permission = res.permission
+    FROM (
+      SELECT m.permission FROM menu m WHERE m.tenant_id IS NULL
+      UNION ALL
+      SELECT a.permission FROM ui_action a WHERE a.tenant_id IS NULL
+      UNION ALL
+      SELECT e.permission FROM api_endpoint e WHERE e.tenant_id IS NULL
+    ) p
+    WHERE p.permission = res.permission
   )
-ORDER BY res.permission;
+ORDER BY res.permission, res.carrier_type;
 
 -- 4. Optional: count summary for quick overview
 SELECT 'default_tenant_template_roles' AS metric, COUNT(*) AS count
@@ -48,14 +62,24 @@ WHERE t.code = 'default'
       AND p.code = r.code
   )
 UNION ALL
-SELECT 'default_tenant_template_resources' AS metric, COUNT(*) AS count
-FROM resource res
+SELECT 'default_tenant_template_carriers' AS metric, COUNT(*) AS count
+FROM (
+  SELECT m.tenant_id, m.permission FROM menu m
+  UNION ALL
+  SELECT a.tenant_id, a.permission FROM ui_action a
+  UNION ALL
+  SELECT e.tenant_id, e.permission FROM api_endpoint e
+) res
 JOIN tenant t ON res.tenant_id = t.id
 WHERE t.code = 'default'
   AND EXISTS (
     SELECT 1
-    FROM resource p
-    WHERE p.tenant_id IS NULL
-      AND p.permission = res.permission
+    FROM (
+      SELECT m.permission FROM menu m WHERE m.tenant_id IS NULL
+      UNION ALL
+      SELECT a.permission FROM ui_action a WHERE a.tenant_id IS NULL
+      UNION ALL
+      SELECT e.permission FROM api_endpoint e WHERE e.tenant_id IS NULL
+    ) p
+    WHERE p.permission = res.permission
   );
-

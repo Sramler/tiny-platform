@@ -16,7 +16,7 @@ import java.util.Map;
 
 /**
  * 菜单管理控制器
- * 只处理 type=0/1 的菜单和目录，底层共用 ResourceRepository
+ * 只处理 type=0/1 的菜单和目录，底层直接使用 menu carrier。
  */
 @RestController
 @RequestMapping("/sys/menus")

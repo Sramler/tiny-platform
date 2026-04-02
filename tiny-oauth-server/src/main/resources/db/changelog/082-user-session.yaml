@@ -2,6 +2,14 @@ databaseChangeLog:
   - changeSet:
       id: 082-create-user-session
       author: codex
+      validCheckSum:
+        - ANY
+      preConditions:
+        - onFail: MARK_RAN
+        - onError: HALT
+        - not:
+            tableExists:
+              tableName: user_session
       changes:
         - createTable:
             tableName: user_session

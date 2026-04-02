@@ -1,12 +1,22 @@
 -- 插入初始角色
-INSERT INTO role (id, name, description) VALUES
-    (1, 'ROLE_ADMIN', '系统管理员');
+INSERT INTO role (id, tenant_id, code, name, description) VALUES
+    (1, 1, 'ROLE_ADMIN', 'ROLE_ADMIN', '系统管理员');
 
--- 插入初始资源（3个示例 API 资源）
-INSERT INTO resource (id, name, path, method, type, parent_id, sort) VALUES
-                                                                         (1, '用户列表', '/sys/user/list', 'GET', 'API', NULL, 1),
-                                                                         (2, '添加用户', '/sys/user/add', 'POST', 'API', NULL, 2),
-                                                                         (3, '删除用户', '/sys/user/delete', 'DELETE', 'API', NULL, 3);
+-- 插入初始权限与端点载体（canonical carrier 模型）
+INSERT INTO permission (id, tenant_id, permission_code, permission_name, permission_type, enabled) VALUES
+    (1, 1, 'system:user:list', 'system:user:list', 'API', true),
+    (2, 1, 'system:user:add', 'system:user:add', 'API', true),
+    (3, 1, 'system:user:delete', 'system:user:delete', 'API', true);
+
+INSERT INTO api_endpoint (id, tenant_id, uri, method, permission, required_permission_id, enabled) VALUES
+    (1, 1, '/sys/user/list', 'GET', 'system:user:list', 1, true),
+    (2, 1, '/sys/user/add', 'POST', 'system:user:add', 2, true),
+    (3, 1, '/sys/user/delete', 'DELETE', 'system:user:delete', 3, true);
+
+INSERT INTO role_permission (id, role_id, permission_id, tenant_id) VALUES
+    (1, 1, 1, 1),
+    (2, 1, 2, 1),
+    (3, 1, 3, 1);
 
 -- 插入初始用户（密码字段已废弃，保留用于兼容）
 -- 实际密码存储在 user_authentication_method 表中

@@ -28,6 +28,7 @@ import com.tiny.platform.core.oauth.tenant.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import jakarta.persistence.criteria.Predicate;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -56,7 +57,6 @@ public class ResourceServiceImpl implements ResourceService {
     private static final String CARRIER_UI_ACTION = "UI_ACTION";
     private static final String CARRIER_API_ENDPOINT = "API_ENDPOINT";
 
-    private final ResourceRepository resourceRepository;
     private final RoleRepository roleRepository;
     private final EffectiveRoleResolutionService effectiveRoleResolutionService;
     private final TenantUserRepository tenantUserRepository;
@@ -69,8 +69,8 @@ public class ResourceServiceImpl implements ResourceService {
     private final CarrierPermissionRequirementEvaluator carrierPermissionRequirementEvaluator;
     private final AuthorizationAuditService authorizationAuditService;
 
-    public ResourceServiceImpl(ResourceRepository resourceRepository,
-                               RoleRepository roleRepository,
+    @Autowired
+    public ResourceServiceImpl(RoleRepository roleRepository,
                                EffectiveRoleResolutionService effectiveRoleResolutionService,
                                TenantUserRepository tenantUserRepository,
                                UserUnitRepository userUnitRepository,
@@ -81,7 +81,6 @@ public class ResourceServiceImpl implements ResourceService {
                                CarrierCompatibilitySafetyService carrierCompatibilitySafetyService,
                                CarrierPermissionRequirementEvaluator carrierPermissionRequirementEvaluator,
                                AuthorizationAuditService authorizationAuditService) {
-        this.resourceRepository = resourceRepository;
         this.roleRepository = roleRepository;
         this.effectiveRoleResolutionService = effectiveRoleResolutionService;
         this.tenantUserRepository = tenantUserRepository;
@@ -93,6 +92,38 @@ public class ResourceServiceImpl implements ResourceService {
         this.carrierCompatibilitySafetyService = carrierCompatibilitySafetyService;
         this.carrierPermissionRequirementEvaluator = carrierPermissionRequirementEvaluator;
         this.authorizationAuditService = authorizationAuditService;
+    }
+
+    /**
+     * Temporary bridge constructor so existing focused tests can migrate
+     * incrementally while runtime injection no longer depends on ResourceRepository.
+     */
+    @Deprecated
+    public ResourceServiceImpl(ResourceRepository ignoredResourceRepository,
+                               RoleRepository roleRepository,
+                               EffectiveRoleResolutionService effectiveRoleResolutionService,
+                               TenantUserRepository tenantUserRepository,
+                               UserUnitRepository userUnitRepository,
+                               MenuEntryRepository menuEntryRepository,
+                               UiActionEntryRepository uiActionEntryRepository,
+                               ApiEndpointEntryRepository apiEndpointEntryRepository,
+                               ResourcePermissionBindingService resourcePermissionBindingService,
+                               CarrierCompatibilitySafetyService carrierCompatibilitySafetyService,
+                               CarrierPermissionRequirementEvaluator carrierPermissionRequirementEvaluator,
+                               AuthorizationAuditService authorizationAuditService) {
+        this(
+            roleRepository,
+            effectiveRoleResolutionService,
+            tenantUserRepository,
+            userUnitRepository,
+            menuEntryRepository,
+            uiActionEntryRepository,
+            apiEndpointEntryRepository,
+            resourcePermissionBindingService,
+            carrierCompatibilitySafetyService,
+            carrierPermissionRequirementEvaluator,
+            authorizationAuditService
+        );
     }
 
     @Override

@@ -2,8 +2,8 @@ package com.tiny.platform.infrastructure.auth.role.service;
 
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.core.oauth.tenant.TenantContextContract;
+import com.tiny.platform.infrastructure.auth.resource.repository.CarrierProjectionRepository;
 import com.tiny.platform.infrastructure.auth.resource.repository.RoleResourcePermissionBindingView;
-import com.tiny.platform.infrastructure.auth.resource.repository.ResourceRepository;
 import com.tiny.platform.infrastructure.auth.role.dto.RoleCreateUpdateDto;
 import com.tiny.platform.infrastructure.auth.role.domain.Role;
 import com.tiny.platform.infrastructure.auth.role.repository.RoleRepository;
@@ -35,11 +35,12 @@ class RoleServiceImplTest {
     @Test
     void getUserIdsByRoleId_should_prefer_role_assignment_view() {
         RoleRepository roleRepository = mock(RoleRepository.class);
+        CarrierProjectionRepository carrierProjectionRepository = mock(CarrierProjectionRepository.class);
         RoleAssignmentSyncService roleAssignmentSyncService = mock(RoleAssignmentSyncService.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         RoleServiceImpl service = new RoleServiceImpl(
                 roleRepository,
-                mock(ResourceRepository.class),
+                carrierProjectionRepository,
                 mock(TenantUserRepository.class),
                 roleAssignmentSyncService,
                 effectiveRoleResolutionService,
@@ -58,12 +59,13 @@ class RoleServiceImplTest {
     @Test
     void updateRoleUsers_should_sync_role_assignments_using_tenant_membership() {
         RoleRepository roleRepository = mock(RoleRepository.class);
+        CarrierProjectionRepository carrierProjectionRepository = mock(CarrierProjectionRepository.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
         RoleAssignmentSyncService roleAssignmentSyncService = mock(RoleAssignmentSyncService.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         RoleServiceImpl service = new RoleServiceImpl(
                 roleRepository,
-                mock(ResourceRepository.class),
+                carrierProjectionRepository,
                 tenantUserRepository,
                 roleAssignmentSyncService,
                 effectiveRoleResolutionService,
@@ -90,12 +92,13 @@ class RoleServiceImplTest {
     @Test
     void updateRoleUsers_should_support_dept_scope_assignments() {
         RoleRepository roleRepository = mock(RoleRepository.class);
+        CarrierProjectionRepository carrierProjectionRepository = mock(CarrierProjectionRepository.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
         RoleAssignmentSyncService roleAssignmentSyncService = mock(RoleAssignmentSyncService.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         RoleServiceImpl service = new RoleServiceImpl(
                 roleRepository,
-                mock(ResourceRepository.class),
+                carrierProjectionRepository,
                 tenantUserRepository,
                 roleAssignmentSyncService,
                 effectiveRoleResolutionService,
@@ -121,9 +124,10 @@ class RoleServiceImplTest {
     @Test
     void create_should_write_platform_template_when_platform_scope() {
         RoleRepository roleRepository = mock(RoleRepository.class);
+        CarrierProjectionRepository carrierProjectionRepository = mock(CarrierProjectionRepository.class);
         RoleServiceImpl service = new RoleServiceImpl(
                 roleRepository,
-                mock(ResourceRepository.class),
+                carrierProjectionRepository,
                 mock(TenantUserRepository.class),
                 mock(RoleAssignmentSyncService.class),
                 mock(EffectiveRoleResolutionService.class),
@@ -155,10 +159,10 @@ class RoleServiceImplTest {
     @Test
     void updateRoleResources_should_write_role_permission_only_when_platform_scope() {
         RoleRepository roleRepository = mock(RoleRepository.class);
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
+        CarrierProjectionRepository carrierProjectionRepository = mock(CarrierProjectionRepository.class);
         RoleServiceImpl service = new RoleServiceImpl(
                 roleRepository,
-                resourceRepository,
+                carrierProjectionRepository,
                 mock(TenantUserRepository.class),
                 mock(RoleAssignmentSyncService.class),
                 mock(EffectiveRoleResolutionService.class),
@@ -174,7 +178,7 @@ class RoleServiceImplTest {
         role.setRoleLevel("PLATFORM");
 
         when(roleRepository.findById(9L)).thenReturn(Optional.of(role));
-        when(resourceRepository.findCarrierPermissionBindingViewsByIdsAndScope(List.of(12L), null, "PLATFORM"))
+        when(carrierProjectionRepository.findPermissionBindingViewsByIdsAndScope(List.of(12L), null, "PLATFORM"))
             .thenReturn(List.of(binding(12L, null, 3001L)));
 
         service.updateRoleResources(9L, List.of(12L));
@@ -186,10 +190,10 @@ class RoleServiceImplTest {
     @Test
     void updateRoleResources_should_write_role_permission_only_when_tenant_scope() {
         RoleRepository roleRepository = mock(RoleRepository.class);
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
+        CarrierProjectionRepository carrierProjectionRepository = mock(CarrierProjectionRepository.class);
         RoleServiceImpl service = new RoleServiceImpl(
                 roleRepository,
-                resourceRepository,
+                carrierProjectionRepository,
                 mock(TenantUserRepository.class),
                 mock(RoleAssignmentSyncService.class),
                 mock(EffectiveRoleResolutionService.class),
@@ -205,7 +209,7 @@ class RoleServiceImplTest {
         role.setRoleLevel("TENANT");
 
         when(roleRepository.findById(7L)).thenReturn(Optional.of(role));
-        when(resourceRepository.findCarrierPermissionBindingViewsByIdsAndScope(List.of(88L), 2L, "TENANT"))
+        when(carrierProjectionRepository.findPermissionBindingViewsByIdsAndScope(List.of(88L), 2L, "TENANT"))
             .thenReturn(List.of(binding(88L, null, 4001L)));
 
         service.updateRoleResources(7L, List.of(88L));
@@ -217,10 +221,10 @@ class RoleServiceImplTest {
     @Test
     void updateRoleResources_should_fail_closed_when_permission_binding_missing() {
         RoleRepository roleRepository = mock(RoleRepository.class);
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
+        CarrierProjectionRepository carrierProjectionRepository = mock(CarrierProjectionRepository.class);
         RoleServiceImpl service = new RoleServiceImpl(
             roleRepository,
-            resourceRepository,
+            carrierProjectionRepository,
             mock(TenantUserRepository.class),
             mock(RoleAssignmentSyncService.class),
             mock(EffectiveRoleResolutionService.class),
@@ -236,7 +240,7 @@ class RoleServiceImplTest {
         role.setRoleLevel("TENANT");
 
         when(roleRepository.findById(7L)).thenReturn(Optional.of(role));
-        when(resourceRepository.findCarrierPermissionBindingViewsByIdsAndScope(List.of(88L), 2L, "TENANT"))
+        when(carrierProjectionRepository.findPermissionBindingViewsByIdsAndScope(List.of(88L), 2L, "TENANT"))
             .thenReturn(List.of(binding(88L, "system:user:list", null)));
 
         assertThatThrownBy(() -> service.updateRoleResources(7L, List.of(88L)))
@@ -251,10 +255,10 @@ class RoleServiceImplTest {
     @Test
     void updateRoleResources_should_fail_closed_when_resource_out_of_scope_or_missing() {
         RoleRepository roleRepository = mock(RoleRepository.class);
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
+        CarrierProjectionRepository carrierProjectionRepository = mock(CarrierProjectionRepository.class);
         RoleServiceImpl service = new RoleServiceImpl(
             roleRepository,
-            resourceRepository,
+            carrierProjectionRepository,
             mock(TenantUserRepository.class),
             mock(RoleAssignmentSyncService.class),
             mock(EffectiveRoleResolutionService.class),
@@ -270,7 +274,7 @@ class RoleServiceImplTest {
         role.setRoleLevel("TENANT");
 
         when(roleRepository.findById(7L)).thenReturn(Optional.of(role));
-        when(resourceRepository.findCarrierPermissionBindingViewsByIdsAndScope(List.of(88L, 89L), 2L, "TENANT"))
+        when(carrierProjectionRepository.findPermissionBindingViewsByIdsAndScope(List.of(88L, 89L), 2L, "TENANT"))
             .thenReturn(List.of(binding(88L, null, 4001L)));
 
         assertThatThrownBy(() -> service.updateRoleResources(7L, List.of(88L, 89L)))
@@ -284,10 +288,10 @@ class RoleServiceImplTest {
     @Test
     void updateRoleResources_should_report_missing_resource_ids_in_fail_closed_message() {
         RoleRepository roleRepository = mock(RoleRepository.class);
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
+        CarrierProjectionRepository carrierProjectionRepository = mock(CarrierProjectionRepository.class);
         RoleServiceImpl service = new RoleServiceImpl(
             roleRepository,
-            resourceRepository,
+            carrierProjectionRepository,
             mock(TenantUserRepository.class),
             mock(RoleAssignmentSyncService.class),
             mock(EffectiveRoleResolutionService.class),
@@ -303,7 +307,7 @@ class RoleServiceImplTest {
         role.setRoleLevel("TENANT");
 
         when(roleRepository.findById(7L)).thenReturn(Optional.of(role));
-        when(resourceRepository.findCarrierPermissionBindingViewsByIdsAndScope(List.of(88L, 89L), 2L, "TENANT"))
+        when(carrierProjectionRepository.findPermissionBindingViewsByIdsAndScope(List.of(88L, 89L), 2L, "TENANT"))
             .thenReturn(List.of(binding(88L, null, 4001L)));
 
         assertThatThrownBy(() -> service.updateRoleResources(7L, List.of(88L, 89L)))
@@ -318,10 +322,10 @@ class RoleServiceImplTest {
     @Test
     void updateRoleResources_should_deduplicate_same_permission_across_multiple_carriers() {
         RoleRepository roleRepository = mock(RoleRepository.class);
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
+        CarrierProjectionRepository carrierProjectionRepository = mock(CarrierProjectionRepository.class);
         RoleServiceImpl service = new RoleServiceImpl(
             roleRepository,
-            resourceRepository,
+            carrierProjectionRepository,
             mock(TenantUserRepository.class),
             mock(RoleAssignmentSyncService.class),
             mock(EffectiveRoleResolutionService.class),
@@ -337,7 +341,7 @@ class RoleServiceImplTest {
         role.setRoleLevel("TENANT");
 
         when(roleRepository.findById(7L)).thenReturn(Optional.of(role));
-        when(resourceRepository.findCarrierPermissionBindingViewsByIdsAndScope(List.of(88L, 89L), 2L, "TENANT"))
+        when(carrierProjectionRepository.findPermissionBindingViewsByIdsAndScope(List.of(88L, 89L), 2L, "TENANT"))
             .thenReturn(List.of(
                 binding(88L, "system:user:list", 4001L),
                 binding(89L, "system:user:list:alt", 4001L)

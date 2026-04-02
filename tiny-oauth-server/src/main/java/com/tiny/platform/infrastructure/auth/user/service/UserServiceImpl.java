@@ -180,9 +180,12 @@ public class UserServiceImpl implements UserService {
                 user.getFailedLoginCount() != null ? user.getFailedLoginCount() : 0, user.getLastFailedLoginAt(),
                 temporarilyLocked,
                 temporarilyLocked ? loginFailurePolicy.remainingLockMinutes(user, now) : null);
-        // 展示/审计用，来自兼容字段 user.tenant_id；授权与可见性以 tenant_user + activeTenantId 为准
-        dto.setRecordTenantId(user.getTenantId());
         return dto;
+    }
+
+    @Override
+    public Optional<UserResponseDto> findUserDtoById(Long id) {
+        return findById(id).map(this::toDto);
     }
 
     @Override

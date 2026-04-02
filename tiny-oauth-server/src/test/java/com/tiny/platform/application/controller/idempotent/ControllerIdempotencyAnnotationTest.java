@@ -39,13 +39,13 @@ class ControllerIdempotencyAnnotationTest {
         assertIdempotent(UserController.class.getDeclaredMethod("batchEnable", java.util.List.class));
         assertIdempotent(UserController.class.getDeclaredMethod("batchDisable", java.util.List.class));
         assertIdempotent(UserController.class.getDeclaredMethod("batchDelete", java.util.List.class));
-        assertIdempotent(UserController.class.getDeclaredMethod("updateUserRoles", Long.class, java.util.List.class));
+        assertIdempotent(UserController.class.getDeclaredMethod("updateUserRoles", Long.class, Object.class));
 
         assertIdempotent(RoleController.class.getDeclaredMethod("create", RoleCreateUpdateDto.class));
         assertIdempotent(RoleController.class.getDeclaredMethod("update", Long.class, RoleCreateUpdateDto.class));
         assertIdempotent(RoleController.class.getDeclaredMethod("delete", Long.class));
-        assertIdempotent(RoleController.class.getDeclaredMethod("updateRoleUsers", Long.class, java.util.List.class));
-        assertIdempotent(RoleController.class.getDeclaredMethod("updateRoleResources", Long.class, java.util.List.class));
+        assertIdempotent(RoleController.class.getDeclaredMethod("updateRoleUsers", Long.class, Object.class));
+        assertIdempotent(RoleController.class.getDeclaredMethod("updateRoleResources", Long.class, Object.class));
 
         assertIdempotent(ResourceController.class.getDeclaredMethod("create", ResourceCreateUpdateDto.class));
         assertIdempotent(ResourceController.class.getDeclaredMethod("update", Long.class, ResourceCreateUpdateDto.class));

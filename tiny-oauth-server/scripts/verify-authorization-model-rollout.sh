@@ -394,139 +394,122 @@ echo ""
 # ─── 7. 权限码 seed 完整性 ───
 echo "── 7. 权限码 seed ──"
 
-if table_exists "resource" && table_exists "role" && table_exists "role_permission" && table_exists "permission"; then
-  resource_permission_count=$(query "SELECT COUNT(DISTINCT permission) FROM resource WHERE tenant_id = 1 AND permission IS NOT NULL AND permission != ''")
+if table_exists "role" && table_exists "role_permission" && table_exists "permission" && \
+   table_exists "menu" && table_exists "ui_action" && table_exists "api_endpoint"; then
+  carrier_permission_count=$(query "
+    SELECT COUNT(DISTINCT permission_code)
+    FROM (
+      SELECT TRIM(permission) AS permission_code
+      FROM menu
+      WHERE tenant_id = 1
+        AND permission IS NOT NULL
+        AND TRIM(permission) <> ''
+      UNION
+      SELECT TRIM(permission) AS permission_code
+      FROM ui_action
+      WHERE tenant_id = 1
+        AND permission IS NOT NULL
+        AND TRIM(permission) <> ''
+      UNION
+      SELECT TRIM(permission) AS permission_code
+      FROM api_endpoint
+      WHERE tenant_id = 1
+        AND permission IS NOT NULL
+        AND TRIM(permission) <> ''
+    ) carrier_permissions
+  ")
   role_admin_permission_count=$(query "SELECT COUNT(DISTINCT p.permission_code) FROM role_permission rp JOIN permission p ON p.id = rp.permission_id AND p.normalized_tenant_id = rp.normalized_tenant_id JOIN role rl ON rl.id = rp.role_id AND rl.tenant_id = 1 AND rl.tenant_id <=> rp.tenant_id WHERE rl.code='ROLE_TENANT_ADMIN' AND rp.tenant_id = 1 AND p.permission_code IS NOT NULL AND p.permission_code != ''")
 
-  echo "  系统权限码总数: $resource_permission_count"
+  echo "  carrier 权限码总数: $carrier_permission_count"
   echo "  ROLE_TENANT_ADMIN 已授予: $role_admin_permission_count"
 
-  if [[ "$role_admin_permission_count" -ge "$resource_permission_count" ]]; then
+  if [[ "$role_admin_permission_count" -ge "$carrier_permission_count" ]]; then
     pass "ROLE_TENANT_ADMIN 已覆盖全部权限码"
   else
-    gap=$((resource_permission_count - role_admin_permission_count))
+    gap=$((carrier_permission_count - role_admin_permission_count))
     warn "ROLE_TENANT_ADMIN 缺少 $gap 个权限码（可能是新增未 seed）"
   fi
 
-  if column_exists "resource" "required_permission_id"; then
-    unbound_resource_permission_count=$(query "
-      SELECT COUNT(*)
-      FROM resource
-      WHERE permission IS NOT NULL
-        AND TRIM(permission) <> ''
-        AND required_permission_id IS NULL
-    ")
-    if [[ "${unbound_resource_permission_count:-0}" -eq 0 ]]; then
-      pass "resource.required_permission_id 已覆盖全部非空 permission 载体"
-    else
-      fail "仍有 ${unbound_resource_permission_count:-0} 条 resource.permission 未绑定 required_permission_id"
-    fi
+  menu_projection_count=$(query "SELECT COUNT(*) FROM menu")
+  ui_action_projection_count=$(query "SELECT COUNT(*) FROM ui_action")
+  api_endpoint_projection_count=$(query "SELECT COUNT(*) FROM api_endpoint")
+  echo "  menu 行数: ${menu_projection_count:-0}"
+  echo "  ui_action 行数: ${ui_action_projection_count:-0}"
+  echo "  api_endpoint 行数: ${api_endpoint_projection_count:-0}"
+
+  unbound_menu_permission_count=$(query "
+    SELECT COUNT(*)
+    FROM menu
+    WHERE permission IS NOT NULL
+      AND TRIM(permission) <> ''
+      AND required_permission_id IS NULL
+  ")
+  unbound_ui_action_permission_count=$(query "
+    SELECT COUNT(*)
+    FROM ui_action
+    WHERE permission IS NOT NULL
+      AND TRIM(permission) <> ''
+      AND required_permission_id IS NULL
+  ")
+  unbound_api_endpoint_permission_count=$(query "
+    SELECT COUNT(*)
+    FROM api_endpoint
+    WHERE permission IS NOT NULL
+      AND TRIM(permission) <> ''
+      AND required_permission_id IS NULL
+  ")
+
+  if [[ "${unbound_menu_permission_count:-0}" -eq 0 && "${unbound_ui_action_permission_count:-0}" -eq 0 && "${unbound_api_endpoint_permission_count:-0}" -eq 0 ]]; then
+    pass "split carrier tables 已覆盖全部非空 permission 载体绑定"
   else
-    fail "resource.required_permission_id 缺失，当前库未完成 permission 载体显式绑定"
+    fail "split carrier tables 仍有未绑定 required_permission_id 的载体（menu=${unbound_menu_permission_count:-0}, ui_action=${unbound_ui_action_permission_count:-0}, api_endpoint=${unbound_api_endpoint_permission_count:-0}）"
   fi
 
-  if table_exists "menu" && table_exists "ui_action" && table_exists "api_endpoint"; then
-    menu_projection_count=$(query "SELECT COUNT(*) FROM menu")
-    menu_resource_projection_count=$(query "SELECT COUNT(*) FROM resource WHERE type IN (0, 1)")
-    ui_action_projection_count=$(query "SELECT COUNT(*) FROM ui_action")
-    ui_action_resource_projection_count=$(query "SELECT COUNT(*) FROM resource WHERE type = 2")
-    api_endpoint_projection_count=$(query "SELECT COUNT(*) FROM api_endpoint")
-    api_endpoint_resource_projection_count=$(query "SELECT COUNT(*) FROM resource WHERE type = 3")
-
-    if [[ "${menu_projection_count:-0}" -eq "${menu_resource_projection_count:-0}" ]]; then
-      pass "menu 载体表已与 resource(type=目录/菜单) 对齐"
-    else
-      fail "menu 载体表与 resource(type=目录/菜单) 数量不一致（menu=${menu_projection_count:-0}, resource=${menu_resource_projection_count:-0}）"
-    fi
-
-    if [[ "${ui_action_projection_count:-0}" -eq "${ui_action_resource_projection_count:-0}" ]]; then
-      pass "ui_action 载体表已与 resource(type=按钮) 对齐"
-    else
-      fail "ui_action 载体表与 resource(type=按钮) 数量不一致（ui_action=${ui_action_projection_count:-0}, resource=${ui_action_resource_projection_count:-0}）"
-    fi
-
-    if [[ "${api_endpoint_projection_count:-0}" -eq "${api_endpoint_resource_projection_count:-0}" ]]; then
-      pass "api_endpoint 载体表已与 resource(type=接口) 对齐"
-    else
-      fail "api_endpoint 载体表与 resource(type=接口) 数量不一致（api_endpoint=${api_endpoint_projection_count:-0}, resource=${api_endpoint_resource_projection_count:-0}）"
-    fi
-
-    unbound_menu_permission_count=$(query "
+  if table_exists "menu_permission_requirement" && table_exists "ui_action_permission_requirement" && table_exists "api_endpoint_permission_requirement"; then
+    missing_menu_compatibility_requirement_count=$(query "
       SELECT COUNT(*)
-      FROM menu
-      WHERE permission IS NOT NULL
-        AND TRIM(permission) <> ''
-        AND required_permission_id IS NULL
+      FROM menu m
+      LEFT JOIN menu_permission_requirement r
+        ON r.menu_id = m.id
+       AND r.requirement_group = 0
+       AND r.negated = 0
+       AND r.permission_id = m.required_permission_id
+      WHERE m.required_permission_id IS NOT NULL
+        AND r.id IS NULL
     ")
-    unbound_ui_action_permission_count=$(query "
+    missing_ui_action_compatibility_requirement_count=$(query "
       SELECT COUNT(*)
-      FROM ui_action
-      WHERE permission IS NOT NULL
-        AND TRIM(permission) <> ''
-        AND required_permission_id IS NULL
+      FROM ui_action a
+      LEFT JOIN ui_action_permission_requirement r
+        ON r.ui_action_id = a.id
+       AND r.requirement_group = 0
+       AND r.negated = 0
+       AND r.permission_id = a.required_permission_id
+      WHERE a.required_permission_id IS NOT NULL
+        AND r.id IS NULL
     ")
-    unbound_api_endpoint_permission_count=$(query "
+    missing_api_endpoint_compatibility_requirement_count=$(query "
       SELECT COUNT(*)
-      FROM api_endpoint
-      WHERE permission IS NOT NULL
-        AND TRIM(permission) <> ''
-        AND required_permission_id IS NULL
+      FROM api_endpoint e
+      LEFT JOIN api_endpoint_permission_requirement r
+        ON r.api_endpoint_id = e.id
+       AND r.requirement_group = 0
+       AND r.negated = 0
+       AND r.permission_id = e.required_permission_id
+      WHERE e.required_permission_id IS NOT NULL
+        AND r.id IS NULL
     ")
 
-    if [[ "${unbound_menu_permission_count:-0}" -eq 0 && "${unbound_ui_action_permission_count:-0}" -eq 0 && "${unbound_api_endpoint_permission_count:-0}" -eq 0 ]]; then
-      pass "split carrier tables 已覆盖全部非空 permission 载体绑定"
+    if [[ "${missing_menu_compatibility_requirement_count:-0}" -eq 0 && "${missing_ui_action_compatibility_requirement_count:-0}" -eq 0 && "${missing_api_endpoint_compatibility_requirement_count:-0}" -eq 0 ]]; then
+      pass "carrier requirement 兼容组已与 required_permission_id 对齐"
     else
-      fail "split carrier tables 仍有未绑定 required_permission_id 的载体（menu=${unbound_menu_permission_count:-0}, ui_action=${unbound_ui_action_permission_count:-0}, api_endpoint=${unbound_api_endpoint_permission_count:-0}）"
-    fi
-
-    if table_exists "menu_permission_requirement" && table_exists "ui_action_permission_requirement" && table_exists "api_endpoint_permission_requirement"; then
-      missing_menu_compatibility_requirement_count=$(query "
-        SELECT COUNT(*)
-        FROM menu m
-        LEFT JOIN menu_permission_requirement r
-          ON r.menu_id = m.id
-         AND r.requirement_group = 0
-         AND r.negated = 0
-         AND r.permission_id = m.required_permission_id
-        WHERE m.required_permission_id IS NOT NULL
-          AND r.id IS NULL
-      ")
-      missing_ui_action_compatibility_requirement_count=$(query "
-        SELECT COUNT(*)
-        FROM ui_action a
-        LEFT JOIN ui_action_permission_requirement r
-          ON r.ui_action_id = a.id
-         AND r.requirement_group = 0
-         AND r.negated = 0
-         AND r.permission_id = a.required_permission_id
-        WHERE a.required_permission_id IS NOT NULL
-          AND r.id IS NULL
-      ")
-      missing_api_endpoint_compatibility_requirement_count=$(query "
-        SELECT COUNT(*)
-        FROM api_endpoint e
-        LEFT JOIN api_endpoint_permission_requirement r
-          ON r.api_endpoint_id = e.id
-         AND r.requirement_group = 0
-         AND r.negated = 0
-         AND r.permission_id = e.required_permission_id
-        WHERE e.required_permission_id IS NOT NULL
-          AND r.id IS NULL
-      ")
-
-      if [[ "${missing_menu_compatibility_requirement_count:-0}" -eq 0 && "${missing_ui_action_compatibility_requirement_count:-0}" -eq 0 && "${missing_api_endpoint_compatibility_requirement_count:-0}" -eq 0 ]]; then
-        pass "carrier requirement 兼容组已与 required_permission_id 对齐"
-      else
-        fail "carrier requirement 兼容组存在缺口（menu=${missing_menu_compatibility_requirement_count:-0}, ui_action=${missing_ui_action_compatibility_requirement_count:-0}, api_endpoint=${missing_api_endpoint_compatibility_requirement_count:-0}）"
-      fi
-    else
-      fail "carrier requirement tables 未全部就绪（menu/ui_action/api_endpoint requirement）"
+      fail "carrier requirement 兼容组存在缺口（menu=${missing_menu_compatibility_requirement_count:-0}, ui_action=${missing_ui_action_compatibility_requirement_count:-0}, api_endpoint=${missing_api_endpoint_compatibility_requirement_count:-0}）"
     fi
   else
-    warn "menu/ui_action/api_endpoint 载体表未全部就绪，跳过 split carrier rollout 检查"
+    fail "carrier requirement tables 未全部就绪（menu/ui_action/api_endpoint requirement）"
   fi
 else
-  warn "resource / role / role_permission / permission 未就绪；当前 canonical rollout 检查不再接受 role_resource 作为权限主关系"
+  warn "carrier / role / role_permission / permission 未就绪；当前 canonical rollout 检查已以 split carrier tables 为唯一载体真相源"
 fi
 
 echo ""
@@ -535,24 +518,28 @@ echo ""
 echo "── 8. user.tenant_id 退场 ──"
 
 if table_exists "user"; then
-  user_with_tenant_id=$(query "SELECT COUNT(*) FROM user WHERE tenant_id IS NOT NULL")
-  orphan_user_tenant_id=$(query "
-    SELECT COUNT(*)
-    FROM user u
-    WHERE u.tenant_id IS NOT NULL
-      AND NOT EXISTS (
-        SELECT 1
-        FROM tenant_user tu
-        WHERE tu.user_id = u.id
-          AND tu.tenant_id = u.tenant_id
-          AND tu.status = 'ACTIVE'
-      )
-  ")
-  echo "  兼容 tenant_id 非空用户: $user_with_tenant_id"
-  if [[ "$orphan_user_tenant_id" -eq 0 ]]; then
-    pass "user.tenant_id 兼容值已与 active membership 对齐"
+  if column_exists "user" "tenant_id"; then
+    user_with_tenant_id=$(query "SELECT COUNT(*) FROM user WHERE tenant_id IS NOT NULL")
+    orphan_user_tenant_id=$(query "
+      SELECT COUNT(*)
+      FROM user u
+      WHERE u.tenant_id IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1
+          FROM tenant_user tu
+          WHERE tu.user_id = u.id
+            AND tu.tenant_id = u.tenant_id
+            AND tu.status = 'ACTIVE'
+        )
+    ")
+    echo "  兼容 tenant_id 非空用户: $user_with_tenant_id"
+    if [[ "$orphan_user_tenant_id" -eq 0 ]]; then
+      pass "user.tenant_id 兼容值已与 active membership 对齐"
+    else
+      warn "有 $orphan_user_tenant_id 条 user.tenant_id 兼容值未匹配 active membership（历史脏数据待清理）"
+    fi
   else
-    warn "有 $orphan_user_tenant_id 条 user.tenant_id 兼容值未匹配 active membership（历史脏数据待清理）"
+    pass "user.tenant_id 列已删除（Liquibase 129 终态）"
   fi
 else
   warn "user 表不存在，跳过 tenant_id 退场检查"
@@ -574,7 +561,13 @@ if table_exists "DATABASECHANGELOG"; then
                        123-add-resource-required-permission-id \
                        124-backfill-missing-resource-permission-bindings \
                        125-split-resource-carrier-tables \
-                       126-carrier-permission-requirement-tables; do
+                       126-carrier-permission-requirement-tables \
+                       129-drop-user-tenant-fk \
+                       129-drop-user-tenant-id-index \
+                       129-drop-user-tenant-id-column \
+                       130-repair-uam-drop-fk-if-tenant-still-not-null \
+                       130-repair-uam-tenant-id-to-nullable \
+                       130-repair-uam-restore-fk-if-missing; do
     if query "SELECT 1 FROM DATABASECHANGELOG WHERE id='$changeset_id'" 2>/dev/null | grep -q 1; then
       pass "迁移 $changeset_id 已执行"
     else

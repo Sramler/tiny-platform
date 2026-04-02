@@ -1,11 +1,23 @@
 package com.tiny.web.sys.repository;
 
 /**
- * Native-query projection: granted resource path/method for access checks (uri/url → path).
+ * Canonical carrier-backed access row used by tiny-web demo authorization checks.
  */
-public interface GrantedResourceAccessRow {
+public class GrantedResourceAccessRow {
 
-    String getPath();
+    private final String path;
+    private final String method;
 
-    String getMethod();
+    public GrantedResourceAccessRow(String path, String method) {
+        this.path = path;
+        this.method = method;
+    }
+
+    public String getPath() {
+        return path;
+    }
+
+    public String getMethod() {
+        return method;
+    }
 }
