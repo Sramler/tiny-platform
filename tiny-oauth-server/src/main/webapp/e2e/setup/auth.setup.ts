@@ -100,7 +100,7 @@ setup('authenticate real scheduling e2e user', async ({ page }) => {
 
   await page.getByLabel('用户名').fill(username)
   await page.getByLabel('密码').fill(password)
-  await page.getByRole('button', { name: '登录' }).click()
+  await page.locator('button[type="submit"]').click()
 
   await page.waitForURL(/\/(callback|self\/security\/totp-(bind|verify)|OIDCDebug)/, {
     timeout: 90_000,

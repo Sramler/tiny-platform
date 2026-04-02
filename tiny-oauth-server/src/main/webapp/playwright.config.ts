@@ -1,5 +1,10 @@
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { defineConfig, devices } from '@playwright/test'
 
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const webappRoot = path.resolve(__dirname)
 const PORT = 4173
 const baseURL = `http://127.0.0.1:${PORT}`
 
@@ -21,7 +26,7 @@ export default defineConfig({
     // 仅启动前端 dev server，后端由 mock / page.route 等方式模拟；
     // 避免默认 test:e2e 被误用为真实链路回归。
     command: `npm run dev -- --host 127.0.0.1 --port ${PORT}`,
-    cwd: '/Users/bliu/code/tiny-platform/tiny-oauth-server/src/main/webapp',
+    cwd: webappRoot,
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     env: {

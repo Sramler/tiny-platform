@@ -69,6 +69,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y default-mysql-client
 
       - name: Start backend
+        env:
+          SPRING_PROFILES_ACTIVE: ${{ env.E2E_BACKEND_PROFILE }}
         shell: bash
         run: |
           set -euo pipefail
@@ -108,4 +110,3 @@ jobs:
             pid="$(cat /tmp/tiny-platform-auth-db-residuals/backend.pid)"
             kill "$pid" 2>/dev/null || true
           fi
-

@@ -9,6 +9,7 @@ import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.repository.NoRepositoryBean;
 
 /**
  * Legacy compatibility interface retained only for bridge constructors and
@@ -18,6 +19,7 @@ import org.springframework.data.jpa.domain.Specification;
  * legacy {@code resource} table. Any remaining production reads must go
  * through carrier-backed repositories instead.</p>
  */
+@NoRepositoryBean
 public interface ResourceRepository extends CarrierProjectionRepository {
 
     <S extends Resource> S save(S entity);

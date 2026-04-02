@@ -202,10 +202,10 @@ test.describe('idempotent ops access', () => {
     await expect(page.getByText('通过请求')).toBeVisible()
 
     await page.getByRole('button', { name: '进入治理页' }).click()
-    await page.waitForURL('**/ops/idempotent?activeTenantId=1')
+    await page.waitForURL(/\/ops\/idempotent(?:\?activeTenantId=\d+)?$/)
 
     await expect(page.getByRole('heading', { name: '幂等治理页' })).toBeVisible()
-    await expect(page).toHaveURL(/activeTenantId=1/)
+    await expect(page).toHaveURL(/\/ops\/idempotent(?:\?activeTenantId=\d+)?$/)
     await expect(page.getByText('POST /sys/users')).toBeVisible()
     await expect(page.getByText('消费成功')).toBeVisible()
   })

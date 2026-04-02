@@ -47,13 +47,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          JAR=$(ls tiny-oauth-server/target/tiny-oauth-server-*.jar | head -1)
-          java -Dspring.profiles.active=ci -jar "$JAR" > /tmp/migration-smoke-backend.log 2>&1 &
+          SPRING_PROFILES_ACTIVE=ci mvn -pl tiny-oauth-server spring-boot:run > /tmp/migration-smoke-backend.log 2>&1 &
           APP_PID=$!
           trap "kill $APP_PID 2>/dev/null || true" EXIT
 
           for _ in $(seq 1 120); do
-            if curl -fsS "http://127.0.0.1:9000/actuator/health" >/dev/null 2>&1; then
+            if curl -fsS "http://127.0.0.1:9000/login" >/dev/null 2>&1; then
               echo "Backend ready. Liquibase migration should have completed."
               exit 0
             fi

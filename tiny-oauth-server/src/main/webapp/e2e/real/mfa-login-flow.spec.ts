@@ -122,7 +122,7 @@ test.describe('real-link: /login -> totp-verify -> /self/security', () => {
     await page.getByLabel('租户编码').fill(tenantCode)
     await page.getByLabel('用户名').fill(username)
     await page.getByLabel('密码').fill(password)
-    await page.getByRole('button', { name: '登录' }).click()
+    await page.locator('button[type="submit"]').click()
 
     // 2) 预期后端重定向到 TOTP 验证页
     await page.waitForURL('**/self/security/totp-verify**', { timeout: 60_000 })

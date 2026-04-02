@@ -162,7 +162,7 @@ test.describe('real-link: 未绑定 TOTP 首绑链路', () => {
     await page.getByLabel('租户编码').fill(tenantCode)
     await page.getByLabel('用户名').fill(username)
     await page.getByLabel('密码').fill(password)
-    await page.getByRole('button', { name: '登录' }).click()
+    await page.locator('button[type="submit"]').click()
 
     await page.waitForURL('**/self/security/totp-bind**', { timeout: 60_000 })
     await expect(page.getByRole('heading', { name: /开启两步验证/ })).toBeVisible({
@@ -198,7 +198,7 @@ test.describe('real-link: 未绑定 TOTP 首绑链路', () => {
     await page.getByLabel('租户编码').fill(tenantCode)
     await page.getByLabel('用户名').fill(username)
     await page.getByLabel('密码').fill(password)
-    await page.getByRole('button', { name: '登录' }).click()
+    await page.locator('button[type="submit"]').click()
 
     await page.waitForURL('**/self/security/totp-verify**', { timeout: 60_000 })
     await expect(page.getByRole('heading', { name: /两步验证/ })).toBeVisible({

@@ -63,6 +63,8 @@ jobs:
           mvn -pl tiny-oauth-server -DskipTests test-compile
 
       - name: Start backend
+        env:
+          SPRING_PROFILES_ACTIVE: ${{ env.E2E_BACKEND_PROFILE }}
         shell: bash
         run: |
           set -euo pipefail
@@ -102,4 +104,3 @@ jobs:
             pid="$(cat /tmp/tiny-platform-scheduling-seed-reset/backend.pid)"
             kill "$pid" 2>/dev/null || true
           fi
-

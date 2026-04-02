@@ -55,17 +55,17 @@ jobs:
       - name: Run app and verify scheduling demo data
         run: |
           set -e
-          JAR=$(ls tiny-oauth-server/target/tiny-oauth-server-*.jar | head -1)
-          java -Dspring.profiles.active=ci -jar "$JAR" &
+          SPRING_PROFILES_ACTIVE=ci mvn -pl tiny-oauth-server spring-boot:run > /tmp/verify-scheduling-demo-backend.log 2>&1 &
           APP_PID=$!
           trap "kill $APP_PID 2>/dev/null || true" EXIT
           for i in $(seq 1 60); do
-            if curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:9000/actuator/health 2>/dev/null | grep -q 200; then
+            if curl -fsS http://127.0.0.1:9000/login >/dev/null 2>&1; then
               echo "App ready."
               break
             fi
             if ! kill -0 $APP_PID 2>/dev/null; then
               echo "App process exited early."
+              tail -n 200 /tmp/verify-scheduling-demo-backend.log || true
               exit 1
             fi
             sleep 2

@@ -19,3 +19,8 @@ spring:
       ddl-auto: none
   liquibase:
     enabled: true
+
+camunda:
+  bpm:
+    database:
+      schema-update: true

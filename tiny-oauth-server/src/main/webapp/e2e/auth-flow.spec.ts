@@ -48,7 +48,7 @@ test.describe('auth flow pages', () => {
     await page.getByLabel('租户编码').fill('Tiny-Prod')
     await page.getByLabel('用户名').fill('alice')
     await page.getByLabel('密码').fill('secret')
-    await page.getByRole('button', { name: '登录' }).click()
+    await page.locator('button[type="submit"]').click()
 
     await page.waitForURL('**/self/security/totp-verify?redirect=%2F')
     await expect(page.getByRole('heading', { name: '两步验证' })).toBeVisible()
