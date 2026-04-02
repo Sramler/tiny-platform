@@ -263,7 +263,7 @@ Long findRoleIdByCode(Connection connection, Long tenantId, String roleCode) thr
     return null;
 }
 
-void verifyDefaultSchedulingBootstrapTemplate(Connection connection) throws SQLException {
+void ensureDefaultSchedulingBootstrapTemplate(Connection connection) throws SQLException {
     Long defaultTenantId = findTenantIdByCode(connection, "default");
     if (defaultTenantId == null) {
         throw new IllegalStateException("默认租户 default 不存在，无法作为调度 E2E 权限模板来源");
@@ -275,22 +275,39 @@ void verifyDefaultSchedulingBootstrapTemplate(Connection connection) throws SQLE
         adminRoleId = findRoleIdByCode(connection, defaultTenantId, "ROLE_ADMIN");
     }
     if (adminRoleId == null) {
-        System.out.println("Skip default scheduling bootstrap template verification: default tenant has neither ROLE_TENANT_ADMIN nor ROLE_ADMIN");
-        return;
+        try (PreparedStatement ps = connection.prepareStatement(
+                "INSERT INTO role (tenant_id, code, name, description, builtin, enabled) VALUES (?, 'ROLE_TENANT_ADMIN', '系统管理员', 'real e2e default scheduling bootstrap role', true, true)",
+                Statement.RETURN_GENERATED_KEYS)) {
+            ps.setLong(1, defaultTenantId);
+            ps.executeUpdate();
+            try (ResultSet rs = ps.getGeneratedKeys()) {
+                if (rs.next()) {
+                    adminRoleId = rs.getLong(1);
+                }
+            }
+        }
+    }
+    if (adminRoleId == null) {
+        throw new IllegalStateException("默认租户缺少 ROLE_TENANT_ADMIN / ROLE_ADMIN，且自动补建失败");
     }
 
-    String[] requiredAuthorities = new String[] {
-        "scheduling:console:view",
-        "scheduling:console:config",
-        "scheduling:run:control",
-        "scheduling:audit:view",
-        "scheduling:cluster:view",
-        "scheduling:*"
+    String[][] requiredAuthorities = new String[][] {
+        {"scheduling:console:view", "调度控制面查看权限", "MENU"},
+        {"scheduling:console:config", "调度控制面配置权限", "API"},
+        {"scheduling:run:control", "调度运行控制权限", "API"},
+        {"scheduling:audit:view", "调度审计查看权限", "API"},
+        {"scheduling:cluster:view", "调度集群状态查看权限", "API"},
+        {"scheduling:*", "调度全权限", "OTHER"}
     };
-    for (String authority : requiredAuthorities) {
-        if (findPermissionId(connection, defaultTenantId, authority) == null) {
-            throw new IllegalStateException("默认租户缺少调度 authority 模板权限: " + authority);
-        }
+    for (String[] authority : requiredAuthorities) {
+        Long permissionId = ensurePermission(
+                connection,
+                defaultTenantId,
+                authority[0],
+                authority[1],
+                authority[2],
+                "real e2e default scheduling bootstrap authority");
+        ensureRolePermissionBinding(connection, defaultTenantId, adminRoleId, permissionId);
     }
 
     boolean wildcardBound = false;
@@ -316,7 +333,7 @@ void verifyDefaultSchedulingBootstrapTemplate(Connection connection) throws SQLE
         throw new IllegalStateException("默认租户 ROLE_TENANT_ADMIN 未绑定 scheduling:*，调度 E2E 权限模板不完整");
     }
 
-    System.out.println("Verified default scheduling bootstrap template: tenant=default");
+    System.out.println("Ensured default scheduling bootstrap template: tenant=default");
 }
 
 void ensureRolePermissionBinding(Connection connection, Long tenantId, Long roleId, Long permissionId) throws SQLException {
@@ -361,7 +378,7 @@ void ensurePlatformGovernanceAuthorities(Connection connection, Long tenantId, L
 
 try (Connection connection = DriverManager.getConnection(jdbcUrl, dbUser, dbPassword)) {
     connection.setAutoCommit(false);
-    verifyDefaultSchedulingBootstrapTemplate(connection);
+    ensureDefaultSchedulingBootstrapTemplate(connection);
 
     boolean idempotentTokenTableExists = false;
     try (PreparedStatement ps = connection.prepareStatement(

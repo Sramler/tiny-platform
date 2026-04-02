@@ -189,26 +189,43 @@ async function mockAuthenticatedApis(page: Page, tasks: ExportTask[]) {
 }
 
 async function openExportTaskPage(page: Page) {
+  const taskIdInput = page.getByPlaceholder('请输入任务ID')
+  const waitForTaskPage = async (timeout: number) =>
+    taskIdInput
+      .waitFor({ state: 'visible', timeout })
+      .then(() => true)
+      .catch(() => false)
+
   await page.goto('/')
   await page
     .getByText('菜单路由加载中...')
     .waitFor({ state: 'detached', timeout: 15_000 })
     .catch(() => {})
+
   const exportMenu = page.locator('.menu-item, .submenu-item').filter({ hasText: '导出任务' }).first()
-  await expect(exportMenu).toBeVisible({ timeout: 15_000 })
-  await exportMenu.click()
-  const navigatedByMenu = await page
-    .waitForURL('**/export/task', { timeout: 5_000 })
+  const menuVisible = await exportMenu
+    .waitFor({ state: 'visible', timeout: 10_000 })
     .then(() => true)
     .catch(() => false)
 
-  if (!navigatedByMenu) {
-    // CI 中动态菜单路由有时已经渲染但首次点击未触发跳转，这里直接回退到目标路由，
-    // 保持测试关注点仍然是“导出任务页面本身”，而不是侧边栏点击时序。
-    await page.goto('/export/task')
+  if (menuVisible) {
+    await exportMenu.click()
+    const renderedViaMenu = await waitForTaskPage(8_000)
+    if (renderedViaMenu) {
+      return
+    }
   }
 
-  await expect(page.getByPlaceholder('请输入任务ID')).toBeVisible({ timeout: 15_000 })
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const refreshSuffix = attempt === 0 ? '' : `?_refresh=${Date.now()}-${attempt}`
+    await page.goto(`/export/task${refreshSuffix}`)
+    const rendered = await waitForTaskPage(10_000)
+    if (rendered) {
+      return
+    }
+  }
+
+  throw new Error(`导出任务页面未完成渲染，当前 URL=${page.url()}`)
 }
 
 test.describe('export task page', () => {
