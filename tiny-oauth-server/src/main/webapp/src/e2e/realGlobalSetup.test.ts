@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildEnsureAuthEnv,
   buildAuthStateEnv,
   buildSecondaryAuthStateEnv,
   extractAccessTokenFromStorageState,
@@ -146,6 +147,49 @@ describe('real.global.setup auth-state login mode', () => {
     )
 
     expect(env.E2E_LOGIN_MODE).toBe('PLATFORM')
+  })
+})
+
+describe('real.global.setup ensure auth env', () => {
+  it('preserves bind and readonly companions from the primary env when overriding platform identity', () => {
+    const env = buildEnsureAuthEnv(
+      {
+        E2E_TENANT_CODE: 'bench-1m',
+        E2E_TENANT_CODE_BIND: 'bench-1m',
+        E2E_USERNAME_BIND: 'e2e_bind',
+        E2E_PASSWORD_BIND: 'bind-pass',
+        E2E_USERNAME_READONLY: 'e2e_readonly',
+        E2E_PASSWORD_READONLY: 'readonly-pass',
+        E2E_TOTP_SECRET_READONLY: 'READONLYSECRET',
+      },
+      {
+        E2E_TENANT_CODE: 'platform-main',
+        E2E_USERNAME: 'e2e_platform_admin',
+      },
+    )
+
+    expect(env.E2E_TENANT_CODE).toBe('platform-main')
+    expect(env.E2E_TENANT_CODE_BIND).toBe('bench-1m')
+    expect(env.E2E_USERNAME_BIND).toBe('e2e_bind')
+    expect(env.E2E_USERNAME_READONLY).toBe('e2e_readonly')
+    expect(env.E2E_TENANT_CODE_READONLY).toBe('bench-1m')
+  })
+
+  it('respects explicit readonly overrides when preparing readonly identity', () => {
+    const env = buildEnsureAuthEnv(
+      {
+        E2E_TENANT_CODE: 'bench-1m',
+        E2E_TENANT_CODE_READONLY: 'bench-1m',
+        E2E_USERNAME_READONLY: 'primary_readonly',
+      },
+      {
+        E2E_TENANT_CODE_READONLY: 'bench-2m',
+        E2E_USERNAME_READONLY: 'secondary_readonly',
+      },
+    )
+
+    expect(env.E2E_TENANT_CODE_READONLY).toBe('bench-2m')
+    expect(env.E2E_USERNAME_READONLY).toBe('secondary_readonly')
   })
 })
 

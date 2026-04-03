@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, type Browser, type BrowserContext, type Page } from '@playwright/test'
@@ -207,25 +208,56 @@ export async function waitForOidcIdentity(page: Page, timeout = 60_000) {
 
 async function loginWithIdentity(page: Page, identity: LoginIdentity) {
   await page.goto(`/login?redirect=${encodeURIComponent('/OIDCDebug')}`)
-  await page.getByRole('heading', { name: '欢迎登录' }).waitFor({ timeout: 90_000 })
 
-  if (identity.mode === 'PLATFORM') {
-    await page.getByRole('button', { name: '平台登录' }).click()
-    await page.getByLabel('租户编码').waitFor({ state: 'detached', timeout: 10_000 }).catch(() => {})
-  } else {
-    await page.getByRole('button', { name: '租户登录' }).click()
-    await page.getByLabel('租户编码').fill(identity.tenantCode!, { force: true })
+  if (page.url().includes('/login')) {
+    const loginHeading = page.getByRole('heading', { name: '欢迎登录' })
+    const tenantCodeInput = page.getByLabel('租户编码')
+    const usernameInput = page.getByLabel('用户名')
+    const passwordInput = page.getByLabel('密码')
+    await Promise.any([
+      loginHeading.waitFor({ timeout: 90_000 }),
+      usernameInput.waitFor({ timeout: 90_000 }),
+      tenantCodeInput.waitFor({ timeout: 90_000 }),
+    ]).catch(async () => {
+      await passwordInput.waitFor({ timeout: 90_000 })
+    })
   }
 
-  await page.getByLabel('用户名').fill(identity.username)
-  await page.getByLabel('密码').fill(identity.password)
-  await page
-    .getByRole('button', { name: identity.mode === 'PLATFORM' ? '登录平台' : '登录租户' })
-    .click()
+  if (page.url().includes('/login')) {
+    if (identity.mode === 'PLATFORM') {
+      await page.getByRole('button', { name: '平台登录' }).click()
+      await page.getByLabel('租户编码').waitFor({ state: 'detached', timeout: 10_000 }).catch(() => {})
+    } else {
+      await page.getByRole('button', { name: '租户登录' }).click()
+      await page.getByLabel('租户编码').fill(identity.tenantCode!, { force: true })
+    }
 
-  await page.waitForURL(/\/(callback|self\/security\/totp-(bind|verify)|OIDCDebug|exception\/403)/, {
-    timeout: 90_000,
-  })
+    await page.getByLabel('用户名').fill(identity.username)
+    await page.getByLabel('密码').fill(identity.password)
+    await page
+      .getByRole('button', { name: identity.mode === 'PLATFORM' ? '登录平台' : '登录租户' })
+      .click()
+  }
+
+  await Promise.race([
+    page.waitForURL(/\/(callback|self\/security\/totp-(bind|verify)|OIDCDebug|exception\/403)/, {
+      timeout: 90_000,
+    }),
+    page
+      .waitForURL((url) => url.pathname.includes('/login') && url.searchParams.has('error'), {
+        timeout: 90_000,
+      })
+      .then(async () => {
+        const errorMessage =
+          (await page
+            .locator('.ant-alert-message,.ant-message-notice-content,.login-form-error')
+            .first()
+            .textContent()
+            .catch(() => null)) ??
+          decodeURIComponent(new URL(page.url()).searchParams.get('message') ?? '')
+        throw new Error(`实时登录失败: ${errorMessage || page.url()}`)
+      }),
+  ])
 
   if (page.url().includes('/self/security/totp-bind')) {
     const skipButton = page.getByRole('button', { name: '跳过' })

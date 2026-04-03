@@ -275,14 +275,54 @@ function ensureDeterministicE2EAuth() {
   })
 }
 
+export function buildEnsureAuthEnv(
+  baseEnv: NodeJS.ProcessEnv,
+  envOverrides: Record<string, string>,
+): NodeJS.ProcessEnv {
+  const bindTenantCode = readConfiguredValue(baseEnv, ['E2E_TENANT_CODE_BIND', 'E2E_TENANT_CODE'])
+  const bindUsername = readConfiguredValue(baseEnv, ['E2E_USERNAME_BIND'])
+  const bindPassword = readConfiguredValue(baseEnv, ['E2E_PASSWORD_BIND'])
+  const readonlyTenantCode = resolveReadonlyTenantCode(baseEnv)
+  const readonlyUsername = readConfiguredValue(baseEnv, ['E2E_USERNAME_READONLY'])
+  const readonlyPassword = readConfiguredValue(baseEnv, ['E2E_PASSWORD_READONLY'])
+  const readonlyTotpSecret = readConfiguredValue(baseEnv, ['E2E_TOTP_SECRET_READONLY'])
+  const readonlyTotpCode = readConfiguredValue(baseEnv, ['E2E_TOTP_CODE_READONLY'])
+
+  return {
+    ...baseEnv,
+    ...(bindTenantCode && !('E2E_TENANT_CODE_BIND' in envOverrides)
+      ? { E2E_TENANT_CODE_BIND: bindTenantCode }
+      : {}),
+    ...(bindUsername && !('E2E_USERNAME_BIND' in envOverrides)
+      ? { E2E_USERNAME_BIND: bindUsername }
+      : {}),
+    ...(bindPassword && !('E2E_PASSWORD_BIND' in envOverrides)
+      ? { E2E_PASSWORD_BIND: bindPassword }
+      : {}),
+    ...(readonlyTenantCode && !('E2E_TENANT_CODE_READONLY' in envOverrides)
+      ? { E2E_TENANT_CODE_READONLY: readonlyTenantCode }
+      : {}),
+    ...(readonlyUsername && !('E2E_USERNAME_READONLY' in envOverrides)
+      ? { E2E_USERNAME_READONLY: readonlyUsername }
+      : {}),
+    ...(readonlyPassword && !('E2E_PASSWORD_READONLY' in envOverrides)
+      ? { E2E_PASSWORD_READONLY: readonlyPassword }
+      : {}),
+    ...(readonlyTotpSecret && !('E2E_TOTP_SECRET_READONLY' in envOverrides)
+      ? { E2E_TOTP_SECRET_READONLY: readonlyTotpSecret }
+      : {}),
+    ...(readonlyTotpCode && !('E2E_TOTP_CODE_READONLY' in envOverrides)
+      ? { E2E_TOTP_CODE_READONLY: readonlyTotpCode }
+      : {}),
+    ...envOverrides,
+  }
+}
+
 function ensureDeterministicE2EAuthFor(envOverrides: Record<string, string>) {
   execFileSync('bash', [ensureAuthScriptPath], {
     cwd: backendRoot,
     stdio: 'inherit',
-    env: {
-      ...process.env,
-      ...envOverrides,
-    },
+    env: buildEnsureAuthEnv(process.env, envOverrides),
   })
 }
 
