@@ -14,7 +14,7 @@ test.describe('real-link: scheduling readonly RBAC', () => {
       '缺少 E2E_USERNAME_READONLY / E2E_PASSWORD_READONLY / E2E_TOTP_SECRET_READONLY，跳过调度只读 RBAC 回归',
     )
 
-    await openOidcDebug(page)
+    await openOidcDebug(page, 'readonly')
 
     const listTaskTypes = await fetchSchedulingApi<Record<string, unknown>>(
       page,

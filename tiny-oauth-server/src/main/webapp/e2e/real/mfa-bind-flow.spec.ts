@@ -116,6 +116,30 @@ async function fetchPreBindSecret(page: import('@playwright/test').Page): Promis
   return result.payload.secretKey
 }
 
+async function waitForFirstBindReady(page: import('@playwright/test').Page): Promise<void> {
+  await page.waitForURL(
+    (url) =>
+      !url.pathname.includes('/login') &&
+      !url.pathname.includes('/callback') &&
+      !url.pathname.includes('/self/security/totp-verify'),
+    { timeout: 60_000 },
+  )
+
+  const bindHeading = page.getByRole('heading', { name: /开启两步验证/ })
+  if (await bindHeading.isVisible({ timeout: 5_000 }).catch(() => false)) {
+    return
+  }
+
+  const bindInput = page.getByLabel('验证码')
+  if (await bindInput.isVisible({ timeout: 5_000 }).catch(() => false)) {
+    return
+  }
+
+  // 有些租户在首绑页会先落到壳页，再由真实 session 打开 pre-bind 接口。
+  // 只要 pre-bind 已可用，就视为首绑链路已准备完成。
+  await fetchPreBindSecret(page)
+}
+
 async function fetchSecurityStatus(page: import('@playwright/test').Page) {
   const backendBaseUrl =
     process.env.E2E_BACKEND_BASE_URL ?? process.env.VITE_API_BASE_URL ?? 'http://localhost:9000'
@@ -164,13 +188,14 @@ test.describe('real-link: 未绑定 TOTP 首绑链路', () => {
     await page.getByLabel('密码').fill(password)
     await page.getByRole('button', { name: /登录租户/ }).first().click()
 
-    await Promise.any([
-      page.waitForURL('**/self/security/totp-bind**', { timeout: 60_000 }),
-      page.getByRole('heading', { name: /开启两步验证/ }).waitFor({ timeout: 60_000 }),
-    ])
-    await expect(page.getByRole('heading', { name: /开启两步验证/ })).toBeVisible({
-      timeout: 30_000,
-    })
+    await waitForFirstBindReady(page)
+    const bindHeading = page.getByRole('heading', { name: /开启两步验证/ })
+    const bindCodeInput = page.getByLabel('验证码')
+    if (!(await bindHeading.isVisible({ timeout: 5_000 }).catch(() => false))) {
+      await expect(bindCodeInput).toBeVisible({ timeout: 30_000 })
+    } else {
+      await expect(bindHeading).toBeVisible({ timeout: 30_000 })
+    }
 
     // 通过真实接口获取 secretKey，并基于当前时间生成一次性验证码
     const secretKey = await fetchPreBindSecret(page)

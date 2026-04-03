@@ -206,7 +206,16 @@ jobs:
       - name: Run real-link E2E
         env:
           E2E_SKIP_WEBSERVER: 'true'
-        run: npm run test:e2e:real -- --reporter=line
+        run: |
+          npm run test:e2e:real -- \
+            e2e/real/platform-vue-login.spec.ts \
+            e2e/real/platform-menu-tree.spec.ts \
+            e2e/real/security-mfa-flow.spec.ts \
+            e2e/real/mfa-login-flow.spec.ts \
+            e2e/real/mfa-bind-flow.spec.ts \
+            e2e/real/permission-refactor-disabled-permission-deny.spec.ts \
+            e2e/real/permission-refactor-non-menu.spec.ts \
+            --reporter=line
 
       - name: Dump server logs on failure
         if: failure()

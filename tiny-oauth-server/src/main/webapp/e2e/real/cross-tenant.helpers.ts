@@ -17,6 +17,8 @@ export const readonlyAuthStatePath = path.resolve(
   'scheduling-readonly-user.json',
 )
 
+export type AuthIdentityKind = 'primary' | 'secondary' | 'readonly' | 'platform'
+
 function isPlaceholderValue(value: string): boolean {
   const normalized = value.trim()
   return normalized.startsWith('<') && normalized.endsWith('>')
@@ -41,7 +43,150 @@ export function isReadonlyIdentityConfigured(): boolean {
   )
 }
 
-export async function waitForOidcIdentity(page: Page) {
+function readConfiguredEnv(...names: string[]): string | undefined {
+  for (const name of names) {
+    const value = process.env[name]
+    if (isConfiguredValue(value)) {
+      return value!.trim()
+    }
+  }
+  return undefined
+}
+
+function deriveReadonlyTenantCode(): string | undefined {
+  const explicitReadonlyTenantCode = readConfiguredEnv('E2E_TENANT_CODE_READONLY')
+  if (explicitReadonlyTenantCode) {
+    return explicitReadonlyTenantCode
+  }
+
+  const primaryTenantCode = readConfiguredEnv('E2E_TENANT_CODE')
+  if (!primaryTenantCode) {
+    return undefined
+  }
+
+  const platformTenantCode = (readConfiguredEnv('E2E_PLATFORM_TENANT_CODE') ?? 'default').toLowerCase()
+  if (primaryTenantCode.toLowerCase() !== platformTenantCode) {
+    return primaryTenantCode
+  }
+
+  const candidate = `${primaryTenantCode.toLowerCase()}-t`
+  return candidate.length <= 32 ? candidate : candidate.slice(0, 32)
+}
+
+function decodeBase32(secret: string): Buffer {
+  const normalized = secret.replace(/=+$/g, '').replace(/\s+/g, '').toUpperCase()
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+  let bits = ''
+
+  for (const character of normalized) {
+    const index = alphabet.indexOf(character)
+    if (index < 0) {
+      throw new Error(`非法 TOTP secret: ${secret}`)
+    }
+    bits += index.toString(2).padStart(5, '0')
+  }
+
+  const bytes: number[] = []
+  for (let offset = 0; offset + 8 <= bits.length; offset += 8) {
+    bytes.push(Number.parseInt(bits.slice(offset, offset + 8), 2))
+  }
+  return Buffer.from(bytes)
+}
+
+function generateTotpCode(secret: string, timestampMs = Date.now()): string {
+  const counter = Math.floor(timestampMs / 30_000)
+  const counterBuffer = Buffer.alloc(8)
+  counterBuffer.writeBigUInt64BE(BigInt(counter))
+
+  const hmac = createHmac('sha1', decodeBase32(secret)).update(counterBuffer).digest()
+  const offset = hmac[hmac.length - 1] & 0x0f
+  const binaryCode =
+    ((hmac[offset] & 0x7f) << 24) |
+    ((hmac[offset + 1] & 0xff) << 16) |
+    ((hmac[offset + 2] & 0xff) << 8) |
+    (hmac[offset + 3] & 0xff)
+
+  return String(binaryCode % 1_000_000).padStart(6, '0')
+}
+
+type LoginIdentity = {
+  mode: 'TENANT' | 'PLATFORM'
+  tenantCode?: string
+  username: string
+  password: string
+  totpCode?: string
+  totpSecret?: string
+}
+
+function resolveLoginIdentity(kind: AuthIdentityKind): LoginIdentity | null {
+  if (kind === 'secondary') {
+    const tenantCode = readConfiguredEnv('E2E_TENANT_CODE_B')
+    const username = readConfiguredEnv('E2E_USERNAME_B')
+    const password = readConfiguredEnv('E2E_PASSWORD_B')
+    const totpSecret = readConfiguredEnv('E2E_TOTP_SECRET_B')
+    const totpCode = readConfiguredEnv('E2E_TOTP_CODE_B')
+    if (!tenantCode || !username || !password || (!totpSecret && !totpCode)) {
+      return null
+    }
+    return { mode: 'TENANT', tenantCode, username, password, totpCode, totpSecret }
+  }
+
+  if (kind === 'readonly') {
+    const tenantCode = deriveReadonlyTenantCode()
+    const username = readConfiguredEnv('E2E_USERNAME_READONLY')
+    const password = readConfiguredEnv('E2E_PASSWORD_READONLY')
+    const totpSecret = readConfiguredEnv('E2E_TOTP_SECRET_READONLY')
+    const totpCode = readConfiguredEnv('E2E_TOTP_CODE_READONLY')
+    if (!tenantCode || !username || !password || (!totpSecret && !totpCode)) {
+      return null
+    }
+    return { mode: 'TENANT', tenantCode, username, password, totpCode, totpSecret }
+  }
+
+  if (kind === 'platform') {
+    const username = readConfiguredEnv('E2E_PLATFORM_USERNAME')
+    const password = readConfiguredEnv('E2E_PLATFORM_PASSWORD')
+    const totpSecret = readConfiguredEnv('E2E_PLATFORM_TOTP_SECRET')
+    const totpCode = readConfiguredEnv('E2E_PLATFORM_TOTP_CODE')
+    if (!username || !password || (!totpSecret && !totpCode)) {
+      return null
+    }
+    return { mode: 'PLATFORM', username, password, totpCode, totpSecret }
+  }
+
+  const tenantCode = readConfiguredEnv('E2E_TENANT_CODE')
+  const username = readConfiguredEnv('E2E_USERNAME')
+  const password = readConfiguredEnv('E2E_PASSWORD')
+  const totpSecret = readConfiguredEnv('E2E_TOTP_SECRET')
+  const totpCode = readConfiguredEnv('E2E_TOTP_CODE')
+  if (!tenantCode || !username || !password || (!totpSecret && !totpCode)) {
+    return null
+  }
+  return { mode: 'TENANT', tenantCode, username, password, totpCode, totpSecret }
+}
+
+async function hasOidcIdentity(page: Page): Promise<boolean> {
+  return page
+    .evaluate(() => {
+      const oidcKey = Object.keys(window.localStorage).find((key) => key.startsWith('oidc.user:'))
+      if (!oidcKey) {
+        return false
+      }
+      const rawUser = window.localStorage.getItem(oidcKey)
+      if (!rawUser) {
+        return false
+      }
+      try {
+        const user = JSON.parse(rawUser) as { access_token?: string }
+        return Boolean(user.access_token)
+      } catch {
+        return false
+      }
+    })
+    .catch(() => false)
+}
+
+export async function waitForOidcIdentity(page: Page, timeout = 60_000) {
   await page.waitForFunction(() => {
     const oidcKey = Object.keys(window.localStorage).find((key) => key.startsWith('oidc.user:'))
     if (!oidcKey) {
@@ -57,22 +202,75 @@ export async function waitForOidcIdentity(page: Page) {
     } catch {
       return false
     }
-  }, { timeout: 60_000 })
+  }, { timeout })
 }
 
-export async function openOidcDebug(page: Page) {
-  await page.goto('/OIDCDebug')
-  const oidcDebugHeading = page.getByRole('heading', { name: /OIDC 调试工具/ })
-  const oidcDebugVisible = await oidcDebugHeading.isVisible({ timeout: 5_000 }).catch(() => false)
-  if (!oidcDebugVisible || page.url().includes('/login') || page.url().includes('/callback')) {
-    await page.goto('/OIDCDebug')
+async function loginWithIdentity(page: Page, identity: LoginIdentity) {
+  await page.goto(`/login?redirect=${encodeURIComponent('/OIDCDebug')}`)
+  await page.getByRole('heading', { name: '欢迎登录' }).waitFor({ timeout: 90_000 })
+
+  if (identity.mode === 'PLATFORM') {
+    await page.getByRole('button', { name: '平台登录' }).click()
+    await page.getByLabel('租户编码').waitFor({ state: 'detached', timeout: 10_000 }).catch(() => {})
+  } else {
+    await page.getByRole('button', { name: '租户登录' }).click()
+    await page.getByLabel('租户编码').fill(identity.tenantCode!, { force: true })
   }
 
-  // 某些测试租户并未初始化完整菜单树，但只要浏览器已恢复真实 OIDC 登录态，
-  // API 级 real-link 断言仍然可以继续。
-  await waitForOidcIdentity(page)
-  await page.waitForLoadState('networkidle').catch(() => {})
-  await page.waitForTimeout(1_000)
+  await page.getByLabel('用户名').fill(identity.username)
+  await page.getByLabel('密码').fill(identity.password)
+  await page
+    .getByRole('button', { name: identity.mode === 'PLATFORM' ? '登录平台' : '登录租户' })
+    .click()
+
+  await page.waitForURL(/\/(callback|self\/security\/totp-(bind|verify)|OIDCDebug|exception\/403)/, {
+    timeout: 90_000,
+  })
+
+  if (page.url().includes('/self/security/totp-bind')) {
+    const skipButton = page.getByRole('button', { name: '跳过' })
+    if (await skipButton.isVisible().catch(() => false)) {
+      await skipButton.click()
+    }
+  }
+
+  if (page.url().includes('/self/security/totp-verify')) {
+    const code = identity.totpCode ?? generateTotpCode(identity.totpSecret!)
+    await page.getByLabel('动态验证码').fill(code)
+    await page.getByRole('button', { name: '确认' }).click()
+  }
+
+  await page.waitForURL(
+    (url) => !url.pathname.includes('/callback') && !url.pathname.includes('/self/security/totp-verify'),
+    {
+      timeout: 90_000,
+    },
+  )
+}
+
+export async function openOidcDebug(page: Page, kind: AuthIdentityKind = 'primary') {
+  const loginIdentity = resolveLoginIdentity(kind)
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await page.goto('/OIDCDebug')
+    const oidcDebugHeading = page.getByRole('heading', { name: /OIDC 调试工具/ })
+    const oidcDebugVisible = await oidcDebugHeading.isVisible({ timeout: 5_000 }).catch(() => false)
+    if ((!oidcDebugVisible || page.url().includes('/login') || page.url().includes('/callback')) && loginIdentity) {
+      await loginWithIdentity(page, loginIdentity)
+      await page.goto('/OIDCDebug')
+    } else if (!oidcDebugVisible || page.url().includes('/login') || page.url().includes('/callback')) {
+      await page.goto('/OIDCDebug')
+    }
+
+    await waitForOidcIdentity(page, 90_000)
+    await page.waitForLoadState('networkidle').catch(() => {})
+    await page.waitForTimeout(1_000)
+    if (await hasOidcIdentity(page)) {
+      return
+    }
+  }
+
+  await waitForOidcIdentity(page, 90_000)
 }
 
 type OidcIdentitySnapshot = {
@@ -209,13 +407,14 @@ export async function createTaskType(page: Page, codePrefix: string) {
 export async function openSecondaryAuthenticatedPage(
   browser: Browser,
   storageStatePath: string,
+  kind: AuthIdentityKind = 'secondary',
 ): Promise<{ context: BrowserContext; page: Page }> {
   const context = await browser.newContext({
     storageState: storageStatePath,
     baseURL: frontendBaseUrl,
   })
   const page = await context.newPage()
-  await openOidcDebug(page)
+  await openOidcDebug(page, kind)
   return { context, page }
 }
 

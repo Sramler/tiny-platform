@@ -194,7 +194,7 @@ test.describe('real-link: tenant lifecycle freeze', () => {
     }
 
     // 2) 租户用户写操作成功
-    await openOidcDebug(page)
+    await openOidcDebug(page, 'primary')
     const created = await createTaskType(page, 'freeze-smoke')
     expect(created.id).toBeTruthy()
 

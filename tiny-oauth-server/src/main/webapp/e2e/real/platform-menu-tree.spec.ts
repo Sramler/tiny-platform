@@ -1,14 +1,8 @@
 import { createHmac } from 'node:crypto'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
 import { openOidcDebug } from './cross-tenant.helpers'
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-const platformAuthStatePath = path.resolve(__dirname, '..', '.auth', 'platform-admin-user.json')
-
-test.use({ storageState: platformAuthStatePath })
+test.use({ storageState: undefined })
 
 function isPlaceholderValue(value: string): boolean {
   const normalized = value.trim()
@@ -107,9 +101,9 @@ test.describe('real-link: 平台登录菜单树', () => {
     const cfg = resolvePlatformLoginConfig()
     test.skip(!cfg, '需要 E2E_PLATFORM_USERNAME/PASSWORD 与 E2E_PLATFORM_TOTP_SECRET 或 TOTP_CODE')
 
-    await openOidcDebug(page)
+    await openOidcDebug(page, 'platform')
     if (page.url().includes('/login')) {
-      throw new Error('平台菜单树 real-link 未拿到有效 platform-admin storageState，页面仍停留在 /login')
+      throw new Error('平台菜单树 real-link 未拿到有效 platform 登录态，页面仍停留在 /login')
     }
 
     const backendBaseUrl = readBackendBaseUrl()

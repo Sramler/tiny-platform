@@ -28,8 +28,8 @@ test.describe('real-link: tenant B is isolated from tenant A resources', () => {
       '缺少 E2E_TENANT_CODE_B / E2E_USERNAME_B / E2E_PASSWORD_B / E2E_TOTP_SECRET_B，跳过双身份跨租户回归',
     )
 
-    await openOidcDebug(page)
-    const tenantA = await openSecondaryAuthenticatedPage(browser, primaryAuthStatePath)
+    await openOidcDebug(page, 'secondary')
+    const tenantA = await openSecondaryAuthenticatedPage(browser, primaryAuthStatePath, 'primary')
 
     try {
       const ownedByTenantA = await createTaskType(tenantA.page, 'tenant-a-owned')

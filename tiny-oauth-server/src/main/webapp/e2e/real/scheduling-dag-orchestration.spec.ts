@@ -54,7 +54,7 @@ function nodeDialog(page: Page): Locator {
 }
 
 async function openAuthenticatedShell(page: Page) {
-  await openOidcDebug(page)
+  await openOidcDebug(page, 'primary')
 }
 
 async function openDagList(page: Page) {

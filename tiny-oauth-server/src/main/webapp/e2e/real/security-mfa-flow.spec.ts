@@ -79,12 +79,12 @@ test.describe('real-link (post-login): 自助安全中心 + TOTP 信息读取', 
   test('authenticated user can load current security status from a real browser session', async ({
     page,
   }) => {
-    await openOidcDebug(page)
+    await openOidcDebug(page, 'primary')
     await expectAuthenticatedSecurityStatus(page)
   })
 
   test('authenticated user can start TOTP pre-bind flow via real backend', async ({ page }) => {
-    await openOidcDebug(page)
+    await openOidcDebug(page, 'primary')
 
     // 通过真实接口获取预绑定信息（secret / otpauthUri / qrCodeDataUrl）
     const { status, payload } = await fetchSelfSecurity<Record<string, unknown>>(
