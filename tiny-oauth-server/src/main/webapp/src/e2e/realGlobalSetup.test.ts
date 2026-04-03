@@ -136,6 +136,16 @@ describe('real.global.setup configured env resolution', () => {
 
     expect(tenantCode).toBe('bind-bench')
   })
+
+  it('ignores explicit bind tenant code when it matches platform tenant and derives tenant-scoped fallback', () => {
+    const tenantCode = resolveBindTenantCode({
+      E2E_TENANT_CODE: 'bench-1m',
+      E2E_PLATFORM_TENANT_CODE: 'bench-1m',
+      E2E_TENANT_CODE_BIND: 'bench-1m',
+    })
+
+    expect(tenantCode).toBe('bench-1m-t')
+  })
 })
 
 describe('real.global.setup auth-state login mode', () => {

@@ -51,12 +51,11 @@ function deriveTenantCodeForTenantScope(primaryTenantCode: string, platformTenan
 
 function resolveBindTenantCode(): string {
   const explicitBindTenantCode = readEnv('E2E_TENANT_CODE_BIND')
-  if (explicitBindTenantCode) {
-    return explicitBindTenantCode
-  }
-
   const primaryTenantCode = requireEnv('E2E_TENANT_CODE')
   const platformTenantCode = readEnv('E2E_PLATFORM_TENANT_CODE') ?? 'default'
+  if (explicitBindTenantCode && explicitBindTenantCode.trim().toLowerCase() !== platformTenantCode.trim().toLowerCase()) {
+    return explicitBindTenantCode
+  }
   return deriveTenantCodeForTenantScope(primaryTenantCode, platformTenantCode)
 }
 

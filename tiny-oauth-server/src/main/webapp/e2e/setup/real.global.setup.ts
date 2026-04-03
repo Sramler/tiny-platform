@@ -277,16 +277,21 @@ function ensureDeterministicE2EAuth() {
 
 export function resolveBindTenantCode(source: NodeJS.ProcessEnv): string | undefined {
   const explicitBindTenantCode = readConfiguredValue(source, ['E2E_TENANT_CODE_BIND'])
+  const primaryTenantCode = readConfiguredValue(source, ['E2E_TENANT_CODE'])
+  const platformTenantCode = readConfiguredValue(source, ['E2E_PLATFORM_TENANT_CODE']) ?? 'default'
   if (explicitBindTenantCode) {
-    return explicitBindTenantCode
+    if (explicitBindTenantCode.trim().toLowerCase() !== platformTenantCode.trim().toLowerCase()) {
+      return explicitBindTenantCode
+    }
+    if (!primaryTenantCode) {
+      return explicitBindTenantCode
+    }
   }
 
-  const primaryTenantCode = readConfiguredValue(source, ['E2E_TENANT_CODE'])
   if (!primaryTenantCode) {
     return undefined
   }
 
-  const platformTenantCode = readConfiguredValue(source, ['E2E_PLATFORM_TENANT_CODE']) ?? 'default'
   return deriveTenantCodeForTenantScope(primaryTenantCode, platformTenantCode)
 }
 
