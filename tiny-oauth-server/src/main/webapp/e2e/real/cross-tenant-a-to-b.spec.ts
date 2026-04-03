@@ -58,7 +58,7 @@ test.describe('real-link: tenant A is isolated from tenant B resources', () => {
       expect(spoofedTenantHeaderRead.status).toBe(403)
       expectTenantMismatchPayload(spoofedTenantHeaderRead.payload)
     } finally {
-      await tenantB.context.close()
+      await tenantB.context.close().catch(() => {})
     }
   })
 })

@@ -122,7 +122,10 @@ test.describe('real-link: 平台登录菜单树', () => {
       if (!rawUser) {
         throw new Error(`平台 OIDC 存储为空: ${oidcKey}`)
       }
-      const oidcUser = JSON.parse(rawUser) as { access_token?: string }
+      const oidcUser = JSON.parse(rawUser) as {
+        access_token?: string
+        profile?: { activeTenantId?: number | string }
+      }
       if (!oidcUser.access_token) {
         throw new Error('平台 OIDC 用户缺少 access_token')
       }
@@ -131,7 +134,9 @@ test.describe('real-link: 平台登录菜单树', () => {
         Accept: 'application/json',
         Authorization: `Bearer ${oidcUser.access_token}`,
       })
-      const activeTenantId = window.localStorage.getItem('app_active_tenant_id')
+      const activeTenantId =
+        window.localStorage.getItem('app_active_tenant_id') ??
+        String(oidcUser.profile?.activeTenantId ?? '')
       if (activeTenantId) {
         headers.set('X-Active-Tenant-Id', activeTenantId)
       }

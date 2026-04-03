@@ -20,7 +20,32 @@ async function fetchSelfSecurity<T>(
   const { method = 'GET', body } = options
   return page.evaluate(
     async ({ apiBaseUrl, apiPath, apiMethod, apiBody }) => {
-      const headers = new Headers({ Accept: 'application/json' })
+      const oidcKey = Object.keys(window.localStorage).find((key) => key.startsWith('oidc.user:'))
+      if (!oidcKey) {
+        throw new Error('未找到 OIDC 登录态，无法调用安全中心接口')
+      }
+      const rawUser = window.localStorage.getItem(oidcKey)
+      if (!rawUser) {
+        throw new Error(`OIDC 存储为空: ${oidcKey}`)
+      }
+      const user = JSON.parse(rawUser) as {
+        access_token?: string
+        profile?: { activeTenantId?: number | string }
+      }
+      if (!user.access_token) {
+        throw new Error('OIDC 用户缺少 access_token')
+      }
+
+      const activeTenantId =
+        window.localStorage.getItem('app_active_tenant_id') ?? String(user.profile?.activeTenantId ?? '')
+
+      const headers = new Headers({
+        Accept: 'application/json',
+        Authorization: `Bearer ${user.access_token}`,
+      })
+      if (activeTenantId) {
+        headers.set('X-Active-Tenant-Id', activeTenantId)
+      }
       if (apiMethod !== 'GET') {
         headers.set('Content-Type', 'application/json')
       }
@@ -81,6 +106,7 @@ test.describe('real-link (post-login): 自助安全中心 + TOTP 信息读取', 
       }
     } else {
       expect(payload).not.toBeNull()
+      expect((payload as Record<string, unknown>).success).toBe(false)
     }
   })
 })
