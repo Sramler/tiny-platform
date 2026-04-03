@@ -13,8 +13,8 @@ databaseChangeLog:
         - ANY
       changes:
         - sqlFile:
-            path: db/migration/init_default_dicts.sql
-            relativeToChangelogFile: false
+            path: ../migration/init_default_dicts.sql
+            relativeToChangelogFile: true
             splitStatements: true
             stripComments: false
             endDelimiter: ;

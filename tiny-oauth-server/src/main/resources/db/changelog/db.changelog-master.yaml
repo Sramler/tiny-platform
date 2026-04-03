@@ -457,8 +457,8 @@ databaseChangeLog:
             dbms: mysql
             sql: "DROP PROCEDURE IF EXISTS sp_generate_demo_export_usage"
         - sqlFile:
-            path: db/changelog/001-create-demo-export-usage-procedure.sql
-            relativeToChangelogFile: false
+            path: 001-create-demo-export-usage-procedure.sql
+            relativeToChangelogFile: true
             splitStatements: false
             stripComments: false
 

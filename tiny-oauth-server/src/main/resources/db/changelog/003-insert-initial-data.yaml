@@ -7,8 +7,8 @@ databaseChangeLog:
         - ANY
       changes:
         - sqlFile:
-            path: data.sql
-            relativeToChangelogFile: false
+            path: ../../data.sql
+            relativeToChangelogFile: true
             splitStatements: true
             stripComments: false
             endDelimiter: ;

@@ -7,8 +7,8 @@ databaseChangeLog:
         - ANY
       changes:
         - sqlFile:
-            path: schema.sql
-            relativeToChangelogFile: false
+            path: ../../schema.sql
+            relativeToChangelogFile: true
             splitStatements: true
             stripComments: false
             endDelimiter: ;
