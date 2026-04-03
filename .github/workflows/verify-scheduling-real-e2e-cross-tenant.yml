@@ -73,6 +73,36 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Normalize real-link identity env
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          platform_tenant_code="${E2E_PLATFORM_TENANT_CODE:-}"
+          platform_username="${E2E_PLATFORM_USERNAME:-}"
+          platform_password="${E2E_PLATFORM_PASSWORD:-}"
+          platform_totp_secret="${E2E_PLATFORM_TOTP_SECRET:-}"
+
+          if [ -z "$platform_tenant_code" ]; then
+            platform_tenant_code="${E2E_TENANT_CODE:-}"
+          fi
+          if [ -z "$platform_username" ]; then
+            platform_username='e2e_platform_admin'
+          fi
+          if [ -z "$platform_password" ]; then
+            platform_password="${E2E_PASSWORD:-}"
+          fi
+          if [ -z "$platform_totp_secret" ]; then
+            platform_totp_secret="${E2E_TOTP_SECRET:-}"
+          fi
+
+          {
+            echo "E2E_PLATFORM_TENANT_CODE=${platform_tenant_code}"
+            echo "E2E_PLATFORM_USERNAME=${platform_username}"
+            echo "E2E_PLATFORM_PASSWORD=${platform_password}"
+            echo "E2E_PLATFORM_TOTP_SECRET=${platform_totp_secret}"
+          } >> "$GITHUB_ENV"
+
       - name: Validate real-link secret set
         shell: bash
         run: |
