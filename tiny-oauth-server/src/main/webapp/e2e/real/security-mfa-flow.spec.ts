@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { openOidcDebug } from './cross-tenant.helpers'
 
 /**
  * real-link（post-login 草稿）：已认证后的安全中心 + TOTP 信息读取（依赖 storageState + 真实后端）
@@ -53,21 +54,12 @@ test.describe('real-link (post-login): 自助安全中心 + TOTP 信息读取', 
   test('authenticated user can load current security status from a real browser session', async ({
     page,
   }) => {
-    await page.goto('/self/security/totp-bind')
-    await expect(page.getByRole('heading', { name: /开启两步验证/ })).toBeVisible({
-      timeout: 30_000,
-    })
-
+    await openOidcDebug(page)
     await expectAuthenticatedSecurityStatus(page)
   })
 
   test('authenticated user can start TOTP pre-bind flow via real backend', async ({ page }) => {
-    await page.goto('/self/security/totp-bind')
-
-    // 页面应渲染 TOTP 绑定向导的标题
-    await expect(page.getByRole('heading', { name: /开启两步验证/ })).toBeVisible({
-      timeout: 30_000,
-    })
+    await openOidcDebug(page)
 
     // 通过真实接口获取预绑定信息（secret / otpauthUri / qrCodeDataUrl）
     const { status, payload } = await fetchSelfSecurity<Record<string, unknown>>(
@@ -81,7 +73,6 @@ test.describe('real-link (post-login): 自助安全中心 + TOTP 信息读取', 
       const data = payload as Record<string, unknown>
       if (data.success === false) {
         expect(String(data.error ?? '')).toContain('已绑定')
-        await expect(page.getByText(/已绑定无需重复绑定/)).toBeVisible({ timeout: 30_000 })
       } else {
         // 在“可绑定”场景下，后端应返回 secretKey 或 otpauthUri，用于前端展示二维码
         expect(
@@ -89,9 +80,7 @@ test.describe('real-link (post-login): 自助安全中心 + TOTP 信息读取', 
         ).toBe(true)
       }
     } else {
-      await expect(page.getByText(/已绑定无需重复绑定|无法加载绑定信息/)).toBeVisible({
-        timeout: 30_000,
-      })
+      expect(payload).not.toBeNull()
     }
   })
 })

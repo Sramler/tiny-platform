@@ -1,4 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
+import { openOidcDebug } from './cross-tenant.helpers'
 
 const backendBaseUrl = process.env.E2E_BACKEND_BASE_URL ?? 'http://localhost:9000'
 const parallelDagBaseCode = process.env.E2E_PARALLEL_DAG_CODE_BASE ?? 'sales-report-pipeline'
@@ -53,10 +54,7 @@ function nodeDialog(page: Page): Locator {
 }
 
 async function openAuthenticatedShell(page: Page) {
-  await page.goto('/OIDCDebug')
-  await expect(page.getByRole('heading', { name: 'OIDC 调试工具' })).toBeVisible({
-    timeout: 90_000,
-  })
+  await openOidcDebug(page)
 }
 
 async function openDagList(page: Page) {

@@ -667,6 +667,15 @@ String skipSchedulingAdminAuth = System.getenv("E2E_SKIP_SCHEDULING_ADMIN_AUTH")
             ps.executeUpdate();
         }
 
+        try (PreparedStatement ps = connection.prepareStatement(
+                "INSERT IGNORE INTO tenant_user (tenant_id, user_id, status, is_default, joined_at, created_at, updated_at) " +
+                        "VALUES (?, ?, 'ACTIVE', ?, NOW(), NOW(), NOW())")) {
+            ps.setLong(1, bindTenantId);
+            ps.setLong(2, bindUserId);
+            ps.setBoolean(3, true);
+            ps.executeUpdate();
+        }
+
         Long bindRoleId = null;
         try (PreparedStatement ps = connection.prepareStatement(
                 "SELECT id FROM role WHERE tenant_id = ? AND code = 'ROLE_TENANT_ADMIN' LIMIT 1")) {
@@ -777,6 +786,15 @@ String skipSchedulingAdminAuth = System.getenv("E2E_SKIP_SCHEDULING_ADMIN_AUTH")
         try (PreparedStatement ps = connection.prepareStatement(
                 "UPDATE user SET enabled = true, account_non_expired = true, account_non_locked = true, credentials_non_expired = true, failed_login_count = 0, last_failed_login_at = NULL WHERE id = ?")) {
             ps.setLong(1, readonlyUserId);
+            ps.executeUpdate();
+        }
+
+        try (PreparedStatement ps = connection.prepareStatement(
+                "INSERT IGNORE INTO tenant_user (tenant_id, user_id, status, is_default, joined_at, created_at, updated_at) " +
+                        "VALUES (?, ?, 'ACTIVE', ?, NOW(), NOW(), NOW())")) {
+            ps.setLong(1, readonlyTenantId);
+            ps.setLong(2, readonlyUserId);
+            ps.setBoolean(3, true);
             ps.executeUpdate();
         }
 

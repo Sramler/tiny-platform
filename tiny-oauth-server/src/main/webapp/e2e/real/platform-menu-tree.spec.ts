@@ -2,6 +2,7 @@ import { createHmac } from 'node:crypto'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
+import { openOidcDebug } from './cross-tenant.helpers'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -106,20 +107,39 @@ test.describe('real-link: 平台登录菜单树', () => {
     const cfg = resolvePlatformLoginConfig()
     test.skip(!cfg, '需要 E2E_PLATFORM_USERNAME/PASSWORD 与 E2E_PLATFORM_TOTP_SECRET 或 TOTP_CODE')
 
-    await page.goto('/OIDCDebug')
-    await page.waitForLoadState('networkidle').catch(() => {})
+    await openOidcDebug(page)
     if (page.url().includes('/login')) {
       throw new Error('平台菜单树 real-link 未拿到有效 platform-admin storageState，页面仍停留在 /login')
     }
 
     const backendBaseUrl = readBackendBaseUrl()
     const menuResult = await page.evaluate(async ({ apiBaseUrl }) => {
+      const oidcKey = Object.keys(window.localStorage).find((key) => key.startsWith('oidc.user:'))
+      if (!oidcKey) {
+        throw new Error('未找到平台 OIDC 登录态')
+      }
+      const rawUser = window.localStorage.getItem(oidcKey)
+      if (!rawUser) {
+        throw new Error(`平台 OIDC 存储为空: ${oidcKey}`)
+      }
+      const oidcUser = JSON.parse(rawUser) as { access_token?: string }
+      if (!oidcUser.access_token) {
+        throw new Error('平台 OIDC 用户缺少 access_token')
+      }
+
+      const headers = new Headers({
+        Accept: 'application/json',
+        Authorization: `Bearer ${oidcUser.access_token}`,
+      })
+      const activeTenantId = window.localStorage.getItem('app_active_tenant_id')
+      if (activeTenantId) {
+        headers.set('X-Active-Tenant-Id', activeTenantId)
+      }
+
       const response = await fetch(`${apiBaseUrl}/sys/menus/tree`, {
         method: 'GET',
         credentials: 'include',
-        headers: {
-          Accept: 'application/json',
-        },
+        headers,
       })
       const text = await response.text()
       const contentType = response.headers.get('content-type') || ''

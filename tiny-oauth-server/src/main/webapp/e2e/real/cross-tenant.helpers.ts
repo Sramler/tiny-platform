@@ -72,6 +72,9 @@ export async function openOidcDebug(page: Page) {
   // 某些测试租户并未初始化菜单树，前端会落到“菜单为空”的壳页；
   // 只要 localStorage 中已经存在真实 OIDC 登录态，API 级跨租户回归仍可继续。
   await waitForOidcIdentity(page)
+  if (page.url().includes('/login') || page.url().includes('/callback')) {
+    await page.goto('/OIDCDebug')
+  }
   await page.waitForLoadState('networkidle').catch(() => {})
   await page.waitForTimeout(1_000)
 }
