@@ -146,7 +146,7 @@ export default defineConfig({
     {
       name: 'chromium-mfa',
       // 从 /login 起步的 MFA 真实链路，不依赖预生成 storageState。
-      testMatch: /real\/(mfa-login-flow|platform-vue-login|platform-menu-tree)\.spec\.ts/,
+      testMatch: /real\/(mfa-login-flow|platform-vue-login)\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
         storageState: undefined,

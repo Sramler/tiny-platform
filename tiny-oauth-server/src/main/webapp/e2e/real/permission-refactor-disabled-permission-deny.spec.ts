@@ -103,6 +103,21 @@ function readBackendBaseUrl(): string {
   return process.env.E2E_BACKEND_BASE_URL ?? process.env.VITE_API_BASE_URL ?? 'http://localhost:9000'
 }
 
+function deriveTenantCodeForTenantScope(primaryTenantCode: string, platformTenantCode: string): string {
+  if (primaryTenantCode.trim().toLowerCase() !== platformTenantCode.trim().toLowerCase()) {
+    return primaryTenantCode.trim()
+  }
+  const base = primaryTenantCode.trim().toLowerCase()
+  const candidate = `${base}-t`
+  return candidate.length <= 32 ? candidate : candidate.slice(0, 32)
+}
+
+function resolveEffectiveTenantCode(): string {
+  const primaryTenantCode = requireEnv('E2E_TENANT_CODE')
+  const platformTenantCode = readEnv('E2E_PLATFORM_TENANT_CODE') ?? 'default'
+  return deriveTenantCodeForTenantScope(primaryTenantCode, platformTenantCode)
+}
+
 function sanitizeSqlLiteral(raw: string): string {
   // E2E-only input, keep simple escaping for safe literal embedding
   return raw.replace(/'/g, "''")
@@ -153,7 +168,7 @@ function mysqlSetEnabled(permissionCodes: string[], tenantCode: string, enabled:
 }
 
 function resolveLoginConfig() {
-  const tenantCode = requireEnv('E2E_TENANT_CODE')
+  const tenantCode = resolveEffectiveTenantCode()
   const username = requireEnv('E2E_USERNAME')
   const password = requireEnv('E2E_PASSWORD')
   const totpSecret = readEnv('E2E_TOTP_SECRET')
@@ -211,7 +226,7 @@ test.describe('real-link: disabled permission deny (JWT + interface) ', () => {
     }
 
     const permissionCodes = ['system:org:list', 'system:org:view']
-    const tenantCode = requireEnv('E2E_TENANT_CODE')
+    const tenantCode = resolveEffectiveTenantCode()
 
     // Snapshot original enabled states to restore after this test.
     const originalEnabled: Record<string, boolean> = {}
@@ -278,4 +293,3 @@ test.describe('real-link: disabled permission deny (JWT + interface) ', () => {
     }
   })
 })
-

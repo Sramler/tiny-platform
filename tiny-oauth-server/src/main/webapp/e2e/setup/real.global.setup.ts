@@ -336,6 +336,19 @@ function isConfiguredValue(value: string | undefined) {
   return !(normalized.startsWith('<') && normalized.endsWith('>'))
 }
 
+export function readConfiguredValue(
+  source: NodeJS.ProcessEnv,
+  names: string[],
+): string | undefined {
+  for (const name of names) {
+    const value = source[name]
+    if (isConfiguredValue(value)) {
+      return value!.trim()
+    }
+  }
+  return undefined
+}
+
 function resolveSecondaryIdentityEnv(): ResolvedIdentityEnv | null {
   const tenantCode = process.env.E2E_TENANT_CODE_B
   const username = process.env.E2E_USERNAME_B
@@ -372,7 +385,7 @@ function resolveSecondaryIdentityEnv(): ResolvedIdentityEnv | null {
 }
 
 function resolveReadonlyIdentityEnv(): ResolvedIdentityEnv | null {
-  const tenantCode = process.env.E2E_TENANT_CODE_READONLY ?? process.env.E2E_TENANT_CODE
+  const tenantCode = readConfiguredValue(process.env, ['E2E_TENANT_CODE_READONLY', 'E2E_TENANT_CODE'])
   const username = process.env.E2E_USERNAME_READONLY
   const password = process.env.E2E_PASSWORD_READONLY
   const totpSecret = process.env.E2E_TOTP_SECRET_READONLY
@@ -395,7 +408,7 @@ function resolveReadonlyIdentityEnv(): ResolvedIdentityEnv | null {
   }
 
   return {
-    E2E_TENANT_CODE: (tenantCode ?? process.env.E2E_TENANT_CODE ?? '').trim(),
+    E2E_TENANT_CODE: tenantCode ?? '',
     E2E_USERNAME: username!.trim(),
     E2E_PASSWORD: password!.trim(),
     E2E_TOTP_SECRET: totpSecret!.trim(),

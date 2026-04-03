@@ -1,5 +1,13 @@
 import { createHmac } from 'node:crypto'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const platformAuthStatePath = path.resolve(__dirname, '..', '.auth', 'platform-admin-user.json')
+
+test.use({ storageState: platformAuthStatePath })
 
 function isPlaceholderValue(value: string): boolean {
   const normalized = value.trim()
@@ -88,65 +96,48 @@ function flattenMenu(nodes: MenuNode[]): MenuNode[] {
   return result
 }
 
+function readBackendBaseUrl(): string {
+  return process.env.E2E_BACKEND_BASE_URL ?? process.env.VITE_API_BASE_URL ?? 'http://localhost:9000'
+}
+
 test.describe('real-link: 平台登录菜单树', () => {
   test('platform_admin 登录后 /sys/menus/tree 不能退化为单节点', async ({ page }) => {
     test.setTimeout(240_000)
     const cfg = resolvePlatformLoginConfig()
     test.skip(!cfg, '需要 E2E_PLATFORM_USERNAME/PASSWORD 与 E2E_PLATFORM_TOTP_SECRET 或 TOTP_CODE')
 
-    // 与 platform-vue-login.spec.ts 保持一致，避免额外 CSRF 监听与页签顺序引入竞态。
-    await page.goto('/login')
-    await page.getByRole('button', { name: '平台登录' }).click()
-    await page.getByLabel('用户名').fill(cfg!.username)
-    await page.getByLabel('密码').fill(cfg!.password)
-    // 须在提交前挂上监听：登录成功进入壳层后会拉菜单；同时超时需覆盖 MFA 绑定/验证耗时。
-    const menuResponsePromise = page.waitForResponse(
-      (response) => response.url().includes('/sys/menus/tree') && response.request().method() === 'GET',
-      { timeout: 180_000 },
-    )
-    await page.getByRole('button', { name: '登录平台' }).click()
+    await page.goto('/OIDCDebug')
+    await page.waitForLoadState('networkidle').catch(() => {})
+    if (page.url().includes('/login')) {
+      throw new Error('平台菜单树 real-link 未拿到有效 platform-admin storageState，页面仍停留在 /login')
+    }
 
-    await page.waitForURL(
-      (url) => {
-        if (url.pathname.includes('/self/security/totp-verify')) return true
-        if (url.pathname.includes('/login')) {
-          return url.searchParams.get('error') != null || url.searchParams.get('message') != null
-        }
-        return !url.pathname.includes('/login')
-      },
-      { timeout: 60_000 },
-    )
-
-    if (page.url().includes('/self/security/totp-bind')) {
-      const skipButton = page.getByRole('button', { name: '跳过' })
-      if (await skipButton.isVisible().catch(() => false)) {
-        await skipButton.click()
+    const backendBaseUrl = readBackendBaseUrl()
+    const menuResult = await page.evaluate(async ({ apiBaseUrl }) => {
+      const response = await fetch(`${apiBaseUrl}/sys/menus/tree`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: {
+          Accept: 'application/json',
+        },
+      })
+      const text = await response.text()
+      const contentType = response.headers.get('content-type') || ''
+      return {
+        status: response.status,
+        payload:
+          text && contentType.includes('application/json')
+            ? (JSON.parse(text) as MenuNode[])
+            : null,
+        text,
       }
-      await page.waitForURL(
-        (u) => !u.pathname.includes('/self/security/totp-bind') && !u.pathname.includes('/callback'),
-        { timeout: 60_000 },
-      )
-    }
+    }, { apiBaseUrl: backendBaseUrl })
 
-    if (page.url().includes('/self/security/totp-verify')) {
-      await page.getByLabel('动态验证码').fill(cfg!.totpCode)
-      await page.getByRole('button', { name: '确认' }).click()
-      await page.waitForURL(
-        (u) => !u.pathname.includes('/self/security/totp-verify') && !u.pathname.includes('/callback'),
-        { timeout: 60_000 },
-      )
-    }
-
-    const menuResponse = await menuResponsePromise
-    const menuStatus = menuResponse.status()
-    const menuPayload = await menuResponse.json().catch(() => null)
-
-    expect(menuStatus).toBe(200)
-    expect(Array.isArray(menuPayload)).toBeTruthy()
-    const menuTree = menuPayload as MenuNode[]
+    expect(menuResult.status, menuResult.text).toBe(200)
+    expect(Array.isArray(menuResult.payload), menuResult.text).toBeTruthy()
+    const menuTree = menuResult.payload as MenuNode[]
     const flattened = flattenMenu(menuTree)
 
-    // 退化场景通常只剩一个工作台节点，这里要求至少出现 2 个可见菜单节点。
     expect(flattened.length).toBeGreaterThan(1)
 
     const hasSystemUserEntry = flattened.some((item) => item.url === '/system/user' || item.name === 'user')
