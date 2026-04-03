@@ -59,7 +59,7 @@ jobs:
           APP_PID=$!
           trap "kill $APP_PID 2>/dev/null || true" EXIT
           for i in $(seq 1 60); do
-            if curl -fsS http://127.0.0.1:9000/login >/dev/null 2>&1; then
+            if curl -fsS http://127.0.0.1:9000/csrf >/dev/null 2>&1; then
               echo "App ready."
               break
             fi
