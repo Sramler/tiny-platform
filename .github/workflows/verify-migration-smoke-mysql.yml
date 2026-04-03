@@ -37,6 +37,11 @@ jobs:
     env:
       MYSQL_ROOT_PASSWORD: ci
       MYSQL_PORT: 3306
+      SCHEDULING_VERIFY_DB_HOST: 127.0.0.1
+      SCHEDULING_VERIFY_DB_PORT: 3306
+      SCHEDULING_VERIFY_DB_USER: root
+      SCHEDULING_VERIFY_DB_PASSWORD: ci
+      SCHEDULING_VERIFY_DB_NAME: tiny_web
 
     steps:
       - uses: actions/checkout@v6
