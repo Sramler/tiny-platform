@@ -24,7 +24,7 @@ class HttpRequestLogServiceImplTest {
     @Test
     void shouldSaveLogAndRestorePreviousMdc() {
         HttpRequestLogRepository repository = mock(HttpRequestLogRepository.class);
-        when(repository.save(any(HttpRequestLog.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(repository.saveAndFlush(any(HttpRequestLog.class))).thenAnswer(invocation -> invocation.getArgument(0));
         HttpRequestLogServiceImpl service = new HttpRequestLogServiceImpl(repository);
 
         HttpRequestLog log = new HttpRequestLog();
@@ -44,7 +44,7 @@ class HttpRequestLogServiceImplTest {
         MDC.put("pre", "keep");
         service.save(log);
 
-        verify(repository).save(log);
+        verify(repository).saveAndFlush(log);
         assertThat(MDC.get("pre")).isEqualTo("keep");
         assertThat(MDC.get("traceId")).isNull();
         assertThat(MDC.get("activeTenantId")).isNull();
@@ -53,7 +53,7 @@ class HttpRequestLogServiceImplTest {
     @Test
     void shouldCatchRepositoryExceptionAndRestoreEmptyMdc() {
         HttpRequestLogRepository repository = mock(HttpRequestLogRepository.class);
-        Mockito.doThrow(new RuntimeException("db down")).when(repository).save(any(HttpRequestLog.class));
+        Mockito.doThrow(new RuntimeException("db down")).when(repository).saveAndFlush(any(HttpRequestLog.class));
         HttpRequestLogServiceImpl service = new HttpRequestLogServiceImpl(repository);
 
         HttpRequestLog log = new HttpRequestLog();
@@ -63,7 +63,7 @@ class HttpRequestLogServiceImplTest {
         MDC.clear();
         service.save(log);
 
-        verify(repository).save(log);
+        verify(repository).saveAndFlush(log);
         assertThat(MDC.getCopyOfContextMap()).isNull();
     }
 

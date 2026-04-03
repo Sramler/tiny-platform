@@ -75,6 +75,9 @@ public class HttpRequestLoggingInterceptor implements HandlerInterceptor {
         if (!properties.isEnabled()) {
             return;
         }
+        if (Boolean.TRUE.equals(request.getAttribute(HttpRequestLoggingFilter.ATTR_AUDIT_LOGGED))) {
+            return;
+        }
         Object startAttr = request.getAttribute(HttpRequestLoggingFilter.ATTR_START_TIME);
         if (!(startAttr instanceof Long startTime)) {
             return;
@@ -138,8 +141,8 @@ public class HttpRequestLoggingInterceptor implements HandlerInterceptor {
             log.setError(truncate(ex.getMessage(), 512));
         }
 
-        logService.save(log);
         request.setAttribute(HttpRequestLoggingFilter.ATTR_AUDIT_LOGGED, Boolean.TRUE);
+        logService.save(log);
     }
 
     private String resolveCurrentIssuer() {

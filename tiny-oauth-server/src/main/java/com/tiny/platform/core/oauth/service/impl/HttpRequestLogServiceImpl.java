@@ -9,8 +9,6 @@ import org.slf4j.MDC;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Map;
 
@@ -27,12 +25,11 @@ public class HttpRequestLogServiceImpl implements HttpRequestLogService {
 
     @Override
     @Async
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void save(HttpRequestLog requestLog) {
         Map<String, String> previous = MDC.getCopyOfContextMap();
         try {
             bindLogMdc(requestLog);
-            repository.save(requestLog);
+            repository.saveAndFlush(requestLog);
             if (log.isInfoEnabled()) {
                 log.info("REQ_LOG service={} env={} method={} path={} status={} duration={}ms user={} activeTenantId={} traceId={} requestId={} clientRequestId={} traceSource={}",
                         requestLog.getServiceName(),

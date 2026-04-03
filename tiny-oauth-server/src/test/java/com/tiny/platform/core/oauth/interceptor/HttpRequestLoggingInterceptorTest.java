@@ -22,6 +22,7 @@ import java.nio.charset.StandardCharsets;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 class HttpRequestLoggingInterceptorTest {
@@ -120,5 +121,31 @@ class HttpRequestLoggingInterceptorTest {
         HttpRequestLog saved = captor.getValue();
         assertThat(saved.getActiveTenantId()).isEqualTo(12L);
         assertThat(MDC.get("activeTenantId")).isEqualTo("12");
+    }
+
+    @Test
+    void shouldSkipDuplicateAfterCompletionForSameRequest() throws Exception {
+        HttpRequestLoggingProperties properties = new HttpRequestLoggingProperties();
+        HttpRequestLogService logService = mock(HttpRequestLogService.class);
+        HttpRequestLoggingInterceptor interceptor = new HttpRequestLoggingInterceptor(properties, logService);
+
+        MockHttpServletRequest rawRequest = new MockHttpServletRequest("GET", "/login");
+        rawRequest.setRemoteAddr("127.0.0.1");
+        ContentCachingRequestWrapper request = new ContentCachingRequestWrapper(rawRequest, properties.getMaxBodyLength());
+        request.setAttribute(HttpRequestLoggingFilter.ATTR_START_TIME, System.currentTimeMillis() - 5);
+        request.setAttribute(HttpRequestLoggingFilter.ATTR_SERVICE, "tiny-oauth-server");
+        request.setAttribute(HttpRequestLoggingFilter.ATTR_ENV, "test");
+        request.setAttribute(HttpRequestLoggingFilter.ATTR_TRACE_ID, "0123456789abcdef0123456789abcdef");
+        request.setAttribute(HttpRequestLoggingFilter.ATTR_REQUEST_ID, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+
+        MockHttpServletResponse rawResponse = new MockHttpServletResponse();
+        ContentCachingResponseWrapper response = new ContentCachingResponseWrapper(rawResponse);
+        response.setStatus(200);
+
+        interceptor.afterCompletion(request, response, new Object(), null);
+        interceptor.afterCompletion(request, response, new Object(), null);
+
+        verify(logService, times(1)).save(org.mockito.ArgumentMatchers.any(HttpRequestLog.class));
+        assertThat(request.getAttribute(HttpRequestLoggingFilter.ATTR_AUDIT_LOGGED)).isEqualTo(Boolean.TRUE);
     }
 }
