@@ -4,6 +4,7 @@ import {
   buildSecondaryAuthStateEnv,
   extractAccessTokenFromStorageState,
   readConfiguredValue,
+  resolveReadonlyTenantCode,
   shouldCreateTenantViaApi,
   shouldUseTenantScopedPrimaryAuthState,
 } from '../../e2e/setup/real.global.setup'
@@ -92,6 +93,26 @@ describe('real.global.setup configured env resolution', () => {
     )
 
     expect(tenantCode).toBe('bench-1m')
+  })
+
+  it('derives readonly tenant code away from platform tenant when readonly tenant is not explicitly configured', () => {
+    const tenantCode = resolveReadonlyTenantCode({
+      E2E_TENANT_CODE: 'bench-1m',
+      E2E_PLATFORM_TENANT_CODE: 'bench-1m',
+      E2E_USERNAME_READONLY: 'e2e_scheduling_readonly',
+    })
+
+    expect(tenantCode).toBe('bench-1m-t')
+  })
+
+  it('prefers explicit readonly tenant code over derived tenant-scoped fallback', () => {
+    const tenantCode = resolveReadonlyTenantCode({
+      E2E_TENANT_CODE: 'bench-1m',
+      E2E_PLATFORM_TENANT_CODE: 'bench-1m',
+      E2E_TENANT_CODE_READONLY: 'readonly-bench',
+    })
+
+    expect(tenantCode).toBe('readonly-bench')
   })
 })
 

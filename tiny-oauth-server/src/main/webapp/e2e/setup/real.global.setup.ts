@@ -349,6 +349,21 @@ export function readConfiguredValue(
   return undefined
 }
 
+export function resolveReadonlyTenantCode(source: NodeJS.ProcessEnv): string | undefined {
+  const explicitReadonlyTenantCode = readConfiguredValue(source, ['E2E_TENANT_CODE_READONLY'])
+  if (explicitReadonlyTenantCode) {
+    return explicitReadonlyTenantCode
+  }
+
+  const primaryTenantCode = readConfiguredValue(source, ['E2E_TENANT_CODE'])
+  if (!primaryTenantCode) {
+    return undefined
+  }
+
+  const platformTenantCode = readConfiguredValue(source, ['E2E_PLATFORM_TENANT_CODE']) ?? 'default'
+  return deriveTenantCodeForTenantScope(primaryTenantCode, platformTenantCode)
+}
+
 function resolveSecondaryIdentityEnv(): ResolvedIdentityEnv | null {
   const tenantCode = process.env.E2E_TENANT_CODE_B
   const username = process.env.E2E_USERNAME_B
@@ -385,7 +400,7 @@ function resolveSecondaryIdentityEnv(): ResolvedIdentityEnv | null {
 }
 
 function resolveReadonlyIdentityEnv(): ResolvedIdentityEnv | null {
-  const tenantCode = readConfiguredValue(process.env, ['E2E_TENANT_CODE_READONLY', 'E2E_TENANT_CODE'])
+  const tenantCode = resolveReadonlyTenantCode(process.env)
   const username = process.env.E2E_USERNAME_READONLY
   const password = process.env.E2E_PASSWORD_READONLY
   const totpSecret = process.env.E2E_TOTP_SECRET_READONLY
