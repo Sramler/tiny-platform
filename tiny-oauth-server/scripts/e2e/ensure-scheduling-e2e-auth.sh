@@ -350,6 +350,154 @@ void ensureRolePermissionBinding(Connection connection, Long tenantId, Long role
     }
 }
 
+void ensureTenantUserMembership(Connection connection, Long tenantId, Long userId, boolean isDefault) throws SQLException {
+    try (PreparedStatement ps = connection.prepareStatement(
+            "INSERT INTO tenant_user (tenant_id, user_id, status, is_default, joined_at, left_at, last_activated_at, created_at, updated_at) " +
+                    "VALUES (?, ?, 'ACTIVE', ?, NOW(), NULL, NOW(), NOW(), NOW()) " +
+                    "ON DUPLICATE KEY UPDATE status = 'ACTIVE', is_default = VALUES(is_default), left_at = NULL, last_activated_at = NOW(), updated_at = NOW()")) {
+        ps.setLong(1, tenantId);
+        ps.setLong(2, userId);
+        ps.setBoolean(3, isDefault);
+        ps.executeUpdate();
+    }
+}
+
+void ensureActiveRoleAssignment(Connection connection, Long principalId, Long roleId, Long tenantId, String scopeType, Long scopeId) throws SQLException {
+    try (PreparedStatement ps = connection.prepareStatement(
+            "UPDATE role_assignment SET status = 'ACTIVE', end_time = NULL, updated_at = NOW() " +
+                    "WHERE principal_type = 'USER' AND principal_id = ? AND role_id = ? AND ((tenant_id IS NULL AND ? IS NULL) OR tenant_id = ?) " +
+                    "AND scope_type = ? AND ((scope_id IS NULL AND ? IS NULL) OR scope_id = ?)")) {
+        ps.setLong(1, principalId);
+        ps.setLong(2, roleId);
+        if (tenantId == null) {
+            ps.setNull(3, Types.BIGINT);
+            ps.setNull(4, Types.BIGINT);
+        } else {
+            ps.setLong(3, tenantId);
+            ps.setLong(4, tenantId);
+        }
+        ps.setString(5, scopeType);
+        if (scopeId == null) {
+            ps.setNull(6, Types.BIGINT);
+            ps.setNull(7, Types.BIGINT);
+        } else {
+            ps.setLong(6, scopeId);
+            ps.setLong(7, scopeId);
+        }
+        int updated = ps.executeUpdate();
+        if (updated > 0) {
+            return;
+        }
+    }
+
+    try (PreparedStatement ps = connection.prepareStatement(
+            "INSERT IGNORE INTO role_assignment " +
+                    "(principal_type, principal_id, role_id, tenant_id, scope_type, scope_id, status, start_time, end_time, granted_by, granted_at) " +
+                    "VALUES ('USER', ?, ?, ?, ?, ?, 'ACTIVE', NOW(), NULL, NULL, NOW())")) {
+        ps.setLong(1, principalId);
+        ps.setLong(2, roleId);
+        if (tenantId == null) {
+            ps.setNull(3, Types.BIGINT);
+        } else {
+            ps.setLong(3, tenantId);
+        }
+        ps.setString(4, scopeType);
+        if (scopeId == null) {
+            ps.setNull(5, Types.BIGINT);
+        } else {
+            ps.setLong(5, scopeId);
+        }
+        ps.executeUpdate();
+    }
+}
+
+Long ensurePlatformMenuEntry(Connection connection,
+                             String name,
+                             String title,
+                             String path,
+                             String icon,
+                             boolean showIcon,
+                             int sort,
+                             String component,
+                             String permission,
+                             Long requiredPermissionId,
+                             int type,
+                             Long parentId) throws SQLException {
+    Long existingId = null;
+    try (PreparedStatement ps = connection.prepareStatement(
+            "SELECT id FROM menu WHERE tenant_id IS NULL AND name = ? LIMIT 1")) {
+        ps.setString(1, name);
+        try (ResultSet rs = ps.executeQuery()) {
+            if (rs.next()) {
+                existingId = rs.getLong(1);
+            }
+        }
+    }
+
+    if (existingId == null) {
+        try (PreparedStatement ps = connection.prepareStatement(
+                "INSERT INTO menu (tenant_id, resource_level, name, title, path, icon, show_icon, sort, component, redirect, hidden, keep_alive, permission, required_permission_id, type, parent_id, enabled, created_at, updated_at) " +
+                        "VALUES (NULL, 'PLATFORM', ?, ?, ?, ?, ?, ?, ?, '', false, false, ?, ?, ?, ?, true, NOW(), NOW())",
+                Statement.RETURN_GENERATED_KEYS)) {
+            ps.setString(1, name);
+            ps.setString(2, title);
+            ps.setString(3, path);
+            ps.setString(4, icon);
+            ps.setBoolean(5, showIcon);
+            ps.setInt(6, sort);
+            ps.setString(7, component);
+            ps.setString(8, permission);
+            if (requiredPermissionId == null) {
+                ps.setNull(9, Types.BIGINT);
+            } else {
+                ps.setLong(9, requiredPermissionId);
+            }
+            ps.setInt(10, type);
+            if (parentId == null) {
+                ps.setNull(11, Types.BIGINT);
+            } else {
+                ps.setLong(11, parentId);
+            }
+            ps.executeUpdate();
+            try (ResultSet rs = ps.getGeneratedKeys()) {
+                if (rs.next()) {
+                    existingId = rs.getLong(1);
+                }
+            }
+        }
+    } else {
+        try (PreparedStatement ps = connection.prepareStatement(
+                "UPDATE menu SET resource_level = 'PLATFORM', title = ?, path = ?, icon = ?, show_icon = ?, sort = ?, component = ?, redirect = '', hidden = false, keep_alive = false, permission = ?, required_permission_id = ?, type = ?, parent_id = ?, enabled = true, updated_at = NOW() " +
+                        "WHERE id = ?")) {
+            ps.setString(1, title);
+            ps.setString(2, path);
+            ps.setString(3, icon);
+            ps.setBoolean(4, showIcon);
+            ps.setInt(5, sort);
+            ps.setString(6, component);
+            ps.setString(7, permission);
+            if (requiredPermissionId == null) {
+                ps.setNull(8, Types.BIGINT);
+            } else {
+                ps.setLong(8, requiredPermissionId);
+            }
+            ps.setInt(9, type);
+            if (parentId == null) {
+                ps.setNull(10, Types.BIGINT);
+            } else {
+                ps.setLong(10, parentId);
+            }
+            ps.setLong(11, existingId);
+            ps.executeUpdate();
+        }
+    }
+
+    if (existingId == null) {
+        throw new IllegalStateException("创建平台菜单失败: " + name);
+    }
+    return existingId;
+}
+
 void ensureSchedulingAdminAuthority(Connection connection, Long tenantId, Long roleId) throws SQLException {
     Long wildcardPermissionId = ensurePermission(connection, tenantId, "scheduling:*", "调度全权限", "OTHER", "real e2e scheduling wildcard");
     ensureRolePermissionBinding(connection, tenantId, roleId, wildcardPermissionId);
@@ -374,6 +522,34 @@ void ensurePlatformGovernanceAuthorities(Connection connection, Long roleId) thr
         Long permissionId = ensurePermission(connection, null, authority[0], authority[1], "API", "real e2e platform governance authority");
         ensureRolePermissionBinding(connection, null, roleId, permissionId);
     }
+
+    Long tenantListPermissionId = ensurePermission(connection, null, "system:tenant:list", "租户列表访问", "API", "real e2e platform governance authority");
+    Long systemMenuId = ensurePlatformMenuEntry(
+            connection,
+            "system",
+            "系统管理",
+            "/system",
+            "SettingOutlined",
+            true,
+            1,
+            "",
+            "system:tenant:list",
+            tenantListPermissionId,
+            0,
+            null);
+    ensurePlatformMenuEntry(
+            connection,
+            "tenant",
+            "租户管理",
+            "/system/tenant",
+            "ApartmentOutlined",
+            true,
+            5,
+            "/views/tenant/Tenant.vue",
+            "system:tenant:list",
+            tenantListPermissionId,
+            1,
+            systemMenuId);
 }
 
 try (Connection connection = DriverManager.getConnection(jdbcUrl, dbUser, dbPassword)) {
@@ -469,14 +645,7 @@ String skipSchedulingAdminAuth = System.getenv("E2E_SKIP_SCHEDULING_ADMIN_AUTH")
     }
 
     // tenant_user membership（AuthUserResolutionService 依赖该表判断租户内用户有效性）
-    try (PreparedStatement ps = connection.prepareStatement(
-            "INSERT IGNORE INTO tenant_user (tenant_id, user_id, status, is_default, joined_at, created_at, updated_at) " +
-                    "VALUES (?, ?, 'ACTIVE', ?, NOW(), NOW(), NOW())")) {
-        ps.setLong(1, tenantId);
-        ps.setLong(2, userId);
-        ps.setBoolean(3, true);
-        ps.executeUpdate();
-    }
+    ensureTenantUserMembership(connection, tenantId, userId, true);
 
     Long roleId = null;
     try (PreparedStatement ps = connection.prepareStatement(
@@ -509,14 +678,7 @@ String skipSchedulingAdminAuth = System.getenv("E2E_SKIP_SCHEDULING_ADMIN_AUTH")
         throw new IllegalStateException("未找到或创建 ROLE_TENANT_ADMIN 失败");
     }
 
-    try (PreparedStatement ps = connection.prepareStatement(
-            "INSERT IGNORE INTO role_assignment (principal_type, principal_id, role_id, tenant_id, scope_type, scope_id, status, start_time, end_time, granted_by, granted_at) VALUES ('USER', ?, ?, ?, 'TENANT', ?, 'ACTIVE', NOW(), NULL, NULL, NOW())")) {
-        ps.setLong(1, userId);
-        ps.setLong(2, roleId);
-        ps.setLong(3, tenantId);
-        ps.setLong(4, tenantId);
-        ps.executeUpdate();
-    }
+    ensureActiveRoleAssignment(connection, userId, roleId, tenantId, "TENANT", tenantId);
     if (!"true".equalsIgnoreCase(skipSchedulingAdminAuth)) {
         ensureSchedulingAdminAuthority(connection, tenantId, roleId);
     } else {
@@ -538,14 +700,7 @@ String skipSchedulingAdminAuth = System.getenv("E2E_SKIP_SCHEDULING_ADMIN_AUTH")
         if (platformAdminRoleId == null) {
             throw new IllegalStateException("缺少平台角色 ROLE_PLATFORM_ADMIN，无法完成 PLATFORM 登录所需赋权");
         }
-        try (PreparedStatement ps = connection.prepareStatement(
-                "INSERT IGNORE INTO role_assignment " +
-                        "(principal_type, principal_id, role_id, tenant_id, scope_type, scope_id, status, start_time, end_time, granted_by, granted_at) " +
-                        "VALUES ('USER', ?, ?, NULL, 'PLATFORM', NULL, 'ACTIVE', NOW(), NULL, NULL, NOW())")) {
-            ps.setLong(1, userId);
-            ps.setLong(2, platformAdminRoleId);
-            ps.executeUpdate();
-        }
+        ensureActiveRoleAssignment(connection, userId, platformAdminRoleId, null, "PLATFORM", null);
         // Tenant management (/sys/tenants) is platform-scope only (TenantContext.activeScopeType=PLATFORM).
         // Bind platform governance permissions to ROLE_PLATFORM_ADMIN on platform-template rows (tenant_id IS NULL),
         // so PLATFORM-scope tokens can actually carry system:tenant:freeze/unfreeze/... authorities in CI.
@@ -667,14 +822,7 @@ String skipSchedulingAdminAuth = System.getenv("E2E_SKIP_SCHEDULING_ADMIN_AUTH")
             ps.executeUpdate();
         }
 
-        try (PreparedStatement ps = connection.prepareStatement(
-                "INSERT IGNORE INTO tenant_user (tenant_id, user_id, status, is_default, joined_at, created_at, updated_at) " +
-                        "VALUES (?, ?, 'ACTIVE', ?, NOW(), NOW(), NOW())")) {
-            ps.setLong(1, bindTenantId);
-            ps.setLong(2, bindUserId);
-            ps.setBoolean(3, true);
-            ps.executeUpdate();
-        }
+        ensureTenantUserMembership(connection, bindTenantId, bindUserId, true);
 
         Long bindRoleId = null;
         try (PreparedStatement ps = connection.prepareStatement(
@@ -707,14 +855,7 @@ String skipSchedulingAdminAuth = System.getenv("E2E_SKIP_SCHEDULING_ADMIN_AUTH")
             throw new IllegalStateException("未找到或创建 ROLE_TENANT_ADMIN (bind) 失败");
         }
 
-        try (PreparedStatement ps = connection.prepareStatement(
-                "INSERT IGNORE INTO role_assignment (principal_type, principal_id, role_id, tenant_id, scope_type, scope_id, status, start_time, end_time, granted_by, granted_at) VALUES ('USER', ?, ?, ?, 'TENANT', ?, 'ACTIVE', NOW(), NULL, NULL, NOW())")) {
-            ps.setLong(1, bindUserId);
-            ps.setLong(2, bindRoleId);
-            ps.setLong(3, bindTenantId);
-            ps.setLong(4, bindTenantId);
-            ps.executeUpdate();
-        }
+        ensureActiveRoleAssignment(connection, bindUserId, bindRoleId, bindTenantId, "TENANT", bindTenantId);
         ensureSchedulingAdminAuthority(connection, bindTenantId, bindRoleId);
 
         String bindPasswordJson = "{\"password\":\"{noop}" + bindPassword + "\",\"created_by\":\"real-e2e-bind\",\"hash_algorithm\":\"noop\",\"password_version\":1,\"password_changed_at\":\"" + Instant.now().toString() + "\"}";
@@ -789,14 +930,7 @@ String skipSchedulingAdminAuth = System.getenv("E2E_SKIP_SCHEDULING_ADMIN_AUTH")
             ps.executeUpdate();
         }
 
-        try (PreparedStatement ps = connection.prepareStatement(
-                "INSERT IGNORE INTO tenant_user (tenant_id, user_id, status, is_default, joined_at, created_at, updated_at) " +
-                        "VALUES (?, ?, 'ACTIVE', ?, NOW(), NOW(), NOW())")) {
-            ps.setLong(1, readonlyTenantId);
-            ps.setLong(2, readonlyUserId);
-            ps.setBoolean(3, true);
-            ps.executeUpdate();
-        }
+        ensureTenantUserMembership(connection, readonlyTenantId, readonlyUserId, true);
 
         Long readonlyRoleId = null;
         try (PreparedStatement ps = connection.prepareStatement(
@@ -839,14 +973,7 @@ String skipSchedulingAdminAuth = System.getenv("E2E_SKIP_SCHEDULING_ADMIN_AUTH")
             ps.setLong(3, readonlyRoleId);
             ps.executeUpdate();
         }
-        try (PreparedStatement ps = connection.prepareStatement(
-                "INSERT IGNORE INTO role_assignment (principal_type, principal_id, role_id, tenant_id, scope_type, scope_id, status, start_time, end_time, granted_by, granted_at) VALUES ('USER', ?, ?, ?, 'TENANT', ?, 'ACTIVE', NOW(), NULL, NULL, NOW())")) {
-            ps.setLong(1, readonlyUserId);
-            ps.setLong(2, readonlyRoleId);
-            ps.setLong(3, readonlyTenantId);
-            ps.setLong(4, readonlyTenantId);
-            ps.executeUpdate();
-        }
+        ensureActiveRoleAssignment(connection, readonlyUserId, readonlyRoleId, readonlyTenantId, "TENANT", readonlyTenantId);
 
         String readonlyPasswordJson = "{\"password\":\"{noop}" + readonlyPassword + "\",\"created_by\":\"real-e2e-readonly\",\"hash_algorithm\":\"noop\",\"password_version\":1,\"password_changed_at\":\"" + Instant.now().toString() + "\"}";
         try (PreparedStatement ps = connection.prepareStatement(

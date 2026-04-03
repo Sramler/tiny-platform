@@ -214,13 +214,27 @@ async function loginWithIdentity(page: Page, identity: LoginIdentity) {
     const tenantCodeInput = page.getByLabel('租户编码')
     const usernameInput = page.getByLabel('用户名')
     const passwordInput = page.getByLabel('密码')
-    await Promise.any([
-      loginHeading.waitFor({ timeout: 90_000 }),
-      usernameInput.waitFor({ timeout: 90_000 }),
-      tenantCodeInput.waitFor({ timeout: 90_000 }),
-    ]).catch(async () => {
-      await passwordInput.waitFor({ timeout: 90_000 })
-    })
+    const loginSurfaceReady = await Promise.race([
+      Promise.any([
+        loginHeading.waitFor({ timeout: 15_000 }),
+        usernameInput.waitFor({ timeout: 15_000 }),
+        tenantCodeInput.waitFor({ timeout: 15_000 }),
+        passwordInput.waitFor({ timeout: 15_000 }),
+      ])
+        .then(() => true)
+        .catch(() => false),
+      page
+        .waitForURL((url) => !url.pathname.includes('/login'), { timeout: 15_000 })
+        .then(() => false)
+        .catch(() => false),
+      waitForOidcIdentity(page, 15_000)
+        .then(() => false)
+        .catch(() => false),
+    ])
+
+    if (!loginSurfaceReady && page.url().includes('/login') && !(await hasOidcIdentity(page))) {
+      throw new Error(`实时登录页未就绪: ${page.url()}`)
+    }
   }
 
   if (page.url().includes('/login')) {
@@ -280,18 +294,35 @@ async function loginWithIdentity(page: Page, identity: LoginIdentity) {
   )
 }
 
+async function gotoOidcDebug(page: Page) {
+  try {
+    await page.goto('/OIDCDebug', { waitUntil: 'domcontentloaded' })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (!message.includes('ERR_ABORTED')) {
+      throw error
+    }
+  }
+}
+
 export async function openOidcDebug(page: Page, kind: AuthIdentityKind = 'primary') {
   const loginIdentity = resolveLoginIdentity(kind)
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    await page.goto('/OIDCDebug')
+    await gotoOidcDebug(page)
     const oidcDebugHeading = page.getByRole('heading', { name: /OIDC 调试工具/ })
     const oidcDebugVisible = await oidcDebugHeading.isVisible({ timeout: 5_000 }).catch(() => false)
-    if ((!oidcDebugVisible || page.url().includes('/login') || page.url().includes('/callback')) && loginIdentity) {
+    const existingIdentity = await hasOidcIdentity(page)
+
+    if (
+      !existingIdentity &&
+      (!oidcDebugVisible || page.url().includes('/login') || page.url().includes('/callback')) &&
+      loginIdentity
+    ) {
       await loginWithIdentity(page, loginIdentity)
-      await page.goto('/OIDCDebug')
+      await gotoOidcDebug(page)
     } else if (!oidcDebugVisible || page.url().includes('/login') || page.url().includes('/callback')) {
-      await page.goto('/OIDCDebug')
+      await gotoOidcDebug(page)
     }
 
     await waitForOidcIdentity(page, 90_000)

@@ -1,75 +1,13 @@
-import { createHmac } from 'node:crypto'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
 import { openOidcDebug } from './cross-tenant.helpers'
 
-test.use({ storageState: undefined })
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const platformAuthStatePath = path.resolve(__dirname, '..', '.auth', 'platform-admin-user.json')
 
-function isPlaceholderValue(value: string): boolean {
-  const normalized = value.trim()
-  return normalized.startsWith('<') && normalized.endsWith('>')
-}
-
-function readEnv(name: string): string | undefined {
-  const value = process.env[name]
-  if (!value || !value.trim() || isPlaceholderValue(value)) {
-    return undefined
-  }
-  return value.trim()
-}
-
-function decodeBase32(secret: string): Buffer {
-  const normalized = secret.replace(/=+$/g, '').replace(/\s+/g, '').toUpperCase()
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
-  let bits = ''
-  for (const character of normalized) {
-    const index = alphabet.indexOf(character)
-    if (index < 0) {
-      throw new Error(`非法 TOTP secret: ${secret}`)
-    }
-    bits += index.toString(2).padStart(5, '0')
-  }
-  const bytes: number[] = []
-  for (let offset = 0; offset + 8 <= bits.length; offset += 8) {
-    bytes.push(Number.parseInt(bits.slice(offset, offset + 8), 2))
-  }
-  return Buffer.from(bytes)
-}
-
-function generateTotpCode(secret: string, timestampMs = Date.now()): string {
-  const counter = Math.floor(timestampMs / 30_000)
-  const counterBuffer = Buffer.alloc(8)
-  counterBuffer.writeBigUInt64BE(BigInt(counter))
-
-  const hmac = createHmac('sha1', decodeBase32(secret)).update(counterBuffer).digest()
-  const offset = hmac[hmac.length - 1] & 0x0f
-  const binaryCode =
-    ((hmac[offset] & 0x7f) << 24) |
-    ((hmac[offset + 1] & 0xff) << 16) |
-    ((hmac[offset + 2] & 0xff) << 8) |
-    (hmac[offset + 3] & 0xff)
-
-  return String(binaryCode % 1_000_000).padStart(6, '0')
-}
-
-function resolvePlatformLoginConfig() {
-  const username = readEnv('E2E_PLATFORM_USERNAME')
-  const password = readEnv('E2E_PLATFORM_PASSWORD')
-  const totpCode = readEnv('E2E_PLATFORM_TOTP_CODE')
-  const totpSecret = readEnv('E2E_PLATFORM_TOTP_SECRET')
-
-  if (!username || !password) {
-    return null
-  }
-  if (!totpCode && !totpSecret) {
-    return null
-  }
-
-  return {
-    username,
-    password,
-    totpCode: totpCode ?? generateTotpCode(totpSecret!),
-  }
-}
+test.use({ storageState: platformAuthStatePath })
 
 type MenuNode = {
   title?: string
@@ -98,12 +36,12 @@ function readBackendBaseUrl(): string {
 test.describe('real-link: 平台登录菜单树', () => {
   test('platform_admin 登录后 /sys/menus/tree 不能退化为单节点', async ({ page }) => {
     test.setTimeout(240_000)
-    const cfg = resolvePlatformLoginConfig()
-    test.skip(!cfg, '需要 E2E_PLATFORM_USERNAME/PASSWORD 与 E2E_PLATFORM_TOTP_SECRET 或 TOTP_CODE')
 
     await openOidcDebug(page, 'platform')
     if (page.url().includes('/login')) {
-      throw new Error('平台菜单树 real-link 未拿到有效 platform 登录态，页面仍停留在 /login')
+      throw new Error(
+        '平台菜单树 real-link 未拿到有效 platform storageState；请确认 globalSetup 已生成 e2e/.auth/platform-admin-user.json，并且后端已补齐平台模板菜单载体。',
+      )
     }
 
     const backendBaseUrl = readBackendBaseUrl()
