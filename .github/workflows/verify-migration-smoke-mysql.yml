@@ -1,7 +1,18 @@
-name: Migration smoke (real MySQL)
+name: Verify migration smoke (real MySQL)
 
 on:
-  workflow_dispatch:
+  push:
+    paths:
+      - 'tiny-oauth-server/**'
+      - '.github/workflows/verify-migration-smoke-mysql.yml'
+      - 'pom.xml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tiny-oauth-server/**'
+      - '.github/workflows/verify-migration-smoke-mysql.yml'
+      - 'pom.xml'
+  workflow_dispatch: {}
   schedule:
     - cron: '20 1 * * *'
 
@@ -72,7 +83,7 @@ jobs:
         shell: bash
         run: bash ./tiny-oauth-server/scripts/verify-scheduling-migration-smoke.sh
 
-      - name: Verify auth migration: user_role_legacy dropped
+      - name: "Verify auth migration: user_role_legacy dropped"
         shell: bash
         run: |
           set -euo pipefail

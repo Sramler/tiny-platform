@@ -172,7 +172,7 @@ mvn -q -pl tiny-oauth-server test -Dtest=SchedulingServiceTenantScopeTest,Schedu
 ### 4.3 未跑或需说明的测试
 
 - **Liquibase 迁移**：migration smoke 脚本现已显式校验 `035/036/037/038/039/040`、默认租户 bootstrap 模板前提，以及“非默认租户不存在平台菜单”“默认租户调度菜单权限已规范化”“默认控制面菜单 URI 已规范化”这三类结果；但本轮仍未在真实 MySQL 上实跑该 workflow，**建议**：下一轮在 real MySQL CI 中真正执行。
-- **Migration smoke 基础设施**：已补 `scripts/verify-scheduling-migration-smoke.sh` 与 `.github/workflows/migration-smoke-mysql.yml`，用于显式校验 035/036/037/038/039/040 的索引、列、回填、平台菜单清理、权限与 URI 规范化结果；**但本轮未在真实 MySQL 上实跑**。
+- **Migration smoke 基础设施**：已补 `scripts/verify-scheduling-migration-smoke.sh` 与 `.github/workflows/verify-migration-smoke-mysql.yml`，用于显式校验 035/036/037/038/039/040 的索引、列、回填、平台菜单清理、权限与 URI 规范化结果；**但本轮未在真实 MySQL 上实跑**。
 - **E2E / real-link**：本轮未实际执行 real-link，但已补 `verify-scheduling-real-e2e.yml` 的固定调度清单（`scheduling-dag-orchestration` + 双向跨租户拒绝 + `scheduling-rbac-readonly`）与 artifact 上传；新增 readonly 自动化身份用于真实 RBAC 拒绝回归。
 - **全量 scheduling 单测**：可执行 `mvn -q -pl tiny-oauth-server test -Dtest='**/scheduling/**/*Test'` 做回归。
 
