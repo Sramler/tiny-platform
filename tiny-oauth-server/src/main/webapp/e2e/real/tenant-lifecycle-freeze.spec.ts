@@ -92,16 +92,22 @@ async function transitionTenantLifecycle(
   accessToken: string,
   tenantId: number,
   action: 'freeze' | 'unfreeze',
-): Promise<boolean> {
+): Promise<{ ok: boolean; status: number; body: string }> {
   const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   const res = await fetch(`${backendBaseUrl}/sys/tenants/${tenantId}/${action}`, {
     method: 'POST',
     headers: {
+      Accept: 'application/json',
       Authorization: `Bearer ${accessToken}`,
       'X-Idempotency-Key': `e2e-tenant-lifecycle:${tenantId}:${action}:${requestId}`,
     },
   })
-  return res.ok
+  const body = await res.text()
+  return {
+    ok: res.ok,
+    status: res.status,
+    body,
+  }
 }
 
 async function fetchAuditSummary(accessToken: string, tenantId: number) {
@@ -183,8 +189,8 @@ test.describe('real-link: tenant lifecycle freeze', () => {
 
     // 1) 确保 ACTIVE
     if (String(tenantPayload!.lifecycleStatus ?? 'ACTIVE').toUpperCase() === 'FROZEN') {
-      const unfreezeOk = await transitionTenantLifecycle(adminToken!, tenantId!, 'unfreeze')
-      expect(unfreezeOk).toBe(true)
+      const unfreezeResult = await transitionTenantLifecycle(adminToken!, tenantId!, 'unfreeze')
+      expect(unfreezeResult.ok, `unfreeze failed: HTTP ${unfreezeResult.status} ${unfreezeResult.body}`).toBe(true)
     }
 
     // 2) 租户用户写操作成功
@@ -193,8 +199,8 @@ test.describe('real-link: tenant lifecycle freeze', () => {
     expect(created.id).toBeTruthy()
 
     // 3) 冻结租户
-    const frozenOk = await transitionTenantLifecycle(adminToken!, tenantId!, 'freeze')
-    expect(frozenOk).toBe(true)
+    const freezeResult = await transitionTenantLifecycle(adminToken!, tenantId!, 'freeze')
+    expect(freezeResult.ok, `freeze failed: HTTP ${freezeResult.status} ${freezeResult.body}`).toBe(true)
 
     try {
       // 3a) 平台治理只读白名单仍可用

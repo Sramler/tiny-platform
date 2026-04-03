@@ -12,6 +12,8 @@ import { createHmac } from 'node:crypto'
  *
  * Guard used:
  * - OrganizationAccessGuard.canRead(authentication): system:org:list / system:org:view
+ * - This proof uses the guaranteed tenant-admin permission `system:org:list` to avoid coupling the
+ *   regression to optional `system:org:view` bootstrap shape.
  * Endpoint:
  * - GET /sys/org/tree
  */
@@ -225,7 +227,7 @@ test.describe('real-link: disabled permission deny (JWT + interface) ', () => {
       test.skip('mysql client/DB not available for real-link disabled-permission proof')
     }
 
-    const permissionCodes = ['system:org:list', 'system:org:view']
+    const permissionCodes = ['system:org:list']
     const tenantCode = resolveEffectiveTenantCode()
 
     // Snapshot original enabled states to restore after this test.

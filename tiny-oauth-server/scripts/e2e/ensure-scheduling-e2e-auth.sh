@@ -358,7 +358,7 @@ void ensureSchedulingAdminAuthority(Connection connection, Long tenantId, Long r
     ensureRolePermissionBinding(connection, tenantId, roleId, orgListPermissionId);
 }
 
-void ensurePlatformGovernanceAuthorities(Connection connection, Long tenantId, Long roleId) throws SQLException {
+void ensurePlatformGovernanceAuthorities(Connection connection, Long roleId) throws SQLException {
     String[][] authorities = new String[][] {
             {"system:tenant:list", "租户列表访问"},
             {"system:tenant:view", "租户详情访问"},
@@ -371,8 +371,8 @@ void ensurePlatformGovernanceAuthorities(Connection connection, Long tenantId, L
             {"system:audit:authentication:export", "认证审计导出"}
     };
     for (String[] authority : authorities) {
-        Long permissionId = ensurePermission(connection, tenantId, authority[0], authority[1], "API", "real e2e platform governance authority");
-        ensureRolePermissionBinding(connection, tenantId, roleId, permissionId);
+        Long permissionId = ensurePermission(connection, null, authority[0], authority[1], "API", "real e2e platform governance authority");
+        ensureRolePermissionBinding(connection, null, roleId, permissionId);
     }
 }
 
@@ -547,8 +547,9 @@ String skipSchedulingAdminAuth = System.getenv("E2E_SKIP_SCHEDULING_ADMIN_AUTH")
             ps.executeUpdate();
         }
         // Tenant management (/sys/tenants) is platform-scope only (TenantContext.activeScopeType=PLATFORM).
-        // Bind platform governance permissions to ROLE_PLATFORM_ADMIN; permission rows仍使用当前租户 tenantId，保持 normalized_tenant_id 对齐。
-        ensurePlatformGovernanceAuthorities(connection, tenantId, platformAdminRoleId);
+        // Bind platform governance permissions to ROLE_PLATFORM_ADMIN on platform-template rows (tenant_id IS NULL),
+        // so PLATFORM-scope tokens can actually carry system:tenant:freeze/unfreeze/... authorities in CI.
+        ensurePlatformGovernanceAuthorities(connection, platformAdminRoleId);
     }
 
     String passwordJson = "{\"password\":\"{noop}" + rawPassword + "\",\"created_by\":\"real-e2e\",\"hash_algorithm\":\"noop\",\"password_version\":1,\"password_changed_at\":\"" + Instant.now().toString() + "\"}";
