@@ -41,6 +41,25 @@ function requireEnv(name: string, fallbackFrom?: string): string {
   return raw
 }
 
+function deriveTenantCodeForTenantScope(primaryTenantCode: string, platformTenantCode: string): string {
+  if (primaryTenantCode.trim().toLowerCase() !== platformTenantCode.trim().toLowerCase()) {
+    return primaryTenantCode.trim()
+  }
+  const candidate = `${primaryTenantCode.trim().toLowerCase()}-t`
+  return candidate.length <= 32 ? candidate : candidate.slice(0, 32)
+}
+
+function resolveBindTenantCode(): string {
+  const explicitBindTenantCode = readEnv('E2E_TENANT_CODE_BIND')
+  if (explicitBindTenantCode) {
+    return explicitBindTenantCode
+  }
+
+  const primaryTenantCode = requireEnv('E2E_TENANT_CODE')
+  const platformTenantCode = readEnv('E2E_PLATFORM_TENANT_CODE') ?? 'default'
+  return deriveTenantCodeForTenantScope(primaryTenantCode, platformTenantCode)
+}
+
 function decodeBase32(secret: string): Buffer {
   const normalized = secret.replace(/=+$/g, '').replace(/\s+/g, '').toUpperCase()
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
@@ -162,7 +181,7 @@ async function fetchSecurityStatus(page: import('@playwright/test').Page) {
 }
 
 function resolveBindLoginConfig() {
-  const tenantCode = requireEnv('E2E_TENANT_CODE_BIND', 'E2E_TENANT_CODE')
+  const tenantCode = resolveBindTenantCode()
   const username = requireEnv('E2E_USERNAME_BIND')
   const password = requireEnv('E2E_PASSWORD_BIND')
   return { tenantCode, username, password }

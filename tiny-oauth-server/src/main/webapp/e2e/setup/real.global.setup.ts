@@ -271,15 +271,30 @@ function ensureDeterministicE2EAuth() {
   execFileSync('bash', [ensureAuthScriptPath], {
     cwd: backendRoot,
     stdio: 'inherit',
-    env: process.env,
+    env: buildEnsureAuthEnv(process.env, {}),
   })
+}
+
+export function resolveBindTenantCode(source: NodeJS.ProcessEnv): string | undefined {
+  const explicitBindTenantCode = readConfiguredValue(source, ['E2E_TENANT_CODE_BIND'])
+  if (explicitBindTenantCode) {
+    return explicitBindTenantCode
+  }
+
+  const primaryTenantCode = readConfiguredValue(source, ['E2E_TENANT_CODE'])
+  if (!primaryTenantCode) {
+    return undefined
+  }
+
+  const platformTenantCode = readConfiguredValue(source, ['E2E_PLATFORM_TENANT_CODE']) ?? 'default'
+  return deriveTenantCodeForTenantScope(primaryTenantCode, platformTenantCode)
 }
 
 export function buildEnsureAuthEnv(
   baseEnv: NodeJS.ProcessEnv,
   envOverrides: Record<string, string>,
 ): NodeJS.ProcessEnv {
-  const bindTenantCode = readConfiguredValue(baseEnv, ['E2E_TENANT_CODE_BIND', 'E2E_TENANT_CODE'])
+  const bindTenantCode = resolveBindTenantCode(baseEnv)
   const bindUsername = readConfiguredValue(baseEnv, ['E2E_USERNAME_BIND'])
   const bindPassword = readConfiguredValue(baseEnv, ['E2E_PASSWORD_BIND'])
   const readonlyTenantCode = resolveReadonlyTenantCode(baseEnv)

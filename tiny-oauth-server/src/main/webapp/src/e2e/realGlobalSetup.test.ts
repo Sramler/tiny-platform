@@ -5,6 +5,7 @@ import {
   buildSecondaryAuthStateEnv,
   extractAccessTokenFromStorageState,
   readConfiguredValue,
+  resolveBindTenantCode,
   resolveReadonlyTenantCode,
   shouldCreateTenantViaApi,
   shouldUseTenantScopedPrimaryAuthState,
@@ -114,6 +115,26 @@ describe('real.global.setup configured env resolution', () => {
     })
 
     expect(tenantCode).toBe('readonly-bench')
+  })
+
+  it('derives bind tenant code away from platform tenant when bind tenant is not explicitly configured', () => {
+    const tenantCode = resolveBindTenantCode({
+      E2E_TENANT_CODE: 'bench-1m',
+      E2E_PLATFORM_TENANT_CODE: 'bench-1m',
+      E2E_USERNAME_BIND: 'e2e_bind',
+    })
+
+    expect(tenantCode).toBe('bench-1m-t')
+  })
+
+  it('prefers explicit bind tenant code over derived tenant-scoped fallback', () => {
+    const tenantCode = resolveBindTenantCode({
+      E2E_TENANT_CODE: 'bench-1m',
+      E2E_PLATFORM_TENANT_CODE: 'bench-1m',
+      E2E_TENANT_CODE_BIND: 'bind-bench',
+    })
+
+    expect(tenantCode).toBe('bind-bench')
   })
 })
 
