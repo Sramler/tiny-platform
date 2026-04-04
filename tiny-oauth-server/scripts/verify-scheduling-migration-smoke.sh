@@ -235,20 +235,6 @@ done
 check_permission_by_name "schedulingAudit" "scheduling:audit:view"
 echo "  [OK] 039: 默认租户调度菜单载体已使用规范权限码"
 
-check_uri_by_name() {
-  local resource_name="$1"
-  local expected_uri="$2"
-  local actual_uri
-  actual_uri=$(query_value "
-    SELECT uri
-    FROM api_endpoint
-    WHERE tenant_id = ${default_tenant_id}
-      AND name = '${resource_name}'
-    LIMIT 1;
-  ")
-  [[ "$actual_uri" == "$expected_uri" ]] || fail "默认租户接口载体 ${resource_name} URI 异常，期望 ${expected_uri}，实际 ${actual_uri:-<empty>}"
-}
-
 legacy_control_plane_uri_count=$(query_value "
   SELECT COUNT(*)
   FROM api_endpoint
@@ -256,11 +242,10 @@ legacy_control_plane_uri_count=$(query_value "
 ")
 [[ "${legacy_control_plane_uri_count:-0}" -eq 0 ]] || fail "api_endpoint 表中仍残留历史控制面 URI，040 规范化未生效: ${legacy_control_plane_uri_count}"
 
-check_uri_by_name "user" "/sys/users"
-check_uri_by_name "role" "/sys/roles"
-check_uri_by_name "menu" "/sys/menus"
-check_uri_by_name "resource" "/sys/resources"
-echo "  [OK] 040: 历史控制面接口 URI 已统一到当前 /sys/* 路径"
+# 040 最初针对 legacy resource(type=1) 的 uri；125 拆分后控制面「菜单」落在 menu 表（无 uri 列），
+# api_endpoint 仅承载 type=3 资源，种子中未必存在 name=user/role 等与菜单同名的行。
+# 因此不再按菜单名断言 api_endpoint；保留上方对历史 /api/* 残留否证即可。
+echo "  [OK] 040: api_endpoint 无历史控制面 /api/* URI（拆分载体后与菜单同名 endpoint 不作强制）"
 
 echo ""
 echo "=== 全部检查通过：035/036/037/038/039/040 调度迁移、默认租户 bootstrap 模板、平台菜单清理、权限与 URI 规范化已在真实 MySQL 上落库 ==="
