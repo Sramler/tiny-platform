@@ -3,6 +3,7 @@ package com.tiny.platform.core.oauth.config;
 import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
 import com.tiny.platform.core.oauth.security.PermissionVersionService;
+import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.core.oauth.tenant.TenantContextContract;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.core.oauth.security.AuthenticationFactorAuthorities;
@@ -628,21 +629,61 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
             return fromAuthentication;
         }
         if (userDetailsService != null && principal != null && principal.getName() != null
-            && !principal.getName().isBlank()) {
-            try {
-                UserDetails reloaded = userDetailsService.loadUserByUsername(principal.getName());
-                if (reloaded != null && reloaded.getAuthorities() != null) {
-                    Set<String> fromReload = reloaded.getAuthorities().stream()
-                        .map(GrantedAuthority::getAuthority)
-                        .filter(authority -> authority != null && !authority.isBlank())
-                        .map(String::trim)
-                        .collect(Collectors.toCollection(LinkedHashSet::new));
-                    if (!fromReload.isEmpty()) {
-                        return fromReload;
-                    }
-                }
-            } catch (UsernameNotFoundException ex) {
-                log.debug("JwtTokenCustomizer: skip UserDetails reload for access token: {}", ex.getMessage());
+            && !principal.getName().isBlank() && securityUser != null) {
+            Set<String> fromReload = reloadAuthoritiesWithTenantContextForTokenEndpoint(principal, securityUser);
+            if (!fromReload.isEmpty()) {
+                return fromReload;
+            }
+        }
+        return Set.of();
+    }
+
+    /**
+     * 默认 issuer 下 {@code POST /oauth2/token} 常无 Session / {@link TenantContext}，
+     * {@link UserDetailsService#loadUserByUsername} 会报「缺少租户信息」。此处用 {@link SecurityUser} 上的活动租户
+     *（或平台作用域）临时填充 ThreadLocal，再加载完整权限。
+     */
+    private Set<String> reloadAuthoritiesWithTenantContextForTokenEndpoint(Authentication principal,
+                                                                           SecurityUser securityUser) {
+        Long prevTenantId = TenantContext.getActiveTenantId();
+        String prevScopeType = TenantContext.getActiveScopeType();
+        Long prevScopeId = TenantContext.getActiveScopeId();
+        String prevTenantSource = TenantContext.getTenantSource();
+        try {
+            if (securityUser.getActiveTenantId() != null && securityUser.getActiveTenantId() > 0) {
+                TenantContext.setActiveTenantId(securityUser.getActiveTenantId());
+                TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_TENANT);
+                TenantContext.setActiveScopeId(securityUser.getActiveTenantId());
+                TenantContext.setTenantSource(TenantContext.SOURCE_TOKEN);
+            } else {
+                TenantContext.setActiveTenantId(null);
+                TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_PLATFORM);
+                TenantContext.setActiveScopeId(null);
+                TenantContext.setTenantSource(TenantContext.SOURCE_TOKEN);
+            }
+            UserDetails reloaded = userDetailsService.loadUserByUsername(principal.getName());
+            if (reloaded != null && reloaded.getAuthorities() != null) {
+                return reloaded.getAuthorities().stream()
+                    .map(GrantedAuthority::getAuthority)
+                    .filter(authority -> authority != null && !authority.isBlank())
+                    .map(String::trim)
+                    .collect(Collectors.toCollection(LinkedHashSet::new));
+            }
+        } catch (UsernameNotFoundException ex) {
+            log.debug("JwtTokenCustomizer: skip UserDetails reload for access token: {}", ex.getMessage());
+        } finally {
+            TenantContext.clear();
+            if (prevTenantId != null && prevTenantId > 0) {
+                TenantContext.setActiveTenantId(prevTenantId);
+            }
+            if (prevScopeType != null && !prevScopeType.isBlank()) {
+                TenantContext.setActiveScopeType(prevScopeType);
+            }
+            if (prevScopeId != null && prevScopeId > 0) {
+                TenantContext.setActiveScopeId(prevScopeId);
+            }
+            if (prevTenantSource != null && !prevTenantSource.isBlank()) {
+                TenantContext.setTenantSource(prevTenantSource);
             }
         }
         return Set.of();
