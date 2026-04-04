@@ -46,7 +46,8 @@ test.describe('real-link: tenant A is isolated from tenant B resources', () => {
         page,
         `/scheduling/task-type/${ownedByTenantB.id}`,
       )
-      expect(directCrossTenantRead.status).toBe(404)
+      // 隔离语义：不可读即可；实现可能返回 404（不存在）或 403（拒绝），均不泄露资源内容
+      expect([404, 403]).toContain(directCrossTenantRead.status)
 
       const spoofedTenantHeaderRead = await fetchSchedulingApi<Record<string, unknown>>(
         page,

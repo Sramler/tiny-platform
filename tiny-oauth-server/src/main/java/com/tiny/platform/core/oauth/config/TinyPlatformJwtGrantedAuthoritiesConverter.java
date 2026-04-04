@@ -17,8 +17,9 @@ import java.util.stream.Stream;
 /**
  * 从 JWT 提取 GrantedAuthority，与 JwtTokenCustomizer 写入的 claims 一致。
  *
- * <p>顺序：1）scope 转为 SCOPE_*；2）authorities 数组逐项；3）若 authorities 为空则用 permissions。
- * 使 Bearer 请求时方法级鉴权（@PreAuthorize / AccessGuard）能正确识别规范权限码。</p>
+ * <p>顺序：1）scope 转为 SCOPE_*；2）{@code authorities} 数组逐项；3）{@code permissions} 数组逐项（与 2 合并去重）。
+ * 历史上仅在 {@code authorities} 为空时才读 {@code permissions}，会导致仅带角色码的 authorities claim
+ * 把规范权限码全部丢弃，Bearer 下 @PreAuthorize / 统一 api_endpoint 守卫误判为无权限。</p>
  */
 public class TinyPlatformJwtGrantedAuthoritiesConverter implements Converter<Jwt, Collection<GrantedAuthority>> {
 
@@ -31,9 +32,7 @@ public class TinyPlatformJwtGrantedAuthoritiesConverter implements Converter<Jwt
     public Collection<GrantedAuthority> convert(@Nonnull Jwt jwt) {
         Set<GrantedAuthority> scopeAuthorities = new LinkedHashSet<>(scopeConverter.convert(jwt));
         Set<GrantedAuthority> fromAuthorities = parseStringListClaim(jwt.getClaim(AUTHORITIES_CLAIM));
-        Set<GrantedAuthority> fromPermissions = fromAuthorities.isEmpty()
-            ? parseStringListClaim(jwt.getClaim(PERMISSIONS_CLAIM))
-            : Set.of();
+        Set<GrantedAuthority> fromPermissions = parseStringListClaim(jwt.getClaim(PERMISSIONS_CLAIM));
 
         return Stream.of(scopeAuthorities, fromAuthorities, fromPermissions)
             .flatMap(Collection::stream)

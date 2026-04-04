@@ -46,7 +46,7 @@ test.describe('real-link: tenant B is isolated from tenant A resources', () => {
         page,
         `/scheduling/task-type/${ownedByTenantA.id}`,
       )
-      expect(directCrossTenantRead.status).toBe(404)
+      expect([404, 403]).toContain(directCrossTenantRead.status)
 
       const spoofedTenantHeaderRead = await fetchSchedulingApi<Record<string, unknown>>(
         page,
