@@ -466,3 +466,8 @@ databaseChangeLog:
   - include:
       file: 131-drop-resource-legacy.yaml
       relativeToChangelogFile: true
+
+  # 默认租户 ROLE_TENANT_ADMIN 绑定 scheduling:*（037 仅 role_resource→ROLE_ADMIN，116 未覆盖 tenant admin）
+  - include:
+      file: 132-bind-default-tenant-admin-scheduling-wildcard.yaml
+      relativeToChangelogFile: true

@@ -343,6 +343,34 @@ type OidcIdentitySnapshot = {
 
 async function loadIdentitySnapshot(page: Page): Promise<OidcIdentitySnapshot> {
   return page.evaluate(() => {
+    function decodeJwtPayload(accessToken: string): Record<string, unknown> | null {
+      try {
+        const parts = accessToken.split('.')
+        if (parts.length < 2) {
+          return null
+        }
+        const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+        const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=')
+        const json = atob(padded)
+        return JSON.parse(json) as Record<string, unknown>
+      } catch {
+        return null
+      }
+    }
+
+    function firstNonEmptyTenantId(...candidates: Array<string | number | null | undefined>): string {
+      for (const candidate of candidates) {
+        if (candidate == null) {
+          continue
+        }
+        const text = String(candidate).trim()
+        if (text !== '' && text !== 'undefined') {
+          return text
+        }
+      }
+      return ''
+    }
+
     const oidcKey = Object.keys(window.localStorage).find((key) => key.startsWith('oidc.user:'))
     if (!oidcKey) {
       throw new Error('未找到 OIDC 登录态，无法构造跨租户请求')
@@ -360,8 +388,14 @@ async function loadIdentitySnapshot(page: Page): Promise<OidcIdentitySnapshot> {
       throw new Error('OIDC 用户缺少 access_token')
     }
 
-    const activeTenantId =
-      window.localStorage.getItem('app_active_tenant_id') ?? String(user.profile?.activeTenantId ?? '')
+    const jwtPayload = decodeJwtPayload(user.access_token)
+    const fromJwt = jwtPayload?.activeTenantId
+
+    const activeTenantId = firstNonEmptyTenantId(
+      window.localStorage.getItem('app_active_tenant_id'),
+      user.profile?.activeTenantId,
+      fromJwt,
+    )
     if (!activeTenantId) {
       throw new Error('OIDC 用户缺少 activeTenantId')
     }

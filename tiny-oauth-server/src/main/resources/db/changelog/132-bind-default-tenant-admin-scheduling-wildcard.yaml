@@ -1,0 +1,35 @@
+databaseChangeLog:
+  - changeSet:
+      id: 132-bind-role-tenant-admin-scheduling-wildcard
+      author: tiny-platform
+      comment: |
+        037 仅向 ROLE_ADMIN 写入 role_resource；116 回填 role_permission 后 ROLE_TENANT_ADMIN 仍缺 scheduling:*。
+        默认租户模板缺该绑定会导致 migration smoke 与新租户 bootstrap 不完整。
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT IGNORE INTO `role_permission` (
+                `role_id`,
+                `permission_id`,
+                `tenant_id`,
+                `created_by`,
+                `created_at`
+              )
+              SELECT
+                r.id,
+                p.id,
+                r.tenant_id,
+                NULL,
+                NOW()
+              FROM `role` r
+              JOIN `tenant` t
+                ON t.id = r.tenant_id
+               AND t.code = 'default'
+              JOIN `permission` p
+                ON p.tenant_id <=> r.tenant_id
+               AND p.permission_code = 'scheduling:*'
+               AND p.normalized_tenant_id = IFNULL(r.tenant_id, 0)
+              WHERE r.code = 'ROLE_TENANT_ADMIN';
