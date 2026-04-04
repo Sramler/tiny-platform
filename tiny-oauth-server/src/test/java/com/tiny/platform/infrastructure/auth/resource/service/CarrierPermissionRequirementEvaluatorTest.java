@@ -105,6 +105,32 @@ class CarrierPermissionRequirementEvaluatorTest {
         assertThat(detail.reason()).isEqualTo("REQUIREMENT_PERMISSION_DISABLED");
     }
 
+    @Test
+    void apiEndpoint_moduleWildcard_shouldSatisfySpecificPermissionRequirement() {
+        ApiEndpointEntry endpoint = new ApiEndpointEntry();
+        endpoint.setId(32L);
+        endpoint.setPermission("scheduling:console:config");
+        endpoint.setRequiredPermissionId(9002L);
+
+        when(apiEndpointPermissionRequirementRepository.findRowsByApiEndpointIdIn(anyCollection())).thenReturn(List.of(
+            row(32L, 0, 1, "scheduling:console:config", false)
+        ));
+
+        var detail = evaluator.evaluateApiEndpointRequirementDetail(endpoint, Set.of("scheduling:*"));
+        assertThat(detail.decision()).isEqualTo("ALLOW");
+        assertThat(detail.reason()).isEqualTo("REQUIREMENT_GROUP_SATISFIED");
+    }
+
+    @Test
+    void menu_fallbackPermission_shouldHonorModuleWildcard() {
+        MenuEntry menu = new MenuEntry();
+        menu.setId(12L);
+        menu.setPermission("scheduling:console:view");
+
+        assertThat(evaluator.isMenuAllowed(menu, Set.of("scheduling:*"))).isTrue();
+        assertThat(evaluator.isMenuAllowed(menu, Set.of("workflow:*"))).isFalse();
+    }
+
     private CarrierPermissionRequirementRow row(Long carrierId, Integer group, Integer sortOrder, String permissionCode, boolean negated) {
         return rowWithEnabled(carrierId, group, sortOrder, permissionCode, negated, true);
     }

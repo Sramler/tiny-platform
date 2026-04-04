@@ -192,7 +192,7 @@ public class CarrierPermissionRequirementEvaluator {
         if (endpoint.getRequiredPermissionId() == null) {
             boolean hasPermission = StringUtils.hasText(fallbackPermission);
             String normalized = hasPermission ? fallbackPermission.trim() : null;
-            boolean present = hasPermission && normalizedAuthorities.contains(normalized);
+            boolean present = hasPermission && authorityImpliesPermission(normalizedAuthorities, normalized);
             List<String> matched = present ? List.of(normalized) : List.of();
             List<String> missing = (!present && hasPermission) ? List.of(normalized) : List.of();
             return new RequirementAwareAuditDetail(
@@ -211,7 +211,7 @@ public class CarrierPermissionRequirementEvaluator {
         if (rows == null || rows.isEmpty()) {
             boolean hasPermission = StringUtils.hasText(fallbackPermission);
             String normalized = hasPermission ? fallbackPermission.trim() : null;
-            boolean present = hasPermission && normalizedAuthorities.contains(normalized);
+            boolean present = hasPermission && authorityImpliesPermission(normalizedAuthorities, normalized);
             List<String> matched = present ? List.of(normalized) : List.of();
             List<String> missing = (!present && hasPermission) ? List.of(normalized) : List.of();
             return new RequirementAwareAuditDetail(
@@ -256,7 +256,8 @@ public class CarrierPermissionRequirementEvaluator {
                               Map<Long, List<CarrierPermissionRequirementRow>> requirementMap) {
         List<CarrierPermissionRequirementRow> rows = requirementMap.get(carrierId);
         if (rows == null || rows.isEmpty()) {
-            return !StringUtils.hasText(fallbackPermission) || authorityCodes.contains(fallbackPermission.trim());
+            return !StringUtils.hasText(fallbackPermission)
+                || authorityImpliesPermission(authorityCodes, fallbackPermission.trim());
         }
 
         Map<Integer, List<CarrierPermissionRequirementRow>> groups = new LinkedHashMap<>();
@@ -283,7 +284,7 @@ public class CarrierPermissionRequirementEvaluator {
         if (!Boolean.TRUE.equals(row.getPermissionEnabled())) {
             return false;
         }
-        boolean present = authorityCodes.contains(row.getPermissionCode().trim());
+        boolean present = authorityImpliesPermission(authorityCodes, row.getPermissionCode().trim());
         return Boolean.TRUE.equals(row.getNegated()) ? !present : present;
     }
 
@@ -390,7 +391,7 @@ public class CarrierPermissionRequirementEvaluator {
             .collect(Collectors.toCollection(LinkedHashSet::new));
 
         List<String> matchedPermissionCodes = permissionCodesInGroup.stream()
-            .filter(authorityCodes::contains)
+            .filter(code -> authorityImpliesPermission(authorityCodes, code))
             .toList();
 
         List<String> negatedPermissionCodes = groupRows.stream()
@@ -405,7 +406,7 @@ public class CarrierPermissionRequirementEvaluator {
             .filter(row -> row != null && !Boolean.TRUE.equals(row.getNegated()))
             .filter(row -> {
                 String code = row.getPermissionCode();
-                boolean present = StringUtils.hasText(code) && authorityCodes.contains(code.trim());
+                boolean present = StringUtils.hasText(code) && authorityImpliesPermission(authorityCodes, code.trim());
                 boolean enabled = Boolean.TRUE.equals(row.getPermissionEnabled());
                 return !present || !enabled;
             })
@@ -450,7 +451,7 @@ public class CarrierPermissionRequirementEvaluator {
                                                                        Set<String> authorityCodes) {
         boolean hasPermission = StringUtils.hasText(fallbackPermission);
         String normalized = hasPermission ? fallbackPermission.trim() : null;
-        boolean present = hasPermission && authorityCodes.contains(normalized);
+        boolean present = hasPermission && authorityImpliesPermission(authorityCodes, normalized);
         boolean allowed = !hasPermission || present;
 
         List<String> matched = present ? List.of(normalized) : List.of();
@@ -480,7 +481,7 @@ public class CarrierPermissionRequirementEvaluator {
             return List.of();
         }
         String normalized = fallbackPermission.trim();
-        boolean present = authorityCodes.contains(normalized);
+        boolean present = authorityImpliesPermission(authorityCodes, normalized);
         return present ? List.of() : List.of(normalized);
     }
 
@@ -518,5 +519,26 @@ public class CarrierPermissionRequirementEvaluator {
             .filter(StringUtils::hasText)
             .map(String::trim)
             .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    /**
+     * True if {@code authorityCodes} grants {@code requiredPermission}: exact match, or a
+     * {@code module:*} wildcard where {@code module} is the substring before the first ':' in the
+     * required code (aligned with {@code SchedulingAccessGuard} / {@code WorkflowAccessGuard}).
+     */
+    private static boolean authorityImpliesPermission(Set<String> authorityCodes, String requiredPermission) {
+        if (authorityCodes == null || authorityCodes.isEmpty() || !StringUtils.hasText(requiredPermission)) {
+            return false;
+        }
+        String required = requiredPermission.trim();
+        if (authorityCodes.contains(required)) {
+            return true;
+        }
+        int colon = required.indexOf(':');
+        if (colon <= 0) {
+            return false;
+        }
+        String moduleWildcard = required.substring(0, colon) + ":*";
+        return authorityCodes.contains(moduleWildcard);
     }
 }
