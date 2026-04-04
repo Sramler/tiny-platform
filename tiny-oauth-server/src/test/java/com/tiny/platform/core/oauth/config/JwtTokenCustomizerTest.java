@@ -9,6 +9,7 @@ import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
@@ -107,6 +108,72 @@ class JwtTokenCustomizerTest {
         assertThat(claims.get("authorities")).asInstanceOf(collection(String.class))
                 .containsExactly("ROLE_ADMIN");
         assertThat(claims.get("permissions")).asInstanceOf(collection(String.class)).isEmpty();
+    }
+
+    @Test
+    void accessToken_should_use_security_user_authorities_when_outer_authentication_has_none() {
+        User user = new User();
+        user.setId(7L);
+        user.setUsername("alice");
+        user.setEnabled(true);
+        user.setAccountNonExpired(true);
+        user.setAccountNonLocked(true);
+        user.setCredentialsNonExpired(true);
+
+        SecurityUser securityUser = new SecurityUser(
+            user,
+            "",
+            9L,
+            List.of(new SimpleGrantedAuthority("ROLE_TENANT_ADMIN"), new SimpleGrantedAuthority("scheduling:*")),
+            "perm-v1");
+
+        UsernamePasswordAuthenticationToken principal = UsernamePasswordAuthenticationToken.authenticated(
+            "alice",
+            "n/a",
+            List.of());
+        principal.setDetails(securityUser);
+
+        RegisteredClient client = RegisteredClient.withId("rc-id")
+            .clientId("vue-client")
+            .clientSecret("{noop}secret")
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .redirectUri("http://localhost:5173/callback")
+            .scope("openid")
+            .scope("profile")
+            .clientSettings(ClientSettings.builder().requireAuthorizationConsent(false).build())
+            .tokenSettings(TokenSettings.builder().build())
+            .build();
+
+        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(client)
+            .id("auth-id")
+            .principalName("alice")
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .authorizedScopes(Set.of("openid", "profile"))
+            .attribute("auth_time", Instant.ofEpochSecond(1_770_000_000L))
+            .build();
+
+        PermissionVersionService permissionVersionService = mock(PermissionVersionService.class);
+        when(permissionVersionService.resolvePermissionsVersion(
+            eq(7L), eq(9L), eq(TenantContextContract.SCOPE_TYPE_TENANT), eq(9L))).thenReturn("perm-v1");
+
+        JwtEncodingContext context = JwtEncodingContext.with(
+                JwsHeader.with(SignatureAlgorithm.RS256),
+                JwtClaimsSet.builder()
+            )
+            .registeredClient(client)
+            .principal(principal)
+            .authorization(authorization)
+            .authorizedScopes(Set.of("openid", "profile"))
+            .tokenType(OAuth2TokenType.ACCESS_TOKEN)
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .build();
+
+        new JwtTokenCustomizer(mock(UserRepository.class), permissionVersionService).customize(context);
+
+        Map<String, Object> claims = context.getClaims().build().getClaims();
+        assertThat(claims.get("authorities")).asInstanceOf(collection(String.class))
+            .containsExactlyInAnyOrder("ROLE_TENANT_ADMIN", "scheduling:*");
+        assertThat(claims.get("permissions")).asInstanceOf(collection(String.class)).containsExactly("scheduling:*");
     }
 
     @Test

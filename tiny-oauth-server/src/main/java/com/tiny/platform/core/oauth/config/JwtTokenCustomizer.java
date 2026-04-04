@@ -208,8 +208,9 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
                 com.tiny.platform.core.oauth.tenant.TenantContext.getActiveScopeId()
             );
 
-            // 兼容保留旧 authorities，同时新增 permissions 供后续最小契约迁移。
-            Set<String> authorities = collectAuthorities(principal);
+            // OAuth2 token 端点传入的 Authentication 往往不把 GrantedAuthority 填在外层 token 上（details 里才有 SecurityUser）。
+            // 若仅用 principal.getAuthorities()，access_token 会丢失 scheduling:* 等规范码，资源服务器 Bearer 鉴权全灭。
+            Set<String> authorities = resolveAccessTokenAuthorityStrings(principal, securityUser);
             claims.claim("authorities", authorities);
             claims.claim("permissions", extractPermissionAuthorities(authorities));
             addPermissionsVersionClaim(
@@ -594,6 +595,23 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
                 .map(GrantedAuthority::getAuthority)
                 .filter(authority -> authority != null && !authority.isBlank())
                 .collect(Collectors.toCollection(LinkedHashSet::new));
+    }
+
+    /**
+     * Access token claims 必须与 SecurityUser 授权一致；外层 {@link Authentication#getAuthorities()} 在授权码换 token 等场景可能为空。
+     */
+    private Set<String> resolveAccessTokenAuthorityStrings(Authentication principal, SecurityUser securityUser) {
+        if (securityUser != null && securityUser.getAuthorities() != null) {
+            Set<String> fromUser = securityUser.getAuthorities().stream()
+                .map(GrantedAuthority::getAuthority)
+                .filter(authority -> authority != null && !authority.isBlank())
+                .map(String::trim)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+            if (!fromUser.isEmpty()) {
+                return fromUser;
+            }
+        }
+        return collectAuthorities(principal);
     }
 
     private Set<String> extractPermissionAuthorities(Set<String> authorities) {
