@@ -614,18 +614,21 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
      * Access token claims 必须与 SecurityUser 授权一致；外层 {@link Authentication#getAuthorities()} 在授权码换 token 等场景可能为空。
      */
     private Set<String> resolveAccessTokenAuthorityStrings(Authentication principal, SecurityUser securityUser) {
+        Set<String> fromUser = Set.of();
         if (securityUser != null && securityUser.getAuthorities() != null) {
-            Set<String> fromUser = securityUser.getAuthorities().stream()
+            fromUser = securityUser.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
                 .filter(authority -> authority != null && !authority.isBlank())
                 .map(String::trim)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
-            if (!fromUser.isEmpty()) {
+            // 授权码换票等场景：序列化/快照里的 SecurityUser 可能只有 ROLE_*，不含 domain:resource:action；
+            // 若直接返回会导致 JWT 缺权限码，TenantContextFilter 判 stale_permissions 401，@PreAuthorize 403。
+            if (!fromUser.isEmpty() && containsPermissionStyleAuthority(fromUser)) {
                 return fromUser;
             }
         }
         Set<String> fromAuthentication = collectAuthorities(principal);
-        if (!fromAuthentication.isEmpty()) {
+        if (!fromAuthentication.isEmpty() && containsPermissionStyleAuthority(fromAuthentication)) {
             return fromAuthentication;
         }
         if (userDetailsService != null && principal != null && principal.getName() != null
@@ -635,7 +638,21 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
                 return fromReload;
             }
         }
+        if (!fromUser.isEmpty()) {
+            return fromUser;
+        }
+        if (!fromAuthentication.isEmpty()) {
+            return fromAuthentication;
+        }
         return Set.of();
+    }
+
+    /** 与 {@link #extractPermissionAuthorities(Set)} 一致：规范权限码含 {@code :}。 */
+    private static boolean containsPermissionStyleAuthority(Set<String> authorities) {
+        if (authorities == null || authorities.isEmpty()) {
+            return false;
+        }
+        return authorities.stream().anyMatch(a -> a != null && a.contains(":"));
     }
 
     /**
