@@ -51,6 +51,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @EnabledIfEnvironmentVariable(named = "E2E_DB_PASSWORD", matches = ".+")
 class AuthenticationFlowE2eProfileIntegrationTest {
 
+    private static String firstNonBlankEnv(String... keysThenLiteralFallback) {
+        if (keysThenLiteralFallback.length < 1) {
+            throw new IllegalArgumentException("firstNonBlankEnv requires at least one argument");
+        }
+        for (int i = 0; i < keysThenLiteralFallback.length - 1; i++) {
+            String value = System.getenv(keysThenLiteralFallback[i]);
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return keysThenLiteralFallback[keysThenLiteralFallback.length - 1];
+    }
+
     private static final String OIDC_TEST_CLIENT_ID = "vue-client";
     private static final String OIDC_SILENT_REDIRECT_URI = "http://localhost:5173/silent-renew.html";
 
@@ -62,16 +75,18 @@ class AuthenticationFlowE2eProfileIntegrationTest {
     class FormLoginBehaviour {
 
         @Test
-        @DisplayName("tenantCode=default + e2e_admin + 正确密码 => 不应返回 200+用户不存在页面，而是进入成功路径（如回调或安全中心）")
+        @DisplayName("表单管理员登录（租户与口令来自 E2E_* 环境）=> 成功路径或非冻结类失败，而非用户不存在页")
         void loginWithValidTenantAndE2eAdminShouldRedirectToSuccessTarget() throws Exception {
-            // 说明：
-            // - 该用例依赖 e2e profile 下预置的租户 default 与用户 e2e_admin；
-            // - 为避免在测试代码中暴露密码，这里的密码来自环境与种子脚本，期望由 CI/本地环境预置。
+            // 租户：E2E_FORM_LOGIN_TENANT_CODE 优先，否则 E2E_TENANT_CODE（与 Playwright 主身份一致），最后 default。
+            // 账号/口令：E2E_ADMIN_* 优先，否则回退到 E2E_USERNAME / E2E_PASSWORD，避免 Tier2 与 .env.e2e.local 双轨维护。
+            String tenantCode = firstNonBlankEnv("E2E_FORM_LOGIN_TENANT_CODE", "E2E_TENANT_CODE", "default");
+            String username = firstNonBlankEnv("E2E_ADMIN_USERNAME", "E2E_USERNAME", "e2e_admin");
+            String password = firstNonBlankEnv("E2E_ADMIN_PASSWORD", "E2E_PASSWORD", "e2e_admin_password");
             mockMvc.perform(
                             post("/login")
-                                    .param("username", System.getenv().getOrDefault("E2E_ADMIN_USERNAME", "e2e_admin"))
-                                    .param("password", System.getenv().getOrDefault("E2E_ADMIN_PASSWORD", "e2e_admin_password"))
-                                    .param("tenantCode", System.getenv().getOrDefault("E2E_TENANT_CODE", "default"))
+                                    .param("username", username)
+                                    .param("password", password)
+                                    .param("tenantCode", tenantCode)
                                     // 与前端 Login.vue 保持一致：默认 LOCAL+PASSWORD
                                     .param("authenticationProvider", "LOCAL")
                                     .param("authenticationType", "PASSWORD")
@@ -87,6 +102,12 @@ class AuthenticationFlowE2eProfileIntegrationTest {
                             if (redirected.contains("/login?error=true")) {
                                 if (redirected.contains("%E8%AF%A5%E7%94%A8%E6%88%B7%E6%9C%AA%E9%85%8D%E7%BD%AE%E6%AD%A4%E8%AE%A4%E8%AF%81%E6%96%B9%E5%BC%8F")) {
                                     Assumptions.abort("当前 e2e 数据未为 e2e_admin 配置 LOCAL+PASSWORD，跳过成功路径断言。redirect=" + redirected);
+                                }
+                                // 密码错误（URL 编码「密码错误」）；Tier2 前应由 verify-platform-login-auth-chain 调用 ensure 脚本对齐库内哈希
+                                if (redirected.contains("%E5%AF%86%E7%A0%81%E9%94%99%E8%AF%AF")) {
+                                    Assumptions.abort(
+                                            "登录返回密码错误：环境口令与 user_authentication_method 不一致。redirect="
+                                                    + redirected);
                                 }
                                 org.assertj.core.api.Assertions.assertThat(redirected)
                                         .contains("message=")

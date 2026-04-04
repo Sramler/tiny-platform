@@ -611,9 +611,27 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
     }
 
     /**
-     * Access token claims 必须与 SecurityUser 授权一致；外层 {@link Authentication#getAuthorities()} 在授权码换 token 等场景可能为空。
+     * 解析写入 access_token {@code authorities}/{@code permissions} 的权限串集合。
+     *
+     * <p><b>产品语义（验收口径）</b>：当 {@link SecurityUser#getActiveTenantId()} 表示租户态（{@code > 0}）且可提供
+     * {@link UserDetailsService} 时，access token 的权限集合应优先反映<b>该活动租户下</b>经
+     * {@link UserDetailsService#loadUserByUsername(String)} 解析的<b>完整运行时权限</b>，而不是误信认证链路上
+     * 可能残缺的 SecurityUser 快照（例如仅含少量平台类 {@code a:b} 串却缺 {@code scheduling:*}）。
+     * 平台态（无有效 {@code activeTenantId}）不进入该优先分支，仍走下方快照 / 平台态重载逻辑。</p>
+     *
+     * <p>外层 {@link Authentication#getAuthorities()} 在授权码换 token 等场景可能为空，故需与 SecurityUser、重载结果综合。</p>
      */
     private Set<String> resolveAccessTokenAuthorityStrings(Authentication principal, SecurityUser securityUser) {
+        // 租户态换票：优先 DB 完整权限，避免 SecurityUser 快照里仅有平台类 a:b 码却缺 scheduling:* 时提前返回。
+        if (userDetailsService != null && principal != null && principal.getName() != null
+            && !principal.getName().isBlank() && securityUser != null
+            && securityUser.getActiveTenantId() != null && securityUser.getActiveTenantId() > 0) {
+            Set<String> tenantReload = reloadAuthoritiesWithTenantContextForTokenEndpoint(principal, securityUser);
+            if (!tenantReload.isEmpty()) {
+                return tenantReload;
+            }
+        }
+
         Set<String> fromUser = Set.of();
         if (securityUser != null && securityUser.getAuthorities() != null) {
             fromUser = securityUser.getAuthorities().stream()

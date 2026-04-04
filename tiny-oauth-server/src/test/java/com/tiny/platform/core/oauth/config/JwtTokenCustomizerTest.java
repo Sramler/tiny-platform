@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
@@ -34,6 +35,7 @@ import static org.assertj.core.api.InstanceOfAssertFactories.collection;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -177,6 +179,315 @@ class JwtTokenCustomizerTest {
         assertThat(claims.get("authorities")).asInstanceOf(collection(String.class))
             .containsExactlyInAnyOrder("ROLE_TENANT_ADMIN", "scheduling:*");
         assertThat(claims.get("permissions")).asInstanceOf(collection(String.class)).containsExactly("scheduling:*");
+    }
+
+    @Test
+    void accessToken_should_prefer_tenant_reload_over_partial_permission_style_snapshot() {
+        User user = new User();
+        user.setId(7L);
+        user.setUsername("alice");
+        user.setEnabled(true);
+        user.setAccountNonExpired(true);
+        user.setAccountNonLocked(true);
+        user.setCredentialsNonExpired(true);
+
+        // 模拟「快照里已有带冒号的平台/组织码但缺 scheduling」——旧逻辑会提前返回导致 JWT 缺调度权限。
+        SecurityUser securityUser = new SecurityUser(
+            user,
+            "",
+            9L,
+            List.of(
+                new SimpleGrantedAuthority("ROLE_TENANT_ADMIN"),
+                new SimpleGrantedAuthority("system:org:list")),
+            "perm-v1");
+
+        UsernamePasswordAuthenticationToken principal = UsernamePasswordAuthenticationToken.authenticated(
+            "alice",
+            "n/a",
+            List.of());
+        principal.setDetails(securityUser);
+
+        UserDetailsService userDetailsService = mock(UserDetailsService.class);
+        when(userDetailsService.loadUserByUsername("alice")).thenReturn(
+            org.springframework.security.core.userdetails.User.withUsername("alice")
+                .password("")
+                .authorities(
+                    new SimpleGrantedAuthority("ROLE_TENANT_ADMIN"),
+                    new SimpleGrantedAuthority("system:org:list"),
+                    new SimpleGrantedAuthority("scheduling:*"))
+                .build());
+
+        RegisteredClient client = RegisteredClient.withId("rc-id")
+            .clientId("vue-client")
+            .clientSecret("{noop}secret")
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .redirectUri("http://localhost:5173/callback")
+            .scope("openid")
+            .scope("profile")
+            .clientSettings(ClientSettings.builder().requireAuthorizationConsent(false).build())
+            .tokenSettings(TokenSettings.builder().build())
+            .build();
+
+        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(client)
+            .id("auth-id")
+            .principalName("alice")
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .authorizedScopes(Set.of("openid", "profile"))
+            .attribute("auth_time", Instant.ofEpochSecond(1_770_000_000L))
+            .build();
+
+        PermissionVersionService permissionVersionService = mock(PermissionVersionService.class);
+        when(permissionVersionService.resolvePermissionsVersion(
+            eq(7L), eq(9L), eq(TenantContextContract.SCOPE_TYPE_TENANT), eq(9L))).thenReturn("perm-v1");
+
+        JwtEncodingContext context = JwtEncodingContext.with(
+                JwsHeader.with(SignatureAlgorithm.RS256),
+                JwtClaimsSet.builder()
+            )
+            .registeredClient(client)
+            .principal(principal)
+            .authorization(authorization)
+            .authorizedScopes(Set.of("openid", "profile"))
+            .tokenType(OAuth2TokenType.ACCESS_TOKEN)
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .build();
+
+        new JwtTokenCustomizer(mock(UserRepository.class), null, permissionVersionService, userDetailsService).customize(context);
+
+        Map<String, Object> claims = context.getClaims().build().getClaims();
+        assertThat(claims.get("authorities")).asInstanceOf(collection(String.class))
+            .containsExactlyInAnyOrder("ROLE_TENANT_ADMIN", "system:org:list", "scheduling:*");
+        assertThat(claims.get("permissions")).asInstanceOf(collection(String.class))
+            .containsExactlyInAnyOrder("system:org:list", "scheduling:*");
+        verify(userDetailsService).loadUserByUsername("alice");
+    }
+
+    /**
+     * 平台态（无 activeTenantId）：不得走「租户优先重载」首段；快照已含规范权限码时不必触碰 UserDetailsService。
+     * Cross-tenant / Nightly 全链路仍建议由 Playwright real-link 覆盖。
+     */
+    @Test
+    void accessToken_platform_scoped_complete_snapshot_does_not_invoke_user_details_service() {
+        User user = new User();
+        user.setId(7L);
+        user.setUsername("platform_alice");
+        user.setEnabled(true);
+        user.setAccountNonExpired(true);
+        user.setAccountNonLocked(true);
+        user.setCredentialsNonExpired(true);
+
+        SecurityUser securityUser = new SecurityUser(
+            user,
+            "",
+            null,
+            List.of(
+                new SimpleGrantedAuthority("ROLE_PLATFORM_ADMIN"),
+                new SimpleGrantedAuthority("system:tenant:list")),
+            "perm-plat");
+
+        UsernamePasswordAuthenticationToken principal = UsernamePasswordAuthenticationToken.authenticated(
+            "platform_alice",
+            "n/a",
+            List.of());
+        principal.setDetails(securityUser);
+
+        UserDetailsService userDetailsService = mock(UserDetailsService.class);
+
+        RegisteredClient client = RegisteredClient.withId("rc-id")
+            .clientId("vue-client")
+            .clientSecret("{noop}secret")
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .redirectUri("http://localhost:5173/callback")
+            .scope("openid")
+            .scope("profile")
+            .clientSettings(ClientSettings.builder().requireAuthorizationConsent(false).build())
+            .tokenSettings(TokenSettings.builder().build())
+            .build();
+
+        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(client)
+            .id("auth-id")
+            .principalName("platform_alice")
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .authorizedScopes(Set.of("openid", "profile"))
+            .attribute("auth_time", Instant.ofEpochSecond(1_770_000_000L))
+            .build();
+
+        PermissionVersionService permissionVersionService = mock(PermissionVersionService.class);
+        when(permissionVersionService.resolvePermissionsVersion(
+            eq(7L),
+            eq(null),
+            eq(TenantContextContract.SCOPE_TYPE_PLATFORM),
+            eq(null))).thenReturn("perm-plat-v1");
+
+        JwtEncodingContext context = JwtEncodingContext.with(
+                JwsHeader.with(SignatureAlgorithm.RS256),
+                JwtClaimsSet.builder()
+            )
+            .registeredClient(client)
+            .principal(principal)
+            .authorization(authorization)
+            .authorizedScopes(Set.of("openid", "profile"))
+            .tokenType(OAuth2TokenType.ACCESS_TOKEN)
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .build();
+
+        new JwtTokenCustomizer(mock(UserRepository.class), null, permissionVersionService, userDetailsService).customize(context);
+
+        Map<String, Object> claims = context.getClaims().build().getClaims();
+        assertThat(claims.get("authorities")).asInstanceOf(collection(String.class))
+            .containsExactlyInAnyOrder("ROLE_PLATFORM_ADMIN", "system:tenant:list");
+        verify(userDetailsService, never()).loadUserByUsername(anyString());
+    }
+
+    @Test
+    void accessToken_tenant_reload_failure_falls_back_to_partial_permission_snapshot() {
+        User user = new User();
+        user.setId(7L);
+        user.setUsername("alice");
+        user.setEnabled(true);
+        user.setAccountNonExpired(true);
+        user.setAccountNonLocked(true);
+        user.setCredentialsNonExpired(true);
+
+        SecurityUser securityUser = new SecurityUser(
+            user,
+            "",
+            9L,
+            List.of(
+                new SimpleGrantedAuthority("ROLE_TENANT_ADMIN"),
+                new SimpleGrantedAuthority("system:org:list")),
+            "perm-v1");
+
+        UsernamePasswordAuthenticationToken principal = UsernamePasswordAuthenticationToken.authenticated(
+            "alice",
+            "n/a",
+            List.of());
+        principal.setDetails(securityUser);
+
+        UserDetailsService userDetailsService = mock(UserDetailsService.class);
+        when(userDetailsService.loadUserByUsername("alice")).thenThrow(new UsernameNotFoundException("reload failed"));
+
+        RegisteredClient client = RegisteredClient.withId("rc-id")
+            .clientId("vue-client")
+            .clientSecret("{noop}secret")
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .redirectUri("http://localhost:5173/callback")
+            .scope("openid")
+            .scope("profile")
+            .clientSettings(ClientSettings.builder().requireAuthorizationConsent(false).build())
+            .tokenSettings(TokenSettings.builder().build())
+            .build();
+
+        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(client)
+            .id("auth-id")
+            .principalName("alice")
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .authorizedScopes(Set.of("openid", "profile"))
+            .attribute("auth_time", Instant.ofEpochSecond(1_770_000_000L))
+            .build();
+
+        PermissionVersionService permissionVersionService = mock(PermissionVersionService.class);
+        when(permissionVersionService.resolvePermissionsVersion(
+            eq(7L), eq(9L), eq(TenantContextContract.SCOPE_TYPE_TENANT), eq(9L))).thenReturn("perm-v1");
+
+        JwtEncodingContext context = JwtEncodingContext.with(
+                JwsHeader.with(SignatureAlgorithm.RS256),
+                JwtClaimsSet.builder()
+            )
+            .registeredClient(client)
+            .principal(principal)
+            .authorization(authorization)
+            .authorizedScopes(Set.of("openid", "profile"))
+            .tokenType(OAuth2TokenType.ACCESS_TOKEN)
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .build();
+
+        new JwtTokenCustomizer(mock(UserRepository.class), null, permissionVersionService, userDetailsService).customize(context);
+
+        Map<String, Object> claims = context.getClaims().build().getClaims();
+        assertThat(claims.get("authorities")).asInstanceOf(collection(String.class))
+            .containsExactlyInAnyOrder("ROLE_TENANT_ADMIN", "system:org:list");
+        verify(userDetailsService).loadUserByUsername("alice");
+    }
+
+    @Test
+    void accessToken_tenant_priority_reload_sets_tenant_context_from_security_user_active_tenant() {
+        User user = new User();
+        user.setId(7L);
+        user.setUsername("bob");
+        user.setEnabled(true);
+        user.setAccountNonExpired(true);
+        user.setAccountNonLocked(true);
+        user.setCredentialsNonExpired(true);
+
+        long tenantB = 77L;
+        SecurityUser securityUser = new SecurityUser(
+            user,
+            "",
+            tenantB,
+            List.of(new SimpleGrantedAuthority("ROLE_TENANT_ADMIN")),
+            "perm-b");
+
+        UsernamePasswordAuthenticationToken principal = UsernamePasswordAuthenticationToken.authenticated(
+            "bob",
+            "n/a",
+            List.of());
+        principal.setDetails(securityUser);
+
+        UserDetailsService userDetailsService = mock(UserDetailsService.class);
+        doAnswer(invocation -> {
+            assertThat(TenantContext.getActiveTenantId()).isEqualTo(tenantB);
+            assertThat(TenantContext.getActiveScopeType()).isEqualToIgnoringCase(TenantContextContract.SCOPE_TYPE_TENANT);
+            assertThat(TenantContext.getActiveScopeId()).isEqualTo(tenantB);
+            return org.springframework.security.core.userdetails.User.withUsername("bob")
+                .password("")
+                .authorities(
+                    new SimpleGrantedAuthority("ROLE_TENANT_ADMIN"),
+                    new SimpleGrantedAuthority("scheduling:*"))
+                .build();
+        }).when(userDetailsService).loadUserByUsername("bob");
+
+        RegisteredClient client = RegisteredClient.withId("rc-id")
+            .clientId("vue-client")
+            .clientSecret("{noop}secret")
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .redirectUri("http://localhost:5173/callback")
+            .scope("openid")
+            .scope("profile")
+            .clientSettings(ClientSettings.builder().requireAuthorizationConsent(false).build())
+            .tokenSettings(TokenSettings.builder().build())
+            .build();
+
+        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(client)
+            .id("auth-id")
+            .principalName("bob")
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .authorizedScopes(Set.of("openid", "profile"))
+            .attribute("auth_time", Instant.ofEpochSecond(1_770_000_000L))
+            .build();
+
+        PermissionVersionService permissionVersionService = mock(PermissionVersionService.class);
+        when(permissionVersionService.resolvePermissionsVersion(
+            eq(7L), eq(tenantB), eq(TenantContextContract.SCOPE_TYPE_TENANT), eq(tenantB))).thenReturn("perm-b-v1");
+
+        JwtEncodingContext context = JwtEncodingContext.with(
+                JwsHeader.with(SignatureAlgorithm.RS256),
+                JwtClaimsSet.builder()
+            )
+            .registeredClient(client)
+            .principal(principal)
+            .authorization(authorization)
+            .authorizedScopes(Set.of("openid", "profile"))
+            .tokenType(OAuth2TokenType.ACCESS_TOKEN)
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .build();
+
+        new JwtTokenCustomizer(mock(UserRepository.class), null, permissionVersionService, userDetailsService).customize(context);
+
+        Map<String, Object> claims = context.getClaims().build().getClaims();
+        assertThat(claims).containsEntry("activeTenantId", tenantB);
+        assertThat(claims.get("authorities")).asInstanceOf(collection(String.class)).contains("scheduling:*");
+        verify(userDetailsService).loadUserByUsername("bob");
     }
 
     @Test
