@@ -339,6 +339,9 @@ class JwtTokenCustomizerTest {
         verify(userDetailsService, never()).loadUserByUsername(anyString());
     }
 
+    /**
+     * 租户态重载失败时：若外层 Authentication 未携带规范权限码，仍回落到 SecurityUser 快照（与历史行为一致）。
+     */
     @Test
     void accessToken_tenant_reload_failure_falls_back_to_partial_permission_snapshot() {
         User user = new User();
@@ -407,6 +410,82 @@ class JwtTokenCustomizerTest {
         Map<String, Object> claims = context.getClaims().build().getClaims();
         assertThat(claims.get("authorities")).asInstanceOf(collection(String.class))
             .containsExactlyInAnyOrder("ROLE_TENANT_ADMIN", "system:org:list");
+        verify(userDetailsService).loadUserByUsername("alice");
+    }
+
+    /**
+     * 租户态重载失败且快照仅含部分规范码时：外层 Authentication 上的权限（如 scheduling:*）须并入 JWT，避免继续只发残缺快照。
+     */
+    @Test
+    void accessToken_tenant_reload_empty_merges_authentication_permission_authorities_with_snapshot() {
+        User user = new User();
+        user.setId(7L);
+        user.setUsername("alice");
+        user.setEnabled(true);
+        user.setAccountNonExpired(true);
+        user.setAccountNonLocked(true);
+        user.setCredentialsNonExpired(true);
+
+        SecurityUser securityUser = new SecurityUser(
+            user,
+            "",
+            9L,
+            List.of(
+                new SimpleGrantedAuthority("ROLE_TENANT_ADMIN"),
+                new SimpleGrantedAuthority("system:org:list")),
+            "perm-v1");
+
+        UsernamePasswordAuthenticationToken principal = UsernamePasswordAuthenticationToken.authenticated(
+            "alice",
+            "n/a",
+            List.of(new SimpleGrantedAuthority("scheduling:*")));
+        principal.setDetails(securityUser);
+
+        UserDetailsService userDetailsService = mock(UserDetailsService.class);
+        when(userDetailsService.loadUserByUsername("alice")).thenThrow(new UsernameNotFoundException("reload failed"));
+
+        RegisteredClient client = RegisteredClient.withId("rc-id")
+            .clientId("vue-client")
+            .clientSecret("{noop}secret")
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .redirectUri("http://localhost:5173/callback")
+            .scope("openid")
+            .scope("profile")
+            .clientSettings(ClientSettings.builder().requireAuthorizationConsent(false).build())
+            .tokenSettings(TokenSettings.builder().build())
+            .build();
+
+        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(client)
+            .id("auth-id")
+            .principalName("alice")
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .authorizedScopes(Set.of("openid", "profile"))
+            .attribute("auth_time", Instant.ofEpochSecond(1_770_000_000L))
+            .build();
+
+        PermissionVersionService permissionVersionService = mock(PermissionVersionService.class);
+        when(permissionVersionService.resolvePermissionsVersion(
+            eq(7L), eq(9L), eq(TenantContextContract.SCOPE_TYPE_TENANT), eq(9L))).thenReturn("perm-v1");
+
+        JwtEncodingContext context = JwtEncodingContext.with(
+                JwsHeader.with(SignatureAlgorithm.RS256),
+                JwtClaimsSet.builder()
+            )
+            .registeredClient(client)
+            .principal(principal)
+            .authorization(authorization)
+            .authorizedScopes(Set.of("openid", "profile"))
+            .tokenType(OAuth2TokenType.ACCESS_TOKEN)
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .build();
+
+        new JwtTokenCustomizer(mock(UserRepository.class), null, permissionVersionService, userDetailsService).customize(context);
+
+        Map<String, Object> claims = context.getClaims().build().getClaims();
+        assertThat(claims.get("authorities")).asInstanceOf(collection(String.class))
+            .containsExactlyInAnyOrder("ROLE_TENANT_ADMIN", "system:org:list", "scheduling:*");
+        assertThat(claims.get("permissions")).asInstanceOf(collection(String.class))
+            .containsExactlyInAnyOrder("system:org:list", "scheduling:*");
         verify(userDetailsService).loadUserByUsername("alice");
     }
 
