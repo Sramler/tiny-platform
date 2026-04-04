@@ -616,6 +616,27 @@ class TenantContextFilterTest {
     }
 
     @Test
+    void shouldAcceptBearerTokenWhenPermissionsVersionMatchesEvenIfAuthorityClaimsAreEmpty() throws Exception {
+        PermissionVersionService permissionVersionService = Mockito.mock(PermissionVersionService.class);
+        TenantContextFilter permissionsFilter = new TenantContextFilter(tenantRepository, permissionVersionService);
+
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/sys/menus/tree");
+        request.addHeader("Authorization", "Bearer " + jwtWithPayload("""
+            {"sub":"admin","userId":1,"activeTenantId":1,
+             "authorities":[],"permissions":[],"permissionsVersion":"perm-v1"}
+            """));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AtomicReference<Long> tenantInChain = new AtomicReference<>();
+
+        when(permissionVersionService.resolvePermissionsVersion(eq(1L), eq(1L), eq("TENANT"), eq(1L))).thenReturn("perm-v1");
+
+        permissionsFilter.doFilter(request, response, (req, resp) -> tenantInChain.set(TenantContext.getActiveTenantId()));
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(tenantInChain.get()).isEqualTo(1L);
+    }
+
+    @Test
     void shouldRejectSessionSecurityUserWhenPermissionsVersionMismatches() throws Exception {
         PermissionVersionService permissionVersionService = Mockito.mock(PermissionVersionService.class);
         TenantContextFilter permissionsFilter = new TenantContextFilter(tenantRepository, permissionVersionService);

@@ -1138,7 +1138,8 @@ public class TenantContextFilter extends OncePerRequestFilter {
         if (bearerClaims == null || bearerClaims.permissionsVersion() == null || bearerClaims.permissionsVersion().isBlank()) {
             return true;
         }
-        if (bearerClaims.userId() == null || bearerClaims.authorities().isEmpty()) {
+        // 权限快照以 Spring Security 的 JwtAuthenticationConverter 为准；此处仅校验 permissionsVersion 指纹。
+        if (bearerClaims.userId() == null) {
             rejectStalePermissions(response);
             return false;
         }
