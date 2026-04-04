@@ -10,6 +10,7 @@ import com.tiny.platform.core.oauth.security.PermissionVersionService;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
@@ -49,10 +50,12 @@ class AuthorizationServerConfigFactoryTest {
         UserRepository userRepository = mock(UserRepository.class);
         AuthUserResolutionService authUserResolutionService = mock(AuthUserResolutionService.class);
         PermissionVersionService permissionVersionService = mock(PermissionVersionService.class);
+        UserDetailsService userDetailsService = mock(UserDetailsService.class);
         JwtTokenCustomizer customizer = config.jwtTokenCustomizer(
                 userRepository,
                 authUserResolutionService,
-                permissionVersionService
+                permissionVersionService,
+                userDetailsService
         );
         assertThat(customizer).isNotNull();
 

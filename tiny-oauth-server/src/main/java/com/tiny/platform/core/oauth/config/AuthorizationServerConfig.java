@@ -17,6 +17,7 @@ import org.springframework.http.MediaType;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
@@ -248,8 +249,9 @@ public class AuthorizationServerConfig {
     public JwtTokenCustomizer jwtTokenCustomizer(
             com.tiny.platform.infrastructure.auth.user.repository.UserRepository userRepository,
             AuthUserResolutionService authUserResolutionService,
-            com.tiny.platform.core.oauth.security.PermissionVersionService permissionVersionService) {
-        return new JwtTokenCustomizer(userRepository, authUserResolutionService, permissionVersionService);
+            com.tiny.platform.core.oauth.security.PermissionVersionService permissionVersionService,
+            UserDetailsService userDetailsService) {
+        return new JwtTokenCustomizer(userRepository, authUserResolutionService, permissionVersionService, userDetailsService);
     }
 
     /**

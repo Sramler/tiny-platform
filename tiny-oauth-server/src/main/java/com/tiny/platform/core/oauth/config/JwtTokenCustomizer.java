@@ -11,6 +11,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
 import org.springframework.security.oauth2.server.authorization.OAuth2TokenType;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
@@ -68,6 +71,7 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
     private final UserRepository userRepository;
     private final AuthUserResolutionService authUserResolutionService;
     private final PermissionVersionService permissionVersionService;
+    private final UserDetailsService userDetailsService;
 
     /**
      * 构造函数
@@ -76,15 +80,23 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
      */
     public JwtTokenCustomizer(UserRepository userRepository,
                               PermissionVersionService permissionVersionService) {
-        this(userRepository, null, permissionVersionService);
+        this(userRepository, null, permissionVersionService, null);
     }
 
     public JwtTokenCustomizer(UserRepository userRepository,
                               AuthUserResolutionService authUserResolutionService,
                               PermissionVersionService permissionVersionService) {
+        this(userRepository, authUserResolutionService, permissionVersionService, null);
+    }
+
+    public JwtTokenCustomizer(UserRepository userRepository,
+                              AuthUserResolutionService authUserResolutionService,
+                              PermissionVersionService permissionVersionService,
+                              UserDetailsService userDetailsService) {
         this.userRepository = userRepository;
         this.authUserResolutionService = authUserResolutionService;
         this.permissionVersionService = permissionVersionService;
+        this.userDetailsService = userDetailsService;
     }
 
     @Override
@@ -611,7 +623,29 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
                 return fromUser;
             }
         }
-        return collectAuthorities(principal);
+        Set<String> fromAuthentication = collectAuthorities(principal);
+        if (!fromAuthentication.isEmpty()) {
+            return fromAuthentication;
+        }
+        if (userDetailsService != null && principal != null && principal.getName() != null
+            && !principal.getName().isBlank()) {
+            try {
+                UserDetails reloaded = userDetailsService.loadUserByUsername(principal.getName());
+                if (reloaded != null && reloaded.getAuthorities() != null) {
+                    Set<String> fromReload = reloaded.getAuthorities().stream()
+                        .map(GrantedAuthority::getAuthority)
+                        .filter(authority -> authority != null && !authority.isBlank())
+                        .map(String::trim)
+                        .collect(Collectors.toCollection(LinkedHashSet::new));
+                    if (!fromReload.isEmpty()) {
+                        return fromReload;
+                    }
+                }
+            } catch (UsernameNotFoundException ex) {
+                log.debug("JwtTokenCustomizer: skip UserDetails reload for access token: {}", ex.getMessage());
+            }
+        }
+        return Set.of();
     }
 
     private Set<String> extractPermissionAuthorities(Set<String> authorities) {
