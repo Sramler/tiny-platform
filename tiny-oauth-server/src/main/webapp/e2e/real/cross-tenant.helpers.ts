@@ -342,7 +342,7 @@ type OidcIdentitySnapshot = {
 }
 
 async function loadIdentitySnapshot(page: Page): Promise<OidcIdentitySnapshot> {
-  return page.evaluate(() => {
+  return page.evaluate(async (apiBaseUrl) => {
     function decodeJwtPayload(accessToken: string): Record<string, unknown> | null {
       try {
         const parts = accessToken.split('.')
@@ -391,11 +391,33 @@ async function loadIdentitySnapshot(page: Page): Promise<OidcIdentitySnapshot> {
     const jwtPayload = decodeJwtPayload(user.access_token)
     const fromJwt = jwtPayload?.activeTenantId
 
-    const activeTenantId = firstNonEmptyTenantId(
+    let activeTenantId = firstNonEmptyTenantId(
       window.localStorage.getItem('app_active_tenant_id'),
       user.profile?.activeTenantId,
       fromJwt,
     )
+
+    if (!activeTenantId) {
+      const r = await fetch(`${apiBaseUrl}/sys/users/current`, {
+        credentials: 'include',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${user.access_token}`,
+        },
+      })
+      if (r.ok) {
+        try {
+          const body = (await r.json()) as { activeTenantId?: number | string }
+          activeTenantId = firstNonEmptyTenantId(body.activeTenantId)
+          if (activeTenantId) {
+            window.localStorage.setItem('app_active_tenant_id', activeTenantId)
+          }
+        } catch {
+          // ignore malformed JSON
+        }
+      }
+    }
+
     if (!activeTenantId) {
       throw new Error('OIDC 用户缺少 activeTenantId')
     }
@@ -404,7 +426,7 @@ async function loadIdentitySnapshot(page: Page): Promise<OidcIdentitySnapshot> {
       accessToken: user.access_token,
       activeTenantId,
     }
-  })
+  }, backendBaseUrl)
 }
 
 type SchedulingFetchOptions = {

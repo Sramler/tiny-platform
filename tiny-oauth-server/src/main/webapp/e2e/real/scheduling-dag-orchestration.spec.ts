@@ -124,8 +124,64 @@ async function callSchedulingApi<T>(
         throw new Error('OIDC 用户缺少 access_token')
       }
 
-      const activeTenantId =
-        window.localStorage.getItem('app_active_tenant_id') ?? String(user.profile?.activeTenantId ?? 1)
+      function decodeJwtPayload(token: string): Record<string, unknown> | null {
+        try {
+          const parts = token.split('.')
+          if (parts.length < 2) {
+            return null
+          }
+          const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+          const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=')
+          return JSON.parse(atob(padded)) as Record<string, unknown>
+        } catch {
+          return null
+        }
+      }
+
+      function pickTenantId(...candidates: Array<string | number | null | undefined>): string {
+        for (const candidate of candidates) {
+          if (candidate == null) {
+            continue
+          }
+          const text = String(candidate).trim()
+          if (text !== '' && text !== 'undefined') {
+            return text
+          }
+        }
+        return ''
+      }
+
+      const jwtPayload = decodeJwtPayload(accessToken)
+      let activeTenantId = pickTenantId(
+        window.localStorage.getItem('app_active_tenant_id'),
+        user.profile?.activeTenantId,
+        jwtPayload?.activeTenantId,
+      )
+
+      if (!activeTenantId) {
+        const r = await fetch(`${apiBaseUrl}/sys/users/current`, {
+          credentials: 'include',
+          headers: {
+            Accept: 'application/json',
+            Authorization: `Bearer ${accessToken}`,
+          },
+        })
+        if (r.ok) {
+          try {
+            const body = (await r.json()) as { activeTenantId?: number | string }
+            activeTenantId = pickTenantId(body.activeTenantId)
+            if (activeTenantId) {
+              window.localStorage.setItem('app_active_tenant_id', activeTenantId)
+            }
+          } catch {
+            // ignore
+          }
+        }
+      }
+
+      if (!activeTenantId) {
+        throw new Error('无法解析活动租户：请确认 OIDC 登录态与 /sys/users/current 可用')
+      }
       const headers = new Headers({
         Accept: 'application/json',
         Authorization: `Bearer ${accessToken}`,

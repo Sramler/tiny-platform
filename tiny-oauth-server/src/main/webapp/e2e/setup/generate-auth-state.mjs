@@ -22,6 +22,8 @@ function requireEnv(name) {
 
 const frontendPort = Number(readEnv('E2E_FRONTEND_PORT') ?? 5173)
 const frontendBaseURL = readEnv('E2E_FRONTEND_BASE_URL') ?? `http://localhost:${frontendPort}`
+const backendPort = Number(readEnv('E2E_BACKEND_PORT') ?? 9000)
+const backendBaseURL = readEnv('E2E_BACKEND_BASE_URL') ?? `http://localhost:${backendPort}`
 const tenantCode = requireEnv('E2E_TENANT_CODE')
 const username = requireEnv('E2E_USERNAME')
 const password = requireEnv('E2E_PASSWORD')
@@ -73,6 +75,90 @@ function generateTotpCode(secret, timestampMs = Date.now()) {
     (hmac[offset + 3] & 0xff)
 
   return String(binaryCode % 1_000_000).padStart(6, '0')
+}
+
+/**
+ * 持久化前强制对齐 app_active_tenant_id：initScript 会清空该键，若 HeaderBar 与菜单请求竞态，
+ * storageState 会缺少租户上下文，导致 TenantContextFilter 拒绝 /sys/menus/tree 等首屏请求（real-link 401）。
+ */
+async function syncActiveTenantIdBeforeSave(page, apiBase) {
+  await page.evaluate(async (api) => {
+    const oidcKey = Object.keys(window.localStorage).find((key) => key.startsWith('oidc.user:'))
+    if (!oidcKey) {
+      return
+    }
+    const rawUser = window.localStorage.getItem(oidcKey)
+    if (!rawUser) {
+      return
+    }
+    let accessToken
+    try {
+      accessToken = JSON.parse(rawUser).access_token
+    } catch {
+      return
+    }
+    if (!accessToken) {
+      return
+    }
+
+    function decodeJwtPayload(accessTokenInner) {
+      try {
+        const parts = accessTokenInner.split('.')
+        if (parts.length < 2) {
+          return null
+        }
+        const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+        const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=')
+        const json = atob(padded)
+        return JSON.parse(json)
+      } catch {
+        return null
+      }
+    }
+
+    function pickTenantId(...candidates) {
+      for (const candidate of candidates) {
+        if (candidate == null) {
+          continue
+        }
+        const text = String(candidate).trim()
+        if (text !== '' && text !== 'undefined') {
+          return text
+        }
+      }
+      return ''
+    }
+
+    const user = JSON.parse(rawUser)
+    const payload = decodeJwtPayload(accessToken)
+    let tenantId = pickTenantId(
+      window.localStorage.getItem('app_active_tenant_id'),
+      user.profile?.activeTenantId,
+      payload?.activeTenantId,
+    )
+
+    if (!tenantId) {
+      const r = await fetch(`${api}/sys/users/current`, {
+        credentials: 'include',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+      })
+      if (r.ok) {
+        try {
+          const body = await r.json()
+          tenantId = pickTenantId(body.activeTenantId)
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    if (tenantId) {
+      window.localStorage.setItem('app_active_tenant_id', tenantId)
+    }
+  }, apiBase)
 }
 
 async function waitForOidcIdentity(page) {
@@ -147,6 +233,7 @@ async function main() {
     })
 
     await waitForOidcIdentity(page)
+    await syncActiveTenantIdBeforeSave(page, backendBaseURL)
 
     if (!page.url().includes(landingPath)) {
       await page.goto(`${frontendBaseURL}${landingPath}`)
@@ -156,6 +243,7 @@ async function main() {
         // 某些租户未初始化菜单资源时，/OIDCDebug 会退化到“菜单为空”的壳页；此时只要浏览器中已有真实 OIDC 登录态即可持久化 storageState。
         await waitForOidcIdentity(page)
       }
+      await syncActiveTenantIdBeforeSave(page, backendBaseURL)
     }
 
     await context.storageState({ path: path.resolve(authStatePath) })
