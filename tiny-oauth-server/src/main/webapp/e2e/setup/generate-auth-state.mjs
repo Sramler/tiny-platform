@@ -161,6 +161,64 @@ async function syncActiveTenantIdBeforeSave(page, apiBase) {
   }, apiBase)
 }
 
+/**
+ * 租户登录模式下若换票得到 PLATFORM 作用域或缺少 activeTenantId，调度/menu real-link 会在首屏即失败。
+ * 在持久化 storageState 前强断言，避免 CI 带着“假绿路径”的残缺 JWT 继续跑用例。
+ */
+async function assertTenantAccessTokenClaims(page) {
+  if (loginMode !== 'TENANT') {
+    return
+  }
+  const message = await page.evaluate(() => {
+    function decodeJwtPayload(token) {
+      try {
+        const parts = token.split('.')
+        if (parts.length < 2) {
+          return null
+        }
+        const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+        const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=')
+        return JSON.parse(atob(padded))
+      } catch {
+        return null
+      }
+    }
+
+    const oidcKey = Object.keys(window.localStorage).find((key) => key.startsWith('oidc.user:'))
+    if (!oidcKey) {
+      return '未找到 oidc.user:* localStorage 项'
+    }
+    const rawUser = window.localStorage.getItem(oidcKey)
+    if (!rawUser) {
+      return 'OIDC 存储为空'
+    }
+    let accessToken
+    try {
+      accessToken = JSON.parse(rawUser).access_token
+    } catch {
+      return '无法解析 OIDC 用户 JSON'
+    }
+    if (!accessToken) {
+      return '缺少 access_token'
+    }
+    const payload = decodeJwtPayload(accessToken)
+    if (!payload) {
+      return '无法解析 access_token JWT payload'
+    }
+    if (payload.activeScopeType === 'PLATFORM') {
+      return 'access_token.activeScopeType 为 PLATFORM（期望非 PLATFORM 租户态）。请核对 E2E_TENANT_CODE、种子与登录流程。'
+    }
+    const tid = payload.activeTenantId
+    if (tid == null || Number(tid) <= 0) {
+      return `access_token 缺少有效 activeTenantId（当前=${String(tid)}）`
+    }
+    return null
+  })
+  if (message) {
+    throw new Error(`generate-auth-state (E2E_LOGIN_MODE=TENANT): ${message}`)
+  }
+}
+
 async function waitForOidcIdentity(page) {
   await page.waitForFunction(() => {
     const oidcKey = Object.keys(window.localStorage).find((key) => key.startsWith('oidc.user:'))
@@ -246,6 +304,7 @@ async function main() {
       await syncActiveTenantIdBeforeSave(page, backendBaseURL)
     }
 
+    await assertTenantAccessTokenClaims(page)
     await context.storageState({ path: path.resolve(authStatePath) })
   } finally {
     await context.close()

@@ -80,6 +80,11 @@ export function shouldCreateTenantViaApi(
   return Boolean(normalizedPrimary && normalizedTarget && normalizedPrimary !== normalizedTarget)
 }
 
+/**
+ * 历史分支条件：主租户编码是否与「平台租户编码」相同（未配置时平台侧按 default 口径比较）。
+ * globalSetup 现已始终用 {@link deriveTenantCodeForTenantScope} 的结果生成主 scheduling 登录态；
+ * 本函数仍保留供单测与文档化 CI secret 组合语义。
+ */
 export function shouldUseTenantScopedPrimaryAuthState(
   primaryTenantCode: string | undefined,
   platformTenantCode: string | undefined,
@@ -346,17 +351,6 @@ function ensureDeterministicE2EAuthFor(envOverrides: Record<string, string>) {
   })
 }
 
-function generateAuthState() {
-  execFileSync('node', [generateAuthStateScriptPath], {
-    cwd: webappRoot,
-    stdio: 'inherit',
-    env: {
-      ...process.env,
-      E2E_AUTH_STATE_PATH: authStatePath,
-    },
-  })
-}
-
 export function buildAuthStateEnv(
   baseEnv: NodeJS.ProcessEnv,
   envOverrides: Record<string, string>,
@@ -525,17 +519,15 @@ export default async function globalSetup() {
   const primaryTenantCodeValue = process.env.E2E_TENANT_CODE!.trim()
   const platformTenantCodeValue = (process.env.E2E_PLATFORM_TENANT_CODE ?? 'default').trim()
   const tenantScopeTenantCode = deriveTenantCodeForTenantScope(primaryTenantCodeValue, platformTenantCodeValue)
-  const useTenantScopedPrimaryAuthState = shouldUseTenantScopedPrimaryAuthState(
-    primaryTenantCodeValue,
-    platformTenantCodeValue,
-  )
 
-  if (useTenantScopedPrimaryAuthState) {
-    ensureDeterministicE2EAuthFor({ E2E_TENANT_CODE: tenantScopeTenantCode })
-    generateAuthStateFor({ E2E_TENANT_CODE: tenantScopeTenantCode }, authStatePath)
-  } else {
-    generateAuthState()
-  }
+  // 主调度身份必须与 deriveTenantCodeForTenantScope(primary, platform) 对齐（含 primary===platform 时的 *-t 派生），
+  // 且强制租户登录。旧逻辑仅在 primary===platform 时走派生，否则走 generateAuthState() 仅用原始 E2E_TENANT_CODE，
+  // 易与 ensure 脚本二次 seed 的租户错位；若进程环境误带 E2E_LOGIN_MODE=PLATFORM 还会生成无租户调度权限的 JWT。
+  ensureDeterministicE2EAuthFor({ E2E_TENANT_CODE: tenantScopeTenantCode })
+  generateAuthStateFor(
+    { E2E_TENANT_CODE: tenantScopeTenantCode, E2E_LOGIN_MODE: 'TENANT' },
+    authStatePath,
+  )
 
   const primaryAuthExists = await fs
     .access(authStatePath)
@@ -547,17 +539,8 @@ export default async function globalSetup() {
     )
   }
 
-  // 生成“租户态真实身份”的登录态（避免 PLATFORM 计算导致 activeTenantId 为空）。
-  // 仅针对本用例派生：不改动后端契约，也不要求手工编辑 e2e/.auth/*.json。
-  if (
-    useTenantScopedPrimaryAuthState ||
-    tenantScopeTenantCode.trim().toLowerCase() === primaryTenantCodeValue.trim().toLowerCase()
-  ) {
-    await fs.copyFile(authStatePath, tenantScopedAuthStatePath)
-  } else {
-    ensureDeterministicE2EAuthFor({ E2E_TENANT_CODE: tenantScopeTenantCode })
-    generateAuthStateFor({ E2E_TENANT_CODE: tenantScopeTenantCode }, tenantScopedAuthStatePath)
-  }
+  // 与主身份同一租户登录态（active-scope 等用例依赖）；主文件已按 tenantScopeTenantCode 生成，直接复用。
+  await fs.copyFile(authStatePath, tenantScopedAuthStatePath)
 
   const scopedAuthExists = await fs
     .access(tenantScopedAuthStatePath)

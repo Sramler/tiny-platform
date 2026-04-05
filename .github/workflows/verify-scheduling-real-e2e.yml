@@ -97,8 +97,9 @@ jobs:
             echo
             echo "### Identity & seed notes"
             echo "- **Auth state generation**: Playwright \`globalSetup\` creates storageState via real login (no forged cookie/JWT)."
-            echo "- **Tenant-scoped identity**: \`active-scope-token-refresh\` requires a **tenant-scoped** principal;"
-            echo "  globalSetup derives \`e2e/.auth/scheduling-tenant-user.json\` (must include \`activeTenantId\` in token + \`GET /sys/users/current\`)."
+            echo "- **Effective primary tenant code**: \`deriveTenantCodeForTenantScope(E2E_TENANT_CODE, E2E_PLATFORM_TENANT_CODE)\` — when primary equals platform tenant code, appends \`-t\` (e.g. \`default\`→\`default-t\`, \`bench-1m\`→\`bench-1m-t\`) so the issuer is not mis-inferred as PLATFORM; otherwise uses \`E2E_TENANT_CODE\` as-is."
+            echo "- **CI secrets**: If \`E2E_PLATFORM_TENANT_CODE\` is unset, workflow sets it to \`E2E_TENANT_CODE\` (primary and platform align → derived \`*-t\` login). If you set \`E2E_PLATFORM_TENANT_CODE\` to a **different** value than \`E2E_TENANT_CODE\`, primary login uses **raw** \`E2E_TENANT_CODE\` (no \`-t\`); ensure \`ensure-scheduling-e2e-auth.sh\` seeds that same tenant and that \`generate-auth-state.mjs\` TENANT JWT is not PLATFORM (globalSetup now asserts before saving storageState)."
+            echo "- **Tenant-scoped file**: \`scheduling-tenant-user.json\` is a copy of the primary scheduling storageState (same tenant login)."
             echo "- **Seed/auth bootstrap**: \`scripts/e2e/ensure-scheduling-e2e-auth.sh\` runs during globalSetup to ensure deterministic identities/permissions."
             echo
             echo "### Failure triage (first look)"
