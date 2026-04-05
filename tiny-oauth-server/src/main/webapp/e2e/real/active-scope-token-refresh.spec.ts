@@ -7,23 +7,14 @@
  * - 层 3：切换弹窗关闭、无 warning、Bearer 调 `GET /sys/users/current` 非 401；可选比对 `oidc.user:*` access_token 变化
  *
  * 身份与 storageState：
- * - Playwright project **chromium**（`playwright.real.config.ts`）
- * - `e2e/.auth/scheduling-user.json` 由 `e2e/setup/real.global.setup.ts` 调用 `generate-auth-state.mjs` 合法生成
- * - 依赖 `.env.e2e.local` 中 `E2E_TENANT_CODE` / `E2E_USERNAME` / `E2E_PASSWORD` / `E2E_TOTP_SECRET`（与调度 real e2e 主身份一致）
+ * - 与 `playwright.real.config.ts` 的 chromium 项目一致：`e2e/.auth/scheduling-user.json`（globalSetup 生成后与 `scheduling-tenant-user.json` 为同内容副本）
+ * - 不再单独 `test.use` 指向 `scheduling-tenant-user.json`，避免与调度用例分裂；首屏须先完成 BasicLayout 菜单树（GET /sys/menus/tree）与租户头对齐
  *
  * 前置：本机 `localhost:9000` + Vite 前端；`vue-client` 与 `silent-renew.html` 由 webServer 注入。
  */
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { expect, test, type Page } from '@playwright/test'
 
 const backendBaseUrl = process.env.E2E_BACKEND_BASE_URL ?? 'http://localhost:9000'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-// this file: e2e/real/*.spec.ts
-// tenant auth: e2e/.auth/scheduling-tenant-user.json
-const tenantScopedAuthStatePath = path.resolve(__dirname, '..', '.auth', 'scheduling-tenant-user.json')
 
 function decodeJwtPayload(token: string): any {
   const parts = token.split('.')
@@ -77,8 +68,6 @@ async function fetchCurrentUserWithBearer(page: Page): Promise<{ status: number;
 }
 
 test.describe('real-link: active scope + token refresh', () => {
-  test.use({ storageState: tenantScopedAuthStatePath })
-
   test('should_silent_renew_after_active_scope_switch_when_backend_requires_token_refresh', async ({ page }) => {
     const currentUserRespPromise = page.waitForResponse(
       (r) =>
@@ -87,10 +76,14 @@ test.describe('real-link: active scope + token refresh', () => {
         r.status() === 200,
       { timeout: 90_000 },
     )
+    // 先走工作台主壳，让 initAuth、axios 拦截器与 GET /sys/menus/tree 在 OIDCDebug 前完成；直接首跳 /OIDCDebug 在 CI 上曾与菜单请求竞态导致 401（TenantContext / 头对齐）
+    await page.goto('/', { waitUntil: 'networkidle', timeout: 120_000 }).catch(async () => {
+      await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 120_000 })
+    })
     await page.goto('/OIDCDebug', { waitUntil: 'domcontentloaded' })
     if (page.url().includes('/login')) {
       throw new Error(
-        '仍在 /login：请确认 chromium 使用 globalSetup 生成的 e2e/.auth/scheduling-tenant-user.json（租户态身份），且本机 5173/9000 可用（勿在无 storageState 时 E2E_SKIP_REAL_SETUP 空跑）。',
+        '仍在 /login：请确认 chromium 使用 globalSetup 生成的 e2e/.auth/scheduling-user.json（租户态主身份），且本机 5173/9000 可用（勿在无 storageState 时 E2E_SKIP_REAL_SETUP 空跑）。',
       )
     }
     await expect(page.locator('h1').filter({ hasText: 'OIDC 调试工具' })).toBeVisible({ timeout: 90_000 })
