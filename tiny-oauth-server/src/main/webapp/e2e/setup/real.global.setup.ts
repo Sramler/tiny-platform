@@ -107,7 +107,7 @@ async function prepareAuthState() {
   await fs.writeFile(tenantScopedAuthStatePath, EMPTY_STORAGE_STATE, 'utf8')
 }
 
-function deriveTenantCodeForTenantScope(primaryTenantCode: string, platformTenantCode: string): string {
+export function deriveTenantCodeForTenantScope(primaryTenantCode: string, platformTenantCode: string): string {
   // 目标：避免 TenantContextFilter 将该 tenant 推断为 PLATFORM tenant。
   // 当 primary 与 platform tenant 相等时，为本用例派生一个不同的 tenant code。
   if (primaryTenantCode.trim().toLowerCase() !== platformTenantCode.trim().toLowerCase()) {

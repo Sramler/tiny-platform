@@ -3,6 +3,7 @@ import {
   buildEnsureAuthEnv,
   buildAuthStateEnv,
   buildSecondaryAuthStateEnv,
+  deriveTenantCodeForTenantScope,
   extractAccessTokenFromStorageState,
   readConfiguredValue,
   resolveBindTenantCode,
@@ -260,5 +261,16 @@ describe('real.global.setup tenant bootstrap helpers', () => {
 
   it('does not switch primary storageState when the tenant-scoped fallback is unnecessary', () => {
     expect(shouldUseTenantScopedPrimaryAuthState('bench-1m', 'default')).toBe(false)
+  })
+})
+
+describe('deriveTenantCodeForTenantScope', () => {
+  it('derives a distinct tenant code when primary matches platform (openOidcDebug primary login must match globalSetup)', () => {
+    expect(deriveTenantCodeForTenantScope('default', 'default')).toBe('default-t')
+    expect(deriveTenantCodeForTenantScope('bench-1m', 'bench-1m')).toBe('bench-1m-t')
+  })
+
+  it('uses primary tenant code as-is when it already differs from platform tenant', () => {
+    expect(deriveTenantCodeForTenantScope('bench-1m', 'default')).toBe('bench-1m')
   })
 })

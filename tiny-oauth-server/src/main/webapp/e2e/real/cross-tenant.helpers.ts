@@ -3,6 +3,8 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, type Browser, type BrowserContext, type Page } from '@playwright/test'
 
+import { deriveTenantCodeForTenantScope } from '../setup/real.global.setup'
+
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
@@ -155,14 +157,16 @@ function resolveLoginIdentity(kind: AuthIdentityKind): LoginIdentity | null {
     return { mode: 'PLATFORM', username, password, totpCode, totpSecret }
   }
 
-  const tenantCode = readConfiguredEnv('E2E_TENANT_CODE')
+  const primaryTenantCode = readConfiguredEnv('E2E_TENANT_CODE')
   const username = readConfiguredEnv('E2E_USERNAME')
   const password = readConfiguredEnv('E2E_PASSWORD')
   const totpSecret = readConfiguredEnv('E2E_TOTP_SECRET')
   const totpCode = readConfiguredEnv('E2E_TOTP_CODE')
-  if (!tenantCode || !username || !password || (!totpSecret && !totpCode)) {
+  if (!primaryTenantCode || !username || !password || (!totpSecret && !totpCode)) {
     return null
   }
+  const platformTenantCode = readConfiguredEnv('E2E_PLATFORM_TENANT_CODE') ?? 'default'
+  const tenantCode = deriveTenantCodeForTenantScope(primaryTenantCode, platformTenantCode)
   return { mode: 'TENANT', tenantCode, username, password, totpCode, totpSecret }
 }
 
