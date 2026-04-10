@@ -45,4 +45,6 @@ public interface MenuEntryRepository extends JpaRepository<MenuEntry, Long>, Jpa
                                                        @Param("tenantId") Long tenantId);
 
     boolean existsByParentIdAndTenantId(Long parentId, Long tenantId);
+
+    boolean existsByParentIdAndTenantIdIsNull(Long parentId);
 }

@@ -38,11 +38,11 @@ public class IssuerDelegatingRegisteredClientRepository implements RegisteredCli
     }
 
     private RegisteredClientRepository resolveDelegate() {
-        String tenantCode = issuerResolver.resolveCurrentTenantCode();
-        if (tenantCode == null || tenantCode.isBlank()) {
+        String issuerKey = issuerResolver.resolveCurrentIssuerKey();
+        if (issuerKey == null || issuerKey.isBlank()) {
             return defaultDelegate;
         }
-        RegisteredClientRepository delegate = registry.get(tenantCode, RegisteredClientRepository.class);
+        RegisteredClientRepository delegate = registry.get(issuerKey, RegisteredClientRepository.class);
         return delegate != null ? delegate : defaultDelegate;
     }
 }

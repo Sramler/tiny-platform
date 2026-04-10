@@ -2,8 +2,9 @@ package com.tiny.platform.core.oauth.controller;
 
 import com.tiny.platform.core.oauth.config.CustomWebAuthenticationDetailsSource;
 import com.tiny.platform.core.oauth.config.FrontendProperties;
-import com.tiny.platform.core.oauth.tenant.IssuerTenantSupport;
+import com.tiny.platform.core.oauth.tenant.ActiveScope;
 import com.tiny.platform.core.oauth.tenant.ActiveTenantResponseSupport;
+import com.tiny.platform.core.oauth.tenant.IssuerTenantSupport;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.core.oauth.tenant.TenantContextContract;
 import com.tiny.platform.core.oauth.security.RedirectPathSanitizer;
@@ -16,8 +17,8 @@ import com.tiny.platform.core.oauth.session.UserSessionView;
 import com.tiny.platform.core.oauth.service.AuthenticationAuditService;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
-import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
+import com.tiny.platform.infrastructure.auth.user.service.UserAuthenticationMethodProfileService;
 import com.tiny.platform.infrastructure.core.util.IpUtils;
 import com.tiny.platform.infrastructure.core.util.DeviceUtils;
 import com.tiny.platform.infrastructure.core.util.QrCodeUtil;
@@ -47,7 +48,7 @@ import jakarta.servlet.http.HttpServletRequest;
 public class SecurityController {
     private final UserRepository userRepository;
     private final SecurityService securityService;
-    private final UserAuthenticationMethodRepository authenticationMethodRepository;
+    private final UserAuthenticationMethodProfileService authenticationMethodProfileService;
     private final FrontendProperties frontendProperties;
     private final MultiFactorAuthenticationSessionManager sessionManager;
     private final AuthenticationAuditService auditService;
@@ -57,7 +58,7 @@ public class SecurityController {
     @Autowired
     public SecurityController(UserRepository userRepository,
                              SecurityService securityService,
-                             UserAuthenticationMethodRepository authenticationMethodRepository,
+                             UserAuthenticationMethodProfileService authenticationMethodProfileService,
                              FrontendProperties frontendProperties,
                              MultiFactorAuthenticationSessionManager sessionManager,
                              AuthUserResolutionService authUserResolutionService,
@@ -65,7 +66,7 @@ public class SecurityController {
                              UserSessionService userSessionService) {
         this.userRepository = userRepository;
         this.securityService = securityService;
-        this.authenticationMethodRepository = authenticationMethodRepository;
+        this.authenticationMethodProfileService = authenticationMethodProfileService;
         this.frontendProperties = frontendProperties;
         this.sessionManager = sessionManager;
         this.authUserResolutionService = authUserResolutionService;
@@ -80,10 +81,13 @@ public class SecurityController {
         User user = getCurrentUser();
         if (user == null) return ResponseEntity.status(401).body(Map.of("success", false, "error", "未登录"));
         Map<String, Object> status = new HashMap<>(securityService.getSecurityStatus(user));
+        ActiveScope activeScope = ActiveTenantResponseSupport.resolveActiveScopeFromRequestContext();
         ActiveTenantResponseSupport.putTenantFields(
                 status,
-                ActiveTenantResponseSupport.resolveActiveTenantId(SecurityContextHolder.getContext().getAuthentication())
+                ActiveTenantResponseSupport.resolveActiveTenantId(SecurityContextHolder.getContext().getAuthentication()),
+                activeScope
         );
+        ActiveTenantResponseSupport.putScopeFields(status, activeScope);
         return ResponseEntity.ok(status);
     }
 
@@ -107,7 +111,9 @@ public class SecurityController {
         result.put("success", true);
         result.put("content", sessions);
         result.put("currentSessionId", currentSessionId);
-        ActiveTenantResponseSupport.putTenantFields(result, activeTenantId);
+        ActiveScope activeScope = ActiveTenantResponseSupport.resolveActiveScopeFromRequestContext();
+        ActiveTenantResponseSupport.putTenantFields(result, activeTenantId, activeScope);
+        ActiveTenantResponseSupport.putScopeFields(result, activeScope);
         return ResponseEntity.ok(result);
     }
 
@@ -231,8 +237,9 @@ public class SecurityController {
             Long activeTenantId = ActiveTenantResponseSupport.resolveActiveTenantId(
                     SecurityContextHolder.getContext().getAuthentication()
             );
-            boolean hasLocalPassword = authenticationMethodRepository
-                    .existsEffectiveAuthenticationMethod(user.getId(), activeTenantId, "LOCAL", "PASSWORD");
+            String activeScopeType = ActiveTenantResponseSupport.resolveActiveScopeTypeFromRequestContext();
+            boolean hasLocalPassword = authenticationMethodProfileService
+                    .existsEffectiveMethod(user.getId(), activeScopeType, activeTenantId, "LOCAL", "PASSWORD");
             if (hasLocalPassword) {
                 // 推荐提供密码，但不强制（为了兼容性）
                 plainPassword = req.get("password");
@@ -300,10 +307,13 @@ public class SecurityController {
                 }
             }
         }
+        ActiveScope activeScope = ActiveTenantResponseSupport.resolveActiveScopeFromRequestContext();
         ActiveTenantResponseSupport.putTenantFields(
                 result,
-                ActiveTenantResponseSupport.resolveActiveTenantId(SecurityContextHolder.getContext().getAuthentication())
+                ActiveTenantResponseSupport.resolveActiveTenantId(SecurityContextHolder.getContext().getAuthentication()),
+                activeScope
         );
+        ActiveTenantResponseSupport.putScopeFields(result, activeScope);
         return ResponseEntity.ok(result);
     }
 
@@ -492,10 +502,13 @@ public class SecurityController {
 
     private Map<String, Object> withActiveTenant(Map<String, Object> source, User user) {
         Map<String, Object> result = new HashMap<>(source);
+        ActiveScope activeScope = ActiveTenantResponseSupport.resolveActiveScopeFromRequestContext();
         ActiveTenantResponseSupport.putTenantFields(
                 result,
-                ActiveTenantResponseSupport.resolveActiveTenantId(SecurityContextHolder.getContext().getAuthentication())
+                ActiveTenantResponseSupport.resolveActiveTenantId(SecurityContextHolder.getContext().getAuthentication()),
+                activeScope
         );
+        ActiveTenantResponseSupport.putScopeFields(result, activeScope);
         return result;
     }
 

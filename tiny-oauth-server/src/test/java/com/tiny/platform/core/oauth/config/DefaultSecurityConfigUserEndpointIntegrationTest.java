@@ -80,6 +80,9 @@ class DefaultSecurityConfigUserEndpointIntegrationTest {
     @Autowired
     private UserDetailsService userDetailsService;
 
+    @Autowired
+    private AuthUserResolutionService authUserResolutionService;
+
     @Test
     @DisplayName("anonymous 访问 /sys/users/** 应被认证层拦截")
     void sysUsersProbeShouldRequireAuthentication() throws Exception {
@@ -424,6 +427,42 @@ class DefaultSecurityConfigUserEndpointIntegrationTest {
 
         assertThat(session.getAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_TYPE_KEY)).isEqualTo("ORG");
         assertThat(session.getAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_ID_KEY)).isEqualTo(5L);
+    }
+
+    @Test
+    @DisplayName("真实 /sys/users/current/active-scope 在平台态可通过显式 TENANT scopeId 切回租户态")
+    void currentActiveScopeSwitchShouldAllowTenantReentryFromPlatformWhenExplicitTenantIdProvided() throws Exception {
+        Mockito.when(tenantRepository.findLoginBlockedLifecycleStatus(9L)).thenReturn(Optional.empty());
+        Mockito.when(userService.findByUsername("alice")).thenReturn(Optional.of(userEntity(3L, "alice")));
+        Mockito.when(authUserResolutionService.resolveUserRecordInActiveTenant("alice", 9L))
+            .thenReturn(Optional.of(userEntity(3L, "alice")));
+
+        SecurityUser reloaded = new SecurityUser(3L, 9L, "alice", "", List.of(), true, true, true, true, "pv-tenant-9");
+        Mockito.when(userDetailsService.loadUserByUsername("alice")).thenReturn(reloaded);
+
+        MockHttpSession session = new MockHttpSession();
+        session.setAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_TYPE_KEY, TenantContextContract.SCOPE_TYPE_PLATFORM);
+
+        SecurityUser principal = new SecurityUser(3L, null, "alice", "", List.of(), true, true, true, true, "pv-platform");
+
+        mockMvc.perform(post("/sys/users/current/active-scope")
+                .session(session)
+                .with(user(principal))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"scopeType":"TENANT","scopeId":9}
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.activeTenantId").value(9))
+            .andExpect(jsonPath("$.activeScopeType").value("TENANT"))
+            .andExpect(jsonPath("$.activeScopeId").value(9))
+            .andExpect(jsonPath("$.tokenRefreshRequired").value(false));
+
+        assertThat(session.getAttribute(TenantContextContract.SESSION_ACTIVE_TENANT_ID_KEY)).isEqualTo(9L);
+        assertThat(session.getAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_TYPE_KEY))
+            .isEqualTo(TenantContextContract.SCOPE_TYPE_TENANT);
+        assertThat(session.getAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_ID_KEY)).isEqualTo(9L);
     }
 
     @SpringBootConfiguration

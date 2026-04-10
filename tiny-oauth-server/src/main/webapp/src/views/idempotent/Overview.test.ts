@@ -132,16 +132,18 @@ describe('idempotent Overview.vue', () => {
       delete mocks.routeQuery[key]
     })
 
-    mocks.routerReplace.mockImplementation(async ({ query }: { query?: Record<string, unknown> }) => {
-      Object.keys(mocks.routeQuery).forEach((key) => {
-        delete mocks.routeQuery[key]
-      })
-      Object.entries(query ?? {}).forEach(([key, value]) => {
-        if (value !== undefined) {
-          mocks.routeQuery[key] = value
-        }
-      })
-    })
+    mocks.routerReplace.mockImplementation(
+      async ({ query }: { query?: Record<string, unknown> }) => {
+        Object.keys(mocks.routeQuery).forEach((key) => {
+          delete mocks.routeQuery[key]
+        })
+        Object.entries(query ?? {}).forEach(([key, value]) => {
+          if (value !== undefined) {
+            mocks.routeQuery[key] = value
+          }
+        })
+      },
+    )
 
     mocks.getIdempotentMetrics.mockResolvedValue({
       windowMinutes: 60,

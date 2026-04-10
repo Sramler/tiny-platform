@@ -16,7 +16,7 @@ import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.server.authorization.token.*;
 import org.springframework.security.web.SecurityFilterChain;
 import com.tiny.web.sys.repository.UserRepository;
-import com.tiny.web.sys.repository.UserAuthenticationMethodRepository;
+import com.tiny.web.sys.security.UserAuthPasswordLookupService;
 
 import java.util.List;
 
@@ -66,10 +66,10 @@ public class SecurityConfig {
 
     @Bean
     public AuthenticationProvider passwordAuthenticationProvider(UserRepository userRepository,
-                                                                 UserAuthenticationMethodRepository authenticationMethodRepository,
+                                                                 UserAuthPasswordLookupService userAuthPasswordLookupService,
                                                                  PasswordEncoder passwordEncoder,
                                                                  UserDetailsService userDetailsService) {
-        return new PasswordAuthenticationProvider(userRepository, authenticationMethodRepository, passwordEncoder, userDetailsService);
+        return new PasswordAuthenticationProvider(userRepository, userAuthPasswordLookupService, passwordEncoder, userDetailsService);
     }
 
     /**

@@ -18,7 +18,7 @@
 
 - **可立刻删除（已完成）**：旧菜单/资源运行时查询 helper，包括 `MenuServiceImpl.mergeTreeMenus(...)`、`MenuServiceImpl.resolveCurrentUsername()`、`MenuEntryRepository.findGranted*ByUsername*`、`ResourceRepository.findGrantedResourcesByUsername*`。
 - **已迁 runtime 后删除（已完成本轮迁移）**：资源管理控制面的运行时按钮门控、API 访问判断、资源树与按类型读路径已迁到 `menu / ui_action / api_endpoint + requirement`，并据此删除对应 legacy 查询。
-- **暂时必须保留**：`resource` 总表、`resource.permission`、部分 `ResourceRepository` 兼容查询（仅作为历史资产：可观测/迁移输入/运营可读字段；运行时主线不再读写 `resource` 表）。与运行时安全边界相关的显式语义由 `CarrierCompatibilitySafetyService` 承接（`replaceCompatibilityRequirement(requirement_group=0)` 与 `existsPermissionReference`），不再以 legacy projection bridge 的形式存在。后续若要物理下线 `resource` 表，应先补齐归档/迁移与回滚路径（历史资产治理议题，不是运行时阻断）。
+- **已完成退场**：`resource` 总表已从活动 schema 与运行时主线退出，并由 Liquibase 131 物理删除；`resource.permission` 仅作为历史迁移名词、旧文档字段来源和参考 SQL 口径保留。当前仍需保留的是少量显式安全语义与历史/迁移说明，例如 `CarrierCompatibilitySafetyService`（`replaceCompatibilityRequirement(requirement_group=0)` 与 `existsPermissionReference`），而不是 `resource` 表本身。
 
 ---
 
@@ -97,3 +97,31 @@
 **任务清单 T1/T2/T3 收口**：T1.1 调度迁移脚本注释、T1.2 参考 SQL 注释、T2.1 菜单页权限常量注释、T3.1 控制面 RBAC 核查已完成，见 `TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md`。
 
 上述项均属“兼容/遗留”范畴，按阶段逐步收口即可，避免一次性大改。
+
+---
+
+## 8. CARD-10 兼容壳边界（2026-04）
+
+### 8.1 JWT / Session 解码兼容窗口（CARD-10A）
+
+- （更新：CARD-11D 已完成）`SecurityUser` 反序列化已移除“`roleCodes` 缺失时从 `authorities` 恢复 `ROLE_*`”兼容逻辑，旧 session 快照不再半兼容恢复角色码。
+- （更新：CARD-11D 已完成）`TinyPlatformJwtGrantedAuthoritiesConverter` 已拒绝 `ROLE_*` authority claim 的旧混合态解码；Bearer 主链仅接受 scope + 非 `ROLE_*` authorities + permissions。
+- 主线现状：JWT / Session 只认当前显式契约；旧混合态 payload 视为不支持输入。
+
+### 8.2 roleCodes 消费者 fallback（CARD-10B）
+
+- （更新：CARD-11B 已完成）`roleCodes` 消费者主线仅接受显式 `roleCodes`（`SecurityUser` principal/details 或 JWT `roleCodes` claim）。
+- （更新：CARD-11B 已完成）历史 `ROLE_* authorities` 反推 roleCodes 的 fallback 已删除，legacy JWT 缺失 `roleCodes` 时不再回退。
+- 主线现状：通用 `ROLE_* authorities` 不再作为 roleCodes 消费链输入来源。
+
+### 8.3 default/platformTenantCode 兼容壳（CARD-10C）
+
+- （更新：CARD-11C 已完成）`TenantContextFilter` 主链已移除基于 `PlatformTenantResolver` 的平台 scope 推断，平台主语义仅认显式 `PLATFORM` scope。
+- `MenuServiceImpl` 写侧不再回退 `platformTenantCode/default`，改为要求显式 `activeTenantId`。
+- `PlatformTenantResolver` 仅保留给 bootstrap / 历史入口兼容路径；新业务主链禁止新增依赖。
+
+### 8.4 carrier requirement fallback（CARD-10D）
+
+- （更新：CARD-11A 已完成）主线已删除 requirement 缺失时按 `fallbackPermission` 的放行兼容路径；
+- requirement 缺失统一 fail-closed，并通过审计 reason（如 `REQUIREMENT_ROWS_MISSING_FAIL_CLOSED`）显式诊断；
+- 新增 carrier 仍必须优先补齐 requirement 行，不允许依赖兼容兜底。

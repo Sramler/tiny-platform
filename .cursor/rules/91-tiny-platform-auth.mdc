@@ -38,11 +38,13 @@ globs:
 - ✅ 认证相关 E2E 必须显式断言用户可观察结果和安全结果，例如登录成功后的身份状态、MFA 二次校验、拒绝页面、租户上下文、cookie/session 或 token 切换结果。
 - ✅ 认证 E2E 所使用的测试 client 必须最小权限化，并区分 Web Session、API JWT、OIDC 浏览器回调等测试目标；不得用一个超大权限 client 混测所有场景。
 - ✅ 认证 real-link 中涉及多身份或多租户 auth-state 生成时，环境变量覆盖顺序必须显式定义，并用自动化测试锁住：次身份不能继承主身份的 TOTP code、TOTP secret、client 或 auth-state 输出路径。
+- ✅ 平台身份、租户身份、readonly 身份、bind 身份的 auth-state / setup helper 必须显式区分 `login mode` 与 tenant code 归属；不得因 fallback 把 tenant 登录误导向 platform scope，或把 platform 管理调用错误复用为 tenant 身份。
 - ✅ 首绑 TOTP / post-login 安全中心 / MFA 继续跳转类 E2E 必须按真实浏览器会话契约工作：优先使用页面真实渲染结果或 `credentials: include` 的 first-party 请求，不能假设 OIDC callback 一定已经把 token 写入 `localStorage`。
 - ✅ 涉及 Session / Bearer 同时存在、`activeTenantId` 来源裁决、`activeScopeType/id` 成对解析、`prompt=none` / silent renew 行为的改动，必须与 `docs/TINY_PLATFORM_SESSION_BEARER_AUTH_MATRIX.md` 保持一致；不得用“浏览器请求一律只看 Session”或“只要带 Bearer 就完全忽略 Session”这种简化口径替代当前主线契约。
 - ✅ **M4（Bearer + Session 一致）在 user 端点上分两种正式语义，不得混用**：`GET /sys/users/current` 为 **M4 读**（只读快照，不改 Session scope）；`POST /sys/users/current/active-scope` 为 **M4 写**（会话 active scope **持久化以 Session 为权威落点**，Bearer 写成功须返回 `tokenRefreshRequired` / `newActiveScope*`）。默认不得假设“矩阵 §4 的 M4 放行 = 所有 `/sys/users/**` 同一口径”；须按 `docs/TINY_PLATFORM_SESSION_BEARER_AUTH_MATRIX.md` **§8**。
 - ✅ **默认心智模型（Cursor/Codex/实现者）**：将 `POST /sys/users/current/active-scope` 视为 **会话状态变更写**（session-first 持久化）；在 **M4** 下 **额外**允许带 Bearer 完成同一写，且**必须**按响应 `tokenRefreshRequired` 规划 refresh，不得假装 JWT 已随该请求更新。
 - ✅ `POST /sys/users/current/active-scope` 在 M4（Bearer + Session 成对一致）下允许写 Session 时，成功响应必须携带可机器解析的 `tokenRefreshRequired` 与 `newActiveScopeType`/`newActiveScopeId`（及说明写后 JWT 与 Session 可预测行为的文档），且与 `docs/TINY_PLATFORM_SESSION_BEARER_AUTH_MATRIX.md` §8 一致；不得静默忽略“写后显式 scope claims 陈旧导致下一请求 M5 fail-closed”的风险。
+- ✅ 涉及 silent renew、`tokenRefreshRequired`、`prompt=none` 的 real-link 断言时，必须优先验证 durable evidence（真实 `/oauth2/authorize?...prompt=none...`、刷新后 Bearer 请求恢复 200、稳定页面态），不能只依赖瞬时 success toast 或壳页标题判定通过。
 - ✅ tiny-platform 本地认证 / 租户 / 平台模板验证应优先复用仓库脚本，且**默认入口**为 `tiny-oauth-server/scripts/verify-platform-local-dev-stack.sh`；只有在明确不需要前端联动时，才降级为 `tiny-oauth-server/scripts/verify-platform-dev-bootstrap.sh`；登录链专项快速门禁再使用 `tiny-oauth-server/scripts/verify-platform-login-auth-chain.sh`。不要先要求人工逐个启动数据库、后端、前端，再开始判断认证结论。
 - ✅ 如需读取本机已导出的数据库密码、启动命令或路径，只允许通过 login shell 子进程读取**白名单环境变量**；`DB_*` 为 dev/bootstrap 主变量，`E2E_DB_*` 可作为兼容别名回填，不得打印或上传 `~/.zprofile`、`~/.zshrc`、`~/.bashrc` 全文。
 - ✅ `verify-platform-dev-bootstrap.sh` / `verify-platform-local-dev-stack.sh` 返回 `exit 2` 时，只能记为“环境前置未满足”，不得写成认证链路失败或代码回归。

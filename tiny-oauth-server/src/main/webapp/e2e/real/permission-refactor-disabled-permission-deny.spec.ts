@@ -102,10 +102,15 @@ function decodeJwtPayload(token: string): any {
 }
 
 function readBackendBaseUrl(): string {
-  return process.env.E2E_BACKEND_BASE_URL ?? process.env.VITE_API_BASE_URL ?? 'http://localhost:9000'
+  return (
+    process.env.E2E_BACKEND_BASE_URL ?? process.env.VITE_API_BASE_URL ?? 'http://localhost:9000'
+  )
 }
 
-function deriveTenantCodeForTenantScope(primaryTenantCode: string, platformTenantCode: string): string {
+function deriveTenantCodeForTenantScope(
+  primaryTenantCode: string,
+  platformTenantCode: string,
+): string {
   if (primaryTenantCode.trim().toLowerCase() !== platformTenantCode.trim().toLowerCase()) {
     return primaryTenantCode.trim()
   }
@@ -131,7 +136,11 @@ function mysqlExec(sql: string): string {
   const port = readEnv('E2E_DB_PORT') ?? readEnv('E2E_MYSQL_PORT') ?? '3306'
   const user = readEnv('E2E_DB_USER') ?? readEnv('E2E_MYSQL_USER') ?? 'root'
   const dbName = readEnv('E2E_DB_NAME') ?? readEnv('E2E_MYSQL_DATABASE') ?? 'tiny_web'
-  const password = readEnv('E2E_DB_PASSWORD') ?? readEnv('E2E_MYSQL_PASSWORD') ?? readEnv('MYSQL_ROOT_PASSWORD') ?? ''
+  const password =
+    readEnv('E2E_DB_PASSWORD') ??
+    readEnv('E2E_MYSQL_PASSWORD') ??
+    readEnv('MYSQL_ROOT_PASSWORD') ??
+    ''
 
   // Use MYSQL_PWD env to avoid leaking password in argv/logs.
   const env = { ...process.env, MYSQL_PWD: password }
@@ -150,7 +159,8 @@ function mysqlCheckEnabled(permissionCode: string, tenantCode: string): boolean 
     LIMIT 1;
   `
   const out = mysqlExec(sql).trim()
-  if (!out) throw new Error(`permission row not found: code=${permissionCode}, tenant=${tenantCode}`)
+  if (!out)
+    throw new Error(`permission row not found: code=${permissionCode}, tenant=${tenantCode}`)
   // mysql returns 0/1 or true/false depending on column type; handle both.
   return out === '1' || out.toLowerCase() === 'true'
 }
@@ -183,7 +193,7 @@ function resolveLoginConfig() {
     tenantCode,
     username,
     password,
-    totpCode: totpCode ?? generateTotpCode(totpSecret!)
+    totpCode: totpCode ?? generateTotpCode(totpSecret!),
   }
 }
 
@@ -196,7 +206,10 @@ async function loginWithMfa(page: import('@playwright/test').Page) {
   await page.getByLabel('密码').fill(password)
   // Avoid strict-mode ambiguity: the login page has both scope tabs ("租户登录"/"平台登录")
   // and the real submit button ("登录租户").
-  await page.getByRole('button', { name: /登录租户/ }).first().click()
+  await page
+    .getByRole('button', { name: /登录租户/ })
+    .first()
+    .click()
 
   await page.waitForURL('**/self/security/totp-verify**', { timeout: 60_000 })
   await expect(page.getByRole('heading', { name: /两步验证/ })).toBeVisible({ timeout: 30_000 })
@@ -209,14 +222,14 @@ async function loginWithMfa(page: import('@playwright/test').Page) {
       !url.pathname.includes('/self/security/totp-verify') &&
       !url.pathname.includes('/callback') &&
       !url.pathname.includes('/login'),
-    { timeout: 60_000 }
+    { timeout: 60_000 },
   )
   await page.waitForLoadState('networkidle').catch(() => {})
 }
 
 test.describe('real-link: disabled permission deny (JWT + interface) ', () => {
   test('disabled permissions are removed from JWT and cannot be used to access /sys/org/tree', async ({
-    browser
+    browser,
   }) => {
     const backendBaseUrl = readBackendBaseUrl()
 
@@ -254,7 +267,9 @@ test.describe('real-link: disabled permission deny (JWT + interface) ', () => {
       const authorities1: string[] = payload1.authorities ?? []
       const permissions1: string[] = payload1.permissions ?? []
 
-      const beforeFound = permissionCodes.filter((c) => authorities1.includes(c) || permissions1.includes(c))
+      const beforeFound = permissionCodes.filter(
+        (c) => authorities1.includes(c) || permissions1.includes(c),
+      )
       expect(beforeFound.length).toBeGreaterThan(0)
 
       // Disable them (fail-closed should remove from JWT and deny access).
@@ -279,8 +294,8 @@ test.describe('real-link: disabled permission deny (JWT + interface) ', () => {
       // Verify protected interface denies disabled permission via claims/recovery chain.
       const resp = await page2.request.get(`${backendBaseUrl}/sys/org/tree`, {
         headers: {
-          Authorization: `Bearer ${accessToken2}`
-        }
+          Authorization: `Bearer ${accessToken2}`,
+        },
       })
 
       // For method security denial, most commonly 403. If env differs, fail with body.

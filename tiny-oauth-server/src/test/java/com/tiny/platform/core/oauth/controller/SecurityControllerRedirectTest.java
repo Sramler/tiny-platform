@@ -10,8 +10,9 @@ import com.tiny.platform.core.oauth.service.AuthenticationAuditService;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
-import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
+import com.tiny.platform.infrastructure.auth.user.repository.UserAuthScopePolicyRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
+import com.tiny.platform.infrastructure.auth.user.service.UserAuthenticationMethodProfileService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -27,8 +28,11 @@ import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -60,7 +64,7 @@ class SecurityControllerRedirectTest {
         SecurityController controller = new SecurityController(
                 userRepository,
                 securityService,
-                mock(UserAuthenticationMethodRepository.class),
+                authenticationMethodProfileService(),
                 frontendProperties(),
                 sessionManager,
                 authUserResolutionService,
@@ -93,7 +97,7 @@ class SecurityControllerRedirectTest {
         SecurityController controller = new SecurityController(
                 userRepository,
                 securityService,
-                mock(UserAuthenticationMethodRepository.class),
+                authenticationMethodProfileService(),
                 frontendProperties(),
                 mock(MultiFactorAuthenticationSessionManager.class),
                 authUserResolutionService,
@@ -136,7 +140,7 @@ class SecurityControllerRedirectTest {
         SecurityController controller = new SecurityController(
                 userRepository,
                 securityService,
-                mock(UserAuthenticationMethodRepository.class),
+                authenticationMethodProfileService(),
                 frontendProperties(),
                 sessionManager,
                 authUserResolutionService,
@@ -171,7 +175,7 @@ class SecurityControllerRedirectTest {
         SecurityController controller = new SecurityController(
                 userRepository,
                 securityService,
-                mock(UserAuthenticationMethodRepository.class),
+                authenticationMethodProfileService(),
                 frontendProperties(),
                 sessionManager,
                 authUserResolutionService,
@@ -216,7 +220,7 @@ class SecurityControllerRedirectTest {
         SecurityController controller = new SecurityController(
                 userRepository,
                 securityService,
-                mock(UserAuthenticationMethodRepository.class),
+                authenticationMethodProfileService(),
                 frontendProperties(),
                 mock(MultiFactorAuthenticationSessionManager.class),
                 authUserResolutionService,
@@ -251,7 +255,7 @@ class SecurityControllerRedirectTest {
         SecurityController controller = new SecurityController(
                 userRepository,
                 securityService,
-                mock(UserAuthenticationMethodRepository.class),
+                authenticationMethodProfileService(),
                 frontendProperties(),
                 sessionManager,
                 authUserResolutionService,
@@ -283,7 +287,7 @@ class SecurityControllerRedirectTest {
         SecurityController controller = new SecurityController(
                 userRepository,
                 securityService,
-                mock(UserAuthenticationMethodRepository.class),
+                authenticationMethodProfileService(),
                 frontendProperties(),
                 sessionManager,
                 authUserResolutionService,
@@ -319,6 +323,14 @@ class SecurityControllerRedirectTest {
         properties.setTotpBindUrl("redirect:http://localhost:5173/self/security/totp-bind");
         properties.setTotpVerifyUrl("redirect:http://localhost:5173/self/security/totp-verify");
         return properties;
+    }
+
+    private static UserAuthenticationMethodProfileService authenticationMethodProfileService() {
+        UserAuthScopePolicyRepository scopeRepo = mock(UserAuthScopePolicyRepository.class);
+        lenient().when(scopeRepo.findByUserIdAndAuthenticationProviderAndAuthenticationTypeAndScopeKey(
+                anyLong(), anyString(), anyString(), anyString())).thenReturn(Optional.empty());
+        lenient().when(scopeRepo.findByUserIdAndScopeKey(anyLong(), anyString())).thenReturn(List.of());
+        return new UserAuthenticationMethodProfileService(scopeRepo);
     }
 
     private static MockHttpServletRequest request() {

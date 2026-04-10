@@ -25,10 +25,11 @@ import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.core.oauth.tenant.TenantContextContract;
 import com.tiny.platform.core.oauth.tenant.TenantContextFilter;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
-import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationMethod;
-import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
-import com.tiny.platform.infrastructure.tenant.config.PlatformTenantProperties;
-import com.tiny.platform.infrastructure.tenant.config.PlatformTenantResolver;
+import com.tiny.platform.infrastructure.auth.user.domain.UserAuthCredential;
+import com.tiny.platform.infrastructure.auth.user.domain.UserAuthScopePolicy;
+import com.tiny.platform.infrastructure.auth.user.repository.UserAuthScopePolicyRepository;
+import com.tiny.platform.infrastructure.auth.user.service.UserAuthenticationBridgeWriter;
+import com.tiny.platform.infrastructure.auth.user.service.UserAuthenticationMethodProfileService;
 import com.tiny.platform.infrastructure.tenant.domain.Tenant;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
@@ -63,13 +64,16 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import org.springframework.web.filter.RequestContextFilter;
 
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 
+import static com.tiny.platform.infrastructure.auth.user.service.UserAuthenticationBridgeWriter.buildScopeKey;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.web.context.HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY;
@@ -88,7 +92,10 @@ class PartialMfaFormLoginIntegrationTest {
     private UserRepository userRepository;
 
     @Mock
-    private UserAuthenticationMethodRepository authenticationMethodRepository;
+    private UserAuthScopePolicyRepository scopePolicyRepository;
+
+    @Mock
+    private UserAuthenticationBridgeWriter authenticationBridgeWriter;
 
     @Mock
     private UserDetailsService userDetailsService;
@@ -126,7 +133,7 @@ class PartialMfaFormLoginIntegrationTest {
         csrfTokenRepository.setHeaderName("X-XSRF-TOKEN");
         csrfTokenRepository.setParameterName("_csrf");
 
-        lenient().when(authenticationMethodRepository.findByUserIdAndTenantIdIsNullAndIsMethodEnabledTrueOrderByAuthenticationPriorityAsc(anyLong()))
+        lenient().when(scopePolicyRepository.findByUserIdAndScopeKey(anyLong(), any()))
                 .thenReturn(List.of());
 
         FrontendProperties frontendProperties = new FrontendProperties();
@@ -134,13 +141,16 @@ class PartialMfaFormLoginIntegrationTest {
         frontendProperties.setTotpBindUrl("redirect:http://localhost:5173/self/security/totp-bind");
         frontendProperties.setTotpVerifyUrl("redirect:http://localhost:5173/self/security/totp-verify");
 
+        UserAuthenticationMethodProfileService profileService =
+                new UserAuthenticationMethodProfileService(scopePolicyRepository);
+
         MultiFactorAuthenticationSessionManager sessionManager =
                 new MultiFactorAuthenticationSessionManager(userDetailsService, securityContextRepository);
 
         SecurityController securityController = new SecurityController(
                 userRepository,
                 securityService,
-                authenticationMethodRepository,
+                profileService,
                 frontendProperties,
                 sessionManager,
                 authUserResolutionService,
@@ -148,17 +158,16 @@ class PartialMfaFormLoginIntegrationTest {
                 userSessionService
         );
 
-        PlatformTenantResolver platformTenantResolver = new PlatformTenantResolver(tenantRepository, new PlatformTenantProperties());
         MultiAuthenticationProvider authenticationProvider = new MultiAuthenticationProvider(
                 userRepository,
                 tenantRepository,
-                platformTenantResolver,
-                authenticationMethodRepository,
+                profileService,
+                authenticationBridgeWriter,
                 passwordEncoder,
                 userDetailsService,
                 securityService,
                 authUserResolutionService,
-                new TotpVerificationGuard(authenticationMethodRepository, new MfaProperties(), totpService),
+                new TotpVerificationGuard(authenticationBridgeWriter, new MfaProperties(), totpService),
                 new LoginFailurePolicy(new LoginProtectionProperties())
         );
 
@@ -216,10 +225,15 @@ class PartialMfaFormLoginIntegrationTest {
         when(tenantRepository.findByCode("acme")).thenReturn(Optional.of(activeTenant(1L, "acme")));
         when(authUserResolutionService.resolveUserRecordInActiveTenant("admin", 1L)).thenReturn(Optional.of(user));
         when(userDetailsService.loadUserByUsername("admin")).thenReturn(securityUser);
-        when(authenticationMethodRepository.findEnabledMethodsByUserId(1L, 1L)).thenReturn(List.of(
-                passwordMethod(user.getId(), 1L, "{noop}raw-password"),
-                totpMethod(user.getId(), 1L, "BASE32SECRET")
-        ));
+        when(scopePolicyRepository.findByUserIdAndScopeKey(eq(1L), eq(buildScopeKey("TENANT", 1L))))
+                .thenReturn(List.of(
+                        tenantScopePolicy(user.getId(), 1L, "LOCAL", "PASSWORD",
+                                Map.of("password", "{noop}raw-password"), 0),
+                        tenantScopePolicy(user.getId(), 1L, "LOCAL", "TOTP",
+                                Map.of("secret", "BASE32SECRET"), 1)
+                ));
+        when(scopePolicyRepository.findByUserIdAndScopeKey(eq(1L), eq(buildScopeKey("GLOBAL", null))))
+                .thenReturn(List.of());
         when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
                 "totpBound", true,
                 "totpActivated", true,
@@ -304,9 +318,13 @@ class PartialMfaFormLoginIntegrationTest {
         when(tenantRepository.findByCode("acme")).thenReturn(Optional.of(activeTenant(1L, "acme")));
         when(authUserResolutionService.resolveUserRecordInActiveTenant("admin", 1L)).thenReturn(Optional.of(user));
         when(userDetailsService.loadUserByUsername("admin")).thenReturn(securityUser);
-        when(authenticationMethodRepository.findEnabledMethodsByUserId(1L, 1L)).thenReturn(List.of(
-                passwordMethod(user.getId(), 1L, "{noop}raw-password")
-        ));
+        when(scopePolicyRepository.findByUserIdAndScopeKey(eq(1L), eq(buildScopeKey("TENANT", 1L))))
+                .thenReturn(List.of(
+                        tenantScopePolicy(user.getId(), 1L, "LOCAL", "PASSWORD",
+                                Map.of("password", "{noop}raw-password"), 0)
+                ));
+        when(scopePolicyRepository.findByUserIdAndScopeKey(eq(1L), eq(buildScopeKey("GLOBAL", null))))
+                .thenReturn(List.of());
         when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
                 "totpBound", false,
                 "totpActivated", false,
@@ -418,28 +436,28 @@ class PartialMfaFormLoginIntegrationTest {
         );
     }
 
-    private static UserAuthenticationMethod passwordMethod(Long userId, Long tenantId, String encodedPassword) {
-        UserAuthenticationMethod method = new UserAuthenticationMethod();
-        method.setId(11L);
-        method.setUserId(userId);
-        method.setTenantId(tenantId);
-        method.setAuthenticationProvider("LOCAL");
-        method.setAuthenticationType("PASSWORD");
-        method.setAuthenticationConfiguration(Map.of("password", encodedPassword));
-        method.setIsMethodEnabled(true);
-        return method;
-    }
+    private static UserAuthScopePolicy tenantScopePolicy(
+            long userId,
+            long tenantId,
+            String authenticationProvider,
+            String authenticationType,
+            Map<String, Object> configuration,
+            int authenticationPriority) {
+        UserAuthCredential credential = new UserAuthCredential();
+        credential.setUserId(userId);
+        credential.setAuthenticationProvider(authenticationProvider);
+        credential.setAuthenticationType(authenticationType);
+        credential.setAuthenticationConfiguration(new HashMap<>(configuration));
 
-    private static UserAuthenticationMethod totpMethod(Long userId, Long tenantId, String secret) {
-        UserAuthenticationMethod method = new UserAuthenticationMethod();
-        method.setId(12L);
-        method.setUserId(userId);
-        method.setTenantId(tenantId);
-        method.setAuthenticationProvider("LOCAL");
-        method.setAuthenticationType("TOTP");
-        method.setAuthenticationConfiguration(Map.of("secret", secret));
-        method.setIsMethodEnabled(true);
-        return method;
+        UserAuthScopePolicy policy = new UserAuthScopePolicy();
+        policy.setCredential(credential);
+        policy.setScopeType("TENANT");
+        policy.setScopeId(tenantId);
+        policy.setScopeKey(buildScopeKey("TENANT", tenantId));
+        policy.setIsPrimaryMethod(true);
+        policy.setIsMethodEnabled(true);
+        policy.setAuthenticationPriority(authenticationPriority);
+        return policy;
     }
 
     private static Tenant activeTenant(Long id, String code) {

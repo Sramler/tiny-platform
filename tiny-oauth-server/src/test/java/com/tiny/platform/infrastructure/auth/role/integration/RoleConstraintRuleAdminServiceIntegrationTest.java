@@ -11,6 +11,7 @@ import com.tiny.platform.infrastructure.auth.role.repository.RolePrerequisiteRep
 import com.tiny.platform.infrastructure.auth.role.repository.RoleRepository;
 import com.tiny.platform.infrastructure.auth.role.service.RoleConstraintRuleAdminService;
 import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -58,111 +59,169 @@ class RoleConstraintRuleAdminServiceIntegrationTest {
         Long tenantId = 1L;
         long ts = System.currentTimeMillis();
 
-        Role a = new Role();
-        a.setTenantId(tenantId);
-        a.setRoleLevel("TENANT");
-        a.setCode("ROLE_RBAC3_RULE_A_" + ts);
-        a.setName("RBAC3 Rule A " + ts);
-        a.setEnabled(true);
-        a.setBuiltin(false);
-        a = roleRepository.save(a);
+        Long aId = null;
+        Long bId = null;
+        Long cId = null;
+        try {
+            Role a = new Role();
+            a.setTenantId(tenantId);
+            a.setRoleLevel("TENANT");
+            a.setCode("ROLE_RBAC3_RULE_A_" + ts);
+            a.setName("RBAC3 Rule A " + ts);
+            a.setEnabled(true);
+            a.setBuiltin(false);
+            a = roleRepository.save(a);
 
-        Role b = new Role();
-        b.setTenantId(tenantId);
-        b.setRoleLevel("TENANT");
-        b.setCode("ROLE_RBAC3_RULE_B_" + ts);
-        b.setName("RBAC3 Rule B " + ts);
-        b.setEnabled(true);
-        b.setBuiltin(false);
-        b = roleRepository.save(b);
+            Role b = new Role();
+            b.setTenantId(tenantId);
+            b.setRoleLevel("TENANT");
+            b.setCode("ROLE_RBAC3_RULE_B_" + ts);
+            b.setName("RBAC3 Rule B " + ts);
+            b.setEnabled(true);
+            b.setBuiltin(false);
+            b = roleRepository.save(b);
 
-        Role c = new Role();
-        c.setTenantId(tenantId);
-        c.setRoleLevel("TENANT");
-        c.setCode("ROLE_RBAC3_RULE_C_" + ts);
-        c.setName("RBAC3 Rule C " + ts);
-        c.setEnabled(true);
-        c.setBuiltin(false);
-        c = roleRepository.save(c);
+            Role c = new Role();
+            c.setTenantId(tenantId);
+            c.setRoleLevel("TENANT");
+            c.setCode("ROLE_RBAC3_RULE_C_" + ts);
+            c.setName("RBAC3 Rule C " + ts);
+            c.setEnabled(true);
+            c.setBuiltin(false);
+            c = roleRepository.save(c);
 
-        Long aId = a.getId();
-        Long bId = b.getId();
-        Long cId = c.getId();
+            aId = a.getId();
+            bId = b.getId();
+            cId = c.getId();
+            final Long finalAId = aId;
+            final Long finalBId = bId;
+            final Long finalCId = cId;
 
-        // Best-effort clean.
-        roleHierarchyRepository.deleteByTenantIdAndChildRoleIdAndParentRoleId(tenantId, aId, bId);
-        roleHierarchyRepository.deleteByTenantIdAndChildRoleIdAndParentRoleId(tenantId, bId, cId);
-        roleHierarchyRepository.deleteByTenantIdAndChildRoleIdAndParentRoleId(tenantId, cId, aId);
+            // Best-effort clean.
+            roleHierarchyRepository.deleteByTenantIdAndChildRoleIdAndParentRoleId(tenantId, finalAId, finalBId);
+            roleHierarchyRepository.deleteByTenantIdAndChildRoleIdAndParentRoleId(tenantId, finalBId, finalCId);
+            roleHierarchyRepository.deleteByTenantIdAndChildRoleIdAndParentRoleId(tenantId, finalCId, finalAId);
 
-        adminService.upsertRoleHierarchyEdge(tenantId, aId, bId);
-        adminService.upsertRoleHierarchyEdge(tenantId, bId, cId);
+            adminService.upsertRoleHierarchyEdge(tenantId, finalAId, finalBId);
+            adminService.upsertRoleHierarchyEdge(tenantId, finalBId, finalCId);
 
-        assertThatThrownBy(() -> adminService.upsertRoleHierarchyEdge(tenantId, cId, aId))
-            .isInstanceOf(BusinessException.class);
+            assertThatThrownBy(() -> adminService.upsertRoleHierarchyEdge(tenantId, finalCId, finalAId))
+                .isInstanceOf(BusinessException.class);
+        } finally {
+            Rbac3RoleConstraintIntegrationTestCleanup.purgeRoleConstraintArtifacts(
+                tenantId,
+                List.of(aId, bId, cId),
+                roleHierarchyRepository,
+                roleMutexRepository,
+                roleCardinalityRepository,
+                rolePrerequisiteRepository,
+                roleRepository
+            );
+        }
     }
 
     @Test
     void roleMutex_shouldRejectSelfMutex() {
         Long tenantId = 1L;
         long ts = System.currentTimeMillis();
-        Role r = new Role();
-        r.setTenantId(tenantId);
-        r.setRoleLevel("TENANT");
-        r.setCode("ROLE_RBAC3_RULE_MUTEX_" + ts);
-        r.setName("RBAC3 Rule Mutex " + ts);
-        r.setEnabled(true);
-        r.setBuiltin(false);
-        r = roleRepository.save(r);
+        Long roleId = null;
+        try {
+            Role r = new Role();
+            r.setTenantId(tenantId);
+            r.setRoleLevel("TENANT");
+            r.setCode("ROLE_RBAC3_RULE_MUTEX_" + ts);
+            r.setName("RBAC3 Rule Mutex " + ts);
+            r.setEnabled(true);
+            r.setBuiltin(false);
+            r = roleRepository.save(r);
 
-        Long roleId = r.getId();
-        roleMutexRepository.deleteByTenantIdAndLeftRoleIdAndRightRoleId(tenantId, roleId, roleId);
+            roleId = r.getId();
+            final Long finalRoleId = roleId;
+            roleMutexRepository.deleteByTenantIdAndLeftRoleIdAndRightRoleId(tenantId, finalRoleId, finalRoleId);
 
-        assertThatThrownBy(() -> adminService.upsertRoleMutex(tenantId, roleId, roleId))
-            .isInstanceOf(BusinessException.class);
+            assertThatThrownBy(() -> adminService.upsertRoleMutex(tenantId, finalRoleId, finalRoleId))
+                .isInstanceOf(BusinessException.class);
+        } finally {
+            Rbac3RoleConstraintIntegrationTestCleanup.purgeRoleConstraintArtifacts(
+                tenantId,
+                List.of(roleId),
+                roleHierarchyRepository,
+                roleMutexRepository,
+                roleCardinalityRepository,
+                rolePrerequisiteRepository,
+                roleRepository
+            );
+        }
     }
 
     @Test
     void roleCardinality_shouldRejectInvalidParams() {
         Long tenantId = 1L;
         long ts = System.currentTimeMillis();
-        Role r = new Role();
-        r.setTenantId(tenantId);
-        r.setRoleLevel("TENANT");
-        r.setCode("ROLE_RBAC3_RULE_CARD_" + ts);
-        r.setName("RBAC3 Rule Card " + ts);
-        r.setEnabled(true);
-        r.setBuiltin(false);
-        r = roleRepository.save(r);
+        Long roleId = null;
+        try {
+            Role r = new Role();
+            r.setTenantId(tenantId);
+            r.setRoleLevel("TENANT");
+            r.setCode("ROLE_RBAC3_RULE_CARD_" + ts);
+            r.setName("RBAC3 Rule Card " + ts);
+            r.setEnabled(true);
+            r.setBuiltin(false);
+            r = roleRepository.save(r);
 
-        Long roleId = r.getId();
-        roleCardinalityRepository.deleteByTenantIdAndRoleIdAndScopeType(tenantId, roleId, "TENANT");
+            roleId = r.getId();
+            final Long finalRoleId = roleId;
+            roleCardinalityRepository.deleteByTenantIdAndRoleIdAndScopeType(tenantId, finalRoleId, "TENANT");
 
-        assertThatThrownBy(() -> adminService.upsertRoleCardinality(tenantId, roleId, "INVALID_SCOPE", 1))
-            .isInstanceOf(BusinessException.class);
+            assertThatThrownBy(() -> adminService.upsertRoleCardinality(tenantId, finalRoleId, "INVALID_SCOPE", 1))
+                .isInstanceOf(BusinessException.class);
 
-        assertThatThrownBy(() -> adminService.upsertRoleCardinality(tenantId, roleId, "TENANT", 0))
-            .isInstanceOf(BusinessException.class);
+            assertThatThrownBy(() -> adminService.upsertRoleCardinality(tenantId, finalRoleId, "TENANT", 0))
+                .isInstanceOf(BusinessException.class);
+        } finally {
+            Rbac3RoleConstraintIntegrationTestCleanup.purgeRoleConstraintArtifacts(
+                tenantId,
+                List.of(roleId),
+                roleHierarchyRepository,
+                roleMutexRepository,
+                roleCardinalityRepository,
+                rolePrerequisiteRepository,
+                roleRepository
+            );
+        }
     }
 
     @Test
     void rolePrerequisite_shouldRejectSelfPrerequisite() {
         Long tenantId = 1L;
         long ts = System.currentTimeMillis();
+        Long roleId = null;
+        try {
+            Role r = new Role();
+            r.setTenantId(tenantId);
+            r.setRoleLevel("TENANT");
+            r.setCode("ROLE_RBAC3_RULE_PRE_" + ts);
+            r.setName("RBAC3 Rule Pre " + ts);
+            r.setEnabled(true);
+            r.setBuiltin(false);
+            r = roleRepository.save(r);
 
-        Role r = new Role();
-        r.setTenantId(tenantId);
-        r.setRoleLevel("TENANT");
-        r.setCode("ROLE_RBAC3_RULE_PRE_" + ts);
-        r.setName("RBAC3 Rule Pre " + ts);
-        r.setEnabled(true);
-        r.setBuiltin(false);
-        r = roleRepository.save(r);
+            roleId = r.getId();
+            final Long finalRoleId = roleId;
+            rolePrerequisiteRepository.deleteByTenantIdAndRoleIdAndRequiredRoleId(tenantId, finalRoleId, finalRoleId);
 
-        Long roleId = r.getId();
-        rolePrerequisiteRepository.deleteByTenantIdAndRoleIdAndRequiredRoleId(tenantId, roleId, roleId);
-
-        assertThatThrownBy(() -> adminService.upsertRolePrerequisite(tenantId, roleId, roleId))
-            .isInstanceOf(BusinessException.class);
+            assertThatThrownBy(() -> adminService.upsertRolePrerequisite(tenantId, finalRoleId, finalRoleId))
+                .isInstanceOf(BusinessException.class);
+        } finally {
+            Rbac3RoleConstraintIntegrationTestCleanup.purgeRoleConstraintArtifacts(
+                tenantId,
+                List.of(roleId),
+                roleHierarchyRepository,
+                roleMutexRepository,
+                roleCardinalityRepository,
+                rolePrerequisiteRepository,
+                roleRepository
+            );
+        }
     }
 }
-

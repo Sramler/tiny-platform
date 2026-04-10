@@ -33,7 +33,7 @@ Usage:
   VERIFY_DEMO_USERS_CLEANUP_CONFIRM=YES bash scripts/cleanup-demo-users-user-xxxx.sh --apply
 
 Deletes users matching username pattern ^user_[0-9]{4}$ and related rows in:
-  role_assignment, user_authentication_method, user_avatar, user_unit,
+  role_assignment, user_auth_credential/user_auth_scope_policy, user_avatar, user_unit,
   user_session, user_authentication_audit, authorization_audit_log, tenant_user, user
 EOF
 }
@@ -95,7 +95,8 @@ echo ""
 
 ra_count="$(query "SELECT COUNT(*) FROM role_assignment ra WHERE ra.principal_type='USER' AND ra.principal_id IN (SELECT u.id FROM user u WHERE $CANDIDATE_FILTER)")"
 tu_count="$(query "SELECT COUNT(*) FROM tenant_user tu WHERE tu.user_id IN (SELECT u.id FROM user u WHERE $CANDIDATE_FILTER)")"
-uam_count="$(query "SELECT COUNT(*) FROM user_authentication_method uam WHERE uam.user_id IN (SELECT u.id FROM user u WHERE $CANDIDATE_FILTER)")"
+credential_count="$(query "SELECT COUNT(*) FROM user_auth_credential c WHERE c.user_id IN (SELECT u.id FROM user u WHERE $CANDIDATE_FILTER)")"
+scope_policy_count="$(query "SELECT COUNT(*) FROM user_auth_scope_policy p WHERE p.credential_id IN (SELECT c.id FROM user_auth_credential c WHERE c.user_id IN (SELECT u.id FROM user u WHERE $CANDIDATE_FILTER))")"
 avatar_count="$(query "SELECT COUNT(*) FROM user_avatar ua WHERE ua.user_id IN (SELECT u.id FROM user u WHERE $CANDIDATE_FILTER)")"
 
 uu_count=0
@@ -118,7 +119,8 @@ fi
 echo "关联数据统计（将一并清理）:"
 echo "  role_assignment: $ra_count"
 echo "  tenant_user: $tu_count"
-echo "  user_authentication_method: $uam_count"
+echo "  user_auth_credential: $credential_count"
+echo "  user_auth_scope_policy: $scope_policy_count"
 echo "  user_avatar: $avatar_count"
 echo "  user_unit: $uu_count"
 echo "  user_session: $us_count"
@@ -152,8 +154,11 @@ CLEANUP_SQL="
   START TRANSACTION;
   DELETE ra FROM role_assignment ra
    INNER JOIN tmp_demo_user_ids t ON ra.principal_type='USER' AND ra.principal_id = t.id;
-  DELETE uam FROM user_authentication_method uam
-   INNER JOIN tmp_demo_user_ids t ON uam.user_id = t.id;
+  DELETE p FROM user_auth_scope_policy p
+   INNER JOIN user_auth_credential c ON c.id = p.credential_id
+   INNER JOIN tmp_demo_user_ids t ON c.user_id = t.id;
+  DELETE c FROM user_auth_credential c
+   INNER JOIN tmp_demo_user_ids t ON c.user_id = t.id;
   DELETE ua FROM user_avatar ua
    INNER JOIN tmp_demo_user_ids t ON ua.user_id = t.id;
 "

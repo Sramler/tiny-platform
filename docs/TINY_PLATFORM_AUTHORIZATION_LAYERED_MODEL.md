@@ -30,7 +30,6 @@ flowchart TD
     end
 
     subgraph "载体层（Carrier Layer）"
-        RES["resource（当前兼容总表）"]
         M["menu"]
         A["ui_action"]
         E["api_endpoint"]
@@ -48,7 +47,6 @@ flowchart TD
     end
 
     P --> RP
-    P --> RES
     P --> M
     P --> A
     P --> E
@@ -73,7 +71,7 @@ principal -> role_assignment -> role -> role_permission -> permission
 
 - `permission` 是**能力真相源**；
 - `role_permission` 是**角色到能力的关系真相源**；
-- `resource` 不再承担“角色授了什么”的真相，只承担“这个能力挂在哪个载体上”的兼容职责。
+- `resource` 已不再属于当前活动 schema；旧文档若仍提到它，只能按历史兼容层理解。
 
 补充（ORG/DEPT active scope 主线口径，2026-03-28）：
 
@@ -86,22 +84,20 @@ principal -> role_assignment -> role -> role_permission -> permission
 
 ### 3.2 载体层
 
-当前仓库中，载体层已经进入“双模型过渡态”：
+当前仓库中，载体层的活动 schema / 运行时口径已经收口为：
 
-- 兼容总表：`resource`
-- 已拆载体表：`menu`、`ui_action`、`api_endpoint`
-- 显式绑定字段：`resource.required_permission_id`
+- 活动载体表：`menu`、`ui_action`、`api_endpoint`
+- 显式绑定字段：carrier 表的 `required_permission_id`
 - 组合需求表：
   - `menu_permission_requirement`
   - `ui_action_permission_requirement`
   - `api_endpoint_permission_requirement`
 
-当前允许的过渡方式是：
+历史说明：
 
-- 保留 `resource.permission` 作为兼容字段、可读字段和迁移输入；
-- 同步维护 `resource.required_permission_id`，把兼容载体层显式绑定到 `permission.id`；
-- carrier 表同样维护 `required_permission_id`；
-- compatibility group 统一使用 `requirement_group = 0`、`negated = false` 对齐单权限旧模型。
+- `resource` 曾在迁移期作为兼容总表存在，但已通过 Liquibase 131 物理删除；
+- `resource.permission`、`resource.required_permission_id` 只应按历史迁移阶段名词理解，不再代表当前数据库表结构；
+- compatibility group 仍统一使用 `requirement_group = 0`、`negated = false` 对齐单权限旧模型，但承载位置已切到 carrier / requirement 表。
 
 ### 3.3 复杂需求（当前已落地的最小语义）
 
@@ -146,7 +142,7 @@ principal/effective roles -> role_data_scope -> role_data_scope_item -> @DataSco
 
 ### 4.2 显式绑定，避免字符串漂移
 
-过渡期仍允许保留 `resource.permission`，但它只应作为：
+历史迁移期曾保留 `resource.permission`，但它只应作为：
 
 - 兼容字段
 - 运营可读字段
@@ -212,10 +208,10 @@ api_endpoint.required_permission_id -> permission.id
 
 本轮删除的旧运行时查询和 helper 以这批迁移为前提。
 
-#### 暂时必须保留（带退场条件）
+#### 当前仍保留的历史语义与安全约束
 
-- `resource`：兼容总表与迁移输入（用于历史/运营可读字段承载）；已下线 legacy `ResourceCarrierProjectionSyncService.sync/delete` 双写接口；正常 `create/update/updateSort/delete` 不再主动维护 compatibility `resource` 行，而是仅写入 carrier（`menu/ui_action/api_endpoint`）并维护 `requirement_group=0`；运行时主线不再依赖 `resource` 表做任何业务读写，`resource` 退化为历史兼容壳（可观测/迁移输入）；
-- `resource.permission`：兼容字段、运营可读字段、历史回填输入（不再由正常写链主动维护；运行时逻辑不依赖该字段）；
+- `resource`：已不再是活动表；若在旧文档、旧 SQL 或历史 runbook 中出现，应按“pre-131 兼容层”理解，而不是当前数据库事实；
+- `resource.permission`：仅作为历史迁移命名口径、运营可读字段来源和旧文档术语保留；运行时逻辑与当前 schema 均不依赖该字段；
 - `CarrierCompatibilitySafetyService`：承接 legacy projection bridge 剩余的两段显式安全语义：`replaceCompatibilityRequirement(requirement_group=0)` 与 `existsPermissionReference`（用于“最后载体撤 role_permission”的判断）；运行时主线不再依赖 `ResourceCarrierProjectionSyncService`；
 - `ResourceRepository` 中依赖总表的写链装载 / 回填查询：已退出运行时主线；如仍存在仅允许用于历史/迁移脚本，不得回流主链。
 - 2026-03-27 收缩进展：菜单父子关系校验、循环引用检查和递归删除子菜单已优先改读 `menu` 载体（`MenuEntryRepository`）；运行时删除链 direct-delete carrier，不再依赖 `resource` 表。
@@ -273,12 +269,13 @@ api_endpoint.required_permission_id -> permission.id
 - 已实现 evaluator、菜单运行时消费、`ui_action` 统一运行时门控与 `api_endpoint` 统一守卫
 - requirement-aware 审计已覆盖 `menu/ui_action/api_endpoint` 运行时决策；后续只需持续回归与覆盖证据维护，不再作为阶段闭环阻断
 
-### 第五步：让 `resource` 退化为兼容层（进行中）
+### 第五步：`resource` 兼容层退场（已完成）
 
-当菜单、按钮、API 的管理面和治理边界稳定后：
+当前阶段已经完成：
 
-- `resource` 仅保留为兼容总表 / 迁移输入；或
-- 最终退化为历史兼容视图，再逐步下线。
+- 运行时与活动 schema 不再依赖 `resource`；
+- carrier 与 requirement 成为唯一活动载体层；
+- `resource` 仅在少量历史文档、迁移说明和参考 SQL 中继续出现。
 
 当前阶段性结论：
 

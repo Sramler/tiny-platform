@@ -1,12 +1,23 @@
 package com.tiny.platform.infrastructure.auth.role.integration;
 
 import com.tiny.platform.infrastructure.auth.role.domain.RoleConstraintViolationLog;
+import com.tiny.platform.infrastructure.auth.role.domain.RoleCardinality;
+import com.tiny.platform.infrastructure.auth.role.domain.RoleHierarchy;
+import com.tiny.platform.infrastructure.auth.role.domain.RoleMutex;
+import com.tiny.platform.infrastructure.auth.role.domain.RolePrerequisite;
+import com.tiny.platform.infrastructure.auth.role.repository.RoleCardinalityRepository;
+import com.tiny.platform.infrastructure.auth.role.repository.RoleHierarchyRepository;
+import com.tiny.platform.infrastructure.auth.role.repository.RoleMutexRepository;
 import com.tiny.platform.infrastructure.auth.role.repository.RoleAssignmentRepository;
 import com.tiny.platform.infrastructure.auth.role.repository.RoleConstraintViolationLogRepository;
+import com.tiny.platform.infrastructure.auth.role.repository.RolePrerequisiteRepository;
 import com.tiny.platform.infrastructure.auth.role.repository.RoleRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.TenantUserRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import java.util.Collection;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 import org.springframework.dao.EmptyResultDataAccessException;
 
 /**
@@ -25,6 +36,75 @@ public final class Rbac3RoleConstraintIntegrationTestCleanup {
             roleRepository.deleteById(roleId);
         } catch (RuntimeException ignored) {
             // best-effort teardown (FK order / concurrent runs)
+        }
+    }
+
+    public static void purgeRoleConstraintArtifacts(
+        Long tenantId,
+        Collection<Long> roleIds,
+        RoleHierarchyRepository roleHierarchyRepository,
+        RoleMutexRepository roleMutexRepository,
+        RoleCardinalityRepository roleCardinalityRepository,
+        RolePrerequisiteRepository rolePrerequisiteRepository,
+        RoleRepository roleRepository
+    ) {
+        if (roleIds == null || roleIds.isEmpty()) {
+            return;
+        }
+
+        Set<Long> targetRoleIds = roleIds.stream()
+            .filter(id -> id != null)
+            .collect(Collectors.toSet());
+        if (targetRoleIds.isEmpty()) {
+            return;
+        }
+
+        try {
+            List<RoleHierarchy> hierarchies = roleHierarchyRepository.findByTenantId(tenantId).stream()
+                .filter(h -> targetRoleIds.contains(h.getChildRoleId()) || targetRoleIds.contains(h.getParentRoleId()))
+                .toList();
+            if (!hierarchies.isEmpty()) {
+                roleHierarchyRepository.deleteAll(hierarchies);
+            }
+        } catch (RuntimeException ignored) {
+            // best-effort teardown
+        }
+
+        try {
+            List<RoleMutex> mutexes = roleMutexRepository.findByTenantId(tenantId).stream()
+                .filter(m -> targetRoleIds.contains(m.getLeftRoleId()) || targetRoleIds.contains(m.getRightRoleId()))
+                .toList();
+            if (!mutexes.isEmpty()) {
+                roleMutexRepository.deleteAll(mutexes);
+            }
+        } catch (RuntimeException ignored) {
+            // best-effort teardown
+        }
+
+        try {
+            List<RoleCardinality> cardinalities = roleCardinalityRepository.findByTenantId(tenantId).stream()
+                .filter(c -> targetRoleIds.contains(c.getRoleId()))
+                .toList();
+            if (!cardinalities.isEmpty()) {
+                roleCardinalityRepository.deleteAll(cardinalities);
+            }
+        } catch (RuntimeException ignored) {
+            // best-effort teardown
+        }
+
+        try {
+            List<RolePrerequisite> prerequisites = rolePrerequisiteRepository.findByTenantId(tenantId).stream()
+                .filter(p -> targetRoleIds.contains(p.getRoleId()) || targetRoleIds.contains(p.getRequiredRoleId()))
+                .toList();
+            if (!prerequisites.isEmpty()) {
+                rolePrerequisiteRepository.deleteAll(prerequisites);
+            }
+        } catch (RuntimeException ignored) {
+            // best-effort teardown
+        }
+
+        for (Long roleId : targetRoleIds) {
+            deleteRoleBestEffort(roleRepository, roleId);
         }
     }
 

@@ -22,7 +22,6 @@ import java.util.stream.Collectors;
 
 @Service
 public class CarrierPermissionRequirementEvaluator {
-
     private final MenuPermissionRequirementRepository menuPermissionRequirementRepository;
     private final UiActionPermissionRequirementRepository uiActionPermissionRequirementRepository;
     private final ApiEndpointPermissionRequirementRepository apiEndpointPermissionRequirementRepository;
@@ -256,8 +255,7 @@ public class CarrierPermissionRequirementEvaluator {
                               Map<Long, List<CarrierPermissionRequirementRow>> requirementMap) {
         List<CarrierPermissionRequirementRow> rows = requirementMap.get(carrierId);
         if (rows == null || rows.isEmpty()) {
-            return !StringUtils.hasText(fallbackPermission)
-                || authorityImpliesPermission(authorityCodes, fallbackPermission.trim());
+            return false;
         }
 
         Map<Integer, List<CarrierPermissionRequirementRow>> groups = new LinkedHashMap<>();
@@ -316,19 +314,16 @@ public class CarrierPermissionRequirementEvaluator {
             );
         }
         if (rows == null || rows.isEmpty()) {
-            if (enforceRequirementRowsWhenMissing) {
-                return new RequirementAwareAuditDetail(
-                    carrierType,
-                    carrierId,
-                    null,
-                    authorityIntersectionCodes(List.of(), authorityCodes),
-                    computeFallbackMissingCodes(fallbackPermission, authorityCodes),
-                    List.of(),
-                    "DENY",
-                    "REQUIREMENT_ROWS_MISSING_FAIL_CLOSED"
-                );
-            }
-            return compatibilityFallbackDetail(carrierType, carrierId, fallbackPermission, authorityCodes);
+            return new RequirementAwareAuditDetail(
+                carrierType,
+                carrierId,
+                null,
+                List.of(),
+                computeFallbackMissingCodes(fallbackPermission, authorityCodes),
+                List.of(),
+                "DENY",
+                "REQUIREMENT_ROWS_MISSING_FAIL_CLOSED"
+            );
         }
 
         Map<Integer, List<CarrierPermissionRequirementRow>> groups = new LinkedHashMap<>();
@@ -339,18 +334,16 @@ public class CarrierPermissionRequirementEvaluator {
             groups.computeIfAbsent(row.getRequirementGroup(), ignored -> new java.util.ArrayList<>()).add(row);
         }
         if (groups.isEmpty()) {
-            return enforceRequirementRowsWhenMissing
-                ? new RequirementAwareAuditDetail(
-                    carrierType,
-                    carrierId,
-                    null,
-                    List.of(),
-                    computeFallbackMissingCodes(fallbackPermission, authorityCodes),
-                    List.of(),
-                    "DENY",
-                    "REQUIREMENT_GROUPS_MISSING_FAIL_CLOSED"
-                )
-                : compatibilityFallbackDetail(carrierType, carrierId, fallbackPermission, authorityCodes);
+            return new RequirementAwareAuditDetail(
+                carrierType,
+                carrierId,
+                null,
+                List.of(),
+                computeFallbackMissingCodes(fallbackPermission, authorityCodes),
+                List.of(),
+                "DENY",
+                "REQUIREMENT_GROUPS_MISSING_FAIL_CLOSED"
+            );
         }
 
         for (Map.Entry<Integer, List<CarrierPermissionRequirementRow>> entry : groups.entrySet()) {
@@ -445,37 +438,6 @@ public class CarrierPermissionRequirementEvaluator {
         return "REQUIREMENT_NOT_SATISFIED";
     }
 
-    private RequirementAwareAuditDetail compatibilityFallbackDetail(String carrierType,
-                                                                       Long carrierId,
-                                                                       String fallbackPermission,
-                                                                       Set<String> authorityCodes) {
-        boolean hasPermission = StringUtils.hasText(fallbackPermission);
-        String normalized = hasPermission ? fallbackPermission.trim() : null;
-        boolean present = hasPermission && authorityImpliesPermission(authorityCodes, normalized);
-        boolean allowed = !hasPermission || present;
-
-        List<String> matched = present ? List.of(normalized) : List.of();
-        List<String> missing = (!allowed && hasPermission) ? List.of(normalized) : List.of();
-
-        String reason;
-        if (!hasPermission) {
-            reason = allowed ? "COMPATIBILITY_NO_PERMISSION_CONSTRAINT" : "COMPATIBILITY_NO_PERMISSION_CONSTRAINT";
-        } else {
-            reason = "COMPATIBILITY_FALLBACK_SINGLE_PERMISSION";
-        }
-
-        return new RequirementAwareAuditDetail(
-            carrierType,
-            carrierId,
-            null,
-            matched,
-            missing,
-            List.of(),
-            allowed ? "ALLOW" : "DENY",
-            reason
-        );
-    }
-
     private List<String> computeFallbackMissingCodes(String fallbackPermission, Set<String> authorityCodes) {
         if (!StringUtils.hasText(fallbackPermission)) {
             return List.of();
@@ -483,18 +445,6 @@ public class CarrierPermissionRequirementEvaluator {
         String normalized = fallbackPermission.trim();
         boolean present = authorityImpliesPermission(authorityCodes, normalized);
         return present ? List.of() : List.of(normalized);
-    }
-
-    private List<String> authorityIntersectionCodes(List<String> candidates, Set<String> authorityCodes) {
-        if (candidates == null || candidates.isEmpty()) {
-            return List.of();
-        }
-        return candidates.stream()
-            .filter(StringUtils::hasText)
-            .map(String::trim)
-            .filter(authorityCodes::contains)
-            .distinct()
-            .toList();
     }
 
     private Map<Long, List<CarrierPermissionRequirementRow>> buildRequirementMap(List<CarrierPermissionRequirementRow> rows) {

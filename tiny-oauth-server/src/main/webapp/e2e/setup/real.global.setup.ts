@@ -13,8 +13,13 @@ const tenantScopedAuthStatePath = path.resolve(authDir, 'scheduling-tenant-user.
 const secondaryAuthStatePath = path.resolve(authDir, 'tenant-b-user.json')
 const readonlyAuthStatePath = path.resolve(authDir, 'scheduling-readonly-user.json')
 const platformAuthStatePath = path.resolve(authDir, 'platform-admin-user.json')
+const derivedAssetStatePath = path.resolve(authDir, 'real-derived-assets.json')
 const seedSqlPath = path.resolve(backendRoot, 'scripts/e2e/seed-scheduling-orchestration.sql')
 const ensureAuthScriptPath = path.resolve(backendRoot, 'scripts/e2e/ensure-scheduling-e2e-auth.sh')
+const derivedAssetGovernanceScriptPath = path.resolve(
+  backendRoot,
+  'scripts/verify-real-e2e-derived-assets.sh',
+)
 const generateAuthStateScriptPath = path.resolve(__dirname, 'generate-auth-state.mjs')
 const EMPTY_STORAGE_STATE = JSON.stringify({ cookies: [], origins: [] }, null, 2)
 const backendPort = Number(readEnv(['E2E_BACKEND_PORT'], '9000'))
@@ -37,6 +42,10 @@ type ResolvedIdentityEnv = {
   E2E_PASSWORD: string
   E2E_TOTP_SECRET: string
   E2E_TOTP_CODE?: string
+}
+
+type DerivedAssetState = {
+  targetGeneratedTenantCodes: string[]
 }
 
 function readEnv(names: string[], fallback: string): string
@@ -101,13 +110,17 @@ async function prepareAuthState() {
   await fs.rm(secondaryAuthStatePath, { force: true })
   await fs.rm(readonlyAuthStatePath, { force: true })
   await fs.rm(platformAuthStatePath, { force: true })
+  await fs.rm(derivedAssetStatePath, { force: true })
   await fs.writeFile(secondaryAuthStatePath, EMPTY_STORAGE_STATE, 'utf8')
   await fs.writeFile(readonlyAuthStatePath, EMPTY_STORAGE_STATE, 'utf8')
   await fs.writeFile(platformAuthStatePath, EMPTY_STORAGE_STATE, 'utf8')
   await fs.writeFile(tenantScopedAuthStatePath, EMPTY_STORAGE_STATE, 'utf8')
 }
 
-export function deriveTenantCodeForTenantScope(primaryTenantCode: string, platformTenantCode: string): string {
+export function deriveTenantCodeForTenantScope(
+  primaryTenantCode: string,
+  platformTenantCode: string,
+): string {
   // 目标：避免 TenantContextFilter 将该 tenant 推断为 PLATFORM tenant。
   // 当 primary 与 platform tenant 相等时，为本用例派生一个不同的 tenant code。
   if (primaryTenantCode.trim().toLowerCase() !== platformTenantCode.trim().toLowerCase()) {
@@ -146,9 +159,7 @@ async function ensureTenantViaApi(authStateFilePath: string, targetTenantCode: s
     return
   }
 
-  const safeTenantCode = normalizedTargetTenantCode
-    .replace(/[^a-z0-9_]/gi, '_')
-    .slice(0, 11) // keep username length <= 20 (e2e_init_ prefix)
+  const safeTenantCode = normalizedTargetTenantCode.replace(/[^a-z0-9_]/gi, '_').slice(0, 11) // keep username length <= 20 (e2e_init_ prefix)
   const initialAdminPassword = process.env.E2E_INITIAL_ADMIN_PASSWORD ?? 'Tianye0903.'
   const initialAdminUsername = `e2e_init_${safeTenantCode}`
 
@@ -198,13 +209,13 @@ function resolvePlatformIdentityEnv(): ResolvedIdentityEnv | null {
   if (!isConfiguredValue(totpSecret)) missing.push('E2E_PLATFORM_TOTP_SECRET')
 
   if (missing.length > 0) {
-    throw new Error(
-      `租户管理 real-link 需要完整的平台自动化身份配置，缺少: ${missing.join(', ')}`,
-    )
+    throw new Error(`租户管理 real-link 需要完整的平台自动化身份配置，缺少: ${missing.join(', ')}`)
   }
 
   if (!isConfiguredValue(tenantCode)) {
-    throw new Error('缺少 E2E_PLATFORM_TENANT_CODE（请勿默认回退到 default，default 租户可能被冻结）')
+    throw new Error(
+      '缺少 E2E_PLATFORM_TENANT_CODE（请勿默认回退到 default，default 租户可能被冻结）',
+    )
   }
   if (
     tenantCode!.trim().toLowerCase() === 'default' &&
@@ -247,10 +258,13 @@ async function runMysqlSeed() {
     )
   }
 
-  const mysqlPassword = readEnv(['E2E_DB_PASSWORD', 'E2E_MYSQL_PASSWORD', 'MYSQL_ROOT_PASSWORD'], '')
+  const mysqlPassword = readEnv(
+    ['E2E_DB_PASSWORD', 'E2E_MYSQL_PASSWORD', 'MYSQL_ROOT_PASSWORD'],
+    '',
+  )
   if (!mysqlPassword) {
     throw new Error(
-      'real scheduling e2e 需要设置 E2E_DB_PASSWORD、E2E_MYSQL_PASSWORD 或 MYSQL_ROOT_PASSWORD，以便执行种子 SQL'
+      'real scheduling e2e 需要设置 E2E_DB_PASSWORD、E2E_MYSQL_PASSWORD 或 MYSQL_ROOT_PASSWORD，以便执行种子 SQL',
     )
   }
 
@@ -267,7 +281,7 @@ async function runMysqlSeed() {
       {
         input: sql,
         stdio: ['pipe', 'inherit', 'inherit'],
-      }
+      },
     )
   })
 }
@@ -298,6 +312,49 @@ export function resolveBindTenantCode(source: NodeJS.ProcessEnv): string | undef
   }
 
   return deriveTenantCodeForTenantScope(primaryTenantCode, platformTenantCode)
+}
+
+function uniqueNonBlank(values: Array<string | undefined>) {
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const value of values) {
+    const normalized = value?.trim()
+    if (!normalized || seen.has(normalized)) {
+      continue
+    }
+    seen.add(normalized)
+    result.push(normalized)
+  }
+  return result
+}
+
+export function collectRealLinkDerivedTenantCodes(source: NodeJS.ProcessEnv) {
+  const primaryTenantCode = readConfiguredValue(source, ['E2E_TENANT_CODE'])
+  if (!primaryTenantCode) {
+    return []
+  }
+
+  const platformTenantCode = readConfiguredValue(source, ['E2E_PLATFORM_TENANT_CODE']) ?? 'default'
+  const tenantScopeTenantCode = deriveTenantCodeForTenantScope(primaryTenantCode, platformTenantCode)
+  const secondaryTenantCode = readConfiguredValue(source, ['E2E_TENANT_CODE_B'])
+  const readonlyTenantCode = resolveReadonlyTenantCode(source)
+  const bindTenantCode = resolveBindTenantCode(source)
+
+  return uniqueNonBlank([
+    tenantScopeTenantCode !== primaryTenantCode.trim() ? tenantScopeTenantCode : undefined,
+    secondaryTenantCode && shouldCreateTenantViaApi(primaryTenantCode, secondaryTenantCode)
+      ? secondaryTenantCode
+      : undefined,
+    readonlyTenantCode && shouldCreateTenantViaApi(primaryTenantCode, readonlyTenantCode)
+      ? readonlyTenantCode
+      : undefined,
+    bindTenantCode &&
+    bindTenantCode.trim().toLowerCase() !== 'default' &&
+    bindTenantCode.trim().toLowerCase() !== platformTenantCode.trim().toLowerCase() &&
+    shouldCreateTenantViaApi(primaryTenantCode, bindTenantCode)
+      ? bindTenantCode
+      : undefined,
+  ])
 }
 
 export function buildEnsureAuthEnv(
@@ -341,6 +398,27 @@ export function buildEnsureAuthEnv(
       : {}),
     ...envOverrides,
   }
+}
+
+export function buildDerivedAssetGovernanceEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const normalizedEnv = buildEnsureAuthEnv(baseEnv, {})
+  const platformTenantCode = readConfiguredValue(baseEnv, ['E2E_PLATFORM_TENANT_CODE']) ?? 'default'
+  return {
+    ...normalizedEnv,
+    E2E_PLATFORM_TENANT_CODE: platformTenantCode,
+  }
+}
+
+function runDerivedAssetGovernance(args: string[], envOverrides?: NodeJS.ProcessEnv) {
+  execFileSync('bash', [derivedAssetGovernanceScriptPath, ...args], {
+    cwd: backendRoot,
+    stdio: 'inherit',
+    env: envOverrides ?? buildDerivedAssetGovernanceEnv(process.env),
+  })
+}
+
+async function writeDerivedAssetState(state: DerivedAssetState) {
+  await fs.writeFile(derivedAssetStatePath, JSON.stringify(state, null, 2), 'utf8')
 }
 
 function ensureDeterministicE2EAuthFor(envOverrides: Record<string, string>) {
@@ -439,9 +517,7 @@ function resolveSecondaryIdentityEnv(): ResolvedIdentityEnv | null {
   if (!isConfiguredValue(totpSecret)) missing.push('E2E_TOTP_SECRET_B')
 
   if (missing.length > 0) {
-    throw new Error(
-      `跨租户 real-link 需要完整的第二租户身份配置，缺少: ${missing.join(', ')}`
-    )
+    throw new Error(`跨租户 real-link 需要完整的第二租户身份配置，缺少: ${missing.join(', ')}`)
   }
 
   return {
@@ -488,6 +564,19 @@ function resolveReadonlyIdentityEnv(): ResolvedIdentityEnv | null {
 export default async function globalSetup() {
   await prepareAuthState()
 
+  const derivedTenantCodes = collectRealLinkDerivedTenantCodes(process.env)
+  const skipDerivedAssetCleanup = process.env.E2E_SKIP_REAL_DERIVED_ASSET_CLEANUP === 'true'
+  if (!skipDerivedAssetCleanup) {
+    const cleanupArgs = ['--apply', '--fail-on-stale']
+    if (derivedTenantCodes.length > 0) {
+      cleanupArgs.push('--target-generated-tenant-codes', derivedTenantCodes.join(','))
+    }
+    runDerivedAssetGovernance(cleanupArgs)
+  }
+  await writeDerivedAssetState({
+    targetGeneratedTenantCodes: derivedTenantCodes,
+  })
+
   const createPrimaryTenantViaApi = process.env.E2E_CREATE_PRIMARY_TENANT_VIA_API === 'true'
   if (createPrimaryTenantViaApi) {
     const primaryTenantCode = process.env.E2E_TENANT_CODE?.trim()
@@ -497,7 +586,7 @@ export default async function globalSetup() {
     const platformIdentityEnv = resolvePlatformIdentityEnv()
     if (!platformIdentityEnv) {
       throw new Error(
-        'E2E_CREATE_PRIMARY_TENANT_VIA_API=true 需要完整的平台自动化身份配置：E2E_PLATFORM_USERNAME / E2E_PLATFORM_PASSWORD / E2E_PLATFORM_TOTP_SECRET（以及可选 E2E_PLATFORM_TOTP_CODE）'
+        'E2E_CREATE_PRIMARY_TENANT_VIA_API=true 需要完整的平台自动化身份配置：E2E_PLATFORM_USERNAME / E2E_PLATFORM_PASSWORD / E2E_PLATFORM_TOTP_SECRET（以及可选 E2E_PLATFORM_TOTP_CODE）',
       )
     }
     ensureDeterministicE2EAuthFor({
@@ -518,7 +607,10 @@ export default async function globalSetup() {
   await runMysqlSeed()
   const primaryTenantCodeValue = process.env.E2E_TENANT_CODE!.trim()
   const platformTenantCodeValue = (process.env.E2E_PLATFORM_TENANT_CODE ?? 'default').trim()
-  const tenantScopeTenantCode = deriveTenantCodeForTenantScope(primaryTenantCodeValue, platformTenantCodeValue)
+  const tenantScopeTenantCode = deriveTenantCodeForTenantScope(
+    primaryTenantCodeValue,
+    platformTenantCodeValue,
+  )
 
   // 主调度身份必须与 deriveTenantCodeForTenantScope(primary, platform) 对齐（含 primary===platform 时的 *-t 派生），
   // 且强制租户登录。旧逻辑仅在 primary===platform 时走派生，否则走 generateAuthState() 仅用原始 E2E_TENANT_CODE，

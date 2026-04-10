@@ -14,24 +14,37 @@ import java.util.regex.Pattern;
  */
 public final class IssuerTenantSupport {
 
+    public static final String PLATFORM_ISSUER_KEY = "platform";
+
     private static final Pattern TENANT_CODE_PATTERN = Pattern.compile("^[a-z0-9][a-z0-9-]{1,31}$");
-    private static final Pattern ISSUER_PATH_PATTERN = Pattern.compile("^/([a-z0-9][a-z0-9-]{1,31})/(oauth2/.*|\\.well-known/.*|connect/.*)$");
+    private static final Pattern TENANT_ISSUER_PATH_PATTERN =
+        Pattern.compile("^/([a-z0-9][a-z0-9-]{1,31})/(oauth2/.*|\\.well-known/.*|connect/.*)$");
+    private static final Pattern PLATFORM_ISSUER_PATH_PATTERN =
+        Pattern.compile("^/platform/(oauth2/.*|\\.well-known/.*|connect/.*)$");
 
     private IssuerTenantSupport() {
     }
 
     public static String extractTenantCodeFromRequestPath(String requestPath) {
-        if (requestPath == null || requestPath.isBlank()) {
+        if (isPlatformIssuerPath(requestPath)) {
             return null;
         }
-        Matcher matcher = ISSUER_PATH_PATTERN.matcher(requestPath);
-        if (!matcher.matches()) {
-            return null;
+        return extractTenantIssuerCodeFromRequestPath(requestPath);
+    }
+
+    public static String extractIssuerKeyFromRequestPath(String requestPath) {
+        if (isPlatformIssuerPath(requestPath)) {
+            return PLATFORM_ISSUER_KEY;
         }
-        return normalizeTenantCode(matcher.group(1));
+        return extractTenantIssuerCodeFromRequestPath(requestPath);
     }
 
     public static String extractTenantCodeFromIssuer(String issuer) {
+        String issuerKey = extractIssuerKeyFromIssuer(issuer);
+        return PLATFORM_ISSUER_KEY.equals(issuerKey) ? null : issuerKey;
+    }
+
+    public static String extractIssuerKeyFromIssuer(String issuer) {
         if (issuer == null || issuer.isBlank()) {
             return null;
         }
@@ -43,15 +56,29 @@ public final class IssuerTenantSupport {
             }
             String[] segments = path.split("/");
             for (int i = segments.length - 1; i >= 0; i--) {
-                String candidate = normalizeTenantCode(segments[i]);
-                if (candidate != null) {
-                    return candidate;
+                String candidate = segments[i];
+                if (candidate == null || candidate.isBlank()) {
+                    continue;
+                }
+                if (PLATFORM_ISSUER_KEY.equalsIgnoreCase(candidate.trim())) {
+                    return PLATFORM_ISSUER_KEY;
+                }
+                String tenantCode = normalizeTenantCode(candidate);
+                if (tenantCode != null) {
+                    return tenantCode;
                 }
             }
         } catch (IllegalArgumentException ignored) {
             return null;
         }
         return null;
+    }
+
+    public static boolean isPlatformIssuerPath(String requestPath) {
+        if (requestPath == null || requestPath.isBlank()) {
+            return false;
+        }
+        return PLATFORM_ISSUER_PATH_PATTERN.matcher(requestPath).matches();
     }
 
     public static boolean isAuthorizationEndpointPath(String requestPath) {
@@ -69,7 +96,7 @@ public final class IssuerTenantSupport {
         if (requestPath.startsWith("/oauth2/") || requestPath.startsWith("/.well-known/") || requestPath.startsWith("/connect/")) {
             return true;
         }
-        return ISSUER_PATH_PATTERN.matcher(requestPath).matches();
+        return isPlatformIssuerPath(requestPath) || TENANT_ISSUER_PATH_PATTERN.matcher(requestPath).matches();
     }
 
     public static boolean isWellKnownOrJwkSetPath(String requestPath) {
@@ -79,7 +106,9 @@ public final class IssuerTenantSupport {
         if (requestPath.startsWith("/.well-known/") || requestPath.startsWith("/oauth2/jwks")) {
             return true;
         }
-        return requestPath.matches("^/[a-z0-9][a-z0-9-]{1,31}/\\.well-known/.*$")
+        return requestPath.matches("^/platform/\\.well-known/.*$")
+                || requestPath.matches("^/platform/oauth2/jwks(?:/.*)?$")
+                || requestPath.matches("^/[a-z0-9][a-z0-9-]{1,31}/\\.well-known/.*$")
                 || requestPath.matches("^/[a-z0-9][a-z0-9-]{1,31}/oauth2/jwks(?:/.*)?$");
     }
 
@@ -110,5 +139,16 @@ public final class IssuerTenantSupport {
         }
         String normalized = raw.trim().toLowerCase(Locale.ROOT);
         return TENANT_CODE_PATTERN.matcher(normalized).matches() ? normalized : null;
+    }
+
+    private static String extractTenantIssuerCodeFromRequestPath(String requestPath) {
+        if (requestPath == null || requestPath.isBlank()) {
+            return null;
+        }
+        Matcher matcher = TENANT_ISSUER_PATH_PATTERN.matcher(requestPath);
+        if (!matcher.matches()) {
+            return null;
+        }
+        return normalizeTenantCode(matcher.group(1));
     }
 }

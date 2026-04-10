@@ -38,11 +38,11 @@ public class IssuerDelegatingOAuth2AuthorizationConsentService implements OAuth2
     }
 
     private OAuth2AuthorizationConsentService resolveDelegate() {
-        String tenantCode = issuerResolver.resolveCurrentTenantCode();
-        if (tenantCode == null || tenantCode.isBlank()) {
+        String issuerKey = issuerResolver.resolveCurrentIssuerKey();
+        if (issuerKey == null || issuerKey.isBlank()) {
             return defaultDelegate;
         }
-        OAuth2AuthorizationConsentService delegate = registry.get(tenantCode, OAuth2AuthorizationConsentService.class);
+        OAuth2AuthorizationConsentService delegate = registry.get(issuerKey, OAuth2AuthorizationConsentService.class);
         return delegate != null ? delegate : defaultDelegate;
     }
 }

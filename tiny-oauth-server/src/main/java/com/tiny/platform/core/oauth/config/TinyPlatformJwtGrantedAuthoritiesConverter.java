@@ -1,7 +1,7 @@
 package com.tiny.platform.core.oauth.config;
 
-import jakarta.annotation.Nonnull;
 import org.springframework.core.convert.converter.Converter;
+import org.springframework.lang.NonNull;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -29,9 +29,9 @@ public class TinyPlatformJwtGrantedAuthoritiesConverter implements Converter<Jwt
     private final JwtGrantedAuthoritiesConverter scopeConverter = new JwtGrantedAuthoritiesConverter();
 
     @Override
-    public Collection<GrantedAuthority> convert(@Nonnull Jwt jwt) {
+    public Collection<GrantedAuthority> convert(@NonNull Jwt jwt) {
         Set<GrantedAuthority> scopeAuthorities = new LinkedHashSet<>(scopeConverter.convert(jwt));
-        Set<GrantedAuthority> fromAuthorities = parseStringListClaim(jwt.getClaim(AUTHORITIES_CLAIM));
+        Set<GrantedAuthority> fromAuthorities = parseAuthoritiesClaim(jwt.getClaim(AUTHORITIES_CLAIM));
         Set<GrantedAuthority> fromPermissions = parseStringListClaim(jwt.getClaim(PERMISSIONS_CLAIM));
 
         return Stream.of(scopeAuthorities, fromAuthorities, fromPermissions)
@@ -58,6 +58,12 @@ public class TinyPlatformJwtGrantedAuthoritiesConverter implements Converter<Jwt
             return Set.of();
         }
         return Collections.singleton(new SimpleGrantedAuthority(s.trim()));
+    }
+
+    private static Set<GrantedAuthority> parseAuthoritiesClaim(Object claim) {
+        return parseStringListClaim(claim).stream()
+            .filter(authority -> authority.getAuthority() != null && !authority.getAuthority().startsWith("ROLE_"))
+            .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
     private static String asString(Object value) {

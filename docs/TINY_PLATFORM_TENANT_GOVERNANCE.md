@@ -88,12 +88,25 @@
 
 它们当前主要用于迁移期的平台租户识别和模板回填，不再应被视为平台语义本身。
 
-### 3.1 `user_authentication_method`：`tenant_id` 可选与回退语义
+### 3.1 认证作用域语义（运行时已切新模型，2026-04）
 
-- **`tenant_id IS NULL`**：用户级**全局**认证配置行。同一 `user_id` 下每种 `authentication_provider + authentication_type` 至多一条全局行；Liquibase `111-user-auth-method-global-tenant-fallback` 通过生成列 `auth_scope_key = IFNULL(tenant_id, 0)`（`0` 表示全局）与唯一键 `uk_user_auth_method_scope` 规避 MySQL 下 `UNIQUE(tenant_id, …)` 对 `NULL` 的松散语义。
-- **`tenant_id` 非空**：仅在该租户上下文中生效的配置行。
-- **生效顺序**：解析出登录租户后，**先匹配租户内行**；若无则**回退**全局行（`UserAuthenticationMethodRepository#findEffectiveAuthenticationMethod` / `#existsEffectiveAuthenticationMethod`）。启用方法列表在 `MultiAuthenticationProvider` 中合并租户内与全局行，**同一 `provider+type` 以租户内为准**（`UserAuthenticationMethodMerge`）。
-- **平台账号**：`platform_admin` 的 `LOCAL`/`PASSWORD` 行以全局行（`tenant_id NULL`）为基准，与 `tenant_user` 是否为空无关；`ensure-platform-admin` 与上述 migration 回填保持一致。
+当前认证域运行时主链已完成从旧表桥接态向新模型的收口：
+
+- **新模型**（长期目标载体）：
+  - `user_auth_credential`：只存认证材料（password hash / totp secret / verify metadata）。
+  - `user_auth_scope_policy`：只存作用域策略（`GLOBAL/PLATFORM/TENANT` + enabled/primary/priority）。
+  - `scope_key` 正式契约：`GLOBAL` / `PLATFORM` / `TENANT:{id}`。
+- **运行时读写现状**：
+  - production runtime 主链已只读新模型，不再通过 `user_authentication_method` 做 fallback。
+  - 密码创建/更新、TOTP 预绑/激活/解绑、MFA remind skip、认证验证记录、TOTP 锁定状态均已写入新模型。
+  - 平台态 bulk/read 已固定为 `PLATFORM > GLOBAL`；租户态保持 `TENANT > GLOBAL`。
+- **旧表角色**：
+  - `user_authentication_method` 仍保留，但当前只允许用于迁移、审计、历史对账；不再参与 production runtime 主链鉴权。
+
+实现约束（防漂移）：
+
+- 认证读写、回填脚本与后续迁移代码必须复用同一 `scope_key` 构造规则（`buildScopeKey(...)`），禁止再手写第二套格式。
+- 平台态语义以 `scope_type=PLATFORM` + `scope_key=PLATFORM` 表达，不允许回落到“platform tenant id/code”兼容壳。
 
 长期目标（见 `TINY_PLATFORM_AUTHORIZATION_MODEL.md` §5.2）：
 

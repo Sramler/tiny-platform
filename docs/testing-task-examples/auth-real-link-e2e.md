@@ -50,6 +50,8 @@ E2E 必填：
 - Session/JWT/OIDC 中本次变更涉及的真实结果
 - 若涉及 OIDC 静默续期：明确断言 `prompt=none` 未登录时返回 `login_required` 到 redirect_uri，而不是 `/login?error=true...`
 - 若涉及 Bearer + Session 并存：明确断言“一致时可通过、冲突时 fail-closed”
+- 若涉及 real-link UI 过渡态（toast、壳页标题、菜单 loading），必须额外补 durable evidence：真实网络、稳定页面态、后续 API 200、trace/storageState 收敛；不能只靠瞬时文案判定通过
+- 若涉及多身份 auth-state（platform / tenant / readonly / bind / cross-tenant），必须明确写出 env 归一化规则与单测覆盖点，避免 trigger 差异导致身份串用
 
 交付：
 - 测试文件清单

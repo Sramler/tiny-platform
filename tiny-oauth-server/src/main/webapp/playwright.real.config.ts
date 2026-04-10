@@ -86,6 +86,7 @@ export default defineConfig({
   workers: 1,
   retries: process.env.CI ? 1 : 0,
   globalSetup: skipRealSetup ? undefined : './e2e/setup/real.global.setup.ts',
+  globalTeardown: skipRealSetup ? undefined : './e2e/setup/real.global.teardown.ts',
   use: {
     baseURL: frontendBaseURL,
     trace: 'on-first-retry',
@@ -98,7 +99,9 @@ export default defineConfig({
         {
           command: 'mvn -pl tiny-oauth-server spring-boot:run',
           cwd: workspaceRoot,
-          url: `${backendBaseURL}/login`,
+          // /csrf is a stable 200 endpoint once the backend is HTTP-ready.
+          // /login may redirect or vary by auth state, which can stall Playwright's readiness probe.
+          url: `${backendBaseURL}/csrf`,
           timeout: 360_000,
           reuseExistingServer: true,
           env: {

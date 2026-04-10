@@ -101,6 +101,48 @@ async function fetchSecurityStatus(page: import('@playwright/test').Page) {
   }, { apiBaseUrl: backendBaseUrl })
 }
 
+async function fetchCurrentUser(page: import('@playwright/test').Page) {
+  const backendBaseUrl =
+    process.env.E2E_BACKEND_BASE_URL ?? process.env.VITE_API_BASE_URL ?? 'http://localhost:9000'
+  return page.evaluate(async ({ apiBaseUrl }) => {
+    const response = await fetch(`${apiBaseUrl}/sys/users/current`, {
+      method: 'GET',
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    })
+    const text = await response.text()
+    const contentType = response.headers.get('content-type') || ''
+    return {
+      status: response.status,
+      payload:
+        text && contentType.includes('application/json')
+          ? (JSON.parse(text) as Record<string, unknown>)
+          : null,
+    }
+  }, { apiBaseUrl: backendBaseUrl })
+}
+
+async function fetchTenantControlPlane(page: import('@playwright/test').Page) {
+  const backendBaseUrl =
+    process.env.E2E_BACKEND_BASE_URL ?? process.env.VITE_API_BASE_URL ?? 'http://localhost:9000'
+  return page.evaluate(async ({ apiBaseUrl }) => {
+    const response = await fetch(`${apiBaseUrl}/sys/tenants?page=0&size=5`, {
+      method: 'GET',
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    })
+    const text = await response.text()
+    const contentType = response.headers.get('content-type') || ''
+    return {
+      status: response.status,
+      payload:
+        text && contentType.includes('application/json')
+          ? (JSON.parse(text) as Record<string, unknown>)
+          : null,
+    }
+  }, { apiBaseUrl: backendBaseUrl })
+}
+
 test.describe('real-link: Login.vue 平台登录', () => {
   test('平台页签提交后应离开 /login 且不因缺少租户失败', async ({ page }) => {
     const cfg = resolvePlatformLoginConfig()
@@ -141,9 +183,21 @@ test.describe('real-link: Login.vue 平台登录', () => {
     }
 
     await page.waitForLoadState('networkidle').catch(() => {})
-    const { status, payload } = await fetchSecurityStatus(page)
-    expect(status).toBe(200)
-    expect(payload).not.toBeNull()
-    expect(Object.keys(payload ?? {}).length).toBeGreaterThan(0)
+    const securityStatus = await fetchSecurityStatus(page)
+    expect(securityStatus.status).toBe(200)
+    expect(securityStatus.payload).not.toBeNull()
+    expect(typeof securityStatus.payload?.totpBound).toBe('boolean')
+    expect(typeof securityStatus.payload?.totpActivated).toBe('boolean')
+    expect(typeof securityStatus.payload?.requireTotp).toBe('boolean')
+
+    const currentUser = await fetchCurrentUser(page)
+    expect(currentUser.status).toBe(200)
+    expect(currentUser.payload).not.toBeNull()
+    expect(currentUser.payload?.activeScopeType).toBe('PLATFORM')
+
+    const tenantControlPlane = await fetchTenantControlPlane(page)
+    expect(tenantControlPlane.status).toBe(200)
+    expect(tenantControlPlane.payload).not.toBeNull()
+    expect(Array.isArray(tenantControlPlane.payload?.content)).toBe(true)
   })
 })

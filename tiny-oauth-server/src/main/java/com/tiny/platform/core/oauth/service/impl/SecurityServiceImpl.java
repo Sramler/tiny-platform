@@ -3,14 +3,17 @@ package com.tiny.platform.core.oauth.service.impl;
 import com.tiny.platform.core.oauth.config.MfaProperties;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationMethod;
-import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
+import com.tiny.platform.infrastructure.auth.user.service.UserAuthenticationMethodProfileService;
+import com.tiny.platform.infrastructure.auth.user.service.UserAuthenticationBridgeWriter;
+import com.tiny.platform.infrastructure.auth.user.support.UserAuthenticationCredential;
+import com.tiny.platform.infrastructure.auth.user.support.UserAuthenticationMethodProfiles;
+import com.tiny.platform.infrastructure.auth.user.support.UserAuthenticationScopePolicy;
 import com.tiny.platform.core.oauth.security.TotpVerificationGuard;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.core.oauth.tenant.ActiveTenantResponseSupport;
 import com.tiny.platform.core.oauth.tenant.TenantContextContract;
 import com.tiny.platform.infrastructure.core.util.IpUtils;
 import com.tiny.platform.infrastructure.core.util.DeviceUtils;
-import com.tiny.platform.infrastructure.tenant.config.PlatformTenantResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -41,36 +44,37 @@ public class SecurityServiceImpl implements SecurityService {
     private static final String REMIND_CONFIG_DEVICE = "deviceFingerprint";
     private static final int REMIND_SKIP_DAYS = 30;
     
-    private final UserAuthenticationMethodRepository authenticationMethodRepository;
+    private final UserAuthenticationMethodProfileService authenticationMethodProfileService;
     private final PasswordEncoder passwordEncoder;
     private final MfaProperties mfaProperties;
     private final TotpVerificationGuard totpVerificationGuard;
-    private final PlatformTenantResolver platformTenantResolver;
+    private final UserAuthenticationBridgeWriter authenticationBridgeWriter;
 
     @Autowired
-    public SecurityServiceImpl(UserAuthenticationMethodRepository authenticationMethodRepository,
+    public SecurityServiceImpl(UserAuthenticationMethodProfileService authenticationMethodProfileService,
                                PasswordEncoder passwordEncoder,
                                MfaProperties mfaProperties,
                                TotpVerificationGuard totpVerificationGuard,
-                               PlatformTenantResolver platformTenantResolver) {
-        this.authenticationMethodRepository = authenticationMethodRepository;
+                               UserAuthenticationBridgeWriter authenticationBridgeWriter) {
+        this.authenticationMethodProfileService = authenticationMethodProfileService;
         this.passwordEncoder = passwordEncoder;
         this.mfaProperties = mfaProperties;
         this.totpVerificationGuard = totpVerificationGuard;
-        this.platformTenantResolver = platformTenantResolver;
+        this.authenticationBridgeWriter = authenticationBridgeWriter;
     }
 
     @Override
     public Map<String, Object> getSecurityStatus(User user) {
         Long activeTenantId = resolveActiveTenantId(user);
-        Long authenticationTenantId = resolveAuthenticationMethodTenantId(activeTenantId);
-        boolean totpBound = authenticationMethodRepository.existsEffectiveAuthenticationMethod(
-                user.getId(), authenticationTenantId, "LOCAL", "TOTP");
+        String activeScopeType = resolveActiveScopeType();
+        boolean totpBound = authenticationMethodProfileService.existsEffectiveMethod(
+                user.getId(), activeScopeType, activeTenantId, "LOCAL", "TOTP");
         boolean totpActivated = false;
         String otpauthUri = null;
         if (totpBound) {
-            Optional<UserAuthenticationMethod> totp = authenticationMethodRepository
-                    .findEffectiveAuthenticationMethod(user.getId(), authenticationTenantId, "LOCAL", "TOTP");
+            Optional<UserAuthenticationMethod> totp = authenticationMethodProfileService
+                    .findEffectiveMethodProfile(user.getId(), activeScopeType, activeTenantId, "LOCAL", "TOTP")
+                    .map(profile -> profile.storageRecord());
             totpActivated = totp.isPresent() && Boolean.TRUE.equals(
                     getMapBool(totp.get().getAuthenticationConfiguration(), "activated"));
             otpauthUri = totp.map(m -> (String) m.getAuthenticationConfiguration().get("otpauthUri")).orElse(null);
@@ -170,7 +174,8 @@ public class SecurityServiceImpl implements SecurityService {
     @Override
     public Map<String, Object> bindTotp(User user, String plainPassword, String totpCode) {
         Long activeTenantId = resolveActiveTenantId(user);
-        Long authTenantId = resolveAuthenticationMethodTenantId(activeTenantId);
+        String activeScopeType = resolveActiveScopeType();
+        Long authTenantId = authenticationMethodProfileService.resolveStorageTenantIdForWrite(activeScopeType, activeTenantId);
         // TOTP 绑定安全设计说明：
         // 1. 用户已登录（已通过密码或其他方式验证），身份已验证
         // 2. TOTP 码本身就是一个强验证因子（"你拥有什么"），足以验证用户身份
@@ -184,8 +189,9 @@ public class SecurityServiceImpl implements SecurityService {
         
         // 注意：plainPassword 参数保留是为了向后兼容，但在新的设计中，绑定 TOTP 时不需要密码验证
         // 如果传递了密码，我们忽略它（为了兼容性，不报错）
-        Optional<UserAuthenticationMethod> totpMethodOpt = authenticationMethodRepository
-                .findEffectiveAuthenticationMethod(user.getId(), authTenantId, "LOCAL", "TOTP");
+        Optional<UserAuthenticationMethod> totpMethodOpt = authenticationMethodProfileService
+                .findEffectiveMethodProfile(user.getId(), activeScopeType, activeTenantId, "LOCAL", "TOTP")
+                .map(profile -> profile.storageRecord());
         UserAuthenticationMethod method = totpMethodOpt.orElse(new UserAuthenticationMethod());
         Map<String, Object> totpConfig = method.getAuthenticationConfiguration() == null ? new HashMap<>() : method.getAuthenticationConfiguration();
 
@@ -208,33 +214,47 @@ public class SecurityServiceImpl implements SecurityService {
             secret = String.valueOf(totpConfig.get("secretKey"));
         }
         // 用真实 TOTP 算法校验
-        method.setUserId(user.getId());
-        method.setTenantId(authTenantId);
-        method.setAuthenticationProvider("LOCAL");
-        method.setAuthenticationType("TOTP");
-
         try {
             totpVerificationGuard.verifyOrThrow(user.getUsername(), method, secret, totpCode, "验证码错误");
         } catch (org.springframework.security.authentication.BadCredentialsException ex) {
             return Map.of("success", false, "error", ex.getMessage());
         }
         totpConfig.put("activated", true);
-        method.setAuthenticationConfiguration(totpConfig);
-        method.setIsPrimaryMethod(false);
-        method.setIsMethodEnabled(true);
-        method.setAuthenticationPriority(1);
+        UserAuthenticationMethodProfiles.apply(
+            method,
+            new UserAuthenticationCredential(
+                user.getId(),
+                "LOCAL",
+                "TOTP",
+                totpConfig,
+                method.getLastVerifiedAt(),
+                method.getLastVerifiedIp(),
+                method.getExpiresAt()
+            ),
+            new UserAuthenticationScopePolicy(
+                user.getId(),
+                authTenantId,
+                "LOCAL",
+                "TOTP",
+                false,
+                true,
+                1
+            )
+        );
         method.setUpdatedAt(LocalDateTime.now());
         if (method.getId() == null) method.setCreatedAt(LocalDateTime.now());
-        authenticationMethodRepository.save(method);
+        persistRuntimeMethod(method, activeScopeType, authTenantId);
         return Map.of("success", true, "message", "TOTP绑定并激活成功", "otpauthUri", totpConfig.get("otpauthUri"));
     }
 
     @Override
     public Map<String, Object> unbindTotp(User user, String plainPassword, String totpCode) {
         Long activeTenantId = resolveActiveTenantId(user);
-        Long authTenantId = resolveAuthenticationMethodTenantId(activeTenantId);
-        Optional<UserAuthenticationMethod> totpMethodOpt = authenticationMethodRepository
-                .findEffectiveAuthenticationMethod(user.getId(), authTenantId, "LOCAL", "TOTP");
+        String activeScopeType = resolveActiveScopeType();
+        Long authTenantId = authenticationMethodProfileService.resolveStorageTenantIdForWrite(activeScopeType, activeTenantId);
+        Optional<UserAuthenticationMethod> totpMethodOpt = authenticationMethodProfileService
+                .findEffectiveMethodProfile(user.getId(), activeScopeType, activeTenantId, "LOCAL", "TOTP")
+                .map(profile -> profile.storageRecord());
         if (totpMethodOpt.isEmpty())
             return Map.of("success", false, "error", "未绑定二次验证");
         
@@ -244,8 +264,9 @@ public class SecurityServiceImpl implements SecurityService {
         
         if (plainPassword != null && !plainPassword.isEmpty()) {
             // Controller 层已经判断用户是通过 LOCAL + PASSWORD 登录的，需要验证密码
-            Optional<UserAuthenticationMethod> passwordMethodOpt = authenticationMethodRepository
-                    .findEffectiveAuthenticationMethod(user.getId(), authTenantId, "LOCAL", "PASSWORD");
+            Optional<UserAuthenticationMethod> passwordMethodOpt = authenticationMethodProfileService
+                    .findEffectiveMethodProfile(user.getId(), activeScopeType, activeTenantId, "LOCAL", "PASSWORD")
+                    .map(profile -> profile.storageRecord());
             
             if (passwordMethodOpt.isEmpty()) {
                 // 理论上不应该发生：Controller 判断是 LOCAL + PASSWORD 登录，但数据库中没有记录
@@ -293,16 +314,17 @@ public class SecurityServiceImpl implements SecurityService {
         
         // 验证通过，删除 TOTP 认证方法
         UserAuthenticationMethod totpMethod = Objects.requireNonNull(totpMethodOpt.orElse(null));
-        authenticationMethodRepository.delete(totpMethod);
+        deleteRuntimeMethod(totpMethod, activeScopeType, authTenantId);
         return Map.of("success", true, "message", "二步验证已解绑");
     }
 
     @Override
     public Map<String, Object> checkTotp(User user, String totpCode) {
         Long activeTenantId = resolveActiveTenantId(user);
-        Long authTenantId = resolveAuthenticationMethodTenantId(activeTenantId);
-        Optional<UserAuthenticationMethod> totpMethodOpt = authenticationMethodRepository
-                .findEffectiveAuthenticationMethod(user.getId(), authTenantId, "LOCAL", "TOTP");
+        String activeScopeType = resolveActiveScopeType();
+        Optional<UserAuthenticationMethod> totpMethodOpt = authenticationMethodProfileService
+                .findEffectiveMethodProfile(user.getId(), activeScopeType, activeTenantId, "LOCAL", "TOTP")
+                .map(profile -> profile.storageRecord());
         if (totpMethodOpt.isEmpty())
             return Map.of("success", false, "error", "未绑定二步验证");
         Map<String, Object> config = totpMethodOpt.get().getAuthenticationConfiguration();
@@ -329,10 +351,11 @@ public class SecurityServiceImpl implements SecurityService {
     @Override
     public Map<String, Object> skipMfaRemind(User user, boolean skip) {
         Long activeTenantId = resolveActiveTenantId(user);
-        Long authTenantId = resolveAuthenticationMethodTenantId(activeTenantId);
+        String activeScopeType = resolveActiveScopeType();
+        Long authTenantId = authenticationMethodProfileService.resolveStorageTenantIdForWrite(activeScopeType, activeTenantId);
         Optional<UserAuthenticationMethod> remindMethodOpt = findReminderMethod(user);
         if (!skip) {
-            remindMethodOpt.ifPresent(authenticationMethodRepository::delete);
+            remindMethodOpt.ifPresent(method -> deleteRuntimeMethod(method, activeScopeType, authTenantId));
             return Map.of("success", true, "message", "已启用二次验证绑定提醒");
         }
 
@@ -345,28 +368,43 @@ public class SecurityServiceImpl implements SecurityService {
         config.put(REMIND_CONFIG_SKIP_UNTIL, LocalDateTime.now().plusDays(REMIND_SKIP_DAYS).toString());
         config.put(REMIND_CONFIG_DEVICE, buildDeviceFingerprint());
 
-        remindMethod.setUserId(user.getId());
-        remindMethod.setTenantId(authTenantId);
-        remindMethod.setAuthenticationProvider(REMIND_PROVIDER);
-        remindMethod.setAuthenticationType(REMIND_TYPE);
-        remindMethod.setAuthenticationConfiguration(config);
-        remindMethod.setIsPrimaryMethod(false);
-        remindMethod.setIsMethodEnabled(false);
-        remindMethod.setAuthenticationPriority(99);
+        UserAuthenticationMethodProfiles.apply(
+            remindMethod,
+            new UserAuthenticationCredential(
+                user.getId(),
+                REMIND_PROVIDER,
+                REMIND_TYPE,
+                config,
+                remindMethod.getLastVerifiedAt(),
+                remindMethod.getLastVerifiedIp(),
+                remindMethod.getExpiresAt()
+            ),
+            new UserAuthenticationScopePolicy(
+                user.getId(),
+                authTenantId,
+                REMIND_PROVIDER,
+                REMIND_TYPE,
+                false,
+                false,
+                99
+            )
+        );
         remindMethod.setUpdatedAt(LocalDateTime.now());
         if (remindMethod.getId() == null) {
             remindMethod.setCreatedAt(LocalDateTime.now());
         }
-        authenticationMethodRepository.save(remindMethod);
+        persistRuntimeMethod(remindMethod, activeScopeType, authTenantId);
         return Map.of("success", true, "message", "已设置跳过二次验证绑定提醒");
     }
 
     @Override
     public Map<String, Object> preBindTotp(User user) {
         Long activeTenantId = resolveActiveTenantId(user);
-        Long authTenantId = resolveAuthenticationMethodTenantId(activeTenantId);
-        Optional<UserAuthenticationMethod> methodOpt = authenticationMethodRepository
-                .findEffectiveAuthenticationMethod(user.getId(), authTenantId, "LOCAL", "TOTP");
+        String activeScopeType = resolveActiveScopeType();
+        Long authTenantId = authenticationMethodProfileService.resolveStorageTenantIdForWrite(activeScopeType, activeTenantId);
+        Optional<UserAuthenticationMethod> methodOpt = authenticationMethodProfileService
+                .findEffectiveMethodProfile(user.getId(), activeScopeType, activeTenantId, "LOCAL", "TOTP")
+                .map(profile -> profile.storageRecord());
         UserAuthenticationMethod method;
         Map<String, Object> config;
         boolean needCreate = true;
@@ -400,17 +438,30 @@ public class SecurityServiceImpl implements SecurityService {
                     urlEncode(issuer), urlEncode(account), secret, urlEncode(issuer));
             config.put("otpauthUri", otpauthUri);
             // 持久化未激活
-            method.setUserId(user.getId());
-            method.setTenantId(authTenantId);
-            method.setAuthenticationProvider("LOCAL");
-            method.setAuthenticationType("TOTP");
-            method.setAuthenticationConfiguration(config);
-            method.setIsPrimaryMethod(false);
-            method.setIsMethodEnabled(true);
-            method.setAuthenticationPriority(1);
+            UserAuthenticationMethodProfiles.apply(
+                method,
+                new UserAuthenticationCredential(
+                    user.getId(),
+                    "LOCAL",
+                    "TOTP",
+                    config,
+                    method.getLastVerifiedAt(),
+                    method.getLastVerifiedIp(),
+                    method.getExpiresAt()
+                ),
+                new UserAuthenticationScopePolicy(
+                    user.getId(),
+                    authTenantId,
+                    "LOCAL",
+                    "TOTP",
+                    false,
+                    true,
+                    1
+                )
+            );
             method.setUpdatedAt(LocalDateTime.now());
             if (method.getId() == null) method.setCreatedAt(LocalDateTime.now());
-            authenticationMethodRepository.save(method);
+            persistRuntimeMethod(method, activeScopeType, authTenantId);
         } else {
             if (config == null || config.get("secretKey") == null) {
                 return Map.of("success", false, "error", "TOTP 配置错误：缺少 secretKey");
@@ -453,9 +504,14 @@ public class SecurityServiceImpl implements SecurityService {
 
     private Optional<UserAuthenticationMethod> findReminderMethod(User user) {
         Long activeTenantId = resolveActiveTenantId(user);
-        Long authenticationTenantId = resolveAuthenticationMethodTenantId(activeTenantId);
-        return authenticationMethodRepository.findEffectiveAuthenticationMethod(
-                user.getId(), authenticationTenantId, REMIND_PROVIDER, REMIND_TYPE);
+        return authenticationMethodProfileService.findEffectiveMethodProfile(
+                        user.getId(),
+                        resolveActiveScopeType(),
+                        activeTenantId,
+                        REMIND_PROVIDER,
+                        REMIND_TYPE
+                )
+                .map(profile -> profile.storageRecord());
     }
 
     private Long resolveActiveTenantId(User user) {
@@ -464,18 +520,12 @@ public class SecurityServiceImpl implements SecurityService {
         );
     }
 
-    private Long resolveAuthenticationMethodTenantId(Long activeTenantId) {
+    private String resolveActiveScopeType() {
         String activeScopeType = ActiveTenantResponseSupport.resolveActiveScopeTypeFromRequestContext();
-        if (!TenantContextContract.SCOPE_TYPE_PLATFORM.equalsIgnoreCase(activeScopeType)) {
-            return activeTenantId;
+        if (activeScopeType == null || activeScopeType.isBlank()) {
+            return TenantContextContract.SCOPE_TYPE_TENANT;
         }
-        if (activeTenantId != null) {
-            return activeTenantId;
-        }
-        if (platformTenantResolver == null) {
-            return null;
-        }
-        return platformTenantResolver.getPlatformTenantId();
+        return activeScopeType;
     }
 
     private boolean resolveSkipMfaRemind(User user) {
@@ -559,7 +609,7 @@ public class SecurityServiceImpl implements SecurityService {
                 
                 method.setLastVerifiedAt(LocalDateTime.now());
                 method.setLastVerifiedIp(clientIp);
-                authenticationMethodRepository.save(method);
+                persistRuntimeMethod(method, resolveWriteScopeType(method, resolveActiveScopeType()), method.getTenantId());
                 
                 logger.debug("认证方法 {} (id={}) 验证信息已记录: IP={}, Time={}", 
                         method.getAuthenticationProvider() + "+" + method.getAuthenticationType(),
@@ -567,7 +617,7 @@ public class SecurityServiceImpl implements SecurityService {
             } else {
                 // 如果无法获取请求（例如非HTTP请求），只记录时间
                 method.setLastVerifiedAt(LocalDateTime.now());
-                authenticationMethodRepository.save(method);
+                persistRuntimeMethod(method, resolveWriteScopeType(method, resolveActiveScopeType()), method.getTenantId());
                 logger.debug("认证方法 {} (id={}) 验证信息已记录: Time={} (无IP信息)", 
                         method.getAuthenticationProvider() + "+" + method.getAuthenticationType(),
                         method.getId(), method.getLastVerifiedAt());
@@ -577,5 +627,50 @@ public class SecurityServiceImpl implements SecurityService {
             logger.warn("记录认证方法 {} 验证信息失败: {}", 
                     method.getAuthenticationProvider() + "+" + method.getAuthenticationType(), e.getMessage());
         }
+    }
+
+    private void persistRuntimeMethod(UserAuthenticationMethod method, String scopeType, Long scopeId) {
+        if (authenticationBridgeWriter == null || method == null) {
+            return;
+        }
+        applyRuntimeScope(method, scopeType, scopeId);
+        authenticationBridgeWriter.upsertRuntime(method);
+    }
+
+    private void deleteRuntimeMethod(UserAuthenticationMethod method, String scopeType, Long scopeId) {
+        if (authenticationBridgeWriter == null || method == null) {
+            return;
+        }
+        applyRuntimeScope(method, scopeType, scopeId);
+        authenticationBridgeWriter.deleteRuntime(method);
+    }
+
+    private void applyRuntimeScope(UserAuthenticationMethod method, String scopeType, Long scopeId) {
+        String normalizedScopeType = resolveWriteScopeType(method, scopeType);
+        Long normalizedScopeId = UserAuthenticationBridgeWriter.SCOPE_TYPE_TENANT.equals(normalizedScopeType)
+                ? scopeId
+                : null;
+        method.setRuntimeScopeType(normalizedScopeType);
+        method.setRuntimeScopeKey(UserAuthenticationBridgeWriter.buildScopeKey(normalizedScopeType, normalizedScopeId));
+        method.setTenantId(normalizedScopeId);
+    }
+
+    private String resolveWriteScopeType(UserAuthenticationMethod method, String defaultScopeType) {
+        if (method != null && method.getRuntimeScopeType() != null && !method.getRuntimeScopeType().isBlank()) {
+            return method.getRuntimeScopeType();
+        }
+        if (defaultScopeType == null || defaultScopeType.isBlank()) {
+            return method != null && method.getTenantId() != null
+                    ? UserAuthenticationBridgeWriter.SCOPE_TYPE_TENANT
+                    : UserAuthenticationBridgeWriter.SCOPE_TYPE_GLOBAL;
+        }
+        String normalized = defaultScopeType.trim().toUpperCase(Locale.ROOT);
+        if (TenantContextContract.SCOPE_TYPE_PLATFORM.equals(normalized)) {
+            return UserAuthenticationBridgeWriter.SCOPE_TYPE_PLATFORM;
+        }
+        if (UserAuthenticationBridgeWriter.SCOPE_TYPE_GLOBAL.equals(normalized)) {
+            return UserAuthenticationBridgeWriter.SCOPE_TYPE_GLOBAL;
+        }
+        return UserAuthenticationBridgeWriter.SCOPE_TYPE_TENANT;
     }
 }

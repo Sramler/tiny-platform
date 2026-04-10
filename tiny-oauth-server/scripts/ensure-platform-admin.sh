@@ -120,16 +120,32 @@ SET @platform_admin_password_json := JSON_OBJECT(
 );
 
 -- 平台账号密码挂在 tenant_id NULL（用户级全局），任意租户/PLATFORM 登录上下文均可通过回退命中；与 uk_user_auth_method_scope(auth_scope_key=0) 一致
-INSERT INTO user_authentication_method (
-  tenant_id, user_id, authentication_provider, authentication_type, authentication_configuration,
-  is_primary_method, is_method_enabled, authentication_priority, created_at, updated_at
+INSERT INTO user_auth_credential (
+  user_id, authentication_provider, authentication_type, authentication_configuration,
+  created_at, updated_at
 )
 VALUES (
-  NULL, @platform_admin_user_id, 'LOCAL', 'PASSWORD', @platform_admin_password_json,
-  1, 1, 0, NOW(), NOW()
+  @platform_admin_user_id, 'LOCAL', 'PASSWORD', @platform_admin_password_json,
+  NOW(), NOW()
 )
 ON DUPLICATE KEY UPDATE
   authentication_configuration = VALUES(authentication_configuration),
+  updated_at = NOW(),
+  id = LAST_INSERT_ID(id);
+
+SET @platform_admin_password_credential_id := LAST_INSERT_ID();
+
+INSERT INTO user_auth_scope_policy (
+  credential_id, scope_type, scope_id, scope_key,
+  is_primary_method, is_method_enabled, authentication_priority,
+  created_at, updated_at
+)
+VALUES (
+  @platform_admin_password_credential_id, 'GLOBAL', NULL, 'GLOBAL',
+  1, 1, 0,
+  NOW(), NOW()
+)
+ON DUPLICATE KEY UPDATE
   is_primary_method = 1,
   is_method_enabled = 1,
   authentication_priority = 0,

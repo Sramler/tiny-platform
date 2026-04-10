@@ -66,10 +66,13 @@
 - ✅ 使用真实认证链路的 Nightly / E2E 流水线应负责校验测试身份仍然有效、权限未漂移、测试租户状态可复用。
 - ✅ Nightly/full-chain 流水线中的 real-link E2E 必须提供环境准备、seed/reset、身份检查、失败日志与截图/trace 产物，保证失败可以定位是代码问题还是环境问题。
 - ✅ 真实链路 E2E job 必须显式声明依赖的服务与密钥，例如数据库、Redis、OIDC、测试 client、TOTP secret；缺失时快速失败，不允许静默降级成 mock。
+- ✅ 真实链路 workflow 的 secret preflight 必须与该 workflow 的真实依赖**精确对齐**：既不能漏校验必须的 secret，也不能把并未使用的 secret 设为 mandatory 导致假红。
 - ✅ 失败的主干 / Nightly 门禁必须有明确责任人处理，不能长期红灯运行。
 - ✅ 对需要同时启动前端、后端、数据库、OIDC 或多服务的 real-link job，服务启动步骤必须显式化并保留失败日志；不能把关键服务启动完全隐藏在黑盒 `webServer` 或等价机制后面，导致失败时缺少定位信息。
 - ✅ 新增或修改 real-link workflow 时，必须验证 fresh DB / 干净环境安装路径，而不是只在已初始化数据库或开发者本地缓存环境下验证通过。
 - ✅ 如果 workflow 的 readiness 窗口会受到依赖下载或首次构建影响，必须将依赖预热、构建下载、schema 初始化等前置成本移到显式步骤，避免把“未 ready”误判成应用启动失败。
+- ✅ 涉及多身份、多租户、平台/租户双口径 real-link 的 workflow，必须在 job 内显式归一化环境变量（如平台身份、租户身份、bind/readonly 身份、fallback tenant code）；不能只依赖 GitHub Actions `env:` 表达式或 trigger 差异（`push` / `schedule` / `workflow_dispatch`）来“碰巧”得到正确值。
+- ✅ fresh DB / CI baseline 使用 Liquibase `sqlFile` 时，路径必须采用 changelog-relative 解析并在干净库路径上验证；不能依赖本地工作目录、classpath 偶然命中或已初始化数据库兜底。
 
 ### 4) 发布与部署
 
@@ -113,6 +116,7 @@
 - ⚠️ 重要制品建议启用签名、校验和或来源证明，便于审计。
 - ⚠️ 依赖测试账号的流水线建议上传失败时的身份初始化日志、测试租户信息和认证 trace，便于定位是代码问题还是环境问题。
 - ⚠️ 真实链路 E2E 建议上传 playwright trace、截图、视频、seed 日志、服务日志摘要，便于复现。
+- ⚠️ 对容易受 UI 壳页、菜单懒加载、首次下载时序影响的 workflow，建议把“稳定状态断言”和“临时提示断言”拆开，优先让 CI 以 durable evidence 判定通过与否。
 
 ---
 

@@ -36,6 +36,8 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/auth/oidc', () => ({
+  bindUserManagerEvents: vi.fn(),
+  ensureOidcAuthoritySynced: vi.fn().mockReturnValue('http://localhost:9000/tiny-prod'),
   settings: {
     redirect_uri: 'http://localhost:5173/callback',
     post_logout_redirect_uri: 'http://localhost:5173/',

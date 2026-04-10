@@ -145,4 +145,19 @@ describe('user.ts', () => {
     expect(result.tokenRefreshRequired).toBe(true)
     expect(result.newActiveScopeId).toBe(200)
   })
+
+  it('should allow PLATFORM and explicit TENANT payloads for active scope switch', async () => {
+    mocks.post.mockResolvedValue({ success: true, activeScopeType: 'PLATFORM' })
+
+    const { switchActiveScope } = await import('@/api/user')
+
+    await switchActiveScope({ scopeType: 'PLATFORM' })
+    await switchActiveScope({ scopeType: 'TENANT', scopeId: 9 })
+
+    expect(mocks.post).toHaveBeenNthCalledWith(1, '/sys/users/current/active-scope', { scopeType: 'PLATFORM' })
+    expect(mocks.post).toHaveBeenNthCalledWith(2, '/sys/users/current/active-scope', {
+      scopeType: 'TENANT',
+      scopeId: 9,
+    })
+  })
 })

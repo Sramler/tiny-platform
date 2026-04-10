@@ -321,6 +321,12 @@ class MenuServiceImplTest {
                 menuEntry(3L, 2L, "tenant", 1L, "/system/tenant", "system:tenant:list", ResourceType.MENU.getCode()),
                 menuEntry(4L, 2L, "idempotentOps", 1L, "/ops/idempotent", "idempotent:ops:view", ResourceType.MENU.getCode())
             ));
+        when(menuPermissionRequirementRepository.findRowsByMenuIdIn(anyCollection())).thenReturn(List.of(
+            row(1L, 1, 1, "system:user:list", false),
+            row(2L, 1, 1, "system:user:list", false),
+            row(3L, 1, 1, "system:tenant:list", false),
+            row(4L, 1, 1, "idempotent:ops:view", false)
+        ));
 
         List<ResourceResponseDto> tree = service.menuTree();
 
@@ -331,7 +337,6 @@ class MenuServiceImplTest {
 
     @Test
     void menuTreeShouldKeepPlatformOnlyMenusForPlatformAdmin() {
-        when(platformTenantResolver.getPlatformTenantId()).thenReturn(1L);
         TenantContext.setActiveTenantId(null);
         TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_PLATFORM);
         authenticate(1L, null, "platform-admin", "system:user:list", "system:tenant:list", "idempotent:ops:view");
@@ -343,12 +348,43 @@ class MenuServiceImplTest {
                 menuEntry(3L, null, "tenant", 1L, "/system/tenant", "system:tenant:list", ResourceType.MENU.getCode()),
                 menuEntry(4L, null, "idempotentOps", 1L, "/ops/idempotent", "idempotent:ops:view", ResourceType.MENU.getCode())
             ));
+        when(menuPermissionRequirementRepository.findRowsByMenuIdIn(anyCollection())).thenReturn(List.of(
+            row(1L, 1, 1, "system:user:list", false),
+            row(2L, 1, 1, "system:user:list", false),
+            row(3L, 1, 1, "system:tenant:list", false),
+            row(4L, 1, 1, "idempotent:ops:view", false)
+        ));
 
         List<ResourceResponseDto> tree = service.menuTree();
 
         assertThat(tree).singleElement().extracting(ResourceResponseDto::getName).isEqualTo("system");
         assertThat(tree.get(0).getChildren()).extracting(ResourceResponseDto::getName).containsExactly("user", "tenant", "idempotentOps");
-        verify(platformTenantResolver, atLeastOnce()).getPlatformTenantId();
+        verify(platformTenantResolver, never()).getPlatformTenantId();
+    }
+
+    @Test
+    void menuTreeAllShouldReadPlatformCarrierWithoutResolvingPlatformTenantId() {
+        TenantContext.setActiveTenantId(null);
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_PLATFORM);
+        authenticate(1L, null, "platform-admin", "system:menu:list", "system:user:list");
+
+        when(menuEntryRepository.findByTenantIdIsNullAndTypeInOrderBySortAsc(
+            List.of(ResourceType.DIRECTORY.getCode(), ResourceType.MENU.getCode())
+        )).thenReturn(List.of(
+            menuEntry(1L, null, "system", null, "/system", "", ResourceType.DIRECTORY.getCode()),
+            menuEntry(2L, null, "user", 1L, "/system/user", "system:user:list", ResourceType.MENU.getCode())
+        ));
+        when(menuEntryRepository.existsByParentIdAndTenantIdIsNull(1L)).thenReturn(true);
+        when(menuEntryRepository.existsByParentIdAndTenantIdIsNull(2L)).thenReturn(false);
+
+        List<ResourceResponseDto> tree = service.menuTreeAll();
+
+        assertThat(tree).singleElement().extracting(ResourceResponseDto::getName).isEqualTo("system");
+        assertThat(tree.get(0).getChildren()).extracting(ResourceResponseDto::getName).containsExactly("user");
+        verify(menuEntryRepository).findByTenantIdIsNullAndTypeInOrderBySortAsc(
+            List.of(ResourceType.DIRECTORY.getCode(), ResourceType.MENU.getCode())
+        );
+        verify(platformTenantResolver, never()).getPlatformTenantId();
     }
 
     @Test
@@ -364,6 +400,7 @@ class MenuServiceImplTest {
                 menuEntry(3L, 2L, "forbidden", 1L, "/system/forbidden", "system:audit:authentication:view", ResourceType.MENU.getCode())
             ));
         when(menuPermissionRequirementRepository.findRowsByMenuIdIn(anyCollection())).thenReturn(List.of(
+            row(1L, 1, 1, "system:user:list", false),
             row(2L, 1, 1, "system:audit:auth:view", false),
             row(2L, 1, 2, "system:tenant:list", false),
             row(2L, 2, 1, "system:user:list", false),
@@ -411,6 +448,10 @@ class MenuServiceImplTest {
                 menuEntry(2L, 2L, "user", 1L, "/system/user", "system:user:list", ResourceType.MENU.getCode()),
                 menuEntry(3L, 2L, "tenant", 1L, "/system/tenant", "system:tenant:list", ResourceType.MENU.getCode())
             ));
+        when(menuPermissionRequirementRepository.findRowsByMenuIdIn(anyCollection())).thenReturn(List.of(
+            row(2L, 1, 1, "system:user:list", false),
+            row(3L, 1, 1, "system:tenant:list", false)
+        ));
 
         List<ResourceResponseDto> children = service.getMenusByParentId(1L);
 

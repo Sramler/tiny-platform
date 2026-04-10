@@ -117,6 +117,129 @@ String readonlyPassword = System.getenv("E2E_READONLY_PASSWORD");
 String readonlyTotpSecret = System.getenv("E2E_READONLY_TOTP_SECRET");
 String jdbcUrl = "jdbc:mysql://" + dbHost + ":" + dbPort + "/" + dbName + "?useSSL=false&allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai";
 
+String buildScopeKey(String scopeType, Long scopeId) {
+    if (scopeType == null) {
+        return null;
+    }
+    String normalized = scopeType.trim().toUpperCase(Locale.ROOT);
+    return switch (normalized) {
+        case "GLOBAL" -> "GLOBAL";
+        case "PLATFORM" -> "PLATFORM";
+        case "TENANT" -> "TENANT:" + scopeId;
+        default -> normalized + ":" + scopeId;
+    };
+}
+
+Long upsertCredential(Connection connection,
+                      Long userId,
+                      String authenticationProvider,
+                      String authenticationType,
+                      String configurationJson) throws SQLException {
+    try (PreparedStatement ps = connection.prepareStatement(
+            "INSERT INTO user_auth_credential (user_id, authentication_provider, authentication_type, authentication_configuration, created_at, updated_at) " +
+                    "VALUES (?, ?, ?, CAST(? AS JSON), NOW(), NOW()) " +
+                    "ON DUPLICATE KEY UPDATE authentication_configuration = CAST(VALUES(authentication_configuration) AS JSON), updated_at = NOW()")) {
+        ps.setLong(1, userId);
+        ps.setString(2, authenticationProvider);
+        ps.setString(3, authenticationType);
+        ps.setString(4, configurationJson);
+        ps.executeUpdate();
+    }
+    try (PreparedStatement ps = connection.prepareStatement(
+            "SELECT id FROM user_auth_credential WHERE user_id = ? AND authentication_provider = ? AND authentication_type = ? LIMIT 1")) {
+        ps.setLong(1, userId);
+        ps.setString(2, authenticationProvider);
+        ps.setString(3, authenticationType);
+        try (ResultSet rs = ps.executeQuery()) {
+            if (rs.next()) {
+                return rs.getLong(1);
+            }
+        }
+    }
+    return null;
+}
+
+void upsertScopePolicy(Connection connection,
+                       Long credentialId,
+                       String scopeType,
+                       Long scopeId,
+                       boolean isPrimary,
+                       boolean isEnabled,
+                       int priority) throws SQLException {
+    String normalizedScopeType = scopeType == null ? "TENANT" : scopeType.trim().toUpperCase(Locale.ROOT);
+    Long normalizedScopeId = ("TENANT".equals(normalizedScopeType)) ? scopeId : null;
+    String scopeKey = buildScopeKey(normalizedScopeType, normalizedScopeId);
+    try (PreparedStatement ps = connection.prepareStatement(
+            "INSERT INTO user_auth_scope_policy (credential_id, scope_type, scope_id, scope_key, is_primary_method, is_method_enabled, authentication_priority, created_at, updated_at) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW()) " +
+                    "ON DUPLICATE KEY UPDATE is_primary_method = VALUES(is_primary_method), is_method_enabled = VALUES(is_method_enabled), authentication_priority = VALUES(authentication_priority), updated_at = NOW()")) {
+        ps.setLong(1, credentialId);
+        ps.setString(2, normalizedScopeType);
+        if (normalizedScopeId == null) {
+            ps.setNull(3, Types.BIGINT);
+        } else {
+            ps.setLong(3, normalizedScopeId);
+        }
+        ps.setString(4, scopeKey);
+        ps.setBoolean(5, isPrimary);
+        ps.setBoolean(6, isEnabled);
+        ps.setInt(7, priority);
+        ps.executeUpdate();
+    }
+}
+
+void deleteScopePolicy(Connection connection,
+                       Long userId,
+                       String authenticationProvider,
+                       String authenticationType,
+                       String scopeType,
+                       Long scopeId) throws SQLException {
+    String normalizedScopeType = scopeType == null ? "TENANT" : scopeType.trim().toUpperCase(Locale.ROOT);
+    Long normalizedScopeId = ("TENANT".equals(normalizedScopeType)) ? scopeId : null;
+    String scopeKey = buildScopeKey(normalizedScopeType, normalizedScopeId);
+
+    Long credentialId = null;
+    try (PreparedStatement ps = connection.prepareStatement(
+            "SELECT id FROM user_auth_credential WHERE user_id = ? AND authentication_provider = ? AND authentication_type = ? LIMIT 1")) {
+        ps.setLong(1, userId);
+        ps.setString(2, authenticationProvider);
+        ps.setString(3, authenticationType);
+        try (ResultSet rs = ps.executeQuery()) {
+            if (rs.next()) {
+                credentialId = rs.getLong(1);
+            }
+        }
+    }
+    if (credentialId == null) {
+        return;
+    }
+
+    try (PreparedStatement ps = connection.prepareStatement(
+            "DELETE FROM user_auth_scope_policy WHERE credential_id = ? AND scope_key = ?")) {
+        ps.setLong(1, credentialId);
+        ps.setString(2, scopeKey);
+        ps.executeUpdate();
+    }
+
+    long remaining = 0L;
+    try (PreparedStatement ps = connection.prepareStatement(
+            "SELECT COUNT(*) FROM user_auth_scope_policy WHERE credential_id = ?")) {
+        ps.setLong(1, credentialId);
+        try (ResultSet rs = ps.executeQuery()) {
+            if (rs.next()) {
+                remaining = rs.getLong(1);
+            }
+        }
+    }
+    if (remaining == 0L) {
+        try (PreparedStatement ps = connection.prepareStatement(
+                "DELETE FROM user_auth_credential WHERE id = ?")) {
+            ps.setLong(1, credentialId);
+            ps.executeUpdate();
+        }
+    }
+}
+
 Long ensureTenant(Connection connection, String rawTenantCode, String displayName) throws SQLException {
     if (rawTenantCode == null || rawTenantCode.isBlank()) {
         throw new IllegalStateException("缺少租户编码");
@@ -712,64 +835,27 @@ String skipSchedulingAdminAuth = System.getenv("E2E_SKIP_SCHEDULING_ADMIN_AUTH")
     }
 
     String passwordJson = "{\"password\":\"{noop}" + rawPassword + "\",\"created_by\":\"real-e2e\",\"hash_algorithm\":\"noop\",\"password_version\":1,\"password_changed_at\":\"" + Instant.now().toString() + "\"}";
-    try (PreparedStatement ps = connection.prepareStatement(
-            "INSERT INTO user_authentication_method (tenant_id, user_id, authentication_provider, authentication_type, authentication_configuration, is_primary_method, is_method_enabled, authentication_priority, created_at, updated_at) " +
-                    "VALUES (?, ?, 'LOCAL', 'PASSWORD', CAST(? AS JSON), true, true, 0, NOW(), NOW()) " +
-                    "ON DUPLICATE KEY UPDATE authentication_configuration = CAST(VALUES(authentication_configuration) AS JSON), is_primary_method = true, is_method_enabled = true, authentication_priority = 0, updated_at = NOW()")) {
-        ps.setLong(1, tenantId);
-        ps.setLong(2, userId);
-        ps.setString(3, passwordJson);
-        ps.executeUpdate();
+    Long passwordCredentialId = upsertCredential(connection, userId, "LOCAL", "PASSWORD", passwordJson);
+    if (passwordCredentialId == null) {
+        throw new IllegalStateException("写入 PASSWORD credential 失败: userId=" + userId);
     }
+    upsertScopePolicy(connection, passwordCredentialId, "TENANT", tenantId, true, true, 0);
 
     String totpJson = "{\"digits\":6,\"issuer\":\"TinyOAuthServer\",\"period\":30,\"activated\":true,\"secretKey\":\"" + totpSecret + "\",\"otpauthUri\":\"otpauth://totp/TinyOAuthServer:" + username + "?secret=" + totpSecret + "&issuer=TinyOAuthServer&digits=6&period=30\"}";
-    try (PreparedStatement ps = connection.prepareStatement(
-            "INSERT INTO user_authentication_method (tenant_id, user_id, authentication_provider, authentication_type, authentication_configuration, is_primary_method, is_method_enabled, authentication_priority, created_at, updated_at) " +
-                    "VALUES (?, ?, 'LOCAL', 'TOTP', CAST(? AS JSON), false, true, 1, NOW(), NOW()) " +
-                    "ON DUPLICATE KEY UPDATE authentication_configuration = CAST(VALUES(authentication_configuration) AS JSON), is_primary_method = false, is_method_enabled = true, authentication_priority = 1, updated_at = NOW()")) {
-        ps.setLong(1, tenantId);
-        ps.setLong(2, userId);
-        ps.setString(3, totpJson);
-        ps.executeUpdate();
+    Long totpCredentialId = upsertCredential(connection, userId, "LOCAL", "TOTP", totpJson);
+    if (totpCredentialId == null) {
+        throw new IllegalStateException("写入 TOTP credential 失败: userId=" + userId);
     }
+    upsertScopePolicy(connection, totpCredentialId, "TENANT", tenantId, false, true, 1);
 
     boolean shouldPrepareGlobalAuthMethods = "true".equalsIgnoreCase(skipSchedulingAdminAuth)
             || (platformTenantCode != null
             && !platformTenantCode.isBlank()
             && normalizedTenantCode.equals(platformTenantCode.trim().toLowerCase(Locale.ROOT)));
     if (shouldPrepareGlobalAuthMethods) {
-        boolean authMethodTenantNullable = false;
-        try (PreparedStatement ps = connection.prepareStatement(
-                "SELECT IS_NULLABLE FROM information_schema.columns WHERE table_schema = ? AND table_name = 'user_authentication_method' AND column_name = 'tenant_id'")) {
-            ps.setString(1, dbName);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (rs.next()) {
-                    authMethodTenantNullable = "YES".equalsIgnoreCase(rs.getString(1));
-                }
-            }
-        }
-        if (!authMethodTenantNullable) {
-            System.out.println("Skip global auth method bootstrap: user_authentication_method.tenant_id is NOT NULL");
-        } else {
-        // 平台登录链路会优先按平台租户口径取 tenant-scoped 认证方式，并合并 tenant_id IS NULL 全局方式。
-        // 为防止平台 tenant 配置口径漂移导致“未配置此认证方式”，这里幂等补全一份全局认证方式。
-        try (PreparedStatement ps = connection.prepareStatement(
-                "INSERT INTO user_authentication_method (tenant_id, user_id, authentication_provider, authentication_type, authentication_configuration, is_primary_method, is_method_enabled, authentication_priority, created_at, updated_at) " +
-                        "VALUES (NULL, ?, 'LOCAL', 'PASSWORD', CAST(? AS JSON), true, true, 0, NOW(), NOW()) " +
-                        "ON DUPLICATE KEY UPDATE authentication_configuration = CAST(VALUES(authentication_configuration) AS JSON), is_primary_method = true, is_method_enabled = true, authentication_priority = 0, updated_at = NOW()")) {
-            ps.setLong(1, userId);
-            ps.setString(2, passwordJson);
-            ps.executeUpdate();
-        }
-        try (PreparedStatement ps = connection.prepareStatement(
-                "INSERT INTO user_authentication_method (tenant_id, user_id, authentication_provider, authentication_type, authentication_configuration, is_primary_method, is_method_enabled, authentication_priority, created_at, updated_at) " +
-                        "VALUES (NULL, ?, 'LOCAL', 'TOTP', CAST(? AS JSON), false, true, 1, NOW(), NOW()) " +
-                        "ON DUPLICATE KEY UPDATE authentication_configuration = CAST(VALUES(authentication_configuration) AS JSON), is_primary_method = false, is_method_enabled = true, authentication_priority = 1, updated_at = NOW()")) {
-            ps.setLong(1, userId);
-            ps.setString(2, totpJson);
-            ps.executeUpdate();
-        }
-        }
+        // 平台登录链路会合并 GLOBAL 作用域策略；为防止 scope 配置漂移导致“未配置此认证方式”，这里幂等补全一份 GLOBAL scope policy。
+        upsertScopePolicy(connection, passwordCredentialId, "GLOBAL", null, true, true, 0);
+        upsertScopePolicy(connection, totpCredentialId, "GLOBAL", null, false, true, 1);
     }
 
     System.out.println("Prepared real scheduling e2e auth user: tenant=" + tenantCode + ", username=" + username);
@@ -863,23 +949,14 @@ String skipSchedulingAdminAuth = System.getenv("E2E_SKIP_SCHEDULING_ADMIN_AUTH")
         ensureSchedulingAdminAuthority(connection, bindTenantId, bindRoleId);
 
         String bindPasswordJson = "{\"password\":\"{noop}" + bindPassword + "\",\"created_by\":\"real-e2e-bind\",\"hash_algorithm\":\"noop\",\"password_version\":1,\"password_changed_at\":\"" + Instant.now().toString() + "\"}";
-        try (PreparedStatement ps = connection.prepareStatement(
-                "INSERT INTO user_authentication_method (tenant_id, user_id, authentication_provider, authentication_type, authentication_configuration, is_primary_method, is_method_enabled, authentication_priority, created_at, updated_at) " +
-                        "VALUES (?, ?, 'LOCAL', 'PASSWORD', CAST(? AS JSON), true, true, 0, NOW(), NOW()) " +
-                        "ON DUPLICATE KEY UPDATE authentication_configuration = CAST(VALUES(authentication_configuration) AS JSON), is_primary_method = true, is_method_enabled = true, authentication_priority = 0, updated_at = NOW()")) {
-            ps.setLong(1, bindTenantId);
-            ps.setLong(2, bindUserId);
-            ps.setString(3, bindPasswordJson);
-            ps.executeUpdate();
+        Long bindPasswordCredentialId = upsertCredential(connection, bindUserId, "LOCAL", "PASSWORD", bindPasswordJson);
+        if (bindPasswordCredentialId == null) {
+            throw new IllegalStateException("写入 bind PASSWORD credential 失败: userId=" + bindUserId);
         }
+        upsertScopePolicy(connection, bindPasswordCredentialId, "TENANT", bindTenantId, true, true, 0);
 
         // 删除该用户所有 LOCAL/TOTP 记录，确保每次 real E2E 运行前都是“未绑定 TOTP”的首绑状态。
-        try (PreparedStatement ps = connection.prepareStatement(
-                "DELETE FROM user_authentication_method WHERE tenant_id = ? AND user_id = ? AND authentication_provider = 'LOCAL' AND authentication_type = 'TOTP'")) {
-            ps.setLong(1, bindTenantId);
-            ps.setLong(2, bindUserId);
-            ps.executeUpdate();
-        }
+        deleteScopePolicy(connection, bindUserId, "LOCAL", "TOTP", "TENANT", bindTenantId);
 
         System.out.println("Prepared real e2e bind user without TOTP: tenant=" + effectiveBindTenantCode + ", username=" + bindUsername);
     }
@@ -980,26 +1057,18 @@ String skipSchedulingAdminAuth = System.getenv("E2E_SKIP_SCHEDULING_ADMIN_AUTH")
         ensureActiveRoleAssignment(connection, readonlyUserId, readonlyRoleId, readonlyTenantId, "TENANT", readonlyTenantId);
 
         String readonlyPasswordJson = "{\"password\":\"{noop}" + readonlyPassword + "\",\"created_by\":\"real-e2e-readonly\",\"hash_algorithm\":\"noop\",\"password_version\":1,\"password_changed_at\":\"" + Instant.now().toString() + "\"}";
-        try (PreparedStatement ps = connection.prepareStatement(
-                "INSERT INTO user_authentication_method (tenant_id, user_id, authentication_provider, authentication_type, authentication_configuration, is_primary_method, is_method_enabled, authentication_priority, created_at, updated_at) " +
-                        "VALUES (?, ?, 'LOCAL', 'PASSWORD', CAST(? AS JSON), true, true, 0, NOW(), NOW()) " +
-                        "ON DUPLICATE KEY UPDATE authentication_configuration = CAST(VALUES(authentication_configuration) AS JSON), is_primary_method = true, is_method_enabled = true, authentication_priority = 0, updated_at = NOW()")) {
-            ps.setLong(1, readonlyTenantId);
-            ps.setLong(2, readonlyUserId);
-            ps.setString(3, readonlyPasswordJson);
-            ps.executeUpdate();
+        Long readonlyPasswordCredentialId = upsertCredential(connection, readonlyUserId, "LOCAL", "PASSWORD", readonlyPasswordJson);
+        if (readonlyPasswordCredentialId == null) {
+            throw new IllegalStateException("写入 readonly PASSWORD credential 失败: userId=" + readonlyUserId);
         }
+        upsertScopePolicy(connection, readonlyPasswordCredentialId, "TENANT", readonlyTenantId, true, true, 0);
 
         String readonlyTotpJson = "{\"digits\":6,\"issuer\":\"TinyOAuthServer\",\"period\":30,\"activated\":true,\"secretKey\":\"" + readonlyTotpSecret + "\",\"otpauthUri\":\"otpauth://totp/TinyOAuthServer:" + readonlyUsername + "?secret=" + readonlyTotpSecret + "&issuer=TinyOAuthServer&digits=6&period=30\"}";
-        try (PreparedStatement ps = connection.prepareStatement(
-                "INSERT INTO user_authentication_method (tenant_id, user_id, authentication_provider, authentication_type, authentication_configuration, is_primary_method, is_method_enabled, authentication_priority, created_at, updated_at) " +
-                        "VALUES (?, ?, 'LOCAL', 'TOTP', CAST(? AS JSON), false, true, 1, NOW(), NOW()) " +
-                        "ON DUPLICATE KEY UPDATE authentication_configuration = CAST(VALUES(authentication_configuration) AS JSON), is_primary_method = false, is_method_enabled = true, authentication_priority = 1, updated_at = NOW()")) {
-            ps.setLong(1, readonlyTenantId);
-            ps.setLong(2, readonlyUserId);
-            ps.setString(3, readonlyTotpJson);
-            ps.executeUpdate();
+        Long readonlyTotpCredentialId = upsertCredential(connection, readonlyUserId, "LOCAL", "TOTP", readonlyTotpJson);
+        if (readonlyTotpCredentialId == null) {
+            throw new IllegalStateException("写入 readonly TOTP credential 失败: userId=" + readonlyUserId);
         }
+        upsertScopePolicy(connection, readonlyTotpCredentialId, "TENANT", readonlyTenantId, false, true, 1);
 
         System.out.println("Prepared real scheduling readonly e2e user: tenant=" + effectiveReadonlyTenantCode + ", username=" + readonlyUsername);
     }

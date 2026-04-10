@@ -13,8 +13,10 @@ const mocks = vi.hoisted(() => ({
   ensureCsrfToken: vi.fn(),
   clearActiveTenantId: vi.fn(),
   clearTenantCode: vi.fn(),
+  getLoginMode: vi.fn(),
   getTenantCode: vi.fn(),
   isValidTenantCode: vi.fn(),
+  setLoginMode: vi.fn(),
   setTenantCode: vi.fn(),
 }))
 
@@ -33,8 +35,10 @@ vi.mock('@/utils/csrf', () => ({
 vi.mock('@/utils/tenant', () => ({
   clearActiveTenantId: mocks.clearActiveTenantId,
   clearTenantCode: mocks.clearTenantCode,
+  getLoginMode: mocks.getLoginMode,
   getTenantCode: mocks.getTenantCode,
   isValidTenantCode: mocks.isValidTenantCode,
+  setLoginMode: mocks.setLoginMode,
   setTenantCode: mocks.setTenantCode,
 }))
 
@@ -56,8 +60,10 @@ describe('Login.vue', () => {
     mocks.ensureCsrfToken.mockReset()
     mocks.clearActiveTenantId.mockReset()
     mocks.clearTenantCode.mockReset()
+    mocks.getLoginMode.mockReset()
     mocks.getTenantCode.mockReset()
     mocks.isValidTenantCode.mockReset()
+    mocks.setLoginMode.mockReset()
     mocks.setTenantCode.mockReset()
 
     mocks.ensureCsrfToken.mockResolvedValue({
@@ -65,6 +71,7 @@ describe('Login.vue', () => {
       parameterName: '_csrf',
       headerName: 'X-XSRF-TOKEN',
     })
+    mocks.getLoginMode.mockReturnValue(null)
     mocks.getTenantCode.mockReturnValue(null)
     mocks.isValidTenantCode.mockReturnValue(true)
   })
@@ -77,10 +84,12 @@ describe('Login.vue', () => {
   })
 
   it('should prefill platform dev defaults when saved login mode is platform', async () => {
-    window.localStorage.setItem('app_login_mode', 'PLATFORM')
+    mocks.getLoginMode.mockReturnValue('PLATFORM')
     const wrapper = mount(Login)
     await flushPromises()
-    expect((wrapper.find('input[name="username"]').element as HTMLInputElement).value).toBe('platform_admin')
+    expect((wrapper.find('input[name="username"]').element as HTMLInputElement).value).toBe(
+      'platform_admin',
+    )
     expect((wrapper.find('input[name="password"]').element as HTMLInputElement).value).toBe('admin')
   })
 
@@ -90,9 +99,13 @@ describe('Login.vue', () => {
     expect((wrapper.find('input[name="username"]').element as HTMLInputElement).value).toBe('admin')
     await wrapper.findAll('button.scope-tab')[1]?.trigger('click')
     await flushPromises()
-    expect((wrapper.find('input[name="username"]').element as HTMLInputElement).value).toBe('platform_admin')
+    expect(mocks.setLoginMode).toHaveBeenCalledWith('PLATFORM')
+    expect((wrapper.find('input[name="username"]').element as HTMLInputElement).value).toBe(
+      'platform_admin',
+    )
     await wrapper.findAll('button.scope-tab')[0]?.trigger('click')
     await flushPromises()
+    expect(mocks.setLoginMode).toHaveBeenCalledWith('TENANT')
     expect((wrapper.find('input[name="username"]').element as HTMLInputElement).value).toBe('admin')
   })
 
@@ -159,7 +172,7 @@ describe('Login.vue', () => {
 
   it('should not render tenant field when saved login mode is platform', async () => {
     mocks.getTenantCode.mockReturnValue('default')
-    window.localStorage.setItem('app_login_mode', 'PLATFORM')
+    mocks.getLoginMode.mockReturnValue('PLATFORM')
     const wrapper = mount(Login)
     await flushPromises()
     expect(wrapper.find('input[name="tenantCode"]').exists()).toBe(false)
@@ -172,7 +185,9 @@ describe('Login.vue', () => {
     await flushPromises()
 
     expect(wrapper.find('input[name="tenantCode"]').exists()).toBe(true)
-    expect((wrapper.find('input[name="tenantCode"]').element as HTMLInputElement).value).toBe('default')
+    expect((wrapper.find('input[name="tenantCode"]').element as HTMLInputElement).value).toBe(
+      'default',
+    )
 
     await wrapper.findAll('button.scope-tab')[1]?.trigger('click')
     await flushPromises()
@@ -230,7 +245,14 @@ describe('Login.vue', () => {
       .filter(Boolean)
     expect(names).not.toContain('tenantCode')
     expect(names).toEqual(
-      expect.arrayContaining(['username', 'password', 'authenticationProvider', 'authenticationType', 'redirect', '_csrf']),
+      expect.arrayContaining([
+        'username',
+        'password',
+        'authenticationProvider',
+        'authenticationType',
+        'redirect',
+        '_csrf',
+      ]),
     )
   })
 })

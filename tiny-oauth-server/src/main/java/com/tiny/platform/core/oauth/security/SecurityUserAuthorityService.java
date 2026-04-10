@@ -34,14 +34,12 @@ public class SecurityUserAuthorityService {
                                                                    Long scopeId,
                                                                    Set<Role> roles) {
         Set<Role> effectiveRoles = roles != null ? roles : Set.of();
-        Set<String> roleCodeAuthorities = buildRoleCodeAuthorities(effectiveRoles);
         Set<String> newPermissionCodeSet = loadNewPermissionCodeSet(effectiveRoles, tenantId);
         DenyFilterResult denyFilterResult = applyFinalDenyFilter(newPermissionCodeSet, tenantId);
 
         logAuthorityDiffIfNeeded(userId, tenantId, scopeType, scopeId, effectiveRoles, denyFilterResult);
 
         LinkedHashSet<GrantedAuthority> finalAuthorities = new LinkedHashSet<>();
-        roleCodeAuthorities.stream().map(SimpleGrantedAuthority::new).forEach(finalAuthorities::add);
         buildPermissionAuthorities(denyFilterResult.allowedPermissionCodes()).stream()
                 .map(SimpleGrantedAuthority::new)
                 .forEach(finalAuthorities::add);

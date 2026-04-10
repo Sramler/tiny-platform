@@ -11,8 +11,11 @@ import com.tiny.platform.infrastructure.auth.role.repository.RoleRepository;
 import com.tiny.platform.infrastructure.auth.role.service.RoleAssignmentSyncService;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationMethod;
-import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
+import com.tiny.platform.infrastructure.auth.user.service.UserAuthenticationBridgeWriter;
+import com.tiny.platform.infrastructure.auth.user.support.UserAuthenticationCredential;
+import com.tiny.platform.infrastructure.auth.user.support.UserAuthenticationMethodProfiles;
+import com.tiny.platform.infrastructure.auth.user.support.UserAuthenticationScopePolicy;
 import com.tiny.platform.infrastructure.core.exception.code.ErrorCode;
 import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
 import com.tiny.platform.infrastructure.core.exception.exception.NotFoundException;
@@ -25,11 +28,11 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.BeanUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -61,30 +64,31 @@ public class TenantServiceImpl implements TenantService {
     private final TenantBootstrapService tenantBootstrapService;
     private final AuthorizationAuditService auditService;
     private final UserRepository userRepository;
-    private final UserAuthenticationMethodRepository authenticationMethodRepository;
     private final PasswordEncoder passwordEncoder;
     private final RoleRepository roleRepository;
     private final RoleAssignmentSyncService roleAssignmentSyncService;
     private final TenantQuotaService tenantQuotaService;
+    private final UserAuthenticationBridgeWriter authenticationBridgeWriter;
 
+    @Autowired
     public TenantServiceImpl(TenantRepository tenantRepository,
                              TenantBootstrapService tenantBootstrapService,
                              AuthorizationAuditService auditService,
                              UserRepository userRepository,
-                             UserAuthenticationMethodRepository authenticationMethodRepository,
                              PasswordEncoder passwordEncoder,
                              RoleRepository roleRepository,
                              RoleAssignmentSyncService roleAssignmentSyncService,
-                             TenantQuotaService tenantQuotaService) {
+                             TenantQuotaService tenantQuotaService,
+                             UserAuthenticationBridgeWriter authenticationBridgeWriter) {
         this.tenantRepository = tenantRepository;
         this.tenantBootstrapService = tenantBootstrapService;
         this.auditService = auditService;
         this.userRepository = userRepository;
-        this.authenticationMethodRepository = authenticationMethodRepository;
         this.passwordEncoder = passwordEncoder;
         this.roleRepository = roleRepository;
         this.roleAssignmentSyncService = roleAssignmentSyncService;
         this.tenantQuotaService = tenantQuotaService;
+        this.authenticationBridgeWriter = authenticationBridgeWriter;
     }
 
     @Override
@@ -449,18 +453,42 @@ public class TenantServiceImpl implements TenantService {
         Map<String, Object> config = new HashMap<>();
         config.put("password", encodedPassword);
 
-        UserAuthenticationMethod method = new UserAuthenticationMethod();
-        method.setUserId(userId);
-        method.setTenantId(tenantId);
-        method.setAuthenticationProvider(AUTH_PROVIDER_LOCAL);
-        method.setAuthenticationType(AUTH_TYPE_PASSWORD);
-        method.setAuthenticationConfiguration(config);
-        method.setIsPrimaryMethod(true);
-        method.setIsMethodEnabled(true);
-        method.setAuthenticationPriority(0);
+        UserAuthenticationMethod method = UserAuthenticationMethodProfiles.create(
+            new UserAuthenticationCredential(
+                userId,
+                AUTH_PROVIDER_LOCAL,
+                AUTH_TYPE_PASSWORD,
+                config,
+                null,
+                null,
+                null
+            ),
+            new UserAuthenticationScopePolicy(
+                userId,
+                tenantId,
+                AUTH_PROVIDER_LOCAL,
+                AUTH_TYPE_PASSWORD,
+                true,
+                true,
+                0
+            )
+        );
         method.setCreatedAt(LocalDateTime.now());
         method.setUpdatedAt(LocalDateTime.now());
-        authenticationMethodRepository.save(method);
+        authenticationBridgeWriter.upsert(
+                userId,
+                AUTH_PROVIDER_LOCAL,
+                AUTH_TYPE_PASSWORD,
+                method.getAuthenticationConfiguration(),
+                method.getLastVerifiedAt(),
+                method.getLastVerifiedIp(),
+                method.getExpiresAt(),
+                SCOPE_TYPE_TENANT,
+                tenantId,
+                method.getIsPrimaryMethod(),
+                method.getIsMethodEnabled(),
+                method.getAuthenticationPriority()
+        );
     }
 
     private Tenant requireTenant(Long id) {

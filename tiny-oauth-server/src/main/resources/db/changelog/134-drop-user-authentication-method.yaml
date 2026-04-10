@@ -1,0 +1,14 @@
+databaseChangeLog:
+  - changeSet:
+      id: 134-drop-user-authentication-method-table
+      author: tiny
+      comment: Drop legacy user_authentication_method after runtime migration to user_auth_credential + user_auth_scope_policy
+      preConditions:
+        onFail: MARK_RAN
+        tableExists:
+          tableName: user_authentication_method
+      changes:
+        - sql:
+            dbms: mysql
+            sql: |
+              DROP TABLE IF EXISTS `user_authentication_method`;

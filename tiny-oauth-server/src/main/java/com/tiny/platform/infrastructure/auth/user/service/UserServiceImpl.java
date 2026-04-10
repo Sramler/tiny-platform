@@ -21,9 +21,11 @@ import com.tiny.platform.infrastructure.auth.role.domain.Role;
 import com.tiny.platform.infrastructure.auth.role.repository.RoleRepository;
 import com.tiny.platform.infrastructure.auth.role.service.EffectiveRoleResolutionService;
 import com.tiny.platform.infrastructure.auth.role.service.RoleAssignmentSyncService;
-import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.TenantUserRepository;
 import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationMethod;
+import com.tiny.platform.infrastructure.auth.user.support.UserAuthenticationCredential;
+import com.tiny.platform.infrastructure.auth.user.support.UserAuthenticationMethodProfiles;
+import com.tiny.platform.infrastructure.auth.user.support.UserAuthenticationScopePolicy;
 import com.tiny.platform.infrastructure.tenant.guard.TenantLifecycleGuard;
 import com.tiny.platform.infrastructure.tenant.service.TenantQuotaService;
 import org.springframework.data.domain.Page;
@@ -42,7 +44,6 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.persistence.criteria.Predicate;
 import org.springframework.beans.factory.annotation.Autowired;
-import java.util.HashSet;
 import java.util.HashMap;
 import java.time.LocalDateTime;
 
@@ -54,7 +55,7 @@ public class UserServiceImpl implements UserService {
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final RoleRepository roleRepository;
-    private final UserAuthenticationMethodRepository authenticationMethodRepository;
+    private final UserAuthenticationMethodProfileService authenticationMethodProfileService;
     private final LoginFailurePolicy loginFailurePolicy;
     private final RoleAssignmentSyncService roleAssignmentSyncService;
     private final EffectiveRoleResolutionService effectiveRoleResolutionService;
@@ -64,10 +65,12 @@ public class UserServiceImpl implements UserService {
     private final AuthUserResolutionService authUserResolutionService;
     private final TenantLifecycleGuard tenantLifecycleGuard;
     private final TenantQuotaService tenantQuotaService;
+    private final UserAuthenticationBridgeWriter authenticationBridgeWriter;
 
     @Autowired
     public UserServiceImpl(UserRepository userRepository, PasswordEncoder passwordEncoder,
-                          RoleRepository roleRepository, UserAuthenticationMethodRepository authenticationMethodRepository,
+                          RoleRepository roleRepository,
+                          UserAuthenticationMethodProfileService authenticationMethodProfileService,
                           LoginFailurePolicy loginFailurePolicy,
                           RoleAssignmentSyncService roleAssignmentSyncService,
                           EffectiveRoleResolutionService effectiveRoleResolutionService,
@@ -76,11 +79,12 @@ public class UserServiceImpl implements UserService {
                           UserUnitService userUnitService,
                           AuthUserResolutionService authUserResolutionService,
                           TenantLifecycleGuard tenantLifecycleGuard,
-                          TenantQuotaService tenantQuotaService) {
+                          TenantQuotaService tenantQuotaService,
+                          UserAuthenticationBridgeWriter authenticationBridgeWriter) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.roleRepository = roleRepository;
-        this.authenticationMethodRepository = authenticationMethodRepository;
+        this.authenticationMethodProfileService = authenticationMethodProfileService;
         this.loginFailurePolicy = loginFailurePolicy;
         this.roleAssignmentSyncService = roleAssignmentSyncService;
         this.effectiveRoleResolutionService = effectiveRoleResolutionService;
@@ -90,61 +94,8 @@ public class UserServiceImpl implements UserService {
         this.authUserResolutionService = authUserResolutionService;
         this.tenantLifecycleGuard = tenantLifecycleGuard;
         this.tenantQuotaService = tenantQuotaService;
+        this.authenticationBridgeWriter = authenticationBridgeWriter;
     }
-
-    public UserServiceImpl(UserRepository userRepository, PasswordEncoder passwordEncoder,
-                           RoleRepository roleRepository, UserAuthenticationMethodRepository authenticationMethodRepository,
-                           LoginFailurePolicy loginFailurePolicy,
-                           RoleAssignmentSyncService roleAssignmentSyncService,
-                           EffectiveRoleResolutionService effectiveRoleResolutionService,
-                           TenantUserRepository tenantUserRepository,
-                           UserUnitRepository userUnitRepository,
-                           UserUnitService userUnitService,
-                           AuthUserResolutionService authUserResolutionService,
-                           TenantLifecycleGuard tenantLifecycleGuard) {
-        this(
-            userRepository,
-            passwordEncoder,
-            roleRepository,
-            authenticationMethodRepository,
-            loginFailurePolicy,
-            roleAssignmentSyncService,
-            effectiveRoleResolutionService,
-            tenantUserRepository,
-            userUnitRepository,
-            userUnitService,
-            authUserResolutionService,
-            tenantLifecycleGuard,
-            null
-        );
-    }
-
-    public UserServiceImpl(UserRepository userRepository, PasswordEncoder passwordEncoder,
-                           RoleRepository roleRepository, UserAuthenticationMethodRepository authenticationMethodRepository,
-                           LoginFailurePolicy loginFailurePolicy,
-                           RoleAssignmentSyncService roleAssignmentSyncService,
-                           EffectiveRoleResolutionService effectiveRoleResolutionService,
-                           TenantUserRepository tenantUserRepository,
-                           UserUnitRepository userUnitRepository,
-                           AuthUserResolutionService authUserResolutionService,
-                           TenantLifecycleGuard tenantLifecycleGuard) {
-        this(
-            userRepository,
-            passwordEncoder,
-            roleRepository,
-            authenticationMethodRepository,
-            loginFailurePolicy,
-            roleAssignmentSyncService,
-            effectiveRoleResolutionService,
-            tenantUserRepository,
-            userUnitRepository,
-            null,
-            authUserResolutionService,
-            tenantLifecycleGuard,
-            null
-        );
-    }
-
 
     @Override
     @DataScope(module = "user")
@@ -364,22 +315,44 @@ public class UserServiceImpl implements UserService {
         // 创建认证配置
         Map<String, Object> config = new HashMap<>();
         config.put("password", encodedPassword);
-        
-        // 创建认证方法
-        UserAuthenticationMethod method = new UserAuthenticationMethod();
-        method.setUserId(userId);
-        method.setTenantId(tenantId);
-        method.setAuthenticationProvider("LOCAL");
-        method.setAuthenticationType("PASSWORD");
-        method.setAuthenticationConfiguration(config);
-        method.setIsPrimaryMethod(true);
-        method.setIsMethodEnabled(true);
-        method.setAuthenticationPriority(0);
+
+        UserAuthenticationMethod method = UserAuthenticationMethodProfiles.create(
+            new UserAuthenticationCredential(
+                userId,
+                "LOCAL",
+                "PASSWORD",
+                config,
+                null,
+                null,
+                null
+            ),
+            new UserAuthenticationScopePolicy(
+                userId,
+                tenantId,
+                "LOCAL",
+                "PASSWORD",
+                true,
+                true,
+                0
+            )
+        );
         method.setCreatedAt(LocalDateTime.now());
         method.setUpdatedAt(LocalDateTime.now());
         
-        // 保存认证方法
-        authenticationMethodRepository.save(method);
+        authenticationBridgeWriter.upsert(
+                userId,
+                "LOCAL",
+                "PASSWORD",
+                method.getAuthenticationConfiguration(),
+                method.getLastVerifiedAt(),
+                method.getLastVerifiedIp(),
+                method.getExpiresAt(),
+                "TENANT",
+                tenantId,
+                method.getIsPrimaryMethod(),
+                method.getIsMethodEnabled(),
+                method.getAuthenticationPriority()
+        );
     }
     
     /**
@@ -389,8 +362,12 @@ public class UserServiceImpl implements UserService {
      */
     private void updatePasswordAuthenticationMethod(Long userId, Long tenantId, String plainPassword) {
         // 查找现有的认证方法
-        Optional<UserAuthenticationMethod> existingMethod = authenticationMethodRepository
-                .findEffectiveAuthenticationMethod(userId, tenantId, "LOCAL", "PASSWORD");
+        Optional<UserAuthenticationMethod> existingMethod = Optional.empty();
+        if (authenticationMethodProfileService != null) {
+            existingMethod = authenticationMethodProfileService
+                    .findEffectiveMethodProfile(userId, TenantContextContract.SCOPE_TYPE_TENANT, tenantId, "LOCAL", "PASSWORD")
+                    .map(profile -> profile.storageRecord());
+        }
         
         if (existingMethod.isPresent()) {
             // 更新现有认证方法
@@ -402,9 +379,34 @@ public class UserServiceImpl implements UserService {
             // 加密新密码（DelegatingPasswordEncoder 会自动添加 {bcrypt} 前缀）
             String encodedPassword = passwordEncoder.encode(plainPassword);
             config.put("password", encodedPassword);
-            method.setAuthenticationConfiguration(config);
+            UserAuthenticationMethodProfiles.apply(
+                method,
+                new UserAuthenticationCredential(
+                    userId,
+                    "LOCAL",
+                    "PASSWORD",
+                    config,
+                    method.getLastVerifiedAt(),
+                    method.getLastVerifiedIp(),
+                    method.getExpiresAt()
+                ),
+                UserAuthenticationMethodProfiles.scopePolicyOf(method)
+            );
             method.setUpdatedAt(LocalDateTime.now());
-            authenticationMethodRepository.save(method);
+            authenticationBridgeWriter.upsert(
+                    userId,
+                    "LOCAL",
+                    "PASSWORD",
+                    method.getAuthenticationConfiguration(),
+                    method.getLastVerifiedAt(),
+                    method.getLastVerifiedIp(),
+                    method.getExpiresAt(),
+                    "TENANT",
+                    tenantId,
+                    method.getIsPrimaryMethod(),
+                    method.getIsMethodEnabled(),
+                    method.getAuthenticationPriority()
+            );
         } else {
             // 如果不存在，则创建新的认证方法
             createPasswordAuthenticationMethod(userId, tenantId, plainPassword);

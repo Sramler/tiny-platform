@@ -30,19 +30,33 @@ Usage:
   bash scripts/cleanup-rbac3-test-residual-users.sh            # dry-run
   bash scripts/cleanup-rbac3-test-residual-users.sh --apply    # apply cleanup
   bash scripts/cleanup-rbac3-test-residual-users.sh --apply --include-active  # include even if tenant_user.status='ACTIVE'
+  bash scripts/cleanup-rbac3-test-residual-users.sh --fail-on-stale
 EOF
 }
 
-MODE="${1:-dry-run}"
-if [[ "$MODE" != "dry-run" && "$MODE" != "--apply" ]]; then
-  usage
-  exit 2
-fi
-
+MODE="dry-run"
 INCLUDE_ACTIVE="false"
-if [[ "${2:-}" == "--include-active" || "${3:-}" == "--include-active" ]]; then
-  INCLUDE_ACTIVE="true"
-fi
+FAIL_ON_STALE="false"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    dry-run|--apply )
+      MODE="$1"
+      shift
+      ;;
+    --include-active )
+      INCLUDE_ACTIVE="true"
+      shift
+      ;;
+    --fail-on-stale )
+      FAIL_ON_STALE="true"
+      shift
+      ;;
+    * )
+      usage
+      exit 2
+      ;;
+  esac
+done
 
 MYSQL_BIN="${VERIFY_MYSQL_BIN:-mysql}"
 VERIFY_DB_HOST="${VERIFY_DB_HOST:-127.0.0.1}"
@@ -116,14 +130,16 @@ echo ""
 
 ra_count="$(query "SELECT COUNT(*) FROM role_assignment ra WHERE ra.principal_type='USER' AND ra.principal_id IN (SELECT u.id FROM user u WHERE $CANDIDATE_FILTER)")"
 tu_count="$(query "SELECT COUNT(*) FROM tenant_user tu WHERE tu.user_id IN (SELECT u.id FROM user u WHERE $CANDIDATE_FILTER)")"
-uam_count="$(query "SELECT COUNT(*) FROM user_authentication_method uam WHERE uam.user_id IN (SELECT u.id FROM user u WHERE $CANDIDATE_FILTER)")"
+credential_count="$(query "SELECT COUNT(*) FROM user_auth_credential c WHERE c.user_id IN (SELECT u.id FROM user u WHERE $CANDIDATE_FILTER)")"
+scope_policy_count="$(query "SELECT COUNT(*) FROM user_auth_scope_policy p WHERE p.credential_id IN (SELECT c.id FROM user_auth_credential c WHERE c.user_id IN (SELECT u.id FROM user u WHERE $CANDIDATE_FILTER))")"
 avatar_count="$(query "SELECT COUNT(*) FROM user_avatar ua WHERE ua.user_id IN (SELECT u.id FROM user u WHERE $CANDIDATE_FILTER)")"
 rvl_count="$(query "SELECT COUNT(*) FROM role_constraint_violation_log rvl WHERE rvl.principal_type='USER' AND rvl.principal_id IN (SELECT u.id FROM user u WHERE $CANDIDATE_FILTER)")"
 
 echo "关联数据统计（将一并清理）:"
 echo "  role_assignment: $ra_count"
 echo "  tenant_user: $tu_count"
-echo "  user_authentication_method: $uam_count"
+echo "  user_auth_credential: $credential_count"
+echo "  user_auth_scope_policy: $scope_policy_count"
 echo "  user_avatar: $avatar_count"
 echo "  role_constraint_violation_log: $rvl_count"
 echo ""
@@ -132,6 +148,10 @@ if [[ "$MODE" != "--apply" ]]; then
   echo "dry-run 模式未修改数据。"
   echo "如需执行，请运行:"
   echo "  VERIFY_DB_PASSWORD='***' bash tiny-oauth-server/scripts/cleanup-rbac3-test-residual-users.sh --apply"
+  if [[ "$FAIL_ON_STALE" == "true" ]]; then
+    echo "FAIL: 发现 RBAC3 测试残留用户"
+    exit 1
+  fi
   exit 0
 fi
 
@@ -150,7 +170,9 @@ query "
    WHERE principal_type='USER' AND principal_id IN (SELECT id FROM tmp_rbac3_cleanup_user_ids);
   DELETE FROM role_constraint_violation_log
    WHERE principal_type='USER' AND principal_id IN (SELECT id FROM tmp_rbac3_cleanup_user_ids);
-  DELETE FROM user_authentication_method
+  DELETE FROM user_auth_scope_policy
+   WHERE credential_id IN (SELECT c.id FROM user_auth_credential c WHERE c.user_id IN (SELECT id FROM tmp_rbac3_cleanup_user_ids));
+  DELETE FROM user_auth_credential
    WHERE user_id IN (SELECT id FROM tmp_rbac3_cleanup_user_ids);
   DELETE FROM user_avatar
    WHERE user_id IN (SELECT id FROM tmp_rbac3_cleanup_user_ids);
@@ -170,4 +192,7 @@ if [[ "$remaining" -eq 0 ]]; then
   echo "✅ RBAC3 测试残留用户已清理"
 else
   echo "⚠️ 仍有 $remaining 条未清理，请检查外键/并发写入"
+  if [[ "$FAIL_ON_STALE" == "true" ]]; then
+    exit 1
+  fi
 fi

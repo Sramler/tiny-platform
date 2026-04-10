@@ -5,6 +5,8 @@ import { afterEach, vi } from 'vitest'
 vi.mock('@/auth/oidc', () => {
   const noop = () => {}
   return {
+    bindUserManagerEvents: vi.fn(),
+    ensureOidcAuthoritySynced: vi.fn().mockReturnValue('http://localhost:9000'),
     settings: { authority: 'http://localhost:9000' },
     oidcClient: {},
     userManager: {

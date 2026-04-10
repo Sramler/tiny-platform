@@ -1,5 +1,6 @@
 package com.tiny.platform.core.oauth.multitenancy;
 
+import com.tiny.platform.core.oauth.tenant.IssuerTenantSupport;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.server.authorization.OAuth2Authorization;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsent;
@@ -25,7 +26,7 @@ class IssuerDelegatingOAuth2ServicesTest {
         RegisteredClient registeredClient = mock(RegisteredClient.class);
 
         registry.register("default", RegisteredClientRepository.class, tenantDelegate);
-        when(resolver.resolveCurrentTenantCode()).thenReturn("bench-1m");
+        when(resolver.resolveCurrentIssuerKey()).thenReturn("bench-1m");
         when(defaultDelegate.findByClientId("vue-client")).thenReturn(registeredClient);
 
         IssuerDelegatingRegisteredClientRepository repository =
@@ -37,6 +38,26 @@ class IssuerDelegatingOAuth2ServicesTest {
     }
 
     @Test
+    void registeredClientRepositoryUsesPlatformIssuerKeyWhenPresent() {
+        TenantPerIssuerComponentRegistry registry = new TenantPerIssuerComponentRegistry();
+        CurrentIssuerIdentifierResolver resolver = mock(CurrentIssuerIdentifierResolver.class);
+        RegisteredClientRepository defaultDelegate = mock(RegisteredClientRepository.class);
+        RegisteredClientRepository platformDelegate = mock(RegisteredClientRepository.class);
+        RegisteredClient registeredClient = mock(RegisteredClient.class);
+
+        registry.registerIssuerKey(IssuerTenantSupport.PLATFORM_ISSUER_KEY, RegisteredClientRepository.class, platformDelegate);
+        when(resolver.resolveCurrentIssuerKey()).thenReturn(IssuerTenantSupport.PLATFORM_ISSUER_KEY);
+        when(platformDelegate.findByClientId("vue-client")).thenReturn(registeredClient);
+
+        IssuerDelegatingRegisteredClientRepository repository =
+            new IssuerDelegatingRegisteredClientRepository(registry, resolver, defaultDelegate);
+
+        assertThat(repository.findByClientId("vue-client")).isSameAs(registeredClient);
+        verify(platformDelegate).findByClientId("vue-client");
+        verifyNoInteractions(defaultDelegate);
+    }
+
+    @Test
     void authorizationServiceFallsBackToDefaultDelegateWhenIssuerTenantIsUnknown() {
         TenantPerIssuerComponentRegistry registry = new TenantPerIssuerComponentRegistry();
         CurrentIssuerIdentifierResolver resolver = mock(CurrentIssuerIdentifierResolver.class);
@@ -45,7 +66,7 @@ class IssuerDelegatingOAuth2ServicesTest {
         OAuth2Authorization authorization = mock(OAuth2Authorization.class);
 
         registry.register("default", OAuth2AuthorizationService.class, tenantDelegate);
-        when(resolver.resolveCurrentTenantCode()).thenReturn("bench-1m");
+        when(resolver.resolveCurrentIssuerKey()).thenReturn("bench-1m");
         when(defaultDelegate.findById("auth-id")).thenReturn(authorization);
 
         IssuerDelegatingOAuth2AuthorizationService service =
@@ -64,7 +85,7 @@ class IssuerDelegatingOAuth2ServicesTest {
         OAuth2AuthorizationConsentService tenantDelegate = mock(OAuth2AuthorizationConsentService.class);
 
         registry.register("default", OAuth2AuthorizationConsentService.class, tenantDelegate);
-        when(resolver.resolveCurrentTenantCode()).thenReturn("bench-1m");
+        when(resolver.resolveCurrentIssuerKey()).thenReturn("bench-1m");
 
         IssuerDelegatingOAuth2AuthorizationConsentService service =
                 new IssuerDelegatingOAuth2AuthorizationConsentService(registry, resolver, defaultDelegate);

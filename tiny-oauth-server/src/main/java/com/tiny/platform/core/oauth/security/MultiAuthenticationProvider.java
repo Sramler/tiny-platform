@@ -3,15 +3,14 @@ package com.tiny.platform.core.oauth.security;
 import com.tiny.platform.core.oauth.config.CustomWebAuthenticationDetailsSource;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationMethod;
-import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
-import com.tiny.platform.infrastructure.auth.user.support.UserAuthenticationMethodMerge;
+import com.tiny.platform.infrastructure.auth.user.support.UserAuthenticationMethodProfile;
+import com.tiny.platform.infrastructure.auth.user.service.UserAuthenticationBridgeWriter;
+import com.tiny.platform.infrastructure.auth.user.service.UserAuthenticationMethodProfileService;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.core.oauth.tenant.ActiveTenantResponseSupport;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.core.oauth.tenant.TenantContextContract;
-import com.tiny.platform.infrastructure.tenant.config.PlatformTenantResolver;
-import com.tiny.platform.infrastructure.tenant.domain.Tenant;
 import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import com.tiny.platform.infrastructure.core.util.IpUtils;
 import org.slf4j.Logger;
@@ -57,9 +56,9 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
 
     private final UserRepository userRepository;
     private final TenantRepository tenantRepository;
-    private final PlatformTenantResolver platformTenantResolver;
     private final AuthUserResolutionService authUserResolutionService;
-    private final UserAuthenticationMethodRepository authenticationMethodRepository;
+    private final UserAuthenticationMethodProfileService authenticationMethodProfileService;
+    private final UserAuthenticationBridgeWriter authenticationBridgeWriter;
     private final PasswordEncoder passwordEncoder;
     private final UserDetailsService userDetailsService;
     private final SecurityService securityService;
@@ -69,8 +68,8 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
     @Autowired
     public MultiAuthenticationProvider(UserRepository userRepository,
                                        TenantRepository tenantRepository,
-                                       PlatformTenantResolver platformTenantResolver,
-                                       UserAuthenticationMethodRepository authenticationMethodRepository,
+                                       UserAuthenticationMethodProfileService authenticationMethodProfileService,
+                                       UserAuthenticationBridgeWriter authenticationBridgeWriter,
                                        PasswordEncoder passwordEncoder,
                                        UserDetailsService userDetailsService,
                                        SecurityService securityService,
@@ -79,9 +78,9 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
                                        LoginFailurePolicy loginFailurePolicy) {
         this.userRepository = userRepository;
         this.tenantRepository = tenantRepository;
-        this.platformTenantResolver = platformTenantResolver;
         this.authUserResolutionService = authUserResolutionService;
-        this.authenticationMethodRepository = authenticationMethodRepository;
+        this.authenticationMethodProfileService = authenticationMethodProfileService;
+        this.authenticationBridgeWriter = authenticationBridgeWriter;
         this.passwordEncoder = passwordEncoder;
         this.userDetailsService = userDetailsService;
         this.securityService = securityService;
@@ -191,31 +190,34 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
         Supplier<UserDetails> userDetailsSupplier = memoizedUserDetailsLoader(user.getUsername());
 
         // 读取所有已启用的方法（只查询一次）
-        Long authenticationTenantId = resolveAuthenticationTenantId(activeTenantId, activeScopeType);
-        List<UserAuthenticationMethod> enabledMethods = loadEnabledMethodsWithGlobalFallback(user.getId(), authenticationTenantId);
-        if (enabledMethods == null) {
-            enabledMethods = Collections.emptyList();
+        List<UserAuthenticationMethodProfile> enabledMethodProfiles = authenticationMethodProfileService.loadEnabledMethodProfiles(
+                user.getId(),
+                activeScopeType,
+                activeTenantId
+        );
+        if (enabledMethodProfiles == null) {
+            enabledMethodProfiles = Collections.emptyList();
         }
 
         // 智能回退：如果 provider/type 未指定并且只有一种启用方法，则自动选择
         String finalProvider = provider;
         String finalType = type;
         if ((finalProvider == null || finalProvider.isBlank() || finalType == null || finalType.isBlank())) {
-            if (enabledMethods.isEmpty()) {
+            if (enabledMethodProfiles.isEmpty()) {
                 logger.error("用户 {} 未配置任何启用的认证方法", username);
                 throw new BadCredentialsException("该用户未配置任何认证方式");
             }
             
-            if (enabledMethods.size() == 1) {
-                UserAuthenticationMethod only = enabledMethods.get(0);
-                finalProvider = only.getAuthenticationProvider();
-                finalType = only.getAuthenticationType();
+            if (enabledMethodProfiles.size() == 1) {
+                UserAuthenticationMethodProfile only = enabledMethodProfiles.get(0);
+                finalProvider = only.authenticationProvider();
+                finalType = only.authenticationType();
                 logger.info("用户 {} 未指定认证方式，自动选择唯一启用方法 {}+{}", username, mask(finalProvider), mask(finalType));
             } else {
                 // 多个方法且用户未指定，必须明确
                 String allowed = String.join(", ",
-                        enabledMethods.stream()
-                                .map(m -> m.getAuthenticationProvider() + "+" + m.getAuthenticationType())
+                        enabledMethodProfiles.stream()
+                                .map(m -> m.authenticationProvider() + "+" + m.authenticationType())
                                 .toList());
                 throw new BadCredentialsException("用户配置了多种认证方式，请指定认证方式。可选：" + allowed);
             }
@@ -232,9 +234,9 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
         // 找到请求的具体认证方法配置
         final String finalProviderForLambda = finalProvider;
         final String finalTypeForLambda = finalType;
-        Optional<UserAuthenticationMethod> methodOpt = enabledMethods.stream()
-                .filter(m -> finalProviderForLambda.equalsIgnoreCase(m.getAuthenticationProvider()))
-                .filter(m -> finalTypeForLambda.equalsIgnoreCase(m.getAuthenticationType()))
+        Optional<UserAuthenticationMethodProfile> methodOpt = enabledMethodProfiles.stream()
+                .filter(m -> finalProviderForLambda.equalsIgnoreCase(m.authenticationProvider()))
+                .filter(m -> finalTypeForLambda.equalsIgnoreCase(m.authenticationType()))
                 .findFirst();
 
         if (methodOpt.isEmpty()) {
@@ -242,16 +244,16 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
             throw new BadCredentialsException("该用户未配置此认证方式");
         }
 
-        UserAuthenticationMethod method = methodOpt.get();
+        UserAuthenticationMethodProfile method = methodOpt.get();
 
         // 计算是否需要 MFA 流程（只考虑 LOCAL + PASSWORD/TOTP 的常见组合）
-        List<UserAuthenticationMethod> mfaCandidates = enabledMethods.stream()
-                .filter(m -> PROVIDER_LOCAL.equalsIgnoreCase(m.getAuthenticationProvider()))
-                .filter(m -> FACTOR_PASSWORD.equalsIgnoreCase(m.getAuthenticationType()) || FACTOR_TOTP.equalsIgnoreCase(m.getAuthenticationType()))
+        List<UserAuthenticationMethodProfile> mfaCandidates = enabledMethodProfiles.stream()
+                .filter(m -> PROVIDER_LOCAL.equalsIgnoreCase(m.authenticationProvider()))
+                .filter(m -> FACTOR_PASSWORD.equalsIgnoreCase(m.authenticationType()) || FACTOR_TOTP.equalsIgnoreCase(m.authenticationType()))
                 .sorted((a, b) -> {
                     // password 优先
-                    if (FACTOR_PASSWORD.equalsIgnoreCase(a.getAuthenticationType()) && FACTOR_TOTP.equalsIgnoreCase(b.getAuthenticationType())) return -1;
-                    if (FACTOR_TOTP.equalsIgnoreCase(a.getAuthenticationType()) && FACTOR_PASSWORD.equalsIgnoreCase(b.getAuthenticationType())) return 1;
+                    if (FACTOR_PASSWORD.equalsIgnoreCase(a.authenticationType()) && FACTOR_TOTP.equalsIgnoreCase(b.authenticationType())) return -1;
+                    if (FACTOR_TOTP.equalsIgnoreCase(a.authenticationType()) && FACTOR_PASSWORD.equalsIgnoreCase(b.authenticationType())) return 1;
                     return 0;
                 })
                 .toList();
@@ -267,7 +269,7 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
                 Object requireTotpFlag = securityStatus.get("requireTotp");
                 requireTotpThisSession = Boolean.TRUE.equals(requireTotpFlag);
                 logger.debug("[MFA] MultiAuthenticationProvider - userId={}, username={}, requireTotpThisSession={}, enabledMethods={}",
-                        user.getId(), user.getUsername(), requireTotpThisSession, enabledMethods.size());
+                        user.getId(), user.getUsername(), requireTotpThisSession, enabledMethodProfiles.size());
             } catch (Exception ex) {
                 logger.warn("计算用户 {} 的 MFA 策略时发生异常，降级为仅 PASSWORD 流程: {}", username, ex.getMessage());
             }
@@ -276,7 +278,7 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
                 // 当前会话允许跳过 TOTP：按单因子方式直接认证（通常就是 PASSWORD），
                 // 保证符合思路 A：本次 requiredFactors = {PASSWORD}，完成后即可发最终 Token。
                 if (FACTOR_TOTP.equalsIgnoreCase(finalType)
-                        && mfaCandidates.stream().anyMatch(m -> FACTOR_PASSWORD.equalsIgnoreCase(m.getAuthenticationType()))) {
+                        && mfaCandidates.stream().anyMatch(m -> FACTOR_PASSWORD.equalsIgnoreCase(m.authenticationType()))) {
                     logger.warn("用户 {} 在未完成密码验证前尝试直接使用 TOTP 登录，已拒绝", username);
                     throw new BadCredentialsException("必须先完成前置认证步骤");
                 }
@@ -314,7 +316,7 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
      */
     private Authentication handleMultiFactorAuthentication(User user,
                                                            Object credentials,
-                                                           List<UserAuthenticationMethod> mfaMethods,
+                                                           List<UserAuthenticationMethodProfile> mfaMethods,
                                                            String provider,
                                                            String requestedType,
                                                            Supplier<UserDetails> userDetailsSupplier) {
@@ -334,11 +336,11 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
         validateNoSkippedPrerequisite(user, mfaMethods, credentialMap);
         
         Set<MultiFactorAuthenticationToken.AuthenticationFactorType> completed = new LinkedHashSet<>();
-        List<UserAuthenticationMethod> remaining = new ArrayList<>(mfaMethods);
+        List<UserAuthenticationMethodProfile> remaining = new ArrayList<>(mfaMethods);
         
         // 顺序验证每个因子
-        for (UserAuthenticationMethod method : List.copyOf(mfaMethods)) {
-            String methodType = method.getAuthenticationType();
+        for (UserAuthenticationMethodProfile method : List.copyOf(mfaMethods)) {
+            String methodType = method.authenticationType();
             String methodKeyLower = methodType.toLowerCase(Locale.ROOT);
 
             // 支持常见的 key 名（password, totp, totpCode 等）
@@ -392,7 +394,7 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
             // 如果已经完成了 PASSWORD 并还剩 TOTP，则返回 partial token。
             // successHandler 和后续授权链通过 factor authority + authenticated=false 判断这是待补全的 MFA 会话。
             if (completed.contains(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD) && 
-                remaining.stream().anyMatch(m -> FACTOR_TOTP.equalsIgnoreCase(m.getAuthenticationType()))) {
+                remaining.stream().anyMatch(m -> FACTOR_TOTP.equalsIgnoreCase(m.authenticationType()))) {
                 MultiFactorAuthenticationToken partial = buildPartialToken(
                     user.getUsername(), provider, completed, userDetailsSupplier.get()
                 );
@@ -435,44 +437,6 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
         return scopeType.trim().toUpperCase(Locale.ROOT);
     }
 
-    /**
-     * 解析「租户内认证方法」查询主键：PLATFORM 登录使用平台租户 id（与 platform-tenant-code 对齐），用于命中租户内覆盖行；
-     * {@code user_authentication_method.tenant_id IS NULL} 的全局行由 loadEnabledMethodsWithGlobalFallback 另行并入。
-     */
-    private Long resolveAuthenticationTenantId(Long activeTenantId, String activeScopeType) {
-        if (!TenantContextContract.SCOPE_TYPE_PLATFORM.equalsIgnoreCase(activeScopeType)) {
-            return activeTenantId;
-        }
-        if (platformTenantResolver != null) {
-            Long platformTenantId = platformTenantResolver.getPlatformTenantId();
-            if (platformTenantId != null) {
-                if (logger.isDebugEnabled()) {
-                    logger.debug("[auth-login] PLATFORM 登录：按配置解析认证租户维度 tenantId={}", platformTenantId);
-                }
-                return platformTenantId;
-            }
-        }
-        if (tenantRepository == null) {
-            return null;
-        }
-        logger.warn(
-                "[auth-login] PLATFORM 登录：PlatformTenantResolver 未解析到平台租户 ID，回退 tenant.code=default；"
-                        + "请确认 tiny.platform.tenant.platform-tenant-code 与 tenant 表及 user_authentication_method 一致"
-        );
-        return tenantRepository.findByCode("default").map(Tenant::getId).orElse(activeTenantId);
-    }
-
-    private List<UserAuthenticationMethod> loadEnabledMethodsWithGlobalFallback(Long userId, Long authenticationTenantId) {
-        if (authenticationTenantId == null) {
-            return authenticationMethodRepository.findByUserIdAndTenantIdIsNullAndIsMethodEnabledTrueOrderByAuthenticationPriorityAsc(
-                    userId);
-        }
-        List<UserAuthenticationMethod> tenantRows = authenticationMethodRepository.findEnabledMethodsByUserId(userId, authenticationTenantId);
-        List<UserAuthenticationMethod> globalRows =
-                authenticationMethodRepository.findByUserIdAndTenantIdIsNullAndIsMethodEnabledTrueOrderByAuthenticationPriorityAsc(userId);
-        return UserAuthenticationMethodMerge.mergePreferTenantScoped(tenantRows, globalRows);
-    }
-
     private AuthUserResolutionService requireAuthUserResolutionService() {
         if (authUserResolutionService == null) {
             throw new IllegalStateException("AuthUserResolutionService 未配置");
@@ -481,7 +445,7 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
     }
 
     private void validateNoSkippedPrerequisite(User user,
-                                               List<UserAuthenticationMethod> orderedMethods,
+                                               List<UserAuthenticationMethodProfile> orderedMethods,
                                                Map<String, String> credentialMap) {
         Set<String> providedFactors = providedFactors(credentialMap);
         if (providedFactors.isEmpty()) {
@@ -489,8 +453,8 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
         }
 
         boolean previousFactorMissing = false;
-        for (UserAuthenticationMethod method : orderedMethods) {
-            String factorType = method.getAuthenticationType();
+        for (UserAuthenticationMethodProfile method : orderedMethods) {
+            String factorType = method.authenticationType();
             if (factorType == null || factorType.isBlank()) {
                 continue;
             }
@@ -536,13 +500,13 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
     
     private Authentication authenticateFactor(User user,
                                               String credential,
-                                              UserAuthenticationMethod method,
+                                              UserAuthenticationMethodProfile method,
                                               String factorType,
                                               Supplier<UserDetails> userDetailsSupplier) {
         if (FACTOR_PASSWORD.equalsIgnoreCase(factorType)) {
-                return authenticatePassword(user, credential, method, method.getAuthenticationProvider(), factorType, userDetailsSupplier);
+                return authenticatePassword(user, credential, method, method.authenticationProvider(), factorType, userDetailsSupplier);
         } else if (FACTOR_TOTP.equalsIgnoreCase(factorType)) {
-                return authenticateTotp(user, credential, method, method.getAuthenticationProvider(), factorType, userDetailsSupplier);
+                return authenticateTotp(user, credential, method, method.authenticationProvider(), factorType, userDetailsSupplier);
         } else {
             throw new BadCredentialsException("不支持的认证因子: " + factorType);
         }
@@ -553,14 +517,15 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
      */
     private Authentication authenticatePassword(User user,
                                                 String password,
-                                                UserAuthenticationMethod method,
+                                                UserAuthenticationMethodProfile method,
                                                 String provider,
                                                 String type,
                                                 Supplier<UserDetails> userDetailsSupplier) {
-        Map<String, Object> config = method.getAuthenticationConfiguration();
+        Map<String, Object> config = method.authenticationConfiguration();
+        UserAuthenticationMethod storageRecord = method.storageRecord();
         
         if (config == null || !config.containsKey("password")) {
-            logger.error("用户 {} 的认证配置缺少 password 字段（methodId={}）", user.getUsername(), method.getId());
+            logger.error("用户 {} 的认证配置缺少 password 字段（methodId={}）", user.getUsername(), storageRecord.getId());
             throw new BadCredentialsException("认证配置错误");
         }
 
@@ -580,16 +545,15 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
         boolean matches = passwordEncoder.matches(password, encoded);
         if (!matches) {
             logger.warn(
-                    "用户 {} 密码验证失败（uam.id={}, uam.tenant_id={}, storedHashLen={}；明文与库内哈希不一致或哈希格式无法被 DelegatingPasswordEncoder 识别，可核对 user_authentication_method 或执行 scripts/ensure-platform-admin.sh）",
+                    "用户 {} 密码验证失败（scopeTenantId={}, storedHashLen={}；明文与库内哈希不一致或哈希格式无法被 DelegatingPasswordEncoder 识别，可核对新认证模型数据或执行 scripts/ensure-platform-admin.sh）",
                     user.getUsername(),
-                    method.getId(),
-                    method.getTenantId(),
+                    method.scopeTenantId(),
                     encoded.length());
             throw new BadCredentialsException("密码错误");
         }
 
         // 记录认证方法验证成功的信息
-        recordAuthenticationMethodVerification(method);
+        recordAuthenticationMethodVerification(storageRecord);
 
         UserDetails userDetails = userDetailsSupplier.get();
 
@@ -611,14 +575,15 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
      */
     private Authentication authenticateTotp(User user,
                                             String totpCode,
-                                            UserAuthenticationMethod method,
+                                            UserAuthenticationMethodProfile method,
                                             String provider,
                                             String type,
                                             Supplier<UserDetails> userDetailsSupplier) {
-        Map<String, Object> config = method.getAuthenticationConfiguration();
+        Map<String, Object> config = method.authenticationConfiguration();
+        UserAuthenticationMethod storageRecord = method.storageRecord();
 
         if (config == null) {
-            logger.error("用户 {} 的 TOTP 配置为空 (methodId={})", user.getUsername(), method.getId());
+            logger.error("用户 {} 的 TOTP 配置为空 (methodId={})", user.getUsername(), storageRecord.getId());
             throw new BadCredentialsException("TOTP 配置错误");
         }
 
@@ -628,21 +593,21 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
         if ((secret == null || secret.isBlank()) && config.containsKey("secret")) secret = Objects.toString(config.get("secret"), null);
 
         if (secret == null || secret.isBlank() || "null".equalsIgnoreCase(secret)) {
-            logger.error("用户 {} 未配置有效的 TOTP secret (methodId={})", user.getUsername(), method.getId());
+            logger.error("用户 {} 未配置有效的 TOTP secret (methodId={})", user.getUsername(), storageRecord.getId());
             throw new BadCredentialsException("TOTP 配置错误");
         }
 
         // 不在日志中打印 secret 或 code
         totpVerificationGuard.verifyOrThrow(
                 user.getUsername(),
-                method,
+                storageRecord,
                 secret,
                 totpCode,
                 "TOTP 验证失败"
         );
 
         // 记录认证方法验证成功的信息
-        recordAuthenticationMethodVerification(method);
+        recordAuthenticationMethodVerification(storageRecord);
 
         UserDetails userDetails = userDetailsSupplier.get();
 
@@ -715,6 +680,9 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
      * 记录认证方法验证成功的信息（最后验证时间和IP）
      */
     private void recordAuthenticationMethodVerification(UserAuthenticationMethod method) {
+        if (method == null) {
+            return;
+        }
         try {
             // 尝试从 RequestContextHolder 获取当前请求
             ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
@@ -724,7 +692,7 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
                 
                 method.setLastVerifiedAt(LocalDateTime.now());
                 method.setLastVerifiedIp(clientIp);
-                authenticationMethodRepository.save(method);
+                persistRuntimeMethod(method);
                 
                 logger.debug("认证方法 {} (id={}) 验证信息已记录: IP={}, Time={}", 
                         method.getAuthenticationProvider() + "+" + method.getAuthenticationType(),
@@ -732,7 +700,7 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
             } else {
                 // 如果无法获取请求（例如非HTTP请求），只记录时间
                 method.setLastVerifiedAt(LocalDateTime.now());
-                authenticationMethodRepository.save(method);
+                persistRuntimeMethod(method);
                 logger.debug("认证方法 {} (id={}) 验证信息已记录: Time={} (无IP信息)", 
                         method.getAuthenticationProvider() + "+" + method.getAuthenticationType(),
                         method.getId(), method.getLastVerifiedAt());
@@ -741,6 +709,12 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
             // 记录验证信息失败不应该影响认证流程，只记录日志
             logger.warn("记录认证方法 {} 验证信息失败: {}", 
                     method.getAuthenticationProvider() + "+" + method.getAuthenticationType(), e.getMessage());
+        }
+    }
+
+    private void persistRuntimeMethod(UserAuthenticationMethod method) {
+        if (authenticationBridgeWriter != null) {
+            authenticationBridgeWriter.upsertRuntime(method);
         }
     }
 

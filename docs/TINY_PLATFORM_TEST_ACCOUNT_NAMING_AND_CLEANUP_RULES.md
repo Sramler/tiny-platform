@@ -1,10 +1,16 @@
-# Tiny Platform 测试账号命名与清理规则（E2E / Integration / Seed）
+# Tiny Platform 测试数据命名与清理规则（E2E / Integration / Seed）
 
 ## 1. 文档目的与适用范围
 
 - 该规则适用于 `tiny-oauth-server` 在真实环境（real-link / 真实 MySQL）中使用的共享测试库清理。
-- 主要解决两个问题：测试临时账号残留导致共享库膨胀，以及清理脚本误删长期 seed/E2E 资产。
+- 主要解决两个问题：测试副产物残留导致共享库膨胀，以及清理脚本误删长期 seed/E2E 资产。
 - 本文聚焦“共享真库测试资产治理”，不讨论普通开发环境中的一次性本地测试数据。
+- 本文中的“测试数据”不是只指账号或角色，而是指**整个数据库模型中由测试写入的所有数据**：包括主体表、关联表、中间表、约束表、membership、权限绑定、运行态实例、历史表、审计日志、派生配置与其它模块实例数据。
+
+统一治理入口：
+- 基线脚本：`tiny-oauth-server/scripts/verify-test-db-residuals.sh`
+- 作用：编排模块级 cleanup / verify 脚本，统一执行 dry-run、`--apply`、`--fail-on-stale`
+- 要求：共享真库/real-link 的测试残留治理应优先从该基线入口触发，而不是要求使用者手工逐个执行专名脚本
 
 ## 2. 术语约定（约束面）
 
@@ -13,7 +19,7 @@
 - 长期资产：Seed / Bootstrap 账号与 E2E 固定账号（通常长期存在，不走可回收残留清理逻辑）。
 - 可回收资产：Integration 临时账号（测试期间创建，测试结束后应回收，清理脚本仅兜底）。
 
-## 3. 测试账号资产分层
+## 3. 测试数据资产分层
 
 ### 3.1 Seed / Bootstrap 账号（长期稳定资产）
 
@@ -43,10 +49,11 @@
 - E2E 账号属于长期资产：统一通过 `.env.e2e.local`、CI secrets 或受控测试配置注入，不应在测试代码里硬编码用户名/密码/TOTP。
 - 清理脚本的匹配范围必须永远收敛在“受控前缀白名单”的 Integration 临时账号命名空间，严禁把 E2E（`E2E_`）当作可回收资产处理。
 
-### 3.3 Integration 测试账号（可回收临时资产）
+### 3.3 Integration 测试资产（可回收临时资产）
 
-- 用于 `@SpringBootTest` + 真实 MySQL 的集成测试（在测试中可能写入 `role_assignment`、`tenant_user`、`role_constraint_violation_log` 等）。
+- 用于 `@SpringBootTest` + 真实 MySQL 的集成测试（在测试中可能写入 `role_assignment`、`tenant_user`、`role_constraint_violation_log`、运行态实例、历史表、审计日志或其它模块子表）。
 - 测试用例应在 `finally` 中清理，防止断言失败导致残留。
+- 清理对象必须覆盖本次用例写入的**整条数据链**，不能只删账号/角色主体，留下子表或投影残留。
 
 RBAC3 相关集成测试在 `User.username` 上会写入“用于清理/统计的标识”（时间戳后缀由测试代码追加）。
 
@@ -143,7 +150,7 @@ uniqueSuffix 示例（仅示意）：
 
 ### 5.1 用例内清理（finally 必须执行）
 
-每个 Integration 真实库集成测试都必须在 `finally` 中至少清理以下类型的数据（当前示例模块为 RBAC3；接入其它模块时复用同一清理约束，并按外键依赖顺序执行）：
+每个 Integration 真实库集成测试都必须在 `finally` 中清理“本次用例写入的整条数据链”，并按外键依赖顺序执行。当前以 RBAC3 为例，但约束适用于整个数据库模型：
 
 1. `role_assignment`（USER 主体在 tenant + scope 下的赋权）
 2. `role_constraint_violation_log`（若 dry-run 产生违例日志，按 principalType/principalId/tenantId 删除）
@@ -162,17 +169,43 @@ uniqueSuffix 示例（仅示意）：
 复用测试包内已有的清理 helper，例如 `com.tiny.platform.infrastructure.auth.role.integration.Rbac3RoleConstraintIntegrationTestCleanup`，避免不同测试用例清理口径漂移。
 
 说明：
-- 删除测试账号不等于完成清理；凡测试写入过的模块运行态/实例/历史/日志表，都必须在 `finally` 中同步清理，不能把“删 user”当作唯一回收动作。
+- 删除测试账号不等于完成清理；凡测试写入过的模块运行态/实例/历史/日志/约束/中间表/派生配置，都必须在 `finally` 中同步清理，不能把“删 user/role”当作唯一回收动作。
 
 ### 5.2 共享库兜底清理（cleanup 脚本）
 
 脚本：
 - `tiny-oauth-server/scripts/cleanup-rbac3-test-residual-users.sh`
+- `tiny-oauth-server/scripts/cleanup-rbac3-test-residual-roles.sh`
 
 默认行为（安全模式，不含 ACTIVE membership）：
 - 仅匹配用户名以“受控前缀白名单”之一开头的临时测试账号（脚本侧等价于 `username LIKE 'rbac3_*_user_%'` 强前缀匹配；前缀本身已包含 `_user_` 结构）。
 - 默认只清理“没有 `tenant_user.status='ACTIVE'` 的账号”，以避免误删真正处于活跃 membership 的业务 / seed / E2E 资产。
 - `_user_` 结构锚点的“显式校验”以 `verify-rbac3-test-user-prefix-whitelist.sh` 为准；cleanup 脚本侧通过强前缀白名单收敛候选集。
+- 角色清理脚本只处理“孤儿 RBAC3 测试角色”：`ROLE_RBAC3_% / RBAC3 %` 且无 `role_assignment`、`role_permission`、`role_data_scope` 绑定；同时一并删除它们挂接的 `role_hierarchy` / `role_mutex` / `role_cardinality` / `role_prerequisite`。
+- 兜底脚本的设计目标不是“只删 user/role 两张表”，而是覆盖脚本白名单范围内由测试写入的整条数据链；若某个模块的运行态/历史/审计/中间表尚未接入脚本，视为治理未完成，而不是“主体删掉就算清理完成”。
+
+### 5.3 real-link 派生资产审计（非 RBAC3 临时账号）
+
+以下资产不属于 RBAC3 Integration 临时账号清理范围：
+
+- 通过 real-link `/sys/tenants` 动态创建的派生租户：`tenant.name = E2E租户(<tenantCode>)`
+- 这些派生租户自动生成的初始管理员：`username = e2e_init_<tenantCode>`
+- 当前 keep-set 之外的 `e2e_*` 长期账号与其 stale membership
+
+它们的治理入口应与 RBAC3 cleanup 分开，避免误把固定 E2E 登录身份当作可回收资产：
+
+- 审计脚本：`tiny-oauth-server/scripts/verify-real-e2e-derived-assets.sh`
+- 自动清理：`bash tiny-oauth-server/scripts/verify-real-e2e-derived-assets.sh --apply`
+- 当前 run 派生租户定向清理：`bash tiny-oauth-server/scripts/verify-real-e2e-derived-assets.sh --apply --target-generated-tenant-codes <csv>`
+
+脚本口径：
+
+- 优先读取 shell 中的 `E2E_*` keep-set；缺失时回退到 `src/main/webapp/.env.e2e.local`
+- 当前仓库额外维护一组“长期自动化身份兼容 allowlist”，默认包括：`e2e_admin_b`、`e2e_platform_admin`、`e2e_scheduling_readonly`
+- 如需继续扩展长期身份白名单，可通过 `E2E_KEEP_USERS_EXTRA=user1,user2` 追加，而不必把它们误报为 stale `e2e_*`
+- 固定长期身份只做“是否超出 keep-set”的提示，不直接纳入自动删除
+- `E2E租户(...)`、`e2e_init_*`、以及 keep 用户挂在生成型租户上的 stale membership，属于自动治理范围
+- real-link `globalSetup` / `globalTeardown` 应在跑前执行 `--apply --fail-on-stale` 幂等清理，并在跑后对本轮派生租户再次执行定向清理
 
 ## 6. 风险控制与操作约束
 
@@ -183,19 +216,27 @@ uniqueSuffix 示例（仅示意）：
 - 执行责任：`--include-active` 不应进入默认 CI；仅允许人工执行。执行前必须完成 dry-run 确认候选数，并保留 dry-run 输出作为操作证据，同时在工单/PR/值班记录中注明执行原因、目标环境与预计影响范围。
 
 ### 6.2 脚本命名迁移说明
-迁移说明（脚本名仍是 RBAC3 专名，但规则可推广）：
+迁移说明（脚本名仍是 RBAC3 专名，但规则可推广到整个数据库模型）：
 - 当前仓库脚本以 RBAC3 为起点命名（`cleanup-rbac3...`、`verify-rbac3...`），是为了快速落地共享库残留治理。
-- 当规则推广到其它模块时，现阶段可以沿用脚本命名策略：为新模块先复制脚本模板并替换受控前缀白名单/表范围，然后再评估是否需要统一重命名为更通用的治理脚本（例如 `cleanup-integration-test-residual-users.sh`）。
+- 当规则推广到其它模块时，现阶段可以沿用脚本命名策略：为新模块先复制脚本模板并替换受控前缀白名单/表范围，然后再评估是否需要统一重命名为更通用的治理脚本（例如 `cleanup-integration-test-residual-data.sh`）。
 
 ### 6.3 常用执行方式
 常用执行方式：
 
-1. 先 dry-run 统计：
+1. 先跑统一基线 dry-run：
+   `bash tiny-oauth-server/scripts/verify-test-db-residuals.sh`
+2. 统一基线执行治理并在仍有残留时报错：
+   `bash tiny-oauth-server/scripts/verify-test-db-residuals.sh --apply --fail-on-stale`
+3. 审计 RBAC3 临时测试用户：
    `bash tiny-oauth-server/scripts/cleanup-rbac3-test-residual-users.sh`
-2. 执行清理（安全模式）：
+4. 执行 RBAC3 临时测试用户清理（安全模式）：
    `bash tiny-oauth-server/scripts/cleanup-rbac3-test-residual-users.sh --apply`
-3. 执行清理（包含 ACTIVE）：
+5. 执行 RBAC3 临时测试用户清理（包含 ACTIVE）：
    `bash tiny-oauth-server/scripts/cleanup-rbac3-test-residual-users.sh --apply --include-active`
+6. 审计 RBAC3 孤儿测试角色：
+   `bash tiny-oauth-server/scripts/cleanup-rbac3-test-residual-roles.sh`
+7. 执行 RBAC3 孤儿测试角色清理：
+   `bash tiny-oauth-server/scripts/cleanup-rbac3-test-residual-roles.sh --apply`
 
 ### 6.4 日志与失败处理建议
 日志与失败处理建议：

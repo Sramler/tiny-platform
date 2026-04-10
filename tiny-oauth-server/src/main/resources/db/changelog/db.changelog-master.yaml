@@ -471,3 +471,13 @@ databaseChangeLog:
   - include:
       file: 132-bind-default-tenant-admin-scheduling-wildcard.yaml
       relativeToChangelogFile: true
+
+  # 认证域物理拆层预埋：新增凭证表与作用域策略表（仅建模，不切运行时读写）
+  - include:
+      file: 133-user-auth-credential-and-scope-policy-ddl.yaml
+      relativeToChangelogFile: true
+
+  # 认证域旧表物理下线：user_authentication_method（已由新模型替代）
+  - include:
+      file: 134-drop-user-authentication-method.yaml
+      relativeToChangelogFile: true

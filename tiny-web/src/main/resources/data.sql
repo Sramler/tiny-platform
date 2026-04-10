@@ -19,26 +19,35 @@ INSERT INTO role_permission (id, role_id, permission_id, tenant_id) VALUES
     (3, 1, 3, 1);
 
 -- 插入初始用户（密码字段已废弃，保留用于兼容）
--- 实际密码存储在 user_authentication_method 表中
+-- 实际密码存储在 user_auth_credential + user_auth_scope_policy
 INSERT INTO user (id, username, password, nickname, enabled, account_non_expired, account_non_locked, credentials_non_expired, create_time, update_time)
 VALUES (
            1,
            'admin',
-           NULL, -- 密码字段已废弃，实际密码存储在 user_authentication_method 表中
+           NULL,
            '超级管理员',
            true, true, true, true,
            NOW(), NOW()
        );
 
--- 插入用户认证方法（LOCAL + PASSWORD）
--- 密码为 `admin`，使用 BCrypt 加密后的值
-INSERT INTO user_authentication_method 
-    (user_id, authentication_provider, authentication_type, authentication_configuration, is_primary_method, is_method_enabled, authentication_priority, created_at, updated_at)
+INSERT INTO user_auth_credential
+    (user_id, authentication_provider, authentication_type, authentication_configuration, created_at, updated_at)
 VALUES (
     1,
     'LOCAL',
     'PASSWORD',
-    '{"password": "{bcrypt}$2a$10$WzQPMx3cPM4dfx.Z3lysyuWe2uxDrPYxvmh9ExhFwERzTrgGU5R8u"}', -- admin
+    '{"password": "{bcrypt}$2a$10$WzQPMx3cPM4dfx.Z3lysyuWe2uxDrPYxvmh9ExhFwERzTrgGU5R8u"}',
+    NOW(),
+    NOW()
+);
+
+INSERT INTO user_auth_scope_policy
+    (credential_id, scope_type, scope_id, scope_key, is_primary_method, is_method_enabled, authentication_priority, created_at, updated_at)
+VALUES (
+    1,
+    'GLOBAL',
+    NULL,
+    'GLOBAL',
     true,
     true,
     0,

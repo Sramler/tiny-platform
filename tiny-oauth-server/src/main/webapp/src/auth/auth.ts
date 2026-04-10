@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue'
 import type { Ref, ComputedRef } from 'vue'
-import { oidcClient, userManager, settings } from './oidc'
+import { bindUserManagerEvents, ensureOidcAuthoritySynced, oidcClient, settings, userManager } from './oidc'
 import { authRuntimeConfig } from './config'
 import type { User } from 'oidc-client-ts'
 import { jwtVerify, createRemoteJWKSet } from 'jose'
@@ -42,9 +42,11 @@ const oidcTrace = (step: string, payload?: unknown) => {
  * - 这样既避免了多余的一次 `fetch /.well-known/openid-configuration`，又不破坏企业级职责边界
  */
 let jwks: ReturnType<typeof createRemoteJWKSet> | null = null
+let jwksAuthority: string | null = null
 
 async function getJWKS() {
-  if (jwks) {
+  const oidcAuthority = ensureOidcAuthoritySynced()
+  if (jwks && jwksAuthority === oidcAuthority) {
     return jwks
   }
 
@@ -56,6 +58,7 @@ async function getJWKS() {
     }
 
     jwks = createRemoteJWKSet(new URL(metadata.jwks_uri))
+    jwksAuthority = oidcAuthority
     oidcTrace('jwks.initialized', { jwks_uri: metadata.jwks_uri })
     return jwks
   } catch (error) {
@@ -144,9 +147,15 @@ export const login = async (returnUrl?: string) => {
   }
 
   try {
+    const oidcAuthority = ensureOidcAuthoritySynced()
     // 登录链路使用新的 traceId，避免复用上一个会话/失败流程的 traceId
     const traceId = createNewTraceId()
-    oidcTrace('login.redirect', { redirect_uri: settings.redirect_uri, trace_id: traceId, redirectPath })
+    oidcTrace('login.redirect', {
+      authority: oidcAuthority,
+      redirect_uri: settings.redirect_uri,
+      trace_id: traceId,
+      redirectPath,
+    })
     loginInProgress = true
     lastLoginAttempt = now
 
@@ -175,6 +184,7 @@ export const login = async (returnUrl?: string) => {
 
 export const logout = async () => {
   try {
+    ensureOidcAuthoritySynced()
     const currentUser = await userManager.getUser()
     if (currentUser && currentUser.id_token) {
       const postLogoutRedirect = settings.post_logout_redirect_uri ?? window.location.origin
@@ -218,6 +228,7 @@ type SigninSilentOptions = {
 
 async function signinSilentAndSyncUser(options?: SigninSilentOptions): Promise<User | null> {
   try {
+    ensureOidcAuthoritySynced()
     const renewed = await userManager.signinSilent()
     if (!renewed) {
       user.value = null
@@ -296,6 +307,7 @@ export async function trySilentLoginFromPlatformSession(): Promise<boolean> {
     return false
   }
   try {
+    ensureOidcAuthoritySynced()
     const renewed = await userManager.signinSilent()
     if (renewed && !renewed.expired) {
       user.value = renewed
@@ -315,6 +327,7 @@ export async function trySilentLoginFromPlatformSession(): Promise<boolean> {
 
 export async function initAuth() {
   try {
+    ensureOidcAuthoritySynced()
     oidcTrace('initAuth.start')
 
     // 检查是否在 OIDC 回调中
@@ -423,43 +436,41 @@ export function useAuth(): AuthContext {
 export const initPromise = initAuth()
 
 // OIDC 事件监听
-userManager.events.addUserLoaded((u) => {
-  oidcTrace('event.userLoaded', {
-    hasRefreshToken: !!u.refresh_token,
-    scope: u.scope,
-    expires_at: u.expires_at,
-  })
-  user.value = u
-  syncTenantContextFromClaims(u.profile as Record<string, unknown>)
-  syncTenantContextFromAccessToken(u.access_token)
-  loginInProgress = false // 重置登录状态
-  verifyAccessToken(u.access_token)
-})
-
-userManager.events.addUserUnloaded(() => {
-  oidcTrace('event.userUnloaded')
-  user.value = null
-  clearActiveTenantId()
-  loginInProgress = false // 重置登录状态
-})
-
-userManager.events.addSilentRenewError((err) => {
-  logger.error('[OIDC] Silent renew 事件异常', err)
-})
-
-userManager.events.addUserSignedOut(() => {
-  oidcTrace('event.userSignedOut')
-  user.value = null
-  clearActiveTenantId()
-  loginInProgress = false // 重置登录状态
-  // 可选：跳转登录页
-  window.location.href = '/login'
-})
-
-userManager.events.addAccessTokenExpiring(async () => {
-  const secondsLeft = user.value?.expires_in ?? 0
-  oidcTrace('event.tokenExpiring', { secondsLeft })
-  if (secondsLeft <= 60) {
-    await safeSilentRenew()
-  }
+bindUserManagerEvents({
+  onUserLoaded: (u) => {
+    oidcTrace('event.userLoaded', {
+      hasRefreshToken: !!u.refresh_token,
+      scope: u.scope,
+      expires_at: u.expires_at,
+    })
+    user.value = u
+    syncTenantContextFromClaims(u.profile as Record<string, unknown>)
+    syncTenantContextFromAccessToken(u.access_token)
+    loginInProgress = false // 重置登录状态
+    verifyAccessToken(u.access_token)
+  },
+  onUserUnloaded: () => {
+    oidcTrace('event.userUnloaded')
+    user.value = null
+    clearActiveTenantId()
+    loginInProgress = false // 重置登录状态
+  },
+  onSilentRenewError: (err) => {
+    logger.error('[OIDC] Silent renew 事件异常', err)
+  },
+  onUserSignedOut: () => {
+    oidcTrace('event.userSignedOut')
+    user.value = null
+    clearActiveTenantId()
+    loginInProgress = false // 重置登录状态
+    // 可选：跳转登录页
+    window.location.href = '/login'
+  },
+  onAccessTokenExpiring: async () => {
+    const secondsLeft = user.value?.expires_in ?? 0
+    oidcTrace('event.tokenExpiring', { secondsLeft })
+    if (secondsLeft <= 60) {
+      await safeSilentRenew()
+    }
+  },
 })

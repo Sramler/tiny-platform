@@ -4,10 +4,10 @@
  * 该文件在模块加载阶段完成配置校验，确保生产环境必须显式提供关键地址。
  */
 import { OidcClient, UserManager, WebStorageStateStore } from 'oidc-client-ts'
-import type { UserManagerSettings } from 'oidc-client-ts'
+import type { UserManagerSettings, User } from 'oidc-client-ts'
 import { logger } from '@/utils/logger'
 import { addTraceIdToFetchOptions } from '@/utils/traceId'
-import { getTenantCode } from '@/utils/tenant'
+import { resolveOidcAuthority } from '@/utils/tenant'
 
 type Env = {
   VITE_OIDC_AUTHORITY?: string
@@ -18,6 +18,24 @@ type Env = {
   VITE_OIDC_SCOPES?: string
   VITE_OIDC_STORAGE?: 'local' | 'session'
 }
+
+type OidcRuntime = {
+  authority: string
+  settings: OidcSettings
+  userManager: UserManager
+  oidcClient: OidcClient
+}
+
+type UserLoadedHandler = (user: User) => void | Promise<void>
+type VoidHandler = () => void | Promise<void>
+type ErrorHandler = (error: Error) => void | Promise<void>
+
+type UserManagerEventBinding =
+  | { type: 'userLoaded'; handler: UserLoadedHandler }
+  | { type: 'userUnloaded'; handler: VoidHandler }
+  | { type: 'silentRenewError'; handler: ErrorHandler }
+  | { type: 'userSignedOut'; handler: VoidHandler }
+  | { type: 'accessTokenExpiring'; handler: VoidHandler }
 
 const env = import.meta.env as Env
 const isProd = import.meta.env.PROD
@@ -79,27 +97,6 @@ const scopes = resolveEnvValue(env.VITE_OIDC_SCOPES, 'openid profile offline_acc
   key: 'VITE_OIDC_SCOPES',
 })
 
-function resolveTenantAuthority(baseAuthority: string): string {
-  const tenantCode = getTenantCode()
-  if (!tenantCode) {
-    return baseAuthority
-  }
-  try {
-    const baseUrl = new URL(baseAuthority)
-    const normalizedPath = baseUrl.pathname.replace(/\/+$/, '')
-    if (normalizedPath.endsWith(`/${tenantCode}`)) {
-      return baseUrl.toString().replace(/\/+$/, '')
-    }
-    baseUrl.pathname = `${normalizedPath}/${tenantCode}`
-    return baseUrl.toString().replace(/\/+$/, '')
-  } catch {
-    const normalizedBase = baseAuthority.replace(/\/+$/, '')
-    return `${normalizedBase}/${tenantCode}`
-  }
-}
-
-const authority = resolveTenantAuthority(authorityBase)
-
 /**
  * 为 oidc-client-ts 使用的 fetch 安装 TRACE_ID 支持
  *
@@ -117,7 +114,6 @@ function installOidcFetchWithTraceId(oidcAuthority: string): void {
     return
   }
 
-  // 避免重复安装
   const anyWindow = window as any
   if (anyWindow.__oidcTraceFetchInstalled) {
     return
@@ -131,9 +127,6 @@ function installOidcFetchWithTraceId(oidcAuthority: string): void {
     try {
       const urlString =
         typeof input === 'string' || input instanceof URL ? input.toString() : input.url
-
-      // 仅对指向同一 authority 的请求注入 traceId，避免影响其他第三方域名
-      // 例如 authority = http://localhost:9000
       const requestUrl = new URL(urlString, window.location.origin)
       const isSameAuthority = requestUrl.origin === authorityUrl.origin
 
@@ -144,7 +137,6 @@ function installOidcFetchWithTraceId(oidcAuthority: string): void {
         })
       }
     } catch (e) {
-      // 失败时退回原始 fetch，避免影响正常功能
       logger.warn('[OIDC][trace] 安装 OIDC fetch traceId 包装时出错，回退到原始 fetch', e)
     }
 
@@ -169,29 +161,176 @@ const createOidcStore = () => {
 
 const userStore = createOidcStore()
 
-const baseSettings: UserManagerSettings = {
-  authority,
-  client_id: clientId,
-  redirect_uri: redirectUri,
-  post_logout_redirect_uri: postLogoutRedirectUri,
-  response_type: 'code',
-  scope: scopes,
-  // 如果后端未开启 UserInfo 端点，或 profile 信息已有 ID Token/claims，关闭该项可减少一次请求
-  loadUserInfo: true,
-  automaticSilentRenew: true,
-  silent_redirect_uri: silentRedirectUri,
+function buildSettings(authority: string): UserManagerSettings {
+  const nextSettings: UserManagerSettings = {
+    authority,
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    post_logout_redirect_uri: postLogoutRedirectUri,
+    response_type: 'code',
+    scope: scopes,
+    loadUserInfo: true,
+    automaticSilentRenew: true,
+    silent_redirect_uri: silentRedirectUri,
+  }
+  if (userStore) {
+    nextSettings.userStore = userStore
+  }
+  return nextSettings
 }
-
-if (userStore) {
-  baseSettings.userStore = userStore
-}
-
-// 在创建 UserManager 之前安装带 TRACE_ID 的 fetch 包装
-installOidcFetchWithTraceId(authority)
 
 export type OidcSettings = Readonly<UserManagerSettings>
 
-export const settings: OidcSettings = Object.freeze(baseSettings)
+const eventBindings: UserManagerEventBinding[] = []
 
-export const userManager = new UserManager(settings)
-export const oidcClient = new OidcClient(settings)
+function attachBinding(runtime: OidcRuntime, binding: UserManagerEventBinding): void {
+  switch (binding.type) {
+    case 'userLoaded':
+      runtime.userManager.events.addUserLoaded(binding.handler)
+      return
+    case 'userUnloaded':
+      runtime.userManager.events.addUserUnloaded(binding.handler)
+      return
+    case 'silentRenewError':
+      runtime.userManager.events.addSilentRenewError(binding.handler)
+      return
+    case 'userSignedOut':
+      runtime.userManager.events.addUserSignedOut(binding.handler)
+      return
+    case 'accessTokenExpiring':
+      runtime.userManager.events.addAccessTokenExpiring(binding.handler)
+      return
+  }
+}
+
+function detachBinding(runtime: OidcRuntime, binding: UserManagerEventBinding): void {
+  switch (binding.type) {
+    case 'userLoaded':
+      runtime.userManager.events.removeUserLoaded(binding.handler)
+      return
+    case 'userUnloaded':
+      runtime.userManager.events.removeUserUnloaded(binding.handler)
+      return
+    case 'silentRenewError':
+      runtime.userManager.events.removeSilentRenewError(binding.handler)
+      return
+    case 'userSignedOut':
+      runtime.userManager.events.removeUserSignedOut(binding.handler)
+      return
+    case 'accessTokenExpiring':
+      runtime.userManager.events.removeAccessTokenExpiring(binding.handler)
+      return
+  }
+}
+
+function createRuntime(authority: string): OidcRuntime {
+  const nextSettings = Object.freeze(buildSettings(authority)) as OidcSettings
+  return {
+    authority,
+    settings: nextSettings,
+    userManager: new UserManager(nextSettings),
+    oidcClient: new OidcClient(nextSettings),
+  }
+}
+
+function rebindEventHandlers(previousRuntime: OidcRuntime, nextRuntime: OidcRuntime): void {
+  eventBindings.forEach((binding) => {
+    detachBinding(previousRuntime, binding)
+    attachBinding(nextRuntime, binding)
+  })
+}
+
+let runtime = createRuntime(resolveOidcAuthority(authorityBase))
+
+installOidcFetchWithTraceId(authorityBase)
+
+function syncRuntimeIfNeeded(): OidcRuntime {
+  const nextAuthority = resolveOidcAuthority(authorityBase)
+  if (nextAuthority === runtime.authority) {
+    return runtime
+  }
+  const previousRuntime = runtime
+  runtime = createRuntime(nextAuthority)
+  rebindEventHandlers(previousRuntime, runtime)
+  logger.info('[OIDC][config] authority 已重绑', {
+    previousAuthority: previousRuntime.authority,
+    nextAuthority,
+  })
+  return runtime
+}
+
+function createRuntimeProxy<T extends object>(resolveTarget: () => T): T {
+  return new Proxy({} as T, {
+    get(_target, prop, _receiver) {
+      const target = resolveTarget()
+      const value = Reflect.get(target, prop, target)
+      return typeof value === 'function' ? value.bind(target) : value
+    },
+    set(_target, prop, value, _receiver) {
+      const target = resolveTarget()
+      return Reflect.set(target, prop, value, target)
+    },
+    has(_target, prop) {
+      return Reflect.has(resolveTarget(), prop)
+    },
+    ownKeys() {
+      return Reflect.ownKeys(resolveTarget())
+    },
+    getOwnPropertyDescriptor(_target, prop) {
+      return Reflect.getOwnPropertyDescriptor(resolveTarget(), prop)
+    },
+  })
+}
+
+export function getCurrentOidcAuthority(): string {
+  return syncRuntimeIfNeeded().authority
+}
+
+export function ensureOidcAuthoritySynced(): string {
+  return getCurrentOidcAuthority()
+}
+
+export function bindUserManagerEvents(handlers: {
+  onUserLoaded?: UserLoadedHandler
+  onUserUnloaded?: VoidHandler
+  onSilentRenewError?: ErrorHandler
+  onUserSignedOut?: VoidHandler
+  onAccessTokenExpiring?: VoidHandler
+}): () => void {
+  const newBindings: UserManagerEventBinding[] = []
+  if (handlers.onUserLoaded) {
+    newBindings.push({ type: 'userLoaded', handler: handlers.onUserLoaded })
+  }
+  if (handlers.onUserUnloaded) {
+    newBindings.push({ type: 'userUnloaded', handler: handlers.onUserUnloaded })
+  }
+  if (handlers.onSilentRenewError) {
+    newBindings.push({ type: 'silentRenewError', handler: handlers.onSilentRenewError })
+  }
+  if (handlers.onUserSignedOut) {
+    newBindings.push({ type: 'userSignedOut', handler: handlers.onUserSignedOut })
+  }
+  if (handlers.onAccessTokenExpiring) {
+    newBindings.push({ type: 'accessTokenExpiring', handler: handlers.onAccessTokenExpiring })
+  }
+
+  newBindings.forEach((binding) => {
+    eventBindings.push(binding)
+    attachBinding(syncRuntimeIfNeeded(), binding)
+  })
+
+  return () => {
+    const currentRuntime = syncRuntimeIfNeeded()
+    newBindings.forEach((binding) => {
+      const index = eventBindings.indexOf(binding)
+      if (index >= 0) {
+        eventBindings.splice(index, 1)
+      }
+      detachBinding(currentRuntime, binding)
+    })
+  }
+}
+
+export const settings = createRuntimeProxy<OidcSettings>(() => syncRuntimeIfNeeded().settings)
+export const userManager = createRuntimeProxy<UserManager>(() => syncRuntimeIfNeeded().userManager)
+export const oidcClient = createRuntimeProxy<OidcClient>(() => syncRuntimeIfNeeded().oidcClient)

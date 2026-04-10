@@ -58,12 +58,13 @@
     >
       <a-space direction="vertical" style="width: 100%">
         <a-radio-group v-model:value="nextScopeType" @change="onScopeTypeRadioChange">
+          <a-radio-button value="PLATFORM">PLATFORM</a-radio-button>
           <a-radio-button value="TENANT">TENANT</a-radio-button>
           <a-radio-button value="ORG">ORG</a-radio-button>
           <a-radio-button value="DEPT">DEPT</a-radio-button>
         </a-radio-group>
         <a-select
-          v-if="nextScopeType !== 'TENANT'"
+          v-if="nextScopeType === 'ORG' || nextScopeType === 'DEPT'"
           v-model:value="nextScopeId"
           placeholder="选择 org/dept"
           style="width: 100%"
@@ -81,11 +82,17 @@ import { UserOutlined, SettingOutlined, LogoutOutlined, DownOutlined } from '@an
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth, refreshTokenAfterActiveScopeSwitch } from '@/auth/auth'
-import { getCurrentUser, switchActiveScope, type ActiveScopeType } from '@/api/user'
+import { getCurrentUser, switchActiveScope, type ActiveScopeSwitchResult, type ActiveScopeType } from '@/api/user'
 import { notifyActiveScopeChanged } from '@/utils/activeScopeEvents'
 import { getOrgList, type OrgUnit } from '@/api/org'
 import { generateAvatarStyleObject } from '@/utils/avatar'
-import { getActiveTenantId, setActiveTenantId } from '@/utils/tenant'
+import {
+  clearActiveTenantId,
+  clearTenantCode,
+  getActiveTenantId,
+  setActiveTenantId,
+  setLoginMode,
+} from '@/utils/tenant'
 import { message } from 'ant-design-vue'
 import type { MenuProps } from 'ant-design-vue'
 import type { DefaultOptionType } from 'ant-design-vue/es/select'
@@ -175,11 +182,28 @@ const canSwitchScopeEntry = computed(() => {
 /** 仅在用户切换到 ORG/DEPT 时拉取组织列表（不在弹窗打开时请求，避免当前活动 scope 为 ORG 时误触发 GET /sys/org/list） */
 async function onScopeTypeRadioChange() {
   const type = nextScopeType.value
-  if (type === 'TENANT' || orgUnits.value.length > 0) return
+  if (type === 'TENANT' || type === 'PLATFORM' || orgUnits.value.length > 0) return
   try {
     orgUnits.value = await getOrgList()
   } catch {
     message.error('加载组织列表失败')
+  }
+}
+
+function syncLocalScopeSwitchContext(switchResult: ActiveScopeSwitchResult) {
+  const nextType = switchResult.newActiveScopeType ?? switchResult.activeScopeType
+  if (nextType === 'PLATFORM') {
+    setLoginMode('PLATFORM')
+    clearTenantCode()
+    clearActiveTenantId()
+    return
+  }
+  if (nextType === 'TENANT') {
+    setLoginMode('TENANT')
+    const nextTenantId = switchResult.activeTenantId
+    if (nextTenantId != null && nextTenantId !== 0) {
+      setActiveTenantId(nextTenantId)
+    }
   }
 }
 
@@ -292,8 +316,12 @@ async function confirmSwitchScope() {
     scopeSwitching.value = true
     const switchResult = await switchActiveScope({
       scopeType: nextScopeType.value,
-      scopeId: nextScopeType.value === 'TENANT' ? undefined : (nextScopeId.value ?? undefined),
+      scopeId:
+        nextScopeType.value === 'ORG' || nextScopeType.value === 'DEPT'
+          ? (nextScopeId.value ?? undefined)
+          : undefined,
     })
+    syncLocalScopeSwitchContext(switchResult)
 
     if (switchResult.tokenRefreshRequired === true) {
       const renew = await refreshTokenAfterActiveScopeSwitch()
@@ -414,6 +442,8 @@ onUnmounted(() => {
 /** 供单元测试直接编排 `confirmSwitchScope`，勿在生产业务代码中依赖。 */
 defineExpose({
   confirmSwitchScope,
+  nextScopeType,
+  nextScopeId,
 })
 </script>
 

@@ -11,24 +11,24 @@ describe('jwt utils', () => {
   it('should decode payload and extract authorities from arrays or strings', () => {
     const arrayToken = createToken({
       activeTenantId: 2,
-      authorities: ['ROLE_ADMIN', 'idempotent:ops:view'],
+      authorities: ['system:user:list', 'idempotent:ops:view'],
     })
     const stringToken = createToken({
-      authorities: 'ROLE_ADMIN idempotent:ops:view',
+      authorities: 'system:user:list idempotent:ops:view',
     })
 
     expect(decodeJwtPayload<{ activeTenantId: number }>(arrayToken)).toEqual({
       activeTenantId: 2,
-      authorities: ['ROLE_ADMIN', 'idempotent:ops:view'],
+      authorities: ['system:user:list', 'idempotent:ops:view'],
     })
-    expect(extractAuthoritiesFromJwt(arrayToken)).toEqual(['ROLE_ADMIN', 'idempotent:ops:view'])
-    expect(extractAuthoritiesFromJwt(stringToken)).toEqual(['ROLE_ADMIN', 'idempotent:ops:view'])
+    expect(extractAuthoritiesFromJwt(arrayToken)).toEqual(['system:user:list', 'idempotent:ops:view'])
+    expect(extractAuthoritiesFromJwt(stringToken)).toEqual(['system:user:list', 'idempotent:ops:view'])
     expect(extractAuthoritiesFromJwt('bad-token')).toEqual([])
   })
 
   it('should prioritize permissions claim over authorities', () => {
     const permissionsToken = createToken({
-      authorities: ['ROLE_ADMIN', 'idempotent:ops:view'],
+      authorities: ['system:user:list', 'idempotent:ops:view'],
       permissions: ['system:user:list', 'system:user:view'],
     })
     const permissionsStringToken = createToken({
