@@ -413,22 +413,31 @@ databaseChangeLog:
               EXECUTE stmt;
               DEALLOCATE PREPARE stmt;
 
+              SET @auth_method_table_exists := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_authentication_method'),
+                  1,
+                  0
+                )
+              );
               SET @sql := (
                 SELECT IF(
-                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_authentication_method' AND COLUMN_NAME = 'tenant_id'),
+                  @auth_method_table_exists = 0,
                   'SELECT 1',
-                  'ALTER TABLE `user_authentication_method` ADD COLUMN `tenant_id` BIGINT NULL COMMENT ''租户ID'''
+                  IF(
+                    EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_authentication_method' AND COLUMN_NAME = 'tenant_id'),
+                    'SELECT 1',
+                    'ALTER TABLE `user_authentication_method` ADD COLUMN `tenant_id` BIGINT NULL COMMENT ''租户ID'''
+                  )
                 )
               );
               PREPARE stmt FROM @sql;
               EXECUTE stmt;
               DEALLOCATE PREPARE stmt;
-              UPDATE `user_authentication_method` SET tenant_id = 1 WHERE tenant_id IS NULL;
-              ALTER TABLE `user_authentication_method` MODIFY COLUMN `tenant_id` BIGINT NOT NULL COMMENT '租户ID';
               SET @sql := (
                 SELECT IF(
-                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_authentication_method' AND INDEX_NAME = 'uk_user_auth_method'),
-                  'DROP INDEX `uk_user_auth_method` ON `user_authentication_method`',
+                  @auth_method_table_exists = 1,
+                  'UPDATE `user_authentication_method` SET tenant_id = 1 WHERE tenant_id IS NULL',
                   'SELECT 1'
                 )
               );
@@ -437,9 +446,9 @@ databaseChangeLog:
               DEALLOCATE PREPARE stmt;
               SET @sql := (
                 SELECT IF(
-                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_authentication_method' AND INDEX_NAME = 'idx_user_auth_method_tenant_id'),
-                  'SELECT 1',
-                  'ALTER TABLE `user_authentication_method` ADD KEY `idx_user_auth_method_tenant_id` (`tenant_id`)'
+                  @auth_method_table_exists = 1,
+                  'ALTER TABLE `user_authentication_method` MODIFY COLUMN `tenant_id` BIGINT NOT NULL COMMENT ''租户ID''',
+                  'SELECT 1'
                 )
               );
               PREPARE stmt FROM @sql;
@@ -447,9 +456,41 @@ databaseChangeLog:
               DEALLOCATE PREPARE stmt;
               SET @sql := (
                 SELECT IF(
-                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_authentication_method' AND INDEX_NAME = 'uk_user_auth_method'),
+                  @auth_method_table_exists = 0,
                   'SELECT 1',
-                  'ALTER TABLE `user_authentication_method` ADD UNIQUE KEY `uk_user_auth_method` (`tenant_id`, `user_id`, `authentication_provider`, `authentication_type`)'
+                  IF(
+                    EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_authentication_method' AND INDEX_NAME = 'uk_user_auth_method'),
+                    'DROP INDEX `uk_user_auth_method` ON `user_authentication_method`',
+                    'SELECT 1'
+                  )
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+              SET @sql := (
+                SELECT IF(
+                  @auth_method_table_exists = 0,
+                  'SELECT 1',
+                  IF(
+                    EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_authentication_method' AND INDEX_NAME = 'idx_user_auth_method_tenant_id'),
+                    'SELECT 1',
+                    'ALTER TABLE `user_authentication_method` ADD KEY `idx_user_auth_method_tenant_id` (`tenant_id`)'
+                  )
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+              SET @sql := (
+                SELECT IF(
+                  @auth_method_table_exists = 0,
+                  'SELECT 1',
+                  IF(
+                    EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_authentication_method' AND INDEX_NAME = 'uk_user_auth_method'),
+                    'SELECT 1',
+                    'ALTER TABLE `user_authentication_method` ADD UNIQUE KEY `uk_user_auth_method` (`tenant_id`, `user_id`, `authentication_provider`, `authentication_type`)'
+                  )
                 )
               );
               PREPARE stmt FROM @sql;

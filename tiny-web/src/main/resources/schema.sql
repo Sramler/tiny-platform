@@ -10,7 +10,7 @@ USE tiny_web;
 CREATE TABLE user (
   id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '用户ID',
   username VARCHAR(50) NOT NULL UNIQUE COMMENT '用户名',
-  password VARCHAR(100) NULL COMMENT '加密密码（已废弃，保留用于兼容，实际密码存储在 user_authentication_method 表中）',
+  password VARCHAR(100) NULL COMMENT '加密密码（已废弃，保留用于兼容；实际密码存储在 user_auth_credential + user_auth_scope_policy）',
   nickname VARCHAR(50) COMMENT '昵称',
   enabled BOOLEAN NOT NULL DEFAULT TRUE COMMENT '是否启用',
   account_non_expired BOOLEAN NOT NULL DEFAULT TRUE COMMENT '账号是否未过期',
@@ -92,20 +92,41 @@ CREATE TABLE api_endpoint (
   enabled BOOLEAN NOT NULL DEFAULT TRUE COMMENT '是否启用'
 ) COMMENT = 'API 端点载体表';
 
--- 用户认证方法表
-CREATE TABLE user_authentication_method (
+-- 用户认证凭证表（材料层；与 tiny-oauth-server 新模型对齐）
+CREATE TABLE user_auth_credential (
   id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
   user_id BIGINT NOT NULL COMMENT '用户ID',
-  authentication_provider VARCHAR(50) NOT NULL COMMENT '认证提供者（LOCAL, GITHUB, GOOGLE 等）',
-  authentication_type VARCHAR(50) NOT NULL COMMENT '认证类型（PASSWORD, TOTP, OAUTH2 等）',
-  authentication_configuration JSON NOT NULL COMMENT '认证配置（JSON格式，如密码哈希、TOTP密钥等）',
-  is_primary_method BOOLEAN DEFAULT FALSE COMMENT '是否主要认证方法',
-  is_method_enabled BOOLEAN DEFAULT TRUE COMMENT '是否启用',
-  authentication_priority INT DEFAULT 0 COMMENT '认证优先级（数字越小优先级越高）',
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  authentication_provider VARCHAR(50) NOT NULL COMMENT '认证提供者',
+  authentication_type VARCHAR(50) NOT NULL COMMENT '认证类型',
+  authentication_configuration JSON NOT NULL COMMENT '认证材料配置 JSON',
+  last_verified_at DATETIME NULL COMMENT '最后验证时间',
+  last_verified_ip VARCHAR(50) DEFAULT NULL COMMENT '最后验证 IP',
   expires_at DATETIME NULL COMMENT '过期时间',
-  FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE,
-  UNIQUE KEY uk_user_auth_method (user_id, authentication_provider, authentication_type),
-  KEY idx_user_provider (user_id, authentication_provider)
-) COMMENT = '用户认证方法表';
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  UNIQUE KEY uk_user_auth_credential_user_provider_type (user_id, authentication_provider, authentication_type),
+  KEY idx_user_auth_credential_user_id (user_id),
+  CONSTRAINT fk_user_auth_credential_user FOREIGN KEY (user_id) REFERENCES user(id) ON DELETE CASCADE
+) COMMENT = '用户认证凭证表';
+
+-- 用户认证作用域策略表（策略层）
+CREATE TABLE user_auth_scope_policy (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+  credential_id BIGINT NOT NULL COMMENT '关联认证凭证 ID',
+  scope_type VARCHAR(16) NOT NULL COMMENT '作用域类型：GLOBAL/PLATFORM/TENANT',
+  scope_id BIGINT DEFAULT NULL COMMENT '作用域 ID',
+  scope_key VARCHAR(128) NOT NULL COMMENT '作用域归一化键',
+  is_primary_method BOOLEAN NOT NULL DEFAULT FALSE COMMENT '是否主认证方式',
+  is_method_enabled BOOLEAN NOT NULL DEFAULT TRUE COMMENT '是否启用认证方式',
+  authentication_priority INT NOT NULL DEFAULT 0 COMMENT '认证优先级',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  UNIQUE KEY uk_user_auth_scope_policy_credential_scope_key (credential_id, scope_key),
+  KEY idx_user_auth_scope_policy_scope_type_id (scope_type, scope_id),
+  CONSTRAINT chk_user_auth_scope_policy_scope_type CHECK (scope_type IN ('GLOBAL', 'PLATFORM', 'TENANT')),
+  CONSTRAINT chk_user_auth_scope_policy_scope_id_by_type CHECK (
+    (scope_type IN ('GLOBAL', 'PLATFORM') AND scope_id IS NULL)
+    OR (scope_type = 'TENANT' AND scope_id IS NOT NULL)
+  ),
+  CONSTRAINT fk_user_auth_scope_policy_credential FOREIGN KEY (credential_id) REFERENCES user_auth_credential(id) ON DELETE CASCADE
+) COMMENT = '用户认证作用域策略表';

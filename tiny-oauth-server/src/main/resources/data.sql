@@ -1,6 +1,8 @@
 -- 注意：当前仓库默认由 Liquibase 管理 schema/data 迁移；本文件仅作为参考 seed。
 -- 若手工执行，默认前提是 Liquibase 114-117 等 permission 重构迁移已完成；
 -- 当前角色授权关系以 role_permission -> permission 为准，不再以 role_resource 作为主关系。
+-- 另请注意：本文件中仍保留 pre-131 的 resource 历史 seed 片段，仅供对账/回溯参考；
+-- 若当前数据库已完成 Liquibase 131，则 resource 表已物理删除，相关段落不代表活动 schema 的可执行现状。
 
 -- 插入租户数据（使用 INSERT IGNORE 避免重复插入）
 INSERT IGNORE INTO `tenant` (`id`, `code`, `name`, `enabled`, `created_at`, `updated_at`) VALUES
@@ -79,8 +81,8 @@ JOIN (
 WHERE role_entity.tenant_id = 1
   AND role_entity.code = 'ROLE_TENANT_ADMIN';
 
--- 插入资源数据（包含菜单和API）
--- 注意：resource 表的 path 字段已迁移为 url 字段
+-- 历史参考：pre-131 的 resource seed 片段。
+-- 注意：resource 表的 path 字段曾迁移为 url 字段；若当前数据库已完成 Liquibase 131，则以下段落不再对应活动表结构。
 -- 使用 INSERT IGNORE 避免重复插入
 -- 系统管理目录
 INSERT IGNORE INTO `resource` (`tenant_id`, `name`, `url`, `uri`, `method`, `icon`, `show_icon`, `sort`, `component`, `redirect`, `hidden`, `keep_alive`, `title`, `permission`, `type`, `parent_id`) VALUES
@@ -355,12 +357,10 @@ JOIN `permission` permission_entity
 WHERE role_entity.tenant_id = 1
   AND role_entity.code = 'ROLE_USER';
 
--- 插入用户认证方法数据
--- 为每个用户添加 LOCAL + PASSWORD 认证方法（使用 INSERT IGNORE 避免重复插入）
-INSERT IGNORE INTO `user_authentication_method` 
-    (`tenant_id`, `user_id`, `authentication_provider`, `authentication_type`, `authentication_configuration`, `is_primary_method`, `is_method_enabled`, `authentication_priority`, `created_at`, `updated_at`)
+-- 插入用户认证凭证与租户作用域策略（新模型；替代已删除的 user_authentication_method）
+INSERT IGNORE INTO `user_auth_credential`
+    (`user_id`, `authentication_provider`, `authentication_type`, `authentication_configuration`, `created_at`, `updated_at`)
 SELECT
-    COALESCE(default_membership.tenant_id, 1),
     u.id,
     'LOCAL',
     'PASSWORD',
@@ -374,12 +374,31 @@ SELECT
         'password_version', 1,
         'created_by', 'data.sql'
     ),
-    true,
-    true,
+    NOW(),
+    NOW()
+FROM `user` u
+WHERE u.username IN ('admin', 'user')
+  AND NOT EXISTS (
+      SELECT 1 FROM `user_auth_credential` c
+      WHERE c.user_id = u.id
+        AND c.authentication_provider = 'LOCAL'
+        AND c.authentication_type = 'PASSWORD'
+  );
+
+INSERT IGNORE INTO `user_auth_scope_policy`
+    (`credential_id`, `scope_type`, `scope_id`, `scope_key`, `is_primary_method`, `is_method_enabled`, `authentication_priority`, `created_at`, `updated_at`)
+SELECT
+    c.id,
+    'TENANT',
+    COALESCE(dm.tenant_id, 1),
+    CONCAT('TENANT:', COALESCE(dm.tenant_id, 1)),
+    TRUE,
+    TRUE,
     0,
     NOW(),
     NOW()
-FROM user u
+FROM `user_auth_credential` c
+JOIN `user` u ON u.id = c.user_id
 LEFT JOIN (
     SELECT
         tu.user_id,
@@ -389,14 +408,14 @@ LEFT JOIN (
         ) AS tenant_id
     FROM `tenant_user` tu
     GROUP BY tu.user_id
-) default_membership ON default_membership.user_id = u.id
-WHERE u.username IN ('admin', 'user')
+) dm ON dm.user_id = u.id
+WHERE c.authentication_provider = 'LOCAL'
+  AND c.authentication_type = 'PASSWORD'
+  AND u.username IN ('admin', 'user')
   AND NOT EXISTS (
-      SELECT 1 FROM user_authentication_method uam 
-      WHERE uam.user_id = u.id 
-        AND uam.tenant_id = COALESCE(default_membership.tenant_id, 1)
-        AND uam.authentication_provider = 'LOCAL' 
-        AND uam.authentication_type = 'PASSWORD'
+      SELECT 1 FROM `user_auth_scope_policy` p
+      WHERE p.credential_id = c.id
+        AND p.scope_key = CONCAT('TENANT:', COALESCE(dm.tenant_id, 1))
   );
 
 -- 导出教学示例：用量/账单型数据（使用 INSERT IGNORE 避免重复插入）

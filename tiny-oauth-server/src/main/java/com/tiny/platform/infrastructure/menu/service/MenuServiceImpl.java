@@ -62,7 +62,8 @@ import java.util.ArrayList;
 /**
  * 菜单业务实现类，专注于 type=0/1 的菜单和目录。
  * <p>租户范围以 {@link TenantContext#getActiveTenantId()} 为准，不以 user.tenant_id 为依据。
- * PLATFORM 作用域且活动租户为空时，菜单资源使用 {@link PlatformTenantResolver} 解析的平台租户 ID。
+ * PLATFORM 作用域的读侧直接使用 {@code tenant_id IS NULL} 的平台正式载体；
+ * 写侧要求显式 activeTenantId，不再回退到 default/platformTenantCode 兼容壳。
  */
 @Service
 public class MenuServiceImpl implements MenuService {
@@ -75,7 +76,6 @@ public class MenuServiceImpl implements MenuService {
     private final ApiEndpointEntryRepository apiEndpointEntryRepository;
     private final TenantUserRepository tenantUserRepository;
     private final UserUnitRepository userUnitRepository;
-    private final PlatformTenantResolver platformTenantResolver;
     private final ResourcePermissionBindingService resourcePermissionBindingService;
     private final CarrierCompatibilitySafetyService carrierCompatibilitySafetyService;
     private final CarrierPermissionRequirementEvaluator carrierPermissionRequirementEvaluator;
@@ -88,7 +88,6 @@ public class MenuServiceImpl implements MenuService {
                            ApiEndpointEntryRepository apiEndpointEntryRepository,
                            TenantUserRepository tenantUserRepository,
                            UserUnitRepository userUnitRepository,
-                           PlatformTenantResolver platformTenantResolver,
                            ResourcePermissionBindingService resourcePermissionBindingService,
                            CarrierCompatibilitySafetyService carrierCompatibilitySafetyService,
                            CarrierPermissionRequirementEvaluator carrierPermissionRequirementEvaluator,
@@ -99,7 +98,6 @@ public class MenuServiceImpl implements MenuService {
         this.apiEndpointEntryRepository = apiEndpointEntryRepository;
         this.tenantUserRepository = tenantUserRepository;
         this.userUnitRepository = userUnitRepository;
-        this.platformTenantResolver = platformTenantResolver;
         this.resourcePermissionBindingService = resourcePermissionBindingService;
         this.carrierCompatibilitySafetyService = carrierCompatibilitySafetyService;
         this.carrierPermissionRequirementEvaluator = carrierPermissionRequirementEvaluator;
@@ -118,7 +116,6 @@ public class MenuServiceImpl implements MenuService {
                            ApiEndpointEntryRepository apiEndpointEntryRepository,
                            TenantUserRepository tenantUserRepository,
                            UserUnitRepository userUnitRepository,
-                           PlatformTenantResolver platformTenantResolver,
                            ResourcePermissionBindingService resourcePermissionBindingService,
                            CarrierCompatibilitySafetyService carrierCompatibilitySafetyService,
                            CarrierPermissionRequirementEvaluator carrierPermissionRequirementEvaluator,
@@ -130,7 +127,59 @@ public class MenuServiceImpl implements MenuService {
             apiEndpointEntryRepository,
             tenantUserRepository,
             userUnitRepository,
-            platformTenantResolver,
+            resourcePermissionBindingService,
+            carrierCompatibilitySafetyService,
+            carrierPermissionRequirementEvaluator,
+            authorizationAuditService,
+            roleRepository
+        );
+    }
+
+    @Deprecated
+    public MenuServiceImpl(MenuEntryRepository menuEntryRepository,
+                           UiActionEntryRepository uiActionEntryRepository,
+                           ApiEndpointEntryRepository apiEndpointEntryRepository,
+                           TenantUserRepository tenantUserRepository,
+                           UserUnitRepository userUnitRepository,
+                           PlatformTenantResolver ignoredPlatformTenantResolver,
+                           ResourcePermissionBindingService resourcePermissionBindingService,
+                           CarrierCompatibilitySafetyService carrierCompatibilitySafetyService,
+                           CarrierPermissionRequirementEvaluator carrierPermissionRequirementEvaluator,
+                           AuthorizationAuditService authorizationAuditService,
+                           RoleRepository roleRepository) {
+        this(
+            menuEntryRepository,
+            uiActionEntryRepository,
+            apiEndpointEntryRepository,
+            tenantUserRepository,
+            userUnitRepository,
+            resourcePermissionBindingService,
+            carrierCompatibilitySafetyService,
+            carrierPermissionRequirementEvaluator,
+            authorizationAuditService,
+            roleRepository
+        );
+    }
+
+    @Deprecated
+    public MenuServiceImpl(ResourceRepository ignoredResourceRepository,
+                           MenuEntryRepository menuEntryRepository,
+                           UiActionEntryRepository uiActionEntryRepository,
+                           ApiEndpointEntryRepository apiEndpointEntryRepository,
+                           TenantUserRepository tenantUserRepository,
+                           UserUnitRepository userUnitRepository,
+                           PlatformTenantResolver ignoredPlatformTenantResolver,
+                           ResourcePermissionBindingService resourcePermissionBindingService,
+                           CarrierCompatibilitySafetyService carrierCompatibilitySafetyService,
+                           CarrierPermissionRequirementEvaluator carrierPermissionRequirementEvaluator,
+                           AuthorizationAuditService authorizationAuditService,
+                           RoleRepository roleRepository) {
+        this(
+            menuEntryRepository,
+            uiActionEntryRepository,
+            apiEndpointEntryRepository,
+            tenantUserRepository,
+            userUnitRepository,
             resourcePermissionBindingService,
             carrierCompatibilitySafetyService,
             carrierPermissionRequirementEvaluator,
@@ -152,9 +201,9 @@ public class MenuServiceImpl implements MenuService {
     @Override
     @DataScope(module = "menu")
     public Page<ResourceResponseDto> menus(ResourceRequestDto query, Pageable pageable) {
-        Long tenantId = requireTenantId();
+        Long tenantId = resolveReadTenantId();
         LinkedHashSet<Long> visibleCreatorIds = resolveVisibleCreatorIdsForRead(tenantId);
-        if (requiresDataScopeFilter() && visibleCreatorIds.isEmpty()) {
+        if (requiresDataScopeFilterForScope(tenantId) && visibleCreatorIds.isEmpty()) {
             return Page.empty(pageable);
         }
         Page<MenuEntry> page = menuEntryRepository.findAll(
@@ -169,7 +218,7 @@ public class MenuServiceImpl implements MenuService {
      */
     @Override
     public List<ResourceResponseDto> menuTree() {
-        List<MenuEntry> menus = findTreeMenusForCurrentUser(requireTenantId());
+        List<MenuEntry> menus = findTreeMenusForCurrentUser(resolveReadTenantId());
         List<ResourceResponseDto> fullTree = buildDtoTree(menus.stream()
             .map(this::toDto)
             .toList());
@@ -195,13 +244,17 @@ public class MenuServiceImpl implements MenuService {
      */
     @Override
     public List<ResourceResponseDto> menuTreeAll() {
-        Long tenantId = requireTenantId();
-        List<MenuEntry> menus = menuEntryRepository.findByTenantIdAndTypeInOrderBySortAsc(
-            tenantId,
-            List.of(ResourceType.DIRECTORY.getCode(), ResourceType.MENU.getCode())
-        );
+        Long tenantId = resolveReadTenantId();
+        List<MenuEntry> menus = tenantId == null
+            ? menuEntryRepository.findByTenantIdIsNullAndTypeInOrderBySortAsc(
+                List.of(ResourceType.DIRECTORY.getCode(), ResourceType.MENU.getCode())
+            )
+            : menuEntryRepository.findByTenantIdAndTypeInOrderBySortAsc(
+                tenantId,
+                List.of(ResourceType.DIRECTORY.getCode(), ResourceType.MENU.getCode())
+            );
         List<ResourceResponseDto> dtos = menus.stream()
-            .map(this::toDto)
+            .map(menu -> toDto(menu, tenantId))
             .filter(this::canAccessPlatformMenu)
             .toList();
         return buildDtoTree(dtos);
@@ -272,7 +325,8 @@ public class MenuServiceImpl implements MenuService {
      */
     @Override
     public List<ResourceResponseDto> getMenusByParentId(Long parentId) {
-        List<MenuEntry> menus = findChildMenusForCurrentUser(normalizeParentId(parentId), requireTenantId());
+        Long tenantId = resolveReadTenantId();
+        List<MenuEntry> menus = findChildMenusForCurrentUser(normalizeParentId(parentId), tenantId);
         return menus.stream().map(this::toDto).collect(Collectors.toList());
     }
 
@@ -648,9 +702,9 @@ public class MenuServiceImpl implements MenuService {
             dto.setEnabled(Boolean.TRUE.equals(resource.getEnabled()));
             
             // 判断是否为叶子节点（没有子资源）
-            Long tenantId = requireTenantId();
-            Boolean isLeaf = !menuEntryRepository.existsByParentIdAndTenantId(resource.getId(), tenantId)
-                && !uiActionEntryRepository.existsByParentMenuIdAndTenantId(resource.getId(), tenantId);
+            Long tenantId = resource.getTenantId();
+            Boolean isLeaf = !hasChildMenu(resource.getId(), tenantId)
+                && !hasChildUiAction(resource.getId(), tenantId);
             dto.setLeaf(Boolean.TRUE.equals(isLeaf));
             
             // 初始化children为空集合，避免null指针异常
@@ -705,8 +759,8 @@ public class MenuServiceImpl implements MenuService {
         }
         dto.setParentId(normalizeParentId(menu.getParentId()));
         dto.setEnabled(Boolean.TRUE.equals(menu.getEnabled()));
-        if (tenantId != null && menu.getId() != null) {
-            dto.setLeaf(!menuEntryRepository.existsByParentIdAndTenantId(menu.getId(), tenantId));
+        if (menu.getId() != null) {
+            dto.setLeaf(!hasChildMenu(menu.getId(), tenantId));
         }
         dto.setChildren(new ArrayList<>());
         return dto;
@@ -793,9 +847,9 @@ public class MenuServiceImpl implements MenuService {
     @Override
     @DataScope(module = "menu")
     public List<ResourceResponseDto> list(ResourceRequestDto query) {
-        Long tenantId = requireTenantId();
+        Long tenantId = resolveReadTenantId();
         LinkedHashSet<Long> visibleCreatorIds = resolveVisibleCreatorIdsForRead(tenantId);
-        if (requiresDataScopeFilter() && visibleCreatorIds.isEmpty()) {
+        if (requiresDataScopeFilterForScope(tenantId) && visibleCreatorIds.isEmpty()) {
             return List.of();
         }
         return menuEntryRepository.findAll(
@@ -825,7 +879,11 @@ public class MenuServiceImpl implements MenuService {
                                                                  boolean rootOnlyWhenParentMissing) {
         return (root, criteriaQuery, criteriaBuilder) -> {
             List<Predicate> predicates = new ArrayList<>();
-            predicates.add(criteriaBuilder.equal(root.get("tenantId"), tenantId));
+            if (tenantId == null) {
+                predicates.add(criteriaBuilder.isNull(root.get("tenantId")));
+            } else {
+                predicates.add(criteriaBuilder.equal(root.get("tenantId"), tenantId));
+            }
 
             if (query.getType() != null) {
                 predicates.add(criteriaBuilder.equal(root.get("type"), query.getType()));
@@ -856,7 +914,7 @@ public class MenuServiceImpl implements MenuService {
             if (query.getEnabled() != null) {
                 predicates.add(criteriaBuilder.equal(root.get("enabled"), query.getEnabled()));
             }
-            if (requiresDataScopeFilter()) {
+            if (requiresDataScopeFilterForScope(tenantId)) {
                 predicates.add(root.get("createdBy").in(visibleCreatorIds));
             }
             return criteriaBuilder.and(predicates.toArray(Predicate[]::new));
@@ -869,11 +927,18 @@ public class MenuServiceImpl implements MenuService {
             return tenantId;
         }
         if (TenantContext.isPlatformScope()) {
-            Long platformTenantId = platformTenantResolver.getPlatformTenantId();
-            if (platformTenantId == null || platformTenantId <= 0) {
-                throw new BusinessException(ErrorCode.MISSING_PARAMETER, "平台租户未配置或不存在");
-            }
-            return platformTenantId;
+            throw new BusinessException(ErrorCode.MISSING_PARAMETER, "平台作用域写操作需要显式 activeTenantId");
+        }
+        throw new BusinessException(ErrorCode.MISSING_PARAMETER, "缺少租户信息");
+    }
+
+    private Long resolveReadTenantId() {
+        Long tenantId = TenantContext.getActiveTenantId();
+        if (tenantId != null && tenantId > 0) {
+            return tenantId;
+        }
+        if (TenantContext.isPlatformScope()) {
+            return null;
         }
         throw new BusinessException(ErrorCode.MISSING_PARAMETER, "缺少租户信息");
     }
@@ -1067,7 +1132,7 @@ public class MenuServiceImpl implements MenuService {
     private void appendMenuDataScopeFilter(StringBuilder sqlBuilder,
                                            StringBuilder countSqlBuilder,
                                            LinkedHashSet<Long> visibleCreatorIds) {
-        if (!requiresDataScopeFilter()) {
+        if (!requiresDataScopeFilterForScope(resolveReadTenantId())) {
             return;
         }
         sqlBuilder.append(" AND r.created_by IN (:visibleCreatorIds)");
@@ -1077,6 +1142,10 @@ public class MenuServiceImpl implements MenuService {
     private LinkedHashSet<Long> resolveVisibleCreatorIdsForRead(Long tenantId) {
         ResolvedDataScope scope = DataScopeContext.get();
         if (scope == null) {
+            return new LinkedHashSet<>();
+        }
+        if (tenantId == null) {
+            // 平台菜单读侧不应借 tenant_user / user_unit 解析平台成员范围。
             return new LinkedHashSet<>();
         }
 
@@ -1115,6 +1184,28 @@ public class MenuServiceImpl implements MenuService {
     private boolean requiresDataScopeFilter() {
         ResolvedDataScope scope = DataScopeContext.get();
         return scope != null && !scope.isUnrestricted();
+    }
+
+    private boolean requiresDataScopeFilterForScope(Long tenantId) {
+        return tenantId != null && requiresDataScopeFilter();
+    }
+
+    private boolean hasChildMenu(Long parentId, Long tenantId) {
+        if (parentId == null) {
+            return false;
+        }
+        return tenantId == null
+            ? menuEntryRepository.existsByParentIdAndTenantIdIsNull(parentId)
+            : menuEntryRepository.existsByParentIdAndTenantId(parentId, tenantId);
+    }
+
+    private boolean hasChildUiAction(Long parentMenuId, Long tenantId) {
+        if (parentMenuId == null) {
+            return false;
+        }
+        return tenantId == null
+            ? uiActionEntryRepository.existsByParentMenuIdAndTenantIdIsNull(parentMenuId)
+            : uiActionEntryRepository.existsByParentMenuIdAndTenantId(parentMenuId, tenantId);
     }
 
     private Long extractCurrentUserId() {

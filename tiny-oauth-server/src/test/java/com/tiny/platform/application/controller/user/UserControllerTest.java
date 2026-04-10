@@ -1,6 +1,7 @@
 package com.tiny.platform.application.controller.user;
 
 import com.tiny.platform.core.oauth.model.SecurityUser;
+import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.core.oauth.tenant.TenantContextContract;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
@@ -213,6 +214,28 @@ class UserControllerTest {
 
         Map<String, Object> body = controller.getCurrentUser().getBody();
         assertActiveTenantResponse(body, 12L);
+    }
+
+    @Test
+    void should_omit_active_tenant_in_current_user_response_when_platform_scope_is_explicit() {
+        UserService userService = mock(UserService.class);
+        UserController controller = new UserController(userService, mock(UserAuthenticationAuditRepository.class), mock(AvatarService.class));
+
+        User user = user(1L, "alice");
+        when(userService.findByUsername("alice")).thenReturn(Optional.of(user));
+
+        Authentication authentication = mock(Authentication.class);
+        when(authentication.isAuthenticated()).thenReturn(true);
+        when(authentication.getName()).thenReturn("alice");
+        SecurityContextHolder.getContext().setAuthentication(authentication);
+        TenantContext.setActiveTenantId(88L);
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_PLATFORM);
+        TenantContext.setActiveScopeId(null);
+
+        Map<String, Object> body = controller.getCurrentUser().getBody();
+        assertThat(body).doesNotContainKey("activeTenantId");
+        assertThat(body).containsEntry("activeScopeType", TenantContextContract.SCOPE_TYPE_PLATFORM);
+        assertThat(body).doesNotContainKey("activeScopeId");
     }
 
     @Test
@@ -531,6 +554,106 @@ class UserControllerTest {
             .isEqualTo(503);
 
         SecurityContextHolder.clearContext();
+    }
+
+    @Test
+    void switchActiveScope_should_allow_platform_scope_and_clear_session_tenant_context() {
+        UserService userService = mock(UserService.class);
+        UserDetailsService userDetailsService = mock(UserDetailsService.class);
+        AuthUserResolutionService authUserResolutionService = mock(AuthUserResolutionService.class);
+        UserController controller = new UserController(
+            userService,
+            mock(UserAuthenticationAuditRepository.class),
+            mock(AvatarService.class),
+            null,
+            null,
+            userDetailsService,
+            authUserResolutionService
+        );
+
+        MockHttpServletRequest httpRequest = new MockHttpServletRequest();
+        MockHttpSession session = new MockHttpSession();
+        session.setAttribute(TenantContextContract.SESSION_ACTIVE_TENANT_ID_KEY, 2L);
+        session.setAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_TYPE_KEY, TenantContextContract.SCOPE_TYPE_TENANT);
+        session.setAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_ID_KEY, 2L);
+        httpRequest.setSession(session);
+        httpRequest.addHeader("Authorization", "Bearer test-jwt");
+
+        SecurityUser principal = new SecurityUser(5L, 2L, "alice", "", List.of(), true, true, true, true);
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(principal, "cred", List.of()));
+
+        User boundUser = user(5L, "alice");
+        when(userService.findByUsername("alice")).thenReturn(Optional.of(boundUser));
+        when(authUserResolutionService.resolveUserRecordInPlatform("alice")).thenReturn(Optional.of(boundUser));
+        SecurityUser reloaded = new SecurityUser(5L, null, "alice", "", List.of(new SimpleGrantedAuthority("ROLE_PLATFORM_ADMIN")), true, true, true, true, "pv-platform");
+        when(userDetailsService.loadUserByUsername("alice")).thenReturn(reloaded);
+
+        ResponseEntity<Map<String, Object>> response = controller.switchActiveScope(
+            new UserController.ActiveScopeSwitchRequest(TenantContextContract.SCOPE_TYPE_PLATFORM, null),
+            httpRequest
+        );
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody()).doesNotContainKey("activeTenantId");
+        assertThat(response.getBody()).containsEntry("activeScopeType", TenantContextContract.SCOPE_TYPE_PLATFORM);
+        assertThat(response.getBody()).containsEntry("newActiveScopeType", TenantContextContract.SCOPE_TYPE_PLATFORM);
+        assertThat(response.getBody()).containsEntry("tokenRefreshRequired", true);
+        assertThat(session.getAttribute(TenantContextContract.SESSION_ACTIVE_TENANT_ID_KEY)).isNull();
+        assertThat(session.getAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_TYPE_KEY))
+            .isEqualTo(TenantContextContract.SCOPE_TYPE_PLATFORM);
+        assertThat(session.getAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_ID_KEY)).isNull();
+    }
+
+    @Test
+    void switchActiveScope_should_allow_explicit_tenant_reentry_from_platform_scope() {
+        UserService userService = mock(UserService.class);
+        UserDetailsService userDetailsService = mock(UserDetailsService.class);
+        AuthUserResolutionService authUserResolutionService = mock(AuthUserResolutionService.class);
+        UserController controller = new UserController(
+            userService,
+            mock(UserAuthenticationAuditRepository.class),
+            mock(AvatarService.class),
+            null,
+            null,
+            userDetailsService,
+            authUserResolutionService
+        );
+
+        MockHttpServletRequest httpRequest = new MockHttpServletRequest();
+        MockHttpSession session = new MockHttpSession();
+        session.setAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_TYPE_KEY, TenantContextContract.SCOPE_TYPE_PLATFORM);
+        httpRequest.setSession(session);
+
+        SecurityUser principal = new SecurityUser(5L, null, "alice", "", List.of(), true, true, true, true);
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated(principal, "cred", List.of()));
+
+        User boundUser = user(5L, "alice");
+        when(userService.findByUsername("alice")).thenReturn(Optional.of(boundUser));
+        when(authUserResolutionService.resolveUserRecordInActiveTenant("alice", 9L)).thenReturn(Optional.of(boundUser));
+        SecurityUser reloaded = new SecurityUser(5L, 9L, "alice", "", List.of(new SimpleGrantedAuthority("ROLE_TENANT_ADMIN")), true, true, true, true, "pv-tenant-9");
+        when(userDetailsService.loadUserByUsername("alice")).thenAnswer(invocation -> {
+            assertThat(TenantContext.getActiveTenantId()).isEqualTo(9L);
+            assertThat(TenantContext.getActiveScopeType()).isEqualTo(TenantContextContract.SCOPE_TYPE_TENANT);
+            assertThat(TenantContext.getActiveScopeId()).isEqualTo(9L);
+            return reloaded;
+        });
+
+        ResponseEntity<Map<String, Object>> response = controller.switchActiveScope(
+            new UserController.ActiveScopeSwitchRequest(TenantContextContract.SCOPE_TYPE_TENANT, 9L),
+            httpRequest
+        );
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody()).containsEntry("activeTenantId", 9L);
+        assertThat(response.getBody()).containsEntry("activeScopeType", TenantContextContract.SCOPE_TYPE_TENANT);
+        assertThat(response.getBody()).containsEntry("activeScopeId", 9L);
+        assertThat(response.getBody()).containsEntry("tokenRefreshRequired", false);
+        assertThat(session.getAttribute(TenantContextContract.SESSION_ACTIVE_TENANT_ID_KEY)).isEqualTo(9L);
+        assertThat(session.getAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_TYPE_KEY))
+            .isEqualTo(TenantContextContract.SCOPE_TYPE_TENANT);
+        assertThat(session.getAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_ID_KEY)).isEqualTo(9L);
     }
 
     @SuppressWarnings("unchecked")

@@ -25,7 +25,8 @@ class TinyPlatformJwtGrantedAuthoritiesConverterTest {
             .map(GrantedAuthority::getAuthority)
             .collect(Collectors.toSet());
 
-        assertThat(authorities).contains("ROLE_TENANT_ADMIN", "scheduling:*", "system:org:list");
+        assertThat(authorities).contains("scheduling:*", "system:org:list");
+        assertThat(authorities).doesNotContain("ROLE_TENANT_ADMIN");
     }
 
     @Test
@@ -40,5 +41,20 @@ class TinyPlatformJwtGrantedAuthoritiesConverterTest {
         var authorities = converter.convert(jwt);
         long count = authorities.stream().filter(a -> "scheduling:console:config".equals(a.getAuthority())).count();
         assertThat(count).isEqualTo(1);
+    }
+
+    @Test
+    void shouldIgnoreLegacyRoleAuthoritiesOnlyJwtAfterCompatibilityRemoval() {
+        Jwt jwt = Jwt.withTokenValue("t")
+            .header("alg", "none")
+            .claim("authorities", List.of("ROLE_TENANT_ADMIN"))
+            .subject("u1")
+            .build();
+
+        var authorities = converter.convert(jwt).stream()
+            .map(GrantedAuthority::getAuthority)
+            .collect(Collectors.toSet());
+
+        assertThat(authorities).isEmpty();
     }
 }

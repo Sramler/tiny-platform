@@ -1,9 +1,7 @@
 package com.tiny.web.sys.security;
 
 import com.tiny.web.sys.model.User;
-import com.tiny.web.sys.model.UserAuthenticationMethod;
 import com.tiny.web.sys.repository.UserRepository;
-import com.tiny.web.sys.repository.UserAuthenticationMethodRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.AuthenticationProvider;
@@ -19,24 +17,23 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * 密码认证提供者
- * 从 user_authentication_method 表读取密码进行验证
+ * 密码认证提供者（从 {@code user_auth_credential} + {@code user_auth_scope_policy} 读取密码材料）。
  */
 public class PasswordAuthenticationProvider implements AuthenticationProvider {
 
     private static final Logger logger = LoggerFactory.getLogger(PasswordAuthenticationProvider.class);
 
     private final UserRepository userRepository;
-    private final UserAuthenticationMethodRepository authenticationMethodRepository;
+    private final UserAuthPasswordLookupService userAuthPasswordLookupService;
     private final PasswordEncoder passwordEncoder;
     private final UserDetailsService userDetailsService;
 
     public PasswordAuthenticationProvider(UserRepository userRepository,
-                                         UserAuthenticationMethodRepository authenticationMethodRepository,
+                                         UserAuthPasswordLookupService userAuthPasswordLookupService,
                                          PasswordEncoder passwordEncoder,
                                          UserDetailsService userDetailsService) {
         this.userRepository = userRepository;
-        this.authenticationMethodRepository = authenticationMethodRepository;
+        this.userAuthPasswordLookupService = userAuthPasswordLookupService;
         this.passwordEncoder = passwordEncoder;
         this.userDetailsService = userDetailsService;
     }
@@ -50,28 +47,16 @@ public class PasswordAuthenticationProvider implements AuthenticationProvider {
         User user = userRepository.findByUsername(username)
                 .orElseThrow(() -> new BadCredentialsException("用户不存在: " + username));
 
-        // 查找用户的密码认证方法
-        Optional<UserAuthenticationMethod> methodOpt = authenticationMethodRepository
-                .findByUserIdAndAuthenticationProviderAndAuthenticationType(user.getId(), "LOCAL", "PASSWORD");
-
-        if (!methodOpt.isPresent()) {
+        Optional<Map<String, Object>> configOpt =
+                userAuthPasswordLookupService.findLocalPasswordConfiguration(user.getId());
+        if (configOpt.isEmpty()) {
             logger.warn("用户 {} 未配置 LOCAL + PASSWORD 认证方法", username);
             throw new BadCredentialsException("该用户未配置密码认证方式");
         }
 
-        UserAuthenticationMethod method = methodOpt.get();
-
-        // 检查认证方法是否启用
-        if (!Boolean.TRUE.equals(method.getIsMethodEnabled())) {
-            logger.warn("用户的 LOCAL + PASSWORD 认证方法已禁用，用户ID: {}", user.getId());
-            throw new BadCredentialsException("该认证方式已被禁用");
-        }
-
-        // 从认证配置中获取密码哈希
-        Map<String, Object> config = method.getAuthenticationConfiguration();
-        if (config == null || config.isEmpty()) {
-            logger.error("用户 {} 的密码认证配置为空。UserAuthenticationMethod ID: {}, 配置: {}", 
-                    username, method.getId(), method.getAuthenticationConfiguration());
+        Map<String, Object> config = configOpt.get();
+        if (config.isEmpty()) {
+            logger.error("用户 {} 的密码认证配置为空", username);
             throw new BadCredentialsException("密码认证配置错误：配置为空");
         }
         
@@ -125,7 +110,7 @@ public class PasswordAuthenticationProvider implements AuthenticationProvider {
             throw new BadCredentialsException("密码错误");
         }
 
-        // 认证成功，加载用户详情（这里会从 UserAuthenticationMethod 读取密码并设置到 User 对象）
+        // 认证成功，加载用户详情（UserDetailsService 会从同一新模型补齐 User.password）
         UserDetails userDetails = userDetailsService.loadUserByUsername(username);
 
         logger.info("用户 {} 密码认证成功", username);

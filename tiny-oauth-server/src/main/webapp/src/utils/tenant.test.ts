@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   clearTenantContext,
-  getTenantCode,
   getActiveTenantId,
+  getLoginMode,
+  getTenantCode,
+  resolveOidcAuthority,
   resolveActiveTenantQueryValue,
+  setLoginMode,
   syncTenantContextFromAccessToken,
   syncTenantContextFromClaims,
   withActiveTenantQuery,
@@ -55,6 +58,34 @@ describe('tenant utils', () => {
 
     expect(getActiveTenantId()).toBe('9')
     expect(getTenantCode()).toBe('new')
+  })
+
+  it('should treat platform issuer as platform scope and clear tenant code', () => {
+    syncTenantContextFromClaims({
+      activeScopeType: 'PLATFORM',
+      iss: 'http://localhost:9000/platform',
+    })
+
+    expect(getLoginMode()).toBe('PLATFORM')
+    expect(getActiveTenantId()).toBeNull()
+    expect(getTenantCode()).toBeNull()
+  })
+
+  it('should resolve oidc authority to platform path when platform mode is stored', () => {
+    setLoginMode('PLATFORM')
+
+    expect(resolveOidcAuthority('http://localhost:9000')).toBe('http://localhost:9000/platform')
+    expect(resolveOidcAuthority('http://localhost:9000/platform')).toBe('http://localhost:9000/platform')
+  })
+
+  it('should resolve oidc authority to tenant path when tenant code is stored', () => {
+    syncTenantContextFromClaims({
+      activeTenantId: 21,
+      iss: 'http://localhost:9000/issuer/acme',
+    })
+
+    expect(getLoginMode()).toBe('TENANT')
+    expect(resolveOidcAuthority('http://localhost:9000/issuer')).toBe('http://localhost:9000/issuer/acme')
   })
 
   it('should resolve active tenant route query only from activeTenantId', () => {

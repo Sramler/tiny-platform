@@ -69,9 +69,9 @@
 
 2. **用户、角色、能力、载体四层模型**
    - **当前核心关系（运行态）**：`user -> tenant_user -> role_assignment -> role -> role_permission -> permission`；
-   - 载体层已进入过渡拆分态：`resource` 仍作为兼容总表存在，同时 `menu / ui_action / api_endpoint` 已落库并承接主要读路径；
-   - `resource.required_permission_id` 与 carrier 表的 `required_permission_id` 负责显式绑定 `permission`；
-   - `resource.permission` 仍保留为兼容字段与运营可读字段，不再鼓励作为新逻辑的主 join 键；
+   - 载体层当前已完成 split：活动 schema / 运行时以 `menu / ui_action / api_endpoint` 与 `*_permission_requirement` 为准；`resource` 兼容总表已通过 Liquibase 131 物理删除；
+   - carrier 表的 `required_permission_id` 负责显式绑定 `permission`；
+   - `resource.permission` 仅保留为历史迁移期口径与旧文档字段来源，不再构成当前数据库字段或运行时 join 事实；
    - requirement 层已落地：`menu_permission_requirement / ui_action_permission_requirement / api_endpoint_permission_requirement` 已建表，当前菜单运行时已消费 requirement；
    - **不再使用** `role_resource` 表（Liquibase 117 已删除）。
 
@@ -92,12 +92,12 @@
 当前已经不再是 `user_role -> role -> role_resource` 的旧模型，而是：
 
 - **membership + role_assignment 主链已落地**
-- **权限主数据以 `permission` 为表级真相源；角色绑定以 `role_permission` 为关系真相源**（兼容层仍保留 `resource.permission` 可读字段）
-- **carrier split 已落地到过渡态**：`menu / ui_action / api_endpoint` 表、`required_permission_id` 显式绑定、carrier projection 双写与管理面主要读链已就绪
+- **权限主数据以 `permission` 为表级真相源；角色绑定以 `role_permission` 为关系真相源**
+- **carrier split 已落地到当前态**：`menu / ui_action / api_endpoint` 表、`required_permission_id` 显式绑定、`*_permission_requirement` 与管理面主要读链已就绪；`resource` 兼容表已退场
 - **requirement 层已落地最小语义**：三张 `*_permission_requirement` 表 + compatibility group 回填 + `AND/OR/negated` evaluator；当前菜单运行时已消费 requirement
 - **RBAC3 / 组织部门 / 数据范围 / 审计基座已进入运行态**
 
-**主授权关系（permission 重构收口后）**：角色到可授权能力的关系以 **`role_permission → permission`** 为关系表真相源；菜单/接口/按钮等载体通过 **`resource.required_permission_id → permission.id`** 进行显式绑定。`resource.permission` 当前仅保留为兼容字段与迁移输入。遗留表 **`role_resource` 已由 Liquibase 117 删除**（新环境不再存在）；迁移与验证见 [PERMISSION_REFACTOR_LIQUIBASE_117_RUNBOOK.md](./PERMISSION_REFACTOR_LIQUIBASE_117_RUNBOOK.md)。
+**主授权关系（permission 重构收口后）**：角色到可授权能力的关系以 **`role_permission → permission`** 为关系表真相源；菜单/接口/按钮等载体通过 **`menu / ui_action / api_endpoint.required_permission_id`** 与 `*_permission_requirement` 进行显式绑定。`resource.required_permission_id` / `resource.permission` 仅应视为历史迁移阶段名词，不再代表当前数据库表结构。遗留表 **`role_resource` 已由 Liquibase 117 删除**、兼容总表 **`resource` 已由 Liquibase 131 删除**；迁移与验证见 [PERMISSION_REFACTOR_LIQUIBASE_117_RUNBOOK.md](./PERMISSION_REFACTOR_LIQUIBASE_117_RUNBOOK.md) 与 [TINY_PLATFORM_RESOURCE_RETIREMENT_PLAN.md](./TINY_PLATFORM_RESOURCE_RETIREMENT_PLAN.md)。
 
 历史叙述（表仍存在时的结构示意）：
 
@@ -113,11 +113,12 @@ user
 
 其中，用户列表与资源列表已开始叠加 `role_data_scope` 的模块级解析结果。
 
-当前 `SecurityUser` / JWT / Session 的授权契约是：
+当前 `SecurityUser` / JWT / Session 的授权契约是（09C3/09C4 后）：
 
-- authority 保留 `role.code`（兼容）与 `resource.permission`
+- 新签发 `authorities` 以 permission/factor/scope 为主，不再把 `role.code` 作为主链 authority 输出
+- `roleCodes` 作为显式字段保留，仅供少量合法角色码消费者（如 workflow bridge）
 - 不再把 `role.name` 放入 authority / JWT / Session
-- claims 已包含 `permissions`、`activeTenantId`、`activeScopeType`、`permissionsVersion`
+- claims 已包含 `permissions`、`roleCodes`、`activeTenantId`、`activeScopeType`、`permissionsVersion`
 
 **User 控制面与 M4（Bearer + Session 一致）的读/写分口径**：矩阵 **M4** 描述的是过滤器层对「Bearer 与 Session 成对一致」的放行；**同一矩阵行不等价于** `GET /sys/users/current`（只读）与 `POST /sys/users/current/active-scope`（会话 active scope 写）的**同一套**产品语义。**读**仅返回当前快照；**写**以 **HttpSession** 为权威落点，Bearer 写成功后须按响应 `tokenRefreshRequired` / `newActiveScope*` 处理 token 刷新，避免写后显式 JWT claims 与 Session 漂移触发 **M5**。正式契约见 [TINY_PLATFORM_SESSION_BEARER_AUTH_MATRIX.md](./TINY_PLATFORM_SESSION_BEARER_AUTH_MATRIX.md) §8。
 
@@ -319,7 +320,7 @@ user
   - `active_tenant_id`
   - 规范权限码集合 `permissions`
 - **按需要保留**
-  - 少量平台/管理员角色码（如 `ROLE_ADMIN`），用于兼容粗粒度守卫
+  - 显式 `roleCodes`（仅供少量合法角色码消费者，如 workflow bridge；不作为通用鉴权输入）
   - `active_org_id`
   - `active_dept_id`
   - `active_role_assignment_ids`
@@ -331,6 +332,8 @@ user
 说明：
 
 - Session 与 JWT 的载体形式可以不同，但语义必须一致；
+- 新签发 JWT / Session 的 `authorities` 应以 permission/factor/scope 为主，不再承担 `ROLE_*` 主链输出；
+- （更新：CARD-11D 已完成）旧 token / session 的 `ROLE_*` 解码兼容已下线，运行时输入只认显式 `roleCodes` 与规范权限码契约；
 - 前后端都只应消费规范权限码，不消费角色展示名。
 
 ### 5.4 Role 的定位：角色模板与授权单元分离
@@ -338,7 +341,7 @@ user
 已确定：
 
 - `role` 是角色模板，不直接代表某次授权；
-- `role_permission` 表达“角色模板拥有哪些功能权限”（通过 `permission.permission_code` 与 `resource.permission` 对齐）；
+- `role_permission` 表达“角色模板拥有哪些功能权限”（`permission.permission_code` 延续历史 `resource.permission` 命名口径，但不再依赖 `resource` 表存在）；
 - 新增的 `role_assignment` 表达“谁在什么作用域下拥有哪些角色模板”。
 
 因此：
@@ -741,7 +744,7 @@ user
 ## 11. 对后续实现的硬约束
 
 1. 新增授权模型能力必须先更新本文件和对应 `.agent` 规则。
-2. 兼容期内允许保留 `resource.permission`，但新增运行时逻辑必须以 `role_permission -> permission` 和 `*_permission_requirement` 为准。
+2. 历史文档中若仍出现 `resource.permission`，只能按迁移期名词理解；新增运行时逻辑必须以 `role_permission -> permission` 和 `*_permission_requirement` 为准，不得重新引入对 `resource` 表的依赖。
 3. 角色继承、互斥、先决条件、基数限制必须在授权时校验。
 4. Data Scope 必须按模块建模，不得以“角色名约定”代替。
 5. `tenant_user` 的引入必须同步改登录态、claims、菜单、审计，不允许只改表不改运行时。

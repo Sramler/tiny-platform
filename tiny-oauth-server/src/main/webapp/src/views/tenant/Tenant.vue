@@ -5,7 +5,7 @@
         <div class="platform-guard-kicker">Platform Only</div>
         <h3>租户管理仅对平台管理员开放</h3>
         <p>
-          当前页面属于平台级控制面。只有默认平台租户下具备
+          当前页面属于平台级控制面。只有当前处于 <code>PLATFORM</code> 作用域且具备
           <code>system:tenant:list</code> 权限的用户才可查看租户管理。
         </p>
       </div>
@@ -268,11 +268,10 @@ import {
   decommissionTenant,
 } from '@/api/tenant'
 import { getRuntimeUiActions } from '@/api/resource'
-import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import { decodeJwtPayload, extractAuthoritiesFromJwt } from '@/utils/jwt'
 import {
   TENANT_MANAGEMENT_READ_AUTHORITIES,
 } from '@/constants/permission'
-import { getTenantCode } from '@/utils/tenant'
 import TenantForm from './TenantForm.vue'
 
 const query = ref({
@@ -287,11 +286,12 @@ const query = ref({
 const loading = ref(false)
 const tableData = ref<any[]>([])
 const { user } = useAuth()
+const claims = computed(() => decodeJwtPayload<{ activeScopeType?: unknown }>(user.value?.access_token))
 const authorities = computed(() => new Set(extractAuthoritiesFromJwt(user.value?.access_token)))
-const isPlatformTenant = computed(() => getTenantCode() === 'default')
+const isPlatformScope = computed(() => claims.value?.activeScopeType === 'PLATFORM')
 
 function hasAnyAuthority(requiredAuthorities: string[]) {
-  return isPlatformTenant.value && requiredAuthorities.some((authority) => authorities.value.has(authority))
+  return isPlatformScope.value && requiredAuthorities.some((authority) => authorities.value.has(authority))
 }
 
 const canRead = computed(() => hasAnyAuthority(TENANT_MANAGEMENT_READ_AUTHORITIES))

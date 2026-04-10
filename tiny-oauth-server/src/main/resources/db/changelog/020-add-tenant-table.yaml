@@ -38,6 +38,11 @@ databaseChangeLog:
                 ' UNION SELECT tenant_id FROM `role_assignment`',
                 ''
               );
+              SET @frag_user_auth_method := IF(
+                EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_authentication_method'),
+                ' UNION SELECT tenant_id FROM `user_authentication_method`',
+                ''
+              );
               SET @sql := CONCAT(
                 'INSERT INTO `tenant` (`id`, `code`, `name`, `enabled`, `created_at`, `updated_at`) ',
                 'SELECT DISTINCT t.tenant_id, CONCAT(''tenant-'', t.tenant_id), CONCAT(''Tenant '', t.tenant_id), 1, NOW(), NOW() ',
@@ -47,7 +52,7 @@ databaseChangeLog:
                 @frag_user_role,
                 ' UNION SELECT tenant_id FROM `role_resource` ',
                 @frag_role_assignment,
-                ' UNION SELECT tenant_id FROM `user_authentication_method` ',
+                @frag_user_auth_method,
                 'UNION SELECT tenant_id FROM `user_authentication_audit`) t ',
                 'WHERE t.tenant_id IS NOT NULL AND t.tenant_id > 0 ',
                 'AND NOT EXISTS (SELECT 1 FROM `tenant` WHERE `id` = t.tenant_id)'
@@ -132,12 +137,19 @@ databaseChangeLog:
 
               SET @sql := (
                 SELECT IF(
-                  EXISTS(
-                    SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
-                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_authentication_method' AND CONSTRAINT_NAME = 'fk_user_auth_method_tenant'
+                  NOT EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.TABLES
+                    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_authentication_method'
                   ),
                   'SELECT 1',
-                  'ALTER TABLE `user_authentication_method` ADD CONSTRAINT `fk_user_auth_method_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`)'
+                  IF(
+                    EXISTS(
+                      SELECT 1 FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS
+                      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_authentication_method' AND CONSTRAINT_NAME = 'fk_user_auth_method_tenant'
+                    ),
+                    'SELECT 1',
+                    'ALTER TABLE `user_authentication_method` ADD CONSTRAINT `fk_user_auth_method_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`)'
+                  )
                 )
               );
               PREPARE stmt FROM @sql;

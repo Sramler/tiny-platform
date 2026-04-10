@@ -10,6 +10,8 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 @Service
 public class UserDetailsServiceImpl implements UserDetailsService {
@@ -60,8 +62,26 @@ public class UserDetailsServiceImpl implements UserDetailsService {
                 activeScopeId,
                 resolvedUser.effectiveRoles()
             ),
+            extractRoleCodes(resolvedUser.effectiveRoles()),
             resolvePermissionsVersion(resolvedUser.user().getId(), resolvedUser.activeTenantId(), activeScopeType, activeScopeId)
         );
+    }
+
+    private Set<String> extractRoleCodes(Set<Role> roles) {
+        if (roles == null || roles.isEmpty()) {
+            return Set.of();
+        }
+        LinkedHashSet<String> values = new LinkedHashSet<>();
+        for (Role role : roles) {
+            if (role == null || role.getCode() == null) {
+                continue;
+            }
+            String code = role.getCode().trim();
+            if (!code.isEmpty()) {
+                values.add(code);
+            }
+        }
+        return Set.copyOf(values);
     }
 
     private String resolvePermissionsVersion(Long userId, Long activeTenantId, String activeScopeType, Long activeScopeId) {

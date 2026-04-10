@@ -6,9 +6,11 @@ import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.core.oauth.security.TotpService;
 import com.tiny.platform.core.oauth.security.TotpVerificationGuard;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
-import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationMethod;
-import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
-import com.tiny.platform.infrastructure.tenant.config.PlatformTenantResolver;
+import com.tiny.platform.infrastructure.auth.user.domain.UserAuthCredential;
+import com.tiny.platform.infrastructure.auth.user.domain.UserAuthScopePolicy;
+import com.tiny.platform.infrastructure.auth.user.repository.UserAuthScopePolicyRepository;
+import com.tiny.platform.infrastructure.auth.user.service.UserAuthenticationBridgeWriter;
+import com.tiny.platform.infrastructure.auth.user.service.UserAuthenticationMethodProfileService;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -19,6 +21,10 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -67,21 +73,21 @@ class SecurityServiceImplMfaDecisionTest {
 
     @Test
     void should_prefer_active_tenant_context_for_membership_user_status_lookup() {
-        UserAuthenticationMethodRepository repository = mock(UserAuthenticationMethodRepository.class);
+        UserAuthScopePolicyRepository scopeRepo = mock(UserAuthScopePolicyRepository.class);
         PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
         TotpService totpService = mock(TotpService.class);
         MfaProperties mfaProperties = new MfaProperties();
         mfaProperties.setMode("OPTIONAL");
+        UserAuthenticationMethodProfileService profileService = profileService(scopeRepo);
 
-        when(repository.existsEffectiveAuthenticationMethod(1L, 9L, "LOCAL", "TOTP")).thenReturn(true);
+        UserAuthScopePolicy policy = totpScopePolicy(9L, true);
+        when(scopeRepo.findByUserIdAndAuthenticationProviderAndAuthenticationTypeAndScopeKey(
+                1L, "LOCAL", "TOTP", "TENANT:9"
+        )).thenReturn(Optional.of(policy));
 
-        UserAuthenticationMethod method = new UserAuthenticationMethod();
-        method.setAuthenticationConfiguration(Map.of("activated", true));
-        when(repository.findEffectiveAuthenticationMethod(1L, 9L, "LOCAL", "TOTP")).thenReturn(Optional.of(method));
-
-        TotpVerificationGuard guard = new TotpVerificationGuard(repository, mfaProperties, totpService);
-        PlatformTenantResolver platformTenantResolver = mock(PlatformTenantResolver.class);
-        SecurityServiceImpl service = new SecurityServiceImpl(repository, passwordEncoder, mfaProperties, guard, platformTenantResolver);
+        TotpVerificationGuard guard = new TotpVerificationGuard(mock(UserAuthenticationBridgeWriter.class), mfaProperties, totpService);
+        SecurityServiceImpl service = new SecurityServiceImpl(profileService, passwordEncoder, mfaProperties, guard,
+                mock(UserAuthenticationBridgeWriter.class));
 
         User user = mockUser();
         TenantContext.setActiveTenantId(9L);
@@ -95,21 +101,21 @@ class SecurityServiceImplMfaDecisionTest {
 
     @Test
     void should_fallback_to_authentication_active_tenant_when_context_missing() {
-        UserAuthenticationMethodRepository repository = mock(UserAuthenticationMethodRepository.class);
+        UserAuthScopePolicyRepository scopeRepo = mock(UserAuthScopePolicyRepository.class);
         PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
         TotpService totpService = mock(TotpService.class);
         MfaProperties mfaProperties = new MfaProperties();
         mfaProperties.setMode("OPTIONAL");
+        UserAuthenticationMethodProfileService profileService = profileService(scopeRepo);
 
-        when(repository.existsEffectiveAuthenticationMethod(1L, 9L, "LOCAL", "TOTP")).thenReturn(true);
+        UserAuthScopePolicy policy = totpScopePolicy(9L, true);
+        when(scopeRepo.findByUserIdAndAuthenticationProviderAndAuthenticationTypeAndScopeKey(
+                1L, "LOCAL", "TOTP", "TENANT:9"
+        )).thenReturn(Optional.of(policy));
 
-        UserAuthenticationMethod method = new UserAuthenticationMethod();
-        method.setAuthenticationConfiguration(Map.of("activated", true));
-        when(repository.findEffectiveAuthenticationMethod(1L, 9L, "LOCAL", "TOTP")).thenReturn(Optional.of(method));
-
-        TotpVerificationGuard guard = new TotpVerificationGuard(repository, mfaProperties, totpService);
-        PlatformTenantResolver platformTenantResolver = mock(PlatformTenantResolver.class);
-        SecurityServiceImpl service = new SecurityServiceImpl(repository, passwordEncoder, mfaProperties, guard, platformTenantResolver);
+        TotpVerificationGuard guard = new TotpVerificationGuard(mock(UserAuthenticationBridgeWriter.class), mfaProperties, totpService);
+        SecurityServiceImpl service = new SecurityServiceImpl(profileService, passwordEncoder, mfaProperties, guard,
+                mock(UserAuthenticationBridgeWriter.class));
 
         User user = mockUser();
         SecurityUser securityUser = new SecurityUser(user, "", 9L, Set.of());
@@ -125,23 +131,46 @@ class SecurityServiceImplMfaDecisionTest {
     }
 
     private SecurityServiceImpl createService(String mode, boolean totpBound, boolean totpActivated) {
-        UserAuthenticationMethodRepository repository = mock(UserAuthenticationMethodRepository.class);
+        UserAuthScopePolicyRepository scopeRepo = mock(UserAuthScopePolicyRepository.class);
         PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
         TotpService totpService = mock(TotpService.class);
         MfaProperties mfaProperties = new MfaProperties();
         mfaProperties.setMode(mode);
 
-        when(repository.existsEffectiveAuthenticationMethod(1L, 1L, "LOCAL", "TOTP")).thenReturn(totpBound);
+        UserAuthenticationMethodProfileService profileService = profileService(scopeRepo);
+        when(scopeRepo.findByUserIdAndAuthenticationProviderAndAuthenticationTypeAndScopeKey(
+                eq(1L), eq("LOCAL"), eq("TOTP"), eq("TENANT:1")
+        )).thenReturn(totpBound ? Optional.of(totpScopePolicy(1L, totpActivated)) : Optional.empty());
 
-        if (totpBound) {
-            UserAuthenticationMethod method = new UserAuthenticationMethod();
-            method.setAuthenticationConfiguration(Map.of("activated", totpActivated));
-            when(repository.findEffectiveAuthenticationMethod(1L, 1L, "LOCAL", "TOTP")).thenReturn(Optional.of(method));
-        }
+        TotpVerificationGuard guard = new TotpVerificationGuard(mock(UserAuthenticationBridgeWriter.class), mfaProperties, totpService);
+        return new SecurityServiceImpl(profileService, passwordEncoder, mfaProperties, guard,
+                mock(UserAuthenticationBridgeWriter.class));
+    }
 
-        TotpVerificationGuard guard = new TotpVerificationGuard(repository, mfaProperties, totpService);
-        PlatformTenantResolver platformTenantResolver = mock(PlatformTenantResolver.class);
-        return new SecurityServiceImpl(repository, passwordEncoder, mfaProperties, guard, platformTenantResolver);
+    private UserAuthenticationMethodProfileService profileService(UserAuthScopePolicyRepository scopeRepo) {
+        lenient().when(scopeRepo.findByUserIdAndAuthenticationProviderAndAuthenticationTypeAndScopeKey(
+                anyLong(), anyString(), anyString(), anyString()
+        )).thenReturn(Optional.empty());
+        lenient().when(scopeRepo.findByUserIdAndScopeKey(anyLong(), anyString())).thenReturn(java.util.List.of());
+        return new UserAuthenticationMethodProfileService(scopeRepo);
+    }
+
+    private static UserAuthScopePolicy totpScopePolicy(long tenantId, boolean activated) {
+        UserAuthCredential credential = new UserAuthCredential();
+        credential.setUserId(1L);
+        credential.setAuthenticationProvider("LOCAL");
+        credential.setAuthenticationType("TOTP");
+        credential.setAuthenticationConfiguration(Map.of("activated", activated));
+
+        UserAuthScopePolicy scopePolicy = new UserAuthScopePolicy();
+        scopePolicy.setCredential(credential);
+        scopePolicy.setScopeType("TENANT");
+        scopePolicy.setScopeId(tenantId);
+        scopePolicy.setScopeKey("TENANT:" + tenantId);
+        scopePolicy.setIsMethodEnabled(true);
+        scopePolicy.setIsPrimaryMethod(false);
+        scopePolicy.setAuthenticationPriority(1);
+        return scopePolicy;
     }
 
     private User mockUser() {

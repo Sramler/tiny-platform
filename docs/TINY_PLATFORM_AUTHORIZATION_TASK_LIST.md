@@ -41,6 +41,66 @@
 
 ---
 
+## 0.1 平台作用域认证拆分（CARD-01 ~ CARD-05）状态
+
+> 来源：`docs/TINY_PLATFORM_PLATFORM_SCOPE_CURSOR_TASK_CARDS.md`  
+> 口径：这里记录“当前已落地现状”，不把目标态写成已完成。
+
+- **CARD-01（已完成）**：`UserAuthenticationMethodProfileService` 已移除 `PlatformTenantResolver` 依赖；平台态不再回退 legacy platform tenant 行。
+- **CARD-02（已完成）**：新表 `user_auth_credential` / `user_auth_scope_policy` 已落库，且已补 `scope_type` + `scope_id` CHECK 约束。
+- **CARD-03（已完成）**：认证关键写链已双写新模型；`unbindTotp` 删除链已补桥接删除并有回归测试锁定。
+- **CARD-04（已完成）**：认证读链已切为新模型优先；平台态 `PLATFORM > GLOBAL` 已锁定；`scope_key` 读写契约已统一为 `GLOBAL` / `PLATFORM` / `TENANT:{id}`。
+- **CARD-05（已完成）**：文档与门禁口径已同步到桥接态现状，不再把目标态冒充现状。
+
+第二阶段收口状态（对应 `docs/TINY_PLATFORM_PLATFORM_SCOPE_CURSOR_TASK_CARDS.md` 的 `CARD-06 ~ CARD-09B3`）：
+
+说明：这些剩余卡片是“PLATFORM 正确模型 7 件事”里的第二阶段收口动作，主轴是第 3 项（认证域去 `tenant_id` 语义），并同时落实第 6 项（迁移兼容壳降级/清零）与第 7 项（真实链路门禁同步）。
+
+补充口径：这里的“认证域去 `tenant_id` 语义”指的是把语义迁到 `user_auth_credential + user_auth_scope_policy` 新模型，而不是继续在 `user_authentication_method` 旧表上追加 `scope_type / scope_id / scope_key` 演进。
+
+1. **CARD-06（已完成）数据回填与对账**：backfill / dry-run / apply / reconcile 已跑通；当前证据为 `projected_credential_upserts=15`、`projected_scope_policy_upserts=19`、`conflict_groups=0`、`user_auth_credential=15`、`user_auth_scope_policy=19`、`legacy vs new-model diff = empty`。
+2. **CARD-07A（已完成）命中观测固化**：旧表 fallback 的命中入口、scope/provider/type 维度和调用形态已完成观测固化。
+3. **CARD-07B（已完成）fallback 收窄**：fallback 已收窄到显式异常场景，正常平台态/租户态认证链默认走新模型。
+4. **CARD-07C（已完成）受控环境默认关闭 fallback**：受控环境下已具备 fail-fast 阻断与可审计异常信息。
+5. **CARD-08A（已完成）平台真实认证链**：平台 real-link 已验证 `PLATFORM > GLOBAL` 与最终业务结果。
+6. **CARD-08B（已完成）租户真实认证链**：租户 real-link 已验证平台/租户边界不串用与最终业务结果。
+7. **CARD-09A（已完成）零 runtime 依赖旧表**：production runtime 主链已停止读取旧表；旧表仅保留迁移、审计、历史对账用途。
+8. **CARD-09B1（已完成）下线 inventory 与 drop 前置确认**：已产出可执行 inventory 与 09B2/09B3 分工，见 `docs/TINY_PLATFORM_USER_AUTHENTICATION_METHOD_LEGACY_TABLE_INVENTORY.md`。
+9. **CARD-09B2（已完成）代码/脚本/测试残留清理**：在不 drop 表的前提下，已清掉主路径对旧表 JPA/主链依赖；`tiny-web` 密码读取已切到新模型查询。
+10. **CARD-09B3（已完成）旧表物理下线**：已补 Liquibase `134-drop-user-authentication-method.yaml`；`schema.sql` / `data.sql` 与 `tiny-web` 侧 schema/seed 已同步新模型；桥接迁移期正式结束。
+11. **工具链一致性**：后续 SQL / 脚本 / 迁移代码必须复用统一 `buildScopeKey(...)` 规则，禁止再发明 `scope_key` 字符串形态；该约束适用于 `CARD-06 ~ CARD-09B3` 全阶段。
+
+第三阶段收尾建议（对应 `docs/TINY_PLATFORM_PLATFORM_SCOPE_CURSOR_TASK_CARDS.md` 的 `CARD-09C1 ~ CARD-09C4`）：
+
+1. **CARD-09C1（已完成，含 follow-up）角色码 authority 消费点 inventory**：已盘清 runtime / JWT / Session / downstream（含 `tiny-web`）对 `ROLE_*` authority 的 keep-list、migrate-list、test-only list，见 `docs/TINY_PLATFORM_ROLE_CODE_AUTHORITY_CONSUMER_INVENTORY.md`。
+2. **CARD-09C2（已完成）合法消费者迁到显式 `roleCodes`**：`SecurityUser`/JWT 已补 `roleCodes` 显式契约，`CamundaIdentityBridgeFilter` 与 `tiny-web` 的角色码消费已优先读取显式 roleCodes（保留 authorities 兼容作为 09C3 前过渡）。
+3. **CARD-09C3（已完成）authority 收缩**：新签发 JWT `authorities` 已收缩为非 `ROLE_*`（permission/factor 等）为主，`role.code` 不再作为主链 authority 输出；旧 token 读取兼容保留在 converter，合法角色码消费者继续走显式 `roleCodes`。
+4. **CARD-09C4（已完成）文档与测试收尾**：核心授权文档已同步到 09C3 后契约（新签发 authorities 以 permission/factor/scope 为主、`roleCodes` 仅供少量合法消费者、旧 token 仅解码兼容）；并清理测试样例中的 `ROLE_ADMIN` 通用权限模拟口径。
+
+第四阶段兼容壳收口建议（对应 `docs/TINY_PLATFORM_PLATFORM_SCOPE_CURSOR_TASK_CARDS.md` 的 `CARD-10A ~ CARD-10D`）：
+
+说明：这组卡不再处理“主授权模型是否成立”，而是处理主线已经稳定后仍然保留的兼容壳。目标是把兼容边界写清楚、观测清楚、退出条件写清楚，禁止其继续扩散到新业务。
+
+冻结边界：`tiny-web` 已视为冻结中的历史模块，不再作为权限/认证模型继续演进的承载体；这组卡默认只处理 `tiny-oauth-server` 主线兼容壳。`tiny-web` 若出现编译/启动/阻断性问题，仅接受最小生存修复，不纳入长期收敛主线。
+
+1. **CARD-10A（已完成）JWT / Session 解码兼容窗口固化**：已固化 `SecurityUser` / JWT 旧快照解码兼容边界（仅解码兼容，不影响新签发契约），并补旧 payload / 旧 JWT 最小回归。
+2. **CARD-10B（已完成）`roleCodes` 消费者最后一层 fallback 收窄**：`CamundaIdentityBridgeFilter` 继续以显式 `roleCodes` 为第一入口；`ROLE_* authorities` fallback 已收窄为“仅 legacy carrier 缺失 roleCodes 时兜底”，并补 MFA session / JWT / 普通 session 回归。
+3. **CARD-10C（已完成）平台 `default/platformTenantCode` 兼容壳降级**：已将 `PlatformTenantResolver` 及相关调用点口径固化为“仅 bootstrap / 历史入口兼容”，并在主线代码注释中明确“新业务禁止依赖”。
+4. **CARD-10D（已完成）carrier requirement fallback 收口**：保留兼容 fallback 的同时补充显式观测（compatibility fallback 日志）与审计 reason 断言，明确其仅为迁移期兼容，不得作为新业务默认接入方式。
+
+第五阶段兼容代码移除建议（对应 `docs/TINY_PLATFORM_PLATFORM_SCOPE_CURSOR_TASK_CARDS.md` 的 `CARD-11A ~ CARD-11D`）：
+
+说明：这一阶段不再以“固化兼容边界”为目标，而是以“在证据充分的前提下真正删除兼容代码”为目标。删除顺序按风险从低到高推进：先删 carrier fallback，再删 `ROLE_*` fallback，再退役 `default/platformTenantCode` 兼容壳，最后移除 JWT / Session 旧快照解码兼容。
+
+冻结边界：`tiny-web` 继续视为冻结中的历史模块，不纳入这一阶段长期收敛主线；若因主线删除兼容产生阻断，只接受最小生存修复。
+
+1. **CARD-11A（已完成）移除 carrier requirement fallback**：`CarrierPermissionRequirementEvaluator` 已删除 requirement 缺失时按 `fallbackPermission` 放行的主链兼容路径；requirement 缺失统一 fail-closed，并通过审计 reason `REQUIREMENT_ROWS_MISSING_FAIL_CLOSED` 显式诊断。
+2. **CARD-11B（已完成）移除 `ROLE_*` 最后一层 fallback**：`CamundaIdentityBridgeFilter` 已删除 `ROLE_* authorities` 反推角色码路径，主线仅消费显式 `roleCodes`（principal/details/JWT claim）；legacy JWT 缺失 `roleCodes` 时不再回退角色 authority。
+3. **CARD-11C（已完成）退役平台 `default/platformTenantCode` 兼容壳**：`TenantContextFilter` 已移除按 `PlatformTenantResolver` 推断平台 scope 的主链逻辑；`MenuServiceImpl` 写侧不再回退 `default/platformTenantCode`，改为要求显式 `activeTenantId`；运行主链平台语义仅认 `PLATFORM` scope。
+4. **CARD-11D（已完成）移除 JWT / Session 旧快照解码兼容**：`SecurityUser @JsonCreator` 已移除“`roleCodes` 缺失时从 `authorities` 反推 `ROLE_*`”兼容；`TinyPlatformJwtGrantedAuthoritiesConverter` 已拒绝旧 `ROLE_*` authority claim 解码（仅保留 scope + 非 `ROLE_*` authorities + permissions），旧混合态快照改为显式不支持。
+
+---
+
 ## 一、本周/本迭代可做（阶段 0 收口 + 小遗留）
 
 ### T1. 脚本与参考数据：规范码统一
@@ -100,10 +160,10 @@
 
 | 任务 | 文件/范围 | 修改要点 | 验证 |
 |------|-----------|----------|------|
-| T6.1 移除 role.name 进入 JWT/Session | `JwtTokenCustomizer`、Session 写入处、`SecurityUser` | 不再把 role.name 放入 authorities/claims；保留 role.code（兼容）与 permissions | JWT 中无 role.name；前端不依赖 role.name 鉴权 |
+| T6.1 移除 role.name 进入 JWT/Session | `JwtTokenCustomizer`、Session 写入处、`SecurityUser` | 不再把 role.name 放入 authorities/claims；新签发 authorities 收缩为 permission/factor/scope；`roleCodes` 走显式字段 | JWT 中无 role.name；新签发 authorities 不含 `ROLE_*` 主链输出 |
 | T6.2 permissions 与 activeScopeType 稳定 | `JwtTokenCustomizer`、`TenantContextFilter`、前端解析 | 确保 claims 中 permissions、activeScopeType、activeTenantId 稳定且文档化 | 文档与实现一致；前端仅用 permissions + activeTenantId |
 
-**T6.1 状态**：`SecurityUser.buildAuthorities` 仅使用 `role.getCode()` 与 `resource.getPermission()`，未使用 `role.name`；JWT 的 authorities 来自该列表，故当前已满足「JWT 不含 role.name」。已在 `SecurityUser` 上补充 Javadoc 说明。若后续有其它入口构造 authorities，需保持同样约定。
+**T6.1 状态**：✅ 已完成 09C3/09C4 收口。当前新签发 JWT/Session authorities 已收缩为 permission/factor/scope，不再输出 `ROLE_*` 混合态；`roleCodes` 通过显式 claim/字段提供给少量合法消费者；`role.name` 不进入 authority/JWT/Session。
 
 **T6.2 状态**：已在 `tiny-oauth-server/docs/TOKEN_CLAIMS_ENTERPRISE_STANDARD.md` 中补充 §2.2 的 `activeScopeType` 及 §2.3「permissions / activeScopeType / activeTenantId 稳定契约」；实现与 `TenantContextContract`、`JwtTokenCustomizer.applyTenantClaims` 一致，前端可稳定使用 `permissions` + `activeTenantId`（可选 `activeScopeType`）。
 
@@ -256,7 +316,7 @@
   - 2026-03-27（追加）：资源管理控制面剩余主读已收口：`ResourceServiceImpl.resources/findDetailById/findByType(find menu)/findByPermission/findByName/findByUrl/findByUri/existsBy*` 已迁到 `menu/ui_action/api_endpoint` 读模型组装；`resource` 不再承担控制面主读来源，阶段 1 正式关闭。
   - 2026-03-27（追加）：`ResourceServiceImpl` / `MenuServiceImpl` 的正常 create/update/updateSort/delete 已下线 bridge `sync/delete` 双写，改为 service 内 direct-write / direct-delete carrier；legacy `ResourceCarrierProjectionSyncService` 已退出运行时主线，剩余 `replaceCompatibilityRequirement` 与 `existsPermissionReference` 已迁入 `CarrierCompatibilitySafetyService`。
   - 2026-03-27（追加）：共享 ID 前置条件已继续清零一层：`RoleRepository.findResourceIdsByRoleId/findGrantedRoleCarrierPairs*` 已改为直接从 carrier union 反查，不再借 `resource.required_permission_id` 做 role_permission -> resourceId 映射；`TenantBootstrapServiceImpl.assertPermissionBindingsReady` 也已改为 carrier template snapshot 校验。
-  - 暂时保留：`resource`、`resource.permission`、`CarrierCompatibilitySafetyService`（承接 `replaceCompatibilityRequirement` 与 `existsPermissionReference` 两段显式安全语义；正常写链只写 carrier 并回填 `requirement_group=0`）。`resource` 的主作用退化为历史兼容壳（可观测/迁移输入）；**shared-id 运行时依赖已清零，legacy projection bridge 已退出主线，compatibility resource 主动保存与运行时删除链路已全部退出主线**。
+  - 2026-04-10（口径同步）：`resource` 兼容表已由 Liquibase 131 物理删除，不再属于活动 schema；`resource.permission` 仅作为历史迁移名词与旧文档口径保留。当前仍需保留的是 `CarrierCompatibilitySafetyService` 这类显式安全语义承接点，而不是 `resource` 表本身。**shared-id 运行时依赖已清零，legacy projection bridge 已退出主线，compatibility resource 主动保存与运行时删除链路已全部退出主线**。
 
 ## 六、遗留彻底下线（已完成）
 

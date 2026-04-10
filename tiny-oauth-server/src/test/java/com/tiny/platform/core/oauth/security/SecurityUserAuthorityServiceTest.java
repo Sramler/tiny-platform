@@ -27,7 +27,7 @@ class SecurityUserAuthorityServiceTest {
 
         assertThat(service.buildAuthorities(10L, 1L, "TENANT", 1L, Set.of(role)))
                 .extracting(a -> a.getAuthority())
-                .containsExactlyInAnyOrder("ROLE_ADMIN", "order:read", "order:write");
+                .containsExactlyInAnyOrder("order:read", "order:write");
     }
 
     @Test
@@ -41,7 +41,7 @@ class SecurityUserAuthorityServiceTest {
 
         assertThat(service.buildAuthorities(20L, 2L, "TENANT", 200L, Set.of(role)))
                 .extracting(a -> a.getAuthority())
-                .containsExactly("ROLE_AUDITOR");
+                .isEmpty();
     }
 
     @Test
@@ -59,7 +59,7 @@ class SecurityUserAuthorityServiceTest {
 
         assertThat(service.buildAuthorities(30L, 3L, "TENANT", 300L, Set.of(role)))
                 .extracting(a -> a.getAuthority())
-                .containsExactly("ROLE_OPERATOR");
+                .isEmpty();
     }
 
     @Test
@@ -77,7 +77,7 @@ class SecurityUserAuthorityServiceTest {
 
         assertThat(service.buildAuthorities(40L, 1L, "ORG", 5L, Set.of(role)))
                 .extracting(a -> a.getAuthority())
-                .containsExactly("ROLE_ORG_OPERATOR");
+                .isEmpty();
     }
 
     private Role role(Long id, String roleCode) {

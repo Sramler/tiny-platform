@@ -40,12 +40,12 @@ class CarrierPermissionRequirementEvaluatorTest {
     }
 
     @Test
-    void shouldFallbackToSinglePermissionWhenNoRequirementRowsExist() {
+    void shouldFailClosedWhenNoRequirementRowsExist() {
         MenuEntry menu = new MenuEntry();
         menu.setId(10L);
         menu.setPermission("system:user:list");
 
-        assertThat(evaluator.isMenuAllowed(menu, Set.of("system:user:list"))).isTrue();
+        assertThat(evaluator.isMenuAllowed(menu, Set.of("system:user:list"))).isFalse();
         assertThat(evaluator.isMenuAllowed(menu, Set.of("system:role:list"))).isFalse();
     }
 
@@ -122,13 +122,25 @@ class CarrierPermissionRequirementEvaluatorTest {
     }
 
     @Test
-    void menu_fallbackPermission_shouldHonorModuleWildcard() {
+    void menu_shouldFailClosedWithoutRequirementRows_evenWithModuleWildcardAuthority() {
         MenuEntry menu = new MenuEntry();
         menu.setId(12L);
         menu.setPermission("scheduling:console:view");
 
-        assertThat(evaluator.isMenuAllowed(menu, Set.of("scheduling:*"))).isTrue();
+        assertThat(evaluator.isMenuAllowed(menu, Set.of("scheduling:*"))).isFalse();
         assertThat(evaluator.isMenuAllowed(menu, Set.of("workflow:*"))).isFalse();
+    }
+
+    @Test
+    void menu_requirement_detail_should_mark_rows_missing_fail_closed_when_rows_missing() {
+        MenuEntry menu = new MenuEntry();
+        menu.setId(13L);
+        menu.setPermission("system:user:list");
+
+        var detail = evaluator.resolveMenuRequirementDetails(List.of(menu), Set.of("system:user:list")).get(13L);
+        assertThat(detail).isNotNull();
+        assertThat(detail.reason()).isEqualTo("REQUIREMENT_ROWS_MISSING_FAIL_CLOSED");
+        assertThat(detail.decision()).isEqualTo("DENY");
     }
 
     private CarrierPermissionRequirementRow row(Long carrierId, Integer group, Integer sortOrder, String permissionCode, boolean negated) {

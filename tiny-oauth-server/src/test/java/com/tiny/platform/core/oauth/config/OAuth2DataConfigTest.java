@@ -6,6 +6,7 @@ import com.tiny.platform.core.oauth.multitenancy.IssuerDelegatingOAuth2Authoriza
 import com.tiny.platform.core.oauth.multitenancy.IssuerDelegatingOAuth2AuthorizationService;
 import com.tiny.platform.core.oauth.multitenancy.IssuerDelegatingRegisteredClientRepository;
 import com.tiny.platform.core.oauth.multitenancy.TenantPerIssuerComponentRegistry;
+import com.tiny.platform.core.oauth.tenant.IssuerTenantSupport;
 import com.tiny.platform.infrastructure.tenant.domain.Tenant;
 import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import org.junit.jupiter.api.Test;
@@ -102,16 +103,23 @@ class OAuth2DataConfigTest {
 
         runner.run();
 
+        assertThat(registry.containsIssuerKey(IssuerTenantSupport.PLATFORM_ISSUER_KEY)).isTrue();
         assertThat(registry.containsTenant("acme")).isTrue();
         assertThat(registry.containsTenant("beta")).isTrue();
         assertThat(registry.containsTenant("disabled")).isFalse();
         assertThat(registry.containsTenant("deleted")).isFalse();
         assertThat(registry.containsTenant("expired")).isFalse();
         assertThat(registry.tenantCodes()).containsExactlyInAnyOrder("acme", "beta");
+        assertThat(registry.issuerKeys()).containsExactlyInAnyOrder(
+            IssuerTenantSupport.PLATFORM_ISSUER_KEY,
+            "acme",
+            "beta"
+        );
 
         assertThat(registry.get("acme", RegisteredClientRepository.class)).isSameAs(repo);
         assertThat(registry.get("acme", OAuth2AuthorizationService.class)).isSameAs(authzService);
         assertThat(registry.get("acme", OAuth2AuthorizationConsentService.class)).isSameAs(consentService);
+        assertThat(registry.get(IssuerTenantSupport.PLATFORM_ISSUER_KEY, RegisteredClientRepository.class)).isSameAs(repo);
     }
 
     private static Tenant tenant(String code, boolean enabled, LocalDateTime deletedAt, LocalDateTime expiresAt) {

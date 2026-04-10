@@ -19,10 +19,12 @@ import com.tiny.platform.infrastructure.auth.user.dto.UserCreateUpdateDto;
 import com.tiny.platform.infrastructure.auth.user.dto.UserRequestDto;
 import com.tiny.platform.infrastructure.auth.user.dto.UserResponseDto;
 import com.tiny.platform.infrastructure.auth.user.repository.TenantUserRepository;
-import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
+import com.tiny.platform.infrastructure.auth.user.service.UserAuthenticationBridgeWriter;
+import com.tiny.platform.infrastructure.auth.user.service.UserAuthenticationMethodProfileService;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import com.tiny.platform.infrastructure.tenant.guard.TenantLifecycleGuard;
 import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
+import com.tiny.platform.infrastructure.tenant.service.TenantQuotaService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.Page;
@@ -71,14 +73,17 @@ class UserServiceImplTest {
                 userRepository,
                 mock(PasswordEncoder.class),
                 mock(RoleRepository.class),
-                mock(UserAuthenticationMethodRepository.class),
+                mock(UserAuthenticationMethodProfileService.class),
                 loginFailurePolicy(),
                 roleAssignmentSyncService,
                 mock(EffectiveRoleResolutionService.class),
                 mock(TenantUserRepository.class),
                 mock(UserUnitRepository.class),
+                mock(UserUnitService.class),
                 mock(AuthUserResolutionService.class),
-                tenantLifecycleGuard
+                tenantLifecycleGuard,
+                mock(TenantQuotaService.class),
+                mock(UserAuthenticationBridgeWriter.class)
         );
 
         TenantContext.setActiveTenantId(1L);
@@ -106,14 +111,17 @@ class UserServiceImplTest {
                 userRepository,
                 mock(PasswordEncoder.class),
                 mock(RoleRepository.class),
-                mock(UserAuthenticationMethodRepository.class),
+                mock(UserAuthenticationMethodProfileService.class),
                 loginFailurePolicy(),
                 mock(RoleAssignmentSyncService.class),
                 mock(EffectiveRoleResolutionService.class),
                 tenantUserRepository,
                 mock(UserUnitRepository.class),
+                mock(UserUnitService.class),
                 mock(AuthUserResolutionService.class),
-                tenantLifecycleGuard
+                tenantLifecycleGuard,
+                mock(TenantQuotaService.class),
+                mock(UserAuthenticationBridgeWriter.class)
         );
 
         TenantContext.setActiveTenantId(1L);
@@ -160,14 +168,17 @@ class UserServiceImplTest {
                 userRepository,
                 mock(PasswordEncoder.class),
                 mock(RoleRepository.class),
-                mock(UserAuthenticationMethodRepository.class),
+                mock(UserAuthenticationMethodProfileService.class),
                 loginFailurePolicy(),
                 mock(RoleAssignmentSyncService.class),
                 mock(EffectiveRoleResolutionService.class),
                 tenantUserRepository,
                 mock(UserUnitRepository.class),
+                mock(UserUnitService.class),
                 mock(AuthUserResolutionService.class),
-                tenantLifecycleGuard
+                tenantLifecycleGuard,
+                mock(TenantQuotaService.class),
+                mock(UserAuthenticationBridgeWriter.class)
         );
 
         TenantContext.setActiveTenantId(1L);
@@ -214,14 +225,17 @@ class UserServiceImplTest {
                 userRepository,
                 mock(PasswordEncoder.class),
                 mock(RoleRepository.class),
-                mock(UserAuthenticationMethodRepository.class),
+                mock(UserAuthenticationMethodProfileService.class),
                 loginFailurePolicy(),
                 mock(RoleAssignmentSyncService.class),
                 mock(EffectiveRoleResolutionService.class),
                 tenantUserRepository,
                 mock(UserUnitRepository.class),
+                mock(UserUnitService.class),
                 mock(AuthUserResolutionService.class),
-                tenantLifecycleGuard
+                tenantLifecycleGuard,
+                mock(TenantQuotaService.class),
+                mock(UserAuthenticationBridgeWriter.class)
         );
 
         TenantContext.setActiveTenantId(1L);
@@ -270,14 +284,17 @@ class UserServiceImplTest {
                 userRepository,
                 mock(PasswordEncoder.class),
                 roleRepository,
-                mock(UserAuthenticationMethodRepository.class),
+                mock(UserAuthenticationMethodProfileService.class),
                 loginFailurePolicy(),
                 roleAssignmentSyncService,
                 mock(EffectiveRoleResolutionService.class),
                 tenantUserRepository,
                 mock(UserUnitRepository.class),
+                mock(UserUnitService.class),
                 mock(AuthUserResolutionService.class),
-                tenantLifecycleGuard
+                tenantLifecycleGuard,
+                mock(TenantQuotaService.class),
+                mock(UserAuthenticationBridgeWriter.class)
         );
 
         TenantContext.setActiveTenantId(1L);
@@ -307,14 +324,17 @@ class UserServiceImplTest {
                 userRepository,
                 mock(PasswordEncoder.class),
                 mock(RoleRepository.class),
-                mock(UserAuthenticationMethodRepository.class),
+                mock(UserAuthenticationMethodProfileService.class),
                 loginFailurePolicy(),
                 roleAssignmentSyncService,
                 mock(EffectiveRoleResolutionService.class),
                 tenantUserRepository,
                 mock(UserUnitRepository.class),
+                mock(UserUnitService.class),
                 mock(AuthUserResolutionService.class),
-                tenantLifecycleGuard
+                tenantLifecycleGuard,
+                mock(TenantQuotaService.class),
+                mock(UserAuthenticationBridgeWriter.class)
         );
 
         TenantContext.setActiveTenantId(9L);
@@ -342,14 +362,17 @@ class UserServiceImplTest {
                 userRepository,
                 mock(PasswordEncoder.class),
                 mock(RoleRepository.class),
-                mock(UserAuthenticationMethodRepository.class),
+                mock(UserAuthenticationMethodProfileService.class),
                 loginFailurePolicy(),
                 mock(RoleAssignmentSyncService.class),
                 mock(EffectiveRoleResolutionService.class),
                 mock(TenantUserRepository.class),
                 mock(UserUnitRepository.class),
+                mock(UserUnitService.class),
                 authUserResolutionService,
-                tenantLifecycleGuard
+                tenantLifecycleGuard,
+                mock(TenantQuotaService.class),
+                mock(UserAuthenticationBridgeWriter.class)
         );
 
         TenantContext.setActiveTenantId(9L);
@@ -374,14 +397,17 @@ class UserServiceImplTest {
                 userRepository,
                 mock(PasswordEncoder.class),
                 mock(RoleRepository.class),
-                mock(UserAuthenticationMethodRepository.class),
+                mock(UserAuthenticationMethodProfileService.class),
                 loginFailurePolicy(),
                 mock(RoleAssignmentSyncService.class),
                 mock(EffectiveRoleResolutionService.class),
                 mock(TenantUserRepository.class),
                 mock(UserUnitRepository.class),
+                mock(UserUnitService.class),
                 authUserResolutionService,
-                tenantLifecycleGuard
+                tenantLifecycleGuard,
+                mock(TenantQuotaService.class),
+                mock(UserAuthenticationBridgeWriter.class)
         );
 
         TenantContext.setActiveScopeType("PLATFORM");
@@ -409,14 +435,17 @@ class UserServiceImplTest {
                 userRepository,
                 mock(PasswordEncoder.class),
                 mock(RoleRepository.class),
-                mock(UserAuthenticationMethodRepository.class),
+                mock(UserAuthenticationMethodProfileService.class),
                 loginFailurePolicy(),
                 mock(RoleAssignmentSyncService.class),
                 effectiveRoleResolutionService,
                 tenantUserRepository,
                 mock(UserUnitRepository.class),
+                mock(UserUnitService.class),
                 mock(AuthUserResolutionService.class),
-                tenantLifecycleGuard
+                tenantLifecycleGuard,
+                mock(TenantQuotaService.class),
+                mock(UserAuthenticationBridgeWriter.class)
         );
 
         TenantContext.setActiveTenantId(9L);
@@ -444,14 +473,17 @@ class UserServiceImplTest {
                 userRepository,
                 mock(PasswordEncoder.class),
                 mock(RoleRepository.class),
-                mock(UserAuthenticationMethodRepository.class),
+                mock(UserAuthenticationMethodProfileService.class),
                 loginFailurePolicy(),
                 mock(RoleAssignmentSyncService.class),
                 effectiveRoleResolutionService,
                 tenantUserRepository,
                 mock(UserUnitRepository.class),
+                mock(UserUnitService.class),
                 mock(AuthUserResolutionService.class),
-                tenantLifecycleGuard
+                tenantLifecycleGuard,
+                mock(TenantQuotaService.class),
+                mock(UserAuthenticationBridgeWriter.class)
         );
 
         TenantContext.setActiveTenantId(9L);
@@ -482,14 +514,17 @@ class UserServiceImplTest {
                 userRepository,
                 mock(PasswordEncoder.class),
                 mock(RoleRepository.class),
-                mock(UserAuthenticationMethodRepository.class),
+                mock(UserAuthenticationMethodProfileService.class),
                 loginFailurePolicy(),
                 mock(RoleAssignmentSyncService.class),
                 mock(EffectiveRoleResolutionService.class),
                 tenantUserRepository,
                 userUnitRepository,
+                mock(UserUnitService.class),
                 mock(AuthUserResolutionService.class),
-                tenantLifecycleGuard
+                tenantLifecycleGuard,
+                mock(TenantQuotaService.class),
+                mock(UserAuthenticationBridgeWriter.class)
         );
 
         TenantContext.setActiveTenantId(9L);
@@ -526,14 +561,17 @@ class UserServiceImplTest {
                 userRepository,
                 mock(PasswordEncoder.class),
                 mock(RoleRepository.class),
-                mock(UserAuthenticationMethodRepository.class),
+                mock(UserAuthenticationMethodProfileService.class),
                 loginFailurePolicy(),
                 mock(RoleAssignmentSyncService.class),
                 mock(EffectiveRoleResolutionService.class),
                 tenantUserRepository,
                 userUnitRepository,
+                mock(UserUnitService.class),
                 mock(AuthUserResolutionService.class),
-                tenantLifecycleGuard
+                tenantLifecycleGuard,
+                mock(TenantQuotaService.class),
+                mock(UserAuthenticationBridgeWriter.class)
         );
 
         TenantContext.setActiveTenantId(9L);
@@ -594,14 +632,17 @@ class UserServiceImplTest {
                 userRepository,
                 mock(PasswordEncoder.class),
                 mock(RoleRepository.class),
-                mock(UserAuthenticationMethodRepository.class),
+                mock(UserAuthenticationMethodProfileService.class),
                 loginFailurePolicy(),
                 mock(RoleAssignmentSyncService.class),
                 mock(EffectiveRoleResolutionService.class),
                 tenantUserRepository,
                 userUnitRepository,
+                mock(UserUnitService.class),
                 mock(AuthUserResolutionService.class),
-                tenantLifecycleGuard
+                tenantLifecycleGuard,
+                mock(TenantQuotaService.class),
+                mock(UserAuthenticationBridgeWriter.class)
         );
 
         TenantContext.setActiveTenantId(9L);
@@ -657,14 +698,17 @@ class UserServiceImplTest {
                 userRepository,
                 mock(PasswordEncoder.class),
                 mock(RoleRepository.class),
-                mock(UserAuthenticationMethodRepository.class),
+                mock(UserAuthenticationMethodProfileService.class),
                 loginFailurePolicy(),
                 mock(RoleAssignmentSyncService.class),
                 mock(EffectiveRoleResolutionService.class),
                 tenantUserRepository,
                 userUnitRepository,
+                mock(UserUnitService.class),
                 mock(AuthUserResolutionService.class),
-                tenantLifecycleGuard
+                tenantLifecycleGuard,
+                mock(TenantQuotaService.class),
+                mock(UserAuthenticationBridgeWriter.class)
         );
 
         TenantContext.setActiveTenantId(9L);
@@ -708,14 +752,17 @@ class UserServiceImplTest {
                 userRepository,
                 mock(PasswordEncoder.class),
                 mock(RoleRepository.class),
-                mock(UserAuthenticationMethodRepository.class),
+                mock(UserAuthenticationMethodProfileService.class),
                 loginFailurePolicy(),
                 mock(RoleAssignmentSyncService.class),
                 mock(EffectiveRoleResolutionService.class),
                 tenantUserRepository,
                 userUnitRepository,
+                mock(UserUnitService.class),
                 mock(AuthUserResolutionService.class),
-                tenantLifecycleGuard
+                tenantLifecycleGuard,
+                mock(TenantQuotaService.class),
+                mock(UserAuthenticationBridgeWriter.class)
         );
 
         TenantContext.setActiveTenantId(9L);
@@ -755,14 +802,17 @@ class UserServiceImplTest {
                 userRepository,
                 mock(PasswordEncoder.class),
                 mock(RoleRepository.class),
-                mock(UserAuthenticationMethodRepository.class),
+                mock(UserAuthenticationMethodProfileService.class),
                 loginFailurePolicy(),
                 mock(RoleAssignmentSyncService.class),
                 mock(EffectiveRoleResolutionService.class),
                 tenantUserRepository,
                 userUnitRepository,
+                mock(UserUnitService.class),
                 mock(AuthUserResolutionService.class),
-                tenantLifecycleGuard
+                tenantLifecycleGuard,
+                mock(TenantQuotaService.class),
+                mock(UserAuthenticationBridgeWriter.class)
         );
 
         TenantContext.setActiveTenantId(9L);
@@ -799,14 +849,17 @@ class UserServiceImplTest {
                 userRepository,
                 mock(PasswordEncoder.class),
                 mock(RoleRepository.class),
-                mock(UserAuthenticationMethodRepository.class),
+                mock(UserAuthenticationMethodProfileService.class),
                 loginFailurePolicy(),
                 mock(RoleAssignmentSyncService.class),
                 mock(EffectiveRoleResolutionService.class),
                 tenantUserRepository,
                 mock(UserUnitRepository.class),
+                mock(UserUnitService.class),
                 mock(AuthUserResolutionService.class),
-                tenantLifecycleGuard
+                tenantLifecycleGuard,
+                mock(TenantQuotaService.class),
+                mock(UserAuthenticationBridgeWriter.class)
         );
 
         TenantContext.setActiveTenantId(9L);
@@ -841,14 +894,17 @@ class UserServiceImplTest {
                 userRepository,
                 mock(PasswordEncoder.class),
                 roleRepository,
-                mock(UserAuthenticationMethodRepository.class),
+                mock(UserAuthenticationMethodProfileService.class),
                 loginFailurePolicy(),
                 roleAssignmentSyncService,
                 mock(EffectiveRoleResolutionService.class),
                 tenantUserRepository,
                 mock(UserUnitRepository.class),
+                mock(UserUnitService.class),
                 mock(AuthUserResolutionService.class),
-                tenantLifecycleGuard
+                tenantLifecycleGuard,
+                mock(TenantQuotaService.class),
+                mock(UserAuthenticationBridgeWriter.class)
         );
 
         TenantContext.setActiveTenantId(9L);
@@ -879,14 +935,17 @@ class UserServiceImplTest {
                 userRepository,
                 mock(PasswordEncoder.class),
                 roleRepository,
-                mock(UserAuthenticationMethodRepository.class),
+                mock(UserAuthenticationMethodProfileService.class),
                 loginFailurePolicy(),
                 roleAssignmentSyncService,
                 mock(EffectiveRoleResolutionService.class),
                 tenantUserRepository,
                 mock(UserUnitRepository.class),
+                mock(UserUnitService.class),
                 mock(AuthUserResolutionService.class),
-                tenantLifecycleGuard
+                tenantLifecycleGuard,
+                mock(TenantQuotaService.class),
+                mock(UserAuthenticationBridgeWriter.class)
         );
 
         TenantContext.setActiveTenantId(9L);
@@ -909,7 +968,8 @@ class UserServiceImplTest {
     void createFromDto_should_persist_contact_fields_and_sync_user_units() {
         UserRepository userRepository = mock(UserRepository.class);
         PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
-        UserAuthenticationMethodRepository authenticationMethodRepository = mock(UserAuthenticationMethodRepository.class);
+        UserAuthenticationMethodProfileService authenticationMethodProfileService = mock(UserAuthenticationMethodProfileService.class);
+        UserAuthenticationBridgeWriter authenticationBridgeWriter = mock(UserAuthenticationBridgeWriter.class);
         RoleAssignmentSyncService roleAssignmentSyncService = mock(RoleAssignmentSyncService.class);
         UserUnitService userUnitService = mock(UserUnitService.class);
         AuthUserResolutionService authUserResolutionService = mock(AuthUserResolutionService.class);
@@ -919,7 +979,7 @@ class UserServiceImplTest {
             userRepository,
             passwordEncoder,
             mock(RoleRepository.class),
-            authenticationMethodRepository,
+            authenticationMethodProfileService,
             loginFailurePolicy(),
             roleAssignmentSyncService,
             mock(EffectiveRoleResolutionService.class),
@@ -927,7 +987,9 @@ class UserServiceImplTest {
             mock(UserUnitRepository.class),
             userUnitService,
             authUserResolutionService,
-            tenantLifecycleGuard
+            tenantLifecycleGuard,
+            mock(TenantQuotaService.class),
+            authenticationBridgeWriter
         );
 
         TenantContext.setActiveTenantId(7L);
@@ -959,7 +1021,20 @@ class UserServiceImplTest {
         assertThat(created.getPhone()).isEqualTo("13800000000");
         verify(roleAssignmentSyncService).ensureTenantMembership(88L, 7L, true);
         verify(userUnitService).replaceUserUnits(7L, 88L, List.of(11L, 12L), 11L);
-        verify(authenticationMethodRepository).save(any());
+        verify(authenticationBridgeWriter).upsert(
+                eq(88L),
+                eq("LOCAL"),
+                eq("PASSWORD"),
+                any(),
+                any(),
+                any(),
+                any(),
+                eq("TENANT"),
+                eq(7L),
+                any(),
+                any(),
+                any()
+        );
     }
 
     @Test
@@ -974,7 +1049,7 @@ class UserServiceImplTest {
             userRepository,
             mock(PasswordEncoder.class),
             mock(RoleRepository.class),
-            mock(UserAuthenticationMethodRepository.class),
+            mock(UserAuthenticationMethodProfileService.class),
             loginFailurePolicy(),
             mock(RoleAssignmentSyncService.class),
             mock(EffectiveRoleResolutionService.class),
@@ -982,7 +1057,9 @@ class UserServiceImplTest {
             mock(UserUnitRepository.class),
             userUnitService,
             authUserResolutionService,
-            tenantLifecycleGuard
+            tenantLifecycleGuard,
+            mock(TenantQuotaService.class),
+            mock(UserAuthenticationBridgeWriter.class)
         );
 
         TenantContext.setActiveTenantId(7L);

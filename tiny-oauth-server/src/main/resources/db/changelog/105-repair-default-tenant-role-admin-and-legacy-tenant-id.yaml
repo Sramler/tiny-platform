@@ -3,6 +3,8 @@ databaseChangeLog:
       id: 105-repair-default-tenant-role-admin-and-legacy-tenant-id
       author: tiny
       comment: 修复默认租户 ROLE_TENANT_ADMIN 资源回填，清理孤儿 user.tenant_id，并对齐认证方法 tenant_id
+      validCheckSum:
+        - ANY
       changes:
         - sql:
             sql: |
@@ -26,52 +28,70 @@ databaseChangeLog:
               WHERE user_entity.`tenant_id` IS NOT NULL
                 AND tenant_membership.`user_id` IS NULL;
 
-              DELETE auth_method
-              FROM `user_authentication_method` auth_method
-              JOIN (
-                SELECT
-                  tenant_membership.`user_id`,
-                  COALESCE(
-                    MAX(CASE
-                      WHEN tenant_membership.`status` = 'ACTIVE' AND tenant_membership.`is_default` = 1
-                        THEN tenant_membership.`tenant_id`
-                    END),
-                    MIN(CASE
-                      WHEN tenant_membership.`status` = 'ACTIVE'
-                        THEN tenant_membership.`tenant_id`
-                    END)
-                  ) AS `tenant_id`
-                FROM `tenant_user` tenant_membership
-                GROUP BY tenant_membership.`user_id`
-              ) membership_map
-                ON membership_map.`user_id` = auth_method.`user_id`
-              JOIN `user_authentication_method` target_method
-                ON target_method.`user_id` = auth_method.`user_id`
-               AND target_method.`tenant_id` = membership_map.`tenant_id`
-               AND target_method.`authentication_provider` = auth_method.`authentication_provider`
-               AND target_method.`authentication_type` = auth_method.`authentication_type`
-               AND target_method.`id` <> auth_method.`id`
-              WHERE membership_map.`tenant_id` IS NOT NULL
-                AND auth_method.`tenant_id` <> membership_map.`tenant_id`;
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_authentication_method'),
+                  'DELETE auth_method
+                   FROM `user_authentication_method` auth_method
+                   JOIN (
+                     SELECT
+                       tenant_membership.`user_id`,
+                       COALESCE(
+                         MAX(CASE
+                           WHEN tenant_membership.`status` = ''ACTIVE'' AND tenant_membership.`is_default` = 1
+                             THEN tenant_membership.`tenant_id`
+                         END),
+                         MIN(CASE
+                           WHEN tenant_membership.`status` = ''ACTIVE''
+                             THEN tenant_membership.`tenant_id`
+                         END)
+                       ) AS `tenant_id`
+                     FROM `tenant_user` tenant_membership
+                     GROUP BY tenant_membership.`user_id`
+                   ) membership_map
+                     ON membership_map.`user_id` = auth_method.`user_id`
+                   JOIN `user_authentication_method` target_method
+                     ON target_method.`user_id` = auth_method.`user_id`
+                    AND target_method.`tenant_id` = membership_map.`tenant_id`
+                    AND target_method.`authentication_provider` = auth_method.`authentication_provider`
+                    AND target_method.`authentication_type` = auth_method.`authentication_type`
+                    AND target_method.`id` <> auth_method.`id`
+                   WHERE membership_map.`tenant_id` IS NOT NULL
+                     AND auth_method.`tenant_id` <> membership_map.`tenant_id`',
+                  'SELECT 1'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
 
-              UPDATE `user_authentication_method` auth_method
-              JOIN (
-                SELECT
-                  tenant_membership.`user_id`,
-                  COALESCE(
-                    MAX(CASE
-                      WHEN tenant_membership.`status` = 'ACTIVE' AND tenant_membership.`is_default` = 1
-                        THEN tenant_membership.`tenant_id`
-                    END),
-                    MIN(CASE
-                      WHEN tenant_membership.`status` = 'ACTIVE'
-                        THEN tenant_membership.`tenant_id`
-                    END)
-                  ) AS `tenant_id`
-                FROM `tenant_user` tenant_membership
-                GROUP BY tenant_membership.`user_id`
-              ) membership_map
-                ON membership_map.`user_id` = auth_method.`user_id`
-              SET auth_method.`tenant_id` = membership_map.`tenant_id`
-              WHERE membership_map.`tenant_id` IS NOT NULL
-                AND auth_method.`tenant_id` <> membership_map.`tenant_id`;
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_authentication_method'),
+                  'UPDATE `user_authentication_method` auth_method
+                   JOIN (
+                     SELECT
+                       tenant_membership.`user_id`,
+                       COALESCE(
+                         MAX(CASE
+                           WHEN tenant_membership.`status` = ''ACTIVE'' AND tenant_membership.`is_default` = 1
+                             THEN tenant_membership.`tenant_id`
+                         END),
+                         MIN(CASE
+                           WHEN tenant_membership.`status` = ''ACTIVE''
+                             THEN tenant_membership.`tenant_id`
+                         END)
+                       ) AS `tenant_id`
+                     FROM `tenant_user` tenant_membership
+                     GROUP BY tenant_membership.`user_id`
+                   ) membership_map
+                     ON membership_map.`user_id` = auth_method.`user_id`
+                   SET auth_method.`tenant_id` = membership_map.`tenant_id`
+                   WHERE membership_map.`tenant_id` IS NOT NULL
+                     AND auth_method.`tenant_id` <> membership_map.`tenant_id`',
+                  'SELECT 1'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;

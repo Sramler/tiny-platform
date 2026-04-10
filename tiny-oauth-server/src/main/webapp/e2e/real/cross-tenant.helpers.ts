@@ -35,8 +35,8 @@ function isConfiguredValue(value: string | undefined): boolean {
 }
 
 export function isCrossTenantIdentityConfigured(): boolean {
-  return ['E2E_TENANT_CODE_B', 'E2E_USERNAME_B', 'E2E_PASSWORD_B', 'E2E_TOTP_SECRET_B'].every((name) =>
-    isConfiguredValue(process.env[name]),
+  return ['E2E_TENANT_CODE_B', 'E2E_USERNAME_B', 'E2E_PASSWORD_B', 'E2E_TOTP_SECRET_B'].every(
+    (name) => isConfiguredValue(process.env[name]),
   )
 }
 
@@ -67,7 +67,9 @@ function deriveReadonlyTenantCode(): string | undefined {
     return undefined
   }
 
-  const platformTenantCode = (readConfiguredEnv('E2E_PLATFORM_TENANT_CODE') ?? 'default').toLowerCase()
+  const platformTenantCode = (
+    readConfiguredEnv('E2E_PLATFORM_TENANT_CODE') ?? 'default'
+  ).toLowerCase()
   if (primaryTenantCode.toLowerCase() !== platformTenantCode) {
     return primaryTenantCode
   }
@@ -192,22 +194,25 @@ async function hasOidcIdentity(page: Page): Promise<boolean> {
 }
 
 export async function waitForOidcIdentity(page: Page, timeout = 60_000) {
-  await page.waitForFunction(() => {
-    const oidcKey = Object.keys(window.localStorage).find((key) => key.startsWith('oidc.user:'))
-    if (!oidcKey) {
-      return false
-    }
-    const rawUser = window.localStorage.getItem(oidcKey)
-    if (!rawUser) {
-      return false
-    }
-    try {
-      const user = JSON.parse(rawUser) as { access_token?: string }
-      return Boolean(user.access_token)
-    } catch {
-      return false
-    }
-  }, { timeout })
+  await page.waitForFunction(
+    () => {
+      const oidcKey = Object.keys(window.localStorage).find((key) => key.startsWith('oidc.user:'))
+      if (!oidcKey) {
+        return false
+      }
+      const rawUser = window.localStorage.getItem(oidcKey)
+      if (!rawUser) {
+        return false
+      }
+      try {
+        const user = JSON.parse(rawUser) as { access_token?: string }
+        return Boolean(user.access_token)
+      } catch {
+        return false
+      }
+    },
+    { timeout },
+  )
 }
 
 async function loginWithIdentity(page: Page, identity: LoginIdentity) {
@@ -244,7 +249,10 @@ async function loginWithIdentity(page: Page, identity: LoginIdentity) {
   if (page.url().includes('/login')) {
     if (identity.mode === 'PLATFORM') {
       await page.getByRole('button', { name: '平台登录' }).click()
-      await page.getByLabel('租户编码').waitFor({ state: 'detached', timeout: 10_000 }).catch(() => {})
+      await page
+        .getByLabel('租户编码')
+        .waitFor({ state: 'detached', timeout: 10_000 })
+        .catch(() => {})
     } else {
       await page.getByRole('button', { name: '租户登录' }).click()
       await page.getByLabel('租户编码').fill(identity.tenantCode!, { force: true })
@@ -291,7 +299,8 @@ async function loginWithIdentity(page: Page, identity: LoginIdentity) {
   }
 
   await page.waitForURL(
-    (url) => !url.pathname.includes('/callback') && !url.pathname.includes('/self/security/totp-verify'),
+    (url) =>
+      !url.pathname.includes('/callback') && !url.pathname.includes('/self/security/totp-verify'),
     {
       timeout: 90_000,
     },
@@ -325,7 +334,11 @@ export async function openOidcDebug(page: Page, kind: AuthIdentityKind = 'primar
     ) {
       await loginWithIdentity(page, loginIdentity)
       await gotoOidcDebug(page)
-    } else if (!oidcDebugVisible || page.url().includes('/login') || page.url().includes('/callback')) {
+    } else if (
+      !oidcDebugVisible ||
+      page.url().includes('/login') ||
+      page.url().includes('/callback')
+    ) {
       await gotoOidcDebug(page)
     }
 
@@ -362,7 +375,9 @@ async function loadIdentitySnapshot(page: Page): Promise<OidcIdentitySnapshot> {
       }
     }
 
-    function firstNonEmptyTenantId(...candidates: Array<string | number | null | undefined>): string {
+    function firstNonEmptyTenantId(
+      ...candidates: Array<string | number | null | undefined>
+    ): string {
       for (const candidate of candidates) {
         if (candidate == null) {
           continue
@@ -544,6 +559,8 @@ export async function openSecondaryAuthenticatedPage(
 export function expectTenantMismatchPayload(payload: Record<string, unknown> | null) {
   expect(payload).not.toBeNull()
   const error = String((payload as { error?: unknown }).error ?? '')
-  const errorDescription = String((payload as { error_description?: unknown }).error_description ?? '')
+  const errorDescription = String(
+    (payload as { error_description?: unknown }).error_description ?? '',
+  )
   expect(`${error} ${errorDescription}`.toLowerCase()).toContain('tenant')
 }

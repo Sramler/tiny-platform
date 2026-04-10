@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   buildEnsureAuthEnv,
   buildAuthStateEnv,
+  buildDerivedAssetGovernanceEnv,
   buildSecondaryAuthStateEnv,
+  collectRealLinkDerivedTenantCodes,
   deriveTenantCodeForTenantScope,
   extractAccessTokenFromStorageState,
   readConfiguredValue,
@@ -222,6 +224,47 @@ describe('real.global.setup ensure auth env', () => {
 
     expect(env.E2E_TENANT_CODE_READONLY).toBe('bench-2m')
     expect(env.E2E_USERNAME_READONLY).toBe('secondary_readonly')
+  })
+})
+
+describe('real.global.setup derived asset governance', () => {
+  it('collects generated tenant candidates without duplicates', () => {
+    const tenantCodes = collectRealLinkDerivedTenantCodes({
+      E2E_TENANT_CODE: 'bench-1m',
+      E2E_PLATFORM_TENANT_CODE: 'bench-1m',
+      E2E_TENANT_CODE_B: 'bench-1m-t',
+      E2E_USERNAME_B: 'e2e_admin_b',
+      E2E_USERNAME_BIND: 'e2e_bind_user',
+      E2E_TENANT_CODE_BIND: 'bench-1m',
+      E2E_USERNAME_READONLY: 'e2e_readonly',
+    })
+
+    expect(tenantCodes).toEqual(['bench-1m-t'])
+  })
+
+  it('keeps explicit secondary and readonly derived tenants in the cleanup target set', () => {
+    const tenantCodes = collectRealLinkDerivedTenantCodes({
+      E2E_TENANT_CODE: 'bench-1m',
+      E2E_PLATFORM_TENANT_CODE: 'platform-main',
+      E2E_TENANT_CODE_B: 'bench-2m',
+      E2E_TENANT_CODE_READONLY: 'bench-3m',
+      E2E_USERNAME_READONLY: 'e2e_readonly',
+    })
+
+    expect(tenantCodes).toEqual(['bench-2m', 'bench-3m'])
+  })
+
+  it('normalizes governance env with derived bind/readonly tenant codes and default platform tenant', () => {
+    const env = buildDerivedAssetGovernanceEnv({
+      E2E_TENANT_CODE: 'bench-1m',
+      E2E_PLATFORM_TENANT_CODE: '',
+      E2E_USERNAME_BIND: 'e2e_bind_user',
+      E2E_USERNAME_READONLY: 'e2e_readonly',
+    })
+
+    expect(env.E2E_TENANT_CODE_BIND).toBe('bench-1m')
+    expect(env.E2E_TENANT_CODE_READONLY).toBe('bench-1m')
+    expect(env.E2E_PLATFORM_TENANT_CODE).toBe('default')
   })
 })
 

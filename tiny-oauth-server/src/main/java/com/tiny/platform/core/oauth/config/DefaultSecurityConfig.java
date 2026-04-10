@@ -31,6 +31,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.Set;
 
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
+import com.tiny.platform.infrastructure.tenant.config.PlatformTenantResolver;
 import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationSessionManager;
 import com.tiny.platform.core.oauth.security.PermissionVersionService;
@@ -42,7 +43,6 @@ import com.tiny.platform.core.oauth.session.UserSessionService;
 import com.tiny.platform.core.oauth.tenant.TenantContextFilter;
 import com.tiny.platform.core.oauth.tenant.TenantLifecycleReadPolicy;
 import com.tiny.platform.core.oauth.security.ApiEndpointRequirementFilter;
-import com.tiny.platform.infrastructure.tenant.config.PlatformTenantResolver;
 import com.tiny.platform.infrastructure.auth.resource.service.ResourceService;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.web.servlet.ServletListenerRegistrationBean;
@@ -191,18 +191,34 @@ public class DefaultSecurityConfig {
     @Bean
     public TenantContextFilter tenantContextFilter(TenantRepository tenantRepository,
                                                    ObjectProvider<PermissionVersionService> permissionVersionServiceProvider,
-                                                   ObjectProvider<PlatformTenantResolver> platformTenantResolverProvider,
                                                    ObjectProvider<com.tiny.platform.infrastructure.auth.audit.service.AuthorizationAuditService> authorizationAuditServiceProvider,
                                                    ObjectProvider<TenantLifecycleReadPolicy> tenantLifecycleReadPolicyProvider,
                                                    ObjectProvider<com.tiny.platform.infrastructure.auth.org.repository.OrganizationUnitRepository> organizationUnitRepositoryProvider,
                                                    ObjectProvider<com.tiny.platform.infrastructure.auth.org.repository.UserUnitRepository> userUnitRepositoryProvider) {
         return new TenantContextFilter(tenantRepository,
                 permissionVersionServiceProvider.getIfAvailable(),
-                platformTenantResolverProvider.getIfAvailable(),
                 authorizationAuditServiceProvider.getIfAvailable(),
                 tenantLifecycleReadPolicyProvider.getIfAvailable(),
                 organizationUnitRepositoryProvider.getIfAvailable(),
                 userUnitRepositoryProvider.getIfAvailable());
+    }
+
+    @Deprecated
+    public TenantContextFilter tenantContextFilter(TenantRepository tenantRepository,
+                                                   ObjectProvider<PermissionVersionService> permissionVersionServiceProvider,
+                                                   ObjectProvider<PlatformTenantResolver> ignoredPlatformTenantResolverProvider,
+                                                   ObjectProvider<com.tiny.platform.infrastructure.auth.audit.service.AuthorizationAuditService> authorizationAuditServiceProvider,
+                                                   ObjectProvider<TenantLifecycleReadPolicy> tenantLifecycleReadPolicyProvider,
+                                                   ObjectProvider<com.tiny.platform.infrastructure.auth.org.repository.OrganizationUnitRepository> organizationUnitRepositoryProvider,
+                                                   ObjectProvider<com.tiny.platform.infrastructure.auth.org.repository.UserUnitRepository> userUnitRepositoryProvider) {
+        return tenantContextFilter(
+            tenantRepository,
+            permissionVersionServiceProvider,
+            authorizationAuditServiceProvider,
+            tenantLifecycleReadPolicyProvider,
+            organizationUnitRepositoryProvider,
+            userUnitRepositoryProvider
+        );
     }
 
     @Bean

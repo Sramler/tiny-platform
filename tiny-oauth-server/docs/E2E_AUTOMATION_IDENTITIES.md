@@ -170,21 +170,21 @@ export E2E_BACKEND_PROFILE=e2e
 
 ### secrets 对应关系
 
-| GitHub secret | 说明 |
-| --- | --- |
-| `E2E_DB_PASSWORD` | MySQL root/test password |
-| `E2E_TENANT_CODE` | 主自动化租户编码 |
-| `E2E_USERNAME` / `E2E_PASSWORD` | 主自动化管理员账号 |
-| `E2E_TOTP_SECRET` | 主自动化管理员 TOTP secret |
-| `E2E_PLATFORM_USERNAME` / `E2E_PLATFORM_PASSWORD` | 平台自动化管理员账号 |
-| `E2E_PLATFORM_TOTP_SECRET` | 平台自动化管理员 TOTP secret |
-| `E2E_TENANT_CODE_B` | 第二自动化租户编码 |
-| `E2E_USERNAME_B` / `E2E_PASSWORD_B` | 第二自动化管理员账号 |
-| `E2E_TOTP_SECRET_B` | 第二自动化管理员 TOTP secret |
-| `E2E_USERNAME_READONLY` / `E2E_PASSWORD_READONLY` | readonly 自动化账号 |
-| `E2E_TOTP_SECRET_READONLY` | readonly 自动化账号 TOTP secret |
-| `E2E_TENANT_CODE_BIND` | 首绑用户所属租户，可选 |
-| `E2E_USERNAME_BIND` / `E2E_PASSWORD_BIND` | 未绑定 TOTP 的首绑专用用户 |
+| GitHub secret                                     | 说明                            |
+| ------------------------------------------------- | ------------------------------- |
+| `E2E_DB_PASSWORD`                                 | MySQL root/test password        |
+| `E2E_TENANT_CODE`                                 | 主自动化租户编码                |
+| `E2E_USERNAME` / `E2E_PASSWORD`                   | 主自动化管理员账号              |
+| `E2E_TOTP_SECRET`                                 | 主自动化管理员 TOTP secret      |
+| `E2E_PLATFORM_USERNAME` / `E2E_PLATFORM_PASSWORD` | 平台自动化管理员账号            |
+| `E2E_PLATFORM_TOTP_SECRET`                        | 平台自动化管理员 TOTP secret    |
+| `E2E_TENANT_CODE_B`                               | 第二自动化租户编码              |
+| `E2E_USERNAME_B` / `E2E_PASSWORD_B`               | 第二自动化管理员账号            |
+| `E2E_TOTP_SECRET_B`                               | 第二自动化管理员 TOTP secret    |
+| `E2E_USERNAME_READONLY` / `E2E_PASSWORD_READONLY` | readonly 自动化账号             |
+| `E2E_TOTP_SECRET_READONLY`                        | readonly 自动化账号 TOTP secret |
+| `E2E_TENANT_CODE_BIND`                            | 首绑用户所属租户，可选          |
+| `E2E_USERNAME_BIND` / `E2E_PASSWORD_BIND`         | 未绑定 TOTP 的首绑专用用户      |
 
 ### 手动触发
 
@@ -245,6 +245,49 @@ export E2E_BACKEND_PROFILE=e2e
 - `E2E_MYSQL_*`
 
 `src/main/webapp/.env.e2e.example` 同时提供了两组模板，目的是在不改动现有脚本的前提下保持自动化可用。后续如果统一变量命名，可以再收敛为一套前缀。
+
+## 本地派生资产治理
+
+real-link 测试在以下场景会产生“派生资产”：
+
+- 通过 `/sys/tenants` 动态创建租户时，租户名会写成 `E2E租户(<tenantCode>)`
+- 同时会生成初始管理员账号：`e2e_init_<tenantCode>`
+- 当前 keep-set 之外的 `e2e_*` 用户，还可能保留历史 membership / auth method
+
+这些资产与固定长期身份（如 `E2E_USERNAME`、`E2E_USERNAME_BIND`）不同，不应无限积累在本地共享库中。
+
+当前仓库内还存在一组“长期自动化身份兼容 allowlist”，用于避免审计脚本把已知长期身份误报为 stale `e2e_*`：
+
+- `e2e_admin_b`
+- `e2e_platform_admin`
+- `e2e_scheduling_readonly`
+
+如果本地/CI 还维护其它长期自动化身份，可以通过 `E2E_KEEP_USERS_EXTRA=user1,user2` 追加到审计 keep-set。
+
+推荐审计命令：
+
+```bash
+bash tiny-oauth-server/scripts/verify-real-e2e-derived-assets.sh
+```
+
+受控清理生成型派生资产：
+
+```bash
+bash tiny-oauth-server/scripts/verify-real-e2e-derived-assets.sh --apply
+```
+
+如需把该检查接入门禁，可使用：
+
+```bash
+bash tiny-oauth-server/scripts/verify-real-e2e-derived-assets.sh --fail-on-stale
+```
+
+说明：
+
+- 脚本会优先读取 shell 中已导出的 `E2E_*`，缺失时回退到 `src/main/webapp/.env.e2e.local`
+- 固定 real-link 身份属于长期资产，脚本不会把它们直接判定为“应删除”
+- `E2E租户(...)`、`e2e_init_*`、以及 keep 用户挂在生成型租户上的 stale membership，属于自动治理范围
+- `playwright.real.config.ts` 对应的 `globalSetup/globalTeardown` 会默认执行：跑前 `--apply --fail-on-stale`，跑后按本轮派生租户 code 再做一次定向清理；若需人工保留现场，可显式设置 `E2E_SKIP_REAL_DERIVED_ASSET_CLEANUP=true`
 
 ---
 

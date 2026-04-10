@@ -16,7 +16,6 @@ const apiMocks = vi.hoisted(() => ({
 
 const authMocks = vi.hoisted(() => ({
   authUser: { value: null as { access_token?: string | null } | null },
-  tenantCode: 'default',
 }))
 
 vi.mock('@/api/tenant', () => ({
@@ -46,19 +45,15 @@ vi.mock('@/auth/auth', () => ({
   }),
 }))
 
-vi.mock('@/utils/tenant', () => ({
-  getTenantCode: () => authMocks.tenantCode,
-}))
-
 vi.mock('@/api/resource', () => ({
   getRuntimeUiActions: apiMocks.getRuntimeUiActions,
 }))
 
 const PassThrough = defineComponent({ template: '<div><slot /></div>' })
 
-function createToken(authorities: string[]) {
+function createToken(authorities: string[], activeScopeType: 'PLATFORM' | 'TENANT' = 'PLATFORM') {
   const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')
-  const payload = Buffer.from(JSON.stringify({ authorities })).toString('base64url')
+  const payload = Buffer.from(JSON.stringify({ authorities, activeScopeType })).toString('base64url')
   return `${header}.${payload}.signature`
 }
 
@@ -77,9 +72,8 @@ describe('Tenant.vue', () => {
     apiMocks.tenantList.mockResolvedValue({ content: [], totalElements: 0 })
     apiMocks.getRuntimeUiActions.mockResolvedValue([])
     authMocks.authUser.value = {
-      access_token: createToken(['system:tenant:list', 'system:tenant:view']),
+      access_token: createToken(['system:tenant:list', 'system:tenant:view'], 'PLATFORM'),
     }
-    authMocks.tenantCode = 'default'
     window.history.replaceState({}, '', '/system/tenant')
   })
 
@@ -117,9 +111,8 @@ describe('Tenant.vue', () => {
 
   it('should not request tenant list for non-platform tenant users', async () => {
     authMocks.authUser.value = {
-      access_token: createToken(['system:tenant:list']),
+      access_token: createToken(['system:tenant:list'], 'TENANT'),
     }
-    authMocks.tenantCode = 'tenant-a'
 
     const wrapper = mount(Tenant, {
       global: {
@@ -165,9 +158,8 @@ describe('Tenant.vue', () => {
         'system:tenant:freeze',
         'system:tenant:unfreeze',
         'system:tenant:decommission',
-      ]),
+      ], 'PLATFORM'),
     }
-    authMocks.tenantCode = 'default'
 
     const wrapper = mount(Tenant, {
       global: {

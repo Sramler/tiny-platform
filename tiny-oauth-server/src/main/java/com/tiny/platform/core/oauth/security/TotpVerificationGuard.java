@@ -2,9 +2,10 @@ package com.tiny.platform.core.oauth.security;
 
 import com.tiny.platform.core.oauth.config.MfaProperties;
 import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationMethod;
-import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
+import com.tiny.platform.infrastructure.auth.user.service.UserAuthenticationBridgeWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.stereotype.Component;
 
@@ -22,14 +23,15 @@ public class TotpVerificationGuard {
     public static final String LAST_FAILED_AT_KEY = "totpLastFailedAt";
     public static final String LOCKED_UNTIL_KEY = "totpLockedUntil";
 
-    private final UserAuthenticationMethodRepository authenticationMethodRepository;
+    private final UserAuthenticationBridgeWriter authenticationBridgeWriter;
     private final MfaProperties mfaProperties;
     private final TotpService totpService;
 
-    public TotpVerificationGuard(UserAuthenticationMethodRepository authenticationMethodRepository,
+    @Autowired
+    public TotpVerificationGuard(UserAuthenticationBridgeWriter authenticationBridgeWriter,
                                  MfaProperties mfaProperties,
                                  TotpService totpService) {
-        this.authenticationMethodRepository = authenticationMethodRepository;
+        this.authenticationBridgeWriter = authenticationBridgeWriter;
         this.mfaProperties = mfaProperties;
         this.totpService = totpService;
     }
@@ -119,12 +121,11 @@ public class TotpVerificationGuard {
     }
 
     private void save(UserAuthenticationMethod method) {
-        // tenant_id 可为 NULL：表示用户级全局认证方式，仍需持久化 TOTP 锁定/失败计数等状态
         if (method.getUserId() == null
                 || method.getAuthenticationProvider() == null || method.getAuthenticationType() == null) {
             return;
         }
-        authenticationMethodRepository.save(method);
+        authenticationBridgeWriter.upsertRuntime(method);
     }
 
     private LocalDateTime parseDateTime(Object rawValue) {

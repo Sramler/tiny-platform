@@ -6,6 +6,7 @@ import com.tiny.platform.core.oauth.multitenancy.IssuerDelegatingOAuth2Authoriza
 import com.tiny.platform.core.oauth.multitenancy.IssuerDelegatingOAuth2AuthorizationService;
 import com.tiny.platform.core.oauth.multitenancy.IssuerDelegatingRegisteredClientRepository;
 import com.tiny.platform.core.oauth.multitenancy.TenantPerIssuerComponentRegistry;
+import com.tiny.platform.core.oauth.tenant.IssuerTenantSupport;
 import com.tiny.platform.infrastructure.tenant.domain.Tenant;
 import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -214,7 +215,12 @@ public class OAuth2DataConfig {
             @Qualifier("defaultOAuth2AuthorizationService") OAuth2AuthorizationService oauth2AuthorizationService,
             @Qualifier("defaultOAuth2AuthorizationConsentService") OAuth2AuthorizationConsentService oauth2AuthorizationConsentService
     ) {
-        return args -> tenantRepository.findAll().stream()
+        return args -> {
+            registry.registerIssuerKey(IssuerTenantSupport.PLATFORM_ISSUER_KEY, RegisteredClientRepository.class, registeredClientRepository);
+            registry.registerIssuerKey(IssuerTenantSupport.PLATFORM_ISSUER_KEY, OAuth2AuthorizationService.class, oauth2AuthorizationService);
+            registry.registerIssuerKey(IssuerTenantSupport.PLATFORM_ISSUER_KEY, OAuth2AuthorizationConsentService.class, oauth2AuthorizationConsentService);
+
+            tenantRepository.findAll().stream()
                 .filter(this::isTenantActive)
                 .forEach(tenant -> {
                     String tenantCode = tenant.getCode() == null
@@ -227,6 +233,7 @@ public class OAuth2DataConfig {
                     registry.register(tenantCode, OAuth2AuthorizationService.class, oauth2AuthorizationService);
                     registry.register(tenantCode, OAuth2AuthorizationConsentService.class, oauth2AuthorizationConsentService);
                 });
+        };
     }
 
     private boolean isTenantActive(Tenant tenant) {

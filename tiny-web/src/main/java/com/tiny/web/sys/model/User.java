@@ -24,8 +24,8 @@ public class User implements UserDetails {
 
     /**
      * 密码字段（已废弃，保留用于兼容）
-     * 实际密码存储在 user_authentication_method 表中
-     * @deprecated 使用 user_authentication_method 表存储密码
+     * 实际密码存储在 user_auth_credential + user_auth_scope_policy 中
+     * @deprecated 使用认证凭证新模型存储密码
      */
     @Deprecated
     @Column(nullable = true)
@@ -63,6 +63,13 @@ public class User implements UserDetails {
 //                .flatMap(role -> role.getResources().stream())
 //                .map(resource -> new SimpleGrantedAuthority(resource.getName()))
 //                .collect(Collectors.toSet());
+    }
+
+    public Set<String> getRoleCodes() {
+        return roles.stream()
+                .map(Role::getName)
+                .filter(name -> name != null && !name.isBlank())
+                .collect(Collectors.toSet());
     }
 
     @Override

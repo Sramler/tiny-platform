@@ -2,7 +2,7 @@ package com.tiny.platform.core.oauth.security;
 
 import com.tiny.platform.core.oauth.config.MfaProperties;
 import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationMethod;
-import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
+import com.tiny.platform.infrastructure.auth.user.service.UserAuthenticationBridgeWriter;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.BadCredentialsException;
 
@@ -19,11 +19,11 @@ class TotpVerificationGuardTest {
 
     @Test
     void should_increment_failed_attempts_and_lock_after_threshold() {
-        UserAuthenticationMethodRepository repository = mock(UserAuthenticationMethodRepository.class);
+        UserAuthenticationBridgeWriter bridgeWriter = mock(UserAuthenticationBridgeWriter.class);
         TotpService totpService = mock(TotpService.class);
         when(totpService.verify("BASE32SECRET", "000000")).thenReturn(false);
 
-        TotpVerificationGuard guard = new TotpVerificationGuard(repository, mfaProperties(), totpService);
+        TotpVerificationGuard guard = new TotpVerificationGuard(bridgeWriter, mfaProperties(), totpService);
         UserAuthenticationMethod method = totpMethod();
 
         for (int i = 0; i < 4; i++) {
@@ -39,14 +39,14 @@ class TotpVerificationGuardTest {
         assertThat(method.getAuthenticationConfiguration())
                 .containsKey(TotpVerificationGuard.LOCKED_UNTIL_KEY)
                 .containsEntry(TotpVerificationGuard.FAILED_ATTEMPTS_KEY, 5);
-        verify(repository, times(5)).save(same(method));
+        verify(bridgeWriter, times(5)).upsertRuntime(same(method));
     }
 
     @Test
     void should_reject_when_totp_is_already_locked_without_verifying_code() {
-        UserAuthenticationMethodRepository repository = mock(UserAuthenticationMethodRepository.class);
+        UserAuthenticationBridgeWriter bridgeWriter = mock(UserAuthenticationBridgeWriter.class);
         TotpService totpService = mock(TotpService.class);
-        TotpVerificationGuard guard = new TotpVerificationGuard(repository, mfaProperties(), totpService);
+        TotpVerificationGuard guard = new TotpVerificationGuard(bridgeWriter, mfaProperties(), totpService);
         UserAuthenticationMethod method = totpMethod();
         method.setAuthenticationConfiguration(new HashMap<>(Map.of(
                 "secret", "BASE32SECRET",
@@ -58,16 +58,16 @@ class TotpVerificationGuardTest {
                 .hasMessageContaining("TOTP 验证尝试过多");
 
         verify(totpService, never()).verify(anyString(), anyString());
-        verify(repository, never()).save(any());
+        verify(bridgeWriter, never()).upsertRuntime(any());
     }
 
     @Test
     void should_clear_failure_state_after_success() {
-        UserAuthenticationMethodRepository repository = mock(UserAuthenticationMethodRepository.class);
+        UserAuthenticationBridgeWriter bridgeWriter = mock(UserAuthenticationBridgeWriter.class);
         TotpService totpService = mock(TotpService.class);
         when(totpService.verify("BASE32SECRET", "123456")).thenReturn(true);
 
-        TotpVerificationGuard guard = new TotpVerificationGuard(repository, mfaProperties(), totpService);
+        TotpVerificationGuard guard = new TotpVerificationGuard(bridgeWriter, mfaProperties(), totpService);
         UserAuthenticationMethod method = totpMethod();
         method.setAuthenticationConfiguration(new HashMap<>(Map.of(
                 "secret", "BASE32SECRET",
@@ -83,7 +83,7 @@ class TotpVerificationGuardTest {
                         TotpVerificationGuard.LAST_FAILED_AT_KEY,
                         TotpVerificationGuard.LOCKED_UNTIL_KEY
                 );
-        verify(repository, never()).save(any());
+        verify(bridgeWriter, never()).upsertRuntime(any());
     }
 
     private static MfaProperties mfaProperties() {

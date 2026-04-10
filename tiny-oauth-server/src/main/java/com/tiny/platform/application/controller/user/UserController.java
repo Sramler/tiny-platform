@@ -9,9 +9,12 @@ import com.tiny.platform.infrastructure.core.dto.PageResponse;
 import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationAuditRepository;
 import com.tiny.platform.infrastructure.auth.user.service.AvatarService;
 import com.tiny.platform.infrastructure.idempotent.sdk.annotation.Idempotent;
+import com.tiny.platform.core.oauth.tenant.ActiveScope;
 import com.tiny.platform.core.oauth.tenant.ActiveTenantResponseSupport;
+import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.core.oauth.tenant.TenantContextContract;
 import com.tiny.platform.core.oauth.model.SecurityUser;
+import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
 import com.tiny.platform.core.oauth.security.CurrentActorResolver;
 import com.tiny.platform.core.oauth.security.PermissionVersionService;
 import com.tiny.platform.infrastructure.auth.org.repository.OrganizationUnitRepository;
@@ -52,6 +55,7 @@ public class UserController {
     private final OrganizationUnitRepository organizationUnitRepository;
     private final UserUnitRepository userUnitRepository;
     private final UserDetailsService userDetailsService;
+    private final AuthUserResolutionService authUserResolutionService;
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private PermissionVersionService permissionVersionService;
@@ -62,7 +66,16 @@ public class UserController {
     public UserController(UserService userService,
                          UserAuthenticationAuditRepository auditRepository,
                          AvatarService avatarService) {
-        this(userService, auditRepository, avatarService, null, null, null);
+        this(userService, auditRepository, avatarService, null, null, null, null);
+    }
+
+    public UserController(UserService userService,
+                         UserAuthenticationAuditRepository auditRepository,
+                         AvatarService avatarService,
+                         OrganizationUnitRepository organizationUnitRepository,
+                         UserUnitRepository userUnitRepository,
+                         UserDetailsService userDetailsService) {
+        this(userService, auditRepository, avatarService, organizationUnitRepository, userUnitRepository, userDetailsService, null);
     }
 
     /**
@@ -74,13 +87,15 @@ public class UserController {
                           AvatarService avatarService,
                           OrganizationUnitRepository organizationUnitRepository,
                           UserUnitRepository userUnitRepository,
-                          UserDetailsService userDetailsService) {
+                          UserDetailsService userDetailsService,
+                          AuthUserResolutionService authUserResolutionService) {
         this.userService = userService;
         this.auditRepository = auditRepository;
         this.avatarService = avatarService;
         this.organizationUnitRepository = organizationUnitRepository;
         this.userUnitRepository = userUnitRepository;
         this.userDetailsService = userDetailsService;
+        this.authUserResolutionService = authUserResolutionService;
     }
 
     @GetMapping
@@ -122,11 +137,11 @@ public class UserController {
                     userInfo.put("id", user.getId().toString());
                     userInfo.put("username", user.getUsername());
                     Long activeTenantIdForPv = ActiveTenantResponseSupport.resolveActiveTenantId(authentication);
-                    ActiveTenantResponseSupport.putTenantFields(userInfo, activeTenantIdForPv);
-                    String activeScopeType = ActiveTenantResponseSupport.resolveActiveScopeTypeFromRequestContext();
-                    Long activeScopeId = ActiveTenantResponseSupport.resolveActiveScopeIdFromRequestContext();
-                    userInfo.put("activeScopeType", activeScopeType);
-                    userInfo.put("activeScopeId", activeScopeId);
+                    ActiveScope activeScope = ActiveTenantResponseSupport.resolveActiveScopeFromRequestContext();
+                    ActiveTenantResponseSupport.putTenantFields(userInfo, activeTenantIdForPv, activeScope);
+                    ActiveTenantResponseSupport.putScopeFields(userInfo, activeScope);
+                    String activeScopeType = activeScope != null ? activeScope.scopeType() : null;
+                    Long activeScopeId = activeScope != null ? activeScope.scopeId() : null;
                     userInfo.put(
                         "permissionsVersion",
                         CurrentActorResolver.resolvePermissionsVersionForResponse(
@@ -180,10 +195,6 @@ public class UserController {
         }
         boolean bearerWrite = hasBearerAuthorization(request)
             || CurrentActorResolver.isJwtAuthenticationPrincipal(authentication);
-        Long activeTenantId = CurrentActorResolver.resolveActiveTenantId(authentication);
-        if (activeTenantId == null || activeTenantId <= 0) {
-            return ResponseEntity.status(400).body(Map.of("success", false, "error", "缺少 activeTenantId"));
-        }
         var boundUserOpt = userService.findByUsername(authentication.getName());
         if (boundUserOpt.isEmpty()) {
             return ResponseEntity.status(404).body(Map.of("success", false, "error", "用户不存在"));
@@ -215,28 +226,68 @@ public class UserController {
         String requestedScopeType = body != null ? body.scopeType() : null;
         Long requestedScopeId = body != null ? body.scopeId() : null;
         String scopeType = requestedScopeType == null ? null : requestedScopeType.trim().toUpperCase(java.util.Locale.ROOT);
-        if (!TenantContextContract.SCOPE_TYPE_TENANT.equals(scopeType)
+        if (!TenantContextContract.SCOPE_TYPE_PLATFORM.equals(scopeType)
+            && !TenantContextContract.SCOPE_TYPE_TENANT.equals(scopeType)
             && !TenantContextContract.SCOPE_TYPE_ORG.equals(scopeType)
             && !TenantContextContract.SCOPE_TYPE_DEPT.equals(scopeType)) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "error", "非法 scopeType"));
         }
 
+        Long currentActiveTenantId = CurrentActorResolver.resolveActiveTenantId(authentication);
         Long userId = boundUser.getId();
 
-        Long scopeIdToSet = activeTenantId;
-        if (TenantContextContract.SCOPE_TYPE_TENANT.equals(scopeType)) {
-            scopeIdToSet = activeTenantId;
+        Long tenantIdToSet = currentActiveTenantId;
+        Long scopeIdToSet = currentActiveTenantId;
+        if (TenantContextContract.SCOPE_TYPE_PLATFORM.equals(scopeType)) {
+            if (authUserResolutionService == null) {
+                return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of(
+                    "success", false,
+                    "error", "platform_scope_switch_unavailable",
+                    "error_description", "PLATFORM active scope validation is not available in this deployment"));
+            }
+            var platformUser = authUserResolutionService.resolveUserRecordInPlatform(authentication.getName());
+            if (platformUser.isEmpty() || !Objects.equals(platformUser.get().getId(), boundUser.getId())) {
+                return ResponseEntity.status(403).body(Map.of("success", false, "error", "当前用户不具备 PLATFORM 作用域赋权"));
+            }
+            tenantIdToSet = null;
+            scopeIdToSet = null;
+        } else if (TenantContextContract.SCOPE_TYPE_TENANT.equals(scopeType)) {
+            Long requestedTenantId = requestedScopeId != null && requestedScopeId > 0 ? requestedScopeId : currentActiveTenantId;
+            if (requestedTenantId == null || requestedTenantId <= 0) {
+                return ResponseEntity.status(400).body(Map.of("success", false, "error", "缺少 activeTenantId 或 TENANT scopeId"));
+            }
+            boolean requiresTenantReResolution = currentActiveTenantId == null
+                || currentActiveTenantId <= 0
+                || !Objects.equals(currentActiveTenantId, requestedTenantId);
+            if (requiresTenantReResolution) {
+                if (authUserResolutionService == null) {
+                    return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of(
+                        "success", false,
+                        "error", "tenant_scope_switch_unavailable",
+                        "error_description", "TENANT active scope validation is not available in this deployment"));
+                }
+                var tenantUser = authUserResolutionService.resolveUserRecordInActiveTenant(authentication.getName(), requestedTenantId);
+                if (tenantUser.isEmpty() || !Objects.equals(tenantUser.get().getId(), boundUser.getId())) {
+                    return ResponseEntity.status(403).body(Map.of("success", false, "error", "当前用户不属于目标 tenant"));
+                }
+            }
+            tenantIdToSet = requestedTenantId;
+            scopeIdToSet = tenantIdToSet;
         } else {
+            if (currentActiveTenantId == null || currentActiveTenantId <= 0) {
+                return ResponseEntity.status(400).body(Map.of("success", false, "error", "缺少 activeTenantId"));
+            }
+            tenantIdToSet = currentActiveTenantId;
             if (requestedScopeId == null || requestedScopeId <= 0) {
                 return ResponseEntity.badRequest().body(Map.of("success", false, "error", "缺少 scopeId"));
             }
             if (organizationUnitRepository == null || userUnitRepository == null) {
                 return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of(
                     "success", false,
-                    "error", "active_scope_deps_unavailable",
-                    "error_description", "ORG/DEPT active scope validation is not available in this deployment"));
+                        "error", "active_scope_deps_unavailable",
+                        "error_description", "ORG/DEPT active scope validation is not available in this deployment"));
             }
-            var unit = organizationUnitRepository.findByIdAndTenantId(requestedScopeId, activeTenantId).orElse(null);
+            var unit = organizationUnitRepository.findByIdAndTenantId(requestedScopeId, tenantIdToSet).orElse(null);
             if (unit == null) {
                 return ResponseEntity.status(403).body(Map.of("success", false, "error", "scopeId 不属于当前 tenant"));
             }
@@ -248,8 +299,8 @@ public class UserController {
                 return ResponseEntity.status(403).body(Map.of("success", false, "error", "scopeType 与 scopeId 不匹配"));
             }
             boolean allowed = TenantContextContract.SCOPE_TYPE_DEPT.equals(scopeType)
-                ? userUnitRepository.existsByTenantIdAndUserIdAndUnitId(activeTenantId, userId, requestedScopeId)
-                : isUserInOrg(activeTenantId, userId, requestedScopeId);
+                ? userUnitRepository.existsByTenantIdAndUserIdAndUnitId(tenantIdToSet, userId, requestedScopeId)
+                : isUserInOrg(tenantIdToSet, userId, requestedScopeId);
             if (!allowed) {
                 return ResponseEntity.status(403).body(Map.of("success", false, "error", "当前用户不属于目标 ORG/DEPT"));
             }
@@ -257,8 +308,21 @@ public class UserController {
         }
 
         var session = request.getSession(true);
+        if (TenantContextContract.SCOPE_TYPE_PLATFORM.equals(scopeType)) {
+            session.removeAttribute(TenantContextContract.SESSION_ACTIVE_TENANT_ID_KEY);
+        } else {
+            session.setAttribute(TenantContextContract.SESSION_ACTIVE_TENANT_ID_KEY, tenantIdToSet);
+        }
         session.setAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_TYPE_KEY, scopeType);
-        session.setAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_ID_KEY, scopeIdToSet);
+        if (scopeIdToSet != null && scopeIdToSet > 0) {
+            session.setAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_ID_KEY, scopeIdToSet);
+        } else {
+            session.removeAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_ID_KEY);
+        }
+        TenantContext.setTenantSource(TenantContext.SOURCE_SESSION);
+        TenantContext.setActiveTenantId(TenantContextContract.SCOPE_TYPE_PLATFORM.equals(scopeType) ? null : tenantIdToSet);
+        TenantContext.setActiveScopeType(scopeType);
+        TenantContext.setActiveScopeId(scopeIdToSet);
 
         if (userDetailsService != null) {
             var updated = userDetailsService.loadUserByUsername(authentication.getName());
@@ -273,12 +337,12 @@ public class UserController {
 
         Map<String, Object> okBody = new HashMap<>();
         okBody.put("success", true);
-        okBody.put("activeTenantId", activeTenantId);
         okBody.put("activeScopeType", scopeType);
         okBody.put("activeScopeId", scopeIdToSet);
         okBody.put("newActiveScopeType", scopeType);
         okBody.put("newActiveScopeId", scopeIdToSet);
         okBody.put("tokenRefreshRequired", bearerWrite);
+        ActiveTenantResponseSupport.putTenantFields(okBody, tenantIdToSet, ActiveScope.of(scopeType, scopeIdToSet));
         if (bearerWrite) {
             okBody.put(
                 "tokenRefreshReason",

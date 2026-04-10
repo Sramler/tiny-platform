@@ -224,7 +224,9 @@ test.describe('idempotent ops access', () => {
     expect(metricsRequestCounter.count).toBe(0)
   })
 
-  test('platform metrics operator can switch governance metrics to a tenant scope', async ({ page }) => {
+  test('platform metrics operator can switch governance metrics to a tenant scope', async ({
+    page,
+  }) => {
     const metricsRequestUrls: string[] = []
     await seedAuthenticatedSession(page, ['ROLE_ADMIN', 'idempotent:ops:view'])
     await mockAuthenticatedApis(page, undefined, metricsRequestUrls)
@@ -236,12 +238,14 @@ test.describe('idempotent ops access', () => {
     await page.getByText('演示租户 (demo)', { exact: true }).click()
 
     await expect(page).toHaveURL(/activeTenantId=7/)
-    await expect.poll(() =>
-      metricsRequestUrls.filter((url) => url.includes('activeTenantId=7')).length,
-    ).toBeGreaterThanOrEqual(3)
+    await expect
+      .poll(() => metricsRequestUrls.filter((url) => url.includes('activeTenantId=7')).length)
+      .toBeGreaterThanOrEqual(3)
   })
 
-  test('platform metrics operator can open governance page from a tenant-scoped URL', async ({ page }) => {
+  test('platform metrics operator can open governance page from a tenant-scoped URL', async ({
+    page,
+  }) => {
     const metricsRequestUrls: string[] = []
     await seedAuthenticatedSession(page, ['ROLE_ADMIN', 'idempotent:ops:view'])
     await mockAuthenticatedApis(page, undefined, metricsRequestUrls)
@@ -251,8 +255,8 @@ test.describe('idempotent ops access', () => {
     await expect(page).toHaveURL(/activeTenantId=7/)
     await expect(page.locator('.ops-filter-copy strong')).toHaveText('演示租户 (demo)')
 
-    await expect.poll(() =>
-      metricsRequestUrls.filter((url) => url.includes('activeTenantId=7')).length,
-    ).toBeGreaterThanOrEqual(3)
+    await expect
+      .poll(() => metricsRequestUrls.filter((url) => url.includes('activeTenantId=7')).length)
+      .toBeGreaterThanOrEqual(3)
   })
 })

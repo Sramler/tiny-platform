@@ -43,6 +43,9 @@ public class SecurityUser implements UserDetails {
     // 权限列表（通常来源于角色）
     private final Collection<? extends GrantedAuthority> authorities;
 
+    // 显式角色编码列表，仅供少量合法角色码消费者使用（不替代 permission-style authorities）。
+    private final Set<String> roleCodes;
+
     // 当前权限版本指纹，用于识别会话/Token 权限是否漂移
     private final String permissionsVersion;
 
@@ -84,7 +87,7 @@ public class SecurityUser implements UserDetails {
     }
 
     public SecurityUser(User user, String password, Long activeTenantId, Set<Role> roles, String permissionsVersion) {
-        this(user, password, activeTenantId, buildAuthorities(roles), permissionsVersion);
+        this(user, password, activeTenantId, buildAuthorities(roles), buildRoleCodes(roles), permissionsVersion);
     }
 
     public SecurityUser(User user,
@@ -92,11 +95,21 @@ public class SecurityUser implements UserDetails {
                         Long activeTenantId,
                         Collection<? extends GrantedAuthority> authorities,
                         String permissionsVersion) {
+        this(user, password, activeTenantId, authorities, extractRoleCodesFromAuthorities(authorities), permissionsVersion);
+    }
+
+    public SecurityUser(User user,
+                        String password,
+                        Long activeTenantId,
+                        Collection<? extends GrantedAuthority> authorities,
+                        Set<String> roleCodes,
+                        String permissionsVersion) {
         this.userId = user.getId();
         this.activeTenantId = activeTenantId;
         this.username = user.getUsername();
         this.password = password != null ? password : "";
         this.authorities = authorities != null ? authorities : java.util.List.of();
+        this.roleCodes = roleCodes != null ? Set.copyOf(roleCodes) : Set.of();
         this.permissionsVersion = permissionsVersion;
         this.accountNonExpired = user.isAccountNonExpired();
         this.accountNonLocked = user.isAccountNonLocked();
@@ -130,6 +143,59 @@ public class SecurityUser implements UserDetails {
                 username,
                 password,
                 authorities,
+                extractRoleCodesFromAuthorities(authorities),
+                accountNonExpired,
+                accountNonLocked,
+                credentialsNonExpired,
+                enabled,
+                null
+        );
+    }
+
+    public SecurityUser(
+            Long userId,
+            Long activeTenantId,
+            String username,
+            String password,
+            Collection<? extends GrantedAuthority> authorities,
+            boolean accountNonExpired,
+            boolean accountNonLocked,
+            boolean credentialsNonExpired,
+            boolean enabled,
+            String permissionsVersion) {
+        this(
+                userId,
+                activeTenantId,
+                username,
+                password,
+                authorities,
+                extractRoleCodesFromAuthorities(authorities),
+                accountNonExpired,
+                accountNonLocked,
+                credentialsNonExpired,
+                enabled,
+                permissionsVersion
+        );
+    }
+
+    public SecurityUser(
+            Long userId,
+            Long activeTenantId,
+            String username,
+            String password,
+            Collection<? extends GrantedAuthority> authorities,
+            Set<String> roleCodes,
+            boolean accountNonExpired,
+            boolean accountNonLocked,
+            boolean credentialsNonExpired,
+            boolean enabled) {
+        this(
+                userId,
+                activeTenantId,
+                username,
+                password,
+                authorities,
+                roleCodes,
                 accountNonExpired,
                 accountNonLocked,
                 credentialsNonExpired,
@@ -145,6 +211,7 @@ public class SecurityUser implements UserDetails {
             @JsonProperty("username") String username,
             @JsonProperty("password") String password,
             @JsonProperty("authorities") Collection<? extends GrantedAuthority> authorities,
+            @JsonProperty("roleCodes") Set<String> roleCodes,
             @JsonProperty("accountNonExpired") boolean accountNonExpired,
             @JsonProperty("accountNonLocked") boolean accountNonLocked,
             @JsonProperty("credentialsNonExpired") boolean credentialsNonExpired,
@@ -154,7 +221,8 @@ public class SecurityUser implements UserDetails {
         this.activeTenantId = activeTenantId;
         this.username = username;
         this.password = password;
-        this.authorities = authorities;
+        this.authorities = authorities != null ? authorities : java.util.List.of();
+        this.roleCodes = roleCodes != null ? Set.copyOf(roleCodes) : Set.of();
         this.permissionsVersion = permissionsVersion;
         this.accountNonExpired = accountNonExpired;
         this.accountNonLocked = accountNonLocked;
@@ -177,6 +245,15 @@ public class SecurityUser implements UserDetails {
         return buildAuthorities(roles);
     }
 
+    private static Set<String> buildRoleCodes(Set<Role> roles) {
+        Set<Role> effectiveRoles = roles != null ? roles : Set.of();
+        LinkedHashSet<String> values = new LinkedHashSet<>();
+        for (Role role : effectiveRoles) {
+            addAuthorityValue(values, role.getCode());
+        }
+        return Set.copyOf(values);
+    }
+
     private static Stream<org.springframework.security.core.authority.SimpleGrantedAuthority> authorityStream(String... candidates) {
         Set<String> normalizedValues = new LinkedHashSet<>();
         for (String value : candidates) {
@@ -196,6 +273,23 @@ public class SecurityUser implements UserDetails {
         }
     }
 
+    private static Set<String> extractRoleCodesFromAuthorities(Collection<? extends GrantedAuthority> authorities) {
+        if (authorities == null) {
+            return Set.of();
+        }
+        LinkedHashSet<String> values = new LinkedHashSet<>();
+        for (GrantedAuthority authority : authorities) {
+            if (authority == null || authority.getAuthority() == null) {
+                continue;
+            }
+            String code = authority.getAuthority().trim();
+            if (code.startsWith("ROLE_")) {
+                values.add(code);
+            }
+        }
+        return Set.copyOf(values);
+    }
+
     /**
      * 获取当前用户的权限集合（角色转换而来）
      * 此方法是认证和授权的关键点
@@ -203,6 +297,11 @@ public class SecurityUser implements UserDetails {
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return this.authorities; // 此处原来写成 List.of() 是错误的，需返回真实权限
+    }
+
+    @JsonProperty("roleCodes")
+    public Set<String> getRoleCodes() {
+        return roleCodes;
     }
 
     /**

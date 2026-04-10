@@ -1,91 +1,53 @@
 package com.tiny.platform.infrastructure.auth.user.domain;
 
-import jakarta.persistence.*;
 import java.io.Serializable;
 import java.time.LocalDateTime;
 import java.util.Map;
 
 /**
- * 用户认证方法实体
- * 支持多种认证方式：LOCAL + PASSWORD, LOCAL + TOTP, GITHUB, GOOGLE 等
+ * 认证方式运行时载体（内存投影 / 写回桥接），不再映射数据库表 {@code user_authentication_method}。
+ *
+ * <p>材料与策略的真源为 {@code user_auth_credential} 与 {@code user_auth_scope_policy}。</p>
  */
-@Entity
-@Table(name = "user_authentication_method")
 public class UserAuthenticationMethod implements Serializable {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "user_id", nullable = false)
     private Long userId;
 
     /**
-     * 租户作用域；{@code null} 表示用户级全局认证方式（与任意租户登录上下文均可匹配，见 {@code MultiAuthenticationProvider} 回退逻辑）。
+     * 租户作用域载体；{@code null} 表示全局/平台侧 carrier（与 {@link #runtimeScopeType} 配合解释）。
      */
-    @Column(name = "tenant_id", nullable = true)
     private Long tenantId;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", insertable = false, updatable = false)
-    private User user;
-
-    /**
-     * 认证提供者：LOCAL, GITHUB, GOOGLE, LDAP 等
-     */
-    @Column(name = "authentication_provider", length = 50, nullable = false)
     private String authenticationProvider;
 
-    /**
-     * 认证类型：PASSWORD, TOTP, OAUTH2 等
-     */
-    @Column(name = "authentication_type", length = 50, nullable = false)
     private String authenticationType;
 
-    /**
-     * 认证配置 JSON 数据
-     * 例如：
-     * - PASSWORD: {"password": "{bcrypt}$2a$10$..."}
-     * - TOTP: {"secret": "...", "issuer": "..."}
-     */
-    @Column(name = "authentication_configuration", columnDefinition = "JSON", nullable = false)
-    @Convert(converter = com.tiny.platform.infrastructure.core.converter.JsonStringConverter.class)
     private Map<String, Object> authenticationConfiguration;
 
-    /**
-     * 是否为主要认证方法
-     */
-    @Column(name = "is_primary_method")
     private Boolean isPrimaryMethod = false;
 
-    /**
-     * 认证方法是否启用
-     */
-    @Column(name = "is_method_enabled")
     private Boolean isMethodEnabled = true;
 
-    /**
-     * 认证优先级，数字越小优先级越高
-     */
-    @Column(name = "authentication_priority")
     private Integer authenticationPriority = 0;
 
-    @Column(name = "last_verified_at")
     private LocalDateTime lastVerifiedAt;
 
-    @Column(name = "last_verified_ip", length = 50)
     private String lastVerifiedIp;
 
-    @Column(name = "created_at")
     private LocalDateTime createdAt;
 
-    @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
-    @Column(name = "expires_at")
     private LocalDateTime expiresAt;
 
-    // Getters and Setters
+    /**
+     * 运行时作用域元数据：用于桥接写回新模型，不对应旧表列。
+     */
+    private String runtimeScopeType;
+
+    private String runtimeScopeKey;
 
     public Long getId() {
         return id;
@@ -109,14 +71,6 @@ public class UserAuthenticationMethod implements Serializable {
 
     public void setTenantId(Long tenantId) {
         this.tenantId = tenantId;
-    }
-
-    public User getUser() {
-        return user;
-    }
-
-    public void setUser(User user) {
-        this.user = user;
     }
 
     public String getAuthenticationProvider() {
@@ -207,14 +161,19 @@ public class UserAuthenticationMethod implements Serializable {
         this.expiresAt = expiresAt;
     }
 
-    @PrePersist
-    protected void onCreate() {
-        createdAt = LocalDateTime.now();
-        updatedAt = LocalDateTime.now();
+    public String getRuntimeScopeType() {
+        return runtimeScopeType;
     }
 
-    @PreUpdate
-    protected void onUpdate() {
-        updatedAt = LocalDateTime.now();
+    public void setRuntimeScopeType(String runtimeScopeType) {
+        this.runtimeScopeType = runtimeScopeType;
+    }
+
+    public String getRuntimeScopeKey() {
+        return runtimeScopeKey;
+    }
+
+    public void setRuntimeScopeKey(String runtimeScopeKey) {
+        this.runtimeScopeKey = runtimeScopeKey;
     }
 }

@@ -27,7 +27,7 @@ const totpSecret = requireEnv('E2E_TOTP_SECRET')
 
 if (tenantCode.trim().toLowerCase() === 'default') {
   throw new Error(
-    'E2E_TENANT_CODE 不允许使用 default：当前环境 default 租户可能处于 FROZEN 状态，会导致 /login 被拒绝。请使用专用未冻结测试租户编码。'
+    'E2E_TENANT_CODE 不允许使用 default：当前环境 default 租户可能处于 FROZEN 状态，会导致 /login 被拒绝。请使用专用未冻结测试租户编码。',
   )
 }
 const landingPath = '/OIDCDebug'
@@ -92,7 +92,7 @@ setup('authenticate real scheduling e2e user', async ({ page }) => {
       window.localStorage.removeItem('app_active_tenant_id')
       window.localStorage.setItem('sider-collapsed', 'false')
     },
-    { seedTenantCode: tenantCode }
+    { seedTenantCode: tenantCode },
   )
 
   await page.goto(`/login?redirect=${encodeURIComponent(landingPath)}`)

@@ -96,6 +96,56 @@
   - 若脚本自动拉起前端，仅清理自己拉起的进程，不干扰用户手工启动的现有服务
   - `verify-platform-dev-bootstrap.sh` 不再视为 tiny-platform 本地 AI 验证默认入口；它是“后端/数据库专用降级入口”
 
+### 1.6 从 GitHub Actions 修复记录沉淀的约束（2026-04-09）
+
+以下约束来自近期 CI / real-link 修复，不再依赖口头经验：
+
+- **Fresh DB / Liquibase**
+  - `sqlFile` 路径必须使用 changelog-relative 口径，并在 fresh DB 路径验证；不能依赖本地工作目录或已初始化数据库“碰巧可用”。
+  - 任何 startup workflow 若依赖 fresh baseline，必须先把迁移、schema health、依赖预热拆成显式步骤，再启动后端。
+
+- **Workflow env / secret**
+  - 多身份 real-link workflow（platform / tenant / readonly / bind / cross-tenant）必须在 job 内显式归一化环境变量，不能只依赖 `env:` 表达式在不同 trigger 下自动回退。
+  - secret preflight 必须只校验该 workflow 真实会用到的 secret；校验过多会产生假红，校验过少会让失败延后到浏览器层。
+
+- **real-link auth-state**
+  - auth-state 生成器必须显式区分 platform login 与 tenant login，并用单测锁住 tenant code、TOTP secret/code、输出路径不串用。
+  - 当 primary tenant 与 platform tenant 同值时，必须显式派生租户态 code，不能让 tenant real-link 误落入 platform scope。
+
+- **E2E 断言稳定性**
+  - 对 active-scope refresh、OIDC silent renew、菜单懒加载、壳页跳转等链路，优先断言 durable evidence：真实网络、稳定页面态、后续 API 200、modal 关闭、trace/storageState 收敛。
+  - success toast、页面标题、过渡文案只能做辅助证据，不能单独作为唯一通过依据。
+
+- **前端 CI 测试环境**
+  - 共享测试 setup 中的浏览器 API shim（`matchMedia` 等）必须对 `restoreMocks/resetMocks` 稳定；不能在本地可过、CI 因监听器方法被还原而失败。
+  - 菜单/路由驱动的 E2E 必须等待路由 ready，再点击或断言；不要在同一条用例中混用深链 `goto` 和菜单点击来赌时序。
+
+### 1.7 认证桥接期门禁口径（2026-04）
+
+适用范围：`user_authentication_method` 与 `user_auth_credential` / `user_auth_scope_policy` 并存阶段。
+
+- **PR targeted regression（必跑）**
+  - 认证读写链改动至少覆盖：
+    - `UserAuthenticationMethodProfileServiceTest`
+    - `MultiAuthenticationProviderTest`
+    - `SecurityControllerTest` / `SecurityControllerRedirectTest`
+    - 与写链直接相关的 `UserServiceImplTest` / `TenantServiceImplTest` / `SecurityServiceImpl*`（按改动范围选择）
+  - 必须覆盖“允许路径 + 拒绝路径 + 平台/租户作用域差异”。
+
+- **新模型运行时强约束（CARD-09A 后）**
+  - production runtime 主链只允许读取 `user_auth_credential + user_auth_scope_policy`，不再允许旧表 fallback 参与鉴权。
+  - `scope_key` 必须统一为：`GLOBAL` / `PLATFORM` / `TENANT:{id}`；读写、回填脚本、迁移脚本不得各写一套格式。
+  - 平台态 bulk/read 语义必须锁定 `PLATFORM > GLOBAL`；租户态保持 `TENANT > GLOBAL`。
+  - 旧表 `user_authentication_method` 若仍存在，仅允许用于迁移、审计、历史对账，不得作为测试验证“主链读取正确性”的依据。
+  - 回归时若发现认证主链重新读取旧表，应按阻断问题处理，而不是再补 compat/fallback 配置。
+
+- **Nightly / real-link（后续补齐）**
+  - 在进入 `CARD-09B` 物理删旧表前，至少保留 1 条平台 real-link 和 1 条租户 real-link 覆盖真实登录链路。
+  - 该类用例要验证最终业务结果（能否登录、是否触发 MFA、是否拒绝跨租户/错误作用域），不只验证接口 200。
+  - 当前已固定的最小真实链路证据：
+    - `tiny-oauth-server/src/main/webapp/e2e/real/platform-vue-login.spec.ts`
+    - `tiny-oauth-server/src/main/webapp/e2e/real/mfa-login-flow.spec.ts`
+
 ## 2. tiny-platform 测试分层
 
 ### 2.1 单元测试

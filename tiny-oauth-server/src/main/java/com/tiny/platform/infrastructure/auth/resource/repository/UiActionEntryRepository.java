@@ -12,6 +12,8 @@ import java.util.List;
 public interface UiActionEntryRepository extends JpaRepository<UiActionEntry, Long>, JpaSpecificationExecutor<UiActionEntry> {
     boolean existsByParentMenuIdAndTenantId(Long parentMenuId, Long tenantId);
 
+    boolean existsByParentMenuIdAndTenantIdIsNull(Long parentMenuId);
+
     @Query("""
         SELECT a
         FROM UiActionEntry a

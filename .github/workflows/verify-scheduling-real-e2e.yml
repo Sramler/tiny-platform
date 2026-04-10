@@ -3,7 +3,7 @@ name: Verify scheduling real-link E2E (Nightly)
 on:
   workflow_dispatch:
   schedule:
-    - cron: '40 2 * * *'
+    - cron: "40 2 * * *"
 
 jobs:
   verify-scheduling-real-e2e:
@@ -154,7 +154,7 @@ jobs:
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: "21"
           cache: maven
 
       - name: Set up Node.js
@@ -365,7 +365,7 @@ jobs:
 
       - name: Run scheduling real-link E2E suite
         env:
-          E2E_SKIP_WEBSERVER: 'true'
+          E2E_SKIP_WEBSERVER: "true"
         run: |
           npm run test:e2e:real -- \
             e2e/real/platform-vue-login.spec.ts \

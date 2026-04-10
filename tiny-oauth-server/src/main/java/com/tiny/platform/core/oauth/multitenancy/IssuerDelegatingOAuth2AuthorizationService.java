@@ -44,11 +44,11 @@ public class IssuerDelegatingOAuth2AuthorizationService implements OAuth2Authori
     }
 
     private OAuth2AuthorizationService resolveDelegate() {
-        String tenantCode = issuerResolver.resolveCurrentTenantCode();
-        if (tenantCode == null || tenantCode.isBlank()) {
+        String issuerKey = issuerResolver.resolveCurrentIssuerKey();
+        if (issuerKey == null || issuerKey.isBlank()) {
             return defaultDelegate;
         }
-        OAuth2AuthorizationService delegate = registry.get(tenantCode, OAuth2AuthorizationService.class);
+        OAuth2AuthorizationService delegate = registry.get(issuerKey, OAuth2AuthorizationService.class);
         return delegate != null ? delegate : defaultDelegate;
     }
 }

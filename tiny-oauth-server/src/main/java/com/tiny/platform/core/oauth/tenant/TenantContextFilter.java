@@ -79,36 +79,45 @@ public class TenantContextFilter extends OncePerRequestFilter {
 
     private final TenantRepository tenantRepository;
     private final PermissionVersionService permissionVersionService;
-    private final PlatformTenantResolver platformTenantResolver;
     private final AuthorizationAuditService authorizationAuditService;
     private final TenantLifecycleReadPolicy tenantLifecycleReadPolicy;
     private final OrganizationUnitRepository organizationUnitRepository;
     private final UserUnitRepository userUnitRepository;
 
     public TenantContextFilter(TenantRepository tenantRepository) {
-        this(tenantRepository, null, null, null, new TenantLifecycleReadPolicy(), null, null);
+        this(tenantRepository, null, null, new TenantLifecycleReadPolicy(), null, null);
     }
 
     public TenantContextFilter(TenantRepository tenantRepository, PermissionVersionService permissionVersionService) {
-        this(tenantRepository, permissionVersionService, null, null, new TenantLifecycleReadPolicy(), null, null);
+        this(tenantRepository, permissionVersionService, null, new TenantLifecycleReadPolicy(), null, null);
+    }
+
+    // Backward-compatible constructor for tests/config call sites.
+    @Deprecated
+    public TenantContextFilter(TenantRepository tenantRepository,
+                               PermissionVersionService permissionVersionService,
+                               PlatformTenantResolver ignoredPlatformTenantResolver) {
+        this(tenantRepository, permissionVersionService, null, new TenantLifecycleReadPolicy(), null, null);
+    }
+
+    // Backward-compatible constructor for tests/config call sites.
+    @Deprecated
+    public TenantContextFilter(TenantRepository tenantRepository,
+                               PermissionVersionService permissionVersionService,
+                               PlatformTenantResolver ignoredPlatformTenantResolver,
+                               AuthorizationAuditService authorizationAuditService,
+                               TenantLifecycleReadPolicy tenantLifecycleReadPolicy) {
+        this(tenantRepository, permissionVersionService, authorizationAuditService, tenantLifecycleReadPolicy, null, null);
     }
 
     public TenantContextFilter(TenantRepository tenantRepository,
                                PermissionVersionService permissionVersionService,
-                               PlatformTenantResolver platformTenantResolver) {
-        this(tenantRepository, permissionVersionService, platformTenantResolver, null, new TenantLifecycleReadPolicy(), null, null);
-    }
-
-    public TenantContextFilter(TenantRepository tenantRepository,
-                               PermissionVersionService permissionVersionService,
-                               PlatformTenantResolver platformTenantResolver,
                                AuthorizationAuditService authorizationAuditService,
                                TenantLifecycleReadPolicy tenantLifecycleReadPolicy,
                                OrganizationUnitRepository organizationUnitRepository,
                                UserUnitRepository userUnitRepository) {
         this.tenantRepository = tenantRepository;
         this.permissionVersionService = permissionVersionService;
-        this.platformTenantResolver = platformTenantResolver;
         this.authorizationAuditService = authorizationAuditService;
         this.tenantLifecycleReadPolicy = tenantLifecycleReadPolicy != null
             ? tenantLifecycleReadPolicy
@@ -120,10 +129,22 @@ public class TenantContextFilter extends OncePerRequestFilter {
     // Backward-compatible constructor for older tests/config code paths.
     public TenantContextFilter(TenantRepository tenantRepository,
                                PermissionVersionService permissionVersionService,
-                               PlatformTenantResolver platformTenantResolver,
                                AuthorizationAuditService authorizationAuditService,
                                TenantLifecycleReadPolicy tenantLifecycleReadPolicy) {
-        this(tenantRepository, permissionVersionService, platformTenantResolver, authorizationAuditService, tenantLifecycleReadPolicy, null, null);
+        this(tenantRepository, permissionVersionService, authorizationAuditService, tenantLifecycleReadPolicy, null, null);
+    }
+
+    // Backward-compatible constructor for tests/config call sites.
+    @Deprecated
+    public TenantContextFilter(TenantRepository tenantRepository,
+                               PermissionVersionService permissionVersionService,
+                               PlatformTenantResolver ignoredPlatformTenantResolver,
+                               AuthorizationAuditService authorizationAuditService,
+                               TenantLifecycleReadPolicy tenantLifecycleReadPolicy,
+                               OrganizationUnitRepository organizationUnitRepository,
+                               UserUnitRepository userUnitRepository) {
+        this(tenantRepository, permissionVersionService, authorizationAuditService, tenantLifecycleReadPolicy,
+            organizationUnitRepository, userUnitRepository);
     }
 
     @Override
@@ -483,7 +504,14 @@ public class TenantContextFilter extends OncePerRequestFilter {
     private SessionScopePair resolveSessionScopePair(Long activeTenantId, HttpServletRequest request) {
         String sessionType = normalizeScopeType(resolveScopeTypeFromSession(request));
         Long sessionId = resolveScopeIdFromSession(request);
-        String effectiveType = isSupportedScopeType(sessionType) ? sessionType : inferScopeTypeByTenantId(activeTenantId);
+        String effectiveType;
+        if (isSupportedScopeType(sessionType)) {
+            effectiveType = sessionType;
+        } else if (IssuerTenantSupport.isPlatformIssuerPath(resolvePathForTenantMatching(request))) {
+            effectiveType = TenantContextContract.SCOPE_TYPE_PLATFORM;
+        } else {
+            effectiveType = inferScopeTypeByTenantId(activeTenantId);
+        }
         Long effectiveId;
         if (TenantContextContract.SCOPE_TYPE_PLATFORM.equals(effectiveType)) {
             effectiveId = null;
@@ -667,9 +695,6 @@ public class TenantContextFilter extends OncePerRequestFilter {
     }
 
     private String inferScopeTypeByTenantId(Long activeTenantId) {
-        if (platformTenantResolver != null && platformTenantResolver.isPlatformTenant(activeTenantId)) {
-            return TenantContextContract.SCOPE_TYPE_PLATFORM;
-        }
         return TenantContextContract.SCOPE_TYPE_TENANT;
     }
 
@@ -712,7 +737,7 @@ public class TenantContextFilter extends OncePerRequestFilter {
     }
 
     private Long resolveActiveTenantIdFromIssuerPath(HttpServletRequest request) {
-        String tenantCode = IssuerTenantSupport.extractTenantCodeFromRequestPath(request.getRequestURI());
+        String tenantCode = IssuerTenantSupport.extractTenantCodeFromRequestPath(resolvePathForTenantMatching(request));
         if (tenantCode == null) {
             return null;
         }

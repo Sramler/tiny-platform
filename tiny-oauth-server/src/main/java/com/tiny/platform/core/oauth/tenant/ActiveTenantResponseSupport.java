@@ -43,6 +43,29 @@ public final class ActiveTenantResponseSupport {
         payload.put("activeTenantId", activeTenantId);
     }
 
+    public static void putTenantFields(Map<String, Object> payload, Long activeTenantId, ActiveScope activeScope) {
+        if (payload == null) {
+            return;
+        }
+        if (activeScope != null && activeScope.isPlatform()) {
+            payload.remove(TenantContextContract.ACTIVE_TENANT_ID_CLAIM);
+            return;
+        }
+        putTenantFields(payload, activeTenantId);
+    }
+
+    public static void putScopeFields(Map<String, Object> payload, ActiveScope activeScope) {
+        if (payload == null || activeScope == null || activeScope.scopeType() == null) {
+            return;
+        }
+        payload.put(TenantContextContract.ACTIVE_SCOPE_TYPE_CLAIM, activeScope.scopeType());
+        if (activeScope.scopeId() != null && activeScope.scopeId() > 0) {
+            payload.put(TenantContextContract.ACTIVE_SCOPE_ID_CLAIM, activeScope.scopeId());
+        } else {
+            payload.remove(TenantContextContract.ACTIVE_SCOPE_ID_CLAIM);
+        }
+    }
+
     public static Long resolveActiveTenantId(HttpServletRequest request) {
         Long activeTenantId = TenantContext.getActiveTenantId();
         if (activeTenantId != null && activeTenantId > 0) {
@@ -75,44 +98,46 @@ public final class ActiveTenantResponseSupport {
     }
 
     public static String resolveActiveScopeTypeFromRequestContext() {
-        String scopeType = TenantContext.getActiveScopeType();
-        if (scopeType != null && !scopeType.isBlank()) {
-            return scopeType;
-        }
-        ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
-        if (attributes == null) {
-            return null;
-        }
-        HttpSession session = attributes.getRequest().getSession(false);
-        if (session == null) {
-            return null;
-        }
-        Object raw = session.getAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_TYPE_KEY);
-        return raw != null ? String.valueOf(raw) : null;
+        ActiveScope activeScope = resolveActiveScopeFromRequestContext();
+        return activeScope != null ? activeScope.scopeType() : null;
     }
 
     public static Long resolveActiveScopeIdFromRequestContext() {
+        ActiveScope activeScope = resolveActiveScopeFromRequestContext();
+        return activeScope != null ? activeScope.scopeId() : null;
+    }
+
+    public static ActiveScope resolveActiveScopeFromRequestContext() {
+        String scopeType = ActiveScope.normalizeScopeType(TenantContext.getActiveScopeType());
         Long scopeId = TenantContext.getActiveScopeId();
-        if (scopeId != null && scopeId > 0) {
-            return scopeId;
+        if (scopeType == null) {
+            ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+            if (attributes == null) {
+                return null;
+            }
+            HttpSession session = attributes.getRequest().getSession(false);
+            if (session != null) {
+                Object rawScopeType = session.getAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_TYPE_KEY);
+                scopeType = ActiveScope.normalizeScopeType(rawScopeType != null ? String.valueOf(rawScopeType) : null);
+                scopeId = scopeId != null && scopeId > 0
+                    ? scopeId
+                    : toLong(session.getAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_ID_KEY));
+            }
+            if (scopeType == null) {
+                Long activeTenantId = resolveActiveTenantId(attributes.getRequest());
+                if (activeTenantId != null && activeTenantId > 0) {
+                    return ActiveScope.of(TenantContextContract.SCOPE_TYPE_TENANT, activeTenantId);
+                }
+                return ActiveScope.of(TenantContextContract.SCOPE_TYPE_PLATFORM, null);
+            }
         }
-        ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
-        if (attributes == null) {
-            return null;
+        if (TenantContextContract.SCOPE_TYPE_TENANT.equals(scopeType) && (scopeId == null || scopeId <= 0)) {
+            Long activeTenantId = resolveActiveTenantIdFromRequestContext();
+            if (activeTenantId != null && activeTenantId > 0) {
+                scopeId = activeTenantId;
+            }
         }
-        HttpSession session = attributes.getRequest().getSession(false);
-        if (session == null) {
-            return null;
-        }
-        scopeId = toLong(session.getAttribute(TenantContextContract.SESSION_ACTIVE_SCOPE_ID_KEY));
-        if (scopeId != null && scopeId > 0) {
-            return scopeId;
-        }
-        Long tenantId = resolveActiveTenantId(attributes.getRequest());
-        if (tenantId != null && tenantId > 0) {
-            return tenantId;
-        }
-        return null;
+        return ActiveScope.of(scopeType, scopeId);
     }
 
     public static String resolveSignalSourceFromRequestContext() {

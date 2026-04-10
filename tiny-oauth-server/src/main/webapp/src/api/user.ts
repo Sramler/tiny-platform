@@ -94,10 +94,14 @@ export function getCurrentUser() {
   })
 }
 
-export type ActiveScopeType = 'TENANT' | 'ORG' | 'DEPT'
+export type ActiveScopeType = 'PLATFORM' | 'TENANT' | 'ORG' | 'DEPT'
 
 export type ActiveScopeSwitchPayload = {
   scopeType: ActiveScopeType
+  /**
+   * `TENANT` 下可显式携带目标 tenantId，供平台态切回租户态使用；
+   * `ORG/DEPT` 下表示目标组织单元 id。
+   */
   scopeId?: number
 }
 

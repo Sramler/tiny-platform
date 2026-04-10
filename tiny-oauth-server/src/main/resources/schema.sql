@@ -1,6 +1,8 @@
 -- 注意：当前仓库的数据库权威迁移路径是 Liquibase（见 db/changelog/db.changelog-master.yaml）。
 -- 本文件仅保留为历史结构参考，不应作为当前运行态权限模型的证明依据。
--- 尤其是 permission / role_permission / role_resource 相关结构，请以 Liquibase 114-117 及后续变更为准。
+-- 尤其是 permission / role_permission / role_resource / resource 相关结构，请以 Liquibase 114-117、131 及后续变更为准。
+-- 说明：下方仍保留 pre-131 的 resource / role_resource 结构片段，仅用于历史对账与旧迁移背景参考；
+-- 在已完成 Liquibase 131 的活动数据库中，resource 表已物理删除，不应再把这些片段当作当前 schema 事实。
 
 -- 创建租户表
 CREATE TABLE IF NOT EXISTS `tenant` (
@@ -133,7 +135,8 @@ CREATE TABLE IF NOT EXISTS `role_data_scope` (
     CONSTRAINT `chk_rds_access_type` CHECK (`access_type` IN ('READ', 'WRITE'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='角色数据范围表';
 
--- 创建资源表（统一的权限资源表，包含菜单和API）
+-- 历史参考：pre-131 兼容 resource 表定义。
+-- 当前活动数据库已通过 Liquibase 131 删除 resource 表；本段仅保留作旧迁移/对账参考。
 CREATE TABLE IF NOT EXISTS `resource` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键',
     `tenant_id` BIGINT NOT NULL COMMENT '租户ID',
@@ -217,7 +220,8 @@ CREATE TABLE IF NOT EXISTS `role_permission` (
     CONSTRAINT `fk_role_permission_permission` FOREIGN KEY (`permission_id`) REFERENCES `permission` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='角色-权限关系表';
 
--- 创建角色-资源关联表（历史结构；全新库在 002 中创建，116 回填 role_permission 后由 Liquibase 117 删除本表）
+-- 历史参考：pre-117 角色-资源关联表定义。
+-- 当前活动数据库在 Liquibase 117 后已不再存在 role_resource；本段仅保留作旧迁移/对账参考。
 CREATE TABLE IF NOT EXISTS `role_resource` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '关联ID',
     `tenant_id` BIGINT NOT NULL COMMENT '租户ID',
@@ -233,28 +237,44 @@ CREATE TABLE IF NOT EXISTS `role_resource` (
     CONSTRAINT `fk_role_resource_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='角色-资源关联表';
 
--- 创建用户认证方法表（tenant_id 可空=用户级全局认证方式；完整唯一键/生成列见 Liquibase 111）
-CREATE TABLE IF NOT EXISTS `user_authentication_method` (
+-- 创建用户认证凭证表（认证材料层，不承载作用域策略）
+CREATE TABLE IF NOT EXISTS `user_auth_credential` (
     `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
     `user_id` BIGINT NOT NULL COMMENT '用户ID',
-    `tenant_id` BIGINT NULL COMMENT '租户作用域；NULL 表示用户级全局认证方式',
     `authentication_provider` VARCHAR(50) NOT NULL COMMENT '认证提供者',
     `authentication_type` VARCHAR(50) NOT NULL COMMENT '认证类型',
-    `authentication_configuration` JSON NOT NULL COMMENT '认证配置',
-    `is_primary_method` BOOLEAN DEFAULT FALSE COMMENT '是否主要认证方法',
-    `is_method_enabled` BOOLEAN DEFAULT TRUE COMMENT '是否启用',
-    `authentication_priority` INT DEFAULT 0 COMMENT '认证优先级',
+    `authentication_configuration` JSON NOT NULL COMMENT '认证材料配置JSON',
     `last_verified_at` TIMESTAMP NULL COMMENT '最后验证时间',
     `last_verified_ip` VARCHAR(50) DEFAULT NULL COMMENT '最后验证IP地址',
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     `expires_at` TIMESTAMP NULL COMMENT '过期时间',
-    FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE,
-    UNIQUE KEY `uk_user_auth_method` (`tenant_id`, `user_id`, `authentication_provider`, `authentication_type`),
-    KEY `idx_user_auth_method_tenant_id` (`tenant_id`),
-    KEY `idx_user_provider` (`user_id`, `authentication_provider`),
-    CONSTRAINT `fk_user_auth_method_tenant` FOREIGN KEY (`tenant_id`) REFERENCES `tenant` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户认证方法表';
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY `uk_user_auth_credential_user_provider_type` (`user_id`, `authentication_provider`, `authentication_type`),
+    KEY `idx_user_auth_credential_user_id` (`user_id`),
+    CONSTRAINT `fk_user_auth_credential_user` FOREIGN KEY (`user_id`) REFERENCES `user` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户认证凭证表';
+
+-- 创建用户认证作用域策略表（策略层，不承载认证材料）
+CREATE TABLE IF NOT EXISTS `user_auth_scope_policy` (
+    `id` BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+    `credential_id` BIGINT NOT NULL COMMENT '关联认证凭证ID',
+    `scope_type` VARCHAR(16) NOT NULL COMMENT '作用域类型：GLOBAL/PLATFORM/TENANT',
+    `scope_id` BIGINT DEFAULT NULL COMMENT '作用域ID（GLOBAL 可空）',
+    `scope_key` VARCHAR(128) NOT NULL COMMENT '作用域归一化键',
+    `is_primary_method` BOOLEAN NOT NULL DEFAULT FALSE COMMENT '是否主认证方式',
+    `is_method_enabled` BOOLEAN NOT NULL DEFAULT TRUE COMMENT '是否启用认证方式',
+    `authentication_priority` INT NOT NULL DEFAULT 0 COMMENT '认证优先级',
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY `uk_user_auth_scope_policy_credential_scope_key` (`credential_id`, `scope_key`),
+    KEY `idx_user_auth_scope_policy_scope_type_id` (`scope_type`, `scope_id`),
+    CONSTRAINT `chk_user_auth_scope_policy_scope_type` CHECK (`scope_type` IN ('GLOBAL', 'PLATFORM', 'TENANT')),
+    CONSTRAINT `chk_user_auth_scope_policy_scope_id_by_type` CHECK (
+        (`scope_type` IN ('GLOBAL', 'PLATFORM') AND `scope_id` IS NULL)
+        OR (`scope_type` = 'TENANT' AND `scope_id` IS NOT NULL)
+    ),
+    CONSTRAINT `fk_user_auth_scope_policy_credential` FOREIGN KEY (`credential_id`) REFERENCES `user_auth_credential` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户认证作用域策略表';
 
 -- 创建用户认证审计表
 CREATE TABLE IF NOT EXISTS `user_authentication_audit` (

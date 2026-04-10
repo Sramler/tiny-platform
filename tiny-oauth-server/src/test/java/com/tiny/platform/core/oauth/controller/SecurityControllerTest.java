@@ -10,8 +10,9 @@ import com.tiny.platform.core.oauth.service.AuthenticationAuditService;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
-import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
+import com.tiny.platform.infrastructure.auth.user.repository.UserAuthScopePolicyRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
+import com.tiny.platform.infrastructure.auth.user.service.UserAuthenticationMethodProfileService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,6 +26,9 @@ import java.util.Optional;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 class SecurityControllerTest {
@@ -41,14 +45,18 @@ class SecurityControllerTest {
         securityService = mock(SecurityService.class);
         authUserResolutionService = mock(AuthUserResolutionService.class);
         userSessionService = mock(UserSessionService.class);
-        UserAuthenticationMethodRepository authMethodRepo = mock(UserAuthenticationMethodRepository.class);
+        UserAuthScopePolicyRepository scopeRepo = mock(UserAuthScopePolicyRepository.class);
+        lenient().when(scopeRepo.findByUserIdAndAuthenticationProviderAndAuthenticationTypeAndScopeKey(
+                anyLong(), anyString(), anyString(), anyString())).thenReturn(Optional.empty());
+        lenient().when(scopeRepo.findByUserIdAndScopeKey(anyLong(), anyString())).thenReturn(List.of());
+        UserAuthenticationMethodProfileService profileService = new UserAuthenticationMethodProfileService(scopeRepo);
         FrontendProperties frontendProperties = mock(FrontendProperties.class);
         MultiFactorAuthenticationSessionManager sessionManager = mock(MultiFactorAuthenticationSessionManager.class);
         AuthenticationAuditService auditService = mock(AuthenticationAuditService.class);
         controller = new SecurityController(
             userRepository,
             securityService,
-            authMethodRepo,
+            profileService,
             frontendProperties,
             sessionManager,
             authUserResolutionService,
@@ -119,7 +127,11 @@ class SecurityControllerTest {
 
     @Test
     void status_should_resolve_user_from_authentication_active_tenant_when_tenant_context_missing() {
-        UserAuthenticationMethodRepository authMethodRepo = mock(UserAuthenticationMethodRepository.class);
+        UserAuthScopePolicyRepository scopeRepo = mock(UserAuthScopePolicyRepository.class);
+        lenient().when(scopeRepo.findByUserIdAndAuthenticationProviderAndAuthenticationTypeAndScopeKey(
+                anyLong(), anyString(), anyString(), anyString())).thenReturn(Optional.empty());
+        lenient().when(scopeRepo.findByUserIdAndScopeKey(anyLong(), anyString())).thenReturn(List.of());
+        UserAuthenticationMethodProfileService profileService = new UserAuthenticationMethodProfileService(scopeRepo);
         FrontendProperties frontendProperties = mock(FrontendProperties.class);
         MultiFactorAuthenticationSessionManager sessionManager = mock(MultiFactorAuthenticationSessionManager.class);
         AuthenticationAuditService auditService = mock(AuthenticationAuditService.class);
@@ -127,7 +139,7 @@ class SecurityControllerTest {
         controller = new SecurityController(
                 userRepository,
                 securityService,
-                authMethodRepo,
+                profileService,
                 frontendProperties,
                 sessionManager,
                 authUserResolutionService,

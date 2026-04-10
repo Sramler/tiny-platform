@@ -80,7 +80,16 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ensureCsrfToken } from '@/utils/csrf'
 import { sanitizeInternalRedirect } from '@/utils/redirect'
-import { clearActiveTenantId, clearTenantCode, getTenantCode, isValidTenantCode, setTenantCode } from '@/utils/tenant'
+import {
+  clearActiveTenantId,
+  clearTenantCode,
+  getLoginMode,
+  getTenantCode,
+  isValidTenantCode,
+  type LoginMode,
+  setLoginMode as persistLoginMode,
+  setTenantCode,
+} from '@/utils/tenant'
 
 defineOptions({
   name: 'LoginPage',
@@ -95,8 +104,7 @@ const passwordRef = ref<HTMLInputElement | null>(null)
 const errorMessage = ref('')
 const csrfToken = ref('')
 const csrfParameterName = ref('_csrf')
-const LOGIN_MODE_STORAGE_KEY = 'app_login_mode'
-const loginMode = ref<'TENANT' | 'PLATFORM'>('TENANT')
+const loginMode = ref<LoginMode>('TENANT')
 
 /**
  * 仅用于本地/开发联调占位，与后端 seed 对齐：
@@ -147,13 +155,9 @@ const loadCsrfToken = async () => {
   csrfParameterName.value = csrf.parameterName
 }
 
-const setLoginMode = async (mode: 'TENANT' | 'PLATFORM') => {
+const setLoginMode = async (mode: LoginMode) => {
   loginMode.value = mode
-  try {
-    window.localStorage.setItem(LOGIN_MODE_STORAGE_KEY, mode)
-  } catch {
-    // ignore storage errors
-  }
+  persistLoginMode(mode)
   await nextTick()
   // 切回租户模式后 v-if 已挂载输入框，再回填本地记忆的租户编码
   if (mode === 'TENANT') {
@@ -214,13 +218,9 @@ onMounted(async () => {
   loadCsrfToken().catch((error) => {
     console.error('初始化 CSRF token 失败:', error)
   })
-  try {
-    const storedMode = window.localStorage.getItem(LOGIN_MODE_STORAGE_KEY)
-    if (storedMode === 'PLATFORM' || storedMode === 'TENANT') {
-      loginMode.value = storedMode
-    }
-  } catch {
-    // ignore storage errors
+  const storedMode = getLoginMode()
+  if (storedMode) {
+    loginMode.value = storedMode
   }
   // 与 v-if 对齐：先等 DOM 更新再操作 tenantRef，避免 PLATFORM 仍短暂持有已卸载的租户输入框引用
   await nextTick()

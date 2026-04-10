@@ -112,6 +112,54 @@ async function fetchSecurityStatus(page: import('@playwright/test').Page) {
   }, { apiBaseUrl: backendBaseUrl })
 }
 
+async function fetchCurrentUser(page: import('@playwright/test').Page) {
+  const backendBaseUrl =
+    process.env.E2E_BACKEND_BASE_URL ?? process.env.VITE_API_BASE_URL ?? 'http://localhost:9000'
+  return page.evaluate(async ({ apiBaseUrl }) => {
+    const response = await fetch(`${apiBaseUrl}/sys/users/current`, {
+      method: 'GET',
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    })
+    const text = await response.text()
+    const contentType = response.headers.get('content-type') || ''
+    return {
+      status: response.status,
+      payload:
+        text && contentType.includes('application/json')
+          ? (JSON.parse(text) as Record<string, unknown>)
+          : null,
+    }
+  }, { apiBaseUrl: backendBaseUrl })
+}
+
+async function fetchTaskTypeList(page: import('@playwright/test').Page, activeTenantId: number) {
+  const backendBaseUrl =
+    process.env.E2E_BACKEND_BASE_URL ?? process.env.VITE_API_BASE_URL ?? 'http://localhost:9000'
+  return page.evaluate(
+    async ({ apiBaseUrl, tenantId }) => {
+      const headers = new Headers({ Accept: 'application/json' })
+      headers.set('X-Active-Tenant-Id', String(tenantId))
+
+      const response = await fetch(`${apiBaseUrl}/scheduling/task-type/list?page=0&size=5`, {
+        method: 'GET',
+        credentials: 'include',
+        headers,
+      })
+      const text = await response.text()
+      const contentType = response.headers.get('content-type') || ''
+      return {
+        status: response.status,
+        payload:
+          text && contentType.includes('application/json')
+            ? (JSON.parse(text) as Record<string, unknown>)
+            : null,
+      }
+    },
+    { apiBaseUrl: backendBaseUrl, tenantId: activeTenantId },
+  )
+}
+
 test.describe('real-link: /login -> totp-verify -> /self/security', () => {
   test('bound MFA user can login and reach self/security', async ({ page }) => {
     const { tenantCode, username, password, totpCode } = resolveLoginConfig()
@@ -144,9 +192,31 @@ test.describe('real-link: /login -> totp-verify -> /self/security', () => {
       },
     )
     await page.waitForLoadState('networkidle').catch(() => {})
-    const { status, payload } = await fetchSecurityStatus(page)
-    expect(status).toBe(200)
-    expect(payload).not.toBeNull()
-    expect(Object.keys(payload ?? {}).length).toBeGreaterThan(0)
+    const securityStatus = await fetchSecurityStatus(page)
+    expect(securityStatus.status).toBe(200)
+    expect(securityStatus.payload).not.toBeNull()
+    expect(typeof securityStatus.payload?.totpBound).toBe('boolean')
+    expect(typeof securityStatus.payload?.totpActivated).toBe('boolean')
+    expect(typeof securityStatus.payload?.requireTotp).toBe('boolean')
+
+    const currentUser = await fetchCurrentUser(page)
+    expect(currentUser.status).toBe(200)
+    expect(currentUser.payload).not.toBeNull()
+    expect(currentUser.payload?.activeScopeType).toBe('TENANT')
+
+    const activeTenantId = Number(currentUser.payload?.activeTenantId)
+    expect(Number.isFinite(activeTenantId) && activeTenantId > 0).toBe(true)
+
+    const taskTypeList = await fetchTaskTypeList(page, activeTenantId)
+    expect(taskTypeList.status).toBe(200)
+    expect(taskTypeList.payload).not.toBeNull()
+    const content = taskTypeList.payload?.content
+    expect(Array.isArray(content)).toBe(true)
+    expect((content as Array<Record<string, unknown>>).length).toBeGreaterThan(0)
+    expect(
+      (content as Array<Record<string, unknown>>).every(
+        (item) => Number(item.recordTenantId) === activeTenantId,
+      ),
+    ).toBe(true)
   })
 })

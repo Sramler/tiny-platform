@@ -24,14 +24,23 @@ public final class UserAuthenticationMethodMerge {
     public static List<UserAuthenticationMethod> mergePreferTenantScoped(
             List<UserAuthenticationMethod> tenantScoped,
             List<UserAuthenticationMethod> global) {
+        return mergePreferPrimary(tenantScoped, global);
+    }
+
+    /**
+     * 合并两组认证方式，同一 {@code provider+type} 下优先采用 {@code primary} 中的记录。
+     */
+    public static List<UserAuthenticationMethod> mergePreferPrimary(
+            List<UserAuthenticationMethod> primary,
+            List<UserAuthenticationMethod> fallback) {
         Map<String, UserAuthenticationMethod> byKey = new LinkedHashMap<>();
-        if (global != null) {
-            for (UserAuthenticationMethod m : global) {
+        if (fallback != null) {
+            for (UserAuthenticationMethod m : fallback) {
                 byKey.put(key(m), m);
             }
         }
-        if (tenantScoped != null) {
-            for (UserAuthenticationMethod m : tenantScoped) {
+        if (primary != null) {
+            for (UserAuthenticationMethod m : primary) {
                 byKey.put(key(m), m);
             }
         }

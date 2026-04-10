@@ -32,7 +32,6 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
@@ -238,6 +237,34 @@ class TenantContextFilterTest {
     }
 
     @Test
+    void platformIssuerOauth2TokenPostRunsAsPlatformScopeWithoutTenantLookup() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/platform/oauth2/token");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AtomicReference<Long> tenantInChain = new AtomicReference<>();
+        AtomicReference<String> scopeTypeInChain = new AtomicReference<>();
+
+        filter.doFilter(request, response, (req, resp) -> {
+            tenantInChain.set(TenantContext.getActiveTenantId());
+            scopeTypeInChain.set(TenantContext.getActiveScopeType());
+        });
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(tenantInChain.get()).isNull();
+        assertThat(scopeTypeInChain.get()).isEqualTo(TenantContextContract.SCOPE_TYPE_PLATFORM);
+        verify(tenantRepository, never()).findByCode("platform");
+    }
+
+    @Test
+    void issuerTenantSupportShouldTreatPlatformAsIssuerKeyNotTenantCode() {
+        assertThat(IssuerTenantSupport.extractIssuerKeyFromRequestPath("/platform/oauth2/token"))
+            .isEqualTo(IssuerTenantSupport.PLATFORM_ISSUER_KEY);
+        assertThat(IssuerTenantSupport.extractTenantCodeFromRequestPath("/platform/oauth2/token")).isNull();
+        assertThat(IssuerTenantSupport.extractIssuerKeyFromIssuer("http://localhost:9000/platform"))
+            .isEqualTo(IssuerTenantSupport.PLATFORM_ISSUER_KEY);
+        assertThat(IssuerTenantSupport.extractTenantCodeFromIssuer("http://localhost:9000/platform")).isNull();
+    }
+
+    @Test
     void issuerTenantSupportDefaultProtocolPostEndpointsMatchLiteralPathsOnly() {
         assertThat(IssuerTenantSupport.isDefaultIssuerOAuth2ProtocolPostEndpoint("/oauth2/token")).isTrue();
         assertThat(IssuerTenantSupport.isDefaultIssuerOAuth2ProtocolPostEndpoint("/oauth2/revoke")).isTrue();
@@ -302,7 +329,7 @@ class TenantContextFilterTest {
     }
 
     @Test
-    void shouldAllowWhitelistedAuditReadForFrozenPlatformScopeAndWriteAudit() throws Exception {
+    void shouldRejectWhitelistedAuditReadWhenPlatformScopeIsNotExplicit() throws Exception {
         PlatformTenantResolver platformTenantResolver = Mockito.mock(PlatformTenantResolver.class);
         AuthorizationAuditService authorizationAuditService = Mockito.mock(AuthorizationAuditService.class);
         TenantContextFilter platformFilter = new TenantContextFilter(
@@ -335,7 +362,6 @@ class TenantContextFilterTest {
             AuthorityUtils.createAuthorityList("system:audit:auth:view")
         );
         SecurityContextHolder.getContext().setAuthentication(auth);
-        when(platformTenantResolver.isPlatformTenant(50L)).thenReturn(true);
         when(tenantRepository.findLoginBlockedLifecycleStatus(50L)).thenReturn(Optional.of("FROZEN"));
 
         platformFilter.doFilter(request, response, (req, resp) -> {
@@ -343,22 +369,8 @@ class TenantContextFilterTest {
             scopeTypeInChain.set(TenantContext.getActiveScopeType());
         });
 
-        assertThat(response.getStatus()).isEqualTo(200);
-        assertThat(tenantInChain.get()).isEqualTo(50L);
-        assertThat(scopeTypeInChain.get()).isEqualTo(TenantContextContract.SCOPE_TYPE_PLATFORM);
-        verify(authorizationAuditService).log(
-            eq(AuthorizationAuditEventType.TENANT_LIFECYCLE_ALLOWLIST_ACCESS),
-            eq(50L),
-            isNull(),
-            isNull(),
-            eq(TenantContextContract.SCOPE_TYPE_PLATFORM),
-            eq(50L),
-            eq("audit"),
-            eq("system:audit:auth:view"),
-            contains("\"tenantLifecycleStatus\":\"FROZEN\""),
-            eq("SUCCESS"),
-            isNull()
-        );
+        assertThat(response.getStatus()).isEqualTo(403);
+        assertThat(response.getContentAsString()).contains("tenant_frozen");
     }
 
     @Test
@@ -418,7 +430,7 @@ class TenantContextFilterTest {
     }
 
     @Test
-    void shouldAllowWhitelistedReadWithoutRequiredAuthorityForDecommissionedPlatformScope() throws Exception {
+    void shouldRejectWhitelistedReadWithoutExplicitPlatformScopeForDecommissionedTenant() throws Exception {
         PlatformTenantResolver platformTenantResolver = Mockito.mock(PlatformTenantResolver.class);
         AuthorizationAuditService authorizationAuditService = Mockito.mock(AuthorizationAuditService.class);
         TenantContextFilter platformFilter = new TenantContextFilter(
@@ -451,7 +463,6 @@ class TenantContextFilterTest {
             AuthorityUtils.createAuthorityList("system:audit:authentication:view")
         );
         SecurityContextHolder.getContext().setAuthentication(auth);
-        when(platformTenantResolver.isPlatformTenant(60L)).thenReturn(true);
         when(tenantRepository.findLoginBlockedLifecycleStatus(60L)).thenReturn(Optional.of("DECOMMISSIONED"));
 
         platformFilter.doFilter(request, response, (req, resp) -> {
@@ -459,22 +470,8 @@ class TenantContextFilterTest {
             scopeTypeInChain.set(TenantContext.getActiveScopeType());
         });
 
-        assertThat(response.getStatus()).isEqualTo(200);
-        assertThat(tenantInChain.get()).isEqualTo(60L);
-        assertThat(scopeTypeInChain.get()).isEqualTo(TenantContextContract.SCOPE_TYPE_PLATFORM);
-        verify(authorizationAuditService).log(
-            eq(AuthorizationAuditEventType.TENANT_LIFECYCLE_ALLOWLIST_ACCESS),
-            eq(60L),
-            isNull(),
-            isNull(),
-            eq(TenantContextContract.SCOPE_TYPE_PLATFORM),
-            eq(60L),
-            eq("audit"),
-            eq("system:audit:authentication:export"),
-            org.mockito.ArgumentMatchers.anyString(),
-            eq("SUCCESS"),
-            isNull()
-        );
+        assertThat(response.getStatus()).isEqualTo(403);
+        assertThat(response.getContentAsString()).contains("tenant_decommissioned");
     }
 
     @Test

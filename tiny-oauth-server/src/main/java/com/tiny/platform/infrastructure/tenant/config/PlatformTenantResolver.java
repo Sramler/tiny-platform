@@ -12,7 +12,9 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * 解析并缓存平台租户 ID，避免每次请求都查库。
  *
- * <p>平台租户由配置 {@code tiny.platform.tenant.platform-tenant-code}（默认 "default"）决定。
+ * <p>兼容边界：仅用于 bootstrap / 历史入口兼容，不作为新业务平台语义主链。
+ * 平台主语义应优先使用 {@code scope_type=PLATFORM}。
+ * 平台租户由配置 {@code tiny.platform.tenant.platform-tenant-code}（默认 "default"）决定。
  * 首次调用 {@link #getPlatformTenantId()} 时惰性解析并缓存；
  * 若配置变更或租户重建，调用 {@link #invalidate()} 刷新。</p>
  */

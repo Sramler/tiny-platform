@@ -7,8 +7,10 @@ import com.tiny.platform.infrastructure.auth.user.domain.User;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 
+import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -119,5 +121,23 @@ class SecurityUserTest {
         assertThat(restored.getActiveTenantId()).isEqualTo(11L);
         assertThat(restored.getActiveTenantId()).isEqualTo(11L);
         assertThat(restored.getPermissionsVersion()).isEqualTo("perm-v2");
+    }
+
+    @Test
+    void jsonCreatorPathShouldNotRecoverRoleCodesFromAuthoritiesWhenRoleCodesMissing() {
+        SecurityUser restored = new SecurityUser(
+                9L,
+                21L,
+                "legacy.alice",
+                "",
+                List.of(new SimpleGrantedAuthority("ROLE_TENANT_ADMIN"), new SimpleGrantedAuthority("system:user:list")),
+                null,
+                true,
+                true,
+                true,
+                true,
+                "perm-v3"
+        );
+        assertThat(restored.getRoleCodes()).isEmpty();
     }
 }

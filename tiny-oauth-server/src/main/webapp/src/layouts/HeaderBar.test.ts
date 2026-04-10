@@ -12,6 +12,11 @@ const mocks = vi.hoisted(() => ({
   getCurrentUser: vi.fn(),
   notifyActiveScopeChanged: vi.fn(),
   getOrgList: vi.fn(),
+  getActiveTenantId: vi.fn(),
+  setActiveTenantId: vi.fn(),
+  clearActiveTenantId: vi.fn(),
+  clearTenantCode: vi.fn(),
+  setLoginMode: vi.fn(),
 }))
 
 const messageMocks = vi.hoisted(() => ({
@@ -39,6 +44,14 @@ vi.mock('@/utils/activeScopeEvents', () => ({
 
 vi.mock('@/api/org', () => ({
   getOrgList: mocks.getOrgList,
+}))
+
+vi.mock('@/utils/tenant', () => ({
+  getActiveTenantId: mocks.getActiveTenantId,
+  setActiveTenantId: mocks.setActiveTenantId,
+  clearActiveTenantId: mocks.clearActiveTenantId,
+  clearTenantCode: mocks.clearTenantCode,
+  setLoginMode: mocks.setLoginMode,
 }))
 
 vi.mock('vue-router', () => ({
@@ -87,6 +100,7 @@ describe('HeaderBar.vue confirmSwitchScope', () => {
       ok: true,
       user: { expired: false, access_token: 'at', profile: {} },
     })
+    mocks.getActiveTenantId.mockReturnValue('7')
   })
 
   it('when tokenRefreshRequired is not true: does not renew, loads user, success + broadcast', async () => {
@@ -157,7 +171,7 @@ describe('HeaderBar.vue confirmSwitchScope', () => {
   })
 
   it('when activeScopeType is PLATFORM and local activeTenantId missing: blocks scope switch', async () => {
-    window.localStorage.removeItem('app_active_tenant_id')
+    mocks.getActiveTenantId.mockReturnValue(null)
     mocks.getCurrentUser.mockResolvedValue({
       ...currentUserPayload,
       activeScopeType: 'PLATFORM',
@@ -172,5 +186,55 @@ describe('HeaderBar.vue confirmSwitchScope', () => {
 
     expect(mocks.switchActiveScope).not.toHaveBeenCalled()
     expect(messageMocks.warning).toHaveBeenCalledWith('当前平台态不支持在此处切换作用域')
+  })
+
+  it('when switching tenant scope to PLATFORM with token refresh: syncs local platform context before renew', async () => {
+    const order: string[] = []
+    mocks.switchActiveScope.mockImplementation(async () => {
+      order.push('switch')
+      return { success: true, tokenRefreshRequired: true, newActiveScopeType: 'PLATFORM' }
+    })
+    mocks.setLoginMode.mockImplementation(() => {
+      order.push('loginMode')
+    })
+    mocks.clearTenantCode.mockImplementation(() => {
+      order.push('clearTenantCode')
+    })
+    mocks.clearActiveTenantId.mockImplementation(() => {
+      order.push('clearActiveTenantId')
+    })
+    mocks.refreshTokenAfterActiveScopeSwitch.mockImplementation(async () => {
+      order.push('renew')
+      return { ok: true, user: { expired: false, access_token: 'platform-at', profile: {} } }
+    })
+    mocks.getCurrentUser.mockImplementation(async () => {
+      order.push('getCurrentUser')
+      return {
+        ...currentUserPayload,
+        activeScopeType: 'PLATFORM',
+      }
+    })
+
+    const wrapper = await mountHeaderBar()
+    mocks.getCurrentUser.mockClear()
+    order.length = 0
+    ;(wrapper.vm as any).nextScopeType = 'PLATFORM'
+
+    await wrapper.vm.confirmSwitchScope()
+    await flushPromises()
+
+    expect(mocks.switchActiveScope).toHaveBeenCalledWith({
+      scopeType: 'PLATFORM',
+      scopeId: undefined,
+    })
+    expect(order).toEqual([
+      'switch',
+      'loginMode',
+      'clearTenantCode',
+      'clearActiveTenantId',
+      'renew',
+      'getCurrentUser',
+    ])
+    expect(messageMocks.success).toHaveBeenCalledWith('作用域已切换')
   })
 })

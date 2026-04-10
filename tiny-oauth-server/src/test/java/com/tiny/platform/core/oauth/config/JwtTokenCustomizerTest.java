@@ -111,6 +111,8 @@ class JwtTokenCustomizerTest {
         assertThat(claims).containsKey("authorities");
         assertThat(claims).containsKey("permissions");
         assertThat(claims.get("authorities")).asInstanceOf(collection(String.class))
+                .isEmpty();
+        assertThat(claims.get("roleCodes")).asInstanceOf(collection(String.class))
                 .containsExactly("ROLE_ADMIN");
         assertThat(claims.get("permissions")).asInstanceOf(collection(String.class)).isEmpty();
     }
@@ -177,7 +179,9 @@ class JwtTokenCustomizerTest {
 
         Map<String, Object> claims = context.getClaims().build().getClaims();
         assertThat(claims.get("authorities")).asInstanceOf(collection(String.class))
-            .containsExactlyInAnyOrder("ROLE_TENANT_ADMIN", "scheduling:*");
+            .containsExactlyInAnyOrder("scheduling:*");
+        assertThat(claims.get("roleCodes")).asInstanceOf(collection(String.class))
+            .containsExactlyInAnyOrder("ROLE_TENANT_ADMIN");
         assertThat(claims.get("permissions")).asInstanceOf(collection(String.class)).containsExactly("scheduling:*");
     }
 
@@ -256,7 +260,9 @@ class JwtTokenCustomizerTest {
 
         Map<String, Object> claims = context.getClaims().build().getClaims();
         assertThat(claims.get("authorities")).asInstanceOf(collection(String.class))
-            .containsExactlyInAnyOrder("ROLE_TENANT_ADMIN", "system:org:list", "scheduling:*");
+            .containsExactlyInAnyOrder("system:org:list", "scheduling:*");
+        assertThat(claims.get("roleCodes")).asInstanceOf(collection(String.class))
+            .containsExactlyInAnyOrder("ROLE_TENANT_ADMIN");
         assertThat(claims.get("permissions")).asInstanceOf(collection(String.class))
             .containsExactlyInAnyOrder("system:org:list", "scheduling:*");
         verify(userDetailsService).loadUserByUsername("alice");
@@ -335,8 +341,88 @@ class JwtTokenCustomizerTest {
 
         Map<String, Object> claims = context.getClaims().build().getClaims();
         assertThat(claims.get("authorities")).asInstanceOf(collection(String.class))
-            .containsExactlyInAnyOrder("ROLE_PLATFORM_ADMIN", "system:tenant:list");
+            .containsExactlyInAnyOrder("system:tenant:list");
+        assertThat(claims.get("roleCodes")).asInstanceOf(collection(String.class))
+            .containsExactlyInAnyOrder("ROLE_PLATFORM_ADMIN");
         verify(userDetailsService, never()).loadUserByUsername(anyString());
+    }
+
+    @Test
+    void accessToken_should_not_publish_active_tenant_claim_when_explicit_platform_scope_is_present() {
+        User user = new User();
+        user.setId(7L);
+        user.setUsername("platform_alice");
+        user.setEnabled(true);
+        user.setAccountNonExpired(true);
+        user.setAccountNonLocked(true);
+        user.setCredentialsNonExpired(true);
+
+        SecurityUser securityUser = new SecurityUser(
+            user,
+            "",
+            50L,
+            List.of(
+                new SimpleGrantedAuthority("ROLE_PLATFORM_ADMIN"),
+                new SimpleGrantedAuthority("system:tenant:list")),
+            "perm-plat");
+        UsernamePasswordAuthenticationToken principal = UsernamePasswordAuthenticationToken.authenticated(
+            "platform_alice",
+            "n/a",
+            List.of());
+        principal.setDetails(securityUser);
+
+        RegisteredClient client = RegisteredClient.withId("rc-id")
+            .clientId("vue-client")
+            .clientSecret("{noop}secret")
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .redirectUri("http://localhost:5173/callback")
+            .scope("openid")
+            .scope("profile")
+            .clientSettings(ClientSettings.builder().requireAuthorizationConsent(false).build())
+            .tokenSettings(TokenSettings.builder().build())
+            .build();
+
+        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(client)
+            .id("auth-id")
+            .principalName("platform_alice")
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .authorizedScopes(Set.of("openid", "profile"))
+            .attribute("auth_time", Instant.ofEpochSecond(1_770_000_000L))
+            .build();
+
+        PermissionVersionService permissionVersionService = mock(PermissionVersionService.class);
+        when(permissionVersionService.resolvePermissionsVersion(
+            eq(7L),
+            eq(50L),
+            eq(TenantContextContract.SCOPE_TYPE_PLATFORM),
+            eq(null))).thenReturn("perm-plat-v2");
+
+        JwtEncodingContext context = JwtEncodingContext.with(
+                JwsHeader.with(SignatureAlgorithm.RS256),
+                JwtClaimsSet.builder()
+            )
+            .registeredClient(client)
+            .principal(principal)
+            .authorization(authorization)
+            .authorizedScopes(Set.of("openid", "profile"))
+            .tokenType(OAuth2TokenType.ACCESS_TOKEN)
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .build();
+
+        try {
+            TenantContext.setActiveTenantId(50L);
+            TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_PLATFORM);
+            TenantContext.setActiveScopeId(null);
+            new JwtTokenCustomizer(mock(UserRepository.class), permissionVersionService).customize(context);
+        } finally {
+            TenantContext.clear();
+        }
+
+        Map<String, Object> claims = context.getClaims().build().getClaims();
+        assertThat(claims).doesNotContainKey(TenantContextContract.ACTIVE_TENANT_ID_CLAIM);
+        assertThat(claims).containsEntry(TenantContextContract.ACTIVE_SCOPE_TYPE_CLAIM, TenantContextContract.SCOPE_TYPE_PLATFORM);
+        assertThat(claims).doesNotContainKey(TenantContextContract.ACTIVE_SCOPE_ID_CLAIM);
+        assertThat(claims).containsEntry("permissionsVersion", "perm-plat-v2");
     }
 
     /**
@@ -409,7 +495,9 @@ class JwtTokenCustomizerTest {
 
         Map<String, Object> claims = context.getClaims().build().getClaims();
         assertThat(claims.get("authorities")).asInstanceOf(collection(String.class))
-            .containsExactlyInAnyOrder("ROLE_TENANT_ADMIN", "system:org:list");
+            .containsExactlyInAnyOrder("system:org:list");
+        assertThat(claims.get("roleCodes")).asInstanceOf(collection(String.class))
+            .containsExactlyInAnyOrder("ROLE_TENANT_ADMIN");
         verify(userDetailsService).loadUserByUsername("alice");
     }
 
@@ -483,7 +571,9 @@ class JwtTokenCustomizerTest {
 
         Map<String, Object> claims = context.getClaims().build().getClaims();
         assertThat(claims.get("authorities")).asInstanceOf(collection(String.class))
-            .containsExactlyInAnyOrder("ROLE_TENANT_ADMIN", "system:org:list", "scheduling:*");
+            .containsExactlyInAnyOrder("system:org:list", "scheduling:*");
+        assertThat(claims.get("roleCodes")).asInstanceOf(collection(String.class))
+            .containsExactlyInAnyOrder("ROLE_TENANT_ADMIN");
         assertThat(claims.get("permissions")).asInstanceOf(collection(String.class))
             .containsExactlyInAnyOrder("system:org:list", "scheduling:*");
         verify(userDetailsService).loadUserByUsername("alice");
@@ -640,7 +730,9 @@ class JwtTokenCustomizerTest {
 
         Map<String, Object> claims = context.getClaims().build().getClaims();
         assertThat(claims.get("authorities")).asInstanceOf(collection(String.class))
-            .containsExactlyInAnyOrder("ROLE_TENANT_ADMIN", "scheduling:console:config");
+            .containsExactlyInAnyOrder("scheduling:console:config");
+        assertThat(claims.get("roleCodes")).asInstanceOf(collection(String.class))
+            .containsExactlyInAnyOrder("ROLE_TENANT_ADMIN");
         assertThat(claims.get("permissions")).asInstanceOf(collection(String.class)).containsExactly("scheduling:console:config");
         verify(userDetailsService).loadUserByUsername("alice");
     }

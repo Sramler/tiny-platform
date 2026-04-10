@@ -10,9 +10,11 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * 兼容总表。
- * <p>当前仍作为主写入口和历史迁移输入存在，但功能权限真相源已经迁到
- * role_permission -> permission，运行时载体读路径也在逐步迁往 menu/ui_action/api_endpoint。</p>
+ * 历史兼容资源聚合类型。
+ * <p>当前不再映射活动 {@code resource} 表；功能权限真相源已经迁到
+ * {@code role_permission -> permission}，活动载体层也已收口到
+ * {@code menu / ui_action / api_endpoint}。保留本类型主要用于旧接口 DTO 语义、
+ * 历史迁移说明与 carrier 聚合转换。</p>
  */
 public class Resource implements Serializable {
 

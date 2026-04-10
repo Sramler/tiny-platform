@@ -18,15 +18,15 @@ import com.tiny.platform.infrastructure.auth.role.domain.Role;
 import com.tiny.platform.infrastructure.auth.role.repository.RoleRepository;
 import com.tiny.platform.infrastructure.auth.role.service.RoleAssignmentSyncService;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
-import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationMethod;
-import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationMethodRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
+import com.tiny.platform.infrastructure.auth.user.service.UserAuthenticationBridgeWriter;
 import com.tiny.platform.infrastructure.core.exception.code.ErrorCode;
 import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
 import com.tiny.platform.infrastructure.tenant.domain.Tenant;
 import com.tiny.platform.infrastructure.tenant.dto.TenantCreateUpdateDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantResponseDto;
 import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -39,7 +39,7 @@ class TenantServiceImplTest {
     private TenantBootstrapService tenantBootstrapService;
     private AuthorizationAuditService auditService;
     private UserRepository userRepository;
-    private UserAuthenticationMethodRepository authenticationMethodRepository;
+    private UserAuthenticationBridgeWriter authenticationBridgeWriter;
     private PasswordEncoder passwordEncoder;
     private RoleRepository roleRepository;
     private RoleAssignmentSyncService roleAssignmentSyncService;
@@ -52,7 +52,7 @@ class TenantServiceImplTest {
         tenantBootstrapService = org.mockito.Mockito.mock(TenantBootstrapService.class);
         auditService = org.mockito.Mockito.mock(AuthorizationAuditService.class);
         userRepository = org.mockito.Mockito.mock(UserRepository.class);
-        authenticationMethodRepository = org.mockito.Mockito.mock(UserAuthenticationMethodRepository.class);
+        authenticationBridgeWriter = org.mockito.Mockito.mock(UserAuthenticationBridgeWriter.class);
         passwordEncoder = org.mockito.Mockito.mock(PasswordEncoder.class);
         roleRepository = org.mockito.Mockito.mock(RoleRepository.class);
         roleAssignmentSyncService = org.mockito.Mockito.mock(RoleAssignmentSyncService.class);
@@ -62,11 +62,11 @@ class TenantServiceImplTest {
             tenantBootstrapService,
             auditService,
             userRepository,
-            authenticationMethodRepository,
             passwordEncoder,
             roleRepository,
             roleAssignmentSyncService,
-            tenantQuotaService
+            tenantQuotaService,
+            authenticationBridgeWriter
         );
     }
 
@@ -92,18 +92,29 @@ class TenantServiceImplTest {
             return user;
         });
         when(passwordEncoder.encode("Secret123")).thenReturn("{bcrypt}hashed");
-        when(authenticationMethodRepository.save(any(UserAuthenticationMethod.class)))
-            .thenAnswer(invocation -> invocation.getArgument(0));
 
         TenantResponseDto response = service.create(dto);
 
         ArgumentCaptor<Tenant> tenantCaptor = ArgumentCaptor.forClass(Tenant.class);
         ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
-        ArgumentCaptor<UserAuthenticationMethod> authMethodCaptor = ArgumentCaptor.forClass(UserAuthenticationMethod.class);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> passwordConfigCaptor = ArgumentCaptor.forClass(Map.class);
         verify(tenantRepository).save(tenantCaptor.capture());
         verify(tenantBootstrapService).bootstrapFromPlatformTemplate(tenantCaptor.getValue());
         verify(userRepository).save(userCaptor.capture());
-        verify(authenticationMethodRepository).save(authMethodCaptor.capture());
+        verify(authenticationBridgeWriter).upsert(
+            eq(101L),
+            eq("LOCAL"),
+            eq("PASSWORD"),
+            passwordConfigCaptor.capture(),
+            any(),
+            any(),
+            any(),
+            eq("TENANT"),
+            eq(42L),
+            any(),
+            any(),
+            any());
         verify(roleAssignmentSyncService).ensureTenantMembership(101L, 42L, true);
         verify(roleAssignmentSyncService).replaceUserTenantRoleAssignments(101L, 42L, java.util.List.of(7L));
         verify(auditService).log(
@@ -123,10 +134,7 @@ class TenantServiceImplTest {
         assertThat(tenantCaptor.getValue().getCode()).isEqualTo("acme-01");
         assertThat(userCaptor.getValue().getUsername()).isEqualTo("acme_admin");
         assertThat(userCaptor.getValue().getNickname()).isEqualTo("Acme Admin");
-        assertThat(authMethodCaptor.getValue().getAuthenticationProvider()).isEqualTo("LOCAL");
-        assertThat(authMethodCaptor.getValue().getAuthenticationType()).isEqualTo("PASSWORD");
-        assertThat(authMethodCaptor.getValue().getAuthenticationConfiguration())
-            .containsEntry("password", "{bcrypt}hashed");
+        assertThat(passwordConfigCaptor.getValue()).containsEntry("password", "{bcrypt}hashed");
         assertThat(response.getId()).isEqualTo(42L);
         assertThat(response.getCode()).isEqualTo("acme-01");
     }
@@ -411,8 +419,6 @@ class TenantServiceImplTest {
             return user;
         });
         when(passwordEncoder.encode("Secret123")).thenReturn("{bcrypt}hashed");
-        when(authenticationMethodRepository.save(any(UserAuthenticationMethod.class)))
-            .thenAnswer(invocation -> invocation.getArgument(0));
 
         service.create(dto);
 
