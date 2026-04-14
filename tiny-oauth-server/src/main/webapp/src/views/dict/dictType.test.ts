@@ -4,6 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const apiMocks = vi.hoisted(() => ({
   getDictTypeList: vi.fn(),
+  getPlatformDictTypeList: vi.fn(),
+  createPlatformDictType: vi.fn(),
+  updatePlatformDictType: vi.fn(),
+  deletePlatformDictType: vi.fn(),
 }))
 
 const tenantMocks = vi.hoisted(() => ({
@@ -16,9 +20,13 @@ const uiMocks = vi.hoisted(() => ({
 
 vi.mock('@/api/dict', () => ({
   getDictTypeList: apiMocks.getDictTypeList,
+  getPlatformDictTypeList: apiMocks.getPlatformDictTypeList,
   createDictType: vi.fn(),
   updateDictType: vi.fn(),
   deleteDictType: vi.fn(),
+  createPlatformDictType: apiMocks.createPlatformDictType,
+  updatePlatformDictType: apiMocks.updatePlatformDictType,
+  deletePlatformDictType: apiMocks.deletePlatformDictType,
 }))
 
 vi.mock('@/utils/tenant', () => ({

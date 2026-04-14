@@ -240,6 +240,11 @@ class PartialMfaFormLoginIntegrationTest {
                 "forceMfa", false,
                 "requireTotp", true
         ));
+        when(securityService.preBindTotp(user)).thenReturn(Map.of(
+                "success", true,
+                "secretKey", "BASE32SECRET",
+                "otpauthUri", "otpauth://totp/tiny:admin?secret=BASE32SECRET"
+        ));
         var csrf = fetchCsrf();
 
         var loginResult = mockMvc.perform(post("/login")
@@ -271,6 +276,12 @@ class PartialMfaFormLoginIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.requireTotp").value(true))
                 .andExpect(jsonPath("$.totpActivated").value(true));
+
+        mockMvc.perform(get("/self/security/totp/pre-bind").session(session))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.secretKey").value("BASE32SECRET"))
+                .andExpect(jsonPath("$.qrCodeDataUrl").isNotEmpty());
 
         mockMvc.perform(post("/self/security/skip-mfa-remind")
                         .session(session)

@@ -38,6 +38,25 @@ export interface DictItem {
   updatedBy?: string
 }
 
+export interface PlatformDictOverrideSummary {
+  tenantId: number
+  tenantCode?: string
+  tenantName?: string
+  baselineCount: number
+  overriddenCount: number
+  inheritedCount: number
+  orphanOverlayCount: number
+}
+
+export interface PlatformDictOverrideDetail {
+  value: string
+  status: 'INHERITED' | 'OVERRIDDEN' | 'ORPHAN_OVERLAY'
+  baselineLabel?: string
+  overlayLabel?: string
+  effectiveLabel?: string
+  labelChanged: boolean
+}
+
 // 字典类型查询参数
 export interface DictTypeQuery {
   dictCode?: string
@@ -226,4 +245,92 @@ export function batchDeleteDictItems(ids: (number | string)[]): Promise<void> {
       payload: ids,
     },
   })
+}
+
+// ==================== 平台字典 API ====================
+
+export function getPlatformDictTypeList(params?: DictTypeQuery): Promise<PageResponse<DictTypeItem>> {
+  return request.get('/platform/dict/types', { params })
+}
+
+export async function getPlatformVisibleDictTypes(): Promise<DictTypeItem[]> {
+  const page = await getPlatformDictTypeList({ page: 0, size: 200 })
+  return page.content || []
+}
+
+export function createPlatformDictType(data: DictTypeCreateUpdateDto): Promise<DictTypeItem> {
+  return request.post('/platform/dict/types', data, {
+    idempotency: {
+      scope: 'platform-dict-types:create',
+      payload: data,
+    },
+  })
+}
+
+export function updatePlatformDictType(
+  id: number | string,
+  data: DictTypeCreateUpdateDto,
+): Promise<DictTypeItem> {
+  return request.put(`/platform/dict/types/${id}`, data, {
+    idempotency: {
+      scope: `platform-dict-types:update:${id}`,
+      payload: data,
+    },
+  })
+}
+
+export function deletePlatformDictType(id: number | string): Promise<void> {
+  return request.delete(`/platform/dict/types/${id}`, {
+    idempotency: {
+      scope: `platform-dict-types:delete:${id}`,
+      payload: { id },
+    },
+  })
+}
+
+export function getPlatformDictItemList(params?: DictItemQuery): Promise<PageResponse<DictItem>> {
+  return request.get('/platform/dict/items', { params })
+}
+
+export function createPlatformDictItem(data: DictItemCreateUpdateDto): Promise<DictItem> {
+  return request.post('/platform/dict/items', data, {
+    idempotency: {
+      scope: 'platform-dict-items:create',
+      payload: data,
+    },
+  })
+}
+
+export function updatePlatformDictItem(
+  id: number | string,
+  data: DictItemCreateUpdateDto,
+): Promise<DictItem> {
+  return request.put(`/platform/dict/items/${id}`, data, {
+    idempotency: {
+      scope: `platform-dict-items:update:${id}`,
+      payload: data,
+    },
+  })
+}
+
+export function deletePlatformDictItem(id: number | string): Promise<void> {
+  return request.delete(`/platform/dict/items/${id}`, {
+    idempotency: {
+      scope: `platform-dict-items:delete:${id}`,
+      payload: { id },
+    },
+  })
+}
+
+export function getPlatformDictOverrides(
+  dictTypeId: number | string,
+): Promise<PlatformDictOverrideSummary[]> {
+  return request.get(`/platform/dict/types/${dictTypeId}/overrides`)
+}
+
+export function getPlatformDictOverrideDetails(
+  dictTypeId: number | string,
+  tenantId: number | string,
+): Promise<PlatformDictOverrideDetail[]> {
+  return request.get(`/platform/dict/types/${dictTypeId}/overrides/${tenantId}`)
 }

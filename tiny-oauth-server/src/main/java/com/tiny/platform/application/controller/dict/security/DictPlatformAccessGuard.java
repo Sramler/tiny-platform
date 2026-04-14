@@ -1,5 +1,6 @@
 package com.tiny.platform.application.controller.dict.security;
 
+import com.tiny.platform.core.oauth.tenant.TenantContext;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Component;
@@ -17,6 +18,9 @@ public class DictPlatformAccessGuard {
 
     public boolean canManagePlatformDict(Authentication authentication) {
         if (authentication == null || !authentication.isAuthenticated()) {
+            return false;
+        }
+        if (!TenantContext.isPlatformScope()) {
             return false;
         }
         return authentication.getAuthorities().stream()

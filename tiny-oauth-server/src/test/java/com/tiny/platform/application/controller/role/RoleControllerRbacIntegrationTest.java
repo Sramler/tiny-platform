@@ -168,8 +168,26 @@ class RoleControllerRbacIntegrationTest {
         }
 
         @Test
+        void getRolePermissions_allowsPermissionAssignAuthority() throws Exception {
+            when(roleService.getPermissionIdsByRoleId(6L)).thenReturn(List.of(9001L));
+
+            mockMvc.perform(get("/sys/roles/6/permissions")
+                    .with(user("role-permission-assigner").authorities(new SimpleGrantedAuthority("system:role:permission:assign"))))
+                .andExpect(status().isOk());
+        }
+
+        @Test
         void updateRoleResources_deniesReadAuthority() throws Exception {
             mockMvc.perform(post("/sys/roles/6/resources")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(java.util.Map.of("permissionIds", List.of(4L, 5L))))
+                    .with(user("role-reader").authorities(new SimpleGrantedAuthority("system:role:list"))))
+                .andExpect(status().isForbidden());
+        }
+
+        @Test
+        void updateRolePermissions_deniesReadAuthority() throws Exception {
+            mockMvc.perform(post("/sys/roles/6/permissions")
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(java.util.Map.of("permissionIds", List.of(4L, 5L))))
                     .with(user("role-reader").authorities(new SimpleGrantedAuthority("system:role:list"))))

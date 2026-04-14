@@ -25,7 +25,7 @@
 // 引入Vue API
 import { ref, computed, watch, onMounted } from 'vue';
 import { getResourceTree } from '@/api/resource' // 引入资源API
-import { getRoleResources } from '@/api/role' // 引入角色API
+import { getRolePermissions } from '@/api/role' // 引入角色API
 
 // props 和 emits
 const props = defineProps({
@@ -87,6 +87,7 @@ type TreeEventInfo = {
 
 const treeNodeMap = new Map<string, TreeNodeInfo>()
 const permissionIdByResourceKey = new Map<string, number>()
+const resourceKeyByPermissionId = new Map<number, string>()
 
 const onTreeCheck = (_: unknown, info: unknown) => handleTreeCheck(info as TreeEventInfo)
 const onTreeSelect = (_: unknown, info: unknown) => handleTreeSelect(info as TreeEventInfo)
@@ -99,6 +100,7 @@ async function loadResourceTree() {
     // 转换数据格式，确保key为number类型
     originalTreeData.value = transformTreeData(tree)
     permissionIdByResourceKey.clear()
+    resourceKeyByPermissionId.clear()
     collectPermissionBindings(tree)
     // 扁平化数据用于transfer组件
     flattenTreeData(originalTreeData.value)
@@ -119,9 +121,10 @@ async function loadRoleResources(targetRoleId?: number) {
     return
   }
   try {
-    const resourceIds = await getRoleResources(roleId)
-    // 确保 key 类型一致
-    rightKeys.value = (resourceIds || []).map((id: number | string) => String(id))
+    const permissionIds = await getRolePermissions(roleId)
+    rightKeys.value = (permissionIds || [])
+      .map((permissionId: number) => resourceKeyByPermissionId.get(Number(permissionId)))
+      .filter((resourceKey): resourceKey is string => Boolean(resourceKey))
   } catch (error) {
     console.error('加载角色资源失败:', error)
     rightKeys.value = []
@@ -143,6 +146,7 @@ function collectPermissionBindings(nodes: ResourceTreeNode[] = []) {
     const permissionId = node.requiredPermissionId == null ? null : Number(node.requiredPermissionId)
     if (key && permissionId != null && Number.isFinite(permissionId)) {
       permissionIdByResourceKey.set(key, permissionId)
+      resourceKeyByPermissionId.set(permissionId, key)
     }
     if (node.children) {
       collectPermissionBindings(node.children)

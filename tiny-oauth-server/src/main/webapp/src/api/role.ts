@@ -19,6 +19,10 @@ export type RoleUserAssignmentPayload = {
   userIds: number[]
 }
 
+export type RolePermissionAssignmentPayload = {
+  permissionIds: number[]
+}
+
 export function roleList(params: { current?: number; pageSize?: number; name?: string; code?: string }) {
   return request.get('/sys/roles', { params })
 }
@@ -84,16 +88,29 @@ export function updateRoleUsers(roleId: number, payload: RoleUserAssignmentPaylo
   })
 }
 
-// 获取某角色下已分配资源（返回资源ID数组，需后端实现）
-export function getRoleResources(roleId: number) {
-  // 向后端请求该角色下所有已分配资源
-  return request.get(`/sys/roles/${roleId}/resources`)
+// 获取某角色下已分配权限
+export function getRolePermissions(roleId: number) {
+  return request.get<number[]>(`/sys/roles/${roleId}/permissions`)
+}
+
+// 保存角色权限分配（主契约）
+export function updateRolePermissions(roleId: number, payload: RolePermissionAssignmentPayload) {
+  return request.post(`/sys/roles/${roleId}/permissions`, payload, {
+    idempotency: {
+      scope: `sys-roles:permissions:update:${roleId}`,
+      payload,
+    },
+  })
 }
 
 /**
- * 保存角色权限分配。POST `/sys/roles/{id}/resources` 请求体仅允许 `{ permissionIds }`（CARD-13D，与 RoleController 一致）。
+ * 兼容历史入口：`/sys/roles/{id}/resources` 仍以 permissionIds 语义传输。
  */
-export function updateRoleResources(roleId: number, payload: { permissionIds: number[] }) {
+export function getRoleResources(roleId: number) {
+  return request.get<number[]>(`/sys/roles/${roleId}/resources`)
+}
+
+export function updateRoleResources(roleId: number, payload: RolePermissionAssignmentPayload) {
   return request.post(`/sys/roles/${roleId}/resources`, payload, {
     idempotency: {
       scope: `sys-roles:resources:update:${roleId}`,

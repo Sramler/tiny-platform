@@ -18,6 +18,11 @@ const authMocks = vi.hoisted(() => ({
   authUser: { value: null as { access_token?: string | null } | null },
 }))
 
+const routerMocks = vi.hoisted(() => ({
+  push: vi.fn(),
+  path: '/system/tenant',
+}))
+
 vi.mock('@/api/tenant', () => ({
   tenantList: apiMocks.tenantList,
   getTenantById: vi.fn(),
@@ -49,6 +54,11 @@ vi.mock('@/api/resource', () => ({
   getRuntimeUiActions: apiMocks.getRuntimeUiActions,
 }))
 
+vi.mock('vue-router', () => ({
+  useRoute: () => ({ path: routerMocks.path }),
+  useRouter: () => ({ push: routerMocks.push }),
+}))
+
 const PassThrough = defineComponent({ template: '<div><slot /></div>' })
 
 function createToken(authorities: string[], activeScopeType: 'PLATFORM' | 'TENANT' = 'PLATFORM') {
@@ -69,6 +79,7 @@ async function flushPromises() {
 describe('Tenant.vue', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    routerMocks.path = '/system/tenant'
     apiMocks.tenantList.mockResolvedValue({ content: [], totalElements: 0 })
     apiMocks.getRuntimeUiActions.mockResolvedValue([])
     authMocks.authUser.value = {
@@ -191,5 +202,39 @@ describe('Tenant.vue', () => {
     expect(apiMocks.getRuntimeUiActions).toHaveBeenCalledWith('/system/tenant')
     expect(wrapper.text()).not.toContain('新建租户')
     expect(wrapper.text()).not.toContain('批量删除')
+  })
+
+  it('should resolve runtime actions on platform route with system tenant menu path alias', async () => {
+    routerMocks.path = '/platform/tenants'
+    window.history.replaceState({}, '', '/platform/tenants')
+
+    const wrapper = mount(Tenant, {
+      global: {
+        stubs: {
+          'a-form': PassThrough,
+          'a-form-item': PassThrough,
+          'a-input': PassThrough,
+          'a-input-password': PassThrough,
+          'a-select': PassThrough,
+          'a-select-option': PassThrough,
+          'a-button': PassThrough,
+          'a-tooltip': PassThrough,
+          'a-table': defineComponent({ props: ['dataSource'], template: '<div class="table" />' }),
+          'a-tag': PassThrough,
+          'a-pagination': PassThrough,
+          'a-drawer': PassThrough,
+          'a-input-number': PassThrough,
+          'a-switch': PassThrough,
+          'a-textarea': PassThrough,
+          PlusOutlined: PassThrough,
+          ReloadOutlined: PassThrough,
+          EditOutlined: PassThrough,
+          DeleteOutlined: PassThrough,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(apiMocks.getRuntimeUiActions).toHaveBeenCalledWith('/system/tenant')
   })
 })

@@ -1,0 +1,248 @@
+databaseChangeLog:
+  - changeSet:
+      id: 140-backfill-permission-control-api-endpoints
+      author: codex
+      comment: 补齐 permission control 与 role-permission 主契约的 api_endpoint requirement，避免统一守卫 fail-closed 误拦截
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: api_endpoint
+            - tableExists:
+                tableName: api_endpoint_permission_requirement
+            - tableExists:
+                tableName: permission
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              -- TENANT scope: GET /sys/permissions -> system:role:list
+              INSERT INTO api_endpoint (
+                tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at
+              )
+              SELECT
+                p.tenant_id, 'TENANT', 'permission-management-list-get', 'Permission 主数据列表',
+                '/sys/permissions', 'GET', 'system:role:list', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NOT NULL
+                AND p.permission_code = 'system:role:list'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM api_endpoint e
+                  WHERE e.tenant_id = p.tenant_id
+                    AND e.uri = '/sys/permissions'
+                    AND e.method = 'GET'
+                );
+
+              -- PLATFORM scope: GET /sys/permissions -> system:role:list
+              INSERT INTO api_endpoint (
+                tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at
+              )
+              SELECT
+                NULL, 'PLATFORM', 'permission-management-list-get', 'Permission 主数据列表',
+                '/sys/permissions', 'GET', 'system:role:list', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NULL
+                AND p.permission_code = 'system:role:list'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM api_endpoint e
+                  WHERE e.tenant_id IS NULL
+                    AND e.uri = '/sys/permissions'
+                    AND e.method = 'GET'
+                );
+
+              -- TENANT scope: GET /sys/permissions/{id} -> system:role:list
+              INSERT INTO api_endpoint (
+                tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at
+              )
+              SELECT
+                p.tenant_id, 'TENANT', 'permission-management-detail-get', 'Permission 主数据详情',
+                '/sys/permissions/{id}', 'GET', 'system:role:list', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NOT NULL
+                AND p.permission_code = 'system:role:list'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM api_endpoint e
+                  WHERE e.tenant_id = p.tenant_id
+                    AND e.uri = '/sys/permissions/{id}'
+                    AND e.method = 'GET'
+                );
+
+              -- PLATFORM scope: GET /sys/permissions/{id} -> system:role:list
+              INSERT INTO api_endpoint (
+                tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at
+              )
+              SELECT
+                NULL, 'PLATFORM', 'permission-management-detail-get', 'Permission 主数据详情',
+                '/sys/permissions/{id}', 'GET', 'system:role:list', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NULL
+                AND p.permission_code = 'system:role:list'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM api_endpoint e
+                  WHERE e.tenant_id IS NULL
+                    AND e.uri = '/sys/permissions/{id}'
+                    AND e.method = 'GET'
+                );
+
+              -- TENANT scope: PATCH /sys/permissions/{id}/enabled -> system:role:permission:assign
+              INSERT INTO api_endpoint (
+                tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at
+              )
+              SELECT
+                p.tenant_id, 'TENANT', 'permission-management-enabled-patch', 'Permission 启停切换',
+                '/sys/permissions/{id}/enabled', 'PATCH', 'system:role:permission:assign', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NOT NULL
+                AND p.permission_code = 'system:role:permission:assign'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM api_endpoint e
+                  WHERE e.tenant_id = p.tenant_id
+                    AND e.uri = '/sys/permissions/{id}/enabled'
+                    AND e.method = 'PATCH'
+                );
+
+              -- PLATFORM scope: PATCH /sys/permissions/{id}/enabled -> system:role:permission:assign
+              INSERT INTO api_endpoint (
+                tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at
+              )
+              SELECT
+                NULL, 'PLATFORM', 'permission-management-enabled-patch', 'Permission 启停切换',
+                '/sys/permissions/{id}/enabled', 'PATCH', 'system:role:permission:assign', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NULL
+                AND p.permission_code = 'system:role:permission:assign'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM api_endpoint e
+                  WHERE e.tenant_id IS NULL
+                    AND e.uri = '/sys/permissions/{id}/enabled'
+                    AND e.method = 'PATCH'
+                );
+
+              -- TENANT scope: GET /sys/roles/{id}/permissions -> system:role:permission:assign
+              INSERT INTO api_endpoint (
+                tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at
+              )
+              SELECT
+                p.tenant_id, 'TENANT', 'role-permission-assignment-get', '角色权限读取',
+                '/sys/roles/{id}/permissions', 'GET', 'system:role:permission:assign', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NOT NULL
+                AND p.permission_code = 'system:role:permission:assign'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM api_endpoint e
+                  WHERE e.tenant_id = p.tenant_id
+                    AND e.uri = '/sys/roles/{id}/permissions'
+                    AND e.method = 'GET'
+                );
+
+              -- PLATFORM scope: GET /sys/roles/{id}/permissions -> system:role:permission:assign
+              INSERT INTO api_endpoint (
+                tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at
+              )
+              SELECT
+                NULL, 'PLATFORM', 'role-permission-assignment-get', '角色权限读取',
+                '/sys/roles/{id}/permissions', 'GET', 'system:role:permission:assign', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NULL
+                AND p.permission_code = 'system:role:permission:assign'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM api_endpoint e
+                  WHERE e.tenant_id IS NULL
+                    AND e.uri = '/sys/roles/{id}/permissions'
+                    AND e.method = 'GET'
+                );
+
+              -- TENANT scope: POST /sys/roles/{id}/permissions -> system:role:permission:assign
+              INSERT INTO api_endpoint (
+                tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at
+              )
+              SELECT
+                p.tenant_id, 'TENANT', 'role-permission-assignment-post', '角色权限写入',
+                '/sys/roles/{id}/permissions', 'POST', 'system:role:permission:assign', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NOT NULL
+                AND p.permission_code = 'system:role:permission:assign'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM api_endpoint e
+                  WHERE e.tenant_id = p.tenant_id
+                    AND e.uri = '/sys/roles/{id}/permissions'
+                    AND e.method = 'POST'
+                );
+
+              -- PLATFORM scope: POST /sys/roles/{id}/permissions -> system:role:permission:assign
+              INSERT INTO api_endpoint (
+                tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at
+              )
+              SELECT
+                NULL, 'PLATFORM', 'role-permission-assignment-post', '角色权限写入',
+                '/sys/roles/{id}/permissions', 'POST', 'system:role:permission:assign', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NULL
+                AND p.permission_code = 'system:role:permission:assign'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM api_endpoint e
+                  WHERE e.tenant_id IS NULL
+                    AND e.uri = '/sys/roles/{id}/permissions'
+                    AND e.method = 'POST'
+                );
+
+              INSERT IGNORE INTO api_endpoint_permission_requirement (
+                tenant_id, api_endpoint_id, requirement_group, sort_order, permission_id, negated, created_at, updated_at
+              )
+              SELECT
+                e.tenant_id,
+                e.id,
+                0,
+                1,
+                e.required_permission_id,
+                0,
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP
+              FROM api_endpoint e
+              WHERE e.uri IN (
+                '/sys/permissions',
+                '/sys/permissions/{id}',
+                '/sys/permissions/{id}/enabled',
+                '/sys/roles/{id}/permissions'
+              )
+                AND e.method IN ('GET', 'PATCH', 'POST')
+                AND e.required_permission_id IS NOT NULL;
+
+              -- GET /sys/permissions* read guard accepts (system:role:list OR system:role:permission:assign)
+              -- so add group=1 with assign permission to keep api_endpoint guard consistent with @PreAuthorize.
+              INSERT IGNORE INTO api_endpoint_permission_requirement (
+                tenant_id, api_endpoint_id, requirement_group, sort_order, permission_id, negated, created_at, updated_at
+              )
+              SELECT
+                e.tenant_id,
+                e.id,
+                1,
+                1,
+                p.id,
+                0,
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP
+              FROM api_endpoint e
+              JOIN permission p
+                ON (
+                  (e.tenant_id IS NOT NULL AND p.tenant_id = e.tenant_id)
+                  OR (e.tenant_id IS NULL AND p.tenant_id IS NULL)
+                )
+               AND p.permission_code = 'system:role:permission:assign'
+              WHERE e.uri IN ('/sys/permissions', '/sys/permissions/{id}')
+                AND e.method = 'GET';

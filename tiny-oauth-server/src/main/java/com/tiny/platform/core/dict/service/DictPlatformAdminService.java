@@ -6,6 +6,8 @@ import com.tiny.platform.core.dict.dto.DictItemResponseDto;
 import com.tiny.platform.core.dict.dto.DictTypeCreateUpdateDto;
 import com.tiny.platform.core.dict.dto.DictTypeQueryDto;
 import com.tiny.platform.core.dict.dto.DictTypeResponseDto;
+import com.tiny.platform.core.dict.dto.PlatformDictOverrideDetailDto;
+import com.tiny.platform.core.dict.dto.PlatformDictOverrideSummaryDto;
 import com.tiny.platform.core.dict.model.DictItem;
 import com.tiny.platform.core.dict.model.DictType;
 import org.springframework.data.domain.Page;
@@ -41,6 +43,10 @@ public interface DictPlatformAdminService {
     List<DictItem> findItemsByType(Long dictTypeId);
 
     List<DictItem> findItemsByCode(String dictCode);
+
+    List<PlatformDictOverrideSummaryDto> findTypeOverrideSummaries(Long dictTypeId);
+
+    List<PlatformDictOverrideDetailDto> findTypeOverrideDetails(Long dictTypeId, Long tenantId);
 
     Map<String, String> getDictMap(String dictCode);
 

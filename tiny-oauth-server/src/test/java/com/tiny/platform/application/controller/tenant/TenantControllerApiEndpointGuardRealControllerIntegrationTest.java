@@ -22,6 +22,7 @@ import com.tiny.platform.infrastructure.auth.user.repository.TenantUserRepositor
 import com.tiny.platform.infrastructure.menu.repository.MenuEntryRepository;
 import com.tiny.platform.infrastructure.menu.repository.MenuPermissionRequirementRepository;
 import com.tiny.platform.infrastructure.tenant.dto.TenantResponseDto;
+import com.tiny.platform.infrastructure.tenant.service.PlatformTemplateDiffResult;
 import com.tiny.platform.infrastructure.tenant.service.TenantService;
 import com.tiny.platform.core.oauth.tenant.TenantLifecycleAccessGuard;
 import org.junit.jupiter.api.AfterEach;
@@ -137,6 +138,70 @@ class TenantControllerApiEndpointGuardRealControllerIntegrationTest {
                 .accept(MediaType.APPLICATION_JSON)
                 .with(user("platform-admin").authorities(new SimpleGrantedAuthority(REQUIRED_AUTH))))
             .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void tenant_realTenantController_permissionSummary_allow_shouldReturn200_whenRequirementSatisfied_staticUri() throws Exception {
+        when(tenantService.summarizeTenantPermissions(9L))
+            .thenReturn(new com.tiny.platform.infrastructure.tenant.dto.TenantPermissionSummaryDto(
+                9L, 1L, 1L, 2L, 2L, 3L, 3L, 1L, 1L, 1L
+            ));
+        ApiEndpointEntry summaryEntry = new ApiEndpointEntry();
+        summaryEntry.setId(81102L);
+        summaryEntry.setTenantId(null);
+        summaryEntry.setResourceLevel("PLATFORM");
+        summaryEntry.setName("tenant-permission-summary");
+        summaryEntry.setTitle("tenant permission summary");
+        summaryEntry.setUri("/sys/tenants/9/permission-summary");
+        summaryEntry.setMethod("GET");
+        summaryEntry.setPermission(REQUIRED_AUTH);
+        summaryEntry.setRequiredPermissionId(REQUIRED_PERMISSION_ID);
+        summaryEntry.setEnabled(true);
+        when(apiEndpointEntryRepository.findAll(
+            Mockito.<Specification<ApiEndpointEntry>>any(),
+            Mockito.<Sort>any()
+        )).thenReturn(List.of(summaryEntry));
+        CarrierPermissionRequirementRow row = requirementRow(true);
+        when(apiEndpointPermissionRequirementRepository.findRowsByApiEndpointIdIn(anyCollection()))
+            .thenReturn(List.of(row));
+
+        mockMvc.perform(get("/sys/tenants/9/permission-summary")
+                .accept(MediaType.APPLICATION_JSON)
+                .with(user("platform-admin").authorities(new SimpleGrantedAuthority(REQUIRED_AUTH))))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void tenant_realTenantController_platformTemplateDiff_allow_shouldReturn200_whenRequirementSatisfied_staticUri() throws Exception {
+        when(tenantService.diffPlatformTemplate(9L))
+            .thenReturn(new PlatformTemplateDiffResult(
+                9L,
+                new PlatformTemplateDiffResult.Summary(1, 1, 0, 0, 0),
+                List.of()
+            ));
+        ApiEndpointEntry diffEntry = new ApiEndpointEntry();
+        diffEntry.setId(81103L);
+        diffEntry.setTenantId(null);
+        diffEntry.setResourceLevel("PLATFORM");
+        diffEntry.setName("tenant-platform-template-diff");
+        diffEntry.setTitle("tenant platform template diff");
+        diffEntry.setUri("/sys/tenants/9/platform-template/diff");
+        diffEntry.setMethod("GET");
+        diffEntry.setPermission(REQUIRED_AUTH);
+        diffEntry.setRequiredPermissionId(REQUIRED_PERMISSION_ID);
+        diffEntry.setEnabled(true);
+        when(apiEndpointEntryRepository.findAll(
+            Mockito.<Specification<ApiEndpointEntry>>any(),
+            Mockito.<Sort>any()
+        )).thenReturn(List.of(diffEntry));
+        CarrierPermissionRequirementRow row = requirementRow(true);
+        when(apiEndpointPermissionRequirementRepository.findRowsByApiEndpointIdIn(anyCollection()))
+            .thenReturn(List.of(row));
+
+        mockMvc.perform(get("/sys/tenants/9/platform-template/diff")
+                .accept(MediaType.APPLICATION_JSON)
+                .with(user("platform-admin").authorities(new SimpleGrantedAuthority(REQUIRED_AUTH))))
+            .andExpect(status().isOk());
     }
 
     private static CarrierPermissionRequirementRow requirementRow(boolean permissionEnabled) {

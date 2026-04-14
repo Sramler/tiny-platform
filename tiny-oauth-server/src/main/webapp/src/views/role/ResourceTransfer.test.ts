@@ -7,7 +7,7 @@ const resourceMocks = vi.hoisted(() => ({
 }))
 
 const roleMocks = vi.hoisted(() => ({
-  getRoleResources: vi.fn(),
+  getRolePermissions: vi.fn(),
 }))
 
 vi.mock('@/api/resource', () => ({
@@ -15,7 +15,7 @@ vi.mock('@/api/resource', () => ({
 }))
 
 vi.mock('@/api/role', () => ({
-  getRoleResources: roleMocks.getRoleResources,
+  getRolePermissions: roleMocks.getRolePermissions,
 }))
 
 const ModalStub = defineComponent({
@@ -41,7 +41,7 @@ describe('ResourceTransfer.vue', () => {
       { id: 1, title: '菜单 1', requiredPermissionId: 101 },
       { id: 2, title: '菜单 2', requiredPermissionId: 102 },
     ])
-    roleMocks.getRoleResources.mockResolvedValue([1, 2])
+    roleMocks.getRolePermissions.mockResolvedValue([101, 102])
   })
 
   it('should load data when opened and emit permissionIds-only submit payload on ok', async () => {
@@ -58,7 +58,7 @@ describe('ResourceTransfer.vue', () => {
     await flushPromises()
 
     expect(resourceMocks.getResourceTree).toHaveBeenCalled()
-    expect(roleMocks.getRoleResources).toHaveBeenCalledWith(9)
+    expect(roleMocks.getRolePermissions).toHaveBeenCalledWith(9)
 
     await wrapper.find('button.ok').trigger('click')
     const submitEvents = wrapper.emitted('submit')

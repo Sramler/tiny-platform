@@ -1,10 +1,14 @@
 package com.tiny.platform.core.oauth.config;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
+import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
 import com.tiny.platform.core.oauth.security.PermissionVersionService;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.core.oauth.tenant.TenantContextContract;
+import com.tiny.platform.core.oauth.config.jackson.JacksonConfig;
 import com.tiny.platform.infrastructure.auth.role.domain.Role;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
@@ -23,12 +27,15 @@ import org.springframework.security.oauth2.server.authorization.settings.ClientS
 import org.springframework.security.oauth2.server.authorization.settings.TokenSettings;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
+import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.StreamSupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.InstanceOfAssertFactories.collection;
@@ -423,6 +430,254 @@ class JwtTokenCustomizerTest {
         assertThat(claims).containsEntry(TenantContextContract.ACTIVE_SCOPE_TYPE_CLAIM, TenantContextContract.SCOPE_TYPE_PLATFORM);
         assertThat(claims).doesNotContainKey(TenantContextContract.ACTIVE_SCOPE_ID_CLAIM);
         assertThat(claims).containsEntry("permissionsVersion", "perm-plat-v2");
+    }
+
+    @Test
+    void accessToken_platform_round_tripped_mfa_principal_should_keep_security_user_claims() throws Exception {
+        JacksonConfig jacksonConfig = new JacksonConfig();
+        Jackson2ObjectMapperBuilder builder = new Jackson2ObjectMapperBuilder();
+        jacksonConfig.jacksonCustomizer().customize(builder);
+        ObjectMapper authorizationMapper = jacksonConfig.authorizationMapper(builder);
+
+        SecurityUser securityUser = new SecurityUser(
+            7L,
+            null,
+            "platform_admin",
+            "",
+            List.of(new SimpleGrantedAuthority("system:tenant:list")),
+            Set.of("ROLE_PLATFORM_ADMIN"),
+            true,
+            true,
+            true,
+            true,
+            "perm-plat-v1");
+
+        MultiFactorAuthenticationToken principal = new MultiFactorAuthenticationToken(
+            "platform_admin",
+            null,
+            MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL,
+            Set.of(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD),
+            List.of(new SimpleGrantedAuthority("system:tenant:list")));
+        principal.setDetails(securityUser);
+
+        JsonNode root = authorizationMapper.readTree(
+            authorizationMapper.writeValueAsString(Map.of("principal", principal)));
+        MultiFactorAuthenticationToken restoredPrincipal = authorizationMapper.treeToValue(
+            unwrapTypedNode(root.get("principal")),
+            MultiFactorAuthenticationToken.class);
+
+        RegisteredClient client = RegisteredClient.withId("rc-id")
+            .clientId("vue-client")
+            .clientSecret("{noop}secret")
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .redirectUri("http://localhost:5173/callback")
+            .scope("openid")
+            .scope("profile")
+            .clientSettings(ClientSettings.builder().requireAuthorizationConsent(false).build())
+            .tokenSettings(TokenSettings.builder().build())
+            .build();
+
+        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(client)
+            .id("auth-id")
+            .principalName("platform_admin")
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .authorizedScopes(Set.of("openid", "profile"))
+            .attribute("auth_time", Instant.ofEpochSecond(1_770_000_000L))
+            .build();
+
+        PermissionVersionService permissionVersionService = mock(PermissionVersionService.class);
+        when(permissionVersionService.resolvePermissionsVersion(
+            eq(7L), eq(null), eq(TenantContextContract.SCOPE_TYPE_PLATFORM), eq(null))).thenReturn("perm-plat-v1");
+
+        JwtEncodingContext context = JwtEncodingContext.with(
+                JwsHeader.with(SignatureAlgorithm.RS256),
+                JwtClaimsSet.builder()
+            )
+            .registeredClient(client)
+            .principal(restoredPrincipal)
+            .authorization(authorization)
+            .authorizedScopes(Set.of("openid", "profile"))
+            .tokenType(OAuth2TokenType.ACCESS_TOKEN)
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .build();
+
+        new JwtTokenCustomizer(mock(UserRepository.class), permissionVersionService).customize(context);
+
+        Map<String, Object> claims = context.getClaims().build().getClaims();
+        assertThat(claims).containsEntry("userId", 7L);
+        assertThat(claims).containsEntry("username", "platform_admin");
+        assertThat(claims).containsEntry(TenantContextContract.ACTIVE_SCOPE_TYPE_CLAIM, TenantContextContract.SCOPE_TYPE_PLATFORM);
+        assertThat(claims.get("authorities")).asInstanceOf(collection(String.class))
+            .containsExactly("system:tenant:list");
+        assertThat(claims.get("permissions")).asInstanceOf(collection(String.class))
+            .containsExactly("system:tenant:list");
+        assertThat(claims.get("roleCodes")).asInstanceOf(collection(String.class))
+            .containsExactly("ROLE_PLATFORM_ADMIN");
+        assertThat(claims).containsEntry("permissionsVersion", "perm-plat-v1");
+    }
+
+    @Test
+    void accessToken_should_persist_stable_list_claims_for_authorization_round_trip() throws Exception {
+        ObjectMapper authorizationMapper = authorizationMapper();
+
+        SecurityUser securityUser = new SecurityUser(
+            7L,
+            null,
+            "platform_admin",
+            "",
+            List.of(
+                new SimpleGrantedAuthority("system:tenant:list"),
+                new SimpleGrantedAuthority("dashboard:entry:view")),
+            Set.of("ROLE_PLATFORM_ADMIN"),
+            true,
+            true,
+            true,
+            true,
+            "perm-plat-v1");
+
+        UsernamePasswordAuthenticationToken principal = UsernamePasswordAuthenticationToken.authenticated(
+            "platform_admin",
+            "n/a",
+            List.of());
+        principal.setDetails(securityUser);
+
+        RegisteredClient client = RegisteredClient.withId("rc-id")
+            .clientId("vue-client")
+            .clientSecret("{noop}secret")
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .redirectUri("http://localhost:5173/callback")
+            .scope("openid")
+            .scope("profile")
+            .clientSettings(ClientSettings.builder().requireAuthorizationConsent(false).build())
+            .tokenSettings(TokenSettings.builder().build())
+            .build();
+
+        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(client)
+            .id("auth-id")
+            .principalName("platform_admin")
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .authorizedScopes(Set.of("openid", "profile"))
+            .attribute("auth_time", Instant.ofEpochSecond(1_770_000_000L))
+            .build();
+
+        PermissionVersionService permissionVersionService = mock(PermissionVersionService.class);
+        when(permissionVersionService.resolvePermissionsVersion(
+            eq(7L), eq(null), eq(TenantContextContract.SCOPE_TYPE_PLATFORM), eq(null))).thenReturn("perm-plat-v1");
+
+        JwtEncodingContext context = JwtEncodingContext.with(
+                JwsHeader.with(SignatureAlgorithm.RS256),
+                JwtClaimsSet.builder()
+            )
+            .registeredClient(client)
+            .principal(principal)
+            .authorization(authorization)
+            .authorizedScopes(Set.of("openid", "profile"))
+            .tokenType(OAuth2TokenType.ACCESS_TOKEN)
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .build();
+
+        new JwtTokenCustomizer(mock(UserRepository.class), permissionVersionService).customize(context);
+
+        Map<String, Object> claims = context.getClaims().build().getClaims();
+        assertThat(claims.get("authorities")).isInstanceOf(ArrayList.class);
+        assertThat(claims.get("permissions")).isInstanceOf(ArrayList.class);
+        assertThat(claims.get("roleCodes")).isInstanceOf(ArrayList.class);
+        assertThat(claims.get("authorities")).asInstanceOf(collection(String.class))
+            .containsExactly("system:tenant:list", "dashboard:entry:view");
+        assertThat(claims.get("permissions")).asInstanceOf(collection(String.class))
+            .containsExactly("system:tenant:list", "dashboard:entry:view");
+        assertThat(claims.get("roleCodes")).asInstanceOf(collection(String.class))
+            .containsExactly("ROLE_PLATFORM_ADMIN");
+
+        JsonNode restoredClaims = authorizationMapper.readTree(authorizationMapper.writeValueAsBytes(claims));
+        assertThat(readStringArray(restoredClaims.get("roleCodes"))).containsExactly("ROLE_PLATFORM_ADMIN");
+        assertThat(readStringArray(restoredClaims.get("authorities")))
+            .containsExactly("system:tenant:list", "dashboard:entry:view");
+        assertThat(readStringArray(restoredClaims.get("permissions")))
+            .containsExactly("system:tenant:list", "dashboard:entry:view");
+    }
+
+    @Test
+    void refreshAndIdToken_should_persist_role_codes_as_stable_lists() {
+        SecurityUser securityUser = new SecurityUser(
+            7L,
+            null,
+            "platform_admin",
+            "",
+            List.of(new SimpleGrantedAuthority("system:tenant:list")),
+            Set.of("ROLE_PLATFORM_ADMIN"),
+            true,
+            true,
+            true,
+            true,
+            "perm-plat-v1");
+
+        UsernamePasswordAuthenticationToken principal = UsernamePasswordAuthenticationToken.authenticated(
+            "platform_admin",
+            "n/a",
+            List.of());
+        principal.setDetails(securityUser);
+
+        RegisteredClient client = RegisteredClient.withId("rc-id")
+            .clientId("vue-client")
+            .clientSecret("{noop}secret")
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .redirectUri("http://localhost:5173/callback")
+            .scope("openid")
+            .scope("profile")
+            .clientSettings(ClientSettings.builder().requireAuthorizationConsent(false).build())
+            .tokenSettings(TokenSettings.builder().build())
+            .build();
+
+        OAuth2Authorization authorization = OAuth2Authorization.withRegisteredClient(client)
+            .id("auth-id")
+            .principalName("platform_admin")
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .authorizedScopes(Set.of("openid", "profile"))
+            .attribute("auth_time", Instant.ofEpochSecond(1_770_000_000L))
+            .build();
+
+        JwtEncodingContext refreshContext = JwtEncodingContext.with(
+                JwsHeader.with(SignatureAlgorithm.RS256),
+                JwtClaimsSet.builder()
+            )
+            .registeredClient(client)
+            .principal(principal)
+            .authorization(authorization)
+            .authorizedScopes(Set.of("openid", "profile"))
+            .tokenType(OAuth2TokenType.REFRESH_TOKEN)
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .build();
+
+        JwtEncodingContext idContext = JwtEncodingContext.with(
+                JwsHeader.with(SignatureAlgorithm.RS256),
+                JwtClaimsSet.builder()
+            )
+            .registeredClient(client)
+            .principal(principal)
+            .authorization(authorization)
+            .authorizedScopes(Set.of("openid", "profile"))
+            .tokenType(new OAuth2TokenType("id_token"))
+            .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+            .build();
+
+        JwtTokenCustomizer customizer = new JwtTokenCustomizer(
+            mock(UserRepository.class),
+            mock(AuthUserResolutionService.class),
+            mock(PermissionVersionService.class));
+
+        customizer.customize(refreshContext);
+        customizer.customize(idContext);
+
+        Map<String, Object> refreshClaims = refreshContext.getClaims().build().getClaims();
+        Map<String, Object> idClaims = idContext.getClaims().build().getClaims();
+
+        assertThat(refreshClaims.get("roleCodes")).isInstanceOf(ArrayList.class);
+        assertThat(refreshClaims.get("roleCodes")).asInstanceOf(collection(String.class))
+            .containsExactly("ROLE_PLATFORM_ADMIN");
+        assertThat(idClaims.get("roleCodes")).isInstanceOf(ArrayList.class);
+        assertThat(idClaims.get("roleCodes")).asInstanceOf(collection(String.class))
+            .containsExactly("ROLE_PLATFORM_ADMIN");
     }
 
     /**
@@ -948,5 +1203,39 @@ class JwtTokenCustomizerTest {
         assertThat(claims).containsEntry("email", "alice@example.com");
         assertThat(claims).containsEntry("phone_number", "13800000000");
         verify(authUserResolutionService).resolveUserRecordInActiveTenant("shared.alice", 9L);
+    }
+
+    private static JsonNode unwrapTypedNode(JsonNode node) {
+        if (node != null
+            && node.isArray()
+            && node.size() == 2
+            && node.get(0).isTextual()
+            && node.get(1).isObject()) {
+            return node.get(1);
+        }
+        return node;
+    }
+
+    private static ObjectMapper authorizationMapper() {
+        JacksonConfig jacksonConfig = new JacksonConfig();
+        Jackson2ObjectMapperBuilder builder = new Jackson2ObjectMapperBuilder();
+        jacksonConfig.jacksonCustomizer().customize(builder);
+        return jacksonConfig.authorizationMapper(builder);
+    }
+
+    private static List<String> readStringArray(JsonNode node) {
+        if (node != null
+            && node.isArray()
+            && node.size() == 2
+            && node.get(0).isTextual()
+            && node.get(1).isArray()) {
+            node = node.get(1);
+        }
+        if (node == null || !node.isArray()) {
+            return List.of();
+        }
+        return StreamSupport.stream(node.spliterator(), false)
+            .map(JsonNode::asText)
+            .toList();
     }
 }

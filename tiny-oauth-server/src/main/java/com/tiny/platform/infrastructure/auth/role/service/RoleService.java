@@ -26,6 +26,9 @@ public interface RoleService {
     // 保存角色与权限的分配关系（主契约；CARD-13D 已移除按 resource carrier id 写入的兼容路径）
     void updateRolePermissions(Long roleId, List<Long> permissionIds);
 
-    // 获取角色已分配资源ID列表
+    // 获取角色已分配权限ID列表（主契约）
+    List<Long> getPermissionIdsByRoleId(Long roleId);
+
+    // 获取角色已分配资源ID列表（兼容契约）
     List<Long> getResourceIdsByRoleId(Long roleId);
 } 

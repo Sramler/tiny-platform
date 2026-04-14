@@ -22,6 +22,8 @@ vi.mock('@/api/role', () => ({
   getAllRoles: apiMocks.getAllRoles,
   getRoleUsers: vi.fn(),
   updateRoleUsers: vi.fn(),
+  getRolePermissions: vi.fn(),
+  updateRolePermissions: vi.fn(),
   getRoleResources: vi.fn(),
   updateRoleResources: vi.fn(),
 }))

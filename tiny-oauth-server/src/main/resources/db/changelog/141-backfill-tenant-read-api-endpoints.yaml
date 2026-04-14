@@ -1,0 +1,110 @@
+databaseChangeLog:
+  - changeSet:
+      id: 141-backfill-tenant-read-api-endpoints
+      author: codex
+      comment: 补齐租户控制面新增读接口 api_endpoint requirement，避免统一守卫 fail-closed 误拦截
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: api_endpoint
+            - tableExists:
+                tableName: api_endpoint_permission_requirement
+            - tableExists:
+                tableName: permission
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              -- TENANT scope: GET /sys/tenants/{id}/permission-summary -> system:tenant:view
+              INSERT INTO api_endpoint (
+                tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at
+              )
+              SELECT
+                p.tenant_id, 'TENANT', 'tenant-permission-summary-get', '租户权限摘要读取',
+                '/sys/tenants/{id}/permission-summary', 'GET', 'system:tenant:view', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NOT NULL
+                AND p.permission_code = 'system:tenant:view'
+                AND NOT EXISTS (
+                  SELECT 1 FROM api_endpoint e
+                  WHERE e.tenant_id = p.tenant_id
+                    AND e.uri = '/sys/tenants/{id}/permission-summary'
+                    AND e.method = 'GET'
+                );
+
+              -- PLATFORM scope: GET /sys/tenants/{id}/permission-summary -> system:tenant:view
+              INSERT INTO api_endpoint (
+                tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at
+              )
+              SELECT
+                NULL, 'PLATFORM', 'tenant-permission-summary-get', '租户权限摘要读取',
+                '/sys/tenants/{id}/permission-summary', 'GET', 'system:tenant:view', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NULL
+                AND p.permission_code = 'system:tenant:view'
+                AND NOT EXISTS (
+                  SELECT 1 FROM api_endpoint e
+                  WHERE e.tenant_id IS NULL
+                    AND e.uri = '/sys/tenants/{id}/permission-summary'
+                    AND e.method = 'GET'
+                );
+
+              -- TENANT scope: GET /sys/tenants/{id}/platform-template/diff -> system:tenant:view
+              INSERT INTO api_endpoint (
+                tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at
+              )
+              SELECT
+                p.tenant_id, 'TENANT', 'tenant-platform-template-diff-get', '租户模板差异读取',
+                '/sys/tenants/{id}/platform-template/diff', 'GET', 'system:tenant:view', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NOT NULL
+                AND p.permission_code = 'system:tenant:view'
+                AND NOT EXISTS (
+                  SELECT 1 FROM api_endpoint e
+                  WHERE e.tenant_id = p.tenant_id
+                    AND e.uri = '/sys/tenants/{id}/platform-template/diff'
+                    AND e.method = 'GET'
+                );
+
+              -- PLATFORM scope: GET /sys/tenants/{id}/platform-template/diff -> system:tenant:view
+              INSERT INTO api_endpoint (
+                tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at
+              )
+              SELECT
+                NULL, 'PLATFORM', 'tenant-platform-template-diff-get', '租户模板差异读取',
+                '/sys/tenants/{id}/platform-template/diff', 'GET', 'system:tenant:view', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NULL
+                AND p.permission_code = 'system:tenant:view'
+                AND NOT EXISTS (
+                  SELECT 1 FROM api_endpoint e
+                  WHERE e.tenant_id IS NULL
+                    AND e.uri = '/sys/tenants/{id}/platform-template/diff'
+                    AND e.method = 'GET'
+                );
+
+              INSERT IGNORE INTO api_endpoint_permission_requirement (
+                tenant_id, api_endpoint_id, requirement_group, sort_order, permission_id, negated, created_at, updated_at
+              )
+              SELECT
+                e.tenant_id,
+                e.id,
+                0,
+                1,
+                e.required_permission_id,
+                0,
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP
+              FROM api_endpoint e
+              WHERE e.uri IN (
+                '/sys/tenants/{id}/permission-summary',
+                '/sys/tenants/{id}/platform-template/diff'
+              )
+                AND e.method = 'GET'
+                AND e.required_permission_id IS NOT NULL;

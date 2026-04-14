@@ -57,6 +57,16 @@ export type AuthenticationAuditSummary = {
   eventTypeCounts: AuditEventTypeCount[]
 }
 
+export type TokenDebugDecodeResponse = {
+  authorities: string[]
+  permissions: string[]
+  roleCodes: string[]
+  permissionsVersion: string | null
+  activeScopeType: string | null
+  activeTenantId: number | null
+  claims: Record<string, unknown>
+}
+
 export type AuthorizationAuditQueryParams = {
   tenantId?: number | string
   page?: number
@@ -131,4 +141,8 @@ export function purgeAuditLogs(retentionDays: number) {
       payload: { retentionDays },
     },
   })
+}
+
+export function decodePlatformToken(token: string) {
+  return request.post<TokenDebugDecodeResponse>('/sys/platform/token-debug/decode', { token })
 }

@@ -145,6 +145,23 @@ class UserControllerApiEndpointGuardRealControllerIntegrationTest {
             .andExpect(status().isForbidden());
     }
 
+    @Test
+    void user_realUserController_sysUsers_deny_shouldReturn403_inPlatformScopeEvenWhenRequirementSatisfied() throws Exception {
+        TenantContext.setActiveTenantId(null);
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_PLATFORM);
+
+        CarrierPermissionRequirementRow row = requirementRow(true);
+        when(apiEndpointPermissionRequirementRepository.findRowsByApiEndpointIdIn(anyCollection()))
+            .thenReturn(List.of(row));
+
+        mockMvc.perform(get("/sys/users")
+                .param("page", "0")
+                .param("size", "10")
+                .accept(MediaType.APPLICATION_JSON)
+                .with(user("platform-admin").authorities(new SimpleGrantedAuthority(REQUIRED_AUTH))))
+            .andExpect(status().isForbidden());
+    }
+
     private static CarrierPermissionRequirementRow requirementRow(boolean permissionEnabled) {
         CarrierPermissionRequirementRow row = Mockito.mock(CarrierPermissionRequirementRow.class);
         Mockito.when(row.getCarrierId()).thenReturn(API_ENDPOINT_ID);
@@ -261,4 +278,3 @@ class UserControllerApiEndpointGuardRealControllerIntegrationTest {
         }
     }
 }
-

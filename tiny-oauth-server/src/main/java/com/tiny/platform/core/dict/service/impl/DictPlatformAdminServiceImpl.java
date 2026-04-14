@@ -6,6 +6,8 @@ import com.tiny.platform.core.dict.dto.DictItemResponseDto;
 import com.tiny.platform.core.dict.dto.DictTypeCreateUpdateDto;
 import com.tiny.platform.core.dict.dto.DictTypeQueryDto;
 import com.tiny.platform.core.dict.dto.DictTypeResponseDto;
+import com.tiny.platform.core.dict.dto.PlatformDictOverrideDetailDto;
+import com.tiny.platform.core.dict.dto.PlatformDictOverrideSummaryDto;
 import com.tiny.platform.core.dict.model.DictItem;
 import com.tiny.platform.core.dict.model.DictType;
 import com.tiny.platform.core.dict.repository.DictItemRepository;
@@ -15,6 +17,8 @@ import com.tiny.platform.core.dict.support.DictTenantScope;
 import com.tiny.platform.infrastructure.core.exception.code.ErrorCode;
 import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
 import com.tiny.platform.infrastructure.core.exception.exception.NotFoundException;
+import com.tiny.platform.infrastructure.tenant.domain.Tenant;
+import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -23,9 +27,12 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Comparator;
 
 /**
  * 平台字典管理服务实现。
@@ -36,10 +43,16 @@ public class DictPlatformAdminServiceImpl implements DictPlatformAdminService {
 
     private final DictTypeRepository dictTypeRepository;
     private final DictItemRepository dictItemRepository;
+    private final TenantRepository tenantRepository;
 
-    public DictPlatformAdminServiceImpl(DictTypeRepository dictTypeRepository, DictItemRepository dictItemRepository) {
+    public DictPlatformAdminServiceImpl(
+            DictTypeRepository dictTypeRepository,
+            DictItemRepository dictItemRepository,
+            TenantRepository tenantRepository
+    ) {
         this.dictTypeRepository = dictTypeRepository;
         this.dictItemRepository = dictItemRepository;
+        this.tenantRepository = tenantRepository;
     }
 
     @Override
@@ -171,6 +184,76 @@ public class DictPlatformAdminServiceImpl implements DictPlatformAdminService {
 
     @Override
     @Transactional(readOnly = true)
+    public List<PlatformDictOverrideSummaryDto> findTypeOverrideSummaries(Long dictTypeId) {
+        DictType platformType = findPlatformType(dictTypeId);
+        List<DictItem> baselineItems = dictItemRepository.findPlatformByDictTypeId(platformType.getId());
+        List<DictItem> overlayItems = dictItemRepository.findByDictTypeIdAndTenantIdIsNotNull(platformType.getId());
+        int baselineCount = baselineItems.size();
+        LinkedHashSet<String> baselineValues = baselineItems.stream()
+                .map(DictItem::getValue)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+
+        Map<Long, Map<String, DictItem>> tenantOverlayByValue = new LinkedHashMap<>();
+        for (DictItem overlay : overlayItems) {
+            Long tenantId = overlay.getTenantId();
+            if (tenantId == null) {
+                continue;
+            }
+            tenantOverlayByValue.computeIfAbsent(tenantId, ignored -> new LinkedHashMap<>())
+                    .put(overlay.getValue(), overlay);
+        }
+
+        List<Tenant> tenants = tenantRepository.findAll().stream()
+                .filter(tenant -> tenant.getDeletedAt() == null)
+                .sorted(Comparator.comparing(Tenant::getId, Comparator.nullsLast(Long::compareTo)))
+                .toList();
+
+        return tenants.stream()
+                .map(tenant -> {
+                    Map<String, DictItem> overlays = tenantOverlayByValue.getOrDefault(tenant.getId(), Map.of());
+                    int overriddenCount = (int) overlays.keySet().stream().filter(baselineValues::contains).count();
+                    int orphanOverlayCount = (int) overlays.keySet().stream().filter(value -> !baselineValues.contains(value)).count();
+                    return toSummaryDto(tenant, baselineCount, overriddenCount, orphanOverlayCount);
+                })
+                .toList();
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<PlatformDictOverrideDetailDto> findTypeOverrideDetails(Long dictTypeId, Long tenantId) {
+        DictType platformType = findPlatformType(dictTypeId);
+        requireExistingTenant(tenantId);
+        List<DictItem> baselineItems = dictItemRepository.findPlatformByDictTypeId(platformType.getId());
+        List<DictItem> overlayItems = dictItemRepository.findByDictTypeIdAndTenantId(platformType.getId(), tenantId);
+
+        Map<String, DictItem> overlayByValue = new LinkedHashMap<>();
+        for (DictItem overlay : overlayItems) {
+            overlayByValue.put(overlay.getValue(), overlay);
+        }
+
+        List<PlatformDictOverrideDetailDto> details = baselineItems.stream()
+                .sorted(Comparator.comparing(DictItem::getSortOrder, Comparator.nullsLast(Integer::compareTo))
+                        .thenComparing(DictItem::getId, Comparator.nullsLast(Long::compareTo)))
+                .map(base -> toDetailDto(base, overlayByValue.remove(base.getValue())))
+                .toList();
+
+        List<PlatformDictOverrideDetailDto> orphans = overlayByValue.values().stream()
+                .sorted(Comparator.comparing(DictItem::getSortOrder, Comparator.nullsLast(Integer::compareTo))
+                        .thenComparing(DictItem::getId, Comparator.nullsLast(Long::compareTo)))
+                .map(this::toOrphanDetailDto)
+                .toList();
+
+        if (orphans.isEmpty()) {
+            return details;
+        }
+        java.util.ArrayList<PlatformDictOverrideDetailDto> merged = new java.util.ArrayList<>(details.size() + orphans.size());
+        merged.addAll(details);
+        merged.addAll(orphans);
+        return merged;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public Map<String, String> getDictMap(String dictCode) {
         Map<String, String> map = new HashMap<>();
         for (DictItem item : findItemsByCode(dictCode)) {
@@ -277,6 +360,58 @@ public class DictPlatformAdminServiceImpl implements DictPlatformAdminService {
         DictType dictType = findMutablePlatformType(dictItem.getDictTypeId());
         dictItem.setDictType(dictType);
         return dictItem;
+    }
+
+    private PlatformDictOverrideSummaryDto toSummaryDto(
+            Tenant tenant,
+            int baselineCount,
+            int overriddenCount,
+            int orphanOverlayCount
+    ) {
+        PlatformDictOverrideSummaryDto dto = new PlatformDictOverrideSummaryDto();
+        dto.setTenantId(tenant.getId());
+        dto.setTenantCode(tenant.getCode());
+        dto.setTenantName(tenant.getName());
+        dto.setBaselineCount(baselineCount);
+        dto.setOverriddenCount(overriddenCount);
+        dto.setInheritedCount(Math.max(0, baselineCount - overriddenCount));
+        dto.setOrphanOverlayCount(orphanOverlayCount);
+        return dto;
+    }
+
+    private Tenant requireExistingTenant(Long tenantId) {
+        return tenantRepository.findById(tenantId)
+                .filter(tenant -> tenant.getDeletedAt() == null)
+                .orElseThrow(() -> new NotFoundException("租户不存在: " + tenantId));
+    }
+
+    private PlatformDictOverrideDetailDto toDetailDto(DictItem baseline, DictItem overlay) {
+        PlatformDictOverrideDetailDto dto = new PlatformDictOverrideDetailDto();
+        dto.setValue(baseline.getValue());
+        dto.setBaselineLabel(baseline.getLabel());
+        if (overlay == null) {
+            dto.setStatus("INHERITED");
+            dto.setOverlayLabel(null);
+            dto.setEffectiveLabel(baseline.getLabel());
+            dto.setLabelChanged(false);
+            return dto;
+        }
+        dto.setStatus("OVERRIDDEN");
+        dto.setOverlayLabel(overlay.getLabel());
+        dto.setEffectiveLabel(overlay.getLabel());
+        dto.setLabelChanged(!java.util.Objects.equals(baseline.getLabel(), overlay.getLabel()));
+        return dto;
+    }
+
+    private PlatformDictOverrideDetailDto toOrphanDetailDto(DictItem overlay) {
+        PlatformDictOverrideDetailDto dto = new PlatformDictOverrideDetailDto();
+        dto.setValue(overlay.getValue());
+        dto.setStatus("ORPHAN_OVERLAY");
+        dto.setBaselineLabel(null);
+        dto.setOverlayLabel(overlay.getLabel());
+        dto.setEffectiveLabel(overlay.getLabel());
+        dto.setLabelChanged(true);
+        return dto;
     }
 
     private void preloadDictType(DictItem dictItem) {

@@ -4,6 +4,7 @@ import com.tiny.platform.core.oauth.tenant.TenantLifecycleAccessGuard;
 import com.tiny.platform.infrastructure.core.dto.PageResponse;
 import com.tiny.platform.infrastructure.tenant.domain.Tenant;
 import com.tiny.platform.infrastructure.tenant.dto.TenantCreateUpdateDto;
+import com.tiny.platform.infrastructure.tenant.dto.TenantPermissionSummaryDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantRequestDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantResponseDto;
 import com.tiny.platform.infrastructure.tenant.service.PlatformTemplateDiffResult;
@@ -155,7 +156,22 @@ class TenantControllerTest {
         assertEquals(HttpStatus.OK, resp.getStatusCode());
         assertNotNull(resp.getBody());
         assertEquals(7L, resp.getBody().tenantId());
+        verify(tenantLifecycleAccessGuard).assertPlatformTargetTenantReadable(7L, "system:tenant:view");
         verify(tenantService).diffPlatformTemplate(7L);
+    }
+
+    @Test
+    void permissionSummary_shouldDelegate() {
+        TenantPermissionSummaryDto summary = new TenantPermissionSummaryDto(7L, 5L, 4L, 30L, 28L, 24L, 20L, 10L, 8L, 6L);
+        when(tenantService.summarizeTenantPermissions(7L)).thenReturn(summary);
+
+        ResponseEntity<TenantPermissionSummaryDto> resp = controller.permissionSummary(7L);
+
+        assertEquals(HttpStatus.OK, resp.getStatusCode());
+        assertNotNull(resp.getBody());
+        assertEquals(30L, resp.getBody().totalPermissions());
+        verify(tenantLifecycleAccessGuard).assertPlatformTargetTenantReadable(7L, "system:tenant:view");
+        verify(tenantService).summarizeTenantPermissions(7L);
     }
 
     @Test

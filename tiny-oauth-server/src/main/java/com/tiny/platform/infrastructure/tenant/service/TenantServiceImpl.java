@@ -21,9 +21,12 @@ import com.tiny.platform.infrastructure.core.exception.exception.BusinessExcepti
 import com.tiny.platform.infrastructure.core.exception.exception.NotFoundException;
 import com.tiny.platform.infrastructure.tenant.domain.Tenant;
 import com.tiny.platform.infrastructure.tenant.dto.TenantCreateUpdateDto;
+import com.tiny.platform.infrastructure.tenant.dto.TenantPermissionSummaryDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantRequestDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantResponseDto;
 import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
+import com.tiny.platform.infrastructure.tenant.repository.TenantPermissionSummaryProjection;
+import com.tiny.platform.infrastructure.tenant.repository.TenantPermissionSummaryRepository;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -69,6 +72,7 @@ public class TenantServiceImpl implements TenantService {
     private final RoleAssignmentSyncService roleAssignmentSyncService;
     private final TenantQuotaService tenantQuotaService;
     private final UserAuthenticationBridgeWriter authenticationBridgeWriter;
+    private final TenantPermissionSummaryRepository tenantPermissionSummaryRepository;
 
     @Autowired
     public TenantServiceImpl(TenantRepository tenantRepository,
@@ -79,7 +83,8 @@ public class TenantServiceImpl implements TenantService {
                              RoleRepository roleRepository,
                              RoleAssignmentSyncService roleAssignmentSyncService,
                              TenantQuotaService tenantQuotaService,
-                             UserAuthenticationBridgeWriter authenticationBridgeWriter) {
+                             UserAuthenticationBridgeWriter authenticationBridgeWriter,
+                             TenantPermissionSummaryRepository tenantPermissionSummaryRepository) {
         this.tenantRepository = tenantRepository;
         this.tenantBootstrapService = tenantBootstrapService;
         this.auditService = auditService;
@@ -89,6 +94,7 @@ public class TenantServiceImpl implements TenantService {
         this.roleAssignmentSyncService = roleAssignmentSyncService;
         this.tenantQuotaService = tenantQuotaService;
         this.authenticationBridgeWriter = authenticationBridgeWriter;
+        this.tenantPermissionSummaryRepository = tenantPermissionSummaryRepository;
     }
 
     @Override
@@ -318,6 +324,28 @@ public class TenantServiceImpl implements TenantService {
             null
         );
         return result;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public TenantPermissionSummaryDto summarizeTenantPermissions(Long tenantId) {
+        Tenant tenant = requireTenant(tenantId);
+        TenantPermissionSummaryProjection projection = tenantPermissionSummaryRepository.summarizeByTenantId(tenant.getId());
+        if (projection == null) {
+            return new TenantPermissionSummaryDto(tenant.getId(), 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L, 0L);
+        }
+        return new TenantPermissionSummaryDto(
+            tenant.getId(),
+            projection.getTotalRoles(),
+            projection.getEnabledRoles(),
+            projection.getTotalPermissions(),
+            projection.getAssignedPermissions(),
+            projection.getTotalCarriers(),
+            projection.getBoundCarriers(),
+            projection.getMenuCarriers(),
+            projection.getUiActionCarriers(),
+            projection.getApiEndpointCarriers()
+        );
     }
 
     @Override

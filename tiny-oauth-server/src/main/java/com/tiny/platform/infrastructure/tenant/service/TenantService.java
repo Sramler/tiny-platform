@@ -2,6 +2,7 @@ package com.tiny.platform.infrastructure.tenant.service;
 
 import com.tiny.platform.infrastructure.tenant.domain.Tenant;
 import com.tiny.platform.infrastructure.tenant.dto.TenantCreateUpdateDto;
+import com.tiny.platform.infrastructure.tenant.dto.TenantPermissionSummaryDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantRequestDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantResponseDto;
 import java.util.Optional;
@@ -22,5 +23,7 @@ public interface TenantService {
 
     /** 只读差异证据 + 审计；非重建。 */
     PlatformTemplateDiffResult diffPlatformTemplate(Long tenantId);
+
+    TenantPermissionSummaryDto summarizeTenantPermissions(Long tenantId);
     void delete(Long id);
 }

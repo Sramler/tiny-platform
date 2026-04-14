@@ -1,13 +1,23 @@
 <template>
   <div class="content-container" style="position: relative;">
     <div class="content-card">
-      <div v-if="!canReadUserManagement" class="platform-guard-card">
-        <div class="platform-guard-kicker">Permission Required</div>
-        <h3>用户管理需要额外授权</h3>
-        <p>
-          当前页面属于后台配置面。只有具备 <code>system:user:list</code> 或管理员权限的用户，才会请求
-          <code>/sys/users</code> 并展示用户管理数据。
-        </p>
+      <div v-if="!canAccessTenantScopedUserManagement" class="platform-guard-card">
+        <template v-if="isPlatformScope">
+          <div class="platform-guard-kicker">Tenant Scope Required</div>
+          <h3>当前页面仅支持租户侧作用域</h3>
+          <p>
+            <code>/sys/users</code> 当前仍是租户侧控制面接口。当前会话处于 <code>PLATFORM</code>，
+            已阻止加载用户列表；请先切换到目标租户后重试。
+          </p>
+        </template>
+        <template v-else>
+          <div class="platform-guard-kicker">Permission Required</div>
+          <h3>用户管理需要额外授权</h3>
+          <p>
+            当前页面属于后台配置面。只有具备 <code>system:user:list</code> 或管理员权限的用户，才会请求
+            <code>/sys/users</code> 并展示用户管理数据。
+          </p>
+        </template>
       </div>
 
       <template v-else>
@@ -300,6 +310,7 @@ import RoleTransfer from './RoleTransfer.vue'
 import { getAllRoles, getRoleById } from '@/api/role'
 import { getUserRoles, updateUserRoles } from '@/api/user'
 import { getOrgList } from '@/api/org'
+import { usePlatformScope } from '@/composables/usePlatformScope'
 import request from '@/utils/request'
 import { extractAuthoritiesFromJwt } from '@/utils/jwt'
 import {
@@ -315,6 +326,7 @@ const query = ref({
 
 const tableData = ref<any[]>([])
 const { user } = useAuth()
+const { isPlatformScope } = usePlatformScope()
 const userAuthorities = computed(() => new Set(extractAuthoritiesFromJwt(user.value?.access_token)))
 
 function hasAnyUserAuthority(requiredAuthorities: string[]) {
@@ -322,6 +334,9 @@ function hasAnyUserAuthority(requiredAuthorities: string[]) {
 }
 
 const canReadUserManagement = computed(() => hasAnyUserAuthority(USER_MANAGEMENT_READ_AUTHORITIES))
+const canAccessTenantScopedUserManagement = computed(
+  () => canReadUserManagement.value && !isPlatformScope.value,
+)
 const runtimeUiActionPermissions = ref<Set<string>>(new Set())
 const runtimeUiActionsLoaded = ref(false)
 
@@ -499,13 +514,17 @@ const rowSelection = computed(() => ({
   fixed: true
 }))
 
+function resetUserManagementState() {
+  tableData.value = []
+  pagination.value.total = 0
+  runtimeUiActionsLoaded.value = false
+  runtimeUiActionPermissions.value = new Set()
+  loading.value = false
+}
+
 async function loadData() {
-  if (!canReadUserManagement.value) {
-    tableData.value = []
-    pagination.value.total = 0
-    runtimeUiActionsLoaded.value = false
-    runtimeUiActionPermissions.value = new Set()
-    loading.value = false
+  if (!canAccessTenantScopedUserManagement.value) {
+    resetUserManagementState()
     return
   }
   loading.value = true
@@ -537,7 +556,7 @@ function resolveRuntimePagePath() {
 }
 
 async function loadRuntimeUiActions() {
-  if (!canReadUserManagement.value) {
+  if (!canAccessTenantScopedUserManagement.value) {
     runtimeUiActionsLoaded.value = false
     runtimeUiActionPermissions.value = new Set()
     return
@@ -742,13 +761,15 @@ function updateTableBodyHeight() {
 }
 
 function handleActiveScopeChanged() {
-  if (canReadUserManagement.value) {
+  if (canAccessTenantScopedUserManagement.value) {
     loadData()
+    return
   }
+  resetUserManagementState()
 }
 
 onMounted(() => {
-  if (canReadUserManagement.value) {
+  if (canAccessTenantScopedUserManagement.value) {
     loadData()
   }
   updateTableBodyHeight()
@@ -764,16 +785,12 @@ watch(() => pagination.value.pageSize, () => {
   updateTableBodyHeight()
 })
 
-watch(canReadUserManagement, (enabled) => {
+watch(canAccessTenantScopedUserManagement, (enabled) => {
   if (enabled) {
     loadData()
     return
   }
-  tableData.value = []
-  pagination.value.total = 0
-  runtimeUiActionsLoaded.value = false
-  runtimeUiActionPermissions.value = new Set()
-  loading.value = false
+  resetUserManagementState()
 })
 
 function handleBatchDelete() {
@@ -912,7 +929,7 @@ function handleDelete(record: any) {
 const throttledDelete = useThrottle(handleDelete, 500)
 
 function handleView(record: any) {
-  if (!canReadUserManagement.value) {
+  if (!canAccessTenantScopedUserManagement.value) {
     return
   }
   drawerMode.value = 'view'

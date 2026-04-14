@@ -3,12 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const requestMocks = vi.hoisted(() => ({
   get: vi.fn(),
   delete: vi.fn(),
+  post: vi.fn(),
 }))
 
 vi.mock('@/utils/request', () => ({
   default: {
     get: requestMocks.get,
     delete: requestMocks.delete,
+    post: requestMocks.post,
   },
 }))
 
@@ -183,5 +185,22 @@ describe('audit API', () => {
         payload: { retentionDays: 90 },
       },
     })
+  })
+
+  it('should decode platform token with readonly endpoint', async () => {
+    requestMocks.post.mockResolvedValue({
+      authorities: ['system:audit:auth:view'],
+      permissions: ['system:audit:auth:view'],
+      roleCodes: ['ROLE_ADMIN'],
+      permissionsVersion: 'perm-v-1',
+      activeScopeType: 'PLATFORM',
+      activeTenantId: null,
+      claims: {},
+    })
+    const { decodePlatformToken } = await import('@/api/audit')
+
+    await decodePlatformToken('token-value')
+
+    expect(requestMocks.post).toHaveBeenCalledWith('/sys/platform/token-debug/decode', { token: 'token-value' })
   })
 })

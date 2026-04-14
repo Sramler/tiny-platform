@@ -105,6 +105,46 @@ class MultiFactorAuthenticationTokenJacksonDeserializerTest {
     }
 
     @Test
+    void shouldDeserializeSecurityUserDetailsWithWrappedRoleCodes() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        JsonParser parser = new JsonFactory().createParser("""
+                {
+                  "username":"alice",
+                  "provider":"LOCAL",
+                  "completedFactors":["PASSWORD"],
+                  "authenticated":false,
+                  "details":{
+                    "@type":"securityUser",
+                    "userId":"123",
+                    "activeTenantId":"9",
+                    "username":"alice",
+                    "password":"",
+                    "authorities":["java.util.Collections$UnmodifiableRandomAccessList",["perm:view"]],
+                    "roleCodes":["java.util.ImmutableCollections$Set12",["ROLE_PLATFORM_ADMIN","ROLE_ADMIN"]],
+                    "accountNonExpired":true,
+                    "accountNonLocked":true,
+                    "credentialsNonExpired":true,
+                    "enabled":true,
+                    "permissionsVersion":"pv-platform"
+                  }
+                }
+                """);
+        parser.setCodec(mapper);
+
+        MultiFactorAuthenticationToken token = deserializer.deserialize(parser, mapper.getDeserializationContext());
+
+        assertThat(token.getDetails()).isInstanceOf(SecurityUser.class);
+        SecurityUser details = (SecurityUser) token.getDetails();
+        assertThat(details.getUserId()).isEqualTo(123L);
+        assertThat(details.getActiveTenantId()).isEqualTo(9L);
+        assertThat(details.getRoleCodes()).containsExactlyInAnyOrder("ROLE_PLATFORM_ADMIN", "ROLE_ADMIN");
+        assertThat(details.getAuthorities())
+            .extracting(GrantedAuthority::getAuthority)
+            .containsExactly("perm:view");
+        assertThat(details.getPermissionsVersion()).isEqualTo("pv-platform");
+    }
+
+    @Test
     void shouldDeserializeTokenWithoutCompletedFactorsUsingAuthenticationTypeAndGenericDetails() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
         JsonParser parser = new JsonFactory().createParser("""

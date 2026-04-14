@@ -254,6 +254,42 @@ class TenantContextFilterTest {
     }
 
     @Test
+    void shouldAllowPlatformUserinfoWhenBearerIssuerIsPlatformWithoutTenantClaim() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/platform/userinfo");
+        request.addHeader("Authorization", "Bearer " + jwtWithPayload("""
+            {"sub":"platform_admin","iss":"http://localhost:9000/platform"}
+            """));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AtomicReference<Long> tenantInChain = new AtomicReference<>();
+        AtomicReference<String> scopeTypeInChain = new AtomicReference<>();
+
+        filter.doFilter(request, response, (req, resp) -> {
+            tenantInChain.set(TenantContext.getActiveTenantId());
+            scopeTypeInChain.set(TenantContext.getActiveScopeType());
+        });
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(tenantInChain.get()).isNull();
+        assertThat(scopeTypeInChain.get()).isEqualTo(TenantContextContract.SCOPE_TYPE_PLATFORM);
+    }
+
+    @Test
+    void shouldStillRejectBearerRequestWithoutTenantWhenNoPlatformSignalExists() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/sys/menus/tree");
+        request.addHeader("Authorization", "Bearer " + jwtWithPayload("""
+            {"sub":"tenant_admin"}
+            """));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, (req, resp) -> {
+            throw new AssertionError("filter chain should not be executed");
+        });
+
+        assertThat(response.getStatus()).isEqualTo(400);
+        assertThat(response.getContentAsString()).contains("missing_tenant");
+    }
+
+    @Test
     void issuerTenantSupportShouldTreatPlatformAsIssuerKeyNotTenantCode() {
         assertThat(IssuerTenantSupport.extractIssuerKeyFromRequestPath("/platform/oauth2/token"))
             .isEqualTo(IssuerTenantSupport.PLATFORM_ISSUER_KEY);

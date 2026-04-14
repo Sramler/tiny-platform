@@ -107,10 +107,26 @@ public class RoleController {
         return ResponseEntity.ok().build();
     }
 
-    // ==================== 角色资源分配API ====================
+    // ==================== 角色权限分配API ====================
+
+    @GetMapping("/{id}/permissions")
+    @PreAuthorize("@roleManagementAccessGuard.canAssignPermissions(authentication)")
+    public ResponseEntity<List<Long>> getRolePermissions(@PathVariable("id") Long id) {
+        return ResponseEntity.ok(roleService.getPermissionIdsByRoleId(id));
+    }
+
+    @PostMapping("/{id}/permissions")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@roleManagementAccessGuard.canAssignPermissions(authentication)")
+    public ResponseEntity<?> updateRolePermissions(@PathVariable("id") Long id, @RequestBody Object body) {
+        PermissionAssignmentRequest request = parsePermissionAssignmentRequest(body);
+        roleService.updateRolePermissions(id, request.permissionIds());
+        return ResponseEntity.ok().build();
+    }
 
     /**
      * 获取角色已分配资源ID列表
+     * @deprecated 兼容历史 /resources 入口，推荐使用 /permissions
      * @param id 角色ID
      * @return 资源ID列表
      */
@@ -123,6 +139,7 @@ public class RoleController {
 
     /**
      * 保存角色与权限的分配关系
+     * @deprecated 兼容历史 /resources 入口，推荐使用 /permissions
      * @param id 角色ID
      * @param body 仅接受包含 permissionIds 的请求体
      * @return 响应结果

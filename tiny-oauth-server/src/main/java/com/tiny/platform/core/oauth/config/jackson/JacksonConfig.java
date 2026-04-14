@@ -9,6 +9,7 @@ import com.fasterxml.jackson.datatype.jsr310.ser.LocalDateTimeSerializer;
 import com.tiny.platform.core.oauth.config.CustomWebAuthenticationDetailsJacksonDeserializer;
 import com.tiny.platform.core.oauth.config.CustomWebAuthenticationDetailsSource;
 import com.tiny.platform.core.oauth.config.MultiFactorAuthenticationTokenJacksonDeserializer;
+import com.tiny.platform.core.oauth.config.MultiFactorAuthenticationTokenJacksonSerializer;
 import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
 import org.slf4j.Logger;
@@ -221,6 +222,8 @@ public class JacksonConfig {
     private SimpleModule createCustomModule() {
         SimpleModule module = new SimpleModule();
 
+        // 自定义对象序列化/反序列化（用于 OAuth2 授权流程）
+        module.addSerializer(MultiFactorAuthenticationToken.class, new MultiFactorAuthenticationTokenJacksonSerializer());
         // 自定义对象反序列化（用于 OAuth2 授权流程）
         module.addDeserializer(MultiFactorAuthenticationToken.class, new MultiFactorAuthenticationTokenJacksonDeserializer());
         module.addDeserializer(CustomWebAuthenticationDetailsSource.CustomWebAuthenticationDetails.class,

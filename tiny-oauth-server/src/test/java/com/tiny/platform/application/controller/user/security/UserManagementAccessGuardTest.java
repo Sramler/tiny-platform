@@ -2,7 +2,10 @@ package com.tiny.platform.application.controller.user.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.tiny.platform.core.oauth.tenant.TenantContext;
+import com.tiny.platform.core.oauth.tenant.TenantContextContract;
 import java.util.Arrays;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -12,15 +15,30 @@ class UserManagementAccessGuardTest {
 
     private final UserManagementAccessGuard guard = new UserManagementAccessGuard();
 
+    @AfterEach
+    void clearTenantContext() {
+        TenantContext.clear();
+    }
+
     @Test
     void should_allow_read_with_fine_grained_permission() {
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_TENANT);
         JwtAuthenticationToken authentication = jwtAuth("system:user:list");
 
         assertThat(guard.canRead(authentication)).isTrue();
     }
 
     @Test
+    void should_deny_read_in_platform_scope_even_with_permission() {
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_PLATFORM);
+        JwtAuthenticationToken authentication = jwtAuth("system:user:list");
+
+        assertThat(guard.canRead(authentication)).isFalse();
+    }
+
+    @Test
     void should_deny_read_without_required_authorities() {
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_TENANT);
         JwtAuthenticationToken authentication = jwtAuth("ROLE_USER");
 
         assertThat(guard.canRead(authentication)).isFalse();

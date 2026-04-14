@@ -25,6 +25,8 @@ export const ROLE_EDIT = 'system:role:edit'
 export const ROLE_DELETE = 'system:role:delete'
 export const ROLE_BATCH_DELETE = 'system:role:batch-delete'
 export const ROLE_PERMISSION_ASSIGN = 'system:role:permission:assign'
+export const PERMISSION_LIST = 'system:role:list'
+export const PERMISSION_EDIT = 'system:role:permission:assign'
 
 // ─── 菜单管理 ───
 export const MENU_LIST = 'system:menu:list'
@@ -129,6 +131,8 @@ export const ROLE_MANAGEMENT_UPDATE_AUTHORITIES = [ROLE_EDIT]
 export const ROLE_MANAGEMENT_DELETE_AUTHORITIES = [ROLE_DELETE, ROLE_BATCH_DELETE]
 export const ROLE_ASSIGN_USER_AUTHORITIES = [USER_ROLE_ASSIGN]
 export const ROLE_ASSIGN_PERMISSION_AUTHORITIES = [ROLE_PERMISSION_ASSIGN]
+export const PERMISSION_MANAGEMENT_READ_AUTHORITIES = [PERMISSION_LIST, ROLE_PERMISSION_ASSIGN]
+export const PERMISSION_MANAGEMENT_UPDATE_AUTHORITIES = [PERMISSION_EDIT]
 
 // 迁移兼容：少量控制面页面仍允许管理员角色码作为只读兜底（后续按治理计划收口）。
 

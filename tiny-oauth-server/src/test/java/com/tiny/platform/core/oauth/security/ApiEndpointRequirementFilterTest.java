@@ -42,6 +42,60 @@ class ApiEndpointRequirementFilterTest {
     }
 
     @Test
+    void should_skip_self_security_endpoints_even_when_authenticated() throws Exception {
+        ResourceService resourceService = mock(ResourceService.class);
+        ApiEndpointRequirementFilter filter = new ApiEndpointRequirementFilter(resourceService);
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated("platform_admin", null, java.util.List.of())
+        );
+
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/self/security/totp/pre-bind");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(chain.getRequest()).isNotNull();
+        verifyNoInteractions(resourceService);
+    }
+
+    @Test
+    void should_skip_runtime_menu_tree_endpoint_even_when_authenticated() throws Exception {
+        ResourceService resourceService = mock(ResourceService.class);
+        ApiEndpointRequirementFilter filter = new ApiEndpointRequirementFilter(resourceService);
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated("platform_admin", null, java.util.List.of())
+        );
+
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/sys/menus/tree");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(chain.getRequest()).isNotNull();
+        verifyNoInteractions(resourceService);
+    }
+
+    @Test
+    void should_skip_platform_token_debug_endpoint_even_when_authenticated() throws Exception {
+        ResourceService resourceService = mock(ResourceService.class);
+        ApiEndpointRequirementFilter filter = new ApiEndpointRequirementFilter(resourceService);
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated("platform_admin", null, java.util.List.of())
+        );
+
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/sys/platform/token-debug/decode");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(chain.getRequest()).isNotNull();
+        verifyNoInteractions(resourceService);
+    }
+
+    @Test
     void should_evaluate_business_endpoint_when_authenticated() throws Exception {
         ResourceService resourceService = mock(ResourceService.class);
         ApiEndpointRequirementFilter filter = new ApiEndpointRequirementFilter(resourceService);

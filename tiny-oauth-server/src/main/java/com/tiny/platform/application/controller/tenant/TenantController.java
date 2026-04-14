@@ -4,6 +4,7 @@ import com.tiny.platform.core.oauth.tenant.TenantLifecycleAccessGuard;
 import com.tiny.platform.infrastructure.core.dto.PageResponse;
 import com.tiny.platform.infrastructure.idempotent.sdk.annotation.Idempotent;
 import com.tiny.platform.infrastructure.tenant.dto.TenantCreateUpdateDto;
+import com.tiny.platform.infrastructure.tenant.dto.TenantPermissionSummaryDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantRequestDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantResponseDto;
 import com.tiny.platform.infrastructure.tenant.service.TenantService;
@@ -98,7 +99,15 @@ public class TenantController {
     public ResponseEntity<com.tiny.platform.infrastructure.tenant.service.PlatformTemplateDiffResult> diffPlatformTemplate(
         @PathVariable("id") Long id
     ) {
+        tenantLifecycleAccessGuard.assertPlatformTargetTenantReadable(id, "system:tenant:view");
         return ResponseEntity.ok(tenantService.diffPlatformTemplate(id));
+    }
+
+    @GetMapping("/{id}/permission-summary")
+    @PreAuthorize("@tenantManagementAccessGuard.canRead(authentication)")
+    public ResponseEntity<TenantPermissionSummaryDto> permissionSummary(@PathVariable("id") Long id) {
+        tenantLifecycleAccessGuard.assertPlatformTargetTenantReadable(id, "system:tenant:view");
+        return ResponseEntity.ok(tenantService.summarizeTenantPermissions(id));
     }
 
     @PostMapping("/{id}/freeze")

@@ -5,19 +5,28 @@ import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.JavaType;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.jsontype.TypeIdResolver;
+import com.tiny.platform.core.oauth.model.SecurityUser;
+import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
 import com.fasterxml.jackson.databind.type.TypeFactory;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.jackson.Jackson2ObjectMapperBuilderCustomizer;
 import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.IOException;
 import java.io.StringWriter;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.stream.StreamSupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -72,6 +81,84 @@ class JacksonConfigCoverageTest {
         assertThat(json).contains("\"123\"");
         assertThat(json).contains("2024-02-03T04:05:06");
 
+    }
+
+    @Test
+    void shouldRoundTripMultiFactorAuthenticationTokenWithSecurityUserDetails() throws Exception {
+        JacksonConfig config = new JacksonConfig();
+        Jackson2ObjectMapperBuilder builder = new Jackson2ObjectMapperBuilder();
+        config.jacksonCustomizer().customize(builder);
+        ObjectMapper mapper = config.authorizationMapper(builder);
+
+        SecurityUser securityUser = new SecurityUser(
+                123L,
+                null,
+                "platform_admin",
+                "",
+                List.of(new SimpleGrantedAuthority("system:tenant:list")),
+                Set.of("ROLE_PLATFORM_ADMIN"),
+                true,
+                true,
+                true,
+                true,
+                "perm-plat-v1");
+
+        MultiFactorAuthenticationToken token = new MultiFactorAuthenticationToken(
+                "platform_admin",
+                null,
+                MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL,
+                Set.of(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD),
+                List.of(new SimpleGrantedAuthority("system:tenant:list")));
+        token.setDetails(securityUser);
+
+        String json = mapper.writeValueAsString(Map.of("principal", token));
+        assertThat(json).contains("\"details\"");
+        assertThat(json).contains("\"@type\":\"securityUser\"");
+
+        JsonNode root = mapper.readTree(json);
+        MultiFactorAuthenticationToken restored = mapper.treeToValue(
+                unwrapTypedNode(root.get("principal")),
+                MultiFactorAuthenticationToken.class);
+        assertThat(restored.getDetails()).isInstanceOf(SecurityUser.class);
+
+        SecurityUser restoredDetails = (SecurityUser) restored.getDetails();
+        assertThat(restoredDetails.getUserId()).isEqualTo(123L);
+        assertThat(restoredDetails.getActiveTenantId()).isNull();
+        assertThat(restoredDetails.getRoleCodes()).containsExactly("ROLE_PLATFORM_ADMIN");
+        assertThat(restoredDetails.getPermissionsVersion()).isEqualTo("perm-plat-v1");
+        assertThat(restored.getAuthorities())
+                .extracting(GrantedAuthority::getAuthority)
+                .containsExactlyInAnyOrder("system:tenant:list", "FACTOR_PASSWORD");
+    }
+
+    @Test
+    void shouldRoundTripStableTokenClaimListsForSingleAndDoubleRoleCodes() throws Exception {
+        JacksonConfig config = new JacksonConfig();
+        Jackson2ObjectMapperBuilder builder = new Jackson2ObjectMapperBuilder();
+        config.jacksonCustomizer().customize(builder);
+        ObjectMapper mapper = config.authorizationMapper(builder);
+
+        LinkedHashMap<String, Object> singleRolePayload = new LinkedHashMap<>();
+        singleRolePayload.put("roleCodes", new ArrayList<>(List.of("ROLE_PLATFORM_ADMIN")));
+        singleRolePayload.put("authorities", new ArrayList<>(List.of("system:tenant:list")));
+        singleRolePayload.put("permissions", new ArrayList<>(List.of("system:tenant:list")));
+
+        LinkedHashMap<String, Object> doubleRolePayload = new LinkedHashMap<>();
+        doubleRolePayload.put("roleCodes", new ArrayList<>(List.of("ROLE_PLATFORM_ADMIN", "ROLE_AUDITOR")));
+        doubleRolePayload.put("authorities", new ArrayList<>(List.of("system:tenant:list", "dashboard:entry:view")));
+        doubleRolePayload.put("permissions", new ArrayList<>(List.of("system:tenant:list", "dashboard:entry:view")));
+
+        List<Map<String, Object>> payloads = List.of(singleRolePayload, doubleRolePayload);
+
+        for (Map<String, Object> payload : payloads) {
+            JsonNode restored = mapper.readTree(mapper.writeValueAsBytes(payload));
+            assertThat(readStringArray(restored.get("roleCodes")))
+                .containsExactlyElementsOf((List<String>) payload.get("roleCodes"));
+            assertThat(readStringArray(restored.get("authorities")))
+                .containsExactlyElementsOf((List<String>) payload.get("authorities"));
+            assertThat(readStringArray(restored.get("permissions")))
+                .containsExactlyElementsOf((List<String>) payload.get("permissions"));
+        }
     }
 
     @Test
@@ -177,5 +264,32 @@ class JacksonConfigCoverageTest {
 
     enum TestEnum {
         ALPHA, BETA
+    }
+
+    private static JsonNode unwrapTypedNode(JsonNode node) {
+        if (node != null
+                && node.isArray()
+                && node.size() == 2
+                && node.get(0).isTextual()
+                && node.get(1).isObject()) {
+            return node.get(1);
+        }
+        return node;
+    }
+
+    private static List<String> readStringArray(JsonNode node) {
+        if (node != null
+                && node.isArray()
+                && node.size() == 2
+                && node.get(0).isTextual()
+                && node.get(1).isArray()) {
+            node = node.get(1);
+        }
+        if (node == null || !node.isArray()) {
+            return List.of();
+        }
+        return StreamSupport.stream(node.spliterator(), false)
+                .map(JsonNode::asText)
+                .toList();
     }
 }

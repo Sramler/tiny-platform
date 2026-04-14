@@ -143,8 +143,15 @@ class RoleControllerTest {
         ResponseEntity<List<Long>> resources = controller.getRoleResources(10L);
         assertEquals(List.of(7L), resources.getBody());
 
+        when(roleService.getPermissionIdsByRoleId(10L)).thenReturn(List.of(8L, 9L));
+        ResponseEntity<List<Long>> permissions = controller.getRolePermissions(10L);
+        assertEquals(List.of(8L, 9L), permissions.getBody());
+
         controller.updateRoleResources(10L, java.util.Map.of("permissionIds", List.of(8L, 9L)));
         verify(roleService).updateRolePermissions(10L, List.of(8L, 9L));
+
+        controller.updateRolePermissions(10L, java.util.Map.of("permissionIds", List.of(10L)));
+        verify(roleService).updateRolePermissions(10L, List.of(10L));
     }
 
     @Test

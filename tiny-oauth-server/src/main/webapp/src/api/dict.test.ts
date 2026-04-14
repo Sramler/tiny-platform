@@ -149,4 +149,28 @@ describe('dict API', () => {
       expect(result).toBe('启用')
     })
   })
+
+  describe('platform dict', () => {
+    it('should request platform dict type list', async () => {
+      requestMocks.get.mockResolvedValue({ content: [], totalElements: 0, totalPages: 0, pageNumber: 0, pageSize: 10 })
+      const { getPlatformDictTypeList } = await import('@/api/dict')
+
+      await getPlatformDictTypeList({ dictCode: 'STATUS', page: 0, size: 10 })
+
+      expect(requestMocks.get).toHaveBeenCalledWith('/platform/dict/types', {
+        params: { dictCode: 'STATUS', page: 0, size: 10 },
+      })
+    })
+
+    it('should request platform override summary and detail', async () => {
+      requestMocks.get.mockResolvedValueOnce([{ tenantId: 7 }]).mockResolvedValueOnce([{ value: 'ENABLED' }])
+      const { getPlatformDictOverrides, getPlatformDictOverrideDetails } = await import('@/api/dict')
+
+      await getPlatformDictOverrides(10)
+      await getPlatformDictOverrideDetails(10, 7)
+
+      expect(requestMocks.get).toHaveBeenNthCalledWith(1, '/platform/dict/types/10/overrides')
+      expect(requestMocks.get).toHaveBeenNthCalledWith(2, '/platform/dict/types/10/overrides/7')
+    })
+  })
 })

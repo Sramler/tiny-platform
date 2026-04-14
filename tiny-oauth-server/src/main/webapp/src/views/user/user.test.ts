@@ -73,9 +73,9 @@ const PassThrough = defineComponent({
 import User from '@/views/user/user.vue'
 import { ACTIVE_SCOPE_CHANGED_EVENT } from '@/utils/activeScopeEvents'
 
-function createToken(authorities: string[]) {
+function createToken(authorities: string[], activeScopeType: 'PLATFORM' | 'TENANT' = 'TENANT') {
   const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')
-  const payload = Buffer.from(JSON.stringify({ authorities })).toString('base64url')
+  const payload = Buffer.from(JSON.stringify({ authorities, activeScopeType })).toString('base64url')
   return `${header}.${payload}.signature`
 }
 
@@ -220,6 +220,47 @@ describe('user.vue', () => {
 
     expect(apiMocks.userList).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('用户管理需要额外授权')
+  })
+
+  it('should not request user list under platform scope', async () => {
+    authMocks.authUser.value = {
+      access_token: createToken(['system:user:list'], 'PLATFORM'),
+    }
+
+    const wrapper = mount(User, {
+      global: {
+        stubs: {
+          'a-table': defineComponent({
+            props: ['dataSource'],
+            template: '<div class="user-table-stub">rows: {{ (dataSource || []).length }}</div>',
+          }),
+          'a-form': PassThrough,
+          'a-form-item': PassThrough,
+          'a-input': PassThrough,
+          'a-button': PassThrough,
+          'a-tooltip': PassThrough,
+          'a-tag': PassThrough,
+          'a-modal': defineComponent({ props: ['open'], template: '<div v-if="open"><slot /></div>' }),
+          'a-drawer': defineComponent({ props: ['open'], template: '<div v-if="open"><slot /></div>' }),
+          'a-popover': PassThrough,
+          'a-checkbox': PassThrough,
+          'a-pagination': PassThrough,
+          PlusOutlined: PassThrough,
+          ReloadOutlined: PassThrough,
+          EditOutlined: PassThrough,
+          DeleteOutlined: PassThrough,
+          SettingOutlined: PassThrough,
+          HolderOutlined: PassThrough,
+          CloseOutlined: PassThrough,
+          CheckCircleOutlined: PassThrough,
+          StopOutlined: PassThrough,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(apiMocks.userList).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('当前页面仅支持租户侧作用域')
   })
 
   it('should hide write buttons when runtime ui actions are missing (fail-closed)', async () => {

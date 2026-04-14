@@ -14,7 +14,9 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -157,8 +159,8 @@ public class MultiFactorAuthenticationTokenJacksonDeserializer
                     
                     // 检查 details 是否是 SecurityUser
                     if (detailsNode.has("@type") && "securityUser".equals(detailsNode.get("@type").asText())) {
-                        // 反序列化为 SecurityUser
-                        SecurityUser securityUser = mapper.treeToValue(detailsNode, SecurityUser.class);
+                        // 手动恢复 SecurityUser，避免 roleCodes 等集合字段携带 java.util.* 类型包装时触发 allowlist 问题。
+                        SecurityUser securityUser = deserializeSecurityUser(detailsNode);
                         token.setDetails(securityUser);
                         log.debug("[MultiFactorAuthenticationTokenJacksonDeserializer] 成功恢复 SecurityUser 到 details (userId: {})", 
                                 securityUser != null ? securityUser.getUserId() : "null");
@@ -187,5 +189,103 @@ public class MultiFactorAuthenticationTokenJacksonDeserializer
         } catch (Exception e) {
             throw new IOException("Failed to deserialize MultiFactorAuthenticationToken", e);
         }
+    }
+
+    private SecurityUser deserializeSecurityUser(JsonNode detailsNode) {
+        return new SecurityUser(
+            readLong(detailsNode.get("userId")),
+            readLong(detailsNode.get("activeTenantId")),
+            readString(detailsNode.get("username")),
+            readString(detailsNode.get("password")),
+            readAuthorities(detailsNode.get("authorities")),
+            readStringSet(detailsNode.get("roleCodes")),
+            readBoolean(detailsNode.get("accountNonExpired"), false),
+            readBoolean(detailsNode.get("accountNonLocked"), false),
+            readBoolean(detailsNode.get("credentialsNonExpired"), false),
+            readBoolean(detailsNode.get("enabled"), false),
+            readString(detailsNode.get("permissionsVersion"))
+        );
+    }
+
+    private Collection<? extends GrantedAuthority> readAuthorities(JsonNode authoritiesNode) {
+        JsonNode normalizedNode = unwrapJavaUtilTypeWrapper(authoritiesNode);
+        if (normalizedNode == null || !normalizedNode.isArray()) {
+            return List.of();
+        }
+        List<GrantedAuthority> values = new ArrayList<>();
+        for (JsonNode authorityNode : normalizedNode) {
+            if (authorityNode.has("authority")) {
+                values.add(new SimpleGrantedAuthority(authorityNode.get("authority").asText()));
+            } else if (authorityNode.isTextual()) {
+                values.add(new SimpleGrantedAuthority(authorityNode.asText()));
+            }
+        }
+        return values;
+    }
+
+    private Set<String> readStringSet(JsonNode valuesNode) {
+        JsonNode normalizedNode = unwrapJavaUtilTypeWrapper(valuesNode);
+        if (normalizedNode == null || !normalizedNode.isArray()) {
+            return Set.of();
+        }
+        Set<String> values = new LinkedHashSet<>();
+        for (JsonNode valueNode : normalizedNode) {
+            String value = readString(valueNode);
+            if (value != null && !value.isBlank()) {
+                values.add(value);
+            }
+        }
+        return values;
+    }
+
+    private JsonNode unwrapJavaUtilTypeWrapper(JsonNode node) {
+        if (node == null || !node.isArray()) {
+            return node;
+        }
+        if (node.size() == 2
+            && node.get(0).isTextual()
+            && node.get(0).asText().startsWith("java.util.")
+            && node.get(1).isArray()) {
+            return node.get(1);
+        }
+        return node;
+    }
+
+    private Long readLong(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        if (node.isIntegralNumber()) {
+            return node.longValue();
+        }
+        if (node.isTextual()) {
+            try {
+                return Long.parseLong(node.asText().trim());
+            } catch (NumberFormatException ex) {
+                throw new IllegalArgumentException("Invalid long value: " + node.asText(), ex);
+            }
+        }
+        return null;
+    }
+
+    private String readString(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        String value = node.asText();
+        return value != null ? value : null;
+    }
+
+    private boolean readBoolean(JsonNode node, boolean defaultValue) {
+        if (node == null || node.isNull()) {
+            return defaultValue;
+        }
+        if (node.isBoolean()) {
+            return node.asBoolean();
+        }
+        if (node.isTextual()) {
+            return Boolean.parseBoolean(node.asText());
+        }
+        return defaultValue;
     }
 }

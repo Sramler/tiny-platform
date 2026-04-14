@@ -33,7 +33,7 @@
       <!-- 阶段8: 工具栏 -->
       <div class="toolbar-container">
         <div class="table-title">
-          字典项管理
+          {{ props.platformMode ? '平台字典项管理' : '字典项管理' }}
         </div>
         <div class="table-actions">
           <a-button type="link" @click="openCreateDrawer" class="toolbar-btn" :disabled="!query.dictTypeId">
@@ -206,10 +206,24 @@ import {
   createDictItem,
   updateDictItem,
   deleteDictItem,
+  getPlatformVisibleDictTypes,
+  getPlatformDictItemList,
+  createPlatformDictItem,
+  updatePlatformDictItem,
+  deletePlatformDictItem,
   type DictTypeItem,
   type DictItemQuery,
   type DictItemCreateUpdateDto,
 } from '@/api/dict'
+
+const props = withDefaults(
+  defineProps<{
+    platformMode?: boolean
+  }>(),
+  {
+    platformMode: false,
+  },
+)
 
 // 阶段6: 基础响应式数据
 const tableContentRef = ref<HTMLElement | null>(null)
@@ -230,12 +244,12 @@ const dictTypeOptions = ref<DictTypeItem[]>([])
 async function loadDictTypeOptions() {
   try {
     const activeTenantId = resolveActiveTenantId()
-    if (activeTenantId == null) {
+    if (!props.platformMode && activeTenantId == null) {
       message.error('请先确定当前活动租户')
       dictTypeOptions.value = []
       return
     }
-    const result = await getVisibleDictTypes()
+    const result = props.platformMode ? await getPlatformVisibleDictTypes() : await getVisibleDictTypes()
     dictTypeOptions.value = result
   } catch (error) {
     console.error('加载字典类型选项失败:', error)
@@ -258,7 +272,7 @@ async function loadData() {
       page: currentPage - 1, // 转换为 0-based
       size: pageSize,
     }
-    const res = await getDictItemList(params)
+    const res = props.platformMode ? await getPlatformDictItemList(params) : await getDictItemList(params)
     tableData.value = res.content || []
     pagination.value.total = res.totalElements || 0
   } catch (error: any) {
@@ -452,10 +466,12 @@ const selectedDictType = computed(() =>
 )
 
 const isPlatformOverlayCreate = computed(() =>
+  !props.platformMode &&
   drawerMode.value === 'create' && selectedDictType.value?.recordTenantId == null,
 )
 
 const isPlatformOverlayEdit = computed(() =>
+  !props.platformMode &&
   drawerMode.value === 'edit' &&
   formState.value.recordTenantId != null &&
   selectedDictType.value?.recordTenantId == null,
@@ -476,7 +492,7 @@ function openCreateDrawer() {
     message.warning('请先选择字典类型')
     return
   }
-  if (resolveActiveTenantId() == null) {
+  if (!props.platformMode && resolveActiveTenantId() == null) {
     message.warning('请先确定当前活动租户')
     return
   }
@@ -486,7 +502,7 @@ function openCreateDrawer() {
     value: '',
     label: '',
     description: '',
-    recordTenantId: resolveActiveTenantId(),
+    recordTenantId: props.platformMode ? undefined : resolveActiveTenantId(),
     isBuiltin: false,
     enabled: true,
     sortOrder: 0,
@@ -535,7 +551,7 @@ function handleDrawerClose() {
 async function handleSubmit() {
   try {
     const activeTenantId = resolveActiveTenantId()
-    if (activeTenantId == null) {
+    if (!props.platformMode && activeTenantId == null) {
       message.error('请先确定当前活动租户')
       return
     }
@@ -550,10 +566,18 @@ async function handleSubmit() {
       payload.sortOrder = formState.value.sortOrder ?? 0
     }
     if (drawerMode.value === 'create') {
-      await createDictItem(payload)
+      if (props.platformMode) {
+        await createPlatformDictItem(payload)
+      } else {
+        await createDictItem(payload)
+      }
       message.success('创建字典项成功')
     } else if (drawerMode.value === 'edit' && formState.value.id != null) {
-      await updateDictItem(formState.value.id, payload)
+      if (props.platformMode) {
+        await updatePlatformDictItem(formState.value.id, payload)
+      } else {
+        await updateDictItem(formState.value.id, payload)
+      }
       message.success('更新字典项成功')
     }
     drawerVisible.value = false
@@ -574,7 +598,8 @@ function handleDelete(record: any) {
     okText: '确认',
     cancelText: '取消',
     onOk: () => {
-      return deleteDictItem(record.id)
+      const deleteAction = props.platformMode ? deletePlatformDictItem(record.id) : deleteDictItem(record.id)
+      return deleteAction
         .then(() => {
           message.success('删除成功')
           loadData()
@@ -588,6 +613,9 @@ function handleDelete(record: any) {
 }
 
 function isReadonlyItemRecord(record: any) {
+  if (props.platformMode) {
+    return false
+  }
   return record?.recordTenantId == null
 }
 
@@ -623,6 +651,10 @@ const throttledRefresh = useThrottle(handleRefresh, 1000)
 
 /** 租户字典项列表：见 `shouldReloadTenantControlPlaneOnActiveScopeChange`。 */
 function handleActiveScopeChanged() {
+  if (props.platformMode) {
+    void loadDictTypeOptions().then(() => loadData())
+    return
+  }
   if (!shouldReloadTenantControlPlaneOnActiveScopeChange()) {
     return
   }

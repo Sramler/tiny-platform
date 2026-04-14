@@ -221,4 +221,32 @@ class RoleServiceImplTest {
         verify(roleRepository).deleteRolePermissionRelations(7L, 2L);
         verify(roleRepository, times(1)).addRolePermissionRelationByPermissionId(2L, 7L, 4001L);
     }
+
+    @Test
+    void getPermissionIdsByRoleId_should_query_role_permission_with_scope_guard() {
+        RoleRepository roleRepository = mock(RoleRepository.class);
+        RoleServiceImpl service = new RoleServiceImpl(
+            roleRepository,
+            mock(TenantUserRepository.class),
+            mock(RoleAssignmentSyncService.class),
+            mock(EffectiveRoleResolutionService.class),
+            mock(RoleConstraintService.class)
+        );
+
+        TenantContext.setActiveTenantId(2L);
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_TENANT);
+
+        Role role = new Role();
+        role.setId(7L);
+        role.setTenantId(2L);
+        role.setRoleLevel("TENANT");
+
+        when(roleRepository.findById(7L)).thenReturn(Optional.of(role));
+        when(roleRepository.findPermissionIdsByRoleIdAndTenantId(7L, 2L)).thenReturn(List.of(5001L, 5002L));
+
+        List<Long> permissionIds = service.getPermissionIdsByRoleId(7L);
+
+        assertThat(permissionIds).containsExactly(5001L, 5002L);
+        verify(roleRepository).findPermissionIdsByRoleIdAndTenantId(7L, 2L);
+    }
 }

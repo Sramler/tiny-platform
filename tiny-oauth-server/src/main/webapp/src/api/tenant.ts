@@ -40,12 +40,61 @@ export type PlatformTemplateInitializationResult = {
   message: string
 }
 
+export type TenantPermissionSummary = {
+  tenantId: number
+  totalRoles: number
+  enabledRoles: number
+  totalPermissions: number
+  assignedPermissions: number
+  totalCarriers: number
+  boundCarriers: number
+  menuCarriers: number
+  uiActionCarriers: number
+  apiEndpointCarriers: number
+}
+
+export type PlatformTemplateDiffType = 'MISSING_IN_TENANT' | 'EXTRA_IN_TENANT' | 'CHANGED'
+
+export type PlatformTemplateFieldDiff = {
+  platformValue: string
+  tenantValue: string
+}
+
+export type PlatformTemplateEntryDiff = {
+  carrierType: string
+  key: string
+  platformCarrierId?: number
+  tenantCarrierId?: number
+  diffType: PlatformTemplateDiffType
+  fieldDiffs: Record<string, PlatformTemplateFieldDiff>
+}
+
+export type PlatformTemplateDiffResult = {
+  tenantId: number
+  summary: {
+    totalPlatformEntries: number
+    totalTenantEntries: number
+    missingInTenant: number
+    extraInTenant: number
+    changed: number
+  }
+  diffs: PlatformTemplateEntryDiff[]
+}
+
 export function tenantList(params: TenantListParams) {
   return request.get<PageResponse<Tenant>>('/sys/tenants', { params })
 }
 
 export function getTenantById(id: string | number) {
   return request.get<Tenant>(`/sys/tenants/${id}`)
+}
+
+export function getTenantPermissionSummary(id: string | number) {
+  return request.get<TenantPermissionSummary>(`/sys/tenants/${id}/permission-summary`)
+}
+
+export function diffTenantPlatformTemplate(id: string | number) {
+  return request.get<PlatformTemplateDiffResult>(`/sys/tenants/${id}/platform-template/diff`)
 }
 
 export function createTenant(data: Partial<Tenant> & Record<string, unknown>) {

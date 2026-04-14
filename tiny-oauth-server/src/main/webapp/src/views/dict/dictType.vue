@@ -26,7 +26,7 @@
       <!-- 阶段3: 工具栏 -->
       <div class="toolbar-container">
         <div class="table-title">
-          字典类型管理
+          {{ props.platformMode ? '平台字典类型管理' : '字典类型管理' }}
         </div>
         <div class="table-actions">
           <a-button type="link" @click="openCreateDrawer" class="toolbar-btn">
@@ -209,9 +209,22 @@ import {
   createDictType,
   updateDictType,
   deleteDictType,
+  getPlatformDictTypeList,
+  createPlatformDictType,
+  updatePlatformDictType,
+  deletePlatformDictType,
   type DictTypeQuery,
   type DictTypeCreateUpdateDto,
 } from '@/api/dict'
+
+const props = withDefaults(
+  defineProps<{
+    platformMode?: boolean
+  }>(),
+  {
+    platformMode: false,
+  },
+)
 
 // 定义事件，用于与父组件通信
 const emit = defineEmits<{
@@ -244,7 +257,7 @@ async function loadData() {
       page: currentPage - 1, // 转换为 0-based
       size: pageSize,
     }
-    const res = await getDictTypeList(params)
+    const res = props.platformMode ? await getPlatformDictTypeList(params) : await getDictTypeList(params)
     tableData.value = res.content || []
     pagination.value.total = res.totalElements || 0
   } catch (error: any) {
@@ -448,7 +461,7 @@ function openCreateDrawer() {
     dictCode: '',
     dictName: '',
     description: '',
-    recordTenantId: resolveActiveTenantId(),
+    recordTenantId: props.platformMode ? undefined : resolveActiveTenantId(),
     categoryId: undefined,
     isBuiltin: false,
     builtinLocked: false,
@@ -501,7 +514,7 @@ function handleDrawerClose() {
 async function handleSubmit() {
   try {
     const activeTenantId = resolveActiveTenantId()
-    if (activeTenantId == null) {
+    if (!props.platformMode && activeTenantId == null) {
       message.error('请先确定当前活动租户')
       return
     }
@@ -514,10 +527,18 @@ async function handleSubmit() {
       sortOrder: formState.value.sortOrder ?? 0,
     }
     if (drawerMode.value === 'create') {
-      await createDictType(payload)
+      if (props.platformMode) {
+        await createPlatformDictType(payload)
+      } else {
+        await createDictType(payload)
+      }
       message.success('创建字典类型成功')
     } else if (drawerMode.value === 'edit' && formState.value.id != null) {
-      await updateDictType(formState.value.id, payload)
+      if (props.platformMode) {
+        await updatePlatformDictType(formState.value.id, payload)
+      } else {
+        await updateDictType(formState.value.id, payload)
+      }
       message.success('更新字典类型成功')
     }
     drawerVisible.value = false
@@ -538,7 +559,8 @@ function handleDelete(record: any) {
     okText: '确认',
     cancelText: '取消',
     onOk: () => {
-      return deleteDictType(record.id)
+      const deleteAction = props.platformMode ? deletePlatformDictType(record.id) : deleteDictType(record.id)
+      return deleteAction
         .then(() => {
           message.success('删除成功')
           loadData()
@@ -552,10 +574,16 @@ function handleDelete(record: any) {
 }
 
 function isReadonlyTypeRecord(record: any) {
+  if (props.platformMode) {
+    return Boolean(record?.builtinLocked)
+  }
   return record?.recordTenantId == null || Boolean(record?.builtinLocked)
 }
 
 function getTypeReadonlyReason(record: any) {
+  if (props.platformMode && record?.builtinLocked) {
+    return '内置字典已锁定，不允许修改'
+  }
   if (record?.recordTenantId == null) {
     return '平台字典只读，不允许修改'
   }
@@ -585,6 +613,10 @@ const throttledRefresh = useThrottle(handleRefresh, 1000)
 
 /** 租户字典控制面：见 `shouldReloadTenantControlPlaneOnActiveScopeChange`（统一边界，禁止页面各自推断 scope）。 */
 function handleActiveScopeChanged() {
+  if (props.platformMode) {
+    loadData()
+    return
+  }
   if (!shouldReloadTenantControlPlaneOnActiveScopeChange()) {
     return
   }

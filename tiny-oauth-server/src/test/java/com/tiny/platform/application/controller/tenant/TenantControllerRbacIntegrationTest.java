@@ -2,6 +2,8 @@ package com.tiny.platform.application.controller.tenant;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -12,9 +14,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.core.oauth.tenant.TenantContextContract;
 import com.tiny.platform.core.oauth.tenant.TenantLifecycleAccessGuard;
-import com.tiny.platform.infrastructure.tenant.domain.Tenant;
 import com.tiny.platform.infrastructure.tenant.dto.TenantCreateUpdateDto;
+import com.tiny.platform.infrastructure.tenant.dto.TenantPermissionSummaryDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantResponseDto;
+import com.tiny.platform.infrastructure.tenant.service.PlatformTemplateDiffResult;
 import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import com.tiny.platform.infrastructure.tenant.service.TenantService;
 import org.junit.jupiter.api.AfterEach;
@@ -145,6 +148,32 @@ class TenantControllerRbacIntegrationTest {
                     .with(user("platform-admin").authorities(new SimpleGrantedAuthority("system:tenant:template:initialize"))))
                 .andExpect(status().isOk());
         }
+
+        @Test
+        void permissionSummary_allowsPlatformAdmin() throws Exception {
+            when(tenantService.summarizeTenantPermissions(9L))
+                .thenReturn(new TenantPermissionSummaryDto(9L, 1L, 1L, 2L, 2L, 3L, 3L, 1L, 1L, 1L));
+
+            mockMvc.perform(get("/sys/tenants/9/permission-summary")
+                    .with(user("platform-admin").authorities(new SimpleGrantedAuthority("system:tenant:view"))))
+                .andExpect(status().isOk());
+        }
+
+        @Test
+        void diffPlatformTemplate_allowsPlatformAdmin_andLifecycleGuardIsInvoked() throws Exception {
+            when(tenantService.diffPlatformTemplate(9L))
+                .thenReturn(new PlatformTemplateDiffResult(
+                    9L,
+                    new PlatformTemplateDiffResult.Summary(1, 1, 0, 0, 0),
+                    List.of()
+                ));
+
+            mockMvc.perform(get("/sys/tenants/9/platform-template/diff")
+                    .with(user("platform-admin").authorities(new SimpleGrantedAuthority("system:tenant:view"))))
+                .andExpect(status().isOk());
+
+            verify(tenantLifecycleAccessGuard).assertPlatformTargetTenantReadable(9L, "system:tenant:view");
+        }
     }
 
     @Test
@@ -187,6 +216,28 @@ class TenantControllerRbacIntegrationTest {
 
         mockMvc.perform(post("/sys/tenants/platform-template/initialize")
                 .with(user("editor").authorities(new SimpleGrantedAuthority("system:tenant:edit"))))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void permissionSummary_deniesWithoutReadAuthority() throws Exception {
+        TenantContext.setActiveTenantId(1L);
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_PLATFORM);
+
+        mockMvc.perform(get("/sys/tenants/9/permission-summary")
+                .with(user("editor").authorities(new SimpleGrantedAuthority("system:tenant:edit"))))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void diffPlatformTemplate_deniesWhenLifecycleGuardBlocksFrozenOrDecommissionedTarget() throws Exception {
+        TenantContext.setActiveTenantId(1L);
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_PLATFORM);
+        doThrow(new org.springframework.security.access.AccessDeniedException("lifecycle allowlist denied"))
+            .when(tenantLifecycleAccessGuard).assertPlatformTargetTenantReadable(9L, "system:tenant:view");
+
+        mockMvc.perform(get("/sys/tenants/9/platform-template/diff")
+                .with(user("platform-admin").authorities(new SimpleGrantedAuthority("system:tenant:view"))))
             .andExpect(status().isForbidden());
     }
 

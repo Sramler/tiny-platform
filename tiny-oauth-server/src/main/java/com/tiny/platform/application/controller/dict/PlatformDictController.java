@@ -6,6 +6,8 @@ import com.tiny.platform.core.dict.dto.DictItemResponseDto;
 import com.tiny.platform.core.dict.dto.DictTypeCreateUpdateDto;
 import com.tiny.platform.core.dict.dto.DictTypeQueryDto;
 import com.tiny.platform.core.dict.dto.DictTypeResponseDto;
+import com.tiny.platform.core.dict.dto.PlatformDictOverrideDetailDto;
+import com.tiny.platform.core.dict.dto.PlatformDictOverrideSummaryDto;
 import com.tiny.platform.core.dict.model.DictItem;
 import com.tiny.platform.core.dict.model.DictType;
 import com.tiny.platform.core.dict.service.DictPlatformAdminService;
@@ -120,6 +122,21 @@ public class PlatformDictController {
     @GetMapping("/items/code/{dictCode}")
     public ResponseEntity<List<DictItem>> getDictItemsByCode(@PathVariable("dictCode") String dictCode) {
         return ResponseEntity.ok(dictPlatformAdminService.findItemsByCode(dictCode));
+    }
+
+    @GetMapping("/types/{dictTypeId}/overrides")
+    public ResponseEntity<List<PlatformDictOverrideSummaryDto>> getTypeOverrideSummaries(
+            @PathVariable("dictTypeId") Long dictTypeId
+    ) {
+        return ResponseEntity.ok(dictPlatformAdminService.findTypeOverrideSummaries(dictTypeId));
+    }
+
+    @GetMapping("/types/{dictTypeId}/overrides/{tenantId}")
+    public ResponseEntity<List<PlatformDictOverrideDetailDto>> getTypeOverrideDetails(
+            @PathVariable("dictTypeId") Long dictTypeId,
+            @PathVariable("tenantId") Long tenantId
+    ) {
+        return ResponseEntity.ok(dictPlatformAdminService.findTypeOverrideDetails(dictTypeId, tenantId));
     }
 
     @GetMapping("/items/map/{dictCode}")

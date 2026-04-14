@@ -149,6 +149,42 @@ const routes = [
         component: () => import('@/views/audit/AuthenticationAudit.vue'),
         meta: { requiresAuth: true, title: '认证审计' },
       },
+      {
+        path: 'platform/audit',
+        name: 'PlatformAudit',
+        component: () => import('@/views/platform/audit/PlatformAudit.vue'),
+        meta: { requiresAuth: true, title: '平台审计治理' },
+      },
+      {
+        path: 'platform/token-debug',
+        name: 'PlatformTokenDebug',
+        component: () => import('@/views/platform/token-debug/TokenDebug.vue'),
+        meta: { requiresAuth: true, title: '平台 Token Decode 工具' },
+      },
+      {
+        path: 'platform/tenants',
+        name: 'PlatformTenants',
+        component: () => import('@/views/tenant/Tenant.vue'),
+        meta: { requiresAuth: true, title: '平台租户治理' },
+      },
+      {
+        path: 'platform/tenants/:id',
+        name: 'PlatformTenantDetail',
+        component: () => import('@/views/platform/tenants/TenantDetail.vue'),
+        meta: { requiresAuth: true, title: '平台租户详情' },
+      },
+      {
+        path: 'platform/permissions',
+        name: 'PlatformPermissions',
+        component: () => import('@/views/platform/permissions/PermissionControl.vue'),
+        meta: { requiresAuth: true, title: '平台权限主数据' },
+      },
+      {
+        path: 'platform/template-roles',
+        name: 'PlatformTemplateRoles',
+        component: () => import('@/views/platform/template-roles/TemplateRoles.vue'),
+        meta: { requiresAuth: true, title: '平台模板角色' },
+      },
       // {
       //   path: 'about',
       //   name: 'About',
@@ -185,6 +221,12 @@ const routes = [
         name: 'OIDCDebug',
         component: () => import('@/views/OIDCDebug.vue'),
         meta: { requiresAuth: true, title: 'OIDC 调试工具' },
+      },
+      {
+        path: 'platform/dicts',
+        name: 'PlatformDicts',
+        component: () => import('@/views/platform/dicts/index.vue'),
+        meta: { requiresAuth: true, title: '平台字典管理' },
       },
       // 调度 DAG 详情/历史（子页无菜单项，需静态注册避免 404）
       {

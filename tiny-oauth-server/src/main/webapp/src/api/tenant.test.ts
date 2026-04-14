@@ -47,6 +47,30 @@ describe('tenant API', () => {
     expect(result.code).toBe('t2')
   })
 
+  it('should request tenant permission summary by id', async () => {
+    requestMocks.get.mockResolvedValue({ tenantId: 2, totalPermissions: 10 })
+    const { getTenantPermissionSummary } = await import('@/api/tenant')
+
+    const result = await getTenantPermissionSummary(2)
+
+    expect(requestMocks.get).toHaveBeenCalledWith('/sys/tenants/2/permission-summary')
+    expect(result.totalPermissions).toBe(10)
+  })
+
+  it('should request tenant platform template diff by id', async () => {
+    requestMocks.get.mockResolvedValue({
+      tenantId: 2,
+      summary: { missingInTenant: 1, extraInTenant: 0, changed: 1, totalPlatformEntries: 5, totalTenantEntries: 4 },
+      diffs: [],
+    })
+    const { diffTenantPlatformTemplate } = await import('@/api/tenant')
+
+    const result = await diffTenantPlatformTemplate(2)
+
+    expect(requestMocks.get).toHaveBeenCalledWith('/sys/tenants/2/platform-template/diff')
+    expect(result.summary.changed).toBe(1)
+  })
+
   it('should create tenant with idempotency', async () => {
     requestMocks.post.mockResolvedValue({ id: 3, code: 't3' })
     const { createTenant } = await import('@/api/tenant')

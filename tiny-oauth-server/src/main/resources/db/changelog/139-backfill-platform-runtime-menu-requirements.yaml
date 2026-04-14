@@ -1,0 +1,53 @@
+databaseChangeLog:
+  - changeSet:
+      id: 139-backfill-platform-runtime-menu-requirements
+      author: codex
+      comment: 补齐平台运行态菜单的 requirement rows，保持 menu evaluator fail-closed 语义下可见
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: menu
+            - tableExists:
+                tableName: menu_permission_requirement
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT INTO `menu_permission_requirement` (
+                `tenant_id`,
+                `menu_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                m.`id` AS `menu_id`,
+                0 AS `requirement_group`,
+                1 AS `sort_order`,
+                m.`required_permission_id` AS `permission_id`,
+                0 AS `negated`,
+                NOW() AS `created_at`,
+                NULL AS `created_by`,
+                NOW() AS `updated_at`,
+                NULL AS `updated_by`
+              FROM `menu` m
+              WHERE m.`tenant_id` IS NULL
+                AND m.`name` IN ('tenant', 'idempotentOps', 'authenticationAudit', 'authorizationAudit')
+                AND m.`required_permission_id` IS NOT NULL
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `menu_permission_requirement` existing
+                  WHERE existing.`menu_id` = m.`id`
+                );

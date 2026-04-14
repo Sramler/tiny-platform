@@ -1,0 +1,173 @@
+databaseChangeLog:
+  - changeSet:
+      id: 142-backfill-platform-dict-api-endpoints
+      author: codex
+      comment: 补齐 platform dict 控制面 api_endpoint requirement，确保真实链路受统一守卫保护且限定 PLATFORM scope
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: api_endpoint
+            - tableExists:
+                tableName: api_endpoint_permission_requirement
+            - tableExists:
+                tableName: permission
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              -- /platform/dict/types
+              INSERT INTO api_endpoint (tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at)
+              SELECT NULL, 'PLATFORM', 'platform-dict-types-get', '平台字典类型列表', '/platform/dict/types', 'GET', 'dict:platform:manage', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NULL AND p.permission_code = 'dict:platform:manage'
+                AND NOT EXISTS (SELECT 1 FROM api_endpoint e WHERE e.tenant_id IS NULL AND e.uri = '/platform/dict/types' AND e.method = 'GET');
+              INSERT INTO api_endpoint (tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at)
+              SELECT NULL, 'PLATFORM', 'platform-dict-types-post', '平台字典类型创建', '/platform/dict/types', 'POST', 'dict:platform:manage', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NULL AND p.permission_code = 'dict:platform:manage'
+                AND NOT EXISTS (SELECT 1 FROM api_endpoint e WHERE e.tenant_id IS NULL AND e.uri = '/platform/dict/types' AND e.method = 'POST');
+
+              -- /platform/dict/types/{id}
+              INSERT INTO api_endpoint (tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at)
+              SELECT NULL, 'PLATFORM', 'platform-dict-type-id-get', '平台字典类型详情', '/platform/dict/types/{id}', 'GET', 'dict:platform:manage', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NULL AND p.permission_code = 'dict:platform:manage'
+                AND NOT EXISTS (SELECT 1 FROM api_endpoint e WHERE e.tenant_id IS NULL AND e.uri = '/platform/dict/types/{id}' AND e.method = 'GET');
+              INSERT INTO api_endpoint (tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at)
+              SELECT NULL, 'PLATFORM', 'platform-dict-type-id-put', '平台字典类型更新', '/platform/dict/types/{id}', 'PUT', 'dict:platform:manage', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NULL AND p.permission_code = 'dict:platform:manage'
+                AND NOT EXISTS (SELECT 1 FROM api_endpoint e WHERE e.tenant_id IS NULL AND e.uri = '/platform/dict/types/{id}' AND e.method = 'PUT');
+              INSERT INTO api_endpoint (tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at)
+              SELECT NULL, 'PLATFORM', 'platform-dict-type-id-delete', '平台字典类型删除', '/platform/dict/types/{id}', 'DELETE', 'dict:platform:manage', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NULL AND p.permission_code = 'dict:platform:manage'
+                AND NOT EXISTS (SELECT 1 FROM api_endpoint e WHERE e.tenant_id IS NULL AND e.uri = '/platform/dict/types/{id}' AND e.method = 'DELETE');
+
+              -- /platform/dict/types/code/{dictCode}
+              INSERT INTO api_endpoint (tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at)
+              SELECT NULL, 'PLATFORM', 'platform-dict-type-code-get', '平台字典类型按编码读取', '/platform/dict/types/code/{dictCode}', 'GET', 'dict:platform:manage', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NULL AND p.permission_code = 'dict:platform:manage'
+                AND NOT EXISTS (SELECT 1 FROM api_endpoint e WHERE e.tenant_id IS NULL AND e.uri = '/platform/dict/types/code/{dictCode}' AND e.method = 'GET');
+
+              -- /platform/dict/types/batch/delete
+              INSERT INTO api_endpoint (tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at)
+              SELECT NULL, 'PLATFORM', 'platform-dict-types-batch-delete', '平台字典类型批量删除', '/platform/dict/types/batch/delete', 'POST', 'dict:platform:manage', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NULL AND p.permission_code = 'dict:platform:manage'
+                AND NOT EXISTS (SELECT 1 FROM api_endpoint e WHERE e.tenant_id IS NULL AND e.uri = '/platform/dict/types/batch/delete' AND e.method = 'POST');
+
+              -- /platform/dict/types/{dictTypeId}/overrides*
+              INSERT INTO api_endpoint (tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at)
+              SELECT NULL, 'PLATFORM', 'platform-dict-overrides-get', '平台字典租户覆盖摘要读取', '/platform/dict/types/{dictTypeId}/overrides', 'GET', 'dict:platform:manage', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NULL AND p.permission_code = 'dict:platform:manage'
+                AND NOT EXISTS (SELECT 1 FROM api_endpoint e WHERE e.tenant_id IS NULL AND e.uri = '/platform/dict/types/{dictTypeId}/overrides' AND e.method = 'GET');
+              INSERT INTO api_endpoint (tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at)
+              SELECT NULL, 'PLATFORM', 'platform-dict-overrides-tenant-get', '平台字典租户覆盖明细读取', '/platform/dict/types/{dictTypeId}/overrides/{tenantId}', 'GET', 'dict:platform:manage', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NULL AND p.permission_code = 'dict:platform:manage'
+                AND NOT EXISTS (SELECT 1 FROM api_endpoint e WHERE e.tenant_id IS NULL AND e.uri = '/platform/dict/types/{dictTypeId}/overrides/{tenantId}' AND e.method = 'GET');
+
+              -- /platform/dict/items
+              INSERT INTO api_endpoint (tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at)
+              SELECT NULL, 'PLATFORM', 'platform-dict-items-get', '平台字典项列表', '/platform/dict/items', 'GET', 'dict:platform:manage', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NULL AND p.permission_code = 'dict:platform:manage'
+                AND NOT EXISTS (SELECT 1 FROM api_endpoint e WHERE e.tenant_id IS NULL AND e.uri = '/platform/dict/items' AND e.method = 'GET');
+              INSERT INTO api_endpoint (tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at)
+              SELECT NULL, 'PLATFORM', 'platform-dict-items-post', '平台字典项创建', '/platform/dict/items', 'POST', 'dict:platform:manage', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NULL AND p.permission_code = 'dict:platform:manage'
+                AND NOT EXISTS (SELECT 1 FROM api_endpoint e WHERE e.tenant_id IS NULL AND e.uri = '/platform/dict/items' AND e.method = 'POST');
+
+              -- /platform/dict/items/{id}
+              INSERT INTO api_endpoint (tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at)
+              SELECT NULL, 'PLATFORM', 'platform-dict-item-id-get', '平台字典项详情', '/platform/dict/items/{id}', 'GET', 'dict:platform:manage', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NULL AND p.permission_code = 'dict:platform:manage'
+                AND NOT EXISTS (SELECT 1 FROM api_endpoint e WHERE e.tenant_id IS NULL AND e.uri = '/platform/dict/items/{id}' AND e.method = 'GET');
+              INSERT INTO api_endpoint (tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at)
+              SELECT NULL, 'PLATFORM', 'platform-dict-item-id-put', '平台字典项更新', '/platform/dict/items/{id}', 'PUT', 'dict:platform:manage', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NULL AND p.permission_code = 'dict:platform:manage'
+                AND NOT EXISTS (SELECT 1 FROM api_endpoint e WHERE e.tenant_id IS NULL AND e.uri = '/platform/dict/items/{id}' AND e.method = 'PUT');
+              INSERT INTO api_endpoint (tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at)
+              SELECT NULL, 'PLATFORM', 'platform-dict-item-id-delete', '平台字典项删除', '/platform/dict/items/{id}', 'DELETE', 'dict:platform:manage', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NULL AND p.permission_code = 'dict:platform:manage'
+                AND NOT EXISTS (SELECT 1 FROM api_endpoint e WHERE e.tenant_id IS NULL AND e.uri = '/platform/dict/items/{id}' AND e.method = 'DELETE');
+
+              -- /platform/dict/items/type/{dictTypeId}
+              INSERT INTO api_endpoint (tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at)
+              SELECT NULL, 'PLATFORM', 'platform-dict-items-type-get', '平台字典项按类型读取', '/platform/dict/items/type/{dictTypeId}', 'GET', 'dict:platform:manage', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NULL AND p.permission_code = 'dict:platform:manage'
+                AND NOT EXISTS (SELECT 1 FROM api_endpoint e WHERE e.tenant_id IS NULL AND e.uri = '/platform/dict/items/type/{dictTypeId}' AND e.method = 'GET');
+
+              -- /platform/dict/items/code/{dictCode}
+              INSERT INTO api_endpoint (tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at)
+              SELECT NULL, 'PLATFORM', 'platform-dict-items-code-get', '平台字典项按编码读取', '/platform/dict/items/code/{dictCode}', 'GET', 'dict:platform:manage', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NULL AND p.permission_code = 'dict:platform:manage'
+                AND NOT EXISTS (SELECT 1 FROM api_endpoint e WHERE e.tenant_id IS NULL AND e.uri = '/platform/dict/items/code/{dictCode}' AND e.method = 'GET');
+
+              -- /platform/dict/items/map/{dictCode}
+              INSERT INTO api_endpoint (tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at)
+              SELECT NULL, 'PLATFORM', 'platform-dict-items-map-get', '平台字典映射读取', '/platform/dict/items/map/{dictCode}', 'GET', 'dict:platform:manage', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NULL AND p.permission_code = 'dict:platform:manage'
+                AND NOT EXISTS (SELECT 1 FROM api_endpoint e WHERE e.tenant_id IS NULL AND e.uri = '/platform/dict/items/map/{dictCode}' AND e.method = 'GET');
+
+              -- /platform/dict/items/label/{dictCode}/{value}
+              INSERT INTO api_endpoint (tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at)
+              SELECT NULL, 'PLATFORM', 'platform-dict-items-label-get', '平台字典标签读取', '/platform/dict/items/label/{dictCode}/{value}', 'GET', 'dict:platform:manage', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NULL AND p.permission_code = 'dict:platform:manage'
+                AND NOT EXISTS (SELECT 1 FROM api_endpoint e WHERE e.tenant_id IS NULL AND e.uri = '/platform/dict/items/label/{dictCode}/{value}' AND e.method = 'GET');
+
+              -- /platform/dict/items/batch/delete
+              INSERT INTO api_endpoint (tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at)
+              SELECT NULL, 'PLATFORM', 'platform-dict-items-batch-delete', '平台字典项批量删除', '/platform/dict/items/batch/delete', 'POST', 'dict:platform:manage', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NULL AND p.permission_code = 'dict:platform:manage'
+                AND NOT EXISTS (SELECT 1 FROM api_endpoint e WHERE e.tenant_id IS NULL AND e.uri = '/platform/dict/items/batch/delete' AND e.method = 'POST');
+
+              INSERT IGNORE INTO api_endpoint_permission_requirement (
+                tenant_id, api_endpoint_id, requirement_group, sort_order, permission_id, negated, created_at, updated_at
+              )
+              SELECT
+                e.tenant_id,
+                e.id,
+                0,
+                1,
+                e.required_permission_id,
+                0,
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP
+              FROM api_endpoint e
+              WHERE e.tenant_id IS NULL
+                AND e.uri IN (
+                  '/platform/dict/types',
+                  '/platform/dict/types/{id}',
+                  '/platform/dict/types/code/{dictCode}',
+                  '/platform/dict/types/batch/delete',
+                  '/platform/dict/types/{dictTypeId}/overrides',
+                  '/platform/dict/types/{dictTypeId}/overrides/{tenantId}',
+                  '/platform/dict/items',
+                  '/platform/dict/items/{id}',
+                  '/platform/dict/items/type/{dictTypeId}',
+                  '/platform/dict/items/code/{dictCode}',
+                  '/platform/dict/items/map/{dictCode}',
+                  '/platform/dict/items/label/{dictCode}/{value}',
+                  '/platform/dict/items/batch/delete'
+                )
+                AND e.method IN ('GET', 'POST', 'PUT', 'DELETE')
+                AND e.required_permission_id IS NOT NULL;

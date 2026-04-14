@@ -6,6 +6,8 @@ import com.tiny.platform.core.dict.dto.DictItemResponseDto;
 import com.tiny.platform.core.dict.dto.DictTypeCreateUpdateDto;
 import com.tiny.platform.core.dict.dto.DictTypeQueryDto;
 import com.tiny.platform.core.dict.dto.DictTypeResponseDto;
+import com.tiny.platform.core.dict.dto.PlatformDictOverrideDetailDto;
+import com.tiny.platform.core.dict.dto.PlatformDictOverrideSummaryDto;
 import com.tiny.platform.core.dict.model.DictItem;
 import com.tiny.platform.core.dict.model.DictType;
 import com.tiny.platform.core.dict.service.DictPlatformAdminService;
@@ -85,6 +87,22 @@ class PlatformDictControllerTest {
         }
 
         @Test
+        void getTypeOverrideSummaries_returnsServiceResult() {
+            DictPlatformAdminService service = mock(DictPlatformAdminService.class);
+            PlatformDictController controller = new PlatformDictController(service);
+            PlatformDictOverrideSummaryDto dto = new PlatformDictOverrideSummaryDto();
+            dto.setTenantId(7L);
+            dto.setOverriddenCount(2);
+            when(service.findTypeOverrideSummaries(10L)).thenReturn(List.of(dto));
+
+            List<PlatformDictOverrideSummaryDto> body = controller.getTypeOverrideSummaries(10L).getBody();
+
+            assertThat(body).isNotNull();
+            assertThat(body).hasSize(1);
+            assertThat(body.get(0).getTenantId()).isEqualTo(7L);
+        }
+
+        @Test
         void getDictTypeByCode_whenFound_returnsBody() {
             DictPlatformAdminService service = mock(DictPlatformAdminService.class);
             PlatformDictController controller = new PlatformDictController(service);
@@ -139,6 +157,22 @@ class PlatformDictControllerTest {
 
             assertThat(controller.createDictItem(dto).getBody()).isEqualTo(created);
             verify(service).createItem(dto);
+        }
+
+        @Test
+        void getTypeOverrideDetails_returnsServiceResult() {
+            DictPlatformAdminService service = mock(DictPlatformAdminService.class);
+            PlatformDictController controller = new PlatformDictController(service);
+            PlatformDictOverrideDetailDto dto = new PlatformDictOverrideDetailDto();
+            dto.setValue("ENABLED");
+            dto.setStatus("OVERRIDDEN");
+            when(service.findTypeOverrideDetails(10L, 7L)).thenReturn(List.of(dto));
+
+            List<PlatformDictOverrideDetailDto> body = controller.getTypeOverrideDetails(10L, 7L).getBody();
+
+            assertThat(body).isNotNull();
+            assertThat(body).hasSize(1);
+            assertThat(body.get(0).getStatus()).isEqualTo("OVERRIDDEN");
         }
     }
 }

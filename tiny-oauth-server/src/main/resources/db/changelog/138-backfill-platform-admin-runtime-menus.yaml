@@ -1,0 +1,241 @@
+databaseChangeLog:
+  - changeSet:
+      id: 138-backfill-platform-admin-runtime-menus
+      author: codex
+      comment: 补齐平台模板中 platform_admin 可运行的幂等治理与审计菜单链，并回填 tenant admin 审计模板权限
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: role
+            - tableExists:
+                tableName: permission
+            - tableExists:
+                tableName: menu
+            - tableExists:
+                tableName: role_permission
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              -- 平台模板需要保留 system 目录作为平台/租户通用治理菜单的父节点。
+              INSERT INTO `menu` (
+                `tenant_id`,
+                `resource_level`,
+                `name`,
+                `title`,
+                `path`,
+                `icon`,
+                `show_icon`,
+                `sort`,
+                `component`,
+                `redirect`,
+                `hidden`,
+                `keep_alive`,
+                `permission`,
+                `required_permission_id`,
+                `type`,
+                `parent_id`,
+                `enabled`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                'PLATFORM' AS `resource_level`,
+                src.`name`,
+                src.`title`,
+                src.`path`,
+                src.`icon`,
+                src.`show_icon`,
+                src.`sort`,
+                src.`component`,
+                src.`redirect`,
+                src.`hidden`,
+                src.`keep_alive`,
+                src.`permission`,
+                NULL AS `required_permission_id`,
+                src.`type`,
+                NULL AS `parent_id`,
+                src.`enabled`,
+                NOW() AS `created_at`,
+                NULL AS `created_by`,
+                NOW() AS `updated_at`,
+                NULL AS `updated_by`
+              FROM `menu` src
+              WHERE src.`tenant_id` = 1
+                AND src.`name` = 'system'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `menu` existing
+                  WHERE existing.`tenant_id` IS NULL
+                    AND existing.`name` = 'system'
+                );
+
+              -- platform_admin 在 PLATFORM 作用域下真正可运行的是 tenant / audit / idempotent，
+              -- 不把 tenant-only 的 org/datascope/role-constraint 页面误暴露到平台态。
+              INSERT INTO `permission` (
+                `permission_code`,
+                `permission_name`,
+                `module_code`,
+                `action_code`,
+                `permission_type`,
+                `description`,
+                `enabled`,
+                `built_in_flag`,
+                `tenant_id`,
+                `created_by`,
+                `created_at`,
+                `updated_by`,
+                `updated_at`
+              )
+              SELECT
+                src.`permission_code`,
+                src.`permission_name`,
+                src.`module_code`,
+                src.`action_code`,
+                src.`permission_type`,
+                src.`description`,
+                src.`enabled`,
+                src.`built_in_flag`,
+                NULL AS `tenant_id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`,
+                NULL AS `updated_by`,
+                NOW() AS `updated_at`
+              FROM `permission` src
+              WHERE src.`tenant_id` = 1
+                AND src.`permission_code` IN (
+                  'idempotent:ops:view',
+                  'system:audit:authentication:view',
+                  'system:audit:authentication:export',
+                  'system:audit:auth:view',
+                  'system:audit:auth:export'
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `permission` existing
+                  WHERE existing.`tenant_id` IS NULL
+                    AND existing.`permission_code` = src.`permission_code`
+                );
+
+              INSERT INTO `menu` (
+                `tenant_id`,
+                `resource_level`,
+                `name`,
+                `title`,
+                `path`,
+                `icon`,
+                `show_icon`,
+                `sort`,
+                `component`,
+                `redirect`,
+                `hidden`,
+                `keep_alive`,
+                `permission`,
+                `required_permission_id`,
+                `type`,
+                `parent_id`,
+                `enabled`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                'PLATFORM' AS `resource_level`,
+                src.`name`,
+                src.`title`,
+                src.`path`,
+                src.`icon`,
+                src.`show_icon`,
+                src.`sort`,
+                src.`component`,
+                src.`redirect`,
+                src.`hidden`,
+                src.`keep_alive`,
+                src.`permission`,
+                platform_permission.`id` AS `required_permission_id`,
+                src.`type`,
+                platform_system.`id` AS `parent_id`,
+                src.`enabled`,
+                NOW() AS `created_at`,
+                NULL AS `created_by`,
+                NOW() AS `updated_at`,
+                NULL AS `updated_by`
+              FROM `menu` src
+              JOIN `menu` platform_system
+                ON platform_system.`tenant_id` IS NULL
+               AND platform_system.`name` = 'system'
+              JOIN `permission` platform_permission
+                ON platform_permission.`tenant_id` IS NULL
+               AND platform_permission.`permission_code` COLLATE utf8mb4_general_ci
+                   = src.`permission` COLLATE utf8mb4_general_ci
+              WHERE src.`tenant_id` = 1
+                AND src.`name` IN ('idempotentOps', 'authenticationAudit', 'authorizationAudit')
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `menu` existing
+                  WHERE existing.`tenant_id` IS NULL
+                    AND existing.`name` = src.`name`
+                );
+
+              INSERT IGNORE INTO `role_permission` (
+                `tenant_id`,
+                `role_id`,
+                `permission_id`,
+                `created_by`,
+                `created_at`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                platform_admin.`id` AS `role_id`,
+                platform_permission.`id` AS `permission_id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`
+              FROM `role` platform_admin
+              JOIN `permission` platform_permission
+                ON platform_permission.`tenant_id` IS NULL
+               AND platform_permission.`permission_code` IN (
+                 'idempotent:ops:view',
+                 'system:audit:authentication:view',
+                 'system:audit:authentication:export',
+                 'system:audit:auth:view',
+                 'system:audit:auth:export'
+               )
+              WHERE platform_admin.`tenant_id` IS NULL
+                AND platform_admin.`code` = 'ROLE_PLATFORM_ADMIN';
+
+              -- tenant admin 仍需要从平台模板克隆两类 audit 权限，保证新租户 bootstrap 不回退到旧 default 基线。
+              INSERT IGNORE INTO `role_permission` (
+                `tenant_id`,
+                `role_id`,
+                `permission_id`,
+                `created_by`,
+                `created_at`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                tenant_admin.`id` AS `role_id`,
+                platform_permission.`id` AS `permission_id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`
+              FROM `role` tenant_admin
+              JOIN `permission` platform_permission
+                ON platform_permission.`tenant_id` IS NULL
+               AND platform_permission.`permission_code` IN (
+                 'system:audit:authentication:view',
+                 'system:audit:authentication:export',
+                 'system:audit:auth:view',
+                 'system:audit:auth:export'
+               )
+              WHERE tenant_admin.`tenant_id` IS NULL
+                AND tenant_admin.`code` = 'ROLE_TENANT_ADMIN';

@@ -23,6 +23,10 @@ import java.io.IOException;
  */
 public class ApiEndpointRequirementFilter extends OncePerRequestFilter {
 
+    private static final String SELF_SECURITY_PREFIX = "/self/security/";
+    private static final String RUNTIME_MENU_TREE_PATH = "/sys/menus/tree";
+    private static final String PLATFORM_TOKEN_DEBUG_PREFIX = "/sys/platform/token-debug/";
+
     private final ResourceService resourceService;
 
     public ApiEndpointRequirementFilter(ResourceService resourceService) {
@@ -45,7 +49,13 @@ public class ApiEndpointRequirementFilter extends OncePerRequestFilter {
             || path.startsWith("/webjars/")
             || path.startsWith("/assets/")
             || path.startsWith("/css/")
-            || path.startsWith("/js/");
+            || path.startsWith("/js/")
+            // Runtime sidebar tree is guarded by menu carrier requirements instead of control-plane api_endpoint rows.
+            || RUNTIME_MENU_TREE_PATH.equals(path)
+            // Platform token debug is a readonly troubleshooting endpoint guarded by PreAuthorize + platform-scope checks.
+            || path.startsWith(PLATFORM_TOKEN_DEBUG_PREFIX)
+            || "/self/security".equals(path)
+            || path.startsWith(SELF_SECURITY_PREFIX);
     }
 
     @Override

@@ -18,9 +18,9 @@
 |------|----------|-----------|
 | 1. 租户治理 | 基础能力已成型 | 更细粒度只读保留期策略、套餐/归档能力、独立详情页 |
 | 2. 组织与部门 | 基础骨架已完成 | 负责人、搜索/分页、DTO 校验、批量操作 |
-| 3. 用户管理 | 核心管理能力可用 | 租户成员管理、组织归属集成、OAuth/OIDC 绑定管理 |
-| 4. 角色与权限管理 | 授权主链已基本成型 | DataScope 扩面、控制面体验收口、更多运行态消费 |
-| 5. 资源与菜单管理 | 控制面已较完整 | resourceLevel 运行态接入、自动扫描、导入导出 |
+| 3. 用户管理 | 核心管理能力可用 | 租户成员管理、组织归属集成、OAuth/OIDC 绑定管理；`/sys/users` 当前仍是租户侧控制面 |
+| 4. 角色与权限管理 | 授权主链已基本成型 | DataScope 扩面、roleLevel 前端展示、CUSTOM 明细 UI |
+| 5. 资源与菜单管理 | 控制面已较完整 | 自动扫描、导入导出、菜单拖拽排序 |
 | 6. 策略与审计 | 审计基座已可用 | 图表仪表盘、告警/风控联动、策略中心 |
 
 ---
@@ -91,9 +91,9 @@
 
 | 功能 | 状态 | 已实现 | 未实现 |
 |------|------|--------|--------|
-| **用户列表** | 已实现 | 分页搜索（username/nickname）；批量启/禁/删除；头像管理；登录历史；管理端与用户自服务端点已成套 | email/phone 不在列表 DTO 和搜索条件中 |
+| **用户列表** | 已实现 | 分页搜索（username/nickname）；批量启/禁/删除；头像管理；登录历史；管理端与用户自服务端点已成套；`/sys/users` 当前仅支持租户侧（TENANT/ORG/DEPT）会话 | email/phone 不在列表 DTO 和搜索条件中；无独立的平台级用户列表模型 |
 | **账号详情与安全** | 大部分实现 | 密码设置（bcrypt）；TOTP 自助绑定/解绑；OAuth 方法实体支持 GITHUB/GOOGLE/LDAP；临时锁定策略；账号安全端点已较完整 | 无管理员侧 TOTP 管理；无 OAuth/OIDC 绑定管理 UI/API；无 "强制下次登录改密码" 标记；无邮件重置密码 |
-| **租户成员关系** | 隐式实现 | `tenant_user` 表；角色赋权时自动创建成员记录；列表按 membership 过滤 | 无显式加入/退出/邀请 API；无成员管理 UI；无租户切换 UI |
+| **租户成员关系** | 隐式实现 | `tenant_user` 表；角色赋权时自动创建成员记录；列表按 membership 过滤 | 无显式加入/退出/邀请 API；无成员管理 UI；无租户切换 UI；平台级用户管理仍需独立建模 |
 | **组织/岗位分配** | 基础闭环已实现 | `UserUnitService` 支持归属 CRUD；用户创建/编辑表单已集成组织/部门多选与主部门设置；后端 `UserCreateUpdateDto` / `UserServiceImpl` 已同步 `user_unit` | 组织控制面仍无用户搜索选择器；无批量调岗；组织 Controller 仍使用 `Map<String,Object>` 而非校验 DTO |
 | **账户启停/冻结** | 基础实现 | 批量启用/禁用；`accountNonLocked` 管理员可设；`TenantLifecycleGuard` 租户级写保护 | 无 "冻结原因" 记录字段；无用户级冻结专用端点 |
 
@@ -119,8 +119,8 @@
 
 | 功能 | 状态 | 已实现 | 未实现 |
 |------|------|--------|--------|
-| **角色模板** | 部分实现 | Role 实体有 `roleLevel`（PLATFORM/TENANT）、`builtin` 标记；平台模板 `tenant_id IS NULL`；完整 CRUD + 前端页面 | `roleLevel` 前端未展示/过滤；无 ORG/DEPT 级角色；无 "从平台模板派生租户角色" 机制 |
-| **权限码与资源** | 已实现 | `resource.permission` 为运行时权限真相源；Resource 实体支持 4 种类型（目录/菜单/按钮/API）；完整 CRUD + 树 + 前端页面 | 无独立 permission 注册表；无权限码 action 字典 |
+| **角色模板** | 部分实现 | Role 实体有 `roleLevel`（PLATFORM/TENANT）、`builtin` 标记；平台模板 `tenant_id IS NULL`；新租户创建链路已通过 `TenantBootstrapServiceImpl` 从平台模板派生角色/资源/菜单副本；完整 CRUD + 前端页面 | `roleLevel` 前端未展示/过滤；无 ORG/DEPT 级角色；平台模板治理仍缺少更直观的独立只读/差异化管理体验 |
+| **权限码与资源** | 已实现 | 运行时主链已收口为 `role_assignment -> role_hierarchy -> role -> role_permission -> permission -> resource`；资源/菜单写链已切到显式 `requiredPermissionId` 主入口，`permission` 仅保留派生展示；已提供 `/sys/permissions/options` lookup | 无独立 permission 管理控制面；无权限码 action 字典 |
 | **角色治理 (RBAC3)** | 已实现 | 四类约束全覆盖（hierarchy/mutex/prerequisite/cardinality）；dry-run + enforce 模式；违例日志；管理 API + 前端页面；层级展开已接入权限解析 | enforce 默认关闭；前端 cardinality 表单缺少 scopeType 字段；无层级可视化图；无 "what-if" 模拟 |
 | **角色分配** | 大部分实现 | `role_assignment` 实体支持 PLATFORM/TENANT/ORG/DEPT scope；`RoleAssignmentSyncService` 完整读写；前端 Transfer 组件；ORG/DEPT scope 分配 API 已补齐；赋权写入已补齐 `grantedBy/grantedAt` | 更多运行态消费仍主要围绕租户级链路；无批量跨用户分配端点 |
 | **数据范围配置** | 大部分实现 | 完整框架：`@DataScope` 注解 + AOP 切面 + JPA Specification 构建器；8 种 scope 类型；管理 CRUD + 前端页面；`user/resource/menu/org/scheduling/export/dict` 已消费运行态数据范围；默认租户 `ROLE_ADMIN` 已补 `READ=ALL` seed，避免无规则时退回 SELF | 更多业务模块尚未接入；前端无 CUSTOM 明细管理 UI；无缓存层 |
@@ -149,7 +149,7 @@
 | 功能 | 状态 | 已实现 | 未实现 |
 |------|------|--------|--------|
 | **资源目录** | 大部分实现 | 完整 CRUD + 树 + 批量删除 + 唯一性检查 + 租户隔离；前端树形表格 + 搜索 + 抽屉表单；搜索过滤已修复 | 无自动扫描（注解发现 API 并注册）；无导入/导出；无版本历史 |
-| **菜单配置** | 已实现 | 菜单 CRUD；基于角色的菜单树过滤；平台菜单隐藏策略；循环引用检测；级联删除；前端懒加载 + 图标选择器 | `resourceLevel` 过滤未接入；无拖拽排序；无菜单克隆；无 i18n |
+| **菜单配置** | 已实现 | 菜单 CRUD；基于角色的菜单树过滤；平台菜单隐藏策略；循环引用检测；级联删除；前端懒加载 + 图标选择器；读侧已按 active scope + `resourceLevel` 区分平台模板与租户菜单；写链已切到 `requiredPermissionId` 主入口 | 无拖拽排序；无菜单克隆；无 i18n |
 | **资源分配** | 已实现 | 角色管理页树形资源选择器（ResourceTransfer）；通过角色 CRUD 管理绑定；运行态关系已收口到 `role_permission -> permission -> resource` | 无独立资源分配端点；无批量导入/导出 |
 
 ### 关键缺口清单
@@ -161,7 +161,7 @@
 | M-3 | API 自动扫描（可选） | P3 | L | 基于注解扫描 Controller 端点并自动注册为 resource 记录 |
 | M-4 | 资源导入/导出 | P3 | M | CSV/JSON 批量导入/导出资源定义 |
 | M-5 | 菜单拖拽排序 | P3 | M | 前端拖拽 + 批量排序更新端点 |
-| M-6 | resourceLevel 过滤接入 | P2 | S | 菜单 Service 按 resourceLevel 区分平台模板与租户菜单 |
+| M-6 | resourceLevel 过滤接入 | 已完成 | 2026-04-14 | 菜单/资源主读已按 active scope + `resourceLevel` 区分平台模板与租户载体；当前不再作为资源菜单模块剩余缺口维护 |
 
 ---
 
@@ -200,9 +200,9 @@
 
 - 租户治理：`T-10` 详情页产品化、只读保留期策略、套餐/归档能力。
 - 组织与部门：`O-1/O-2/O-3/O-4`，即负责人、用户搜索、成员联查、请求校验 DTO。
-- 用户管理：`U-1/U-2/U-3`，即租户成员管理、组织归属集成、OAuth/OIDC 绑定管理。
+- 用户管理：`U-1/U-3`，即租户成员管理、OAuth/OIDC 绑定管理；`/sys/users` 当前仍是租户侧控制面，平台级用户管理需独立建模。
 - 角色与权限：`R-3` 数据范围继续扩面、`R-5/R-7/R-8/R-9` 这类控制面与体验收口。
-- 资源与菜单：`M-6` resourceLevel 进一步接入运行时消费。
+- 资源与菜单：自动扫描、资源导入导出、菜单拖拽排序。
 - 审计：优先考虑图表化仪表盘和告警联动；会话管理已完成。
 
 ### 中长期主题

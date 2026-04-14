@@ -496,3 +496,28 @@ databaseChangeLog:
   - include:
       file: 137-backfill-role-constraint-api-endpoints-all-scopes.yaml
       relativeToChangelogFile: true
+
+  # 补齐平台模板中 platform_admin 可运行的幂等治理 / 审计菜单链，并回填 tenant admin 审计模板权限
+  - include:
+      file: 138-backfill-platform-admin-runtime-menus.yaml
+      relativeToChangelogFile: true
+
+  # 补齐平台运行态菜单 requirement rows，避免 fail-closed evaluator 将新菜单误判为不可见
+  - include:
+      file: 139-backfill-platform-runtime-menu-requirements.yaml
+      relativeToChangelogFile: true
+
+  # 补齐 Permission Control 与 role-permission 主契约 API 的 api_endpoint requirement，避免统一守卫 fail-closed
+  - include:
+      file: 140-backfill-permission-control-api-endpoints.yaml
+      relativeToChangelogFile: true
+
+  # 补齐租户控制面新增读接口 api_endpoint requirement，避免统一守卫 fail-closed
+  - include:
+      file: 141-backfill-tenant-read-api-endpoints.yaml
+      relativeToChangelogFile: true
+
+  # 补齐 platform dict 控制面 api_endpoint requirement，确保统一守卫可达且仅 PLATFORM scope
+  - include:
+      file: 142-backfill-platform-dict-api-endpoints.yaml
+      relativeToChangelogFile: true

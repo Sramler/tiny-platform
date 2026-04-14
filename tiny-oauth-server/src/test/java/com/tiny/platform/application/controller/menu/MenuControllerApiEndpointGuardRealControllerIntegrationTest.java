@@ -133,6 +133,16 @@ class MenuControllerApiEndpointGuardRealControllerIntegrationTest {
             .andExpect(status().isForbidden());
     }
 
+    @Test
+    void menu_realMenuController_runtimeTree_shouldReturn200_withoutApiEndpointCarrierRequirement() throws Exception {
+        when(menuService.menuTree()).thenReturn(List.of(new ResourceResponseDto()));
+
+        mockMvc.perform(get("/sys/menus/tree")
+                .accept(MediaType.APPLICATION_JSON)
+                .with(user("platform-admin").authorities(new SimpleGrantedAuthority("system:user:list"))))
+            .andExpect(status().isOk());
+    }
+
     private static CarrierPermissionRequirementRow requirementRow(boolean permissionEnabled) {
         CarrierPermissionRequirementRow row = Mockito.mock(CarrierPermissionRequirementRow.class);
         Mockito.when(row.getCarrierId()).thenReturn(API_ENDPOINT_ID);

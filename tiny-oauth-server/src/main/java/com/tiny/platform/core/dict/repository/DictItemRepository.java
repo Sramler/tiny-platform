@@ -112,5 +112,11 @@ public interface DictItemRepository extends JpaRepository<DictItem, Long> {
     /** 平台字典项唯一性检查（排除指定 ID）：tenant_id IS NULL */
     boolean existsByDictTypeIdAndValueAndTenantIdIsNullAndIdNot(Long dictTypeId, String value, Long id);
 
+    /** 查询平台字典类型下所有租户 overlay 行。 */
+    List<DictItem> findByDictTypeIdAndTenantIdIsNotNull(Long dictTypeId);
+
+    /** 查询平台字典类型下指定租户 overlay 行。 */
+    List<DictItem> findByDictTypeIdAndTenantId(Long dictTypeId, Long tenantId);
+
     void deleteByDictTypeId(Long dictTypeId);
 }

@@ -181,6 +181,16 @@ public class RoleServiceImpl implements RoleService {
         return roleRepository.findResourceIdsByRoleId(roleId);
     }
 
+    @Override
+    public List<Long> getPermissionIdsByRoleId(Long roleId) {
+        Optional<Role> roleOpt = findManagedRole(roleId);
+        if (roleOpt.isEmpty()) {
+            return List.of();
+        }
+        Role role = roleOpt.get();
+        return roleRepository.findPermissionIdsByRoleIdAndTenantId(roleId, role.getTenantId());
+    }
+
     private RoleResponseDto toDto(Role role) {
         RoleResponseDto dto = new RoleResponseDto();
         BeanUtils.copyProperties(role, dto);

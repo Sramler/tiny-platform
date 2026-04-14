@@ -431,29 +431,43 @@ class MenuServiceImplTest {
     }
 
     @Test
-    void menuTreeShouldKeepPlatformOnlyMenusForPlatformAdmin() {
+    void menuTreeShouldKeepPlatformRuntimeMenusForPlatformAdmin() {
         TenantContext.setActiveTenantId(null);
         TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_PLATFORM);
-        authenticate(1L, null, "platform-admin", "system:user:list", "system:tenant:list", "idempotent:ops:view");
+        authenticate(
+            1L,
+            null,
+            "platform-admin",
+            "system:user:list",
+            "system:tenant:list",
+            "idempotent:ops:view",
+            "system:audit:authentication:view",
+            "system:audit:auth:view"
+        );
 
         when(menuEntryRepository.findByTenantIdIsNullAndTypeInOrderBySortAsc(List.of(ResourceType.DIRECTORY.getCode(), ResourceType.MENU.getCode())))
             .thenReturn(List.of(
                 menuEntry(1L, null, "system", null, "/system", "", ResourceType.DIRECTORY.getCode()),
                 menuEntry(2L, null, "user", 1L, "/system/user", "system:user:list", ResourceType.MENU.getCode()),
                 menuEntry(3L, null, "tenant", 1L, "/system/tenant", "system:tenant:list", ResourceType.MENU.getCode()),
-                menuEntry(4L, null, "idempotentOps", 1L, "/ops/idempotent", "idempotent:ops:view", ResourceType.MENU.getCode())
+                menuEntry(4L, null, "idempotentOps", 1L, "/ops/idempotent", "idempotent:ops:view", ResourceType.MENU.getCode()),
+                menuEntry(5L, null, "authenticationAudit", 1L, "/system/audit/authentication", "system:audit:authentication:view", ResourceType.MENU.getCode()),
+                menuEntry(6L, null, "authorizationAudit", 1L, "/system/audit/authorization", "system:audit:auth:view", ResourceType.MENU.getCode())
             ));
         when(menuPermissionRequirementRepository.findRowsByMenuIdIn(anyCollection())).thenReturn(List.of(
             row(1L, 1, 1, "system:user:list", false),
             row(2L, 1, 1, "system:user:list", false),
             row(3L, 1, 1, "system:tenant:list", false),
-            row(4L, 1, 1, "idempotent:ops:view", false)
+            row(4L, 1, 1, "idempotent:ops:view", false),
+            row(5L, 1, 1, "system:audit:authentication:view", false),
+            row(6L, 1, 1, "system:audit:auth:view", false)
         ));
 
         List<ResourceResponseDto> tree = service.menuTree();
 
         assertThat(tree).singleElement().extracting(ResourceResponseDto::getName).isEqualTo("system");
-        assertThat(tree.get(0).getChildren()).extracting(ResourceResponseDto::getName).containsExactly("user", "tenant", "idempotentOps");
+        assertThat(tree.get(0).getChildren()).extracting(ResourceResponseDto::getName)
+            .containsExactly("user", "tenant", "idempotentOps", "authenticationAudit", "authorizationAudit");
     }
 
     @Test

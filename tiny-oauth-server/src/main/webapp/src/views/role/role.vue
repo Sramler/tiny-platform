@@ -80,14 +80,14 @@
               </template>
               配置用户
             </a-button>
-            <!-- 新增：配置资源按钮 -->
-            <a-tooltip v-if="canAssignRolePermissions && selectedRowKeys.length !== 1" title="请仅选择一个角色进行资源配置">
+            <!-- 新增：配置权限按钮 -->
+            <a-tooltip v-if="canAssignRolePermissions && selectedRowKeys.length !== 1" title="请仅选择一个角色进行权限配置">
               <span>
                 <a-button type="primary" class="toolbar-btn" disabled style="pointer-events: auto;">
                   <template #icon>
                     <SettingOutlined />
                   </template>
-                  配置资源
+                  配置权限
                 </a-button>
               </span>
             </a-tooltip>
@@ -95,7 +95,7 @@
               <template #icon>
                 <SettingOutlined />
               </template>
-              配置资源
+              配置权限
             </a-button>
           </div>
           <a-button v-if="canCreateRoleManagement" type="link" @click="throttledCreate" class="toolbar-btn">
@@ -291,7 +291,7 @@
       v-if="showResourceTransfer"
       :open="showResourceTransfer"
       :role-id="currentRoleId"
-      title="配置资源"
+      title="配置权限"
       @update:open="showResourceTransfer = $event"
       @submit="handleResourceAssign"
     />
@@ -305,7 +305,7 @@ import { useAuth } from '@/auth/auth'
 import type { ColumnsType } from 'ant-design-vue/es/table'
 import type { CheckboxChangeEvent } from 'ant-design-vue/es/checkbox/interface'
 // 引入角色API
-import { roleList, createRole, updateRole, deleteRole, getRoleUsers, updateRoleUsers } from '@/api/role'
+import { roleList, createRole, updateRole, deleteRole, getRoleUsers, updateRoleUsers, updateRolePermissions } from '@/api/role'
 // 引入Antd组件和图标
 import { message, Modal } from 'ant-design-vue'
 import { ReloadOutlined, SettingOutlined, HolderOutlined, PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons-vue'
@@ -897,13 +897,12 @@ async function handleResourceAssign(payload: { permissionIds: number[] }) {
     return
   }
   try {
-    const { updateRoleResources } = await import('@/api/role')
-    await updateRoleResources(currentRoleId.value, { permissionIds: payload.permissionIds })
-    message.success('配置资源成功')
+    await updateRolePermissions(currentRoleId.value, { permissionIds: payload.permissionIds })
+    message.success('配置权限成功')
     showResourceTransfer.value = false
     loadData() // 刷新表格
   } catch (error: any) {
-    message.error('配置资源失败: ' + (error.message || '未知错误'))
+    message.error('配置权限失败: ' + (error.message || '未知错误'))
   }
 }
 </script>

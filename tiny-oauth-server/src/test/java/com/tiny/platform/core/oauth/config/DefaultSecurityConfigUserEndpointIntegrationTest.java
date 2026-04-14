@@ -20,7 +20,9 @@ import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
 import com.tiny.platform.core.oauth.session.UserSessionActivityFilter;
 import com.tiny.platform.core.oauth.session.UserSessionService;
 import com.tiny.platform.core.oauth.service.SecurityService;
+import com.tiny.platform.core.oauth.controller.SecurityController;
 import com.tiny.platform.core.oauth.tenant.TenantContextContract;
+import com.tiny.platform.infrastructure.auth.user.service.UserAuthenticationMethodProfileService;
 import com.tiny.platform.infrastructure.auth.resource.service.ApiEndpointRequirementDecision;
 import com.tiny.platform.infrastructure.auth.resource.service.ResourceService;
 import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationAuditRepository;
@@ -83,6 +85,12 @@ class DefaultSecurityConfigUserEndpointIntegrationTest {
 
     @Autowired
     private AuthUserResolutionService authUserResolutionService;
+
+    @Autowired
+    private SecurityService securityService;
+
+    @Autowired
+    private ResourceService resourceService;
 
     @Test
     @DisplayName("anonymous 访问 /sys/users/** 应被认证层拦截")
@@ -167,6 +175,64 @@ class DefaultSecurityConfigUserEndpointIntegrationTest {
             .andExpect(jsonPath("$.activeScopeType").value("ORG"))
             .andExpect(jsonPath("$.activeScopeId").value(5))
             .andExpect(jsonPath("$.permissionsVersion").value("pv-from-jwt"));
+    }
+
+    @Test
+    @DisplayName("真实 /self/security/status 应绕过 api_endpoint requirement，避免挑战页被误拦")
+    void securityStatusShouldBypassApiEndpointRequirement() throws Exception {
+        var currentUser = userEntity(3L, "alice");
+        Mockito.when(tenantRepository.findLoginBlockedLifecycleStatus(1L)).thenReturn(Optional.empty());
+        Mockito.when(authUserResolutionService.resolveUserRecordInActiveTenant("alice", 1L))
+            .thenReturn(Optional.of(currentUser));
+        Mockito.when(securityService.getSecurityStatus(currentUser)).thenReturn(java.util.Map.of(
+            "totpBound", false,
+            "totpActivated", false,
+            "disableMfa", false,
+            "forceMfa", true,
+            "requireTotp", true
+        ));
+        Mockito.clearInvocations(resourceService);
+        Mockito.when(resourceService.evaluateApiEndpointRequirement("GET", "/self/security/status"))
+            .thenReturn(ApiEndpointRequirementDecision.DENIED);
+
+        SecurityUser principal = new SecurityUser(3L, 1L, "alice", "", List.of(), true, true, true, true);
+
+        mockMvc.perform(get("/self/security/status")
+                .sessionAttr(TenantContextContract.SESSION_ACTIVE_TENANT_ID_KEY, 1L)
+                .with(user(principal)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.requireTotp").value(true));
+
+        Mockito.verifyNoInteractions(resourceService);
+    }
+
+    @Test
+    @DisplayName("真实 /self/security/totp/pre-bind 应绕过 api_endpoint requirement，避免绑定页初始化失败")
+    void preBindShouldBypassApiEndpointRequirement() throws Exception {
+        var currentUser = userEntity(3L, "alice");
+        Mockito.when(tenantRepository.findLoginBlockedLifecycleStatus(1L)).thenReturn(Optional.empty());
+        Mockito.when(authUserResolutionService.resolveUserRecordInActiveTenant("alice", 1L))
+            .thenReturn(Optional.of(currentUser));
+        Mockito.when(securityService.preBindTotp(currentUser)).thenReturn(java.util.Map.of(
+            "success", true,
+            "secretKey", "BASE32SECRET",
+            "otpauthUri", "otpauth://totp/tiny:alice?secret=BASE32SECRET"
+        ));
+        Mockito.clearInvocations(resourceService);
+        Mockito.when(resourceService.evaluateApiEndpointRequirement("GET", "/self/security/totp/pre-bind"))
+            .thenReturn(ApiEndpointRequirementDecision.DENIED);
+
+        SecurityUser principal = new SecurityUser(3L, 1L, "alice", "", List.of(), true, true, true, true);
+
+        mockMvc.perform(get("/self/security/totp/pre-bind")
+                .sessionAttr(TenantContextContract.SESSION_ACTIVE_TENANT_ID_KEY, 1L)
+                .with(user(principal)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.success").value(true))
+            .andExpect(jsonPath("$.secretKey").value("BASE32SECRET"))
+            .andExpect(jsonPath("$.qrCodeDataUrl").isNotEmpty());
+
+        Mockito.verifyNoInteractions(resourceService);
     }
 
     @Test
@@ -471,6 +537,7 @@ class DefaultSecurityConfigUserEndpointIntegrationTest {
         DefaultSecurityConfig.class,
         DefaultSecurityConfigUserEndpointIntegrationTest.ProbeController.class,
         UserController.class,
+        SecurityController.class,
         org.springframework.boot.autoconfigure.http.HttpMessageConvertersAutoConfiguration.class,
         org.springframework.boot.autoconfigure.web.servlet.WebMvcAutoConfiguration.class
     })
@@ -505,6 +572,11 @@ class DefaultSecurityConfigUserEndpointIntegrationTest {
         @Bean
         UserService userService() {
             return Mockito.mock(UserService.class);
+        }
+
+        @Bean
+        UserAuthenticationMethodProfileService userAuthenticationMethodProfileService() {
+            return Mockito.mock(UserAuthenticationMethodProfileService.class);
         }
 
         @Bean

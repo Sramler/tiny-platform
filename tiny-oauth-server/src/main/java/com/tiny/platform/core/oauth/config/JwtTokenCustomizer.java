@@ -24,6 +24,7 @@ import org.springframework.security.oauth2.server.authorization.token.OAuth2Toke
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -226,9 +227,9 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
             // 若仅用 principal.getAuthorities()，access_token 会丢失 scheduling:* 等规范码，资源服务器 Bearer 鉴权全灭。
             Set<String> authorities = resolveAccessTokenAuthorityStrings(principal, securityUser);
             Set<String> nonRoleAuthorities = stripRoleAuthorities(authorities);
-            claims.claim("authorities", nonRoleAuthorities);
-            claims.claim("permissions", extractPermissionAuthorities(nonRoleAuthorities));
-            claims.claim("roleCodes", resolveRoleCodes(securityUser, authorities));
+            claims.claim("authorities", toStableStringList(nonRoleAuthorities));
+            claims.claim("permissions", toStableStringList(extractPermissionAuthorities(nonRoleAuthorities)));
+            claims.claim("roleCodes", toStableStringList(resolveRoleCodes(securityUser, authorities)));
             addPermissionsVersionClaim(
                 claims,
                 userId,
@@ -307,7 +308,7 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
             Long activeTenantId = securityUser.getActiveTenantId();
             claims.claim("userId", userId);
             claims.claim("username", username);
-            claims.claim("roleCodes", securityUser.getRoleCodes());
+            claims.claim("roleCodes", toStableStringList(securityUser.getRoleCodes()));
             applyTenantClaims(
                 claims,
                 activeTenantId,
@@ -389,7 +390,7 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
             Long activeTenantId = securityUser.getActiveTenantId();
             claims.claim("userId", userId);
             claims.claim("username", username);
-            claims.claim("roleCodes", securityUser.getRoleCodes());
+            claims.claim("roleCodes", toStableStringList(securityUser.getRoleCodes()));
             applyTenantClaims(
                 claims,
                 activeTenantId,
@@ -790,6 +791,27 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
             return securityUser.getRoleCodes();
         }
         return Set.of();
+    }
+
+    /**
+     * 授权库存储链会对 claims 中集合的具体实现类做 allowlist 校验。
+     * 这里统一将待持久化的字符串集合收敛为稳定的 ArrayList，避免 JDK 内部不可变集合类型反序列化失败。
+     */
+    private List<String> toStableStringList(Collection<String> values) {
+        if (values == null || values.isEmpty()) {
+            return new ArrayList<>();
+        }
+        ArrayList<String> normalized = new ArrayList<>();
+        for (String value : values) {
+            if (value == null) {
+                continue;
+            }
+            String trimmed = value.trim();
+            if (!trimmed.isEmpty()) {
+                normalized.add(trimmed);
+            }
+        }
+        return normalized;
     }
     
     /**

@@ -24,8 +24,11 @@ import com.tiny.platform.infrastructure.core.exception.code.ErrorCode;
 import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
 import com.tiny.platform.infrastructure.tenant.domain.Tenant;
 import com.tiny.platform.infrastructure.tenant.dto.TenantCreateUpdateDto;
+import com.tiny.platform.infrastructure.tenant.dto.TenantPermissionSummaryDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantResponseDto;
 import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
+import com.tiny.platform.infrastructure.tenant.repository.TenantPermissionSummaryProjection;
+import com.tiny.platform.infrastructure.tenant.repository.TenantPermissionSummaryRepository;
 import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -44,6 +47,7 @@ class TenantServiceImplTest {
     private RoleRepository roleRepository;
     private RoleAssignmentSyncService roleAssignmentSyncService;
     private TenantQuotaService tenantQuotaService;
+    private TenantPermissionSummaryRepository tenantPermissionSummaryRepository;
     private TenantServiceImpl service;
 
     @BeforeEach
@@ -57,6 +61,7 @@ class TenantServiceImplTest {
         roleRepository = org.mockito.Mockito.mock(RoleRepository.class);
         roleAssignmentSyncService = org.mockito.Mockito.mock(RoleAssignmentSyncService.class);
         tenantQuotaService = org.mockito.Mockito.mock(TenantQuotaService.class);
+        tenantPermissionSummaryRepository = org.mockito.Mockito.mock(TenantPermissionSummaryRepository.class);
         service = new TenantServiceImpl(
             tenantRepository,
             tenantBootstrapService,
@@ -66,8 +71,34 @@ class TenantServiceImplTest {
             roleRepository,
             roleAssignmentSyncService,
             tenantQuotaService,
-            authenticationBridgeWriter
+            authenticationBridgeWriter,
+            tenantPermissionSummaryRepository
         );
+    }
+
+    @Test
+    void summarizeTenantPermissions_shouldReturnRepositoryProjection() {
+        Tenant existing = tenant(15L, "ACTIVE", true);
+        TenantPermissionSummaryProjection projection = org.mockito.Mockito.mock(TenantPermissionSummaryProjection.class);
+        when(tenantRepository.findById(15L)).thenReturn(Optional.of(existing));
+        when(tenantPermissionSummaryRepository.summarizeByTenantId(15L)).thenReturn(projection);
+        when(projection.getTotalRoles()).thenReturn(5L);
+        when(projection.getEnabledRoles()).thenReturn(4L);
+        when(projection.getTotalPermissions()).thenReturn(32L);
+        when(projection.getAssignedPermissions()).thenReturn(28L);
+        when(projection.getTotalCarriers()).thenReturn(20L);
+        when(projection.getBoundCarriers()).thenReturn(19L);
+        when(projection.getMenuCarriers()).thenReturn(8L);
+        when(projection.getUiActionCarriers()).thenReturn(7L);
+        when(projection.getApiEndpointCarriers()).thenReturn(5L);
+
+        TenantPermissionSummaryDto summary = service.summarizeTenantPermissions(15L);
+
+        assertThat(summary.tenantId()).isEqualTo(15L);
+        assertThat(summary.totalPermissions()).isEqualTo(32L);
+        assertThat(summary.assignedPermissions()).isEqualTo(28L);
+        assertThat(summary.totalCarriers()).isEqualTo(20L);
+        assertThat(summary.boundCarriers()).isEqualTo(19L);
     }
 
     @Test

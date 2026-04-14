@@ -121,7 +121,7 @@
                     @click.stop="throttledViewDetail(record)"
                     class="action-btn"
                   >
-                    详情
+                    {{ isPlatformTenantListRoute ? '平台详情' : '详情' }}
                   </a-button>
                   <a-button
                     v-if="canEdit && record.lifecycleStatus !== 'DECOMMISSIONED'"
@@ -251,6 +251,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, nextTick, computed, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { message, Modal } from 'ant-design-vue'
 import type { ColumnsType } from 'ant-design-vue/es/table'
 import type { Key } from 'ant-design-vue/es/_util/type'
@@ -286,6 +287,8 @@ const query = ref({
 const loading = ref(false)
 const tableData = ref<any[]>([])
 const { user } = useAuth()
+const router = useRouter()
+const route = useRoute()
 const claims = computed(() => decodeJwtPayload<{ activeScopeType?: unknown }>(user.value?.access_token))
 const authorities = computed(() => new Set(extractAuthoritiesFromJwt(user.value?.access_token)))
 const isPlatformScope = computed(() => claims.value?.activeScopeType === 'PLATFORM')
@@ -312,6 +315,10 @@ const canDelete = computed(() => hasRuntimeUiAction('system:tenant:delete'))
 const canFreeze = computed(() => hasRuntimeUiAction('system:tenant:freeze'))
 const canUnfreeze = computed(() => hasRuntimeUiAction('system:tenant:unfreeze'))
 const canDecommission = computed(() => hasRuntimeUiAction('system:tenant:decommission'))
+const isPlatformTenantListRoute = computed(() => route.path.startsWith('/platform/tenants'))
+const RUNTIME_PAGE_PATH_ALIAS: Record<string, string> = {
+  '/platform/tenants': '/system/tenant',
+}
 
 const pagination = ref({
   current: 1,
@@ -403,8 +410,14 @@ async function loadData() {
 }
 
 function resolveRuntimePagePath() {
+  const aliasPath = Object.keys(RUNTIME_PAGE_PATH_ALIAS).find((pathPrefix) =>
+    route.path.startsWith(pathPrefix),
+  )
+  if (aliasPath) {
+    return RUNTIME_PAGE_PATH_ALIAS[aliasPath]
+  }
   const currentPath = window?.location?.pathname
-  if (currentPath && currentPath !== '/') {
+  if (currentPath === '/system/tenant') {
     return currentPath
   }
   return '/system/tenant'
@@ -668,6 +681,10 @@ function handleDrawerClose() {
 }
 
 async function handleViewDetail(record: any) {
+  if (isPlatformTenantListRoute.value) {
+    await router.push(`/platform/tenants/${record.id}`)
+    return
+  }
   detailVisible.value = true
   detailLoading.value = true
   try {

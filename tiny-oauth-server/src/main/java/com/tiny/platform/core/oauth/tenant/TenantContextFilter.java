@@ -56,6 +56,7 @@ public class TenantContextFilter extends OncePerRequestFilter {
     private static final String AUTHORIZATION_HEADER = "Authorization";
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String ACTIVE_TENANT_ID_CLAIM = TenantContextContract.ACTIVE_TENANT_ID_CLAIM;
+    private static final String ISSUER_CLAIM = "iss";
     private static final String USER_ID_CLAIM = "userId";
     private static final String AUTHORITIES_CLAIM = "authorities";
     private static final String PERMISSIONS_CLAIM = "permissions";
@@ -371,7 +372,7 @@ public class TenantContextFilter extends OncePerRequestFilter {
         }
 
         if (effectiveScopeType == null || !isSupportedScopeType(effectiveScopeType)) {
-            effectiveScopeType = inferScopeTypeByTenantId(activeTenantId);
+            effectiveScopeType = inferScopeType(activeTenantId, request);
         }
 
         return validatePairedOrgDeptMembership(effectiveScopeType, effectiveScopeId, activeTenantId, request, bearerPresent);
@@ -478,7 +479,7 @@ public class TenantContextFilter extends OncePerRequestFilter {
         } else if (IssuerTenantSupport.isPlatformIssuerPath(resolvePathForTenantMatching(request))) {
             effectiveType = TenantContextContract.SCOPE_TYPE_PLATFORM;
         } else {
-            effectiveType = inferScopeTypeByTenantId(activeTenantId);
+            effectiveType = inferScopeType(activeTenantId, request);
         }
         Long effectiveId;
         if (TenantContextContract.SCOPE_TYPE_PLATFORM.equals(effectiveType)) {
@@ -662,8 +663,45 @@ public class TenantContextFilter extends OncePerRequestFilter {
             + "\",\"error_description\":\"session active scope is invalid or not permitted\"}");
     }
 
-    private String inferScopeTypeByTenantId(Long activeTenantId) {
+    private String inferScopeType(Long activeTenantId, HttpServletRequest request) {
+        if (activeTenantId != null && activeTenantId > 0) {
+            return TenantContextContract.SCOPE_TYPE_TENANT;
+        }
+        if (isPlatformScopedRequest(request) || bearerIssuerIndicatesPlatform(request)) {
+            return TenantContextContract.SCOPE_TYPE_PLATFORM;
+        }
         return TenantContextContract.SCOPE_TYPE_TENANT;
+    }
+
+    private boolean isPlatformScopedRequest(HttpServletRequest request) {
+        String path = resolvePathForTenantMatching(request);
+        if (path == null || path.isBlank()) {
+            return false;
+        }
+        return "/platform".equals(path)
+            || path.startsWith("/platform/")
+            || IssuerTenantSupport.isPlatformIssuerPath(path);
+    }
+
+    private boolean bearerIssuerIndicatesPlatform(HttpServletRequest request) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication instanceof JwtAuthenticationToken jwtAuthenticationToken) {
+            if (issuerIndicatesPlatform(jwtAuthenticationToken.getToken().getClaims().get(ISSUER_CLAIM))) {
+                return true;
+            }
+        }
+        JsonNode payload = resolveJwtPayloadNode(request);
+        return payload != null && issuerIndicatesPlatform(payload.get(ISSUER_CLAIM));
+    }
+
+    private boolean issuerIndicatesPlatform(Object issuerClaim) {
+        String issuer = parseStringClaim(issuerClaim);
+        return IssuerTenantSupport.PLATFORM_ISSUER_KEY.equals(IssuerTenantSupport.extractIssuerKeyFromIssuer(issuer));
+    }
+
+    private boolean issuerIndicatesPlatform(JsonNode issuerClaim) {
+        String issuer = parseStringClaim(issuerClaim);
+        return IssuerTenantSupport.PLATFORM_ISSUER_KEY.equals(IssuerTenantSupport.extractIssuerKeyFromIssuer(issuer));
     }
 
     private ResolvedTenant resolveActiveTenantIdForUnauthenticatedRequest(HttpServletRequest request, Long headerActiveTenantId) {

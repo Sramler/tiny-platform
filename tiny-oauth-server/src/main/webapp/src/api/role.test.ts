@@ -140,4 +140,23 @@ describe('role API', () => {
       },
     })
   })
+
+  it('should request role permissions and update with idempotency', async () => {
+    requestMocks.get.mockResolvedValue([2001, 2002])
+    requestMocks.post.mockResolvedValue(undefined)
+    const { getRolePermissions, updateRolePermissions } = await import('@/api/role')
+
+    const permissionResult = await getRolePermissions(1)
+    expect(requestMocks.get).toHaveBeenCalledWith('/sys/roles/1/permissions')
+    expect(permissionResult).toEqual([2001, 2002])
+
+    const payload = { permissionIds: [2001, 2002] }
+    await updateRolePermissions(1, payload)
+    expect(requestMocks.post).toHaveBeenCalledWith('/sys/roles/1/permissions', payload, {
+      idempotency: {
+        scope: 'sys-roles:permissions:update:1',
+        payload,
+      },
+    })
+  })
 })

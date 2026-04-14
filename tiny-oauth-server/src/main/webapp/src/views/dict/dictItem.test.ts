@@ -5,6 +5,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const apiMocks = vi.hoisted(() => ({
   getDictItemList: vi.fn(),
   getVisibleDictTypes: vi.fn(),
+  getPlatformVisibleDictTypes: vi.fn(),
+  getPlatformDictItemList: vi.fn(),
+  createPlatformDictItem: vi.fn(),
+  updatePlatformDictItem: vi.fn(),
+  deletePlatformDictItem: vi.fn(),
 }))
 
 const tenantMocks = vi.hoisted(() => ({
@@ -21,6 +26,11 @@ vi.mock('@/api/dict', () => ({
   createDictItem: vi.fn(),
   updateDictItem: vi.fn(),
   deleteDictItem: vi.fn(),
+  getPlatformVisibleDictTypes: apiMocks.getPlatformVisibleDictTypes,
+  getPlatformDictItemList: apiMocks.getPlatformDictItemList,
+  createPlatformDictItem: apiMocks.createPlatformDictItem,
+  updatePlatformDictItem: apiMocks.updatePlatformDictItem,
+  deletePlatformDictItem: apiMocks.deletePlatformDictItem,
 }))
 
 vi.mock('@/utils/tenant', () => ({
