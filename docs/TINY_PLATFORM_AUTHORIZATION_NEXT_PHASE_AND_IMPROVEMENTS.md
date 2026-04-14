@@ -18,6 +18,15 @@
 | `resource.permission` 规范码扫尾 | 确保所有运行态（后端 Guard、JWT、菜单、前端 v-permission）只接受规范码；历史旧码仅出现在迁移脚本的“被替换值”中。 |
 | 平台/租户/普通用户入口分离 | 平台级入口（租户管理、幂等治理、字典平台、导出）已按规范码 + TenantContext.isPlatformScope() 判定；LegacyAuthConstants 已删除；保持与文档一致，不新增“默认租户即平台”的语义。 |
 
+### 1.1.1 当前高优先级兼容尾巴（2026-04）
+
+| 项 | 说明 |
+| --- | --- |
+| `Resource` compatibility facade | `resource` 表虽已删除，但 `/sys/resources`、`ResourceServiceImpl`、`ResourcePermissionBindingService` 仍以 compatibility aggregate 读写 `permission` 字符串并回填 `required_permission_id`。 |
+| `roleCodes / ROLE_*` runtime 尾巴 | `SecurityUser.buildAuthorities(...)` 仍会输出 `role.code` authorities；`JwtTokenCustomizer.resolveRoleCodes(...)` 在显式 `roleCodes` 缺失时仍会从 `ROLE_* authorities` 补回。 |
+| active tooling compat | `ensure-scheduling-e2e-auth.sh` 仍以 `default` 租户作调度模板来源，并在缺 `ROLE_TENANT_ADMIN` 时回退 `ROLE_ADMIN`。 |
+| 当前态文档漂移 | `PERMISSION_IDENTIFIER_SPEC`、`AUTHORIZATION_TASK_LIST`、`LEGACY_COMPATIBILITY_INVENTORY` 等仍有少量把桥接期/历史快照写成当前态的句子。 |
+
 ### 1.2 第一阶段主交付（membership + role_assignment）
 
 | 项 | 说明 |
@@ -25,10 +34,10 @@
 | `tenant_user` 表与回填 | 已完成建表与回填；运行态 membership 已切到 `tenant_user`，`user.tenant_id` 仅剩展示/审计兼容。 |
 | `role_assignment` 已存在 | 已建表且成为运行态授权主来源；`user_role` 读回退已下线。 |
 | UserDetailsService / 登录加载 | 已按“平台账号 + tenant_user”加载，再按 `role_assignment` 展开权限，不再回退 `user_role`。 |
-| SecurityUser / JWT / Session 契约 | ✅ 已完成 09C3/09C4 收口：已移除 `role.name`；新签发 authorities 以 permission/factor/scope 为主；`roleCodes` 为显式契约供少量合法消费者；claims 已含 `permissions`、`roleCodes`、`activeScopeType`、`activeTenantId`、`permissionsVersion`。 |
-| 平台作用域与 default 租户拆分 | 平台级能力用 `scope_type=PLATFORM` 表达，不再用“当前租户 = default”作为平台语义；配置化平台租户 code 已做，长期改为 PLATFORM 作用域。 |
+| SecurityUser / JWT / Session 契约 | 主链已完成 09C3/09C4 收口：已移除 `role.name`；新签发 authorities 以 permission/factor/scope 为主；`roleCodes` 为显式契约供少量合法消费者；claims 已含 `permissions`、`roleCodes`、`activeScopeType`、`activeTenantId`、`permissionsVersion`。**剩余尾巴**：Session carrier 仍可能保留 `role.code` authorities，JWT helper 仍有“`ROLE_*` -> `roleCodes`”兼容恢复。 |
+| 平台作用域与平台租户语义（当前态，CARD-13F 口径） | **运行时主链**已以 `TenantContext.isPlatformScope()` / `activeScopeType=PLATFORM` 收口平台控制面，不再把「当前租户 = default」当作平台语义。**认证读链（CARD-13A）**只读与当前激活作用域一致的**单个** `scope_key`（见 `TINY_PLATFORM_TENANT_GOVERNANCE.md` §3.1）。**Active tooling（CARD-13E）**已移除对 `E2E_PLATFORM_TENANT_CODE` / `PLATFORM_TENANT_CODE` 的隐式 `default` 回退。**剩余兼容边界**：`PlatformTenantProperties.platformTenantCode`（及幂等侧同类配置）**仅**用于 bootstrap / 历史缺模板时的一次性回填入口（CARD-13C：须显式配置，无默认值），**不是**运行态授权或平台 scope 判定的事实来源。 |
 | 控制面接口 RBAC | 用户/角色/资源/菜单/租户/调度/字典/导出已收口；查漏补缺，禁止新增接口绕过 Guard。 |
-| 菜单与权限下发 | 菜单树按 `resource.permission` 与当前用户 permissions 过滤；permissions 来源逐步从 assignment 链路计算。 |
+| 菜单与权限下发 | 菜单树与控制面当前仍主要按 carrier `permission` 字符串 + requirement 与当前用户 permissions 过滤；`/sys/resources` compatibility facade 尚未完全退场。 |
 
 ### 1.3 第二阶段及以后（按文档）
 
@@ -53,7 +62,7 @@
 | 位置 | 遗留表现 | 说明 |
 | --- | --- | --- |
 | `menu_resource_data.sql` | 资源行 `name` 列为历史风格（如 `user:update`、`menu:create`） | 该文件为参考脚本、不参与默认 Liquibase；`permission` 列已是规范码。建议：若继续保留此文件，将 `name` 与规范命名对齐或加注释“仅历史 key，以 permission 为准”。 |
-| `verify-scheduling-migration-smoke.sh` | 脚本中仍出现 `'scheduling:read'` | 若脚本用于断言或展示，应改为规范码 `scheduling:console:view`，避免误导。 |
+| `verify-scheduling-migration-smoke.sh` | SQL 反残留断言的 IN 列表中含 `'scheduling:read'` 等旧码 | **可接受**：这些字面量仅用于检测 `permission` 表中是否仍有 039 前应被迁移走的行；脚本对菜单载体期望权限已用 `scheduling:console:view`（见 `check_permission_by_name`）。若再被误读，以脚本内注释为准。 |
 | ~~前端 `Menu.vue`~~ | ~~`MENU_MANAGEMENT_CREATE_AUTHORITIES = ['ROLE_ADMIN', 'ADMIN', 'system:menu:create']`~~ | ✅ 已收口：菜单管理页权限常量已集中到 `permission.ts`，当前为纯规范码集合。 |
 | 前端调度相关 Vue | 多处 `scheduling:*`、`scheduling:console:view` 等 | 已为规范码，无问题；保持与后端 SchedulingAccessGuard 一致即可。 |
 
@@ -63,11 +72,13 @@
 | --- | --- | --- |
 | ~~`user.tenant_id` 必填 + 双写~~ | ~~创建/更新用户仍写 tenant_id~~ | ✅ **已退场**：createFromDto 不再写 tenant_id，字段已 nullable（044 迁移），setter 标记 @Deprecated。归属以 tenant_user 为准。 |
 | ~~`uk_user_tenant_username`~~ | ~~唯一约束为 `(tenant_id, username)`~~ | ✅ **已收口**：已删除旧唯一约束并改为全局唯一 `uk_user_username`。 |
-| ~~平台 = code "default" 的租户~~ | ~~TenantManagementAccessGuard、MenuServiceImpl、IdempotentMetricsAccessGuard~~ | ✅ **已收口**：Guard 和 MenuServiceImpl 已改为 `TenantContext.isPlatformScope()`，`PlatformTenantResolver` 缓存平台租户 ID，`TenantContextFilter` 在请求入口设置 `activeScopeType`。 |
+| ~~平台 = code "default" 的租户~~ | ~~TenantManagementAccessGuard、MenuServiceImpl、IdempotentMetricsAccessGuard~~ | ✅ **已收口**：Guard 和 MenuServiceImpl 已改为 `TenantContext.isPlatformScope()`，`TenantContextFilter` 在请求入口设置 `activeScopeType`；后续 `11C/12B` 已进一步移除运行时 `PlatformTenantResolver` Bean，平台主链仅认显式 `PLATFORM` scope。 |
 | 平台 = tenant_id 0（字典） | ~~DictTenantScope.PLATFORM_TENANT_ID = 0~~ | ✅ **已收口（T7.1）** | 与“default 租户”可能不一致；需统一平台语义（可配置平台租户 ID 或显式约定 0 仅字典用）。 |
 | ~~ROLE_ADMIN / ADMIN 双码~~ | ~~各 Guard、MenuServiceImpl、ExportController~~ | ✅ **已收口**：`LegacyAuthConstants` 已删除，所有 Guard 改为纯细粒度权限码。`data.sql` 将权限码授予 ROLE_ADMIN 角色。 |
 | role.name 进入展示/下游 | RoleController、CamundaIdentityProvider | 鉴权已不依赖 role.name；展示与工作流可保留，建议注释“仅展示/下游，鉴权不依赖”。 |
-| role.code 进入 authority | SecurityUser、JWT | ✅ 已完成 09C3 收缩：新签发 authorities 不再承载 `ROLE_*` 主链输出；角色码通过显式 `roleCodes` 给少量合法消费者；旧 token 读兼容仅保留在解码侧。 |
+| role.code 进入 authority | SecurityUser、JWT | 主链已完成 09C3 收缩：新签发 authorities 不再承载 `ROLE_*` 主链输出；角色码通过显式 `roleCodes` 给少量合法消费者。**剩余兼容尾巴**：`SecurityUser.buildAuthorities(...)` 仍会生成 role-code authorities，`JwtTokenCustomizer.resolveRoleCodes(...)` 仍可从 `ROLE_* authorities` 补回。 |
+| `Resource` compatibility facade | ResourceController、ResourceServiceImpl、ResourcePermissionBindingService | `resource` 表已删，但控制面仍以 compatibility aggregate 方式聚合 `menu / ui_action / api_endpoint`，并继续接受 `permission` 字符串输入。 |
+| active tooling fallback | `ensure-scheduling-e2e-auth.sh` | real E2E bootstrap 仍以 `default` 作模板来源，且兼容 `ROLE_ADMIN`。 |
 | ~~user_role 只读回退~~ | ~~RoleAssignmentRepository、EffectiveRoleResolutionService~~ | ✅ **已收口**：运行态不再读取或回退 `user_role`。 |
 | TenantBootstrap 模板来源 | TenantBootstrapServiceImpl | ✅ 已收口到“平台模板 + 租户派生”：运行时统一从 `tenant_id IS NULL` 模板派生；仅当历史环境缺模板时，按配置的平台租户 code 回填一次模板。 |
 
@@ -104,7 +115,7 @@
 | --- | --- |
 | **权限来源** | 运行态权限主链已统一为 `role_assignment → role_hierarchy → role → role_permission → permission`；carrier 由 `menu / ui_action / api_endpoint + *_permission_requirement` 承接。历史文档中的 `resource.permission` 仅作迁移命名口径保留。 |
 | **避免第二套真相源** | `permission` / `role_permission` 已落地；后续不再回退到 `role_resource` 或仅以 `resource.permission` 充当唯一关系真相源。 |
-| **平台作用域** | 将“平台”从“default 租户”语义中拆出；用 scope_type=PLATFORM 或可配置平台租户 ID；平台模板与租户模板共表时用 role_level/resource_level 等区分。 |
+| **平台作用域** | **当前态**：平台能力以 `scope_type=PLATFORM` + 显式 `role_assignment`/权限展开表达；**不要**把 `platformTenantCode` 或某个业务租户 `code=default` 当作运行态平台语义本身。模板主链以 `tenant_id IS NULL` 平台模板派生；`platformTenantCode` 仅保留为 **bootstrap / 历史模板缺失时** 的显式回填配置边界（见遗留清单与租户治理文档），与请求路径上的 PLATFORM scope 判定分离。 |
 | **角色与授权分离** | role 为模板；role_assignment 为“谁在何作用域下拥有何角色”；不在运行时用 role.name 做鉴权。 |
 | **会话上下文** | 从“仅 tenantId”升级为“活动租户 + 有效角色分配 + 可选组织/部门”；切换上下文时刷新 Session/JWT。 |
 | **export 模块查询形态** | ✅ **第三批（2026-03-28）**：`findReadableTasks` 已改为 `JpaSpecificationExecutor` + `Specification`：固定 `tenant_id`，受限时追加 `user_id`/`username` 与可见 owner 键集合的 OR 谓词，排序下推；与 `scheduling` 列表同为库侧收敛。 |
@@ -135,9 +146,9 @@
   - 阶段 0 收口：控制面 RBAC 与 permission 规范码扫尾；前端 Menu.vue 等与后端常量一致或从接口下发。  
   - 脚本与参考数据：verify-scheduling-migration-smoke.sh、menu_resource_data.sql 使用或注明规范码。  
 
-- **第一阶段**  
-  - 完成 tenant_user 回填与双写、role_assignment 为权限主来源、JWT/Session 契约收口（去掉 role.name、以 permissions 为主）。  
-  - 平台语义从“default 租户”向 scope_type=PLATFORM 或可配置平台租户 ID 演进。  
+- **第一阶段（里程碑多已完成；动词式列举勿误读为“未开工”）**  
+  - **（阶段性/历史排期）** `tenant_user`、停双写、`role_assignment` 主来源、JWT/Session 契约（09C3/09C4 等）已在主线落地；本 bullet 保留路线图痕迹，**完成度以** `TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md` **为准**。  
+  - **平台语义（当前态，CARD-13F）**：请求路径上平台控制面已以 **PLATFORM scope** 为准；认证读链为 **单 active `scope_key`**（CARD-13A）；real-link / dev-bootstrap 等 **active tooling** 已禁止隐式 `default` 平台租户入口（CARD-13E）。**未竟项**主要是治理与文档层面的持续对齐（例如其它文档章节仍偶发“演进中”措辞），**不是**再把 `platformTenantCode` bootstrap 兼容当作运行态主链事实。  
 
 - **后续阶段**  
   - 按授权模型文档阶段 2/3/4 推进 RBAC3、Scope、Data Scope；不提前引入独立 permission 表或 DENY 等未设计能力。  

@@ -3,6 +3,8 @@ import { Buffer } from 'node:buffer'
 import { expect, test } from '@playwright/test'
 import { createHmac } from 'node:crypto'
 
+import { requireRealLinkPlatformTenantCode } from '../setup/real.global.setup'
+
 /**
  * Real-link end-to-end proof for permission.enabled fail-closed.
  *
@@ -121,7 +123,7 @@ function deriveTenantCodeForTenantScope(
 
 function resolveEffectiveTenantCode(): string {
   const primaryTenantCode = requireEnv('E2E_TENANT_CODE')
-  const platformTenantCode = readEnv('E2E_PLATFORM_TENANT_CODE') ?? 'default'
+  const platformTenantCode = requireRealLinkPlatformTenantCode(process.env)
   return deriveTenantCodeForTenantScope(primaryTenantCode, platformTenantCode)
 }
 

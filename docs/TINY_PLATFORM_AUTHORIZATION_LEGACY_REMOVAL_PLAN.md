@@ -1,8 +1,8 @@
 # Tiny Platform 授权遗留彻底下线计划（不再兼容旧模型）
 
-> 状态更新：本文件保留为 **遗留清退计划 / 历史收口参考 / 非当前运行态真相源**。  
+> 状态更新：本文件保留为 **遗留清退计划 / 历史快照 / 非当前运行态真相源**。  
 > 当前仓库的授权主链、当前完成度与文档读取入口，请优先以 [TINY_PLATFORM_AUTHORIZATION_DOC_MAP.md](./TINY_PLATFORM_AUTHORIZATION_DOC_MAP.md)、[TINY_PLATFORM_AUTHORIZATION_MODEL.md](./TINY_PLATFORM_AUTHORIZATION_MODEL.md) 与 [TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md](./TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md) 为准。  
-> 本文中若出现 `resource.permission`、`user_role`、`default` 租户或旧兼容清退步骤，应按“遗留收口计划”理解，不直接代表当前运行态仍按该口径工作。  
+> 本文中若出现 `resource.permission`、`user_role`、`default` 租户或旧兼容清退步骤，应按“遗留收口计划 / 历史评估窗口”理解，不直接代表当前运行态仍按该口径工作。  
 >
 > 目标：按最新授权模型与权限标识符规范推进，**运行态不再兼容旧权限模型**（不再读 `user_role`、不再依赖 `user.tenant_id` 做授权）。  
 > 说明：这是“面向未来架构负责”的收口计划，建议按多 PR / 多迭代推进，每一步都可验证、可回滚。
@@ -21,7 +21,7 @@
 
 1. **运行态不做 alias**：旧权限码/旧模型只允许出现在“迁移脚本”中作为被替换值，不允许运行时继续兼容。
 2. **安全失败（fail-closed）**：任何“旧数据导致权限缺失”的场景，必须明确失败并给出修复路径（补 migration/补回填），不得放宽鉴权。
-3. **最小授权上下文不退化**：以 `activeTenantId + permissions (+ permissionsVersion)` 为准，且权限真相源为 `resource.permission`。
+3. **最小授权上下文不退化**：以 `activeTenantId + permissions (+ permissionsVersion)` 为准；本文后文若提及 `resource.permission`，均指当时迁移窗口的兼容输入口径，当前运行态功能权限真相源已演进为 `role_assignment -> role_permission -> permission`。
 
 ---
 
@@ -82,6 +82,8 @@
 
 ### 2.4 验证矩阵（登录→认证成功、拒绝分支、权限标识符与权限模型）
 
+> 说明：下表是本计划编写/收口时期的验证矩阵快照，用于说明当时需要覆盖的风险面；是否已闭合、是否仍是当前主线阻塞，请回到 [TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md](./TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md) 与 [TINY_PLATFORM_AUTHORIZATION_MODEL.md](./TINY_PLATFORM_AUTHORIZATION_MODEL.md) 裁决。  
+
 **必须先跑通以下用例**，再推进 2.3 数据库下线或后续步骤：
 
 | 维度 | 说明 | 测试类/方法 |
@@ -140,7 +142,7 @@ mvn -pl tiny-oauth-server test -Dtest=EffectiveRoleResolutionServiceTest,UserDet
 - 设计基线已在 `docs/TINY_PLATFORM_AUTHORIZATION_PHASE1_TECHNICAL_DESIGN.md` §2.2 给出。
 - 实施进展：
   1. **已做**：落库 `role_level`/`resource_level`，`role`/`resource`/`role_resource` 的 `tenant_id` 可空；Liquibase `046-role-resource-level-platform-template.yaml`，CHECK 约束 PLATFORM⇒tenant_id NULL、TENANT⇒tenant_id NOT NULL。
-  2. **已做**：`TenantBootstrapServiceImpl` 优先从平台模板（`tenant_id IS NULL`）克隆，若无则回退到配置的平台租户 code（默认 "default"）。
+  2. **已做**：`TenantBootstrapServiceImpl` 优先从平台模板（`tenant_id IS NULL`）克隆，若无模板则仅在**显式配置** `platform-tenant-code` 时回退到该租户 code 做一次回填（CARD-13C，不再默认 `default`）。
   3. **未做**：清理 default 租户中的“模板数据”依赖（可选，视是否迁移现有 default 数据为平台模板而定）。
 
 验证：

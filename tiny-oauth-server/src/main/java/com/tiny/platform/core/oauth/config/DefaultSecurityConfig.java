@@ -31,7 +31,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.util.Set;
 
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
-import com.tiny.platform.infrastructure.tenant.config.PlatformTenantResolver;
 import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationSessionManager;
 import com.tiny.platform.core.oauth.security.PermissionVersionService;
@@ -201,24 +200,6 @@ public class DefaultSecurityConfig {
                 tenantLifecycleReadPolicyProvider.getIfAvailable(),
                 organizationUnitRepositoryProvider.getIfAvailable(),
                 userUnitRepositoryProvider.getIfAvailable());
-    }
-
-    @Deprecated
-    public TenantContextFilter tenantContextFilter(TenantRepository tenantRepository,
-                                                   ObjectProvider<PermissionVersionService> permissionVersionServiceProvider,
-                                                   ObjectProvider<PlatformTenantResolver> ignoredPlatformTenantResolverProvider,
-                                                   ObjectProvider<com.tiny.platform.infrastructure.auth.audit.service.AuthorizationAuditService> authorizationAuditServiceProvider,
-                                                   ObjectProvider<TenantLifecycleReadPolicy> tenantLifecycleReadPolicyProvider,
-                                                   ObjectProvider<com.tiny.platform.infrastructure.auth.org.repository.OrganizationUnitRepository> organizationUnitRepositoryProvider,
-                                                   ObjectProvider<com.tiny.platform.infrastructure.auth.org.repository.UserUnitRepository> userUnitRepositoryProvider) {
-        return tenantContextFilter(
-            tenantRepository,
-            permissionVersionServiceProvider,
-            authorizationAuditServiceProvider,
-            tenantLifecycleReadPolicyProvider,
-            organizationUnitRepositoryProvider,
-            userUnitRepositoryProvider
-        );
     }
 
     @Bean

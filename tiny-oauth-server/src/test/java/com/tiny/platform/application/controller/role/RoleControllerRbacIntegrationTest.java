@@ -5,6 +5,7 @@ import com.tiny.platform.infrastructure.auth.role.domain.Role;
 import com.tiny.platform.infrastructure.auth.role.dto.RoleCreateUpdateDto;
 import com.tiny.platform.infrastructure.auth.role.dto.RoleResponseDto;
 import com.tiny.platform.infrastructure.auth.role.service.RoleService;
+import com.tiny.platform.infrastructure.core.exception.handler.OAuthServerExceptionHandler;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -47,6 +48,7 @@ class RoleControllerRbacIntegrationTest {
     @Import({
         RoleControllerRbacTestConfig.class,
         RoleController.class,
+        OAuthServerExceptionHandler.class,
         SpringDataWebAutoConfiguration.class,
         HttpMessageConvertersAutoConfiguration.class,
         WebMvcAutoConfiguration.class
@@ -149,7 +151,9 @@ class RoleControllerRbacIntegrationTest {
         void updateRoleUsers_deniesRoleEditAuthorityOnly() throws Exception {
             mockMvc.perform(post("/sys/roles/6/users")
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(List.of(2L, 3L)))
+                    .content(objectMapper.writeValueAsString(java.util.Map.of(
+                        "userIds", List.of(2L, 3L),
+                        "scopeType", "TENANT")))
                     .with(user("role-editor").authorities(new SimpleGrantedAuthority("system:role:edit"))))
                 .andExpect(status().isForbidden());
         }
@@ -167,9 +171,18 @@ class RoleControllerRbacIntegrationTest {
         void updateRoleResources_deniesReadAuthority() throws Exception {
             mockMvc.perform(post("/sys/roles/6/resources")
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(List.of(4L, 5L)))
+                    .content(objectMapper.writeValueAsString(java.util.Map.of("permissionIds", List.of(4L, 5L))))
                     .with(user("role-reader").authorities(new SimpleGrantedAuthority("system:role:list"))))
                 .andExpect(status().isForbidden());
+        }
+
+        @Test
+        void updateRoleResources_returnsBadRequest_whenPermissionIdsMissing() throws Exception {
+            mockMvc.perform(post("/sys/roles/6/resources")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(java.util.Map.of()))
+                    .with(user("role-permission-assigner").authorities(new SimpleGrantedAuthority("system:role:permission:assign"))))
+                .andExpect(status().isBadRequest());
         }
     }
 

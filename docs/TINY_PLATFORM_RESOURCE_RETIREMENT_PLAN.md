@@ -23,7 +23,7 @@
 |---|---|---|
 | 控制面写入口中的 `resource` 兼容保存/managed entity 装载 | 已下线（已完成） | 正常 create/update/updateSort/delete 不再维护 compatibility `resource` 行；managed entity 装载与唯一性校验依托 carrier 写链/读链完成。 |
 | 共享 ID 对齐（`resource.id == carrier.id`） | 已落地（已解耦） | 兼容行已 locator 化，compatibility group 回填已按显式 carrier 主键，carrier 新增主键已改为自增；shared-id 不再构成任何运行时退场的阻断口径。 |
-| compatibility group 回填（`requirement_group=0`） | 暂时保留 | 这是“历史语义桥接”的保留项，不是“resource 是否已退场”的前置门槛；由 `CarrierCompatibilitySafetyService` 按真实 carrier requirement 表维护。 |
+| compatibility group 回填（`requirement_group=0`） | 已删除 | CARD-13B 已移除 runtime compatibility 回填；`CarrierPermissionReferenceSafetyService` 仅保留 `existsPermissionReference` 安全校验，不再维护 requirement_group 语义。 |
 
 ## 2.2 读路径职责（已细化到具体消费者）
 
@@ -42,8 +42,8 @@
 |---|---|---|---|
 | `ResourceCarrierProjectionSyncService.upsertCarrierProjections` | 已删除 | 正常 create/update/updateSort 已改为 service 内直接写 carrier，不再经由 bridge 双写 | 无 |
 | `ResourceCarrierProjectionSyncService.deleteCarrierProjectionsByResourceId(resourceId)` | 已删除 | 删除链已改为 service 内直接按 id 删除 carrier 记录，不再经由 bridge 清理 | 无 |
-| `CarrierCompatibilitySafetyService.replaceCompatibilityRequirement(binding)` | 暂时保留 | 兼容组回填，但已不再依赖 `resource` 或 legacy projection bridge | compatibility group 退场方案可验证 |
-| `CarrierCompatibilitySafetyService.existsPermissionReference(permissionId, tenantId)` | 暂时保留 | “最后载体撤 role_permission”唯一判定，但已改为 carrier/requirement 显式查询 | 等价判定链迁移完成并覆盖回归 |
+| `replaceCompatibilityRequirement(binding)`（历史 compatibility 类上，已删除） | 已删除 | requirement_group=0 compatibility 回填已在 CARD-13B 退场；CARD-14B 后类名为 `CarrierPermissionReferenceSafetyService`，不再包含该方法 | 无 |
+| `CarrierPermissionReferenceSafetyService.existsPermissionReference(permissionId, tenantId)` | 暂时保留 | “最后载体撤 role_permission”唯一判定，但已改为 carrier/requirement 显式查询 | 等价判定链迁移完成并覆盖回归 |
 | 登录/权限矩阵与 bootstrap 脚本 | 已落地 | 已形成脚本门禁 + 定向回归 | 持续执行，不是阻塞删除项 |
 
 ---
@@ -56,12 +56,12 @@
 - **辅助映射冲突保护**：`toPermissionIdMap` 对“同一 resourceId 出现多个不同 required_permission_id”改为 fail-closed 抛错，不再静默覆盖。
 - **主读迁移等价性回归已补齐一层**：`BUTTON / API` 字段复制、平台模板回填链路与 parentId 两段式回填均有直接回归覆盖，证明 carrier snapshot 不只是“能读到”，而是已能驱动实际 clone/save 流程。
 - **写链已缩到 direct carrier write/delete**：`ResourceServiceImpl` 与 `MenuServiceImpl` 的正常 create/update/updateSort/delete 已下线 compatibility `resource` 主动保存，改为 service 内直接保存/删除 `menu_entry / ui_action_entry / api_endpoint_entry`；运行时主线不再对 `resource` 表做任何伴随写入/删除。
-- **legacy projection bridge 已退出主线**：`ResourceCarrierProjectionSyncService` 的 legacy `sync/delete` 双写接口已下线；剩余兼容安全语义已迁到 `CarrierCompatibilitySafetyService`，不再以 projection sync bridge 形式存在于运行时主线。
+- **legacy projection bridge 已退出主线**：`ResourceCarrierProjectionSyncService` 的 legacy `sync/delete` 双写接口已下线；剩余兼容安全语义已迁到 `CarrierPermissionReferenceSafetyService`，不再以 projection sync bridge 形式存在于运行时主线。
 - **共享 ID 前置条件继续清零（本轮）**：`RoleRepository.findResourceIdsByRoleId`、`findGrantedRoleCarrierPairsByTenantId`、`findGrantedRoleCarrierPairsForPlatformTemplate` 已从 `resource.required_permission_id` 反查改为直接从 `menu/ui_action/api_endpoint(required_permission_id)` union 推导；bootstrap 的 `assertPermissionBindingsReady` 也已改为 carrier template snapshot 校验，不再主读 `resource` 快照做绑定就绪判断。
 - **显式 locator 字段已落地（历史资产维度）**：`resource` 新增 `carrier_type + carrier_source_id` 并完成历史 backfill；该维度仅用于历史资产治理/迁移输入/排障定位，不作为运行时主线的兼容删除或定位前提。
-- **角色授权主契约已切换（本轮）**：`/sys/roles/{id}/resources` 已支持 `permissionIds` 主契约，`resourceIds` 仅保留兼容 alias；运行时最终写入只落 `role_permission(permission_id)`。
+- **角色授权主契约已切换（本轮）**：`/sys/roles/{id}/resources` 已只接受 `permissionIds` 正式契约；运行时最终写入只落 `role_permission(permission_id)`。
 - **菜单父子校验与递归删除读链收缩**：`MenuServiceImpl` 已把父级合法性校验、循环引用检查、子菜单递归枚举从 `ResourceRepository` 迁到 `MenuEntryRepository`（carrier 读链优先）。
-- **carrier projection 读链已拆库（本轮）**：角色授权校验与租户 bootstrap 使用的 carrier template / permission snapshot 查询已从 `ResourceRepository` 抽到独立的 `CarrierProjectionRepository`；`ResourceRepository` 仅保留 legacy compatibility 壳与过渡 alias。
+- **carrier projection 读链已拆库（本轮）**：角色授权校验与租户 bootstrap 使用的 carrier template / permission snapshot 查询已从 legacy `ResourceRepository` seam 抽到独立的 `CarrierProjectionRepository`；`ResourceRepository` 兼容接口已在后续清理阶段删除。
 - **菜单遗留 native `resource` 读链已清除（本轮）**：`MenuServiceImpl` 中未再使用的 `findMenusByNativeHibernate(...)` 及其 `resource` 原生 SQL 映射辅助方法已删除，避免误判为仍存在运行时主读依赖。
 - **rollout 门禁已改认 carrier 真相链（本轮）**：`verify-authorization-model-rollout.sh` 不再以 `resource` 行数或 `resource.required_permission_id` 作为 canonical 对照，改为直接核对 `menu/ui_action/api_endpoint`、`required_permission_id` 与 requirement 兼容组。
 - **平台模板自举脚本已切 carrier 计数（本轮）**：`verify-platform-template-row-counts.sh` 与 `verify-platform-dev-bootstrap.sh` 不再要求 `resource` 平台模板行数，统一改为 `role + (menu/ui_action/api_endpoint)` 总量门禁。
@@ -76,7 +76,7 @@
 
 | 结论项 | 当前状态 | 说明 |
 |---|---|---|
-| `tiny-oauth-server` 运行时读写 | 已下线 | 运行时主线不再读写 `resource` 表，`Resource` 已降级为兼容 DTO，`ResourceRepository` 仅保留测试/桥接方法签名 |
+| `tiny-oauth-server` 运行时读写 | 已下线 | 运行时主线不再读写 `resource` 表，`Resource` 仅保留兼容 DTO 语义，legacy `ResourceRepository` bridge 也已删除 |
 | 权限回填链路 | 已下线 | `ResourcePermissionBindingService` 已改为直接基于 `menu/ui_action/api_endpoint` 回填 `permission` 与 `required_permission_id` |
 | `tiny-web` 演示模块 | 已下线 | 访问检查已改为 JDBC 直读 canonical carrier，不再依赖 `resource` 实体、仓储或 seed |
 | 常规脚本门禁 | 已下线 | dev/bootstrap/e2e/smoke/permission 修复统计脚本已迁到 carrier / permission 口径 |
@@ -102,16 +102,16 @@
 
 ---
 
-## 7. `ResourceRepository` 消费者分级证据表（阶段 D）
+## 7. legacy `resource` seam 消费者分级证据表（阶段 D）
 
 | 消费者 | 主要用途 | 当前分级 | 处理结论 |
 |---|---|---|---|
 | `ResourceServiceImpl` | 资源管理控制面 / carrier 读写 | 已收缩（本轮） | 控制面主读已切 carrier；正常 create/update/updateSort/delete 仅写 carrier 并维护 `requirement_group=0`；运行时不再对 `resource` 表做任何业务读写 |
 | `MenuServiceImpl` | 菜单写链、父子关系校验、删除链 | 已落地（写链已迁） | 父子校验/递归枚举已切到 `MenuEntryRepository`；未使用的 `resource` native 菜单分页实现已删除；删除链 direct-delete carrier，并保持“最后载体撤权”判定 |
-| `RoleServiceImpl` | `updateRoleResources` 读取资源并写角色授权 | 已落地（主契约已切） | 主契约已切换为 `permissionIds`；`resourceIds` 仅保留兼容 alias，运行时写入统一落 `role_permission(permission_id)` |
+| `RoleServiceImpl` | `updateRoleResources` 读取资源并写角色授权 | 已降为历史服务别名 | API 主契约已只接受 `permissionIds`；运行时写入统一落 `role_permission(permission_id)` |
 | `TenantBootstrapServiceImpl` | 平台模板资源快照复制、授权回放 | 已落地（主读已迁） | 模板资源主读已切到 carrier template snapshot；复制与授权回放不再依赖 `resource` 表，不保留 resource fallback |
 
-本轮收缩已完成并闭合为一致口径：删除链与控制面读写均已切到 carrier（`menu/ui_action/api_endpoint`）与 permission 真相链；`ResourceServiceImpl.findByRoleId/findByUserId`、`RoleServiceImpl.updateRoleResources`、`TenantBootstrapServiceImpl` 的模板复制与授权回放均不再依赖 `resource` 表。legacy `ResourceCarrierProjectionSyncService` 已退出运行时主线，剩余 `replaceCompatibilityRequirement` 与 `existsPermissionReference` 保留为 carrier requirement/最后引用的显式安全语义，并由 `CarrierCompatibilitySafetyService` 承接。  
+本轮收缩已完成并闭合为一致口径：删除链与控制面读写均已切到 carrier（`menu/ui_action/api_endpoint`）与 permission 真相链；`ResourceServiceImpl.findByRoleId/findByUserId`、`RoleServiceImpl.updateRoleResources`、`TenantBootstrapServiceImpl` 的模板复制与授权回放均不再依赖 `resource` 表。legacy `ResourceCarrierProjectionSyncService` 已退出运行时主线，剩余 `replaceCompatibilityRequirement` 与 `existsPermissionReference` 保留为 carrier requirement/最后引用的显式安全语义，并由 `CarrierPermissionReferenceSafetyService` 承接。  
 **阶段结论：`resource compatibility` 已退出运行时主线。** requirement 外键始终指向 carrier 主键，compatibility group(`requirement_group=0`) 也已改为基于真实 carrier id 回填；当前与 `resource` 相关的剩余事项仅属于历史字段承载（如 `resource.permission`）与历史资产治理/物理清理议题。
 
 ### 3.1 `TenantBootstrapServiceImpl` 依赖拆解（本轮）

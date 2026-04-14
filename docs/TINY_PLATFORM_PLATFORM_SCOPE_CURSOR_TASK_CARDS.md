@@ -3,13 +3,23 @@
 > 状态：可执行任务卡  
 > 适用范围：`tiny-oauth-server` 认证主链 / 菜单资源控制面 / 文档与门禁同步  
 > 目标：把“平台是默认租户别名”的剩余实现拆成小步任务卡交给 Cursor 执行，由 Codex 负责审计  
-> 当前主线：第一阶段（`CARD-01 ~ CARD-05`）已完成认证桥接落地；第二阶段继续做 backfill、旧表 fallback 收口、real-link / Nightly 认证链补强、最终兼容逻辑下线
+>
+> **历史任务卡阅读说明（CARD-14D）**：本文件按阶段保留任务卡正文；卡内“验收 / 必须 / 禁止”多数对应**该卡编写年代的桥接期或阶段性约束**，**不等于**未加说明时的现行运行时代码规范。**当前态**以 `docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md`、`docs/TINY_PLATFORM_TESTING_PLAYBOOK.md`（§1.7）、`docs/TINY_PLATFORM_TENANT_GOVERNANCE.md` §3.1 为准：**CARD-13A** 后认证读链只读取与当前激活作用域一致的**单个** `scope_key`；平台主语义认 **`PLATFORM` scope**；active 工具链对平台租户 **不隐式 `default`**（**CARD-13E**）。下文中带 **（历史）** / **（本卡执行期）** 的句子，均须在上述三份文档语境下理解。
+>
+> **（阶段性叙事，多阶段收口前）** 第一阶段（`CARD-01 ~ CARD-05`）已完成认证桥接落地；曾计划第二阶段继续 backfill、旧表 fallback 收口、real-link / Nightly 认证链补强、最终兼容逻辑下线。**（现状）** 各阶段完成度与开放项以实现与 `TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md` 为准，勿仅凭本段推断仍有运行时旧表 fallback 或未收口桥接主路径。
 
 > 口径纠偏（2026-04）：
-> - 认证域当前迁移路线**不是**在 `user_authentication_method` 上继续演进 `scope_type/scope_id/scope_key`
-> - 当前目标模型是：`user_auth_credential + user_auth_scope_policy`
-> - 旧表 `user_authentication_method` 在桥接期仅保留兼容 fallback 与迁移过渡职责，不再作为长期语义载体
-> - 当前已完成“新模型双写 + 新模型优先读”，后续按 `CARD-06 -> CARD-07A/07B/07C -> CARD-08A/08B -> CARD-09A/09B -> CARD-09C` 推进 backfill、fallback 收口、旧表下线以及 authority 契约收缩
+> - 认证域迁移路线**不是**在 `user_authentication_method` 上继续演进 `scope_type/scope_id/scope_key`
+> - 目标模型是：`user_auth_credential + user_auth_scope_policy`
+> - **（桥接期，旧表尚未物理下线前）** 旧表 `user_authentication_method` 曾保留兼容 fallback 与迁移过渡职责；**（现状）** 旧表已按任务清单 `CARD-09B3` 等下线，production 主链不再读旧表，见 `TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md`
+> - **（阶段成果，已实现）** “新模型双写 + 新模型优先读”及后续 `CARD-06 -> … -> CARD-09C` 所覆盖的 backfill、fallback 收口、旧表下线、authority 契约收缩已在主线按任务清单推进；**后续延续项**亦以任务清单为唯一完成度真相源
+>
+> **CARD-14D 当前态摘要（与上文任务卡年代区分）**：运行时读链单 `scope_key`；平台语义 `PLATFORM`；工具链显式平台租户配置；细节见三份真相文档。
+>
+> **CARD-14E 新增任务卡模板约束（可复用）**  
+> - **写作规则**：新增或修订任务卡时，凡涉及认证读链、`scope_key`、`PLATFORM` 与 `GLOBAL` 的关系、旧表或「新模型优先 + fallback」、`default` / `platformTenantCode`，须在卡内显式标注 **（历史）**、**（桥接期）**、**（阶段性）** 或 **（当前态）** 之一。  
+> - **当前态真相源（固定三份）**：`docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md`、`docs/TINY_PLATFORM_TESTING_PLAYBOOK.md` §1.7、`docs/TINY_PLATFORM_TENANT_GOVERNANCE.md` §3.1；**不得**仅凭本文件未标注的旧卡正文推断现行门禁。  
+> - **禁止**：把桥接期「跨 `scope_key` 合并读序」或历史 **`PLATFORM > GLOBAL`** 简写写成未加标注的现行规范；保留历史卡原文时可加一句指向 **CARD-13A** / **CARD-13E**。
 
 ---
 
@@ -50,6 +60,8 @@ Codex 的职责不是代替 Cursor 实施，而是按本文件末尾的审计口
 
 ### 2.2 当前已经完成的基线
 
+> **（CARD-14D）** 本节为任务卡编写年代的基线快照；读链、旧表角色与后续收口以 `TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md`（含 CARD-04、CARD-09B3、CARD-13A 等）为准。
+
 下列内容已在主线工作区落地，本轮任务卡不得回退：
 
 - `ActiveScope` 已是运行时真源，`/sys/users/current/active-scope` 已支持 `PLATFORM`
@@ -82,10 +94,10 @@ Codex 的职责不是代替 Cursor 实施，而是按本文件末尾的审计口
 4. `CARD-04` 认证读链优先读新模型
 5. `CARD-05` 文档、任务清单与门禁同步
 
-当前状态：
+当前状态（**执行顺序说明；完成度见任务清单**）：
 
 - `CARD-01 ~ CARD-05` 已完成并通过 Codex 审计
-- 接下来按 `CARD-06 -> CARD-07A/07B/07C -> CARD-08A/08B -> CARD-09A/09B -> CARD-09C1/09C2/09C3/09C4` 继续做桥接态收口与 authority 契约收缩
+- **（本文件编写时计划）** 接下来按 `CARD-06 -> CARD-07A/07B/07C -> CARD-08A/08B -> CARD-09A/09B -> CARD-09C1/09C2/09C3/09C4` 继续做桥接态收口与 authority 契约收缩。**（现状）** 后续多阶段已按 `TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md` 落地；勿将“桥接态收口”误解为仍有开放运行时桥接主链（以任务清单为准）。
 
 ### 3.1 与“PLATFORM 正确模型 7 件事”的映射
 
@@ -144,7 +156,7 @@ Codex 的职责不是代替 Cursor 实施，而是按本文件末尾的审计口
 - `UserAuthenticationMethodProfileService` 不再 import / 持有 `PlatformTenantResolver`
 - 平台态 `loadEnabledMethodProfiles` / `findEffectiveMethodProfile` 不再回退 legacy platform tenant 行
 - 直接依赖该服务的测试全部通过
-- 没有把租户态 `TENANT + GLOBAL` 回退语义做坏
+- **（历史验收）** 没有把租户态在桥接期涉及的 `TENANT` 与 `GLOBAL` 并存/回退语义做坏（**当前态**读链见 CARD-13A / `TINY_PLATFORM_TENANT_GOVERNANCE.md` §3.1）
 
 **建议验证**
 
@@ -395,6 +407,8 @@ Codex 的职责不是代替 Cursor 实施，而是按本文件末尾的审计口
 
 ### CARD-04 认证读链优先读新模型
 
+> **（CARD-14D）** 本卡对应桥接期「新模型优先、旧表兼容 fallback」的阶段性目标；**当前 production 主链**已只读新模型且无运行时旧表 fallback，见 `TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md`（CARD-09A、CARD-13A）。
+
 **目标**
 
 让 `UserAuthenticationMethodProfileService` 或其替代服务优先从新模型装配 profile，旧表只作为兼容 fallback。
@@ -579,8 +593,8 @@ Cursor 完成每张卡后，Codex 审计时统一按下面 5 点看：
 **明确要求**
 
 - 必须复用统一 `buildScopeKey(...)` 规则，禁止脚本手写第二套 key 格式
-- backfill 口径必须明确区分：
-  - `tenant_id IS NULL` 且平台语义 -> `PLATFORM` 或 `GLOBAL`
+- backfill 口径必须明确区分（**数据迁移归类**：把源行映射到目标 `scope_key`，**不是**运行时一次查询合并多个 `scope_key`）：
+  - `tenant_id IS NULL` 且平台语义 -> `PLATFORM` 或 `GLOBAL`（按源材料归入对应策略行；**CARD-13A 后**会话内仍只读单 active `scope_key`）
   - `tenant_id = tenant.id` -> `TENANT:{id}`
 - 至少提供 dry-run 模式或不落库对账模式
 - 必须能回答：
@@ -680,7 +694,7 @@ Cursor 完成每张卡后，Codex 审计时统一按下面 5 点看：
   - 哪个 scope 在命中旧表
   - 哪个 provider/type 在命中旧表
   - 是单条查找还是批量读取在命中旧表
-- 平台态仍必须保持 `PLATFORM > GLOBAL`
+- **（本卡执行期，CARD-13A 前桥接读侧）** 观测仍须能在平台上下文中区分 `PLATFORM` 与 `GLOBAL` 相关命中（当时文档常简写为「`PLATFORM` 相对 `GLOBAL` 的读侧顺序」）。**（当前态）** 运行时不再做跨 `scope_key` 合并；平台登录只读 `scope_key=PLATFORM`；以 `TINY_PLATFORM_TENANT_GOVERNANCE.md` §3.1、`TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md`（CARD-13A）为准——勿将历史简写 **`PLATFORM > GLOBAL`** 理解为现行合并读序。
 - 不得恢复任何 legacy platform tenant fallback
 
 **验收标准**
@@ -736,7 +750,7 @@ Cursor 完成每张卡后，Codex 审计时统一按下面 5 点看：
 
 - 是否真的新增了可用的 fallback 命中观测
 - 是否偷带了行为切换而不是纯观测
-- 是否保持 `PLATFORM > GLOBAL` 和统一 `scope_key` 契约
+- **（历史审计）** 在当时桥接约束下，是否仍满足平台上下文对 `PLATFORM`/`GLOBAL` 维度的可观测区分与统一 `scope_key` 契约。**（当前态审计替代）** 新代码是否遵守单 `scope_key` 读链与 §3.1（勿用历史 **`PLATFORM > GLOBAL`** 表述验收现行实现）
 
 ---
 
@@ -792,7 +806,7 @@ Cursor 完成每张卡后，Codex 审计时统一按下面 5 点看：
 本卡只做：
 - 收窄 user_authentication_method fallback 触发条件
 - 保留并复用 CARD-07A 的命中观测
-- 保持新模型优先读与 PLATFORM > GLOBAL 不变
+- **（本卡执行期）** 保持新模型优先读与当时桥接读侧对 `PLATFORM`/`GLOBAL` 的约定不变。**（当前态）** **CARD-13A** 后已无运行时「`PLATFORM` 再合并 `GLOBAL`」读序；本句仅描述该卡年代约束
 
 本卡不要做：
 - 不要默认关闭 fallback
@@ -893,7 +907,7 @@ Cursor 完成每张卡后，Codex 审计时统一按下面 5 点看：
 
 **目标**
 
-固定补 1 条平台真实认证链路，验证平台态 `PLATFORM > GLOBAL` 与新模型优先读在真实链路下成立。
+**（本卡执行期）** 固定补 1 条平台真实认证链路，验证（当时）新模型优先读与桥接期平台上下文中对 `PLATFORM`/`GLOBAL` 读侧语义的可观测性（历史文案常写作 **`PLATFORM > GLOBAL`**）。**（CARD-13A 后读此卡）** 真实链路验收应覆盖 `activeScopeType = PLATFORM` 与认证读链在**单 `scope_key=PLATFORM`** 下成立；勿将历史 **`PLATFORM > GLOBAL`** 简写当作仍需验证的运行时合并顺序。
 
 **前置条件**
 
@@ -955,7 +969,7 @@ Cursor 完成每张卡后，Codex 审计时统一按下面 5 点看：
 **Codex 审计点**
 
 - 是否真的是平台真实认证链
-- 是否验证了 `PLATFORM > GLOBAL`
+- **（历史）** 是否在当时的桥接门禁口径下验证了平台上下文中 `PLATFORM` 与 `GLOBAL` 相关语义（历史汇总表述 **`PLATFORM > GLOBAL`**）。**（当前若复用本卡思路）** 是否验证平台登录路径与单 `scope_key` 读链、任务清单 CARD-13A 一致
 - helper / auth-state 是否有足够回归覆盖
 
 ---
@@ -1637,6 +1651,8 @@ Cursor 完成每张卡后，Codex 审计时统一按下面 5 点看：
 > - 平台 `default/platformTenantCode` 兼容壳
 > - carrier requirement 缺失时的 fallback 兼容
 >
+> **（CARD-14D）** 上列为该阶段**当时**计划收口的兼容层；`default/platformTenantCode` 类入口已随 `CARD-10C` / `CARD-11C` / `CARD-13C` 等降级为 **bootstrap / 历史配置边界**（见任务清单）。**当前平台主语义**只认 `PLATFORM` scope；bootstrap-only `platformTenantCode` 不替代平台定义。
+>
 > 冻结边界：
 > - `tiny-web` 已视为冻结中的历史模块，不再作为权限/认证模型继续演进的承载体
 > - 本阶段卡片默认 **不**为 `tiny-web` 设计长期收敛任务；若出现编译/启动/阻断性问题，仅做最小生存修复
@@ -2262,3 +2278,1762 @@ Cursor 完成每张卡后，Codex 审计时统一按下面 5 点看：
 - 是否真的拿到了“兼容窗口结束”的证据
 - 是否删除了解码兼容而没有误改新签发契约
 - 文档和 inventory 是否同步到新状态
+
+---
+
+## 11. 第六阶段剩余兼容壳清理任务卡（CARD-12A ~ CARD-12D）
+
+> 目标：在 `CARD-11A ~ CARD-11D` 已删除主线兼容路径后，继续清掉仍会误导后续开发、但已不再承担主链职责的残留兼容壳。  
+> 这一阶段主要针对：
+> - 只为旧测试/旧装配保留的 deprecated 构造器与 legacy bridge
+> - 已退出主链、但仍以运行时 Bean 形式存在的 `PlatformTenantResolver`
+> - `SecurityUser` 中仍通过 `authorities` 隐式恢复 `roleCodes` 的构造器兼容
+> - 运行时代码与核心文档中仍残留的旧表/旧模型措辞
+>
+> 删除顺序按风险从低到高推进：
+> - `CARD-12A`：删除 deprecated 构造器与 legacy bridge 接口
+> - `CARD-12B`：把 `PlatformTenantResolver` 降到纯 bootstrap / 运维工具
+> - `CARD-12C`：删除 `SecurityUser` 构造器层的隐式 `roleCodes` 恢复
+> - `CARD-12D`：清理运行时代码与核心文档中的旧模型措辞
+>
+> 冻结边界：
+> - `tiny-web` 继续视为冻结中的历史模块，不作为这一阶段长期演进目标
+> - backfill / reconcile / inventory 类迁移脚本不属于本阶段的主线删除目标
+
+**执行状态（2026-04）**
+
+- `CARD-12A`：已完成
+- `CARD-12B`：已完成
+- `CARD-12C`：已完成
+- `CARD-12D`：已完成
+
+### CARD-12A 删除 deprecated 构造器与 legacy bridge 接口
+
+**目标**
+
+删除仅为旧测试/旧装配保留、但已不再参与运行时主链的 deprecated 构造器和 legacy bridge 接口，避免后续开发继续沿着旧模型接线。
+
+**前置条件**
+
+- `CARD-11A ~ CARD-11D` 已完成
+- 已确认相关 deprecated 路径不再被生产运行时依赖
+
+**范围**
+
+- `DefaultSecurityConfig`、`TenantContextFilter`、`MenuServiceImpl`、`ResourceServiceImpl` 中仅为历史装配保留的 deprecated 构造器
+- `ResourceRepository` 等只用于 legacy compatibility 的桥接接口
+- 与这些删除直接相关的最小测试与文档
+
+**明确要求**
+
+- 删除前先确认主 Bean 装配与当前测试构造都已有非 deprecated 入口
+- 不要恢复 `resource` 表或旧 runtime bridge
+- 不要把测试失败简单改成“继续保留 deprecated 构造器”
+
+**验收标准**
+
+- 主线运行与测试不再依赖这些 deprecated 构造器
+- legacy bridge 接口不再作为运行时扩展点保留
+- 文档与注释同步到“已删除”状态
+
+**复制给 Cursor 的提示词**
+
+```text
+请为 tiny-platform 执行 CARD-12A：删除 deprecated 构造器与 legacy bridge 接口。
+
+必须先阅读：
+- AGENTS.md
+- docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md
+- docs/TINY_PLATFORM_PLATFORM_SCOPE_CURSOR_TASK_CARDS.md
+- docs/TINY_PLATFORM_LEGACY_COMPATIBILITY_INVENTORY.md
+- .agent/src/rules/50-testing.rules.md
+- .agent/src/rules/58-cicd.rules.md
+- .agent/src/rules/90-tiny-platform.rules.md
+- .agent/src/rules/91-tiny-platform-auth.rules.md
+
+前置条件：
+- CARD-11A ~ CARD-11D 已完成
+
+本卡只做：
+- 删除已退出主链的 deprecated 构造器
+- 删除 legacy bridge 接口或把其从运行时主路径中移除
+- 补最小必要测试和文档
+
+本卡不要做：
+- 不要恢复 resource/runtime 旧模型
+- 不要扩大成大规模测试重构
+- 不要把 tiny-web 纳入长期收敛主线
+
+交付要求：
+- 输出删除清单
+- 输出修改文件
+- 输出执行命令
+- 输出测试结果
+- 输出剩余风险
+```
+
+**Codex 审计点**
+
+- 是否真的删掉了运行时不再需要的 deprecated 构造器
+- 是否避免继续保留 legacy bridge 误导新代码
+- 测试是否改成走当前主链而不是继续依赖旧入口
+
+---
+
+### CARD-12B 把 `PlatformTenantResolver` 降到纯 bootstrap / 运维工具
+
+**目标**
+
+继续削弱 `PlatformTenantResolver` 的运行时存在感，使其不再作为应用主线 Bean 的默认依赖，而只保留在 bootstrap / 运维脚本 / 历史入口的明确边界内。
+
+**前置条件**
+
+- `CARD-11C` 已完成
+- 主链已确认只认 `PLATFORM` scope
+
+**范围**
+
+- `PlatformTenantResolver`
+- 仍然直接注入或引用它的配置/服务/测试入口
+- 与其边界说明直接相关的最小文档与测试
+
+**明确要求**
+
+- 不要重新引入“平台 = default tenant”的语义
+- 允许保留在 bootstrap / 历史运维工具中的最小使用面，但必须和主链完全隔离
+- 若仍需保留 Bean，也要明确降级为非主链工具组件
+
+**验收标准**
+
+- 主线配置与运行时服务零依赖 `PlatformTenantResolver`
+- 仅 bootstrap / 运维路径保留最小可解释依赖
+- 文档明确其已不属于运行时语义组件
+
+**复制给 Cursor 的提示词**
+
+```text
+请为 tiny-platform 执行 CARD-12B：把 PlatformTenantResolver 降到纯 bootstrap / 运维工具。
+
+必须先阅读：
+- AGENTS.md
+- docs/TINY_PLATFORM_TENANT_GOVERNANCE.md
+- docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md
+- docs/TINY_PLATFORM_PLATFORM_SCOPE_CURSOR_TASK_CARDS.md
+- docs/TINY_PLATFORM_LEGACY_COMPATIBILITY_INVENTORY.md
+- .agent/src/rules/50-testing.rules.md
+- .agent/src/rules/58-cicd.rules.md
+- .agent/src/rules/90-tiny-platform.rules.md
+- .agent/src/rules/91-tiny-platform-auth.rules.md
+
+前置条件：
+- CARD-11C 已完成
+
+本卡只做：
+- 清理主链对 PlatformTenantResolver 的残留依赖
+- 只保留 bootstrap / 运维工具需要的最小边界
+- 补最小必要测试和文档
+
+本卡不要做：
+- 不要改回 default tenant 平台语义
+- 不要扩大成 tenant bootstrap 全量重构
+- 不要顺手改 unrelated tenantCode 路由能力
+
+交付要求：
+- 输出残留依赖清单
+- 输出修改文件
+- 输出执行命令
+- 输出测试结果
+- 输出剩余风险
+```
+
+**Codex 审计点**
+
+- `PlatformTenantResolver` 是否真正退出主线配置/服务依赖
+- bootstrap / 运维边界是否和运行时语义分开
+- 是否避免把 `tenantCode` 正常租户路由误删
+
+---
+
+### CARD-12C 删除 `SecurityUser` 构造器层的隐式 `roleCodes` 恢复
+
+**目标**
+
+在 `11D` 已删除 JSON/JWT 解码兼容后，进一步删除 `SecurityUser` 构造器层仍然通过 `authorities` 隐式恢复 `roleCodes` 的兼容逻辑，让 `roleCodes` 成为真正显式的输入契约。
+
+**前置条件**
+
+- `CARD-11B`、`CARD-11D` 已完成
+- keep-list 消费者已只依赖显式 `roleCodes`
+
+**范围**
+
+- `SecurityUser` 构造器与辅助方法
+- 仍通过 `authorities -> roleCodes` 隐式恢复的调用点
+- 与该契约变化直接相关的最小测试与文档
+
+**明确要求**
+
+- 不得影响当前显式传入 `roleCodes` 的主链
+- 删除后，调用方若需要角色码必须显式传入
+- 不要重新恢复 `ROLE_*` 主链 authority
+
+**验收标准**
+
+- `SecurityUser` 不再通过构造器隐式恢复 `roleCodes`
+- 主链调用方显式传入 `roleCodes`
+- 相关回归覆盖“显式 roleCodes 正常、缺失 roleCodes 不再隐式恢复”
+
+**复制给 Cursor 的提示词**
+
+```text
+请为 tiny-platform 执行 CARD-12C：删除 SecurityUser 构造器层的隐式 roleCodes 恢复。
+
+必须先阅读：
+- AGENTS.md
+- docs/TINY_PLATFORM_AUTHORIZATION_MODEL.md
+- docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md
+- docs/TINY_PLATFORM_PLATFORM_SCOPE_CURSOR_TASK_CARDS.md
+- docs/TINY_PLATFORM_ROLE_CODE_AUTHORITY_CONSUMER_INVENTORY.md
+- .agent/src/rules/50-testing.rules.md
+- .agent/src/rules/58-cicd.rules.md
+- .agent/src/rules/90-tiny-platform.rules.md
+- .agent/src/rules/91-tiny-platform-auth.rules.md
+
+前置条件：
+- CARD-11B 已完成
+- CARD-11D 已完成
+
+本卡只做：
+- 删除 SecurityUser 构造器中的 authorities -> roleCodes 隐式恢复
+- 让主链调用方显式传入 roleCodes
+- 补最小必要测试和文档
+
+本卡不要做：
+- 不要改 JWT claim 契约
+- 不要恢复 ROLE_* authority 主链
+- 不要扩大成认证模型重写
+
+交付要求：
+- 输出契约变化说明
+- 输出修改文件
+- 输出执行命令
+- 输出测试结果
+- 输出剩余风险
+```
+
+**Codex 审计点**
+
+- 是否真正删除了构造器层的隐式恢复
+- 主链调用点是否全部显式传入 `roleCodes`
+- 是否补了“无 roleCodes 不再自动恢复”的回归
+
+---
+
+### CARD-12D 清理旧模型措辞与运行时代码注释残留
+
+**目标**
+
+把运行时代码、核心文档和高频注释中仍残留的 `user_authentication_method` / `resource` / 旧 authority 混合态等历史措辞清理掉，避免后续开发继续被旧模型误导。
+
+**前置条件**
+
+- `CARD-12A ~ CARD-12C` 已完成或至少已确认主链契约稳定
+
+**范围**
+
+- 运行时代码中的高频注释、Javadoc、类说明
+- `AGENTS.md` / 核心授权文档 / compatibility inventory 中仍可能误导主线的旧措辞
+- 与口径清理直接相关的最小测试/检查（如有）
+
+**明确要求**
+
+- 优先清理“会误导当前开发”的入口文档与运行时代码注释
+- 不要求一次性重写全部历史 runbook
+- 历史迁移/归档文档可保留，但必须明确标成历史阶段说明
+
+**验收标准**
+
+- 主线代码注释与核心文档不再把旧表/旧兼容语义写成当前态
+- 历史文档与当前文档边界清楚
+- 不再出现“当前库/主链仍依赖旧模型”的误导描述
+
+**复制给 Cursor 的提示词**
+
+```text
+请为 tiny-platform 执行 CARD-12D：清理旧模型措辞与运行时代码注释残留。
+
+必须先阅读：
+- AGENTS.md
+- docs/TINY_PLATFORM_AUTHORIZATION_MODEL.md
+- docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md
+- docs/TINY_PLATFORM_LEGACY_COMPATIBILITY_INVENTORY.md
+- docs/TINY_PLATFORM_PLATFORM_SCOPE_CURSOR_TASK_CARDS.md
+- .agent/src/rules/50-testing.rules.md
+- .agent/src/rules/58-cicd.rules.md
+- .agent/src/rules/90-tiny-platform.rules.md
+- .agent/src/rules/91-tiny-platform-auth.rules.md
+
+前置条件：
+- CARD-12A ~ CARD-12C 已完成或主链契约已稳定
+
+本卡只做：
+- 清理会误导当前开发的旧模型措辞
+- 同步核心文档与运行时代码注释
+- 明确历史文档与当前真相源边界
+
+本卡不要做：
+- 不要扩大成全仓库文案大修
+- 不要重写全部历史 runbook
+- 不要顺手改 unrelated 行为代码
+
+交付要求：
+- 输出清理范围清单
+- 输出修改文件
+- 输出执行命令
+- 输出测试结果（如有）
+- 输出剩余风险
+```
+
+**Codex 审计点**
+
+- 是否优先清掉了高频入口与运行时代码中的误导措辞
+- 是否把历史文档和当前真相源边界写清楚
+- 是否避免扩大成低收益的大规模文案重写
+
+---
+
+## 12. 第七阶段剩余主线兼容代码移除任务卡（CARD-13A ~ CARD-13E）
+
+> 目标：在 `CARD-12A ~ CARD-12D` 已清理大部分兼容壳和误导入口后，继续删除仍留在 `tiny-oauth-server` 主链中的少量兼容行为。  
+> 这一阶段主要针对：
+> - 认证桥接里“新模型优先 + 旧模型 fallback”的残留主路径
+> - carrier compatibility group / unregistered endpoint legacy behavior
+> - `platformTenantCode/default` 作为 bootstrap 历史配置的残余主线影响
+> - API/角色层的历史别名与 compat flags
+>
+> 删除顺序按“先主链 fallback，再配置残留，再 API 别名”推进：
+> - `CARD-13A`：删除认证桥接 fallback 主路径
+> - `CARD-13B`：删除 carrier compatibility 运行时兜底
+> - `CARD-13C`：退役 `platformTenantCode/default` bootstrap 兼容配置
+> - `CARD-13D`：删除 API/角色层历史别名与 compat flags
+> - `CARD-13E`：清理 active tooling 的 `default` 隐式平台入口与当前态文档残留旧口径
+>
+> 冻结边界：
+> - `tiny-web` 继续视为冻结中的历史模块，不作为这一阶段主线收口目标
+> - backfill / reconcile / inventory / audit 类迁移材料不属于本阶段的删除目标
+
+**执行状态（2026-04）**
+
+- `CARD-13A`：已完成
+- `CARD-13B`：已完成
+- `CARD-13C`：已完成
+- `CARD-13D`：已完成
+- `CARD-13E`：已完成
+
+### CARD-13A 删除认证桥接 fallback 主路径
+
+**目标**
+
+把认证主链中仍然存在的“新模型优先 + 旧模型 fallback”桥接残留真正移除，让运行时只认 `user_auth_credential + user_auth_scope_policy`。
+
+**前置条件**
+
+- `CARD-09B3` 已完成
+- `CARD-07A ~ CARD-07C` 的 fallback 观测、收窄、fail-fast 经验已沉淀
+- 已确认旧表与 bridge fallback 不再承担运行时兜底职责
+- 存量库若存在 CARD-06 回填的 `scope_key=GLOBAL` 策略行：必须先执行 Liquibase `135-duplicate-global-auth-scope-policy-card-13a`，或运行 `tiny-oauth-server/scripts/verify-card-13a-global-auth-scope-policy-rollout.sh` 证明缺口为 0（避免读侧单 `scope_key` 后租户/平台登录断链）
+
+**范围**
+
+- `UserAuthenticationMethodProfileService`
+- `UserAuthenticationMethodMerge`
+- 与认证桥接 fallback 删除直接相关的最小测试与文档
+
+**明确要求**
+
+- 删除后不得重新引入旧表 runtime 读取依赖
+- 不要恢复任何 platform tenant / legacy scope fallback
+- 若保留迁移工具类，必须明确与运行时主链隔离
+
+**验收标准**
+
+- 认证主链不再存在旧模型 fallback
+- `UserAuthenticationMethodMerge` 等桥接残留要么删除，要么降为迁移材料
+- 相关回归覆盖“新模型唯一真相源”契约
+- 数据侧：`verify-card-13a-global-auth-scope-policy-rollout.sh`（或等价 SQL）对账通过，或已执行 `135` 迁移补齐 `TENANT:{id}` / `PLATFORM` 策略行
+
+**复制给 Cursor 的提示词**
+
+```text
+请为 tiny-platform 执行 CARD-13A：删除认证桥接 fallback 主路径。
+
+必须先阅读：
+- AGENTS.md
+- docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md
+- docs/TINY_PLATFORM_PLATFORM_SCOPE_CURSOR_TASK_CARDS.md
+- docs/TINY_PLATFORM_LEGACY_COMPATIBILITY_INVENTORY.md
+- docs/TINY_PLATFORM_TENANT_GOVERNANCE.md
+- .agent/src/rules/50-testing.rules.md
+- .agent/src/rules/58-cicd.rules.md
+- .agent/src/rules/90-tiny-platform.rules.md
+- .agent/src/rules/91-tiny-platform-auth.rules.md
+
+前置条件：
+- CARD-09B3 已完成
+- CARD-07A ~ CARD-07C 已完成
+
+本卡只做：
+- 删除认证主链里的旧模型 fallback
+- 清理认证桥接 merge / helper 残留
+- 补最小必要测试和文档
+
+本卡不要做：
+- 不要改 backfill / reconcile 脚本
+- 不要恢复 legacy platform tenant fallback
+- 不要扩大成认证框架重写
+
+交付要求：
+- 输出删除/降级清单
+- 输出修改文件
+- 输出执行命令
+- 输出测试结果
+- 输出剩余风险
+```
+
+**Codex 审计点**
+
+- 是否真正删掉了认证主链 fallback，而不是只改注释
+- 是否避免把迁移工具误删成运行时缺口
+- 测试是否已经证明新模型成为唯一运行时输入
+
+---
+
+### CARD-13B 删除 carrier compatibility 运行时兜底
+
+**目标**
+
+继续移除 carrier requirement 体系里残留的 compatibility group / unregistered endpoint legacy behavior，让 requirement 成为唯一正式判定入口。
+
+**前置条件**
+
+- `CARD-11A` 已完成
+- 已有 requirement 缺失 fail-closed 经验与回归
+
+**范围**
+
+- `CarrierPermissionReferenceSafetyService`（原 `CarrierCompatibilitySafetyService`）
+- `ApiEndpointRequirementDecision`
+- `ResourceService`
+- 与上述 compatibility 行为删除直接相关的最小测试与文档
+
+**明确要求**
+
+- 删除后，新 carrier / endpoint 未注册时必须显式 fail-closed 或走明确审计拒绝
+- 不要重新引入 `resource` 表或 compatibility resource 投影
+- 不要把 requirement 缺失与 endpoint 未注册混成同一种 silent fallback
+
+**验收标准**
+
+- compatibility group 不再作为运行时兜底手段
+- unregistered endpoint 不再“保持 legacy behavior”
+- 测试和文档同步到 requirement 唯一入口口径
+
+**复制给 Cursor 的提示词**
+
+```text
+请为 tiny-platform 执行 CARD-13B：删除 carrier compatibility 运行时兜底。
+
+必须先阅读：
+- AGENTS.md
+- docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md
+- docs/TINY_PLATFORM_PLATFORM_SCOPE_CURSOR_TASK_CARDS.md
+- docs/TINY_PLATFORM_LEGACY_COMPATIBILITY_INVENTORY.md
+- docs/TINY_PLATFORM_AUTHORIZATION_LAYERED_MODEL.md
+- .agent/src/rules/50-testing.rules.md
+- .agent/src/rules/58-cicd.rules.md
+- .agent/src/rules/90-tiny-platform.rules.md
+- .agent/src/rules/93-tiny-platform-authorization-model.rules.md
+
+前置条件：
+- CARD-11A 已完成
+
+本卡只做：
+- 删除 carrier compatibility group / unregistered endpoint legacy behavior
+- 让 requirement 成为唯一正式判定入口
+- 补最小必要测试和文档
+
+本卡不要做：
+- 不要恢复 resource 表或 compatibility projection
+- 不要顺手做 carrier 全量重构
+- 不要把 tiny-web 纳入范围
+
+交付要求：
+- 输出删除点清单
+- 输出修改文件
+- 输出执行命令
+- 输出测试结果
+- 输出剩余风险
+```
+
+**Codex 审计点**
+
+- 是否真正删除了 compatibility runtime 兜底
+- 未注册 endpoint 是否改成显式拒绝/可审计行为
+- 是否避免 requirement 主链再次出现 silent legacy behavior
+
+---
+
+### CARD-13C 退役 `platformTenantCode/default` bootstrap 兼容配置
+
+**目标**
+
+把 `platformTenantCode/default` 从“仍可能被新环境或新脚本引用的 bootstrap 兼容配置”继续降级到明确历史配置，避免它再成为平台语义的隐性入口。
+
+**前置条件**
+
+- `CARD-11C`、`CARD-12B` 已完成
+- 已确认主链平台语义只认 `PLATFORM` scope
+
+**范围**
+
+- `TenantBootstrapServiceImpl`
+- `PlatformTenantProperties`
+- `IdempotentProperties`
+- 与该配置退役直接相关的最小脚本、测试和文档
+
+**明确要求**
+
+- 不要误删正常租户 `tenantCode` 路由能力
+- 若仍需保留历史配置项，必须降为明确 deprecated / bootstrap-only 口径
+- 不要让新环境初始化继续默认依赖 `default`
+
+**验收标准**
+
+- `platformTenantCode/default` 不再是新环境/新脚本的默认入口
+- 正常平台语义与 bootstrap 历史配置完全分层
+- 文档明确该配置的剩余用途或正式退场
+
+**复制给 Cursor 的提示词**
+
+```text
+请为 tiny-platform 执行 CARD-13C：退役 platformTenantCode/default bootstrap 兼容配置。
+
+必须先阅读：
+- AGENTS.md
+- docs/TINY_PLATFORM_TENANT_GOVERNANCE.md
+- docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md
+- docs/TINY_PLATFORM_PLATFORM_SCOPE_CURSOR_TASK_CARDS.md
+- docs/TINY_PLATFORM_LEGACY_COMPATIBILITY_INVENTORY.md
+- .agent/src/rules/50-testing.rules.md
+- .agent/src/rules/58-cicd.rules.md
+- .agent/src/rules/90-tiny-platform.rules.md
+- .agent/src/rules/94-tiny-platform-tenant-governance.rules.md
+
+前置条件：
+- CARD-11C 已完成
+- CARD-12B 已完成
+
+本卡只做：
+- 退役 platformTenantCode/default 的 bootstrap 兼容配置
+- 明确剩余历史用途或删除默认值依赖
+- 补最小必要测试和文档
+
+本卡不要做：
+- 不要破坏正常 tenantCode 路由
+- 不要扩大成 tenant bootstrap 大重构
+- 不要恢复 default tenant 平台语义
+
+交付要求：
+- 输出配置退役清单
+- 输出修改文件
+- 输出执行命令
+- 输出测试结果
+- 输出剩余风险
+```
+
+**Codex 审计点**
+
+- 是否真的把 `platformTenantCode/default` 从新环境默认入口里退下来了
+- 是否把 bootstrap 历史配置与平台运行时语义分开
+- 是否避免误伤正常租户路由与现有运维脚本
+
+---
+
+### CARD-13D 删除 API/角色层历史别名与 compat flags
+
+**目标**
+
+继续清理 API/角色层里仍保留的历史别名和 compat flags，避免新调用继续沿用旧契约。
+
+**前置条件**
+
+- `CARD-12D` 已完成
+- 已有文档明确当前正式 API / 权限契约
+
+**范围**
+
+- `RoleManagementAccessGuard`
+- `RoleController`
+- `RoleConstraintServiceImpl`
+- 与这些别名/flags 删除直接相关的最小测试与文档
+
+**明确要求**
+
+- `resourceIds` 这类 alias 删除前要确认正式字段已有足够调用覆盖
+- compat permission alias / compat role flags 删除后必须有清晰错误或迁移提示
+- 不要扩大成整套 role management API 重写
+
+**验收标准**
+
+- API/角色层不再保留历史 alias 和 compat flags
+- 新调用方只能走当前正式契约
+- 回归测试与任务清单/文档口径一致
+
+**复制给 Cursor 的提示词**
+
+```text
+请为 tiny-platform 执行 CARD-13D：删除 API/角色层历史别名与 compat flags。
+
+必须先阅读：
+- AGENTS.md
+- docs/TINY_PLATFORM_AUTHORIZATION_MODEL.md
+- docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md
+- docs/TINY_PLATFORM_PLATFORM_SCOPE_CURSOR_TASK_CARDS.md
+- docs/TINY_PLATFORM_PERMISSION_IDENTIFIER_SPEC.md
+- .agent/src/rules/50-testing.rules.md
+- .agent/src/rules/58-cicd.rules.md
+- .agent/src/rules/90-tiny-platform.rules.md
+- .agent/src/rules/92-tiny-platform-permission.rules.md
+- .agent/src/rules/93-tiny-platform-authorization-model.rules.md
+
+前置条件：
+- CARD-12D 已完成
+
+本卡只做：
+- 删除 API/角色层历史 alias 与 compat flags
+- 让正式字段/正式权限码成为唯一入口
+- 补最小必要测试与文档
+
+本卡不要做：
+- 不要扩大成 role management 全链重写
+- 不要重新引入 resourceIds / compat role flag 语义
+- 不要越界到 unrelated controller
+
+交付要求：
+- 输出删除清单
+- 输出修改文件
+- 输出执行命令
+- 输出测试结果
+- 输出剩余风险
+```
+
+**Codex 审计点**
+
+- 是否真正删掉了 API/角色层的历史 alias / compat flags
+- 是否保住了当前正式契约和测试覆盖
+- 是否避免误删无关 role management 功能
+
+---
+
+### CARD-13E 清理 active tooling 的 `default` 隐式平台入口与当前态文档残留旧口径
+
+**目标**
+
+收掉仍活跃在 real-link / 运维脚本里的“未配置则回退到 `default` 平台租户”隐式入口，并把当前态文档里仍残留的旧口径同步到实际实现，避免 Cursor 或运维继续把历史兼容壳当成现状。
+
+**前置条件**
+
+- `CARD-13A ~ CARD-13D` 已完成
+- 主链平台语义已只认 `PLATFORM` scope
+- `platformTenantCode/default` 已从运行时主链与 bootstrap 默认值中退场
+
+**范围**
+
+- `tiny-oauth-server/src/main/webapp/e2e/setup/real.global.setup.ts`
+- `tiny-oauth-server/scripts/ensure-platform-admin.sh`
+- `docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md`
+- 与上述两条 active tooling / 当前态文档口径同步直接相关的最小测试与文档
+
+**明确要求**
+
+- `real.global.setup.ts` 中所有 `E2E_PLATFORM_TENANT_CODE ?? 'default'` 或等价静默回退必须删除
+- 缺少 `E2E_PLATFORM_TENANT_CODE` 时，要么 fail-fast，要么明确仅在单测 helper 中保留“历史说明”但不得参与实际 real-link 执行路径
+- `ensure-platform-admin.sh` 不允许再把 `PLATFORM_TENANT_CODE` 默认为 `default`；必须显式传入或直接失败
+- 当前态文档必须明确：
+  - 新租户初始化管理员角色是 `ROLE_TENANT_ADMIN`
+  - `CARD-13A` 后认证读链只读当前激活作用域对应的单个 `scope_key`
+- 不要扩大成 Playwright 全链重构
+- 不要顺手修改 tenant bootstrap 行为本身
+- 不要去动 `tiny-web`
+
+**验收标准**
+
+- active real-link / 运维脚本不再通过缺省值把平台语义偷偷绑定到 `default`
+- 缺少平台租户配置时，脚本行为为显式报错或显式受控分支，而不是静默回退
+- `TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md` 与相关专题文档不再把 `ROLE_ADMIN`、`PLATFORM > GLOBAL` 桥接期口径写成当前态
+- 至少补一组覆盖：
+  - real-link env 解析在缺失 `E2E_PLATFORM_TENANT_CODE` 时的 fail-fast / 明确行为
+  - `ensure-platform-admin.sh` 缺失 `PLATFORM_TENANT_CODE` 时的受控失败
+
+**复制给 Cursor 的提示词**
+
+```text
+请为 tiny-platform 执行 CARD-13E：清理 active tooling 的 default 隐式平台入口与当前态文档残留旧口径。
+
+必须先阅读：
+- AGENTS.md
+- docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md
+- docs/TINY_PLATFORM_PLATFORM_SCOPE_CURSOR_TASK_CARDS.md
+- docs/TINY_PLATFORM_TENANT_GOVERNANCE.md
+- docs/TINY_PLATFORM_LEGACY_COMPATIBILITY_INVENTORY.md
+- docs/TINY_PLATFORM_TESTING_PLAYBOOK.md
+- .agent/src/rules/50-testing.rules.md
+- .agent/src/rules/58-cicd.rules.md
+- .agent/src/rules/90-tiny-platform.rules.md
+- .agent/src/rules/91-tiny-platform-auth.rules.md
+- .agent/src/rules/94-tiny-platform-tenant-governance.rules.md
+
+前置条件：
+- CARD-13A ~ CARD-13D 已完成
+
+本卡只做：
+1. 删除 active real-link tooling 中对 default 平台租户的静默回退
+   - 重点检查 `tiny-oauth-server/src/main/webapp/e2e/setup/real.global.setup.ts`
+   - 不允许实际执行路径继续出现 `E2E_PLATFORM_TENANT_CODE ?? 'default'`
+2. 删除 active 运维脚本中对 default 平台租户的静默回退
+   - 重点检查 `tiny-oauth-server/scripts/ensure-platform-admin.sh`
+   - 缺少 `PLATFORM_TENANT_CODE` 时必须显式失败或受控退出
+3. 同步当前态文档口径
+   - 新租户初始化管理员角色必须写成 `ROLE_TENANT_ADMIN`
+   - `CARD-13A` 后认证读链必须写成“单 active scope_key 真相源”，不能把桥接期 `PLATFORM > GLOBAL` 写成当前态
+4. 补最小必要测试
+   - helper / env 解析测试
+   - 脚本受控失败测试（如仓库已有对应测试方式；若无，则至少给出可执行 smoke 验证）
+
+本卡不要做：
+- 不要扩大成 Playwright global setup 重构
+- 不要改 tenant bootstrap 核心业务逻辑
+- 不要改 tiny-web
+- 不要顺手继续做下一阶段兼容清理
+
+交付要求：
+- 输出删除/收紧点清单
+- 输出修改文件
+- 输出执行命令
+- 输出测试结果
+- 输出剩余风险
+- 额外说明：哪些分支只是“历史说明/单测语义”，哪些仍是 active runtime/tooling 路径
+```
+
+**Codex 审计点**
+
+- active tooling 是否真的不再静默回退到 `default`
+- 缺少 `E2E_PLATFORM_TENANT_CODE` / `PLATFORM_TENANT_CODE` 时是否变成显式可诊断行为
+- 当前态文档是否已经和 `ROLE_TENANT_ADMIN`、单 `scope_key` 读链现状一致
+- 是否严格控制范围，没有把这张卡扩成 e2e 或 bootstrap 大重构
+
+---
+
+## 13. 第八阶段剩余 bootstrap / 安全承接 / API 兼容边界收口任务卡（CARD-14A ~ CARD-14C）
+
+> 适用背景：
+> - `CARD-13A ~ CARD-13F` 已完成，主授权链与 active tooling 的大块历史兼容已经收口
+> - 当前剩余的兼容边界主要集中在：
+>   - bootstrap-only 的 `platformTenantCode` 历史入口
+>   - 仅剩安全检查职责、但仍带 `compatibility` 命名的 carrier 服务
+>   - API 层仍允许的裸数组用户分配请求体兼容
+>
+> 这一阶段的目标不是“继续大改主链”，而是把这些边界变成更清晰的当前态：
+> - bootstrap-only 就只保留 bootstrap-only
+> - safety service 就按 safety service 命名与使用
+> - API 只保留正式契约，不再留裸数组兼容口
+
+### 执行状态（2026-04）
+
+- `CARD-14A`：已完成
+- `CARD-14B`：已完成
+- `CARD-14C`：已完成
+
+### CARD-14A 收紧 bootstrap-only 平台租户兼容入口
+
+**目标**
+
+继续收口 `platformTenantCode` 相关历史入口，让它只在“平台模板缺失、且显式允许历史回填”的 bootstrap / dev 自愈路径生效；正常启动、正常模板存在场景不得再隐式依赖该配置。
+
+**前置条件**
+
+- `CARD-13C`、`CARD-13E` 已完成
+- 主链平台语义已只认 `PLATFORM` scope
+- active tooling 已不再静默回退 `default`
+
+**范围**
+
+- `PlatformTenantProperties`
+- `TenantBootstrapServiceImpl`
+- `PlatformTemplateDevAutoBootstrapRunner`
+- 与上述 bootstrap-only 兼容口径直接相关的最小测试、脚本说明、文档
+
+**明确要求**
+
+- 不要把 `platformTenantCode` 重新带回运行时主链
+- 仅在“平台模板缺失且明确允许历史回填”的路径读取该配置
+- 模板已存在时，缺少 `platformTenantCode` 应该是 no-op / 不触发，而不是要求所有环境都配置
+- 模板缺失且确实需要历史回填时，缺配置必须 fail-fast，错误信息要能直接说明“这是 bootstrap 历史入口，不是平台运行时语义”
+- 不要扩大成 tenant bootstrap 大重构
+- 不要碰 `tiny-web`
+
+**验收标准**
+
+- 正常模板已存在场景，不再因为没配 `platformTenantCode` 而产生误报或隐式分支
+- 模板缺失 + 需要历史回填时，行为为“显式配置才执行，否则显式失败”
+- `PlatformTenantProperties` / `TenantBootstrapServiceImpl` / `PlatformTemplateDevAutoBootstrapRunner` 的注释、日志、异常都不再把该配置描述成平台运行时事实来源
+- 文档能明确区分：
+  - `PLATFORM` scope 是运行时真相源
+  - `platformTenantCode` 只是 bootstrap-only 历史入口
+
+**复制给 Cursor 的提示词**
+
+```text
+请为 tiny-platform 执行 CARD-14A：收紧 bootstrap-only 平台租户兼容入口。
+
+必须先阅读：
+- AGENTS.md
+- docs/TINY_PLATFORM_TENANT_GOVERNANCE.md
+- docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md
+- docs/TINY_PLATFORM_PLATFORM_SCOPE_CURSOR_TASK_CARDS.md
+- docs/TINY_PLATFORM_LEGACY_COMPATIBILITY_INVENTORY.md
+- .agent/src/rules/50-testing.rules.md
+- .agent/src/rules/58-cicd.rules.md
+- .agent/src/rules/90-tiny-platform.rules.md
+- .agent/src/rules/94-tiny-platform-tenant-governance.rules.md
+
+前置条件：
+- CARD-13C 已完成
+- CARD-13E 已完成
+
+本卡只做：
+1. 收紧 `PlatformTenantProperties`、`TenantBootstrapServiceImpl`、`PlatformTemplateDevAutoBootstrapRunner` 这条 bootstrap-only 兼容入口
+2. 让 `platformTenantCode` 只在“平台模板缺失、且显式允许历史回填”的路径生效
+3. 补最小必要测试、日志/异常文案、文档口径
+
+本卡不要做：
+- 不要改平台运行时 scope 判定
+- 不要恢复任何 `default` 隐式平台入口
+- 不要做 tenant bootstrap 大重构
+- 不要改 tiny-web
+
+交付要求：
+- 输出哪些路径仍允许读取 `platformTenantCode`
+- 输出哪些路径已改成 no-op 或 fail-fast
+- 输出修改文件
+- 输出执行命令
+- 输出测试结果
+- 输出剩余风险
+```
+
+**Codex 审计点**
+
+- `platformTenantCode` 是否只剩 bootstrap-only 历史入口
+- 模板已存在 / 模板缺失两类场景是否区分清楚
+- 是否避免把 bootstrap 配置重新写成运行时平台真相源
+
+---
+
+### CARD-14B 去掉 carrier 安全承接中的 compatibility 语义
+
+**目标**
+
+把 `CarrierCompatibilitySafetyService` 收口成当前真实职责的正式命名与接口：它已经不再维护 runtime compatibility fallback，而只是做权限引用安全检查。需要把“compatibility”从主命名和文档口径中拿掉，避免后续开发误以为 carrier requirement 仍有兼容主链。
+
+**前置条件**
+
+- `CARD-13B` 已完成
+- requirement fallback 与未注册 endpoint legacy behavior 已 fail-closed
+
+**范围**
+
+- `CarrierPermissionReferenceSafetyService`（原 `CarrierCompatibilitySafetyService`）
+- 直接调用它的 service / repository / test
+- 与其命名/职责变化直接相关的最小文档
+
+**明确要求**
+
+- 可以重命名为更符合现状的名字，例如 `CarrierPermissionReferenceSafetyService` 或等价名称
+- 只能保留当前真实职责：
+  - 判断删除/解绑权限时是否仍被 menu / ui_action / api_endpoint / requirement 表引用
+- 不要重新引入 requirement compatibility group 或 fallback 逻辑
+- 不要扩大成 carrier 体系重构
+
+**验收标准**
+
+- 运行时代码主线不再把该服务描述成 compatibility service
+- 调用方名称、注释、测试都能反映“权限引用安全检查”而不是“兼容兜底”
+- `docs/TINY_PLATFORM_LEGACY_COMPATIBILITY_INVENTORY.md` / 任务清单等不再把它误描述为仍保留 compatibility 主链
+
+**复制给 Cursor 的提示词**
+
+```text
+请为 tiny-platform 执行 CARD-14B：去掉 carrier 安全承接中的 compatibility 语义。
+
+必须先阅读：
+- AGENTS.md
+- docs/TINY_PLATFORM_AUTHORIZATION_MODEL.md
+- docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md
+- docs/TINY_PLATFORM_PLATFORM_SCOPE_CURSOR_TASK_CARDS.md
+- docs/TINY_PLATFORM_LEGACY_COMPATIBILITY_INVENTORY.md
+- .agent/src/rules/50-testing.rules.md
+- .agent/src/rules/58-cicd.rules.md
+- .agent/src/rules/90-tiny-platform.rules.md
+- .agent/src/rules/93-tiny-platform-authorization-model.rules.md
+
+前置条件：
+- CARD-13B 已完成
+
+本卡只做：
+1. 收口 `CarrierCompatibilitySafetyService` 的命名与接口
+2. 让它只表达“权限引用安全检查”当前职责
+3. 同步最小必要测试与文档
+
+本卡不要做：
+- 不要恢复任何 requirement compatibility fallback
+- 不要扩大成 carrier 大重构
+- 不要改无关的 Resource/Menu 主链行为
+
+交付要求：
+- 输出重命名/收口前后职责对照
+- 输出修改文件
+- 输出执行命令
+- 输出测试结果
+- 输出剩余风险
+```
+
+**Codex 审计点**
+
+- 是否真正去掉了 compatibility 语义，而不是只改类名不改文档/调用
+- 是否保住了“最后一个 carrier 删除时的权限引用安全检查”职责
+- 是否没有借机把已删除的 requirement fallback 带回来
+
+---
+
+### CARD-14C 删除 RoleController 用户分配裸数组请求体兼容
+
+**目标**
+
+把 `POST /sys/roles/{id}/users` 收紧为唯一正式契约：对象体 `{ userIds, scopeType, scopeId }`。删除裸数组 `List<Long>` 请求体兼容，避免新调用继续沿用旧 API 形态。
+
+**前置条件**
+
+- `CARD-13D` 已完成
+- 当前角色写入正式契约已明确为对象体/显式字段
+
+**范围**
+
+- `RoleController`
+- `RoleService` / 相关 DTO / 前端 API helper / 页面调用 / 测试
+- 与该请求体兼容删除直接相关的最小文档
+
+**明确要求**
+
+- 删除 `parseUserAssignmentRequest(...)` 中对裸数组 `List<?>` 的兼容分支
+- 保留并明确对象体契约：
+  - `userIds`
+  - `scopeType`
+  - `scopeId`
+- 裸数组请求体必须得到清晰的 4xx 错误，而不是静默接受
+- 前端 helper / 页面 / 测试必须全部切到对象体
+- 不要扩大成 role management API 全链重写
+
+**验收标准**
+
+- `RoleController` 不再接受裸数组用户分配请求体
+- 前端/测试没有继续把裸数组当正式写入契约
+- 文档与任务清单能明确“用户分配只认对象体”
+
+**复制给 Cursor 的提示词**
+
+```text
+请为 tiny-platform 执行 CARD-14C：删除 RoleController 用户分配裸数组请求体兼容。
+
+必须先阅读：
+- AGENTS.md
+- docs/TINY_PLATFORM_AUTHORIZATION_MODEL.md
+- docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md
+- docs/TINY_PLATFORM_PLATFORM_SCOPE_CURSOR_TASK_CARDS.md
+- .agent/src/rules/50-testing.rules.md
+- .agent/src/rules/58-cicd.rules.md
+- .agent/src/rules/90-tiny-platform.rules.md
+- .agent/src/rules/93-tiny-platform-authorization-model.rules.md
+
+前置条件：
+- CARD-13D 已完成
+
+本卡只做：
+1. 删除 `POST /sys/roles/{id}/users` 的裸数组请求体兼容
+2. 统一到对象体 `{ userIds, scopeType, scopeId }`
+3. 补最小必要后端/前端/测试与文档
+
+本卡不要做：
+- 不要扩大成整个 role management API 重写
+- 不要修改无关权限模型
+- 不要顺手改 tiny-web
+
+交付要求：
+- 输出请求体契约变化
+- 输出修改文件
+- 输出执行命令
+- 输出测试结果
+- 输出剩余风险
+```
+
+**Codex 审计点**
+
+- `RoleController` 是否真的不再接受裸数组
+- 前端 helper / 页面 / 测试是否已经统一到对象体
+- 错误响应是否清晰可诊断，而不是静默兼容
+
+---
+
+## 14. 第九阶段当前态漂移与活跃兼容尾巴收口任务卡（第一批：CARD-15C / CARD-15B / CARD-15A）
+
+> 目标：在 `CARD-14E` 已明确“当前态真相源”之后，继续把**仍在活跃代码里**的兼容尾巴往“显式契约 + fail-closed + 小范围可验证”推进。  
+> 本节先细化 3 张最高优先级卡：
+> - `CARD-15C`：active tooling / bootstrap compat 尾巴
+> - `CARD-15B`：`roleCodes <- ROLE_*` runtime compat 尾巴
+> - `CARD-15A`：`/sys/resources` compatibility facade 主链
+>
+> 推荐顺序：
+> 1. `CARD-15C`
+> 2. `CARD-15B`
+> 3. `CARD-15A`
+>
+> 冻结边界：
+> - `tiny-web` 继续视为冻结历史模块，不纳入这一阶段长期演进主线
+> - 不在同一张卡里同时推进“大规模历史文档治理 + 主链契约重写 + 前端全量重构”
+> - 若扫描到超出本卡范围的新消费者或新阻断，优先记录到剩余风险，不顺手扩大范围
+
+**执行状态（2026-04，更新到 2026-04-13）**
+
+- `CARD-15C`：已完成
+- `CARD-15B`：已完成
+- `CARD-15A`：已完成（`15A-1 ~ 15A-8` 已收口：permission lookup 拆到 `/sys/permissions/options`、资源页 no-op 查询壳移除、后端 `permission` 查询契约删除）
+
+### CARD-15C 清理 active tooling / bootstrap compat 尾巴
+
+**目标**
+
+把 real-link / E2E 工具链中仍然活跃的 `default` 模板来源与 `ROLE_ADMIN` 回退尾巴删除掉，统一到“显式平台租户配置 + `ROLE_TENANT_ADMIN` 当前态”。
+
+**前置条件**
+
+- `CARD-13E` 已完成
+- `real.global.setup.ts` / `requireRealLinkPlatformTenantCode(...)` 已要求显式 `E2E_PLATFORM_TENANT_CODE`
+- 当前 active tooling 禁止静默回退 `default` 的前端口径已经稳定
+
+**范围**
+
+- `tiny-oauth-server/scripts/e2e/ensure-scheduling-e2e-auth.sh`
+- 如需同步：`tiny-oauth-server/scripts/verify-platform-login-auth-chain.sh`
+- 与该脚本口径直接相关的文档：
+  - `tiny-oauth-server/src/main/webapp/e2e/README.md`
+  - `tiny-oauth-server/docs/E2E_AUTOMATION_IDENTITIES.md`
+- 与该口径直接相关的测试：
+  - `tiny-oauth-server/src/main/webapp/src/e2e/realGlobalSetup.test.ts`
+
+**明确要求**
+
+- `ensure-scheduling-e2e-auth.sh` 不再硬编码 `default` 作为调度 bootstrap 模板来源
+- 平台模板来源必须由**已存在的显式变量**驱动：
+  - 优先复用 `E2E_PLATFORM_TENANT_CODE`
+  - 不要再发明第二套平台租户环境变量
+- 删除 `ROLE_TENANT_ADMIN -> ROLE_ADMIN` 的历史回退
+- 若平台租户 code 或模板角色缺失，应 **fail-fast** 并给出可诊断错误；不要静默补成旧口径
+- 不要改变以下既有边界：
+  - bind / readonly / primary 三类自动化身份的职责划分
+  - `real.global.setup.ts` 已固化的派生租户规则
+  - 非本卡范围内的登录态生成与 Playwright orchestration
+
+**验收标准**
+
+- 脚本中不再存在 `findTenantIdByCode(..., "default")` 作为调度模板主来源
+- 脚本中不再存在 `ROLE_ADMIN` 的模板角色回退
+- 缺少平台租户配置或模板角色时，失败信息明确指向显式配置或 seed 缺口
+- `realGlobalSetup.test.ts` 与相关 README 已同步到“显式平台租户 + `ROLE_TENANT_ADMIN`”口径
+
+**建议验证**
+
+- `npm --prefix tiny-oauth-server/src/main/webapp run test:unit -- src/e2e/realGlobalSetup.test.ts`
+- 若本机具备 real-link 前置变量，再跑：
+  - `bash tiny-oauth-server/scripts/verify-platform-login-auth-chain.sh`
+
+**复制给 Cursor 的提示词**
+
+```text
+请为 tiny-platform 执行 CARD-15C：清理 active tooling / bootstrap compat 尾巴。
+
+必须先阅读：
+- AGENTS.md
+- docs/TINY_PLATFORM_TESTING_PLAYBOOK.md
+- docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md
+- docs/TINY_PLATFORM_PLATFORM_SCOPE_CURSOR_TASK_CARDS.md
+- docs/TINY_PLATFORM_TENANT_GOVERNANCE.md
+- tiny-oauth-server/src/main/webapp/e2e/README.md
+- .agent/src/rules/50-testing.rules.md
+- .agent/src/rules/58-cicd.rules.md
+- .agent/src/rules/90-tiny-platform.rules.md
+- .agent/src/rules/91-tiny-platform-auth.rules.md
+
+前置条件：
+- CARD-13E 已完成
+- real.global.setup 已要求显式 E2E_PLATFORM_TENANT_CODE
+
+本卡只做：
+1. 清理 ensure-scheduling-e2e-auth.sh 里仍活跃的 default 模板来源
+2. 删除 ROLE_TENANT_ADMIN -> ROLE_ADMIN 的历史回退
+3. 保持现有 real-link 工具链显式平台租户契约不变
+4. 补最小必要测试与文档
+
+本卡不要做：
+- 不要新增第二套平台租户环境变量
+- 不要扩大成 globalSetup / Playwright 全量重写
+- 不要顺手改 unrelated E2E 身份派生逻辑
+- 不要把 tiny-web 纳入长期演进范围
+
+建议验证：
+- npm --prefix tiny-oauth-server/src/main/webapp run test:unit -- src/e2e/realGlobalSetup.test.ts
+- 若本机具备 real-link 前置变量，再跑 bash tiny-oauth-server/scripts/verify-platform-login-auth-chain.sh
+
+交付要求：
+- 输出脚本兼容尾巴删除前后差异
+- 输出修改文件
+- 输出执行命令
+- 输出测试结果
+- 输出环境前置不足时的处理方式
+- 输出剩余风险
+```
+
+**Codex 审计点**
+
+- 是否真的移除了 `default` 模板来源，而不是只改文案
+- 是否真的删掉了 `ROLE_ADMIN` 回退
+- 是否保住了 `CARD-13E` 已固化的显式平台租户契约
+- 缺少环境或模板时是否 fail-fast 且错误可诊断
+
+---
+
+### CARD-15B 切断 `roleCodes <- ROLE_*` runtime compat 尾巴
+
+**目标**
+
+把 `SecurityUser` / `JwtTokenCustomizer` 中仍存活的 `ROLE_*` 兼容尾巴继续收紧到“显式 `roleCodes` only”契约，避免 Session carrier 和 JWT helper 再把角色码从 authority 里恢复出来。
+
+**前置条件**
+
+- `CARD-09C2 ~ CARD-09C4` 已完成
+- `CARD-11B` / `CARD-11D` 已完成
+- `CamundaIdentityBridgeFilter` 等合法消费者已经以显式 `roleCodes` 为第一入口
+
+**范围**
+
+- `tiny-oauth-server/src/main/java/com/tiny/platform/core/oauth/model/SecurityUser.java`
+- `tiny-oauth-server/src/main/java/com/tiny/platform/core/oauth/config/JwtTokenCustomizer.java`
+- 如确有必要，允许同步最小调用点或测试装配，但不得扩成全仓重构
+- 与该契约变化直接相关的测试：
+  - `tiny-oauth-server/src/test/java/com/tiny/platform/core/oauth/model/SecurityUserTest.java`
+  - `tiny-oauth-server/src/test/java/com/tiny/platform/core/oauth/config/JwtTokenCustomizerTest.java`
+  - `tiny-oauth-server/src/test/java/com/tiny/platform/application/oauth/workflow/CamundaIdentityBridgeFilterTest.java`
+  - `tiny-oauth-server/src/test/java/com/tiny/platform/core/oauth/integration/PartialMfaFormLoginIntegrationTest.java`
+
+**明确要求**
+
+- `SecurityUser.buildAuthorities(...)` 不再把 `role.code` 当一般 Session authority 输出
+- `JwtTokenCustomizer.resolveRoleCodes(...)` 不再从 `ROLE_* authorities` 补回 `roleCodes`
+- 显式 `roleCodes` 字段必须保留，且仍供合法消费者使用
+- 不得恢复以下旧契约：
+  - `role.name`
+  - 新签发 `ROLE_* + permission` 混合态 token
+  - 旧 JWT / Session 解码兼容窗口
+- 若发现阻断消费者超出本卡范围：
+  - `tiny-oauth-server` 主线内最小适配可以做
+  - `tiny-web` 或冻结历史模块只记录风险，不顺手展开
+
+**验收标准**
+
+- `SecurityUser` 从 `Role` 集合构造时，不再额外生成 `ROLE_*` authorities
+- `JwtTokenCustomizer.resolveRoleCodes(...)` 在缺显式 `roleCodes` 时返回空集合，而不是从 `ROLE_* authorities` 反推
+- MFA session / 普通 session / JWT 三类路径仍能通过显式 `roleCodes` 工作
+- 文档与测试不再把 `ROLE_* authorities` 当成角色码消费主链
+
+**建议验证**
+
+- `mvn -pl tiny-oauth-server -Dtest=SecurityUserTest,JwtTokenCustomizerTest,CamundaIdentityBridgeFilterTest,PartialMfaFormLoginIntegrationTest test`
+
+**复制给 Cursor 的提示词**
+
+```text
+请为 tiny-platform 执行 CARD-15B：切断 roleCodes <- ROLE_* runtime compat 尾巴。
+
+必须先阅读：
+- AGENTS.md
+- docs/TINY_PLATFORM_AUTHORIZATION_MODEL.md
+- docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md
+- docs/TINY_PLATFORM_PLATFORM_SCOPE_CURSOR_TASK_CARDS.md
+- docs/TINY_PLATFORM_LEGACY_COMPATIBILITY_INVENTORY.md
+- docs/TINY_PLATFORM_ROLE_CODE_AUTHORITY_CONSUMER_INVENTORY.md
+- .agent/src/rules/50-testing.rules.md
+- .agent/src/rules/58-cicd.rules.md
+- .agent/src/rules/90-tiny-platform.rules.md
+- .agent/src/rules/91-tiny-platform-auth.rules.md
+
+前置条件：
+- CARD-09C2 ~ CARD-09C4 已完成
+- CARD-11B / CARD-11D 已完成
+
+本卡只做：
+1. 收紧 SecurityUser / JwtTokenCustomizer 中仍活跃的 ROLE_* compat 尾巴
+2. 让显式 roleCodes 成为唯一角色码输入契约
+3. 补最小必要测试与文档
+
+本卡不要做：
+- 不要恢复 ROLE_* 主链 authority
+- 不要恢复旧 JWT / Session 解码兼容窗口
+- 不要扩大成全仓角色消费者改造
+- 不要把 tiny-web 纳入长期演进主线
+
+建议验证：
+- mvn -pl tiny-oauth-server -Dtest=SecurityUserTest,JwtTokenCustomizerTest,CamundaIdentityBridgeFilterTest,PartialMfaFormLoginIntegrationTest test
+
+交付要求：
+- 输出契约变化说明
+- 输出修改文件
+- 输出执行命令
+- 输出测试结果
+- 输出仍未覆盖的消费者或剩余风险
+```
+
+**Codex 审计点**
+
+- `SecurityUser.buildAuthorities(...)` 是否真的不再输出 `role.code`
+- `JwtTokenCustomizer.resolveRoleCodes(...)` 是否真的去掉了 `ROLE_*` 恢复
+- 显式 `roleCodes` 是否仍然稳定可用
+- MFA session / 普通 session / JWT 三类路径是否都补了回归
+
+---
+
+### CARD-15A 退役 `/sys/resources` compatibility facade 主链（持续收口）
+
+**当前状态补充（2026-04-13）**
+
+- `15A-1 / 15A-2` 已完成：资源写链切到显式 `requiredPermissionId`，`permission` 字符串不再隐式 INSERT / 推断权限主数据，资源表单已切到 lookup + 派生只读 `permission`
+- `15A-3` 已完成：删除 `/sys/resources/permission/{permission}` 读侧入口
+- `15A-4` 已完成：删除重复 `/sys/resources/menus*` 路由，并把 `/sys/menus/check-*` 的内部实现下沉到 menu carrier
+- `15A-5` 已完成：菜单写链切到显式 `requiredPermissionId`，`MenuForm.vue` 不再允许手填 `permission`，`MenuServiceImpl` 对 legacy `permission`-only payload fail-closed
+- `15A-6` 已完成：permission lookup 从 `/sys/resources/permission-options` 拆到 `/sys/permissions/options`，资源/菜单表单改用独立 permission API
+- `15A-7` 已完成：资源管理页 no-op 查询壳删除，前端未使用 `resourceList()/ResourceQuery` 清零
+- `15A-8` 已完成：后端 `ResourceRequestDto` 与 `ResourceServiceImpl` 删除 permission 查询参数/分支，保留 `permission` 派生展示
+
+**目标**
+
+把 `/sys/resources` compatibility facade 再往前收紧一层：保留当前控制面路由与运行时自省端点，但让资源管理写链不再通过任意 `permission` 字符串隐式扩写权限主数据，改为以显式 `requiredPermissionId` 为主。
+
+**前置条件**
+
+- `resource` 表已物理删除
+- `menu / ui_action / api_endpoint + required_permission_id + *_permission_requirement` 已是当前 carrier 主链
+- 当前前端和控制面仍通过 `/sys/resources` 做兼容聚合管理
+
+**范围**
+
+- 后端：
+  - `tiny-oauth-server/src/main/java/com/tiny/platform/application/controller/resource/ResourceController.java`
+  - `tiny-oauth-server/src/main/java/com/tiny/platform/infrastructure/auth/resource/service/ResourceService.java`
+  - `tiny-oauth-server/src/main/java/com/tiny/platform/infrastructure/auth/resource/service/ResourceServiceImpl.java`
+  - `tiny-oauth-server/src/main/java/com/tiny/platform/infrastructure/auth/resource/service/ResourcePermissionBindingService.java`
+  - `tiny-oauth-server/src/main/java/com/tiny/platform/infrastructure/auth/resource/dto/ResourceCreateUpdateDto.java`
+- 前端（仅当写入契约变化需要同步）：
+  - `tiny-oauth-server/src/main/webapp/src/api/resource.ts`
+  - `tiny-oauth-server/src/main/webapp/src/views/resource/ResourceForm.vue`
+  - `tiny-oauth-server/src/main/webapp/src/views/resource/resource.vue`
+- 与本卡直接相关的测试：
+  - `tiny-oauth-server/src/test/java/com/tiny/platform/application/controller/resource/ResourceControllerTest.java`
+  - `tiny-oauth-server/src/test/java/com/tiny/platform/application/controller/resource/ResourceControllerRbacIntegrationTest.java`
+  - `tiny-oauth-server/src/test/java/com/tiny/platform/application/controller/resource/ResourceControllerApiEndpointTemplateUriIntegrationTest.java`
+  - `tiny-oauth-server/src/test/java/com/tiny/platform/infrastructure/auth/resource/service/ResourceServiceImplTest.java`
+  - `tiny-oauth-server/src/test/java/com/tiny/platform/infrastructure/menu/service/MenuServiceImplTest.java`
+  - 如改前端：`tiny-oauth-server/src/main/webapp/src/views/resource/resource.test.ts`
+
+**明确要求**
+
+- 本卡只做“第一刀”，**不**要求一张卡里彻底删除 `/sys/resources` 路由
+- `ResourceController` 的运行时自省端点暂时保留：
+  - `/sys/resources/runtime/ui-actions`
+  - `/sys/resources/runtime/api-access`
+- 写链必须改为“显式 `requiredPermissionId` 为主”：
+  - 可以保留 `permission` 字符串作为展示或兼容输入
+  - 但不得再因为任意新字符串而隐式 `INSERT permission`
+- 若请求只给了 `permission` 字符串：
+  - 仅允许在**能无歧义映射到现有 permission 主数据**时继续兼容
+  - 无法映射时必须 fail-closed，返回清晰 4xx / `BusinessException`
+- 不得恢复 `resource` 表、shared-id、compatibility group 或新的 permission alias
+- 不得顺手把资源管理页、菜单管理页、carrier requirement 做大范围重写
+
+**验收标准**
+
+- `ResourcePermissionBindingService` 不再从任意 `permission` 字符串隐式创建权限主数据
+- `ResourceCreateUpdateDto` / 前端写入契约已具备显式 `requiredPermissionId` 主入口
+- `/sys/resources/runtime/ui-actions` 与 `/runtime/api-access` 行为保持不变
+- 最小回归覆盖：
+  - 显式 `requiredPermissionId` 正常写入
+  - 仅给 `permission` 且能映射现有主数据时兼容通过
+  - 仅给 `permission` 且无法映射时 fail-closed
+
+**建议验证**
+
+- `mvn -pl tiny-oauth-server -Dtest=ResourceControllerTest,ResourceControllerRbacIntegrationTest,ResourceControllerApiEndpointTemplateUriIntegrationTest,ResourceServiceImplTest,MenuServiceImplTest test`
+- 若改前端：
+  - `npm --prefix tiny-oauth-server/src/main/webapp run test:unit -- src/views/resource/resource.test.ts`
+
+**复制给 Cursor 的提示词**
+
+```text
+请为 tiny-platform 执行 CARD-15A：退役 /sys/resources compatibility facade 主链（第一刀）。
+
+必须先阅读：
+- AGENTS.md
+- docs/TINY_PLATFORM_AUTHORIZATION_MODEL.md
+- docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md
+- docs/TINY_PLATFORM_PLATFORM_SCOPE_CURSOR_TASK_CARDS.md
+- docs/TINY_PLATFORM_LEGACY_COMPATIBILITY_INVENTORY.md
+- .agent/src/rules/50-testing.rules.md
+- .agent/src/rules/58-cicd.rules.md
+- .agent/src/rules/90-tiny-platform.rules.md
+- .agent/src/rules/92-tiny-platform-permission.rules.md
+- .agent/src/rules/93-tiny-platform-authorization-model.rules.md
+
+前置条件：
+- resource 表已删除
+- carrier split 与 required_permission_id 主链已稳定
+
+本卡只做：
+1. 把 /sys/resources 写链改成显式 requiredPermissionId 为主
+2. 禁止通过任意 permission 字符串隐式扩写 permission 主数据
+3. 保持 runtime/ui-actions 与 runtime/api-access 端点行为不变
+4. 补最小必要后端/前端/测试与文档
+
+本卡不要做：
+- 不要一张卡里彻底删除 /sys/resources 路由
+- 不要删除 runtime/ui-actions 或 runtime/api-access
+- 不要恢复 resource 表或 shared-id 语义
+- 不要扩大成资源/菜单全量重构
+- 不要把 tiny-web 纳入长期演进主线
+
+建议验证：
+- mvn -pl tiny-oauth-server -Dtest=ResourceControllerTest,ResourceControllerRbacIntegrationTest,ResourceControllerApiEndpointTemplateUriIntegrationTest,ResourceServiceImplTest,MenuServiceImplTest test
+- 若改前端：npm --prefix tiny-oauth-server/src/main/webapp run test:unit -- src/views/resource/resource.test.ts
+
+交付要求：
+- 输出写链契约变化
+- 输出兼容保留面与删除面
+- 输出修改文件
+- 输出执行命令
+- 输出测试结果
+- 输出剩余风险
+```
+
+**Codex 审计点**
+
+- 是否真的把 `requiredPermissionId` 提升为写链主入口
+- 是否真的禁止了“任意 permission 字符串 -> 新 permission 主数据”隐式扩写
+- 是否保住了 runtime 自省端点与现有前端主流程
+- 是否把本卡控制在“第一刀”范围，没有扩成大重构
+
+---
+
+## 15. 第九阶段历史材料硬化与减噪任务卡（第二批：CARD-14G / CARD-14H / CARD-14I / CARD-15D）
+
+> 目标：继续把“历史文档容易被误读成当前态”和“历史 schema / 示例容易被误读成活动真相源”的风险收紧。  
+> 这组卡不追求大规模内容重写，而是强调：
+> - **历史材料保留真实性**
+> - **当前态入口要更醒目**
+> - **启发式守卫而不是重 CI**
+> - **减噪优先于重组仓库**
+>
+> 推荐顺序：
+> 1. `CARD-14G`
+> 2. `CARD-14H`
+> 3. `CARD-14I`
+> 4. `CARD-15D`
+>
+> 冻结边界：
+> - 不把历史计划、历史设计文档整篇重写成“全是 DONE”
+> - 不为了减噪而大规模迁目录、改链接或破坏历史引用
+> - 若某历史文档正文与当前态冲突，优先通过页眉 / 指针 / 表前说明解决；除非本卡明确允许，不顺手改正文细节
+
+**执行状态（2026-04）**
+
+- `CARD-14G`：待做
+- `CARD-14H`：待做
+- `CARD-14I`：待做
+- `CARD-15D`：待做
+
+### CARD-14G 历史计划 / 兼容评估归档硬化
+
+**目标**
+
+给历史计划文档、兼容评估文档补统一的“历史快照 / 非当前运行态真相源”页眉和表前说明，降低它们被误当成当前主链结论的概率，同时保留历史裁决与证据痕迹。
+
+**前置条件**
+
+- `CARD-14F` 已完成或至少已明确当前态真相源文档
+- `TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md`、`TINY_PLATFORM_AUTHORIZATION_MODEL.md`、`TINY_PLATFORM_AUTHORIZATION_DOC_MAP.md` 已能承担当前态入口职责
+
+**范围**
+
+- `docs/TINY_PLATFORM_AUTHORIZATION_LEGACY_REMOVAL_PLAN.md`
+- `docs/PERMISSION_REFACTOR_COMPATIBILITY_LAYER_ASSESSMENT.md`
+- 如有必要，允许最小同步：
+  - `docs/TINY_PLATFORM_AUTHORIZATION_DOC_MAP.md`
+
+**明确要求**
+
+- 每份文档首页必须出现：
+  - “历史快照 / 归档评估 / 非当前运行态真相源”之类的明确页眉
+  - 指向当前真相源文档的指针
+- 对包含大量表格结论的文档，表格前必须补一句总说明，明确：
+  - 表内状态代表**当时评估窗口**
+  - 不直接代表当前运行态 still active / still pending
+- 不要整表刷成 `DONE` / `REMOVED`
+- 不要大改历史结论正文；若个别条目明显会被误解，优先用“注释型说明”而不是重写历史记录
+- 若 `AUTHORIZATION_DOC_MAP` 对这些文档的描述仍可能让人误以为“当前态”，允许做一两行入口文字对齐，但不要扩大成文档地图大重构
+
+**验收标准**
+
+- 两份历史文档首页都显式声明“非当前运行态真相源”
+- 表格密集区域前都有“这是历史快照/评估窗口”的总说明
+- `TINY_PLATFORM_AUTHORIZATION_DOC_MAP.md` 如有更新，应能明确把它们归类到“历史/归档参考”
+- 全文不出现把历史计划整体刷成当前完成度的行为
+
+**建议验证**
+
+- `rg -n "历史快照|归档|非当前运行态真相源|当前真相源|当前运行态" docs/TINY_PLATFORM_AUTHORIZATION_LEGACY_REMOVAL_PLAN.md docs/PERMISSION_REFACTOR_COMPATIBILITY_LAYER_ASSESSMENT.md docs/TINY_PLATFORM_AUTHORIZATION_DOC_MAP.md`
+
+**复制给 Cursor 的提示词**
+
+```text
+请为 tiny-platform 执行 CARD-14G：历史计划 / 兼容评估归档硬化。
+
+必须先阅读：
+- AGENTS.md
+- docs/TINY_PLATFORM_AUTHORIZATION_DOC_MAP.md
+- docs/TINY_PLATFORM_AUTHORIZATION_MODEL.md
+- docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md
+- docs/TINY_PLATFORM_PLATFORM_SCOPE_CURSOR_TASK_CARDS.md
+- docs/TINY_PLATFORM_AUTHORIZATION_LEGACY_REMOVAL_PLAN.md
+- docs/PERMISSION_REFACTOR_COMPATIBILITY_LAYER_ASSESSMENT.md
+
+前置条件：
+- 当前态真相源已经由 TASK_LIST / AUTHORIZATION_MODEL / DOC_MAP 承接
+
+本卡只做：
+1. 给历史计划 / 兼容评估文档补统一页眉
+2. 给表格密集区域补“历史评估窗口”总说明
+3. 如有必要，最小同步 DOC_MAP 的入口描述
+
+本卡不要做：
+- 不要整篇重写历史计划
+- 不要整表刷成 DONE / REMOVED
+- 不要扩大成全仓文档语言统一工程
+
+建议验证：
+- rg -n "历史快照|归档|非当前运行态真相源|当前真相源|当前运行态" docs/TINY_PLATFORM_AUTHORIZATION_LEGACY_REMOVAL_PLAN.md docs/PERMISSION_REFACTOR_COMPATIBILITY_LAYER_ASSESSMENT.md docs/TINY_PLATFORM_AUTHORIZATION_DOC_MAP.md
+
+交付要求：
+- 输出新增的页眉/说明位置
+- 输出修改文件
+- 输出执行命令
+- 输出验证结果
+- 输出仍保留的历史正文范围与原因
+```
+
+**Codex 审计点**
+
+- 是否真的把“历史快照”信号放到了最显眼位置
+- 是否避免把历史表格刷成当前态
+- 是否只做了归档硬化，没有顺手重写历史证据
+
+---
+
+### CARD-14H 历史设计长文页眉 + 当前态指针
+
+**目标**
+
+给历史设计长文补统一页眉与“当前态请看哪里”的指针，降低它们被误读为当前运行态规范的概率，同时保留大篇幅设计讨论的考古价值。
+
+**前置条件**
+
+- `CARD-14E` / `CARD-14F` 已把当前态真相源固定下来
+- 历史长文仍有被频繁打开、但容易误读的风险
+
+**范围**
+
+- `docs/TINY_PLATFORM_AUTHORIZATION_PHASE1_TECHNICAL_DESIGN.md`
+- `docs/tiny-platform-saas-overall-design.md`
+- `docs/TINY_PLATFORM_MODULE_GAP_ANALYSIS.md`
+
+**明确要求**
+
+- 每份文档首页必须补：
+  - “历史设计基线 / 历史讨论稿 / 附录型盘点 / 非当前运行态真相源”页眉
+  - 指向当前真相源的 1-2 个链接
+- 对 `TINY_PLATFORM_MODULE_GAP_ANALYSIS.md`：
+  - 保持其“附录/盘点”定位
+  - 不要把粗略百分比或缺口表整体改写成当前任务状态
+- 对 `tiny-platform-saas-overall-design.md`：
+  - 只加页眉和前置说明，不做大篇幅正文刷新
+  - 若文中仍有明显“下一步将...”且无时间/历史说明的句子，优先在文首说明其为目标模型讨论，不顺手全篇改句式
+- 对 `AUTHORIZATION_PHASE1_TECHNICAL_DESIGN.md`：
+  - 保留 Phase1 历史裁决
+  - 明确其不是当前执行真相，当前完成度以 Task List 为准
+
+**验收标准**
+
+- 三份文档首页都能一眼看出“历史设计 / 附录 / 非当前真相源”
+- 每份文档都至少有一处明确指向 `TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md` 或 `TINY_PLATFORM_TENANT_GOVERNANCE.md`
+- 不发生全篇状态刷新或大规模正文改写
+
+**建议验证**
+
+- `rg -n "非当前运行态真相源|当前完成度|Task List|附录|历史设计|目标模型对齐分析" docs/TINY_PLATFORM_AUTHORIZATION_PHASE1_TECHNICAL_DESIGN.md docs/tiny-platform-saas-overall-design.md docs/TINY_PLATFORM_MODULE_GAP_ANALYSIS.md`
+
+**复制给 Cursor 的提示词**
+
+```text
+请为 tiny-platform 执行 CARD-14H：历史设计长文页眉 + 当前态指针。
+
+必须先阅读：
+- AGENTS.md
+- docs/TINY_PLATFORM_AUTHORIZATION_DOC_MAP.md
+- docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md
+- docs/TINY_PLATFORM_TENANT_GOVERNANCE.md
+- docs/TINY_PLATFORM_PLATFORM_SCOPE_CURSOR_TASK_CARDS.md
+- docs/TINY_PLATFORM_AUTHORIZATION_PHASE1_TECHNICAL_DESIGN.md
+- docs/tiny-platform-saas-overall-design.md
+- docs/TINY_PLATFORM_MODULE_GAP_ANALYSIS.md
+
+前置条件：
+- 当前态真相源已由 TASK_LIST / TENANT_GOVERNANCE / DOC_MAP 固化
+
+本卡只做：
+1. 给三份历史设计长文补统一页眉
+2. 补“当前态请看哪里”的指针
+3. 保留历史设计与模块盘点正文，不做大篇幅刷新
+
+本卡不要做：
+- 不要把长文整篇重写成当前态
+- 不要大规模改章节结构
+- 不要改动不在范围内的其它文档
+
+建议验证：
+- rg -n "非当前运行态真相源|当前完成度|Task List|附录|历史设计|目标模型对齐分析" docs/TINY_PLATFORM_AUTHORIZATION_PHASE1_TECHNICAL_DESIGN.md docs/tiny-platform-saas-overall-design.md docs/TINY_PLATFORM_MODULE_GAP_ANALYSIS.md
+
+交付要求：
+- 输出每份文档新增的页眉/指针位置
+- 输出修改文件
+- 输出执行命令
+- 输出验证结果
+- 输出保留未改正文的原因
+```
+
+**Codex 审计点**
+
+- 是否真的把“当前态看哪里”写清楚了
+- 是否保住了历史设计正文，没有把它们刷成现状报告
+- `MODULE_GAP_ANALYSIS` 是否仍然只是附录，不再被当完成度真相源
+
+---
+
+### CARD-14I 漂移守卫（启发式脚本 + checklist）
+
+**目标**
+
+新增一套轻量的文档漂移守卫，用启发式扫描高风险关键词，提醒“这句话可能把历史/桥接期写成当前态”，但不把它做成高噪音重 CI。
+
+**前置条件**
+
+- `CARD-14F ~ 14H` 已把高频文档口径先收紧
+- 团队接受“grep 级启发式 + 人工复核”的 guard 方式
+
+**范围**
+
+- 新增脚本，建议放在：
+  - `tiny-oauth-server/scripts/verify-authorization-doc-current-state-drift.sh`
+- 如需最小配套：
+  - `docs/TINY_PLATFORM_AUTHORIZATION_DOC_MAP.md`
+  - `AGENTS.md`
+
+**明确要求**
+
+- 守卫必须是**启发式**，不是 AST / parser 工程
+- 默认扫描高风险关键词，例如：
+  - `resource.permission`
+  - `PLATFORM > GLOBAL`
+  - `新模型优先 + fallback`
+  - `ROLE_ADMIN` / `ADMIN` 控制面兜底
+  - `default` 平台语义
+  - `roleCodes <- ROLE_*`
+- 必须支持“人工确认后允许保留”的白名单方式，建议二选一：
+  - 行内注释标记，例如 `CARD-14I: allow-historical`
+  - 独立 ignore pattern 文件
+- 不接重 CI，不要求零误报
+- 脚本输出应区分：
+  - 命中但可能合理的历史材料
+  - 更值得人工复核的当前态文档
+- 若同步 `DOC_MAP` 或 `AGENTS.md`，只补一行“有轻量漂移守卫”的入口说明，不做大改
+
+**验收标准**
+
+- 仓库内新增可执行脚本，能在本地直接运行
+- 脚本能扫描至少一批固定关键词并输出文件/行号
+- 脚本支持白名单或注释忽略
+- 文档或入口说明能告诉后续维护者：这是启发式提醒，不是硬性失败门禁
+
+**建议验证**
+
+- `bash tiny-oauth-server/scripts/verify-authorization-doc-current-state-drift.sh`
+
+**复制给 Cursor 的提示词**
+
+```text
+请为 tiny-platform 执行 CARD-14I：漂移守卫（启发式脚本 + checklist）。
+
+必须先阅读：
+- AGENTS.md
+- docs/TINY_PLATFORM_AUTHORIZATION_DOC_MAP.md
+- docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md
+- docs/TINY_PLATFORM_PLATFORM_SCOPE_CURSOR_TASK_CARDS.md
+- .agent/src/rules/50-testing.rules.md
+- .agent/src/rules/90-tiny-platform.rules.md
+- .agent/src/rules/93-tiny-platform-authorization-model.rules.md
+
+前置条件：
+- 14F ~ 14H 已先把高频真相源文档收紧
+
+本卡只做：
+1. 新增一个启发式文档漂移扫描脚本
+2. 扫描高风险关键词并输出文件/行号
+3. 支持人工白名单或注释忽略
+4. 视情况在 DOC_MAP 或 AGENTS 里补一句入口说明
+
+本卡不要做：
+- 不要做复杂 parser / AST 工程
+- 不要接重 CI
+- 不要要求零误报
+- 不要扩大成全仓 docs lint 框架
+
+建议验证：
+- bash tiny-oauth-server/scripts/verify-authorization-doc-current-state-drift.sh
+
+交付要求：
+- 输出脚本路径与使用方法
+- 输出默认扫描关键词
+- 输出白名单机制
+- 输出执行命令
+- 输出脚本运行结果
+- 输出剩余误报风险
+```
+
+**Codex 审计点**
+
+- 是否真的是轻量启发式，而不是过度工程化
+- 是否提供了白名单/注释忽略机制
+- 输出是否能帮助人工复核，而不是只有噪音
+
+---
+
+### CARD-15D 历史 schema / 示例归档减噪
+
+**目标**
+
+降低 `schema.sql`、参考 SQL、示例 seed 等历史材料被误读成“当前活动 schema / 当前运行态 seed 真相源”的风险；优先通过归档标识、前置说明、最小迁移来减噪，而不是大规模搬迁仓库。
+
+**前置条件**
+
+- `CARD-14G / 14H` 已把历史文档的入口信号收紧
+- 团队接受“先减噪、再视情况归档迁移”的分步策略
+
+**范围**
+
+- `tiny-oauth-server/src/main/resources/schema.sql`
+- `tiny-oauth-server/src/main/resources/menu_resource_data.sql`
+- 如有必要，允许最小同步：
+  - `docs/TINY_PLATFORM_AUTHORIZATION_DOC_MAP.md`
+  - `docs/TINY_PLATFORM_LEGACY_COMPATIBILITY_INVENTORY.md`
+
+**明确要求**
+
+- 至少要让这两类文件一开头就能看出：
+  - 是历史 schema / 参考样例 / 非当前活动真相源
+  - 当前真相源应看哪里
+- 允许的“第一步”包括：
+  - 文件头注释硬化
+  - 文档入口说明
+  - 移到更不易误读的位置并保留链接
+- 但**不要**在一张卡里做以下事情：
+  - 重写大段 SQL 内容
+  - 删除仓库仍被工具或人工引用的历史文件
+  - 重构整个资源初始化体系
+- 若决定移动文件位置，必须同步所有仓库内引用；若风险偏高，优先只加头注释，不强行迁文件
+
+**验收标准**
+
+- `schema.sql`、`menu_resource_data.sql` 首页都有明确的“历史/参考/非当前真相源”提示
+- 至少一处能明确指向当前真相源文档或当前 seed / migration 入口
+- 不破坏现有仓库内引用或脚本使用
+- 若选择迁移文件位置，引用已同步更新
+
+**建议验证**
+
+- `rg -n "schema.sql|menu_resource_data.sql" -g '!node_modules' .`
+- `rg -n "历史|参考|非当前|真相源" tiny-oauth-server/src/main/resources/schema.sql tiny-oauth-server/src/main/resources/menu_resource_data.sql`
+
+**复制给 Cursor 的提示词**
+
+```text
+请为 tiny-platform 执行 CARD-15D：历史 schema / 示例归档减噪。
+
+必须先阅读：
+- AGENTS.md
+- docs/TINY_PLATFORM_AUTHORIZATION_DOC_MAP.md
+- docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md
+- docs/TINY_PLATFORM_LEGACY_COMPATIBILITY_INVENTORY.md
+- docs/TINY_PLATFORM_PLATFORM_SCOPE_CURSOR_TASK_CARDS.md
+
+前置条件：
+- 历史文档页眉与当前态入口已先收紧
+
+本卡只做：
+1. 给 schema.sql / menu_resource_data.sql 补明显的历史/参考标识
+2. 视情况做最小归档或入口说明
+3. 保证仓库内引用不被破坏
+
+本卡不要做：
+- 不要重写大量 SQL 内容
+- 不要删除仍可能被人工或脚本引用的历史文件
+- 不要扩大成初始化体系重构
+
+建议验证：
+- rg -n "schema.sql|menu_resource_data.sql" -g '!node_modules' .
+- rg -n "历史|参考|非当前|真相源" tiny-oauth-server/src/main/resources/schema.sql tiny-oauth-server/src/main/resources/menu_resource_data.sql
+
+交付要求：
+- 输出采取的是“加头注释”还是“最小迁移”策略
+- 输出修改文件
+- 输出执行命令
+- 输出验证结果
+- 输出仍保留这些历史文件的原因
+```
+
+**Codex 审计点**
+
+- 是否优先做了低风险减噪，而不是直接大迁移
+- 历史 schema / 示例是否一眼可见“非当前真相源”
+- 是否保护了仓库内引用和人工排障入口

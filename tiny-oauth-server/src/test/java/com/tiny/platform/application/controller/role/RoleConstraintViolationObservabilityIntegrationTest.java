@@ -153,8 +153,8 @@ class RoleConstraintViolationObservabilityIntegrationTest {
         // Trigger a dry-run mutex violation log by granting both roles.
         roleAssignmentSyncService.replaceUserTenantRoleAssignments(userId, TENANT_ID, List.of(roleAId, roleBId));
 
-        var principal = user("role-permission-assigner")
-            .authorities(new SimpleGrantedAuthority("system:role:permission:assign"));
+        var principal = user("role-constraint-violation-viewer")
+            .authorities(new SimpleGrantedAuthority("system:role:constraint:violation:view"));
 
         mockMvc.perform(get("/sys/role-constraints/violations")
                 .param("principalId", String.valueOf(userId))
@@ -171,4 +171,3 @@ class RoleConstraintViolationObservabilityIntegrationTest {
             .andExpect(jsonPath("$.content[0].violationCode", equalTo("ROLE_CONFLICT_MUTEX")));
     }
 }
-

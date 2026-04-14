@@ -5,8 +5,9 @@
 > 关联：`TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md`、`TINY_PLATFORM_AUTHORIZATION_MODEL.md`
 >
 > 说明：
-> - 本文件保留“按模块看问题”的阅读方式，适合作为附录和盘点参考。
+> - 本文件保留“按模块看问题”的阅读方式，属于附录型盘点 / 历史快照 / 非当前运行态真相源。
 > - 当前完成度、优先级、真实剩余项，以 `TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md` 为唯一真相源。
+> - 平台语义、`default` / `platformTenantCode` 边界与模板口径，以 `TINY_PLATFORM_TENANT_GOVERNANCE.md` 为准。
 > - 本文件中的总览百分比仅作粗略盘点，不作为执行口径；若与 Task List 冲突，以 Task List 为准。
 
 ---

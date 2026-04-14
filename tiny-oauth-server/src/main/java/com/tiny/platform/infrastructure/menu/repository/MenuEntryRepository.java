@@ -44,6 +44,28 @@ public interface MenuEntryRepository extends JpaRepository<MenuEntry, Long>, Jpa
     boolean existsByRequiredPermissionIdAndTenantScope(@Param("permissionId") Long permissionId,
                                                        @Param("tenantId") Long tenantId);
 
+    @Query("""
+        SELECT CASE WHEN COUNT(m) > 0 THEN true ELSE false END
+        FROM MenuEntry m
+        WHERE ((:tenantId IS NULL AND m.tenantId IS NULL) OR m.tenantId = :tenantId)
+          AND m.name = :name
+          AND (:excludeId IS NULL OR m.id <> :excludeId)
+        """)
+    boolean existsByNameAndTenantScope(@Param("name") String name,
+                                       @Param("excludeId") Long excludeId,
+                                       @Param("tenantId") Long tenantId);
+
+    @Query("""
+        SELECT CASE WHEN COUNT(m) > 0 THEN true ELSE false END
+        FROM MenuEntry m
+        WHERE ((:tenantId IS NULL AND m.tenantId IS NULL) OR m.tenantId = :tenantId)
+          AND m.path = :path
+          AND (:excludeId IS NULL OR m.id <> :excludeId)
+        """)
+    boolean existsByPathAndTenantScope(@Param("path") String path,
+                                       @Param("excludeId") Long excludeId,
+                                       @Param("tenantId") Long tenantId);
+
     boolean existsByParentIdAndTenantId(Long parentId, Long tenantId);
 
     boolean existsByParentIdAndTenantIdIsNull(Long parentId);

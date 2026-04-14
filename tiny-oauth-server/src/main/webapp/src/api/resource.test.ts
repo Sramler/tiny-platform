@@ -21,26 +21,6 @@ describe('resource API', () => {
     vi.clearAllMocks()
   })
 
-  it('should request resource list with params', async () => {
-    requestMocks.get.mockResolvedValue({
-      content: [{ id: 1, name: 'res1', title: 'Resource 1', type: 1 }],
-      totalElements: 1,
-      totalPages: 1,
-      size: 10,
-      number: 0,
-      first: true,
-      last: true,
-      numberOfElements: 1,
-    })
-    const { resourceList } = await import('@/api/resource')
-
-    const result = await resourceList({ name: 'res1', type: 1 })
-
-    expect(requestMocks.get).toHaveBeenCalledWith('/sys/resources', { params: { name: 'res1', type: 1 } })
-    expect(result.content).toHaveLength(1)
-    expect(result.content[0]?.name).toBe('res1')
-  })
-
   it('should request resource detail', async () => {
     requestMocks.get.mockResolvedValue({ id: 2, name: 'res2', type: 2 })
     const { getResourceDetail } = await import('@/api/resource')
@@ -54,7 +34,7 @@ describe('resource API', () => {
   it('should create resource with idempotency', async () => {
     requestMocks.post.mockResolvedValue({ id: 10, name: 'new-res' })
     const { createResource } = await import('@/api/resource')
-    const data = { name: 'new-res', title: 'New Resource', type: 2 }
+    const data = { name: 'new-res', title: 'New Resource', type: 2, requiredPermissionId: 101 }
 
     await createResource(data)
 
@@ -69,7 +49,7 @@ describe('resource API', () => {
   it('should update resource with idempotency', async () => {
     requestMocks.put.mockResolvedValue({ id: 11, name: 'updated' })
     const { updateResource } = await import('@/api/resource')
-    const data = { name: 'updated', title: 'Updated', type: 2 }
+    const data = { name: 'updated', title: 'Updated', type: 2, requiredPermissionId: 102 }
 
     await updateResource(11, data)
 

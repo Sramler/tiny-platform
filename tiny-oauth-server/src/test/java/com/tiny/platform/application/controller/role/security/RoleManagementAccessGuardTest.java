@@ -26,6 +26,21 @@ class RoleManagementAccessGuardTest {
         assertThat(guard.canRead(authentication)).isFalse();
     }
 
+    @Test
+    void should_require_explicit_constraint_permissions() {
+        JwtAuthenticationToken legacyAssign = jwtAuth("system:role:permission:assign");
+        JwtAuthenticationToken constraintEdit = jwtAuth("system:role:constraint:edit");
+        JwtAuthenticationToken constraintView = jwtAuth("system:role:constraint:view");
+        JwtAuthenticationToken violationView = jwtAuth("system:role:constraint:violation:view");
+
+        assertThat(guard.canManageRoleConstraints(legacyAssign)).isFalse();
+        assertThat(guard.canViewRoleConstraints(legacyAssign)).isFalse();
+        assertThat(guard.canViewRoleConstraintViolations(legacyAssign)).isFalse();
+        assertThat(guard.canManageRoleConstraints(constraintEdit)).isTrue();
+        assertThat(guard.canViewRoleConstraints(constraintView)).isTrue();
+        assertThat(guard.canViewRoleConstraintViolations(violationView)).isTrue();
+    }
+
     private static JwtAuthenticationToken jwtAuth(String... authorities) {
         Jwt jwt = Jwt.withTokenValue("token")
             .header("alg", "none")

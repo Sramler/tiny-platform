@@ -45,7 +45,7 @@ user
 12. Stage 4（final read-path switch proposal）执行卡与检查清单已就绪，当前状态为 `PROPOSAL_READY`，待 Go/No-Go 评审后再执行最终切换。
 13. Stage 4 Go/No-Go 评审工件已落盘，结论为 `GO_RECOMMENDED`（执行建议通过，最终执行审批保持人工确认）。
 14. Stage 4 执行窗口已完成并判定 `PASS`，当前策略为 `KEEP_SWITCH_ON_APPROVED_SCOPE`（已批准范围保持 final read-path switch，继续保留一键回退能力）。
-15. 菜单读链路演进：`MENU-EVOLVE-001`～`004` 已将租户与平台侧 `ResourceRepository` 中全部 `findGranted*` / `findGranted*AndParentId` **主读** SQL 对齐为 `role_permission → permission → resource`；历史阶段使用的 `*Shadow` 查询已下线（已删除），后续文档中如出现 `*Shadow` 均仅表示历史对照语境。`MenuServiceImpl` 在四条热路径上对已对齐查询 **单次拉取**（不再双查 old+shadow），canary 对比对同源列表恒为 `MATCH`。记录见 `test-results/menu-old-read-decommission-summary.md`。
+15. 菜单读链路演进：`MENU-EVOLVE-001`～`004` 已将租户与平台侧历史 `ResourceRepository` seam 中的 `findGranted*` / `findGranted*AndParentId` **主读** SQL 完成对齐与退场；当前运行时已切到 `role_permission → permission → menu/ui_action/api_endpoint`。历史阶段使用的 `*Shadow` 查询已下线（已删除），后续文档中如出现 `*Shadow` 均仅表示历史对照语境。记录见 `test-results/menu-old-read-decommission-summary.md`。
 16. 写路径演进（W-Off-001）：`RoleServiceImpl.updateRoleResources` 与 `MenuServiceImpl.deleteResourceWithRoleAssociations` 已移除 `permission-refactor.role-resource-write-enabled` 开关与全部 `role_resource` 业务写删分支，仅维护 `role_permission`；回退依赖 `git revert` 或数据侧 reconcile 脚本，不再提供运行时属性回切。`TenantBootstrapServiceImpl` 同步改为：模板侧关联从 `role_permission → permission → resource` 读取（`findGrantedRoleResourcePairs*`），克隆时仅 `addRolePermissionRelationByResourceId`，不再写 `role_resource`；平台/模板租户须已具备可对齐的 `role_permission`（可先跑 reconcile）。
 17. 历史一致性治理：`reconcile-role-permission-from-role-resource.sql`、`verify-role-resource-role-permission-consistency.sql` 与 `verify-role-permission-gap-count.sql` 已从仓库删除（DEPRECATED 归档）；当前默认 `run-permission-dev-smoke-10m.sh` 与 `verify-role-resource-legacy-removal-proof-pack.sh` 已统一走 `verify-role-permission-canonical-health.sql`；不再按表是否存在分支调用。
 18. 遗留表下线（W-Off-002～004，本批实现）：`Role` 实体与 `RoleRepository` 已移除 `role_resource` JPA/原生写读；门禁脚本 `tiny-oauth-server/scripts/verify-role-resource-legacy-removal-proof-pack.sh` + workflow `verify-role-resource-legacy-removal.yml`；Liquibase `117-drop-role-resource-legacy.yaml` 在 migrate 时 `DROP TABLE role_resource`（`preConditions` 表不存在则 `MARK_RAN`）。`tiny-web` 演示模块已去掉 `role_resource` 映射。
@@ -144,7 +144,7 @@ TINY_PLATFORM_AUTHORIZATION_PHASE1_TECHNICAL_DESIGN
 2. PermissionVersionService 计算 permissionsVersion 依赖 role_permission -> permission，并纳入 role_hierarchy 变更快照输入
 
 3. 菜单可见性依赖 role_permission -> permission -> resource
-   - /sys/menus/tree 的菜单可见性由 MenuServiceImpl / ResourceRepository 的已对齐主读 SQL 计算
+   - /sys/menus/tree 的菜单可见性当前由 `MenuServiceImpl` 基于 `role_permission -> permission -> menu` 等 carrier 主链计算；此处若提及 `ResourceRepository` 仅指历史对齐阶段
 
 4. 当前 Resource 实体同时承载两类信息
    一类是资源载体信息：
@@ -1045,7 +1045,7 @@ role_data_scope (module, scope_type, access_type)
 菜单灰度期策略明确如下：
 
 1. /sys/menus/tree 已切到 role_permission -> permission -> resource 新链路
-2. MenuServiceImpl / ResourceRepository 按新链路计算菜单可见性
+2. MenuServiceImpl 按当前 carrier 新链路计算菜单可见性（`ResourceRepository` 仅属历史阶段名词）
 3. 菜单验证目标为：
    新链路结果保持稳定不漂移
 4. 平台菜单相关 authority 判定基于同链路计算（role_resource 旧链路不再作为回退依赖）
@@ -1304,4 +1304,3 @@ user
 以“菜单主读链路保持稳定、非菜单权限双轨灰度验证”为实施策略，
 并补齐 permission 解析规则、permission_type 冲突策略、权限指纹刷新输入、平台模板投影规则、enabled 过滤、强一致兜底策略、覆盖判断口径、最终 deny 过滤闭环、permission.enabled 初始化口径以及 RBAC3 继承约束，
 按兼容演进方式逐步落地，不能硬切。
-

@@ -1,6 +1,7 @@
 package com.tiny.platform.infrastructure.menu.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -16,6 +17,7 @@ import com.tiny.platform.core.oauth.tenant.TenantContextContract;
 import com.tiny.platform.infrastructure.auth.datascope.framework.DataScopeContext;
 import com.tiny.platform.infrastructure.auth.datascope.framework.ResolvedDataScope;
 import com.tiny.platform.infrastructure.auth.org.repository.UserUnitRepository;
+import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
 import com.tiny.platform.infrastructure.auth.resource.domain.Resource;
 import com.tiny.platform.infrastructure.auth.resource.dto.ResourceCreateUpdateDto;
 import com.tiny.platform.infrastructure.auth.resource.dto.ResourceResponseDto;
@@ -25,20 +27,17 @@ import com.tiny.platform.infrastructure.auth.resource.repository.CarrierPermissi
 import com.tiny.platform.infrastructure.auth.resource.repository.ApiEndpointEntryRepository;
 import com.tiny.platform.infrastructure.auth.resource.repository.UiActionEntryRepository;
 import com.tiny.platform.infrastructure.auth.resource.repository.UiActionPermissionRequirementRepository;
-import com.tiny.platform.infrastructure.auth.resource.repository.ResourceRepository;
 import com.tiny.platform.infrastructure.auth.audit.domain.AuthorizationAuditEventType;
 import com.tiny.platform.infrastructure.auth.audit.domain.RequirementAwareAuditDetail;
 import com.tiny.platform.infrastructure.auth.audit.service.AuthorizationAuditService;
-import com.tiny.platform.infrastructure.auth.resource.service.CarrierCompatibilityBinding;
 import com.tiny.platform.infrastructure.auth.resource.service.CarrierPermissionRequirementEvaluator;
-import com.tiny.platform.infrastructure.auth.resource.service.CarrierCompatibilitySafetyService;
+import com.tiny.platform.infrastructure.auth.resource.service.CarrierPermissionReferenceSafetyService;
 import com.tiny.platform.infrastructure.auth.resource.service.ResourcePermissionBindingService;
 import com.tiny.platform.infrastructure.auth.role.repository.RoleRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.TenantUserRepository;
 import com.tiny.platform.infrastructure.menu.domain.MenuEntry;
 import com.tiny.platform.infrastructure.menu.repository.MenuEntryRepository;
 import com.tiny.platform.infrastructure.menu.repository.MenuPermissionRequirementRepository;
-import com.tiny.platform.infrastructure.tenant.config.PlatformTenantResolver;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -56,15 +55,13 @@ import org.mockito.ArgumentCaptor;
 
 class MenuServiceImplTest {
 
-    private ResourceRepository resourceRepository;
     private MenuEntryRepository menuEntryRepository;
     private UiActionEntryRepository uiActionEntryRepository;
     private ApiEndpointEntryRepository apiEndpointEntryRepository;
     private TenantUserRepository tenantUserRepository;
     private UserUnitRepository userUnitRepository;
-    private PlatformTenantResolver platformTenantResolver;
     private ResourcePermissionBindingService resourcePermissionBindingService;
-    private CarrierCompatibilitySafetyService carrierCompatibilitySafetyService;
+    private CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService;
     private MenuPermissionRequirementRepository menuPermissionRequirementRepository;
     private UiActionPermissionRequirementRepository uiActionPermissionRequirementRepository;
     private ApiEndpointPermissionRequirementRepository apiEndpointPermissionRequirementRepository;
@@ -74,15 +71,13 @@ class MenuServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        resourceRepository = Mockito.mock(ResourceRepository.class);
         menuEntryRepository = Mockito.mock(MenuEntryRepository.class);
         uiActionEntryRepository = Mockito.mock(UiActionEntryRepository.class);
         apiEndpointEntryRepository = Mockito.mock(ApiEndpointEntryRepository.class);
         tenantUserRepository = Mockito.mock(TenantUserRepository.class);
         userUnitRepository = Mockito.mock(UserUnitRepository.class);
-        platformTenantResolver = Mockito.mock(PlatformTenantResolver.class);
         resourcePermissionBindingService = Mockito.mock(ResourcePermissionBindingService.class);
-        carrierCompatibilitySafetyService = Mockito.mock(CarrierCompatibilitySafetyService.class);
+        carrierPermissionReferenceSafetyService = Mockito.mock(CarrierPermissionReferenceSafetyService.class);
         menuPermissionRequirementRepository = Mockito.mock(MenuPermissionRequirementRepository.class);
         uiActionPermissionRequirementRepository = Mockito.mock(UiActionPermissionRequirementRepository.class);
         apiEndpointPermissionRequirementRepository = Mockito.mock(ApiEndpointPermissionRequirementRepository.class);
@@ -95,15 +90,13 @@ class MenuServiceImplTest {
             apiEndpointPermissionRequirementRepository
         );
         service = new MenuServiceImpl(
-            resourceRepository,
             menuEntryRepository,
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             tenantUserRepository,
             userUnitRepository,
-            platformTenantResolver,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService,
+            carrierPermissionReferenceSafetyService,
             evaluator,
             authorizationAuditService,
             roleRepository
@@ -166,6 +159,21 @@ class MenuServiceImplTest {
     }
 
     @Test
+    void existsChecksShouldUseMenuCarrierWithinCurrentScope() {
+        TenantContext.setActiveTenantId(2L);
+        authenticate(5L, 2L, "tenant-admin", "system:menu:list");
+        when(menuEntryRepository.existsByNameAndTenantScope("menu", 9L, 2L)).thenReturn(true);
+        when(menuEntryRepository.existsByPathAndTenantScope("/menu", 9L, 2L)).thenReturn(false);
+
+        assertThat(service.existsByName("menu", 9L)).isTrue();
+        assertThat(service.existsByUrl("/menu", 9L)).isFalse();
+        assertThat(service.existsByName(" ", 9L)).isFalse();
+        assertThat(service.existsByUrl("", 9L)).isFalse();
+        verify(menuEntryRepository).existsByNameAndTenantScope("menu", 9L, 2L);
+        verify(menuEntryRepository).existsByPathAndTenantScope("/menu", 9L, 2L);
+    }
+
+    @Test
     void createMenuShouldCaptureCurrentUserAsCreatedBy() {
         TenantContext.setActiveTenantId(2L);
         authenticate(7L, 2L, "creator", "system:menu:create");
@@ -188,9 +196,6 @@ class MenuServiceImplTest {
         assertThat(created.getTenantId()).isEqualTo(2L);
         verify(resourcePermissionBindingService).bindResource(any(Resource.class), eq(7L));
         verify(menuEntryRepository).save(any(MenuEntry.class));
-        verify(carrierCompatibilitySafetyService).replaceCompatibilityRequirement(
-            any(CarrierCompatibilityBinding.class)
-        );
     }
 
     @Test
@@ -211,7 +216,102 @@ class MenuServiceImplTest {
         service.createMenu(dto);
 
         verify(menuEntryRepository, atLeastOnce()).findById(100L);
-        verify(resourceRepository, never()).findByParentIdAndTenantIdOrderBySortAsc(any(Long.class), any(Long.class));
+    }
+
+    @Test
+    void createMenuShouldUseExplicitRequiredPermissionIdAsWriteEntry() {
+        TenantContext.setActiveTenantId(2L);
+        authenticate(7L, 2L, "creator", "system:menu:create");
+        Mockito.doAnswer(invocation -> {
+            Resource resource = invocation.getArgument(0);
+            assertThat(resource.getRequiredPermissionId()).isEqualTo(88L);
+            resource.setPermission("system:menu:list");
+            return null;
+        }).when(resourcePermissionBindingService).bindResource(any(Resource.class), eq(7L));
+        when(menuEntryRepository.save(any(MenuEntry.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ResourceCreateUpdateDto dto = new ResourceCreateUpdateDto();
+        dto.setName("sys-menu");
+        dto.setTitle("Menu");
+        dto.setType(ResourceType.MENU.getCode());
+        dto.setRequiredPermissionId(88L);
+
+        Resource created = service.createMenu(dto);
+
+        assertThat(created.getRequiredPermissionId()).isEqualTo(88L);
+        assertThat(created.getPermission()).isEqualTo("system:menu:list");
+        verify(menuEntryRepository).save(argThat(saved ->
+            Objects.equals(saved.getRequiredPermissionId(), 88L)
+                && Objects.equals(saved.getPermission(), "system:menu:list")
+        ));
+    }
+
+    @Test
+    void createMenuShouldRejectLegacyPermissionOnlyPayload() {
+        TenantContext.setActiveTenantId(2L);
+        authenticate(7L, 2L, "creator", "system:menu:create");
+
+        ResourceCreateUpdateDto dto = new ResourceCreateUpdateDto();
+        dto.setName("sys-menu");
+        dto.setTitle("Menu");
+        dto.setType(ResourceType.MENU.getCode());
+        dto.setPermission("system:menu:list");
+
+        assertThatThrownBy(() -> service.createMenu(dto))
+            .isInstanceOf(BusinessException.class)
+            .hasMessageContaining("Missing required_permission_id");
+        verify(menuEntryRepository, never()).save(any(MenuEntry.class));
+    }
+
+    @Test
+    void updateMenuShouldUseExplicitRequiredPermissionIdAsWriteEntry() {
+        TenantContext.setActiveTenantId(2L);
+        authenticate(7L, 2L, "editor", "system:menu:edit");
+        MenuEntry existing = menuEntry(66L, 2L, "sys-menu", null, "/system/menu", "", ResourceType.MENU.getCode());
+        when(menuEntryRepository.findById(66L)).thenReturn(java.util.Optional.of(existing));
+        Mockito.doAnswer(invocation -> {
+            Resource resource = invocation.getArgument(0);
+            assertThat(resource.getRequiredPermissionId()).isEqualTo(99L);
+            resource.setPermission("system:menu:edit");
+            return null;
+        }).when(resourcePermissionBindingService).bindResource(any(Resource.class), eq(7L));
+        when(menuEntryRepository.save(any(MenuEntry.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        ResourceCreateUpdateDto dto = new ResourceCreateUpdateDto();
+        dto.setId(66L);
+        dto.setName("sys-menu");
+        dto.setTitle("Menu");
+        dto.setType(ResourceType.MENU.getCode());
+        dto.setRequiredPermissionId(99L);
+
+        Resource updated = service.updateMenu(dto);
+
+        assertThat(updated.getRequiredPermissionId()).isEqualTo(99L);
+        assertThat(updated.getPermission()).isEqualTo("system:menu:edit");
+        verify(menuEntryRepository).save(argThat(saved ->
+            Objects.equals(saved.getRequiredPermissionId(), 99L)
+                && Objects.equals(saved.getPermission(), "system:menu:edit")
+        ));
+    }
+
+    @Test
+    void updateMenuShouldRejectLegacyPermissionOnlyPayload() {
+        TenantContext.setActiveTenantId(2L);
+        authenticate(7L, 2L, "editor", "system:menu:edit");
+        MenuEntry existing = menuEntry(66L, 2L, "sys-menu", null, "/system/menu", "", ResourceType.MENU.getCode());
+        when(menuEntryRepository.findById(66L)).thenReturn(java.util.Optional.of(existing));
+
+        ResourceCreateUpdateDto dto = new ResourceCreateUpdateDto();
+        dto.setId(66L);
+        dto.setName("sys-menu");
+        dto.setTitle("Menu");
+        dto.setType(ResourceType.MENU.getCode());
+        dto.setPermission("system:menu:edit");
+
+        assertThatThrownBy(() -> service.updateMenu(dto))
+            .isInstanceOf(BusinessException.class)
+            .hasMessageContaining("Missing required_permission_id");
+        verify(menuEntryRepository, never()).save(any(MenuEntry.class));
     }
 
     @Test
@@ -223,7 +323,7 @@ class MenuServiceImplTest {
         when(menuEntryRepository.findById(9L)).thenReturn(java.util.Optional.of(menu));
         when(menuEntryRepository.findByTenantIdAndTypeInAndParentIdOrderBySortAsc(2L, List.of(ResourceType.DIRECTORY.getCode(), ResourceType.MENU.getCode()), 9L))
             .thenReturn(List.of());
-        when(carrierCompatibilitySafetyService.existsPermissionReference(88L, 2L)).thenReturn(true);
+        when(carrierPermissionReferenceSafetyService.existsPermissionReference(88L, 2L)).thenReturn(true);
 
         service.deleteMenu(9L);
 
@@ -241,7 +341,7 @@ class MenuServiceImplTest {
         when(menuEntryRepository.findById(10L)).thenReturn(java.util.Optional.of(menu));
         when(menuEntryRepository.findByTenantIdAndTypeInAndParentIdOrderBySortAsc(2L, List.of(ResourceType.DIRECTORY.getCode(), ResourceType.MENU.getCode()), 10L))
             .thenReturn(List.of());
-        when(carrierCompatibilitySafetyService.existsPermissionReference(99L, 2L)).thenReturn(false);
+        when(carrierPermissionReferenceSafetyService.existsPermissionReference(99L, 2L)).thenReturn(false);
 
         service.deleteMenu(10L);
 
@@ -267,8 +367,8 @@ class MenuServiceImplTest {
         when(menuEntryRepository.findByTenantIdAndTypeInAndParentIdOrderBySortAsc(
             2L, List.of(ResourceType.DIRECTORY.getCode(), ResourceType.MENU.getCode()), 21L
         )).thenReturn(List.of());
-        when(carrierCompatibilitySafetyService.existsPermissionReference(200L, 2L)).thenReturn(true);
-        when(carrierCompatibilitySafetyService.existsPermissionReference(201L, 2L)).thenReturn(true);
+        when(carrierPermissionReferenceSafetyService.existsPermissionReference(200L, 2L)).thenReturn(true);
+        when(carrierPermissionReferenceSafetyService.existsPermissionReference(201L, 2L)).thenReturn(true);
 
         service.deleteMenu(20L);
 
@@ -284,7 +384,6 @@ class MenuServiceImplTest {
         verify(uiActionEntryRepository).deleteAllByIdInBatch(List.of(20L));
         verify(apiEndpointEntryRepository).deleteAllByIdInBatch(List.of(21L));
         verify(apiEndpointEntryRepository).deleteAllByIdInBatch(List.of(20L));
-        verify(resourceRepository, never()).findByParentIdAndTenantIdOrderBySortAsc(any(Long.class), any(Long.class));
     }
 
     @Test
@@ -302,10 +401,6 @@ class MenuServiceImplTest {
         verify(menuEntryRepository).save(argThat(saved ->
             Objects.equals(saved.getId(), 40L) && saved.getSort().equals(8)
         ));
-        verify(resourceRepository, never()).findByTenantIdAndResourceLevelAndCarrierTypeAndCarrierSourceId(
-            any(Long.class), any(String.class), any(String.class), any(Long.class)
-        );
-        verify(resourceRepository, never()).save(any(Resource.class));
     }
 
     @Test
@@ -359,7 +454,6 @@ class MenuServiceImplTest {
 
         assertThat(tree).singleElement().extracting(ResourceResponseDto::getName).isEqualTo("system");
         assertThat(tree.get(0).getChildren()).extracting(ResourceResponseDto::getName).containsExactly("user", "tenant", "idempotentOps");
-        verify(platformTenantResolver, never()).getPlatformTenantId();
     }
 
     @Test
@@ -384,7 +478,6 @@ class MenuServiceImplTest {
         verify(menuEntryRepository).findByTenantIdIsNullAndTypeInOrderBySortAsc(
             List.of(ResourceType.DIRECTORY.getCode(), ResourceType.MENU.getCode())
         );
-        verify(platformTenantResolver, never()).getPlatformTenantId();
     }
 
     @Test

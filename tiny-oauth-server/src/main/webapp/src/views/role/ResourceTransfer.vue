@@ -327,7 +327,7 @@ function handleOk() {
       .map((resourceId) => permissionIdByResourceKey.get(resourceId))
       .filter((permissionId): permissionId is number => permissionId != null)
   ))
-  emit('submit', { resourceIds: rightKeys.value.map((id) => Number(id)).filter((id) => !Number.isNaN(id)), permissionIds })
+  emit('submit', { permissionIds })
   visible.value = false
 }
 

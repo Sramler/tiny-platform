@@ -3,7 +3,10 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, type Browser, type BrowserContext, type Page } from '@playwright/test'
 
-import { deriveTenantCodeForTenantScope } from '../setup/real.global.setup'
+import {
+  deriveTenantCodeForTenantScope,
+  requireRealLinkPlatformTenantCode,
+} from '../setup/real.global.setup'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -67,9 +70,7 @@ function deriveReadonlyTenantCode(): string | undefined {
     return undefined
   }
 
-  const platformTenantCode = (
-    readConfiguredEnv('E2E_PLATFORM_TENANT_CODE') ?? 'default'
-  ).toLowerCase()
+  const platformTenantCode = requireRealLinkPlatformTenantCode(process.env).toLowerCase()
   if (primaryTenantCode.toLowerCase() !== platformTenantCode) {
     return primaryTenantCode
   }
@@ -167,7 +168,7 @@ function resolveLoginIdentity(kind: AuthIdentityKind): LoginIdentity | null {
   if (!primaryTenantCode || !username || !password || (!totpSecret && !totpCode)) {
     return null
   }
-  const platformTenantCode = readConfiguredEnv('E2E_PLATFORM_TENANT_CODE') ?? 'default'
+  const platformTenantCode = requireRealLinkPlatformTenantCode(process.env)
   const tenantCode = deriveTenantCodeForTenantScope(primaryTenantCode, platformTenantCode)
   return { mode: 'TENANT', tenantCode, username, password, totpCode, totpSecret }
 }

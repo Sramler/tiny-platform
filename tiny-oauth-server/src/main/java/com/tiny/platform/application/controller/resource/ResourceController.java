@@ -117,125 +117,6 @@ public class ResourceController {
         return ResponseEntity.ok(Map.of("success", true, "message", "批量删除成功"));
     }
 
-    // ==================== 菜单管理API ====================
-
-    /**
-     * 分页查询菜单（type为0-目录，1-菜单）
-     * @param name 菜单名称
-     * @param title 菜单标题
-     * @param permission 权限标识
-     * @param pageable 分页参数
-     * @return 分页结果
-     */
-    @GetMapping("/menus")
-    @PreAuthorize("@menuManagementAccessGuard.canRead(authentication)")
-    public ResponseEntity<PageResponse<ResourceResponseDto>> getMenus(
-            @RequestParam(value = "name", required = false) String name,
-            @RequestParam(value = "title", required = false) String title,
-            @RequestParam(value = "permission", required = false) String permission,
-            @PageableDefault(size = 10, sort = "sort", direction = Sort.Direction.ASC) Pageable pageable
-    ) {
-        ResourceRequestDto query = new ResourceRequestDto();
-        query.setName(name);
-        query.setTitle(title);
-        query.setPermission(permission);
-        query.setType(ResourceType.MENU.getCode()); // 只查询菜单类型
-        
-        return ResponseEntity.ok(new PageResponse<>(resourceService.resources(query, pageable)));
-    }
-
-    /**
-     * 获取菜单树结构（type为0-目录，1-菜单）
-     * @return 菜单树
-     */
-    @GetMapping("/menus/tree")
-    @PreAuthorize("@menuManagementAccessGuard.canRead(authentication)")
-    public ResponseEntity<List<ResourceResponseDto>> getMenuTree() {
-        List<Resource> menuResources = resourceService.findByTypeIn(List.of(ResourceType.DIRECTORY, ResourceType.MENU));
-        List<ResourceResponseDto> tree = resourceService.buildResourceTree(menuResources);
-        return ResponseEntity.ok(tree);
-    }
-
-    /**
-     * 创建菜单
-     * @param resourceDto 菜单创建DTO
-     * @return 创建的菜单
-     */
-    @PostMapping("/menus")
-    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
-    @PreAuthorize("@menuManagementAccessGuard.canCreate(authentication)")
-    public ResponseEntity<Resource> createMenu(@Valid @RequestBody ResourceCreateUpdateDto resourceDto) {
-        // 确保类型为目录或菜单
-        if (resourceDto.getType() == null || (resourceDto.getType() != ResourceType.DIRECTORY.getCode() && resourceDto.getType() != ResourceType.MENU.getCode())) {
-            resourceDto.setType(ResourceType.MENU.getCode());
-        }
-        
-        Resource resource = resourceService.createFromDto(resourceDto);
-        return ResponseEntity.ok(resource);
-    }
-
-    /**
-     * 更新菜单
-     * @param id 菜单ID
-     * @param resourceDto 菜单更新DTO
-     * @return 更新后的菜单
-     */
-    @PutMapping("/menus/{id}")
-    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
-    @PreAuthorize("@menuManagementAccessGuard.canUpdate(authentication)")
-    public ResponseEntity<Resource> updateMenu(@PathVariable("id") Long id, @Valid @RequestBody ResourceCreateUpdateDto resourceDto) {
-        // 设置ID
-        resourceDto.setId(id);
-        
-        // 确保类型为目录或菜单
-        if (resourceDto.getType() == null || (resourceDto.getType() != ResourceType.DIRECTORY.getCode() && resourceDto.getType() != ResourceType.MENU.getCode())) {
-            resourceDto.setType(ResourceType.MENU.getCode());
-        }
-        
-        Resource resource = resourceService.updateFromDto(resourceDto);
-        return ResponseEntity.ok(resource);
-    }
-
-    /**
-     * 删除菜单
-     * @param id 菜单ID
-     * @return 删除结果
-     */
-    @DeleteMapping("/menus/{id}")
-    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
-    @PreAuthorize("@menuManagementAccessGuard.canDelete(authentication)")
-    public ResponseEntity<Void> deleteMenu(@PathVariable("id") Long id) {
-        resourceService.delete(id);
-        return ResponseEntity.noContent().build();
-    }
-
-    /**
-     * 批量删除菜单
-     * @param ids 菜单ID列表
-     * @return 删除结果
-     */
-    @PostMapping("/menus/batch/delete")
-    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
-    @PreAuthorize("@menuManagementAccessGuard.canDelete(authentication)")
-    public ResponseEntity<Map<String, Object>> batchDeleteMenus(@RequestBody List<Long> ids) {
-        resourceService.batchDelete(ids);
-        return ResponseEntity.ok(Map.of("success", true, "message", "批量删除成功"));
-    }
-
-    /**
-     * 更新菜单排序
-     * @param id 菜单ID
-     * @param sort 新的排序值
-     * @return 更新后的菜单
-     */
-    @PutMapping("/menus/{id}/sort")
-    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
-    @PreAuthorize("@menuManagementAccessGuard.canUpdate(authentication)")
-    public ResponseEntity<Resource> updateMenuSort(@PathVariable("id") Long id, @RequestParam("sort") Integer sort) {
-        Resource resource = resourceService.updateSort(id, sort);
-        return ResponseEntity.ok(resource);
-    }
-
     // ==================== 通用资源API ====================
     
     /**
@@ -305,7 +186,7 @@ public class ResourceController {
             @RequestParam("uri") String uri) {
         return ResponseEntity.ok(Map.of("allowed", resourceService.canAccessApiEndpoint(method, uri)));
     }
-    
+
     /**
      * 更新资源排序
      * @param id 资源ID
@@ -329,18 +210,6 @@ public class ResourceController {
     public ResponseEntity<List<ResourceType>> getResourceTypes() {
         List<ResourceType> types = resourceService.getResourceTypes();
         return ResponseEntity.ok(types);
-    }
-    
-    /**
-     * 根据权限标识获取资源列表
-     * @param permission 权限标识
-     * @return 资源列表
-     */
-    @GetMapping("/permission/{permission}")
-    @PreAuthorize("@resourceManagementAccessGuard.canRead(authentication)")
-    public ResponseEntity<List<ResourceResponseDto>> getResourcesByPermission(@PathVariable("permission") String permission) {
-        List<ResourceResponseDto> resources = resourceService.findDtosByPermission(permission);
-        return ResponseEntity.ok(resources);
     }
     
     /**

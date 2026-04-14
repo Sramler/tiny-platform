@@ -65,6 +65,28 @@ public class MenuController {
     }
 
     /**
+     * 菜单名称校验直接下沉到 menu carrier，避免再借 Resource compatibility facade。
+     */
+    @GetMapping("/check-name")
+    @PreAuthorize("@menuManagementAccessGuard.canRead(authentication)")
+    public ResponseEntity<Map<String, Boolean>> checkNameExists(
+            @RequestParam("name") String name,
+            @RequestParam(value = "excludeId", required = false) Long excludeId) {
+        return ResponseEntity.ok(Map.of("exists", menuService.existsByName(name, excludeId)));
+    }
+
+    /**
+     * 菜单路径校验直接下沉到 menu carrier，避免再借 Resource compatibility facade。
+     */
+    @GetMapping("/check-url")
+    @PreAuthorize("@menuManagementAccessGuard.canRead(authentication)")
+    public ResponseEntity<Map<String, Boolean>> checkUrlExists(
+            @RequestParam("url") String url,
+            @RequestParam(value = "excludeId", required = false) Long excludeId) {
+        return ResponseEntity.ok(Map.of("exists", menuService.existsByUrl(url, excludeId)));
+    }
+
+    /**
      * 创建菜单
      */
     @PostMapping

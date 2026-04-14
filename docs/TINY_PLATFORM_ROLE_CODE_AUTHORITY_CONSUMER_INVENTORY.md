@@ -1,6 +1,9 @@
-# CARD-09C1 `ROLE_*` authority 消费点 inventory（keep/migrate/test-only）
+# CARD-09C1 角色码 authority 消费点 inventory（keep/migrate/test-only）
 
-> 目的：在 `CARD-09B3` 后，先盘清 runtime / JWT / Session / downstream 对 `ROLE_*` authority 的真实消费点，固化 `keep-list`、`migrate-list`、`test-only list`，为 `CARD-09C2/09C3` 行为收缩做输入。
+> 状态：`CARD-09C1` 历史盘点快照 / 非当前运行态真相源。  
+> 当前 `roleCodes` / authority 契约与完成度，请以 `docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md`、`docs/TINY_PLATFORM_AUTHORIZATION_MODEL.md` 与 `docs/TINY_PLATFORM_LEGACY_COMPATIBILITY_INVENTORY.md` 为准。
+
+> 目的：在 `CARD-09B3` 后，先盘清 runtime / JWT / Session / downstream 对“角色码 authority” 的真实消费点，固化 `keep-list`、`migrate-list`、`test-only list`，为 `CARD-09C2/09C3` 行为收缩做输入。
 > 边界：本卡不改默认行为，不删除 `role.code` authority。
 
 ## 1. 盘点方式（最小观测）
@@ -13,7 +16,7 @@
 - `rg "ROLE_|GrantedAuthority|hasAuthority|authorities" tiny-web/src/main/java`
 - `rg "ROLE_" tiny-oauth-server/src/test/java --files-with-matches`
 
-结论：主链运行时没有 `@PreAuthorize("hasRole...")` / `hasAuthority("ROLE_*")` 的业务判定残留；`ROLE_*` 主要仍在 authority 生产与 JWT 读写兼容链路，以及 workflow bridge 的下游 group 映射。
+结论：主链运行时没有 `@PreAuthorize("hasRole...")` / `hasAuthority("ROLE_*")` 的业务判定残留；角色码 authority 主要仍在 authority 生产与 JWT 读写兼容链路，以及 workflow bridge 的下游 group 映射。
 
 ## 2. Runtime/JWT/Session 消费点清单（含 tiny-oauth-server + tiny-web）
 
@@ -46,7 +49,7 @@
 3) `tiny-web/src/main/java/com/tiny/web/sys/security/ResourceAuthorizationManager.java`
 - 现状：对 `auth.getAuthorities()` 逐项传给 `resourceService.hasAccess(role, path, method)`，当前入参语义实质依赖 `ROLE_*`。
 - 判定：这是 runtime 授权消费点，不应在 authority 收缩阶段遗漏。
-- 09C2/09C3 目标：改成“显式角色集合（roleCodes）”或“permission-style authority”判定，避免耦合 `ROLE_*` 通用 authority。
+- 09C2/09C3 目标：改成“显式角色集合（roleCodes）”或“permission-style authority”判定，避免继续耦合角色型通用 authority。
 
 ## 3. Test-only list（仅测试断言/辅助，不作为运行时行为依据）
 
@@ -68,4 +71,3 @@
 - `test-only list`：见第 3 节
 
 本卡未改默认 authority 行为，满足 `CARD-09C1` 边界。
-

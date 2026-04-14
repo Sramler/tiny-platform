@@ -1,0 +1,25 @@
+# 补全 RBAC3 角色约束 API 的 api_endpoint 与 permission_requirement，满足 CARD-13B 统一守卫。
+databaseChangeLog:
+  - changeSet:
+      id: 136-backfill-role-constraint-api-endpoints
+      author: tiny
+      comment: 补全 /sys/role-constraints/* 的 api_endpoint 登记（tenant_id=1）
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: api_endpoint
+            - tableExists:
+                tableName: permission
+            - tableExists:
+                tableName: api_endpoint_permission_requirement
+      changes:
+        - sqlFile:
+            path: 136-backfill-role-constraint-api-endpoints.sql
+            relativeToChangelogFile: true
+            splitStatements: true
+            endDelimiter: ;
+            stripComments: false

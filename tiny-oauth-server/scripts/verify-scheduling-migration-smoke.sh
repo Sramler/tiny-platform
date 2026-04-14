@@ -195,7 +195,8 @@ non_default_platform_menu_count=$(query_value "
 [[ "${non_default_platform_menu_count:-0}" -eq 0 ]] || fail "非默认租户仍存在平台级菜单资源，038 清理未生效: ${non_default_platform_menu_count}"
 echo "  [OK] 038: 非默认租户不存在 tenant / idempotentOps 平台菜单"
 
-# 039 迁移后，以下为历史调度权限码，表中应无残留（规范码见 039 与 scheduling:console:view 等）
+# 039 迁移后：下列 IN(...) 中的字符串均为**禁止残留的历史 permission_code**（含 scheduling:read 等旧码），
+# 断言 COUNT(*) 必须为 0；并非脚本“仍使用旧码作为期望值”。规范码以 039 changelog 与 scheduling:console:view 等为准。
 legacy_scheduling_permission_count=$(query_value "
   SELECT COUNT(*)
   FROM permission

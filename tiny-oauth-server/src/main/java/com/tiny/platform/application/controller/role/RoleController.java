@@ -5,6 +5,8 @@ import com.tiny.platform.infrastructure.auth.role.dto.RoleRequestDto;
 import com.tiny.platform.infrastructure.auth.role.dto.RoleResponseDto;
 import com.tiny.platform.infrastructure.auth.role.service.RoleService;
 import com.tiny.platform.infrastructure.core.dto.PageResponse;
+import com.tiny.platform.infrastructure.core.exception.code.ErrorCode;
+import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
 import com.tiny.platform.infrastructure.idempotent.sdk.annotation.Idempotent;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
@@ -14,7 +16,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Map;
 
 @RestController
@@ -121,9 +122,9 @@ public class RoleController {
     }
 
     /**
-     * 保存角色与资源的分配关系
+     * 保存角色与权限的分配关系
      * @param id 角色ID
-     * @param resourceIds 资源ID列表
+     * @param body 仅接受包含 permissionIds 的请求体
      * @return 响应结果
      */
     @PostMapping("/{id}/resources")
@@ -131,44 +132,43 @@ public class RoleController {
     @PreAuthorize("@roleManagementAccessGuard.canAssignPermissions(authentication)")
     public ResponseEntity<?> updateRoleResources(@PathVariable("id") Long id, @RequestBody Object body) {
         PermissionAssignmentRequest request = parsePermissionAssignmentRequest(body);
-        if (request.permissionIds() != null && !request.permissionIds().isEmpty()) {
-            roleService.updateRolePermissions(id, request.permissionIds());
-        } else {
-            // Backward compatibility alias: resourceIds is accepted, but no longer the main runtime contract.
-            roleService.updateRoleResources(id, request.resourceIds());
-        }
+        roleService.updateRolePermissions(id, request.permissionIds());
         return ResponseEntity.ok().build();
     }
 
     private PermissionAssignmentRequest parsePermissionAssignmentRequest(Object body) {
-        if (body instanceof List<?> rawResourceIds) {
-            return new PermissionAssignmentRequest(List.of(), parseIdList(rawResourceIds));
-        }
         if (body instanceof Map<?, ?> requestMap) {
             List<Long> permissionIds = requestMap.get("permissionIds") instanceof List<?> rawPermissionIds
                 ? parseIdList(rawPermissionIds)
                 : List.of();
-            List<Long> resourceIds = requestMap.get("resourceIds") instanceof List<?> rawResourceIds
-                ? parseIdList(rawResourceIds)
-                : List.of();
-            return new PermissionAssignmentRequest(permissionIds, resourceIds);
+            if (permissionIds.isEmpty()) {
+                throw new BusinessException(ErrorCode.VALIDATION_ERROR, "请求体必须提供 permissionIds");
+            }
+            return new PermissionAssignmentRequest(permissionIds);
         }
-        throw new IllegalArgumentException("请求体格式不正确");
+        throw new BusinessException(ErrorCode.VALIDATION_ERROR, "请求体必须提供 permissionIds");
     }
 
     private UserAssignmentRequest parseUserAssignmentRequest(Object body) {
-        if (body instanceof List<?> rawUserIds) {
-            return new UserAssignmentRequest(null, null, parseIdList(rawUserIds));
-        }
-        if (body instanceof Map<?, ?> requestMap) {
-            Object userIds = requestMap.get("userIds");
-            return new UserAssignmentRequest(
-                requestMap.get("scopeType") != null ? String.valueOf(requestMap.get("scopeType")) : null,
-                parseNullableLong(requestMap.get("scopeId")),
-                userIds instanceof List<?> rawUserIds ? parseIdList(rawUserIds) : List.of()
+        if (body instanceof List<?>) {
+            throw new BusinessException(
+                ErrorCode.VALIDATION_ERROR,
+                "POST /sys/roles/{id}/users 请求体必须为 JSON 对象，包含 userIds 与可选 scopeType、scopeId；"
+                    + "已停止接受 JSON 数组（CARD-14C）。示例：{\"userIds\":[1,2],\"scopeType\":\"TENANT\"} 或 {\"userIds\":[],\"scopeType\":\"DEPT\",\"scopeId\":200}。"
             );
         }
-        throw new IllegalArgumentException("请求体格式不正确");
+        if (!(body instanceof Map<?, ?> requestMap)) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "请求体必须为 JSON 对象");
+        }
+        Object userIdsObj = requestMap.get("userIds");
+        if (!(userIdsObj instanceof List<?> rawUserIds)) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "请求体必须包含 userIds 数组字段");
+        }
+        return new UserAssignmentRequest(
+            requestMap.get("scopeType") != null ? String.valueOf(requestMap.get("scopeType")) : null,
+            parseNullableLong(requestMap.get("scopeId")),
+            parseIdList(rawUserIds)
+        );
     }
 
     private List<Long> parseIdList(List<?> rawIds) {
@@ -190,5 +190,5 @@ public class RoleController {
     }
 
     private record UserAssignmentRequest(String scopeType, Long scopeId, List<Long> userIds) {}
-    private record PermissionAssignmentRequest(List<Long> permissionIds, List<Long> resourceIds) {}
+    private record PermissionAssignmentRequest(List<Long> permissionIds) {}
 }

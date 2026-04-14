@@ -2,7 +2,6 @@
 
 package com.tiny.platform.infrastructure.auth.resource.dto;
 
-import com.tiny.platform.infrastructure.auth.resource.enums.ResourceType;
 import jakarta.validation.constraints.*;
 
 /**
@@ -93,6 +92,11 @@ public class ResourceCreateUpdateDto {
      */
     @Size(max = 100, message = "权限标识长度不能超过100个字符")
     private String permission;
+
+    /**
+     * 显式权限主数据ID（写链主入口）。
+     */
+    private Long requiredPermissionId;
     
     /**
      * 资源类型
@@ -216,6 +220,14 @@ public class ResourceCreateUpdateDto {
     
     public void setPermission(String permission) {
         this.permission = permission;
+    }
+
+    public Long getRequiredPermissionId() {
+        return requiredPermissionId;
+    }
+
+    public void setRequiredPermissionId(Long requiredPermissionId) {
+        this.requiredPermissionId = requiredPermissionId;
     }
     
     public Integer getType() {

@@ -210,6 +210,10 @@
             <plugin>
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
+                <configuration>
+                    <destFile>${project.build.directory}/jacoco.exec</destFile>
+                    <append>false</append>
+                </configuration>
                 <executions>
                     <execution>
                         <id>prepare-agent</id>

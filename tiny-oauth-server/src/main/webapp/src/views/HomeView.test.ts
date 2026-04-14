@@ -108,7 +108,7 @@ describe('HomeView.vue', () => {
 
   it('should load overview and show governance entry for platform metrics operators', async () => {
     mocks.authUser.value = {
-      access_token: createToken(['ROLE_ADMIN', 'idempotent:ops:view']),
+      access_token: createToken(['idempotent:ops:view']),
     }
 
     const wrapper = mountView()
@@ -125,7 +125,7 @@ describe('HomeView.vue', () => {
 
   it('should preserve current tenant scope when opening governance page', async () => {
     mocks.authUser.value = {
-      access_token: createToken(['ROLE_ADMIN', 'idempotent:ops:view']),
+      access_token: createToken(['idempotent:ops:view']),
     }
     window.localStorage.setItem('app_active_tenant_id', '7')
 
@@ -142,7 +142,7 @@ describe('HomeView.vue', () => {
 
   it('should not fetch metrics or show governance entry without authority', async () => {
     mocks.authUser.value = {
-      access_token: createToken(['ROLE_ADMIN']),
+      access_token: createToken([]),
     }
 
     const wrapper = mountView()
@@ -150,7 +150,7 @@ describe('HomeView.vue', () => {
 
     expect(mocks.getIdempotentMetrics).not.toHaveBeenCalled()
     expect(mocks.getIdempotentTopKeys).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('幂等治理指标仅对平台管理员开放')
+    expect(wrapper.text()).toContain('幂等治理指标仅对具备平台级幂等治理权限的用户开放')
     expect(wrapper.text()).not.toContain('进入治理页')
   })
 })

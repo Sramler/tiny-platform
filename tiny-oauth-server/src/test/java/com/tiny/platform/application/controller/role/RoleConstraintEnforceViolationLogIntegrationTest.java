@@ -159,8 +159,8 @@ class RoleConstraintEnforceViolationLogIntegrationTest {
             // expected: enforce blocks the grant
         }
 
-        var principal = user("role-permission-assigner")
-            .authorities(new SimpleGrantedAuthority("system:role:permission:assign"));
+        var principal = user("role-constraint-violation-viewer")
+            .authorities(new SimpleGrantedAuthority("system:role:constraint:violation:view"));
 
         mockMvc.perform(get("/sys/role-constraints/violations")
                 .param("principalId", String.valueOf(userId))
@@ -176,4 +176,3 @@ class RoleConstraintEnforceViolationLogIntegrationTest {
             .andExpect(jsonPath("$.content[0].violationCode", equalTo("ROLE_CONFLICT_MUTEX")));
     }
 }
-

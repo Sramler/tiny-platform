@@ -2,23 +2,25 @@
 
 > 与授权模型、租户、用户解析相关的遗留包袱，便于分阶段收口与下线。  
 > 关联：`docs/TINY_PLATFORM_AUTHORIZATION_MODEL.md`、`docs/TINY_PLATFORM_PERMISSION_IDENTIFIER_SPEC.md`、`.agent/src/rules/92-tiny-platform-permission.rules.md`、`.agent/src/rules/93-tiny-platform-authorization-model.rules.md`。
-> 说明：本文件只维护遗留来源、兼容现状与下线策略；不承担“当前完成度/优先级”的唯一维护职责。
+> 说明：本文件只维护遗留来源、兼容现状与下线策略；不承担“当前完成度/优先级”的唯一维护职责。  
+> **（CARD-14E）** **当前运行态**（认证读链、`scope_key`、平台语义是否等于某租户 `default`、`platformTenantCode` 边界）以 `docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md`、`docs/TINY_PLATFORM_TESTING_PLAYBOOK.md` §1.7、`docs/TINY_PLATFORM_TENANT_GOVERNANCE.md` §3.1 为准；本清单中的「收口建议」多为**长期治理或历史包袱分类**，勿与“主链仍在桥接 fallback”混淆。
 
 ---
 
 ## 0. 按权限模型与权限标识符的演进路径
 
 - **权限真相源**：运行态功能权限已统一为 `role_assignment -> role_permission -> permission`；`resource.permission` 仅保留为兼容字段、运营可读字段和历史回填输入，新增逻辑不得再把它当唯一真相源。
+- **resource 兼容 facade**：活动 `resource` 表虽已删除，但 `Resource` DTO / `/sys/resources` / `ResourceServiceImpl` 仍在以 carrier 聚合 facade 形式运行，属于“表级历史壳已退场、运行态兼容壳仍在”的状态。
 - **控制面 Guard**：各 AccessGuard 仅使用规范权限码（如 `system:user:list`、`system:role:edit`、`idempotent:ops:view`、`dict:platform:manage`）。`LegacyAuthConstants` 已删除，ROLE_ADMIN 兜底已移除。平台级入口通过 `TenantContext.isPlatformScope()` 判定，不再查库。
-- **平台级入口**：租户管理、幂等治理、字典平台等仅允许“当前平台租户 + 管理员”或“当前平台租户 + 对应规范码”（如 `system:tenant:list`、`idempotent:ops:view`、`dict:platform:manage`），见权限规范文档“控制面与平台级”小节。
+- **平台级入口**：租户管理、幂等治理、字典平台等当前统一按“平台 scope + 对应规范码”（如 `system:tenant:list`、`idempotent:ops:view`、`dict:platform:manage`）判定；不再保留 `ROLE_ADMIN` / `ADMIN` 快捷通行。导出能力另按 `system:export:view` / `system:export:manage` 区分本人任务与管理全部任务。
 - **角色码演进**：运行时代码已不再特殊识别 `ADMIN`；`ROLE_ADMIN` 只是当前 seed 中的管理员角色码。若历史环境仍残留 `ADMIN` 数据，应通过迁移脚本清理，而不是继续在运行时兼容。
-- **导出能力**：导出接口已支持规范码 `system:export:view`（具备则可用导出）；查看全部任务/下载他人结果仍仅允许管理员，与当前导出权限语义一致。
+- **导出能力**：导出接口已支持规范码 `system:export:view`（具备则可用导出）；查看全部任务/下载他人结果需 `system:export:manage`，与当前导出权限语义一致。
 
 ### 0.1 兼容清退分桶（2026-03）
 
 - **可立刻删除（已完成）**：旧菜单/资源运行时查询 helper，包括 `MenuServiceImpl.mergeTreeMenus(...)`、`MenuServiceImpl.resolveCurrentUsername()`、`MenuEntryRepository.findGranted*ByUsername*`、`ResourceRepository.findGrantedResourcesByUsername*`。
 - **已迁 runtime 后删除（已完成本轮迁移）**：资源管理控制面的运行时按钮门控、API 访问判断、资源树与按类型读路径已迁到 `menu / ui_action / api_endpoint + requirement`，并据此删除对应 legacy 查询。
-- **已完成退场**：`resource` 总表已从活动 schema 与运行时主线退出，并由 Liquibase 131 物理删除；`resource.permission` 仅作为历史迁移名词、旧文档字段来源和参考 SQL 口径保留。当前仍需保留的是少量显式安全语义与历史/迁移说明，例如 `CarrierCompatibilitySafetyService`（`replaceCompatibilityRequirement(requirement_group=0)` 与 `existsPermissionReference`），而不是 `resource` 表本身。
+- **表级壳已退场，但 facade 仍在**：`resource` 总表已从活动 schema 与运行时主线退出，并由 Liquibase 131 物理删除；`resource.permission` 仅作为历史迁移名词、旧文档字段来源和参考 SQL 口径保留。当前仍在主线运行的是 `Resource` 兼容聚合、`/sys/resources` 控制面和 `ResourcePermissionBindingService` 的 `permission -> required_permission_id` 回填；这部分属于下一阶段待下线兼容壳，而不只是历史材料。
 
 ---
 
@@ -32,12 +34,14 @@
 
 ---
 
-## 2. 平台语义双轨（“default” vs tenant_id=0）
+## 2. 平台语义双轨（历史标题：“default” vs tenant_id=0）
+
+> **（分区标题历史遗留）** 本节标题反映早期「业务租户 default 行 vs 字典 0」并存时期的表述。**（当前态）** 请求路径上平台控制面以 **`PLATFORM` scope** / `TenantContext.isPlatformScope()` 为准，不以某租户 **code** 推断平台身份；`platformTenantCode` 仅为 **bootstrap / 历史模板** 显式配置（见任务清单 CARD-13C/E）。
 
 | 项 | 位置 | 说明 | 收口建议 |
 |----|------|------|----------|
-| **平台 = code "default" 的租户** | `PlatformTenantProperties` / `PlatformTenantResolver`、`IdempotentProperties`、`TenantBootstrapServiceImpl` | 平台控制面 Guard 已不再依赖 `default`，但平台租户解析与 bootstrap 模板回退仍以配置的 `platformTenantCode`（默认 `default`）作为兼容承载。 | 长期改为 `scope_type=PLATFORM` + 平台模板层级；不再把 `code=default` 作为模板/平台语义的最后回退。 |
-| ~~**平台 = tenant_id 0**~~ | `DictTenantScope.PLATFORM_TENANT_ID = 0`，字典模块各处 `isPlatformTenant(tenantId)` | ✅ 已收口：字典已迁移到 `tenant_id IS NULL`，与“default 租户”可能不一致（若 default 的 id≠0）。 | **当前约定**：`tenant_id=0` 仅字典模块表示“平台字典”；其余控制面（菜单、幂等、租户管理等）使用“code=default 的租户”或配置。可配置化留待与平台租户统一时做（T7.1）。 |
+| **平台 = code "default" 的租户** | `PlatformTenantProperties`、`IdempotentProperties`、`TenantBootstrapServiceImpl` | 平台控制面 Guard 已不再依赖 `default`；`platformTenantCode` 仅剩 bootstrap / 历史入口兼容口径，且已移除默认 `default` 值，必须显式配置才会触发历史模板回填。 | 长期治理：继续减少对租户 **code** 的依赖；运行态平台语义以 `scope_type=PLATFORM` + 平台模板为准（见任务清单）。 |
+| ~~**平台 = tenant_id 0**~~ | `DictTenantScope.PLATFORM_TENANT_ID = 0`，字典模块各处 `isPlatformTenant(tenantId)` | ✅ 已收口：字典已迁移到 `tenant_id IS NULL`，与“default 租户”可能不一致（若 default 的 id≠0）。 | **当前约定**：`tenant_id=0` 仅字典模块表示“平台字典”；**（勿混淆）** 此处指历史/字典域行含义，**不是**运行态「平台 = code default 租户」的授权判定——后者已收口为 **PLATFORM scope**（见 §0 与任务清单）。可配置化留待与平台租户统一时做（T7.1）。 |
 
 ---
 
@@ -47,7 +51,7 @@
 |----|------|------|----------|
 | ~~**"ADMIN" 与 "ROLE_ADMIN" 并存**~~ | 旧：各 AccessGuard 中 `Set.of("ROLE_ADMIN", "ADMIN")` | ✅ **已收口**：所有 Guard 已移除 ROLE_ADMIN/ADMIN 兜底，改为纯细粒度权限码判定。`LegacyAuthConstants` 已物理删除。默认 seed 通过 `role_permission -> permission` 将全部权限码授予 ROLE_ADMIN 角色。 | 已达目标态。 |
 | **role.name 用于展示/下游** | `RoleController`（返回 name/code）、`CamundaIdentityProvider`（`group.setName(role.getName())`） | 运行态鉴权已不依赖 role.name，但 API 与工作流仍用 name。 | 展示可保留；Camunda 若强依赖 name，可保留至工作流迁移或改为用 role.code。 |
-| **role.getCode() 进入 authority** | `SecurityUser.buildAuthorities`、`PermissionVersionService` | 角色 code 作为 authority，与 resource.permission 一起组成权限。 | 已符合“不把 role.name 放入 authority”；若未来仅用 permissions，可逐步不再把 role.code 放入。 |
+| ~~**role.getCode() 进入 authority**~~ | `SecurityUser.buildAuthorities`、`JwtTokenCustomizer.resolveRoleCodes` | ✅ **已收口**：`SecurityUser.buildAuthorities(...)` 已不再输出 `role.code` authorities，`JwtTokenCustomizer.resolveRoleCodes(...)` 只接受显式 `roleCodes`；缺显式角色码时返回空集合，不再从 `ROLE_*` authority 反推。 | 当前角色码仅作为显式 `roleCodes` 契约提供给少量合法消费者，已不再是一般 authority 主链。 |
 
 ---
 
@@ -64,7 +68,7 @@
 
 | 项 | 位置 | 说明 | 收口建议 |
 |----|------|------|----------|
-| **平台模板缺失时的首次回填** | `TenantBootstrapServiceImpl.bootstrapFromPlatformTemplate` | 新租户 bootstrap 已统一从 `tenant_id IS NULL` 的平台模板派生；仅当历史环境尚未回填模板时，才会按配置的平台租户 code（默认 `default`）补一次模板。 | 当前可接受；长期可继续把“一次性回填”下沉为显式迁移或后台运维脚本。 |
+| **平台模板缺失时的首次回填** | `TenantBootstrapServiceImpl.bootstrapFromPlatformTemplate` | 新租户 bootstrap 已统一从 `tenant_id IS NULL` 的平台模板派生；仅当历史环境尚未回填模板时，才会在**显式配置** `tiny.platform.tenant.platform-tenant-code`（无默认值，CARD-13C）下按该租户 code 补一次模板。 | 当前可接受；长期可继续把“一次性回填”下沉为显式迁移或后台运维脚本。 |
 | ~~**菜单树平台租户硬编码**~~ | ~~`MenuServiceImpl`~~ | ✅ 已收口：菜单树过滤已按 `TenantContext.isPlatformScope()` 与平台专属资源策略处理，不再查 `default` 或依赖 `ADMIN`/`ROLE_ADMIN` 兜底。 | 已达目标态。 |
 
 ---
@@ -73,7 +77,9 @@
 
 | 项 | 位置 | 说明 | 收口建议 |
 |----|------|------|----------|
-| **ExportController 鉴权** | `ExportController` | 已移除 `LegacyAuthConstants` 依赖，导出能力使用规范码 `system:export:view`；查看全部任务/下载他人结果仍保留管理员语义。 | 当前可接受；若后续拆独立 AccessGuard，可继续收口“管理员专属能力”。 |
+| **ExportController 鉴权** | `ExportController` | 已移除 `LegacyAuthConstants` 依赖，导出能力使用规范码 `system:export:view`；查看全部任务/下载他人结果使用 `system:export:manage`。 | 当前可接受；若后续拆独立 AccessGuard，可继续收口导出 `view/manage` 的职责边界。 |
+| **`/sys/resources` compatibility facade** | `ResourceController`、`ResourceServiceImpl`、`ResourcePermissionBindingService` | 虽然 `resource` 表已删，但资源控制面仍以 compatibility aggregate 对 `menu/ui_action/api_endpoint` 做聚合读写。当前 `CARD-15A` 已完成收口：`/sys/resources/permission/{permission}` 与重复 `/sys/resources/menus*` 路由已删除；permission lookup 已从 `/sys/resources/permission-options` 拆到独立 `/sys/permissions/options`；资源页 no-op 查询壳与前端未使用 `resourceList()/ResourceQuery` 已删除；后端 `ResourceRequestDto` 与 `ResourceServiceImpl` 也已删除 permission 查询参数/分支。`/sys/resources` 现仅保留 carrier 聚合读写与 runtime 自省端点，`permission` 作为派生展示字段保留。 | 当前主线可接受；后续仅需在新增功能中持续保持“permission 派生展示，不作为 aggregate 查询/lookup 入口”。 |
+| ~~**active tooling fallback**~~ | `scripts/e2e/ensure-scheduling-e2e-auth.sh` | ✅ **已收口**：调度 real E2E bootstrap 已要求显式 `E2E_PLATFORM_TENANT_CODE`，且平台模板租户必须存在 `ROLE_TENANT_ADMIN`；缺任一前置即 fail-fast。脚本内残留的 `default` 字面仅用于测试展示命名，不再承担模板来源或回退语义。 | 已达当前态；后续若继续减噪，可仅处理展示文案与变量命名。 |
 | **recordTenantId 等展示字段** | 各 DTO（如 `UserResponseDto`、`RoleResponseDto`、`ResourceResponseDto` 等） | 响应中 `setRecordTenantId(entity.getTenantId())`，用于前端/审计展示。 | 非授权逻辑，可保留；若平台模板将来 tenant_id 可空，展示层需约定“平台”的展示方式。 |
 | **User 注释掉的 role.getName()** | `User.java` 内注释 | 历史用 role.name 作 authority 的代码已注释。 | 保持注释或删除，避免误导。 |
 
@@ -81,18 +87,25 @@
 
 ## 7. 汇总：按优先级收口（更新状态）
 
+> **（CARD-14E）** 下列优先级条目多为**文档撰写时的分桶**；**现状勾选与完成度**以 `TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md` 为准。
+
 - **高（与授权/多租户强相关）**  
-  - 平台语义双轨（default vs tenant_id=0）统一为可配置的“平台租户/作用域”。  
+  - **（长期治理表述）** 减少“历史业务租户 `default` 行 vs 其它载体”混读风险；运行态平台语义已以 **PLATFORM scope** 为主链事实。  
   - ✅ user.tenant_id 与 uk_user_tenant_username 已按“平台账号 + membership”目标态迁移（停双写、tenant_id 可空、username 全局唯一），仅剩少量展示/审计用途。  
+  - `Resource` compatibility facade 仍在 `/sys/resources` 主链存活，但菜单 CRUD/tree/sort/check 已回到 `/sys/menus`，`permission/{permission}` 读侧入口也已删除，菜单写链也已切到显式 `requiredPermissionId`；当前高优先级尾巴主要收敛到 aggregate 读侧与 DTO 语义仍较厚。  
+  - 角色码一般 authority / `ROLE_* -> roleCodes` runtime compat 已完成收口，当前高优先级 runtime 阻碍基本收敛到 `/sys/resources` facade。  
 
 - **中（一致性/可维护性）**  
-  - TenantBootstrap 从“default 租户复制”改为“平台模板 + 租户派生”。  
-  - 平台租户解析逐步从 `platformTenantCode` 回退演进为显式平台模板层级。  
+  - **（已完成主线）** TenantBootstrap 已以「平台模板 + 租户派生」为主链（任务清单）。  
+  - **（长期）** 继续减少对 `platformTenantCode` 的非 bootstrap 依赖；**当前** bootstrap 已须显式配置（CARD-13C），勿将租户 code 当作平台语义。  
+  - active tooling 的 `default` / `ROLE_ADMIN` 兼容尾巴已收口；剩余更多是历史材料与活跃代码命名的持续减噪。  
+  - 历史文档仍需跟随主线状态持续回写，避免再次把桥接期/阶段性口径冒充当前态。  
 
 - **低（清理与文档）**  
   - ✅ user_role / user_role_legacy 表已通过 Liquibase 043/047 下线，运行态与数据侧均不再依赖。  
   - ExportController 等零散鉴权收口到 AccessGuard + 规范码。  
   - role.name 在 Camunda/API 的用法标注为“展示/兼容”，与鉴权解耦。
+  - `schema.sql` / 参考 SQL 中的历史授权结构仍需继续减噪或归档。
 
 **任务清单 T1/T2/T3 收口**：T1.1 调度迁移脚本注释、T1.2 参考 SQL 注释、T2.1 菜单页权限常量注释、T3.1 控制面 RBAC 核查已完成，见 `TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md`。
 
@@ -104,24 +117,28 @@
 
 ### 8.1 JWT / Session 解码兼容窗口（CARD-10A）
 
-- （更新：CARD-11D 已完成）`SecurityUser` 反序列化已移除“`roleCodes` 缺失时从 `authorities` 恢复 `ROLE_*`”兼容逻辑，旧 session 快照不再半兼容恢复角色码。
-- （更新：CARD-11D 已完成）`TinyPlatformJwtGrantedAuthoritiesConverter` 已拒绝 `ROLE_*` authority claim 的旧混合态解码；Bearer 主链仅接受 scope + 非 `ROLE_*` authorities + permissions。
-- 主线现状：JWT / Session 只认当前显式契约；旧混合态 payload 视为不支持输入。
+- （保持成立）`SecurityUser` 反序列化已移除“`roleCodes` 缺失时从旧角色型 authorities 恢复角色码”的兼容逻辑，`TinyPlatformJwtGrantedAuthoritiesConverter` 也已拒绝旧角色 authority claim 的 Bearer 解码。
+- （保持成立）`SecurityUser` 构造器层已移除“`authorities -> roleCodes`”隐式恢复，主链若需要角色码必须显式传入 `roleCodes`。
+- （更新：CARD-15B 已完成）`SecurityUser.buildAuthorities(...)` 已不再把 `role.code` 放进 Session authorities；`JwtTokenCustomizer.resolveRoleCodes(...)` 也只接受显式 `roleCodes`。
+- 主线现状：JWT / Session 只认显式 `roleCodes` + permission/factor/scope authority 契约；缺显式角色码时返回空集合。
 
 ### 8.2 roleCodes 消费者 fallback（CARD-10B）
 
-- （更新：CARD-11B 已完成）`roleCodes` 消费者主线仅接受显式 `roleCodes`（`SecurityUser` principal/details 或 JWT `roleCodes` claim）。
-- （更新：CARD-11B 已完成）历史 `ROLE_* authorities` 反推 roleCodes 的 fallback 已删除，legacy JWT 缺失 `roleCodes` 时不再回退。
-- 主线现状：通用 `ROLE_* authorities` 不再作为 roleCodes 消费链输入来源。
+- （保持成立）`CamundaIdentityBridgeFilter` 等合法消费者主线已优先接受显式 `roleCodes`（`SecurityUser` principal/details 或 JWT `roleCodes` claim）。
+- （更新：CARD-15B 已完成）`JwtTokenCustomizer.resolveRoleCodes(...)` 已删除 authority 反推路径；`SecurityUser` Session carrier 也不再携带 role-code authorities。
+- 主线现状：显式 `roleCodes` 已是唯一入口；缺失时返回空集合，不再回退通用 `ROLE_* authorities`。
 
 ### 8.3 default/platformTenantCode 兼容壳（CARD-10C）
 
 - （更新：CARD-11C 已完成）`TenantContextFilter` 主链已移除基于 `PlatformTenantResolver` 的平台 scope 推断，平台主语义仅认显式 `PLATFORM` scope。
 - `MenuServiceImpl` 写侧不再回退 `platformTenantCode/default`，改为要求显式 `activeTenantId`。
-- `PlatformTenantResolver` 仅保留给 bootstrap / 历史入口兼容路径；新业务主链禁止新增依赖。
+- （更新：CARD-12B 已完成）运行时代码中的 `PlatformTenantResolver` Bean 已删除；当前仅保留 `platformTenantCode` 作为 bootstrap / 历史入口兼容口径，新业务主链禁止新增依赖。
+- （更新：CARD-13C 已完成）`platformTenantCode` / `tiny.idempotent.ops.platform-tenant-code` 已移除 `default` 默认值；仅在显式配置时允许历史模板来源租户参与 bootstrap。
+- （更新：CARD-13E 已完成）real-link `e2e/setup/real.global.setup.ts`、`verify-real-e2e-derived-assets.sh` 等 active tooling 不再对 `E2E_PLATFORM_TENANT_CODE` 静默回退 `default`；`ensure-platform-admin.sh` 须显式 `PLATFORM_TENANT_CODE`（种子若确为 `tenant.code=default` 可显式传入）。
 
 ### 8.4 carrier requirement fallback（CARD-10D）
 
 - （更新：CARD-11A 已完成）主线已删除 requirement 缺失时按 `fallbackPermission` 的放行兼容路径；
 - requirement 缺失统一 fail-closed，并通过审计 reason（如 `REQUIREMENT_ROWS_MISSING_FAIL_CLOSED`）显式诊断；
+- （更新：CARD-13B 已完成）未注册 / 歧义 api_endpoint 已统一 fail-closed；`CarrierPermissionReferenceSafetyService`（CARD-14B 重命名）不再维护 requirement_group=0 compatibility 回填；
 - 新增 carrier 仍必须优先补齐 requirement 行，不允许依赖兼容兜底。

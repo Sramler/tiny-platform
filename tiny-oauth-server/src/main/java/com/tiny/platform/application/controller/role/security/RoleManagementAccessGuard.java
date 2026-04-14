@@ -25,8 +25,7 @@ public class RoleManagementAccessGuard {
         "system:role:permission:assign"
     );
 
-    // RBAC3 control-plane permissions (new identifiers).
-    // Keep legacy compatibility by also accepting ASSIGN_PERMISSION_AUTHORITIES in methods below.
+    // RBAC3 control-plane permissions.
     private static final Set<String> ROLE_CONSTRAINT_VIEW_AUTHORITIES = Set.of("system:role:constraint:view");
     private static final Set<String> ROLE_CONSTRAINT_MANAGE_AUTHORITIES = Set.of("system:role:constraint:edit");
     private static final Set<String> ROLE_CONSTRAINT_VIOLATION_VIEW_AUTHORITIES = Set.of("system:role:constraint:violation:view");
@@ -56,18 +55,15 @@ public class RoleManagementAccessGuard {
     }
 
     public boolean canViewRoleConstraints(Authentication authentication) {
-        return hasAnyAuthority(authentication, ROLE_CONSTRAINT_VIEW_AUTHORITIES)
-            || canAssignPermissions(authentication);
+        return hasAnyAuthority(authentication, ROLE_CONSTRAINT_VIEW_AUTHORITIES);
     }
 
     public boolean canManageRoleConstraints(Authentication authentication) {
-        return hasAnyAuthority(authentication, ROLE_CONSTRAINT_MANAGE_AUTHORITIES)
-            || canAssignPermissions(authentication);
+        return hasAnyAuthority(authentication, ROLE_CONSTRAINT_MANAGE_AUTHORITIES);
     }
 
     public boolean canViewRoleConstraintViolations(Authentication authentication) {
-        return hasAnyAuthority(authentication, ROLE_CONSTRAINT_VIOLATION_VIEW_AUTHORITIES)
-            || canAssignPermissions(authentication);
+        return hasAnyAuthority(authentication, ROLE_CONSTRAINT_VIOLATION_VIEW_AUTHORITIES);
     }
 
     private boolean hasAnyAuthority(Authentication authentication, Set<String> requiredAuthorities) {

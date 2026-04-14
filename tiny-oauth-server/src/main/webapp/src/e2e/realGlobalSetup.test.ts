@@ -8,6 +8,7 @@ import {
   deriveTenantCodeForTenantScope,
   extractAccessTokenFromStorageState,
   readConfiguredValue,
+  requireRealLinkPlatformTenantCode,
   resolveBindTenantCode,
   resolveReadonlyTenantCode,
   shouldCreateTenantViaApi,
@@ -189,6 +190,7 @@ describe('real.global.setup ensure auth env', () => {
     const env = buildEnsureAuthEnv(
       {
         E2E_TENANT_CODE: 'bench-1m',
+        E2E_PLATFORM_TENANT_CODE: 'platform-main',
         E2E_TENANT_CODE_BIND: 'bench-1m',
         E2E_USERNAME_BIND: 'e2e_bind',
         E2E_PASSWORD_BIND: 'bind-pass',
@@ -213,6 +215,7 @@ describe('real.global.setup ensure auth env', () => {
     const env = buildEnsureAuthEnv(
       {
         E2E_TENANT_CODE: 'bench-1m',
+        E2E_PLATFORM_TENANT_CODE: 'platform-main',
         E2E_TENANT_CODE_READONLY: 'bench-1m',
         E2E_USERNAME_READONLY: 'primary_readonly',
       },
@@ -254,17 +257,17 @@ describe('real.global.setup derived asset governance', () => {
     expect(tenantCodes).toEqual(['bench-2m', 'bench-3m'])
   })
 
-  it('normalizes governance env with derived bind/readonly tenant codes and default platform tenant', () => {
+  it('normalizes governance env with explicit platform tenant and derived bind/readonly tenant codes', () => {
     const env = buildDerivedAssetGovernanceEnv({
       E2E_TENANT_CODE: 'bench-1m',
-      E2E_PLATFORM_TENANT_CODE: '',
+      E2E_PLATFORM_TENANT_CODE: 'platform-main',
       E2E_USERNAME_BIND: 'e2e_bind_user',
       E2E_USERNAME_READONLY: 'e2e_readonly',
     })
 
     expect(env.E2E_TENANT_CODE_BIND).toBe('bench-1m')
     expect(env.E2E_TENANT_CODE_READONLY).toBe('bench-1m')
-    expect(env.E2E_PLATFORM_TENANT_CODE).toBe('default')
+    expect(env.E2E_PLATFORM_TENANT_CODE).toBe('platform-main')
   })
 })
 
@@ -304,6 +307,16 @@ describe('real.global.setup tenant bootstrap helpers', () => {
 
   it('does not switch primary storageState when the tenant-scoped fallback is unnecessary', () => {
     expect(shouldUseTenantScopedPrimaryAuthState('bench-1m', 'default')).toBe(false)
+  })
+})
+
+describe('requireRealLinkPlatformTenantCode', () => {
+  it('throws when E2E_PLATFORM_TENANT_CODE is missing for real-link tooling', () => {
+    expect(() =>
+      requireRealLinkPlatformTenantCode({
+        E2E_TENANT_CODE: 'bench-1m',
+      } as NodeJS.ProcessEnv),
+    ).toThrow(/E2E_PLATFORM_TENANT_CODE/)
   })
 })
 

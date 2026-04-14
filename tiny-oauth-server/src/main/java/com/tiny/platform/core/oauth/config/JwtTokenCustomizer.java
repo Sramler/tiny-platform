@@ -789,12 +789,7 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
         if (securityUser != null && securityUser.getRoleCodes() != null && !securityUser.getRoleCodes().isEmpty()) {
             return securityUser.getRoleCodes();
         }
-        if (authorities == null || authorities.isEmpty()) {
-            return Set.of();
-        }
-        return authorities.stream()
-                .filter(authority -> authority != null && authority.startsWith("ROLE_"))
-                .collect(Collectors.toCollection(LinkedHashSet::new));
+        return Set.of();
     }
     
     /**

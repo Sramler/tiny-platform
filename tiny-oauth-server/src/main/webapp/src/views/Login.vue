@@ -109,7 +109,7 @@ const loginMode = ref<LoginMode>('TENANT')
 /**
  * 仅用于本地/开发联调占位，与后端 seed 对齐：
  * - 租户：`data.sql` 等默认 admin
- * - 平台：`ensure-platform-admin.sh` 默认创建 platform_admin，密码哈希与 admin 相同（明文多为 admin）
+ * - 平台：`ensure-platform-admin.sh` 创建 platform_admin（须显式 `PLATFORM_TENANT_CODE`）；密码哈希与 admin 相同（明文多为 admin）
  */
 const tenantDevDefaults = { username: 'admin', password: 'admin' }
 const platformDevDefaults = { username: 'platform_admin', password: 'admin' }

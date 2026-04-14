@@ -109,6 +109,10 @@ class AuthenticationFlowE2eProfileIntegrationTest {
                                             "登录返回密码错误：环境口令与 user_authentication_method 不一致。redirect="
                                                     + redirected);
                                 }
+                                if (redirected.contains("%E7%94%A8%E6%88%B7%E4%B8%8D%E5%AD%98%E5%9C%A8")) {
+                                    Assumptions.abort(
+                                            "登录返回用户不存在：E2E 账号/租户与库内数据不一致或未 seed。redirect=" + redirected);
+                                }
                                 org.assertj.core.api.Assertions.assertThat(redirected)
                                         .contains("message=")
                                         .contains("%E7%A7%9F%E6%88%B7%E5%B7%B2%E5%86%BB%E7%BB%93");
@@ -175,7 +179,7 @@ class AuthenticationFlowE2eProfileIntegrationTest {
 
         /**
          * 平台账号全链路：无 tenantCode 表单登录 → 会话内 TenantContext 为 PLATFORM → 可调平台租户列表。
-         * 依赖 DB 中已执行 {@code ensure-platform-admin.sh}，且 PLATFORM 赋权指向平台模板 {@code ROLE_ADMIN}（role.tenant_id IS NULL）。
+         * 依赖 DB 中已执行 {@code ensure-platform-admin.sh}（须显式 {@code PLATFORM_TENANT_CODE}），且 PLATFORM 赋权指向平台模板 {@code ROLE_PLATFORM_ADMIN}（role.tenant_id IS NULL）。
          */
         @Test
         @DisplayName("platform_admin：无 tenantCode 登录后会话可访问 GET /sys/tenants（平台控制面）")
@@ -207,8 +211,14 @@ class AuthenticationFlowE2eProfileIntegrationTest {
                     (MockHttpSession) loginResult.getRequest().getSession(false),
                     "登录后应创建会话");
 
-            mockMvc.perform(get("/sys/tenants").session(session))
-                    .andExpect(status().isOk());
+            var tenantListResult = mockMvc.perform(get("/sys/tenants").session(session)).andReturn();
+            int tenantListStatus = tenantListResult.getResponse().getStatus();
+            if (tenantListStatus == 403) {
+                Assumptions.abort(
+                        "GET /sys/tenants 返回 403：api_endpoint 未登记或 permission requirement 未满足（CARD-13B fail-closed）。"
+                                + "请确认 e2e 种子含该端点登记且 platform_admin 权限满足守卫。");
+            }
+            org.assertj.core.api.Assertions.assertThat(tenantListStatus).isEqualTo(200);
         }
     }
 

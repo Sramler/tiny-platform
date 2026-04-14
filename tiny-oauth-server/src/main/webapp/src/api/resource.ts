@@ -19,6 +19,9 @@ export interface ResourceItem {
   redirect?: string
   hidden?: boolean
   keepAlive?: boolean
+  /**
+   * 派生字段（由 requiredPermissionId 对应权限主数据回填），不作为写链主入口。
+   */
   permission?: string
   requiredPermissionId?: number
   type: number
@@ -38,20 +41,6 @@ export interface ResourceItem {
   enabled?: boolean
 }
 
-// 查询参数类型
-export interface ResourceQuery {
-  name?: string
-  title?: string
-  url?: string
-  uri?: string
-  permission?: string
-  type?: number
-  parentId?: number
-  hidden?: boolean
-  page?: number
-  size?: number
-}
-
 // 创建/更新资源参数
 export interface ResourceCreateUpdateDto {
   id?: number
@@ -67,7 +56,14 @@ export interface ResourceCreateUpdateDto {
   redirect?: string
   hidden?: boolean
   keepAlive?: boolean
+  /**
+   * 只读/展示字段；提交时不再依赖手输 permission。
+   */
   permission?: string
+  /**
+   * 写链主字段：显式权限主数据ID。
+   */
+  requiredPermissionId?: number
   type: number
   parentId?: number | null
 }
@@ -97,11 +93,6 @@ export enum ResourceType {
   MENU = 1,
   BUTTON = 2,
   API = 3,
-}
-
-// 获取资源列表（分页）
-export function resourceList(params?: ResourceQuery): Promise<PageResponse<ResourceItem>> {
-  return request.get('/sys/resources', { params })
 }
 
 // 创建资源
@@ -193,11 +184,6 @@ export function getResourcesByParentId(parentId: number): Promise<ResourceItem[]
 // 获取顶级资源列表
 export function getTopLevelResources(): Promise<ResourceItem[]> {
   return request.get('/sys/resources/top-level')
-}
-
-// 根据权限标识获取资源列表
-export function getResourcesByPermission(permission: string): Promise<ResourceItem[]> {
-  return request.get(`/sys/resources/permission/${permission}`)
 }
 
 // 获取资源类型列表

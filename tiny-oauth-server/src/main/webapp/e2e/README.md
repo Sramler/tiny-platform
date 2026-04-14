@@ -33,13 +33,14 @@
   - 伪造 `X-Active-Tenant-Id` 的 `tenant_mismatch` 拒绝（403）
   - 同租户只读调度身份的真实 RBAC 拒绝（只允许 `scheduling:console:view`，拒绝 `scheduling:console:config` / `scheduling:run:control` / `scheduling:audit:view` / `scheduling:cluster:view`）
 - 该套件需要额外只读身份 secrets：
+  - **`E2E_PLATFORM_TENANT_CODE`**（**必填**，与库内平台来源租户 `tenant.code` 一致；`real.global.setup.ts` 禁止缺省静默 `default`，见 CARD-13E）
   - `E2E_PLATFORM_USERNAME`
   - `E2E_PLATFORM_PASSWORD`
   - `E2E_PLATFORM_TOTP_SECRET`
   - `E2E_USERNAME_READONLY`
   - `E2E_PASSWORD_READONLY`
   - `E2E_TOTP_SECRET_READONLY`
-  - `E2E_TENANT_CODE_READONLY` 可选；未提供时默认复用主调度测试租户
+  - `E2E_TENANT_CODE_READONLY` 可选；未提供时由 setup 按 `E2E_TENANT_CODE` + `E2E_PLATFORM_TENANT_CODE` **派生**只读租户编码（不再隐含“就是 default”）
 - 失败证据：
   - Playwright `playwright-report/`
   - Playwright `test-results/`（trace / screenshot / retain-on-failure video）
@@ -80,8 +81,9 @@
 - **种子与认证 bootstrap**
   - 全局 setup：`e2e/setup/real.global.setup.ts`
     - 清理并创建 `e2e/.auth` 目录。
+    - **须配置 `E2E_PLATFORM_TENANT_CODE`**（与 `ensure-scheduling-e2e-auth.sh` / 库内平台租户语义一致；缺省 fail-fast，CARD-13E）。
     - 调用 `scripts/e2e/ensure-scheduling-e2e-auth.sh` 初始化主自动化身份；如配置第二租户变量，再初始化第二自动化身份。
-    - `ensure-scheduling-e2e-auth.sh` 会先验证默认租户是否具备调度 bootstrap 模板（`ROLE_ADMIN` + `037` authority 资源 + `scheduling:*` 绑定），缺失时直接 fail fast，避免在 real-link 中把模板缺失误判成单条业务回归。
+  - `ensure-scheduling-e2e-auth.sh` 会先验证平台模板租户是否具备调度 bootstrap 模板（**必须存在 `ROLE_TENANT_ADMIN`**）及 `037` authority 与 `scheduling:*` 绑定，缺失时直接 fail fast，避免在 real-link 中把模板缺失误判成单条业务回归。
     - 当第二租户或 readonly 租户与主租户不同，`real.global.setup.ts` 会优先使用平台自动化身份（`E2E_PLATFORM_*`）的真实 bearer token 调 `/sys/tenants` 创建租户，再交给 `ensure-scheduling-e2e-auth.sh` 只补用户与认证方式；这样 cross-tenant/readonly 的租户创建会真实触发 `TenantServiceImpl.create() -> TenantBootstrapService`，且不依赖普通租户管理员越权访问租户管理接口。
     - 按需执行 `scripts/e2e/seed-scheduling-orchestration.sql`（由 `E2E_USE_SQL_SEED` 控制）。
     - 运行 `e2e/setup/generate-auth-state.mjs` 生成：
@@ -113,7 +115,7 @@
 |---------------------------------------------|---------------|-------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|
 | `real/scheduling-dag-orchestration.spec.ts` | isolated real-link | 通过真实 OIDC 登录态 + 专用调度租户，创建 DAG、触发 run、观察并行归并/串行推进/重试/取消/暂停恢复等拓扑（当前断言偏行为与状态，不覆盖所有边界条件） | 使用真实 `/scheduling/**` API 与真实 MySQL/H2 schema，不再 mock first-party API；依赖真实 OIDC/JWT/tenant 头 |
 | `real/mfa-login-flow.spec.ts`               | isolated real-link | 从 `/login` 起步，使用主自动化账号走 “/login → /self/security/totp-verify → /self/security” 的已绑定 TOTP 用户登录链路；当前仅覆盖单租户、单身份场景 | 通过真实 `/api/login` 与 `/self/security/**`，不使用 storageState；依赖 `.env.e2e.local` 中的 E2E_TENANT_CODE/E2E_USERNAME/E2E_PASSWORD 以及 `E2E_TOTP_CODE` 或 `E2E_TOTP_SECRET` |
-| `real/platform-vue-login.spec.ts`           | isolated real-link | 从 `/login` 点击「平台登录」、提交「登录平台」，验证无 `tenantCode` 的真实 Session 登录（含平台身份 MFA）；断言不回到带错误的 `/login` | 依赖 `E2E_PLATFORM_USERNAME` / `E2E_PLATFORM_PASSWORD` 与 `E2E_PLATFORM_TOTP_SECRET`（或 `E2E_PLATFORM_TOTP_CODE`）；补全 Vitest 无法覆盖的 Login.vue 平台提交链路 |
+| `real/platform-vue-login.spec.ts`           | isolated real-link | 从 `/login` 点击「平台登录」、提交「登录平台」，验证无 `tenantCode` 的真实 Session 登录（含平台身份 MFA）；断言不回到带错误的 `/login` | 依赖 **`E2E_PLATFORM_TENANT_CODE`**、`E2E_PLATFORM_USERNAME` / `E2E_PLATFORM_PASSWORD` 与 `E2E_PLATFORM_TOTP_SECRET`（或 `E2E_PLATFORM_TOTP_CODE`）；补全 Vitest 无法覆盖的 Login.vue 平台提交链路 |
 | `real/mfa-bind-flow.spec.ts`                | isolated real-link | 从 `/login` 起步，使用专用首绑身份登录未绑定 TOTP 的用户，走 “/login → /self/security/totp-bind → /self/security → 清理会话 → /login → /self/security/totp-verify → /self/security” 的完整首绑 + 校验链路 | 通过真实 `/api/login` 与 `/self/security/totp/*`，不使用 storageState；依赖 `.env.e2e.local` 中的 E2E_USERNAME_BIND/E2E_PASSWORD_BIND 以及可选的 E2E_TENANT_CODE_BIND；TOTP secret 由真实 `/self/security/totp/pre-bind` 返回 |
 | `real/cross-tenant-a-to-b.spec.ts`          | isolated real-link | 以 tenant A 身份登录，由 tenant B 先创建真实调度资源，再验证 tenant A 直接读取其他租户资源会得到 404，伪造 tenant B 头会得到 403 `tenant_mismatch` | 使用两套真实 storageState 与真实 `/scheduling/**` API，不再停留在单身份 forged header；要求第二租户身份已 bootstrap |
 | `real/cross-tenant-b-to-a.spec.ts`          | isolated real-link | 以 tenant B 身份登录，由 tenant A 先创建真实调度资源，再验证 tenant B 直接读取其他租户资源会得到 404，伪造 tenant A 头会得到 403 `tenant_mismatch` | 使用两套真实 storageState 与真实 `/scheduling/**` API，覆盖反向跨租户拒绝路径；要求第二租户身份已 bootstrap |

@@ -10,7 +10,12 @@ DB_NAME="${DB_NAME:-tiny_web}"
 DB_USER="${DB_USER:-root}"
 DB_PASSWORD="${DB_PASSWORD:-}"
 
-PLATFORM_TENANT_CODE="${PLATFORM_TENANT_CODE:-default}"
+# CARD-13E：禁止静默回退 default；须与库内平台来源租户 code / 配置 tiny.platform.tenant.platform-tenant-code 一致。
+if [[ -z "${PLATFORM_TENANT_CODE:-}" ]]; then
+  echo "Missing PLATFORM_TENANT_CODE env var. Export it to your platform source tenant code (matches tenant.code used for platform template bootstrap)." >&2
+  echo "Example: PLATFORM_TENANT_CODE=default bash scripts/ensure-platform-admin.sh  # only if your seed truly uses code=default" >&2
+  exit 1
+fi
 PLATFORM_ADMIN_USERNAME="${PLATFORM_ADMIN_USERNAME:-platform_admin}"
 PLATFORM_ADMIN_NICKNAME="${PLATFORM_ADMIN_NICKNAME:-平台管理员}"
 PLATFORM_ADMIN_ROLE_CODE="${PLATFORM_ADMIN_ROLE_CODE:-ROLE_PLATFORM_ADMIN}"

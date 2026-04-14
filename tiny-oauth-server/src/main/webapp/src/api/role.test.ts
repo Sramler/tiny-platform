@@ -131,7 +131,7 @@ describe('role API', () => {
     expect(requestMocks.get).toHaveBeenCalledWith('/sys/roles/1/resources')
     expect(resourceResult).toEqual([20, 21])
 
-    const payload = { permissionIds: [2001, 2002], resourceIds: [20, 21, 22] }
+    const payload = { permissionIds: [2001, 2002] }
     await updateRoleResources(1, payload)
     expect(requestMocks.post).toHaveBeenCalledWith('/sys/roles/1/resources', payload, {
       idempotency: {

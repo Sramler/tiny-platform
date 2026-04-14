@@ -852,13 +852,11 @@ async function handleBatchUserAssign(newUserIds: string[]) {
     return
   }
   try {
-    const payload = batchUserScopeType.value === 'TENANT'
-      ? newUserIds.map(id => Number(id))
-      : {
-          scopeType: batchUserScopeType.value,
-          scopeId: batchUserScopeId.value ?? undefined,
-          userIds: newUserIds.map(id => Number(id)),
-        }
+    const payload = {
+      scopeType: batchUserScopeType.value,
+      scopeId: batchUserScopeType.value === 'TENANT' ? null : (batchUserScopeId.value ?? undefined),
+      userIds: newUserIds.map(id => Number(id)),
+    }
     for (const roleIdStr of selectedRowKeys.value) {
       const roleId = Number(roleIdStr)
       await updateRoleUsers(roleId, payload)
@@ -893,15 +891,14 @@ async function openResourceTransfer() {
   showResourceTransfer.value = true
 }
 // 保存分配资源
-async function handleResourceAssign(payload: { resourceIds: number[]; permissionIds: number[] }) {
+async function handleResourceAssign(payload: { permissionIds: number[] }) {
   if (!canAssignRolePermissions.value) {
     message.warning('缺少角色权限分配权限')
     return
   }
   try {
-    // 调用 updateRoleResources 保存角色资源分配
     const { updateRoleResources } = await import('@/api/role')
-    await updateRoleResources(currentRoleId.value, payload)
+    await updateRoleResources(currentRoleId.value, { permissionIds: payload.permissionIds })
     message.success('配置资源成功')
     showResourceTransfer.value = false
     loadData() // 刷新表格

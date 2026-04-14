@@ -38,8 +38,27 @@
         <a-input v-model:value="formData.redirect" placeholder="父菜单重定向地址，如：/user/list" :maxlength="200" show-count />
       </a-form-item>
 
-      <a-form-item label="权限标识" name="permission">
-        <a-input v-model:value="formData.permission" placeholder="请输入权限标识，如：system:user:list" :maxlength="100" show-count />
+      <a-form-item label="权限主数据" name="requiredPermissionId">
+        <a-select
+          v-model:value="formData.requiredPermissionId"
+          show-search
+          allow-clear
+          :filter-option="false"
+          :options="permissionSelectOptions"
+          placeholder="请选择权限主数据（可选）"
+          @search="handlePermissionSearch"
+          @change="handleRequiredPermissionIdChange"
+        />
+      </a-form-item>
+
+      <a-form-item label="权限编码（派生，只读）" name="permission">
+        <a-input
+          :value="formData.permission"
+          disabled
+          placeholder="由已选权限主数据自动派生，不可手填"
+          :maxlength="100"
+          show-count
+        />
       </a-form-item>
 
       <!-- 显示配置 -->
@@ -95,6 +114,7 @@ import type { FormInstance } from 'ant-design-vue'
 import type { Rule } from 'ant-design-vue/es/form'
 // 引入菜单API
 import { menuTreeAll, type MenuItem } from '@/api/menu'
+import { getPermissionOptions, type PermissionOptionItem } from '@/api/permission'
 import IconSelect from '../../components/IconSelect.vue' // 新增
 import Icon from '@/components/Icon.vue' // 通用图标回显组件
 
@@ -133,6 +153,7 @@ const formData = reactive({
   hidden: false,
   keepAlive: false,
   permission: '',
+  requiredPermissionId: undefined as number | undefined,
   parentId: null as number | null,
   enabled: true
 })
@@ -155,6 +176,17 @@ const rules: Record<string, Rule[]> = {
 
 // 菜单树数据
 const menuTreeData = ref<MenuItem[]>([])
+const permissionOptions = ref<PermissionOptionItem[]>([])
+const permissionKeyword = ref('')
+const permissionOptionMap = ref<Map<number, PermissionOptionItem>>(new Map())
+const permissionSearchTimer = ref<number | null>(null)
+
+const permissionSelectOptions = computed(() =>
+  permissionOptions.value.map((option) => ({
+    value: option.id,
+    label: `${option.permissionCode} (${option.permissionName || option.permissionCode})`,
+  })),
+)
 
 // 图标选择器
 const showIconSelector = ref(false)
@@ -208,6 +240,62 @@ function convertTreeData(tree: any[]): any[] {
   }))
 }
 
+async function loadPermissionOptions(keyword = '') {
+  permissionKeyword.value = keyword
+  try {
+    const options = await getPermissionOptions(keyword, 50)
+    permissionOptions.value = options || []
+    const mapping = new Map<number, PermissionOptionItem>()
+    permissionOptions.value.forEach((option) => {
+      mapping.set(option.id, option)
+    })
+    permissionOptionMap.value = mapping
+    ensureSelectedPermissionOptionExists()
+  } catch (error) {
+    console.error('加载权限主数据选项失败:', error)
+    permissionOptions.value = []
+    permissionOptionMap.value = new Map()
+  }
+}
+
+function ensureSelectedPermissionOptionExists() {
+  if (!formData.requiredPermissionId || !formData.permission) {
+    return
+  }
+  if (permissionOptionMap.value.has(formData.requiredPermissionId)) {
+    return
+  }
+  const fallbackOption: PermissionOptionItem = {
+    id: formData.requiredPermissionId,
+    permissionCode: formData.permission,
+    permissionName: formData.permission,
+  }
+  permissionOptions.value = [fallbackOption, ...permissionOptions.value]
+  const mapping = new Map<number, PermissionOptionItem>()
+  permissionOptions.value.forEach((option) => {
+    mapping.set(option.id, option)
+  })
+  permissionOptionMap.value = mapping
+}
+
+function handleRequiredPermissionIdChange(value?: number) {
+  if (!value) {
+    formData.permission = ''
+    return
+  }
+  const selectedOption = permissionOptionMap.value.get(value)
+  formData.permission = selectedOption?.permissionCode || ''
+}
+
+function handlePermissionSearch(keyword: string) {
+  if (permissionSearchTimer.value !== null) {
+    window.clearTimeout(permissionSearchTimer.value)
+  }
+  permissionSearchTimer.value = window.setTimeout(() => {
+    loadPermissionOptions(keyword)
+  }, 200)
+}
+
 // 初始化表单数据
 function initFormData() {
   try {
@@ -231,9 +319,14 @@ function initFormData() {
         hidden: Boolean(menuData.hidden),
         keepAlive: Boolean(menuData.keepAlive),
         permission: menuData.permission || '',
+        requiredPermissionId: menuData.requiredPermissionId,
         parentId: menuData.parentId || null,
         enabled: menuData.enabled !== undefined ? menuData.enabled : true
       })
+      if (formData.requiredPermissionId && !formData.permission) {
+        handleRequiredPermissionIdChange(formData.requiredPermissionId)
+      }
+      ensureSelectedPermissionOptionExists()
 
       console.log('编辑模式 - 表单数据已设置:', formData)
       console.log('父级菜单ID:', formData.parentId)
@@ -252,6 +345,7 @@ function initFormData() {
         hidden: false,
         keepAlive: false,
         permission: '',
+        requiredPermissionId: undefined,
         parentId: null,
         enabled: true
       })
@@ -279,7 +373,7 @@ function initFormData() {
     Object.assign(formData, {
       id: '', name: '', title: '', url: '', icon: '',
       showIcon: true, sort: 0, component: '', redirect: '',
-      hidden: false, keepAlive: false, permission: '', parentId: null,
+      hidden: false, keepAlive: false, permission: '', requiredPermissionId: undefined, parentId: null,
       enabled: true
     })
   }
@@ -335,6 +429,7 @@ async function handleSubmit() {
       hidden: Boolean(formData.hidden),
       keepAlive: Boolean(formData.keepAlive),
       permission: formData.permission || '',
+      requiredPermissionId: formData.requiredPermissionId,
       parentId: formData.parentId || null,
       enabled: formData.enabled
     }
@@ -400,6 +495,7 @@ onMounted(async () => {
   try {
     console.log('MenuForm 组件挂载，开始加载菜单树')
     await loadMenuTree()
+    await loadPermissionOptions()
     console.log('菜单树加载完成，初始化表单数据')
     // 确保菜单树加载完成后再初始化表单
     nextTick(() => {
@@ -413,16 +509,22 @@ onMounted(async () => {
 // 组件卸载时清理数据
 onBeforeUnmount(() => {
   try {
+    if (permissionSearchTimer.value !== null) {
+      window.clearTimeout(permissionSearchTimer.value)
+      permissionSearchTimer.value = null
+    }
     // 清理表单数据
     Object.assign(formData, {
       id: '', name: '', title: '', url: '', icon: '',
       showIcon: true, sort: 0, component: '', redirect: '',
-      hidden: false, keepAlive: false, permission: '', parentId: null,
+      hidden: false, keepAlive: false, permission: '', requiredPermissionId: undefined, parentId: null,
       enabled: true
     })
 
     // 清理其他响应式数据
     menuTreeData.value = []
+    permissionOptions.value = []
+    permissionOptionMap.value = new Map()
     showIconSelector.value = false
     submitting.value = false
   } catch (error) {

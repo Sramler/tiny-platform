@@ -5,7 +5,6 @@ import com.tiny.platform.infrastructure.auth.user.domain.UserAuthCredential;
 import com.tiny.platform.infrastructure.auth.user.domain.UserAuthScopePolicy;
 import com.tiny.platform.infrastructure.auth.user.domain.UserAuthenticationMethod;
 import com.tiny.platform.infrastructure.auth.user.repository.UserAuthScopePolicyRepository;
-import com.tiny.platform.infrastructure.auth.user.support.UserAuthenticationMethodMerge;
 import com.tiny.platform.infrastructure.auth.user.support.UserAuthenticationMethodProfile;
 import com.tiny.platform.infrastructure.auth.user.support.UserAuthenticationMethodProfiles;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,13 +13,13 @@ import org.springframework.stereotype.Service;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
-import java.util.Objects;
 import java.util.Optional;
 
 /**
  * 认证方式运行时读取服务。
  *
- * <p>只读取新模型 {@code user_auth_credential + user_auth_scope_policy}。</p>
+ * <p>只读取新模型 {@code user_auth_credential + user_auth_scope_policy}，且只读取与当前激活作用域匹配的
+ * {@code scope_key}，不再做跨作用域合并或第二段回退查询（CARD-13A）。</p>
  */
 @Service
 public class UserAuthenticationMethodProfileService {
@@ -36,11 +35,8 @@ public class UserAuthenticationMethodProfileService {
             Long userId,
             String activeScopeType,
             Long activeTenantId) {
-        ScopeSelection selection = resolveScopeSelection(activeScopeType, activeTenantId);
-        List<UserAuthenticationMethod> primaryRows = loadRowsFromNewModel(userId, selection.primaryScopeKey());
-        List<UserAuthenticationMethod> fallbackRows = loadFallbackRows(userId, selection);
-
-        return UserAuthenticationMethodMerge.mergePreferPrimary(primaryRows, fallbackRows).stream()
+        String scopeKey = resolveScopeKey(activeScopeType, activeTenantId);
+        return loadRowsFromNewModel(userId, scopeKey).stream()
                 .map(UserAuthenticationMethodProfiles::from)
                 .filter(UserAuthenticationMethodProfile::isMethodEnabled)
                 .sorted(Comparator.comparingInt(UserAuthenticationMethodProfile::authenticationPriority))
@@ -53,23 +49,13 @@ public class UserAuthenticationMethodProfileService {
             Long activeTenantId,
             String authenticationProvider,
             String authenticationType) {
-        ScopeSelection selection = resolveScopeSelection(activeScopeType, activeTenantId);
-        Optional<UserAuthenticationMethod> primary = findRowFromNewModel(
-                userId,
-                selection.primaryScopeKey(),
-                authenticationProvider,
-                authenticationType
-        );
-        if (primary.isPresent()) {
-            return primary.map(UserAuthenticationMethodProfiles::from);
-        }
+        String scopeKey = resolveScopeKey(activeScopeType, activeTenantId);
         return findRowFromNewModel(
                 userId,
-                selection.fallbackScopeKey(),
+                scopeKey,
                 authenticationProvider,
                 authenticationType
-        )
-                .map(UserAuthenticationMethodProfiles::from);
+        ).map(UserAuthenticationMethodProfiles::from);
     }
 
     public boolean existsEffectiveMethod(
@@ -88,17 +74,13 @@ public class UserAuthenticationMethodProfileService {
     }
 
     /**
-     * 新写路径的桥接规则：平台侧优先写入全局行（tenant_id IS NULL），租户侧仍写入真实 tenant_id。
+     * 写路径载体字段：与 {@link UserAuthenticationBridgeWriter#normalizeScopeId} 一致——
+     * {@code PLATFORM}/{@code GLOBAL} 作用域的 {@code scope_id} 为 {@code null}（非平台租户主键）；
+     * {@code TENANT} 作用域为真实 {@code tenant_id}。
+     * 平台态认证策略写入使用 {@code scope_type=PLATFORM}、{@code scope_key=PLATFORM}，不是 {@code GLOBAL}。
      */
     public Long resolveStorageTenantIdForWrite(String activeScopeType, Long activeTenantId) {
         return isPlatformScope(activeScopeType) ? null : activeTenantId;
-    }
-
-    private List<UserAuthenticationMethod> loadFallbackRows(Long userId, ScopeSelection selection) {
-        if (Objects.equals(selection.primaryScopeKey(), selection.fallbackScopeKey())) {
-            return List.of();
-        }
-        return loadRowsFromNewModel(userId, selection.fallbackScopeKey());
     }
 
     private List<UserAuthenticationMethod> loadRowsFromNewModel(Long userId, String scopeKey) {
@@ -146,29 +128,18 @@ public class UserAuthenticationMethodProfileService {
         return record;
     }
 
-    private ScopeSelection resolveScopeSelection(String activeScopeType, Long activeTenantId) {
+    private String resolveScopeKey(String activeScopeType, Long activeTenantId) {
         if (isPlatformScope(activeScopeType)) {
-            return new ScopeSelection(
-                    UserAuthenticationBridgeWriter.buildScopeKey(UserAuthenticationBridgeWriter.SCOPE_TYPE_PLATFORM, null),
-                    UserAuthenticationBridgeWriter.buildScopeKey(UserAuthenticationBridgeWriter.SCOPE_TYPE_GLOBAL, null)
-            );
+            return UserAuthenticationBridgeWriter.buildScopeKey(
+                    UserAuthenticationBridgeWriter.SCOPE_TYPE_PLATFORM, null);
         }
         if (isGlobalScope(activeScopeType)) {
-            String scopeKey = UserAuthenticationBridgeWriter.buildScopeKey(
-                    UserAuthenticationBridgeWriter.SCOPE_TYPE_GLOBAL,
-                    null
-            );
-            return new ScopeSelection(scopeKey, scopeKey);
+            return UserAuthenticationBridgeWriter.buildScopeKey(
+                    UserAuthenticationBridgeWriter.SCOPE_TYPE_GLOBAL, null);
         }
-        return new ScopeSelection(
-                UserAuthenticationBridgeWriter.buildScopeKey(
-                        UserAuthenticationBridgeWriter.SCOPE_TYPE_TENANT,
-                        activeTenantId
-                ),
-                UserAuthenticationBridgeWriter.buildScopeKey(
-                        UserAuthenticationBridgeWriter.SCOPE_TYPE_GLOBAL,
-                        null
-                )
+        return UserAuthenticationBridgeWriter.buildScopeKey(
+                UserAuthenticationBridgeWriter.SCOPE_TYPE_TENANT,
+                activeTenantId
         );
     }
 
@@ -186,9 +157,6 @@ public class UserAuthenticationMethodProfileService {
             return false;
         }
         return "GLOBAL".equals(activeScopeType.trim().toUpperCase(Locale.ROOT));
-    }
-
-    private record ScopeSelection(String primaryScopeKey, String fallbackScopeKey) {
     }
 
 }

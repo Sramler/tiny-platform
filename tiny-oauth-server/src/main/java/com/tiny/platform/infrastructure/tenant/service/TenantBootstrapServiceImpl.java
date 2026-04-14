@@ -37,8 +37,8 @@ import org.springframework.util.StringUtils;
  * 新租户从平台模板复制角色与资源，并在副本上写入 {@code role_permission}（不再写入 {@code role_resource}）。
  *
  * <p>运行时统一以 {@code tenant_id IS NULL} 的 role/resource 作为平台模板来源。
- * 若历史环境尚未回填平台模板，则仅在首次 bootstrap 时从配置的平台租户复制一次模板，
- * 之后所有新租户都只从平台模板派生，避免继续直接依赖“default 租户即模板”的隐式语义。</p>
+ * 若历史环境尚未回填平台模板，则仅在<strong>该路径</strong>从 {@code tiny.platform.tenant.platform-tenant-code} 指向的租户复制一次模板；
+ * 模板<strong>已存在</strong>时不会读取上述配置（CARD-14A）。之后新租户只从平台模板派生。</p>
  *
  * <p><b>非「租户副本重建」入口</b>：本类的 {@link #bootstrapFromPlatformTemplate} <strong>不是</strong>对已存在租户做模板重置；
  * {@link #assertTargetTenantHasNoDerivedTemplates} 在目标租户已有角色或 carrier 行时拒绝执行。产品层不提供一键重建/回退 API 的正式理由与替代手段见
@@ -218,6 +218,10 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
         );
     }
 
+    /**
+     * 保证 {@code tenant_id IS NULL} 平台模板存在；仅在<strong>模板完全缺失</strong>时可能读取
+     * {@code tiny.platform.tenant.platform-tenant-code} 做一次性历史回填（非运行时平台 scope 语义）。
+     */
     private boolean ensurePlatformTemplatesInitialized(Long targetTenantId) {
         List<Resource> platformResources = loadCarrierTemplateSnapshot(null, RESOURCE_LEVEL_PLATFORM);
         List<Role> platformRoles = roleRepository.findByTenantIdIsNullOrderByIdAsc();
@@ -233,13 +237,26 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
         return true;
     }
 
+    private static final String BOOTSTRAP_HISTORICAL_BACKFILL_PREFIX =
+        "【bootstrap 历史入口，非运行时平台语义】";
+
     private void backfillPlatformTemplatesFromConfiguredTenant(Long targetTenantId) {
         String sourceCode = platformTenantProperties.getPlatformTenantCode();
+        if (!StringUtils.hasText(sourceCode)) {
+            throw new IllegalStateException(
+                BOOTSTRAP_HISTORICAL_BACKFILL_PREFIX
+                    + " 平台模板（tenant_id IS NULL 角色与载体）缺失，且未显式配置 tiny.platform.tenant.platform-tenant-code，"
+                    + "无法从历史租户回填。请配置后重试，或由平台身份执行 POST /sys/tenants/platform-template/initialize。"
+            );
+        }
         Tenant sourceTenant = tenantRepository.findByCode(sourceCode)
-            .orElseThrow(() -> new IllegalStateException("平台模板缺失，且平台/模板租户不存在（code=" + sourceCode + "），无法初始化新租户权限模型"));
+            .orElseThrow(() -> new IllegalStateException(
+                BOOTSTRAP_HISTORICAL_BACKFILL_PREFIX
+                    + " 平台模板缺失，且 platform-tenant-code 指向的租户不存在（code=" + sourceCode + "）。"));
 
         if (targetTenantId != null && Objects.equals(sourceTenant.getId(), targetTenantId)) {
-            throw new IllegalStateException("平台模板缺失，且目标租户与平台/模板租户相同，无法回填平台模板");
+            throw new IllegalStateException(
+                BOOTSTRAP_HISTORICAL_BACKFILL_PREFIX + " 目标租户与 platform-tenant-code 来源租户相同，拒绝回填。");
         }
 
         List<Resource> sourceResources = loadCarrierTemplateSnapshot(sourceTenant.getId(), "TENANT");
@@ -248,7 +265,8 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
             roleRepository.findGrantedRoleCarrierPairsByTenantId(sourceTenant.getId());
 
         if (sourceResources.isEmpty() || sourceRoles.isEmpty()) {
-            throw new IllegalStateException("平台模板缺失，且平台/模板租户未提供可复制的角色与资源");
+            throw new IllegalStateException(
+                BOOTSTRAP_HISTORICAL_BACKFILL_PREFIX + " platform-tenant-code 来源租户未提供可复制的角色与载体。");
         }
 
         ResourceCloneResult resourceCloneResult = cloneResourcesFromSourceList(sourceResources, null, "PLATFORM");

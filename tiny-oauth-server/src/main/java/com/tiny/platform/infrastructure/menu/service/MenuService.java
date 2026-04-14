@@ -78,4 +78,14 @@ public interface MenuService {
      * 按条件查询菜单（type=0/1），返回list结构
      */
     List<ResourceResponseDto> list(ResourceRequestDto query);
+
+    /**
+     * 检查当前作用域下菜单名称是否已存在。
+     */
+    boolean existsByName(String name, Long excludeId);
+
+    /**
+     * 检查当前作用域下菜单路径是否已存在。
+     */
+    boolean existsByUrl(String url, Long excludeId);
 }

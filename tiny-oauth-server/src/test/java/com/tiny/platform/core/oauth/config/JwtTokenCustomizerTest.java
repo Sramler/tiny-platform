@@ -181,7 +181,7 @@ class JwtTokenCustomizerTest {
         assertThat(claims.get("authorities")).asInstanceOf(collection(String.class))
             .containsExactlyInAnyOrder("scheduling:*");
         assertThat(claims.get("roleCodes")).asInstanceOf(collection(String.class))
-            .containsExactlyInAnyOrder("ROLE_TENANT_ADMIN");
+            .isEmpty();
         assertThat(claims.get("permissions")).asInstanceOf(collection(String.class)).containsExactly("scheduling:*");
     }
 
@@ -262,7 +262,7 @@ class JwtTokenCustomizerTest {
         assertThat(claims.get("authorities")).asInstanceOf(collection(String.class))
             .containsExactlyInAnyOrder("system:org:list", "scheduling:*");
         assertThat(claims.get("roleCodes")).asInstanceOf(collection(String.class))
-            .containsExactlyInAnyOrder("ROLE_TENANT_ADMIN");
+            .isEmpty();
         assertThat(claims.get("permissions")).asInstanceOf(collection(String.class))
             .containsExactlyInAnyOrder("system:org:list", "scheduling:*");
         verify(userDetailsService).loadUserByUsername("alice");
@@ -343,7 +343,7 @@ class JwtTokenCustomizerTest {
         assertThat(claims.get("authorities")).asInstanceOf(collection(String.class))
             .containsExactlyInAnyOrder("system:tenant:list");
         assertThat(claims.get("roleCodes")).asInstanceOf(collection(String.class))
-            .containsExactlyInAnyOrder("ROLE_PLATFORM_ADMIN");
+            .isEmpty();
         verify(userDetailsService, never()).loadUserByUsername(anyString());
     }
 
@@ -497,7 +497,7 @@ class JwtTokenCustomizerTest {
         assertThat(claims.get("authorities")).asInstanceOf(collection(String.class))
             .containsExactlyInAnyOrder("system:org:list");
         assertThat(claims.get("roleCodes")).asInstanceOf(collection(String.class))
-            .containsExactlyInAnyOrder("ROLE_TENANT_ADMIN");
+            .isEmpty();
         verify(userDetailsService).loadUserByUsername("alice");
     }
 
@@ -573,7 +573,7 @@ class JwtTokenCustomizerTest {
         assertThat(claims.get("authorities")).asInstanceOf(collection(String.class))
             .containsExactlyInAnyOrder("system:org:list", "scheduling:*");
         assertThat(claims.get("roleCodes")).asInstanceOf(collection(String.class))
-            .containsExactlyInAnyOrder("ROLE_TENANT_ADMIN");
+            .isEmpty();
         assertThat(claims.get("permissions")).asInstanceOf(collection(String.class))
             .containsExactlyInAnyOrder("system:org:list", "scheduling:*");
         verify(userDetailsService).loadUserByUsername("alice");
@@ -732,7 +732,7 @@ class JwtTokenCustomizerTest {
         assertThat(claims.get("authorities")).asInstanceOf(collection(String.class))
             .containsExactlyInAnyOrder("scheduling:console:config");
         assertThat(claims.get("roleCodes")).asInstanceOf(collection(String.class))
-            .containsExactlyInAnyOrder("ROLE_TENANT_ADMIN");
+            .isEmpty();
         assertThat(claims.get("permissions")).asInstanceOf(collection(String.class)).containsExactly("scheduling:console:config");
         verify(userDetailsService).loadUserByUsername("alice");
     }

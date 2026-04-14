@@ -1,7 +1,7 @@
 databaseChangeLog:
   # user_authentication_method：tenant_id 可空表示「用户级全局认证方式」；
   # 通过生成列 auth_scope_key=IFNULL(tenant_id,0)（0=全局）重建唯一约束，避免 MySQL 下 UNIQUE(tenant_id,...) 对 NULL 语义松散。
-  # 查询侧：租户上下文优先命中 tenant_id=当前租户 的行，否则回退 tenant_id IS NULL（见 UserAuthenticationMethodMerge）。
+  # 历史查询侧曾合并租户行与 tenant_id IS NULL 全局行；新模型已迁至 user_auth_scope_policy.scope_key，且 CARD-13A 起运行时只读当前 scope_key，不再跨作用域合并。
   - changeSet:
       id: 111-drop-fk-user-auth-method-tenant
       author: tiny

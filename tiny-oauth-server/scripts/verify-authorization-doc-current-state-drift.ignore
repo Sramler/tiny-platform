@@ -1,0 +1,5 @@
+# Regex matched against "path:line:text".
+# Use this only after human review confirms a hit is intentional and should stay.
+#
+# Example:
+# docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST\.md:[0-9]+:4\.\s+\*\*CARD-14I

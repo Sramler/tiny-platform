@@ -245,7 +245,10 @@ SECONDARY_TENANT_CODE="$(read_env_or_local_file E2E_TENANT_CODE_B || true)"
 READONLY_TENANT_CODE="$(read_env_or_local_file E2E_TENANT_CODE_READONLY || true)"
 BIND_TENANT_CODE="$(read_env_or_local_file E2E_TENANT_CODE_BIND || true)"
 PLATFORM_TENANT_CODE="$(read_env_or_local_file E2E_PLATFORM_TENANT_CODE || true)"
-PLATFORM_TENANT_CODE="${PLATFORM_TENANT_CODE:-default}"
+if [[ -z "${PLATFORM_TENANT_CODE}" && -n "${PRIMARY_TENANT_CODE}" ]]; then
+  echo "FAIL: 需要 E2E_PLATFORM_TENANT_CODE 才能与主租户编码对齐派生租户（禁止静默 default）。" >&2
+  exit 1
+fi
 
 PRIMARY_USERNAME="$(read_env_or_local_file E2E_USERNAME || true)"
 SECONDARY_USERNAME="$(read_env_or_local_file E2E_USERNAME_B || true)"

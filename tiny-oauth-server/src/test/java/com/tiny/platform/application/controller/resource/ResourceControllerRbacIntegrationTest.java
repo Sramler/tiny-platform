@@ -87,20 +87,20 @@ class ResourceControllerRbacIntegrationTest {
         }
 
         @Test
-        void unregisteredEndpoint_shouldNotBeBlockedByUnifiedGuard() throws Exception {
+        void unregisteredEndpoint_shouldFailClosedInUnifiedGuard() throws Exception {
             when(resourceService.getResourceTypes()).thenReturn(List.of(ResourceType.values()));
             when(resourceService.evaluateApiEndpointRequirement(eq("GET"), eq("/sys/resources/types")))
-                .thenReturn(com.tiny.platform.infrastructure.auth.resource.service.ApiEndpointRequirementDecision.NOT_REGISTERED);
+                .thenReturn(com.tiny.platform.infrastructure.auth.resource.service.ApiEndpointRequirementDecision.DENIED);
             mockMvc.perform(get("/sys/resources/types")
                     .with(user("resource-reader").authorities(new SimpleGrantedAuthority("system:resource:list"))))
-                .andExpect(status().isOk());
+                .andExpect(status().isForbidden());
         }
 
         @Test
         void tree_allowsResourceListAuthority() throws Exception {
             when(resourceService.findResourceTreeDtos()).thenReturn(List.of(sampleResponse()));
             when(resourceService.evaluateApiEndpointRequirement(eq("GET"), eq("/sys/resources/tree")))
-                .thenReturn(com.tiny.platform.infrastructure.auth.resource.service.ApiEndpointRequirementDecision.NOT_REGISTERED);
+                .thenReturn(com.tiny.platform.infrastructure.auth.resource.service.ApiEndpointRequirementDecision.ALLOWED);
 
             mockMvc.perform(get("/sys/resources/tree")
                     .with(user("admin").authorities(new SimpleGrantedAuthority("system:resource:list"))))
@@ -163,25 +163,11 @@ class ResourceControllerRbacIntegrationTest {
         }
     }
 
-    @Nested
-    @DisplayName("LEGACY MENU ENDPOINTS")
-    class LegacyMenuAccess {
-
-        @Test
-        void legacyMenus_allowsMenuReadAuthority() throws Exception {
-            when(resourceService.resources(any(), any())).thenReturn(new PageImpl<>(List.of(sampleResponse())));
-
-            mockMvc.perform(get("/sys/resources/menus")
-                    .with(user("menu-reader").authorities(new SimpleGrantedAuthority("system:menu:list"))))
-                .andExpect(status().isOk());
-        }
-
-        @Test
-        void legacyMenus_deniesResourceReadAuthorityOnly() throws Exception {
-            mockMvc.perform(get("/sys/resources/menus")
-                    .with(user("resource-reader").authorities(new SimpleGrantedAuthority("system:resource:list"))))
-                .andExpect(status().isForbidden());
-        }
+    @Test
+    void removedLegacyMenuEndpoint_shouldFailClosed() throws Exception {
+        mockMvc.perform(get("/sys/resources/menus")
+                .with(user("resource-reader").authorities(new SimpleGrantedAuthority("system:resource:list"))))
+            .andExpect(status().isForbidden());
     }
 
     private static ResourceCreateUpdateDto validResourceDto() {

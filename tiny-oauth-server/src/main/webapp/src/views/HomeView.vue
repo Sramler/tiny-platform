@@ -121,12 +121,12 @@ watch(canViewIdempotentOps, (enabled) => {
           {{
             canViewIdempotentOps
               ? '这里直接展示幂等链路的实时健康度，方便判断重复提交拦截、非法 key 拒绝和存储异常是否在上升。'
-              : '幂等治理指标仅对平台管理员开放，普通租户管理员和业务用户不会在首页拉取这些平台级统计。'
+              : '幂等治理指标仅对具备平台级幂等治理权限的用户开放，普通租户管理员和业务用户不会在首页拉取这些平台级统计。'
           }}
         </p>
       </div>
       <a-space wrap class="hero-actions">
-        <a-tag v-if="!canViewIdempotentOps" color="default">平台管理员可见</a-tag>
+        <a-tag v-if="!canViewIdempotentOps" color="default">平台治理权限可见</a-tag>
         <a-button v-if="canViewIdempotentOps" @click="openIdempotentOps">进入治理页</a-button>
         <a-button v-if="canViewIdempotentOps" type="primary" :loading="loading" @click="loadIdempotentOverview">
           <template #icon>

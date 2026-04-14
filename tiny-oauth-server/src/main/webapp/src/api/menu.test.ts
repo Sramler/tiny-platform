@@ -61,6 +61,30 @@ describe('menu API', () => {
     expect(result).toHaveLength(1)
   })
 
+  it('should check menu name via /sys/menus/check-name', async () => {
+    requestMocks.get.mockResolvedValue({ exists: true })
+    const { checkMenuNameExists } = await import('@/api/menu')
+
+    const result = await checkMenuNameExists('menu', 7)
+
+    expect(requestMocks.get).toHaveBeenCalledWith('/sys/menus/check-name', {
+      params: { name: 'menu', excludeId: 7 },
+    })
+    expect(result).toEqual({ exists: true })
+  })
+
+  it('should check menu url via /sys/menus/check-url', async () => {
+    requestMocks.get.mockResolvedValue({ exists: false })
+    const { checkMenuUrlExists } = await import('@/api/menu')
+
+    const result = await checkMenuUrlExists('/menu', 7)
+
+    expect(requestMocks.get).toHaveBeenCalledWith('/sys/menus/check-url', {
+      params: { url: '/menu', excludeId: 7 },
+    })
+    expect(result).toEqual({ exists: false })
+  })
+
   it('should create menu with idempotency', async () => {
     requestMocks.post.mockResolvedValue({ id: 10, name: 'new-menu' })
     const { createMenu } = await import('@/api/menu')
@@ -77,7 +101,8 @@ describe('menu API', () => {
       redirect: '',
       hidden: false,
       keepAlive: true,
-      permission: '',
+      permission: 'system:menu:list',
+      requiredPermissionId: 88,
       type: 1,
     }
 
@@ -107,7 +132,8 @@ describe('menu API', () => {
       redirect: '',
       hidden: false,
       keepAlive: true,
-      permission: '',
+      permission: 'system:menu:list',
+      requiredPermissionId: 88,
       type: 1,
     }
 

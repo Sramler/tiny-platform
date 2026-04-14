@@ -6,6 +6,9 @@
 -- 3) tenant_id IS NULL 的平台/全局区分口径：
 --    - 若用户存在 ACTIVE tenant_user 归属 -> GLOBAL
 --    - 否则 -> PLATFORM
+-- 4) 部署 CARD-13A（读侧仅单 scope_key）前/后：必须执行 Liquibase
+--    `135-duplicate-global-auth-scope-policy-card-13a`，或运行对账
+--    `scripts/verify-card-13a-global-auth-scope-policy-rollout.sh` 证明 gap=0。
 
 -- 凭证层回填（user + provider + type 唯一）
 INSERT INTO user_auth_credential (

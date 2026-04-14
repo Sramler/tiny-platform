@@ -70,12 +70,16 @@ class ApplicationControllerCoverageTest {
         when(menuService.getMenusByParentId(9L)).thenReturn(menuList);
         when(menuService.createMenu(createDto)).thenReturn(resource);
         when(menuService.updateMenu(any(ResourceCreateUpdateDto.class))).thenReturn(resource);
+        when(menuService.existsByName("menu", 7L)).thenReturn(true);
+        when(menuService.existsByUrl("/menu", 7L)).thenReturn(false);
 
         assertThat(controller.getMenus(query).getBody()).containsExactly(responseDto);
         assertThat(controller.getMenuTree().getBody()).containsExactly(responseDto);
         assertThat(controller.getFullMenuTree().getBody()).containsExactly(responseDto);
         assertThat(controller.getMenusByParentId(9L).getBody()).containsExactly(responseDto);
         assertThat(controller.createMenu(createDto).getBody()).isEqualTo(resource);
+        assertThat(controller.checkNameExists("menu", 7L).getBody()).containsEntry("exists", true);
+        assertThat(controller.checkUrlExists("/menu", 7L).getBody()).containsEntry("exists", false);
 
         ResponseEntity<?> updateResponse = controller.updateMenu(7L, createDto);
         assertThat(updateResponse.getStatusCode().value()).isEqualTo(204);
@@ -142,12 +146,12 @@ class ApplicationControllerCoverageTest {
         assertThat(controller.getAllRoles().getBody()).containsExactly(responseDto);
 
         assertThat(controller.getRoleUsers(1L, null, null).getBody()).containsExactly(10L, 11L);
-        assertThat(controller.updateRoleUsers(1L, List.of(10L)).getStatusCode().value()).isEqualTo(200);
+        assertThat(controller.updateRoleUsers(1L, java.util.Map.of("userIds", List.of(10L))).getStatusCode().value()).isEqualTo(200);
         verify(roleService).updateRoleUsers(1L, null, null, List.of(10L));
 
         assertThat(controller.getRoleResources(1L).getBody()).containsExactly(20L, 21L);
-        assertThat(controller.updateRoleResources(1L, List.of(20L)).getStatusCode().value()).isEqualTo(200);
-        verify(roleService).updateRoleResources(1L, List.of(20L));
+        assertThat(controller.updateRoleResources(1L, java.util.Map.of("permissionIds", List.of(20L))).getStatusCode().value()).isEqualTo(200);
+        verify(roleService).updateRolePermissions(1L, List.of(20L));
     }
 
     @Test

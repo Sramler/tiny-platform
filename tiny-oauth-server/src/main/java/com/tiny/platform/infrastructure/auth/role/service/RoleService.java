@@ -23,9 +23,7 @@ public interface RoleService {
     void updateRoleUsers(Long roleId, List<Long> userIds);
     // 按作用域保存角色与用户的分配关系
     void updateRoleUsers(Long roleId, String scopeType, Long scopeId, List<Long> userIds);
-    // 保存角色与资源的分配关系
-    void updateRoleResources(Long roleId, List<Long> resourceIds);
-    // 保存角色与权限的分配关系（主契约）
+    // 保存角色与权限的分配关系（主契约；CARD-13D 已移除按 resource carrier id 写入的兼容路径）
     void updateRolePermissions(Long roleId, List<Long> permissionIds);
 
     // 获取角色已分配资源ID列表

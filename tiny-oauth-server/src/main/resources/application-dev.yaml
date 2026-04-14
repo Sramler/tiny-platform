@@ -5,14 +5,14 @@
 # 后端通过重定向将请求转发到前端开发服务器
 
 # 历史库若从未触发过平台模板回填（无 tenant_id IS NULL 的 role/resource），
-# platform_admin 与 ensure-platform-admin.sh 会缺少「平台模板 ROLE_ADMIN」。
+# platform_admin 与 ensure-platform-admin.sh 会缺少「平台模板 ROLE_PLATFORM_ADMIN」（须显式 PLATFORM_TENANT_CODE，见 CARD-13E）。
 # 启动时自动从 platform-tenant-code 指向的租户复制一份平台模板（仅开发环境建议开启）。
 tiny:
   platform:
     tenant:
       auto-initialize-platform-template-if-missing: true
-      # Local real-link may run under dev profile; honor E2E platform tenant override for auth-method lookup.
-      platform-tenant-code: ${E2E_PLATFORM_TENANT_CODE:default}
+      # Local real-link may run under dev profile; only use an explicitly supplied bootstrap source tenant code.
+      platform-tenant-code: ${E2E_PLATFORM_TENANT_CODE:}
 
 server:
   error:

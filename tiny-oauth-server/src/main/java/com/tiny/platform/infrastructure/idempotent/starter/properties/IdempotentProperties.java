@@ -59,11 +59,11 @@ public class IdempotentProperties {
 
     public static class Ops {
         /**
-         * 平台租户编码。
+         * 历史平台租户编码（治理入口 bootstrap / 历史脚本兼容口径）。
          *
-         * <p>幂等治理入口默认仅允许该租户下的管理员访问。</p>
+         * <p>不再提供 "default" 默认值；如需历史环境显式绑定，请通过配置传入。</p>
          */
-        private String platformTenantCode = "default";
+        private String platformTenantCode;
 
         /**
          * 治理接口统计窗口大小（分钟）。

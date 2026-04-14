@@ -175,7 +175,7 @@ public class UserServiceImpl implements UserService {
         return findById(id)
             .map(existing -> {
                 existing.setUsername(user.getUsername());
-                // 不再更新 user.password，密码已迁移到 user_authentication_method 表
+                // 不再更新 user.password，密码已迁移到认证凭证模型
                 existing.setNickname(user.getNickname());
                 existing.setEnabled(user.isEnabled());
                 existing.setLastLoginAt(user.getLastLoginAt());
@@ -238,7 +238,7 @@ public class UserServiceImpl implements UserService {
 
         syncUserUnitsIfPresent(tenantId, user.getId(), userDto);
         
-        // 创建认证方法（将密码存储在 user_authentication_method 表中）
+        // 创建认证凭证与作用域策略
         createPasswordAuthenticationMethod(user.getId(), tenantId, userDto.getPassword());
         
         return user;

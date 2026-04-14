@@ -1,11 +1,13 @@
 package com.tiny.platform.infrastructure.auth.resource.service;
 
+import com.tiny.platform.infrastructure.core.exception.code.ErrorCode;
+import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
 import com.tiny.platform.infrastructure.auth.resource.domain.Resource;
-import com.tiny.platform.infrastructure.auth.resource.enums.ResourceType;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
+
+import java.util.List;
 
 /**
  * 将兼容资源聚合与权限主数据显式绑定，避免运行态继续依赖 permission_code 字符串拼接。
@@ -28,19 +30,19 @@ public class ResourcePermissionBindingService {
         if (resource == null) {
             return;
         }
-        String permissionCode = trimToNull(resource.getPermission());
-        if (permissionCode == null) {
-            resource.setRequiredPermissionId(null);
+        Long requiredPermissionId = resource.getRequiredPermissionId();
+        if (requiredPermissionId != null) {
+            String resolvedPermissionCode = findPermissionCodeById(resource.getTenantId(), requiredPermissionId);
+            if (resolvedPermissionCode == null) {
+                throw new BusinessException(
+                    ErrorCode.VALIDATION_ERROR,
+                    "requiredPermissionId does not exist in current tenant scope: " + requiredPermissionId
+                );
+            }
+            resource.setPermission(resolvedPermissionCode);
             return;
         }
-        Long requiredPermissionId = ensurePermissionExists(
-            resource.getTenantId(),
-            permissionCode,
-            resource.getType(),
-            actorUserId,
-            Boolean.TRUE.equals(resource.getEnabled())
-        );
-        resource.setRequiredPermissionId(requiredPermissionId);
+        resource.setRequiredPermissionId(null);
     }
 
     public void backfillPermissionCatalogFromResources(Long tenantId) {
@@ -169,98 +171,26 @@ public class ResourcePermissionBindingService {
         return updated;
     }
 
-    private Long ensurePermissionExists(Long tenantId,
-                                        String permissionCode,
-                                        ResourceType resourceType,
-                                        Long actorUserId,
-                                        boolean enabled) {
-        MapSqlParameterSource params = tenantParams(tenantId)
-            .addValue("permissionCode", permissionCode)
-            .addValue("permissionName", permissionCode)
-            .addValue("moduleCode", deriveModuleCode(permissionCode))
-            .addValue("actionCode", deriveActionCode(permissionCode))
-            .addValue("permissionType", derivePermissionType(resourceType))
-            .addValue("description", "从 carrier 载体同步生成")
-            .addValue("enabled", enabled ? 1 : 0)
-            .addValue("actorUserId", actorUserId);
-
-        namedParameterJdbcTemplate.update("""
-            INSERT IGNORE INTO `permission` (
-              `permission_code`,
-              `permission_name`,
-              `module_code`,
-              `action_code`,
-              `permission_type`,
-              `description`,
-              `enabled`,
-              `built_in_flag`,
-              `tenant_id`,
-              `created_by`,
-              `created_at`,
-              `updated_by`,
-              `updated_at`
-            ) VALUES (
-              :permissionCode,
-              :permissionName,
-              :moduleCode,
-              :actionCode,
-              :permissionType,
-              :description,
-              :enabled,
-              0,
-              :tenantId,
-              :actorUserId,
-              NOW(),
-              :actorUserId,
-              NOW()
-            )
-            """, params);
-
-        return namedParameterJdbcTemplate.queryForObject("""
-            SELECT p.`id`
+    private String findPermissionCodeById(Long tenantId, Long permissionId) {
+        List<String> permissionCodes = namedParameterJdbcTemplate.query(
+            """
+            SELECT p.`permission_code`
             FROM `permission` p
             WHERE p.`normalized_tenant_id` = IFNULL(:tenantId, 0)
-              AND p.`permission_code` = :permissionCode
+              AND p.`id` = :permissionId
             LIMIT 1
-            """, params, Long.class);
+            """,
+            tenantParams(tenantId).addValue("permissionId", permissionId),
+            (rs, rowNum) -> rs.getString("permission_code")
+        );
+        if (permissionCodes.isEmpty()) {
+            return null;
+        }
+        return permissionCodes.getFirst();
     }
 
     private MapSqlParameterSource tenantParams(Long tenantId) {
         return new MapSqlParameterSource().addValue("tenantId", tenantId);
     }
 
-    private String trimToNull(String value) {
-        if (!StringUtils.hasText(value)) {
-            return null;
-        }
-        String trimmed = value.trim();
-        return trimmed.isEmpty() ? null : trimmed;
-    }
-
-    private String deriveModuleCode(String permissionCode) {
-        return hasCanonicalSegments(permissionCode)
-            ? permissionCode.substring(0, permissionCode.indexOf(':'))
-            : null;
-    }
-
-    private String deriveActionCode(String permissionCode) {
-        return hasCanonicalSegments(permissionCode)
-            ? permissionCode.substring(permissionCode.lastIndexOf(':') + 1)
-            : null;
-    }
-
-    private boolean hasCanonicalSegments(String permissionCode) {
-        return StringUtils.countOccurrencesOf(permissionCode, ":") >= 2;
-    }
-
-    private String derivePermissionType(ResourceType resourceType) {
-        if (resourceType == null) {
-            return "OTHER";
-        }
-        return switch (resourceType) {
-            case API -> "API";
-            case BUTTON -> "BUTTON";
-            case DIRECTORY, MENU -> "MENU";
-        };
-    }
 }

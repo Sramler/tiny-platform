@@ -69,7 +69,7 @@
 ### ✅ 正例
 
 ```java
-// Token Claims 包含标准字段 + 企业级字段
+// Token Claims 包含标准字段 + 企业级字段；新签发 authorities 以 permission/factor/scope 为主
 {
   "iss": "https://auth.tiny-platform.com",
   "sub": "user123",
@@ -79,8 +79,9 @@
   "jti": "token-id-123",
   "userId": 123,
   "username": "admin",
-  "authorities": ["ROLE_ADMIN", "system:user:view", "system:user:edit"],
+  "authorities": ["system:user:view", "system:user:edit"],
   "permissions": ["system:user:view", "system:user:edit"],
+  "roleCodes": ["ROLE_ADMIN"],
   "client_id": "web-frontend",
   "scope": "openid profile email",
   "activeTenantId": 1,

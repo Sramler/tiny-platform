@@ -47,7 +47,7 @@ async function getPlatformAccessToken(): Promise<string | null> {
   return getAccessTokenFromStatePath(platformAuthPath)
 }
 
-/** 主身份登录态（default 租户管理员通常具备 /sys/tenants 权限，可作 fallback） */
+/** 主身份登录态（scheduling-user）；若该 JWT 已具备租户治理权限，也可作为调用 /sys/tenants 的 fallback */
 async function getPrimaryAccessToken(): Promise<string | null> {
   return getAccessTokenFromStatePath(primaryAuthPath)
 }
@@ -133,6 +133,7 @@ function isConfigured(value: string | undefined): boolean {
 
 function isFreezeIdentityConfigured(): boolean {
   return (
+    isConfigured(process.env.E2E_PLATFORM_TENANT_CODE) &&
     isConfigured(process.env.E2E_TENANT_CODE) &&
     isConfigured(process.env.E2E_USERNAME) &&
     isConfigured(process.env.E2E_PASSWORD) &&
@@ -149,7 +150,7 @@ function isFreezeIdentityConfigured(): boolean {
  * 4. 该租户用户再次登录 → 被拒绝（租户已冻结）
  * 5. 恢复租户为 ACTIVE，避免影响后续用例
  *
- * 依赖：E2E_PLATFORM_* 用于调用 /sys/tenants 更新状态；主身份 E2E_TENANT_CODE/USERNAME/PASSWORD 为被冻结租户。
+ * 依赖：**E2E_PLATFORM_TENANT_CODE**（CARD-13E，与 globalSetup / cross-tenant.helpers 一致）；E2E_PLATFORM_* 用于生成平台登录态并调用 /sys/tenants；主身份 E2E_TENANT_CODE/USERNAME/PASSWORD/TOTP 为被测租户。
  */
 test.describe('real-link: tenant lifecycle freeze', () => {
   test('frozen tenant rejects login and write is denied or guarded', async ({
@@ -158,7 +159,7 @@ test.describe('real-link: tenant lifecycle freeze', () => {
   }) => {
     test.skip(
       !isFreezeIdentityConfigured(),
-      '缺少 E2E_TENANT_CODE / E2E_USERNAME / E2E_PASSWORD / E2E_TOTP_SECRET，跳过租户冻结回归',
+      '缺少 E2E_PLATFORM_TENANT_CODE 或 E2E_TENANT_CODE / E2E_USERNAME / E2E_PASSWORD / E2E_TOTP_SECRET，跳过租户冻结回归（CARD-13E）',
     )
 
     const adminToken = (await getPlatformAccessToken()) ?? (await getPrimaryAccessToken())

@@ -41,7 +41,8 @@ class SecurityUserTest {
 
         assertThat(securityUser.getAuthorities())
                 .extracting(authority -> authority.getAuthority())
-                .containsExactly("ROLE_ADMIN");
+                .isEmpty();
+        assertThat(securityUser.getRoleCodes()).containsExactly("ROLE_ADMIN");
         assertThat(securityUser.getPermissionsVersion()).isEqualTo("perm-v1");
         assertThat(securityUser.getActiveTenantId()).isEqualTo(1L);
     }
@@ -139,5 +140,26 @@ class SecurityUserTest {
                 "perm-v3"
         );
         assertThat(restored.getRoleCodes()).isEmpty();
+    }
+
+    @Test
+    void constructorPathShouldNotRecoverRoleCodesFromAuthoritiesWhenRoleCodesMissing() {
+        User user = new User();
+        user.setId(10L);
+        user.setUsername("constructor.alice");
+        user.setEnabled(true);
+        user.setAccountNonExpired(true);
+        user.setAccountNonLocked(true);
+        user.setCredentialsNonExpired(true);
+
+        SecurityUser securityUser = new SecurityUser(
+            user,
+            "",
+            21L,
+            List.of(new SimpleGrantedAuthority("ROLE_TENANT_ADMIN"), new SimpleGrantedAuthority("system:user:list")),
+            "perm-v4"
+        );
+
+        assertThat(securityUser.getRoleCodes()).isEmpty();
     }
 }

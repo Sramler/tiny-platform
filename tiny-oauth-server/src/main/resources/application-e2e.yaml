@@ -53,9 +53,8 @@ http:
   request-log:
     enabled: true
 
-# Platform control-plane (sys/*) is guarded by "platform tenant code" in migration phase.
-# For real-link E2E we allow overriding this via env, so the platform control-plane can run on a non-frozen tenant.
+# Platform bootstrap compatibility can still use an explicit tenant code, but it no longer defaults to "default".
 tiny:
   platform:
     tenant:
-      platform-tenant-code: ${E2E_PLATFORM_TENANT_CODE:default}
+      platform-tenant-code: ${E2E_PLATFORM_TENANT_CODE:}

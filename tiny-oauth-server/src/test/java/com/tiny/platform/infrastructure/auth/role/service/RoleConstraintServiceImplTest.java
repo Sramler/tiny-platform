@@ -200,34 +200,16 @@ class RoleConstraintServiceImplTest {
     }
 
     @Test
-    void validateAssignmentsBeforeGrant_should_throw_when_grant_frozen_compat_roles() {
-        ReflectionTestUtils.setField(service, "freezeCompatRoleIds", "5,6");
-        ReflectionTestUtils.setField(service, "freezeCompatRoleIdSet", null);
+    void validateAssignmentsBeforeGrant_should_not_freeze_legacy_role_ids_anymore() {
+        service.validateAssignmentsBeforeGrant(
+            "USER",
+            100L,
+            1L,
+            "TENANT",
+            1L,
+            List.of(5L, 6L)
+        );
 
-        assertThatThrownBy(() ->
-                service.validateAssignmentsBeforeGrant(
-                    "USER",
-                    100L,
-                    1L,
-                    "TENANT",
-                    1L,
-                    List.of(5L)
-                )
-            )
-            .isInstanceOf(BusinessException.class)
-            .hasMessageContaining("兼容性角色已冻结");
-
-        assertThatThrownBy(() ->
-                service.validateAssignmentsBeforeGrant(
-                    "USER",
-                    100L,
-                    1L,
-                    "TENANT",
-                    1L,
-                    List.of(6L)
-                )
-            )
-            .isInstanceOf(BusinessException.class)
-            .hasMessageContaining("兼容性角色已冻结");
+        verify(violationLogWriteService, never()).write(any());
     }
 }

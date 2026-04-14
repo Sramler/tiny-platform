@@ -41,20 +41,6 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
 
     private static final Logger logger = LoggerFactory.getLogger(RoleConstraintServiceImpl.class);
 
-    /**
-     * Freeze compatibility roles (legacy semantics) by default.
-     *
-     * <p>Requirement: keep {@code enabled=1} in DB for compatibility, but prevent any <b>new</b>
-     * role assignment from being created.</p>
-     *
-     * <p>We block earlier (before any delete) via this method contract, so existing assignments are
-     * not revoked by a failed "replace" request.</p>
-     */
-    @Value("${tiny.platform.auth.freeze-compat-role-ids:5,6}")
-    private String freezeCompatRoleIds;
-
-    private volatile Set<Long> freezeCompatRoleIdSet;
-
     @Value("${tiny.platform.auth.rbac3.enforce:false}")
     private boolean rbac3Enforce;
 
@@ -99,21 +85,6 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
         Long scopeId,
         List<Long> roleIdsToGrant
     ) {
-        // --- Compatibility role freezing (prevent new grants) ---
-        if (roleIdsToGrant != null && !roleIdsToGrant.isEmpty()) {
-            Set<Long> frozenIds = getFreezeCompatRoleIdSet();
-            if (!frozenIds.isEmpty()) {
-                for (Long rid : roleIdsToGrant) {
-                    if (rid != null && frozenIds.contains(rid)) {
-                        throw new BusinessException(
-                            ErrorCode.RESOURCE_STATE_INVALID,
-                            "兼容性角色已冻结（ROLE_SYSTEM_ADMIN / ROLE_TENANT_USER），不允许新增授权"
-                        );
-                    }
-                }
-            }
-        }
-
         // Phase 2 最小落地：仅实现 role_mutex 互斥检查。
         // 当前阶段不抛出异常（不改变现有行为）；仅输出 debug 日志，供后续 dry-run / enforce 演进。
         if (tenantId == null || roleIdsToGrant == null || roleIdsToGrant.isEmpty()) {
@@ -353,20 +324,6 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
             }
         }
         return ids.isEmpty() ? Collections.emptySet() : Collections.unmodifiableSet(ids);
-    }
-
-    private Set<Long> getFreezeCompatRoleIdSet() {
-        Set<Long> cached = freezeCompatRoleIdSet;
-        if (cached != null) {
-            return cached;
-        }
-        synchronized (this) {
-            if (freezeCompatRoleIdSet != null) {
-                return freezeCompatRoleIdSet;
-            }
-            freezeCompatRoleIdSet = parseCsvLongIds(freezeCompatRoleIds);
-            return freezeCompatRoleIdSet;
-        }
     }
 
     private Set<Long> parseCsvLongIds(String raw) {

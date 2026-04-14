@@ -90,17 +90,20 @@ export function shouldCreateTenantViaApi(
 }
 
 /**
- * 历史分支条件：主租户编码是否与「平台租户编码」相同（未配置时平台侧按 default 口径比较）。
- * globalSetup 现已始终用 {@link deriveTenantCodeForTenantScope} 的结果生成主 scheduling 登录态；
- * 本函数仍保留供单测与文档化 CI secret 组合语义。
+ * 历史分支条件：主租户编码是否与「平台租户编码」相同。
+ * globalSetup 用 {@link deriveTenantCodeForTenantScope} 生成主 scheduling 登录态；本函数供单测与 CI secret 组合语义。
+ * CARD-13E：未传入 platform 时不再按 default 比较，视为不相等（避免隐式平台入口）。
  */
 export function shouldUseTenantScopedPrimaryAuthState(
   primaryTenantCode: string | undefined,
   platformTenantCode: string | undefined,
 ) {
   const normalizedPrimary = primaryTenantCode?.trim().toLowerCase()
-  const normalizedPlatform = (platformTenantCode ?? 'default').trim().toLowerCase()
-  return Boolean(normalizedPrimary && normalizedPrimary === normalizedPlatform)
+  const normalizedPlatform = platformTenantCode?.trim().toLowerCase()
+  if (!normalizedPrimary || !normalizedPlatform) {
+    return false
+  }
+  return normalizedPrimary === normalizedPlatform
 }
 
 async function prepareAuthState() {
@@ -297,7 +300,10 @@ function ensureDeterministicE2EAuth() {
 export function resolveBindTenantCode(source: NodeJS.ProcessEnv): string | undefined {
   const explicitBindTenantCode = readConfiguredValue(source, ['E2E_TENANT_CODE_BIND'])
   const primaryTenantCode = readConfiguredValue(source, ['E2E_TENANT_CODE'])
-  const platformTenantCode = readConfiguredValue(source, ['E2E_PLATFORM_TENANT_CODE']) ?? 'default'
+  if (!explicitBindTenantCode && !primaryTenantCode) {
+    return undefined
+  }
+  const platformTenantCode = requireRealLinkPlatformTenantCode(source)
   if (explicitBindTenantCode) {
     if (explicitBindTenantCode.trim().toLowerCase() !== platformTenantCode.trim().toLowerCase()) {
       return explicitBindTenantCode
@@ -334,7 +340,7 @@ export function collectRealLinkDerivedTenantCodes(source: NodeJS.ProcessEnv) {
     return []
   }
 
-  const platformTenantCode = readConfiguredValue(source, ['E2E_PLATFORM_TENANT_CODE']) ?? 'default'
+  const platformTenantCode = requireRealLinkPlatformTenantCode(source)
   const tenantScopeTenantCode = deriveTenantCodeForTenantScope(primaryTenantCode, platformTenantCode)
   const secondaryTenantCode = readConfiguredValue(source, ['E2E_TENANT_CODE_B'])
   const readonlyTenantCode = resolveReadonlyTenantCode(source)
@@ -402,7 +408,7 @@ export function buildEnsureAuthEnv(
 
 export function buildDerivedAssetGovernanceEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const normalizedEnv = buildEnsureAuthEnv(baseEnv, {})
-  const platformTenantCode = readConfiguredValue(baseEnv, ['E2E_PLATFORM_TENANT_CODE']) ?? 'default'
+  const platformTenantCode = requireRealLinkPlatformTenantCode(baseEnv)
   return {
     ...normalizedEnv,
     E2E_PLATFORM_TENANT_CODE: platformTenantCode,
@@ -481,6 +487,21 @@ export function readConfiguredValue(
   return undefined
 }
 
+/**
+ * real-link / 租户编码派生：禁止在未配置时把平台租户隐式当作 `default`。
+ *
+ * @see docs/TINY_PLATFORM_PLATFORM_SCOPE_CURSOR_TASK_CARDS.md CARD-13E
+ */
+export function requireRealLinkPlatformTenantCode(source: NodeJS.ProcessEnv): string {
+  const v = readConfiguredValue(source, ['E2E_PLATFORM_TENANT_CODE'])
+  if (!v) {
+    throw new Error(
+      '缺少 E2E_PLATFORM_TENANT_CODE：real-link 工具链禁止隐式回退 default（CARD-13E）。请在 .env.e2e.local 或 CI secrets 中显式配置。',
+    )
+  }
+  return v
+}
+
 export function resolveReadonlyTenantCode(source: NodeJS.ProcessEnv): string | undefined {
   const explicitReadonlyTenantCode = readConfiguredValue(source, ['E2E_TENANT_CODE_READONLY'])
   if (explicitReadonlyTenantCode) {
@@ -492,7 +513,7 @@ export function resolveReadonlyTenantCode(source: NodeJS.ProcessEnv): string | u
     return undefined
   }
 
-  const platformTenantCode = readConfiguredValue(source, ['E2E_PLATFORM_TENANT_CODE']) ?? 'default'
+  const platformTenantCode = requireRealLinkPlatformTenantCode(source)
   return deriveTenantCodeForTenantScope(primaryTenantCode, platformTenantCode)
 }
 
@@ -606,7 +627,7 @@ export default async function globalSetup() {
   ensureDeterministicE2EAuth()
   await runMysqlSeed()
   const primaryTenantCodeValue = process.env.E2E_TENANT_CODE!.trim()
-  const platformTenantCodeValue = (process.env.E2E_PLATFORM_TENANT_CODE ?? 'default').trim()
+  const platformTenantCodeValue = requireRealLinkPlatformTenantCode(process.env).trim()
   const tenantScopeTenantCode = deriveTenantCodeForTenantScope(
     primaryTenantCodeValue,
     platformTenantCodeValue,

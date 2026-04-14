@@ -15,7 +15,6 @@ import com.tiny.platform.infrastructure.auth.resource.dto.ResourceRequestDto;
 import com.tiny.platform.infrastructure.auth.resource.dto.ResourceResponseDto;
 import com.tiny.platform.infrastructure.auth.resource.enums.ResourceType;
 import com.tiny.platform.infrastructure.auth.resource.repository.ApiEndpointEntryRepository;
-import com.tiny.platform.infrastructure.auth.resource.repository.ResourceRepository;
 import com.tiny.platform.infrastructure.auth.resource.repository.UiActionEntryRepository;
 import com.tiny.platform.infrastructure.auth.role.repository.RoleRepository;
 import com.tiny.platform.infrastructure.auth.role.service.EffectiveRoleResolutionService;
@@ -65,7 +64,7 @@ public class ResourceServiceImpl implements ResourceService {
     private final UiActionEntryRepository uiActionEntryRepository;
     private final ApiEndpointEntryRepository apiEndpointEntryRepository;
     private final ResourcePermissionBindingService resourcePermissionBindingService;
-    private final CarrierCompatibilitySafetyService carrierCompatibilitySafetyService;
+    private final CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService;
     private final CarrierPermissionRequirementEvaluator carrierPermissionRequirementEvaluator;
     private final AuthorizationAuditService authorizationAuditService;
 
@@ -78,7 +77,7 @@ public class ResourceServiceImpl implements ResourceService {
                                UiActionEntryRepository uiActionEntryRepository,
                                ApiEndpointEntryRepository apiEndpointEntryRepository,
                                ResourcePermissionBindingService resourcePermissionBindingService,
-                               CarrierCompatibilitySafetyService carrierCompatibilitySafetyService,
+                               CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService,
                                CarrierPermissionRequirementEvaluator carrierPermissionRequirementEvaluator,
                                AuthorizationAuditService authorizationAuditService) {
         this.roleRepository = roleRepository;
@@ -89,41 +88,9 @@ public class ResourceServiceImpl implements ResourceService {
         this.uiActionEntryRepository = uiActionEntryRepository;
         this.apiEndpointEntryRepository = apiEndpointEntryRepository;
         this.resourcePermissionBindingService = resourcePermissionBindingService;
-        this.carrierCompatibilitySafetyService = carrierCompatibilitySafetyService;
+        this.carrierPermissionReferenceSafetyService = carrierPermissionReferenceSafetyService;
         this.carrierPermissionRequirementEvaluator = carrierPermissionRequirementEvaluator;
         this.authorizationAuditService = authorizationAuditService;
-    }
-
-    /**
-     * Temporary bridge constructor so existing focused tests can migrate
-     * incrementally while runtime injection no longer depends on ResourceRepository.
-     */
-    @Deprecated
-    public ResourceServiceImpl(ResourceRepository ignoredResourceRepository,
-                               RoleRepository roleRepository,
-                               EffectiveRoleResolutionService effectiveRoleResolutionService,
-                               TenantUserRepository tenantUserRepository,
-                               UserUnitRepository userUnitRepository,
-                               MenuEntryRepository menuEntryRepository,
-                               UiActionEntryRepository uiActionEntryRepository,
-                               ApiEndpointEntryRepository apiEndpointEntryRepository,
-                               ResourcePermissionBindingService resourcePermissionBindingService,
-                               CarrierCompatibilitySafetyService carrierCompatibilitySafetyService,
-                               CarrierPermissionRequirementEvaluator carrierPermissionRequirementEvaluator,
-                               AuthorizationAuditService authorizationAuditService) {
-        this(
-            roleRepository,
-            effectiveRoleResolutionService,
-            tenantUserRepository,
-            userUnitRepository,
-            menuEntryRepository,
-            uiActionEntryRepository,
-            apiEndpointEntryRepository,
-            resourcePermissionBindingService,
-            carrierCompatibilitySafetyService,
-            carrierPermissionRequirementEvaluator,
-            authorizationAuditService
-        );
     }
 
     @Override
@@ -209,12 +176,6 @@ public class ResourceServiceImpl implements ResourceService {
             if (StringUtils.hasText(query.getUri())) {
                 predicates.add(criteriaBuilder.disjunction());
             }
-            if (StringUtils.hasText(query.getPermission())) {
-                predicates.add(criteriaBuilder.like(
-                    criteriaBuilder.lower(root.get("permission")),
-                    containsIgnoreCase(query.getPermission())
-                ));
-            }
             if (query.getParentId() != null) {
                 predicates.add(criteriaBuilder.equal(root.get("parentId"), query.getParentId()));
             }
@@ -262,9 +223,6 @@ public class ResourceServiceImpl implements ResourceService {
             if (StringUtils.hasText(query.getUri())) {
                 predicates.add(criteriaBuilder.disjunction());
             }
-            if (StringUtils.hasText(query.getPermission())) {
-                predicates.add(criteriaBuilder.like(criteriaBuilder.lower(root.get("permission")), containsIgnoreCase(query.getPermission())));
-            }
             if (query.getParentId() != null) {
                 predicates.add(criteriaBuilder.equal(root.get("parentMenuId"), query.getParentId()));
             }
@@ -310,9 +268,6 @@ public class ResourceServiceImpl implements ResourceService {
             }
             if (StringUtils.hasText(query.getUri())) {
                 predicates.add(criteriaBuilder.like(criteriaBuilder.lower(root.get("uri")), containsIgnoreCase(query.getUri())));
-            }
-            if (StringUtils.hasText(query.getPermission())) {
-                predicates.add(criteriaBuilder.like(criteriaBuilder.lower(root.get("permission")), containsIgnoreCase(query.getPermission())));
             }
             if (query.getParentId() != null) {
                 predicates.add(criteriaBuilder.disjunction());
@@ -372,7 +327,6 @@ public class ResourceServiceImpl implements ResourceService {
                                                             Sort requestedSort) {
         List<Resource> resources = new ArrayList<>();
         ResourceType requestedType = query.getType() == null ? null : ResourceType.fromCode(query.getType());
-        String resourceLevel = currentResourceLevel();
 
         if (requestedType == null || requestedType == ResourceType.DIRECTORY || requestedType == ResourceType.MENU) {
             resources.addAll(menuEntryRepository.findAll(
@@ -488,9 +442,7 @@ public class ResourceServiceImpl implements ResourceService {
         if (StringUtils.hasText(resource.getPermission()) && resource.getRequiredPermissionId() == null) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "Missing required_permission_id for provided permission");
         }
-        Resource carrierResource = saveCarrierEntry(resource);
-        carrierCompatibilitySafetyService.replaceCompatibilityRequirement(toCompatibilityBinding(carrierResource));
-        return carrierResource;
+        return saveCarrierEntry(resource);
     }
 
     @Override
@@ -520,9 +472,7 @@ public class ResourceServiceImpl implements ResourceService {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "Missing required_permission_id for provided permission");
         }
 
-        Resource carrierResource = saveCarrierEntry(existingResource);
-        carrierCompatibilitySafetyService.replaceCompatibilityRequirement(toCompatibilityBinding(carrierResource));
-        return carrierResource;
+        return saveCarrierEntry(existingResource);
     }
 
     @Override
@@ -586,6 +536,7 @@ public class ResourceServiceImpl implements ResourceService {
         resource.setHidden(resourceDto.isHidden());
         resource.setKeepAlive(resourceDto.isKeepAlive());
         resource.setPermission(resourceDto.getPermission());
+        resource.setRequiredPermissionId(resourceDto.getRequiredPermissionId());
         resource.setType(ResourceType.fromCode(resourceDto.getType()));
         resource.setParentId(resourceDto.getParentId());
         resourcePermissionBindingService.bindResource(resource, resource.getCreatedBy());
@@ -594,9 +545,7 @@ public class ResourceServiceImpl implements ResourceService {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "Missing required_permission_id for provided permission");
         }
 
-        Resource carrierResource = saveCarrierEntry(resource);
-        carrierCompatibilitySafetyService.replaceCompatibilityRequirement(toCompatibilityBinding(carrierResource));
-        return carrierResource;
+        return saveCarrierEntry(resource);
     }
 
     @Override
@@ -666,6 +615,7 @@ public class ResourceServiceImpl implements ResourceService {
         existingResource.setHidden(resourceDto.isHidden());
         existingResource.setKeepAlive(resourceDto.isKeepAlive());
         existingResource.setPermission(resourceDto.getPermission());
+        existingResource.setRequiredPermissionId(resourceDto.getRequiredPermissionId());
         existingResource.setType(ResourceType.fromCode(resourceDto.getType()));
         existingResource.setParentId(resourceDto.getParentId());
         existingResource.setTenantId(currentManagedTenantId());
@@ -676,9 +626,7 @@ public class ResourceServiceImpl implements ResourceService {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "Missing required_permission_id for provided permission");
         }
 
-        Resource carrierResource = saveCarrierEntry(existingResource);
-        carrierCompatibilitySafetyService.replaceCompatibilityRequirement(toCompatibilityBinding(carrierResource));
-        return carrierResource;
+        return saveCarrierEntry(existingResource);
     }
 
     /**
@@ -787,7 +735,7 @@ public class ResourceServiceImpl implements ResourceService {
             return;
         }
 
-        boolean permissionStillReferenced = carrierCompatibilitySafetyService.existsPermissionReference(requiredPermissionId, tenantId);
+        boolean permissionStillReferenced = carrierPermissionReferenceSafetyService.existsPermissionReference(requiredPermissionId, tenantId);
         if (permissionStillReferenced) {
             return;
         }
@@ -917,7 +865,7 @@ public class ResourceServiceImpl implements ResourceService {
     public ApiEndpointRequirementDecision evaluateApiEndpointRequirement(String method, String uri) {
         String normalizedUri = normalizeCarrierPath(uri);
         if (!StringUtils.hasText(normalizedUri)) {
-            return ApiEndpointRequirementDecision.NOT_REGISTERED;
+            return ApiEndpointRequirementDecision.DENIED;
         }
 
         List<ApiEndpointEntry> endpoints = apiEndpointEntryRepository.findAll(
@@ -925,14 +873,14 @@ public class ResourceServiceImpl implements ResourceService {
             Sort.by(Sort.Order.asc("id"))
         );
         if (endpoints.isEmpty()) {
-            return ApiEndpointRequirementDecision.NOT_REGISTERED;
+            return ApiEndpointRequirementDecision.DENIED;
         }
         // Template match must be strict and deterministic.
         endpoints = endpoints.stream()
             .filter(e -> apiEndpointUriTemplateMatches(e.getUri(), normalizedUri))
             .toList();
         if (endpoints.isEmpty()) {
-            return ApiEndpointRequirementDecision.NOT_REGISTERED;
+            return ApiEndpointRequirementDecision.DENIED;
         }
         if (endpoints.size() != 1) {
             return ApiEndpointRequirementDecision.DENIED;
@@ -1164,16 +1112,6 @@ public class ResourceServiceImpl implements ResourceService {
     @Override
     public Optional<Resource> findByUri(String uri) {
         return findManagedControlPlaneResourcesByField("uri", uri).stream().findFirst();
-    }
-
-    @Override
-    public List<Resource> findByPermission(String permission) {
-        return findManagedControlPlaneResourcesByField("permission", permission);
-    }
-
-    @Override
-    public List<ResourceResponseDto> findDtosByPermission(String permission) {
-        return findByPermission(permission).stream().map(this::toDto).toList();
     }
 
     @Override
@@ -1479,29 +1417,6 @@ public class ResourceServiceImpl implements ResourceService {
         return resource;
     }
 
-    private String toCarrierType(ResourceType type) {
-        return switch (type) {
-            case DIRECTORY, MENU -> CARRIER_MENU;
-            case BUTTON -> CARRIER_UI_ACTION;
-            case API -> CARRIER_API_ENDPOINT;
-        };
-    }
-
-    private CarrierCompatibilityBinding toCompatibilityBinding(Resource carrierResource) {
-        if (carrierResource == null || carrierResource.getType() == null || carrierResource.getId() == null) {
-            return null;
-        }
-        return new CarrierCompatibilityBinding(
-            toCarrierType(carrierResource.getType()),
-            carrierResource.getId(),
-            carrierResource.getTenantId(),
-            carrierResource.getRequiredPermissionId(),
-            carrierResource.getCreatedAt(),
-            carrierResource.getCreatedBy(),
-            carrierResource.getUpdatedAt()
-        );
-    }
-
     private ResourceResponseDto toDto(UiActionEntry action) {
         ResourceResponseDto dto = new ResourceResponseDto();
         dto.setRecordTenantId(action.getTenantId());
@@ -1747,28 +1662,12 @@ public class ResourceServiceImpl implements ResourceService {
             }
             case "uri" -> resources.addAll(safeList(apiEndpointEntryRepository.findAll(apiExactFieldSpec("uri", value, tenantId, resourceLevel)))
                 .stream().map(this::toResource).toList());
-            case "permission" -> {
-                resources.addAll(safeList(menuEntryRepository.findAll(menuExactFieldSpec("permission", value, tenantId, resourceLevel)))
-                    .stream().map(this::toResource).toList());
-                resources.addAll(safeList(uiActionEntryRepository.findAll(uiActionExactFieldSpec("permission", value, tenantId, resourceLevel)))
-                    .stream().map(this::toResource).toList());
-                resources.addAll(safeList(apiEndpointEntryRepository.findAll(apiExactFieldSpec("permission", value, tenantId, resourceLevel)))
-                    .stream().map(this::toResource).toList());
-            }
             default -> {
                 return List.of();
             }
         }
         resources.sort(resourceSortComparator(Sort.by(Sort.Order.asc("sort"), Sort.Order.asc("id"))));
         return resources;
-    }
-
-    private boolean matchesManagedScope(Resource resource) {
-        if (resource == null) {
-            return false;
-        }
-        return Objects.equals(resource.getTenantId(), currentManagedTenantId())
-            && currentResourceLevel().equalsIgnoreCase(resource.getResourceLevel());
     }
 
     private boolean matchesCarrierScope(Long entryTenantId, String entryResourceLevel, Long tenantId, String resourceLevel) {
@@ -1783,7 +1682,6 @@ public class ResourceServiceImpl implements ResourceService {
     private <T> List<T> safeList(List<T> values) {
         return values == null ? List.of() : values;
     }
-
 
     private Specification<com.tiny.platform.infrastructure.menu.domain.MenuEntry> menuPathCarrierSpec(String path,
                                                                                                       Long tenantId,

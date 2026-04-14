@@ -74,8 +74,8 @@ export function getRoleUsers(
 }
 
 // 保存角色与用户的关系（需后端实现）
-export function updateRoleUsers(roleId: number, payload: number[] | RoleUserAssignmentPayload) {
-  // 向后端提交该角色分配的所有用户ID
+/** POST `/sys/roles/{id}/users` 仅接受对象体 `{ userIds, scopeType?, scopeId? }`（CARD-14C）。 */
+export function updateRoleUsers(roleId: number, payload: RoleUserAssignmentPayload) {
   return request.post(`/sys/roles/${roleId}/users`, payload, {
     idempotency: {
       scope: `sys-roles:users:update:${roleId}`,
@@ -90,12 +90,10 @@ export function getRoleResources(roleId: number) {
   return request.get(`/sys/roles/${roleId}/resources`)
 }
 
-// 保存角色与资源的关系（需后端实现）
-export function updateRoleResources(
-  roleId: number,
-  payload: number[] | { permissionIds?: number[]; resourceIds?: number[] },
-) {
-  // 主契约: permissionIds；resourceIds 仅兼容 alias
+/**
+ * 保存角色权限分配。POST `/sys/roles/{id}/resources` 请求体仅允许 `{ permissionIds }`（CARD-13D，与 RoleController 一致）。
+ */
+export function updateRoleResources(roleId: number, payload: { permissionIds: number[] }) {
   return request.post(`/sys/roles/${roleId}/resources`, payload, {
     idempotency: {
       scope: `sys-roles:resources:update:${roleId}`,

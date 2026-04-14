@@ -1,7 +1,8 @@
 ---
 
-> 说明：本文件是 **目标模型对齐分析 / 历史设计讨论**，包含阶段性差异与候选结构，不作为当前运行态权限主链的唯一真相源。  
-> 当前仓库实现请以 [TINY_PLATFORM_AUTHORIZATION_MODEL.md](./TINY_PLATFORM_AUTHORIZATION_MODEL.md) 和 [TINY_PLATFORM_PERMISSION_REFACTOR_FINAL_APPROVAL.md](./TINY_PLATFORM_PERMISSION_REFACTOR_FINAL_APPROVAL.md) 为准。
+> 说明：本文件是 **目标模型对齐分析 / 历史设计讨论稿 / 非当前运行态真相源**，包含阶段性差异与候选结构，不作为当前运行态权限主链的唯一真相源。  
+> 当前仓库实现、当前完成度与平台/租户边界请以 [TINY_PLATFORM_AUTHORIZATION_MODEL.md](./TINY_PLATFORM_AUTHORIZATION_MODEL.md)、[TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md](./TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md) 与 [TINY_PLATFORM_TENANT_GOVERNANCE.md](./TINY_PLATFORM_TENANT_GOVERNANCE.md) 为准。  
+> 文中若出现“下一步将...”或候选结构比较，应按目标模型讨论 / 历史阶段语境理解，不直接视为当前已排期事项或当前运行态约束。
 
 ## 38. 现有数据库与目标模型对齐分析
 

@@ -28,6 +28,7 @@
 #   MYSQL_START_CMD             显式 MySQL 启动命令（优先于 brew/mysql.server 自动探测）
 #   MYSQL_START_WAIT_SEC        MySQL 自愈启动后等待秒数（默认 45）
 #   DB_* 与 ensure-platform-admin / verify-platform-template-row-counts 一致
+#   PLATFORM_TENANT_CODE 或 E2E_PLATFORM_TENANT_CODE（CARD-13E：调用 ensure-platform-admin 前须显式传入平台来源租户 code）
 #   E2E_DB_*                 兼容别名；若 DB_* 未设置，则用作 dev-bootstrap 的回填来源
 #   远程库时除 DB_* 外可设 SPRING_DATASOURCE_URL（本脚本启动 JVM 时用）
 #
@@ -370,6 +371,12 @@ VERIFY_PLATFORM_TEMPLATE_MIN_ROWS=1 \
   bash "${ROOT_DIR}/tiny-oauth-server/scripts/verify-platform-template-row-counts.sh"
 
 echo "==> Step 3a: ensure-platform-admin"
+# CARD-13E：ensure-platform-admin.sh 不再默认 default；与 E2E/应用配置对齐显式传入。
+export PLATFORM_TENANT_CODE="${PLATFORM_TENANT_CODE:-${E2E_PLATFORM_TENANT_CODE:-}}"
+if [[ -z "${PLATFORM_TENANT_CODE}" ]]; then
+  echo "ERROR: 请先设置 PLATFORM_TENANT_CODE 或 E2E_PLATFORM_TENANT_CODE（库内平台来源租户 code，与 application-dev platform-tenant-code 一致）。" >&2
+  exit 1
+fi
 bash "${ROOT_DIR}/tiny-oauth-server/scripts/ensure-platform-admin.sh"
 
 echo "==> Step 3b: Platform login auth chain (Tier1 + optional Tier2)"

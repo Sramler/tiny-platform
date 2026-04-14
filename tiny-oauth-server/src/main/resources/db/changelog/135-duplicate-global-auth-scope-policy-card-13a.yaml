@@ -1,0 +1,25 @@
+# CARD-13A：将历史 GLOBAL 作用域策略复制到显式 TENANT:{id} 与 PLATFORM，避免读侧单 scope_key 后登录断链。
+# 依赖：133 user_auth_scope_policy、tenant_user；与 134 drop user_authentication_method 顺序无关。
+databaseChangeLog:
+  - changeSet:
+      id: 135-duplicate-global-auth-scope-policy-card-13a
+      author: tiny
+      comment: CARD-13A 数据收口：GLOBAL -> TENANT:* 与 GLOBAL -> PLATFORM（幂等，可重复执行不产生重复行）
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: user_auth_scope_policy
+            - tableExists:
+                tableName: tenant_user
+            - tableExists:
+                tableName: user_auth_credential
+      changes:
+        - sqlFile:
+            path: 135-duplicate-global-auth-scope-policy-card-13a.sql
+            relativeToChangelogFile: true
+            splitStatements: true
+            stripComments: false

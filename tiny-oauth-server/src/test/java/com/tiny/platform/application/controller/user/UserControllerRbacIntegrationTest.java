@@ -8,6 +8,7 @@ import com.tiny.platform.infrastructure.auth.org.repository.OrganizationUnitRepo
 import com.tiny.platform.infrastructure.auth.org.repository.UserUnitRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationAuditRepository;
 import com.tiny.platform.infrastructure.auth.user.service.AvatarService;
+import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
 import com.tiny.platform.infrastructure.auth.user.service.UserService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -30,11 +31,9 @@ import org.springframework.test.context.ActiveProfiles;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -78,6 +77,9 @@ class UserControllerRbacIntegrationTest {
 
     @MockBean
     private UserDetailsService userDetailsService;
+
+    @MockBean
+    private AuthUserResolutionService authUserResolutionService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 

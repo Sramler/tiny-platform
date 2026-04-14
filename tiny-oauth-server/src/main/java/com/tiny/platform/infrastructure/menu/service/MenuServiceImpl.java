@@ -14,13 +14,11 @@ import com.tiny.platform.infrastructure.auth.resource.dto.ResourceRequestDto;
 import com.tiny.platform.infrastructure.auth.resource.dto.ResourceResponseDto;
 import com.tiny.platform.infrastructure.auth.resource.enums.ResourceType;
 import com.tiny.platform.infrastructure.auth.resource.repository.ApiEndpointEntryRepository;
-import com.tiny.platform.infrastructure.auth.resource.repository.ResourceRepository;
 import com.tiny.platform.infrastructure.auth.resource.repository.UiActionEntryRepository;
 import com.tiny.platform.infrastructure.auth.audit.domain.AuthorizationAuditEventType;
 import com.tiny.platform.infrastructure.auth.audit.domain.RequirementAwareAuditDetail;
 import com.tiny.platform.infrastructure.auth.audit.service.AuthorizationAuditService;
-import com.tiny.platform.infrastructure.auth.resource.service.CarrierCompatibilityBinding;
-import com.tiny.platform.infrastructure.auth.resource.service.CarrierCompatibilitySafetyService;
+import com.tiny.platform.infrastructure.auth.resource.service.CarrierPermissionReferenceSafetyService;
 import com.tiny.platform.infrastructure.auth.resource.service.CarrierPermissionRequirementEvaluator;
 import com.tiny.platform.infrastructure.auth.resource.service.ResourcePermissionBindingService;
 import com.tiny.platform.infrastructure.auth.resource.support.PlatformControlPlaneResourcePolicy;
@@ -28,7 +26,6 @@ import com.tiny.platform.infrastructure.auth.role.repository.RoleRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.TenantUserRepository;
 import com.tiny.platform.infrastructure.menu.domain.MenuEntry;
 import com.tiny.platform.infrastructure.menu.repository.MenuEntryRepository;
-import com.tiny.platform.infrastructure.tenant.config.PlatformTenantResolver;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -69,15 +66,13 @@ import java.util.ArrayList;
 public class MenuServiceImpl implements MenuService {
     private static final String ACTIVE = "ACTIVE";
     private static final Logger logger = LoggerFactory.getLogger(MenuServiceImpl.class);
-    private static final String CARRIER_MENU = "MENU";
-
     private final MenuEntryRepository menuEntryRepository;
     private final UiActionEntryRepository uiActionEntryRepository;
     private final ApiEndpointEntryRepository apiEndpointEntryRepository;
     private final TenantUserRepository tenantUserRepository;
     private final UserUnitRepository userUnitRepository;
     private final ResourcePermissionBindingService resourcePermissionBindingService;
-    private final CarrierCompatibilitySafetyService carrierCompatibilitySafetyService;
+    private final CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService;
     private final CarrierPermissionRequirementEvaluator carrierPermissionRequirementEvaluator;
     private final AuthorizationAuditService authorizationAuditService;
     private final RoleRepository roleRepository;
@@ -89,7 +84,7 @@ public class MenuServiceImpl implements MenuService {
                            TenantUserRepository tenantUserRepository,
                            UserUnitRepository userUnitRepository,
                            ResourcePermissionBindingService resourcePermissionBindingService,
-                           CarrierCompatibilitySafetyService carrierCompatibilitySafetyService,
+                           CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService,
                            CarrierPermissionRequirementEvaluator carrierPermissionRequirementEvaluator,
                            AuthorizationAuditService authorizationAuditService,
                            RoleRepository roleRepository) {
@@ -99,93 +94,10 @@ public class MenuServiceImpl implements MenuService {
         this.tenantUserRepository = tenantUserRepository;
         this.userUnitRepository = userUnitRepository;
         this.resourcePermissionBindingService = resourcePermissionBindingService;
-        this.carrierCompatibilitySafetyService = carrierCompatibilitySafetyService;
+        this.carrierPermissionReferenceSafetyService = carrierPermissionReferenceSafetyService;
         this.carrierPermissionRequirementEvaluator = carrierPermissionRequirementEvaluator;
         this.authorizationAuditService = authorizationAuditService;
         this.roleRepository = roleRepository;
-    }
-
-    /**
-     * Temporary bridge constructor so tests can migrate incrementally while
-     * runtime injection no longer depends on ResourceRepository.
-     */
-    @Deprecated
-    public MenuServiceImpl(ResourceRepository ignoredResourceRepository,
-                           MenuEntryRepository menuEntryRepository,
-                           UiActionEntryRepository uiActionEntryRepository,
-                           ApiEndpointEntryRepository apiEndpointEntryRepository,
-                           TenantUserRepository tenantUserRepository,
-                           UserUnitRepository userUnitRepository,
-                           ResourcePermissionBindingService resourcePermissionBindingService,
-                           CarrierCompatibilitySafetyService carrierCompatibilitySafetyService,
-                           CarrierPermissionRequirementEvaluator carrierPermissionRequirementEvaluator,
-                           AuthorizationAuditService authorizationAuditService,
-                           RoleRepository roleRepository) {
-        this(
-            menuEntryRepository,
-            uiActionEntryRepository,
-            apiEndpointEntryRepository,
-            tenantUserRepository,
-            userUnitRepository,
-            resourcePermissionBindingService,
-            carrierCompatibilitySafetyService,
-            carrierPermissionRequirementEvaluator,
-            authorizationAuditService,
-            roleRepository
-        );
-    }
-
-    @Deprecated
-    public MenuServiceImpl(MenuEntryRepository menuEntryRepository,
-                           UiActionEntryRepository uiActionEntryRepository,
-                           ApiEndpointEntryRepository apiEndpointEntryRepository,
-                           TenantUserRepository tenantUserRepository,
-                           UserUnitRepository userUnitRepository,
-                           PlatformTenantResolver ignoredPlatformTenantResolver,
-                           ResourcePermissionBindingService resourcePermissionBindingService,
-                           CarrierCompatibilitySafetyService carrierCompatibilitySafetyService,
-                           CarrierPermissionRequirementEvaluator carrierPermissionRequirementEvaluator,
-                           AuthorizationAuditService authorizationAuditService,
-                           RoleRepository roleRepository) {
-        this(
-            menuEntryRepository,
-            uiActionEntryRepository,
-            apiEndpointEntryRepository,
-            tenantUserRepository,
-            userUnitRepository,
-            resourcePermissionBindingService,
-            carrierCompatibilitySafetyService,
-            carrierPermissionRequirementEvaluator,
-            authorizationAuditService,
-            roleRepository
-        );
-    }
-
-    @Deprecated
-    public MenuServiceImpl(ResourceRepository ignoredResourceRepository,
-                           MenuEntryRepository menuEntryRepository,
-                           UiActionEntryRepository uiActionEntryRepository,
-                           ApiEndpointEntryRepository apiEndpointEntryRepository,
-                           TenantUserRepository tenantUserRepository,
-                           UserUnitRepository userUnitRepository,
-                           PlatformTenantResolver ignoredPlatformTenantResolver,
-                           ResourcePermissionBindingService resourcePermissionBindingService,
-                           CarrierCompatibilitySafetyService carrierCompatibilitySafetyService,
-                           CarrierPermissionRequirementEvaluator carrierPermissionRequirementEvaluator,
-                           AuthorizationAuditService authorizationAuditService,
-                           RoleRepository roleRepository) {
-        this(
-            menuEntryRepository,
-            uiActionEntryRepository,
-            apiEndpointEntryRepository,
-            tenantUserRepository,
-            userUnitRepository,
-            resourcePermissionBindingService,
-            carrierCompatibilitySafetyService,
-            carrierPermissionRequirementEvaluator,
-            authorizationAuditService,
-            roleRepository
-        );
     }
 
     private Long normalizeParentId(Long parentId) {
@@ -362,12 +274,12 @@ public class MenuServiceImpl implements MenuService {
         resource.setHidden(resourceDto.isHidden());
         resource.setKeepAlive(resourceDto.isKeepAlive());
         resource.setPermission(resourceDto.getPermission());
+        resource.setRequiredPermissionId(resourceDto.getRequiredPermissionId());
         resource.setType(ResourceType.fromCode(resourceDto.getType()));
         resource.setParentId(resourceDto.getParentId());
         resourcePermissionBindingService.bindResource(resource, resource.getCreatedBy());
-        MenuEntry savedCarrier = menuEntryRepository.save(toMenuEntry(resource));
-        carrierCompatibilitySafetyService.replaceCompatibilityRequirement(toCompatibilityBinding(savedCarrier));
-        return toResource(savedCarrier);
+        failClosedWhenLegacyPermissionInputPersists(resource);
+        return toResource(menuEntryRepository.save(toMenuEntry(resource)));
     }
 
     /**
@@ -395,14 +307,24 @@ public class MenuServiceImpl implements MenuService {
         carrier.setHidden(resourceDto.isHidden());
         carrier.setKeepAlive(resourceDto.isKeepAlive());
         carrier.setPermission(resourceDto.getPermission());
+        carrier.setRequiredPermissionId(resourceDto.getRequiredPermissionId());
         carrier.setType(resourceDto.getType());
         carrier.setParentId(resourceDto.getParentId());
         Resource marker = toResource(carrier);
         resourcePermissionBindingService.bindResource(marker, extractCurrentUserId());
+        failClosedWhenLegacyPermissionInputPersists(marker);
+        carrier.setPermission(marker.getPermission());
         carrier.setRequiredPermissionId(marker.getRequiredPermissionId());
-        MenuEntry savedCarrier = menuEntryRepository.save(carrier);
-        carrierCompatibilitySafetyService.replaceCompatibilityRequirement(toCompatibilityBinding(savedCarrier));
-        return toResource(savedCarrier);
+        return toResource(menuEntryRepository.save(carrier));
+    }
+
+    private void failClosedWhenLegacyPermissionInputPersists(Resource resource) {
+        if (resource == null) {
+            return;
+        }
+        if (StringUtils.hasText(resource.getPermission()) && resource.getRequiredPermissionId() == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "Missing required_permission_id for provided permission");
+        }
     }
     
     /**
@@ -541,7 +463,7 @@ public class MenuServiceImpl implements MenuService {
         if (requiredPermissionId == null) {
             return;
         }
-        boolean permissionStillReferenced = carrierCompatibilitySafetyService.existsPermissionReference(requiredPermissionId, tenantId);
+        boolean permissionStillReferenced = carrierPermissionReferenceSafetyService.existsPermissionReference(requiredPermissionId, tenantId);
         if (permissionStillReferenced) {
             return;
         }
@@ -571,21 +493,6 @@ public class MenuServiceImpl implements MenuService {
         carrier.setSort(sort);
         MenuEntry savedCarrier = menuEntryRepository.save(carrier);
         return toResource(savedCarrier);
-    }
-
-    private CarrierCompatibilityBinding toCompatibilityBinding(MenuEntry menu) {
-        if (menu == null || menu.getId() == null) {
-            return null;
-        }
-        return new CarrierCompatibilityBinding(
-            CARRIER_MENU,
-            menu.getId(),
-            menu.getTenantId(),
-            menu.getRequiredPermissionId(),
-            menu.getCreatedAt(),
-            menu.getCreatedBy(),
-            menu.getUpdatedAt()
-        );
     }
 
     /**
@@ -862,6 +769,22 @@ public class MenuServiceImpl implements MenuService {
             .collect(Collectors.toList());
     }
 
+    @Override
+    public boolean existsByName(String name, Long excludeId) {
+        if (!StringUtils.hasText(name)) {
+            return false;
+        }
+        return menuEntryRepository.existsByNameAndTenantScope(name, excludeId, resolveReadTenantId());
+    }
+
+    @Override
+    public boolean existsByUrl(String url, Long excludeId) {
+        if (!StringUtils.hasText(url)) {
+            return false;
+        }
+        return menuEntryRepository.existsByPathAndTenantScope(url, excludeId, resolveReadTenantId());
+    }
+
     private Pageable normalizeMenuPageable(Pageable pageable) {
         if (pageable.getSort().isSorted()) {
             return pageable;
@@ -907,9 +830,6 @@ public class MenuServiceImpl implements MenuService {
             }
             if (StringUtils.hasText(query.getName())) {
                 predicates.add(criteriaBuilder.like(root.get("name"), "%" + query.getName() + "%"));
-            }
-            if (StringUtils.hasText(query.getPermission())) {
-                predicates.add(criteriaBuilder.like(root.get("permission"), "%" + query.getPermission() + "%"));
             }
             if (query.getEnabled() != null) {
                 predicates.add(criteriaBuilder.equal(root.get("enabled"), query.getEnabled()));

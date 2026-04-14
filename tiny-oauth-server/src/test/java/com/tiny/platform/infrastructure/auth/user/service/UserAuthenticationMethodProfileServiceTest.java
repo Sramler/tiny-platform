@@ -19,15 +19,12 @@ import static org.mockito.Mockito.when;
 class UserAuthenticationMethodProfileServiceTest {
 
     @Test
-    void tenantScopeShouldAllowDisabledScopedRowToSuppressGlobalEnabledRow() {
+    void tenantScopeShouldExcludeDisabledMethodWithoutCrossScopeMerge() {
         UserAuthScopePolicyRepository scopePolicyRepository = mock(UserAuthScopePolicyRepository.class);
         UserAuthenticationMethodProfileService service = new UserAuthenticationMethodProfileService(scopePolicyRepository);
 
         when(scopePolicyRepository.findByUserIdAndScopeKey(1L, "TENANT:9")).thenReturn(List.of(
                 newScopePolicy(1L, UserAuthenticationBridgeWriter.SCOPE_TYPE_TENANT, 9L, "LOCAL", "PASSWORD", false, Map.of("password", "{noop}tenant"))
-        ));
-        when(scopePolicyRepository.findByUserIdAndScopeKey(1L, "GLOBAL")).thenReturn(List.of(
-                newScopePolicy(1L, UserAuthenticationBridgeWriter.SCOPE_TYPE_GLOBAL, null, "LOCAL", "PASSWORD", true, Map.of("password", "{noop}global"))
         ));
 
         List<UserAuthenticationMethodProfile> profiles = service.loadEnabledMethodProfiles(
@@ -40,15 +37,13 @@ class UserAuthenticationMethodProfileServiceTest {
     }
 
     @Test
-    void platformScopeShouldMergePlatformThenGlobalFromNewModel() {
+    void platformScopeShouldLoadOnlyPlatformScopeRows() {
         UserAuthScopePolicyRepository scopePolicyRepository = mock(UserAuthScopePolicyRepository.class);
         UserAuthenticationMethodProfileService service = new UserAuthenticationMethodProfileService(scopePolicyRepository);
 
         when(scopePolicyRepository.findByUserIdAndScopeKey(1L, "PLATFORM")).thenReturn(List.of(
-                newScopePolicy(1L, UserAuthenticationBridgeWriter.SCOPE_TYPE_PLATFORM, null, "LOCAL", "PASSWORD", true, Map.of("password", "{noop}platform"))
-        ));
-        when(scopePolicyRepository.findByUserIdAndScopeKey(1L, "GLOBAL")).thenReturn(List.of(
-                newScopePolicy(1L, UserAuthenticationBridgeWriter.SCOPE_TYPE_GLOBAL, null, "LOCAL", "TOTP", true, Map.of("secretKey", "global-totp"))
+                newScopePolicy(1L, UserAuthenticationBridgeWriter.SCOPE_TYPE_PLATFORM, null, "LOCAL", "PASSWORD", true, Map.of("password", "{noop}platform")),
+                newScopePolicy(1L, UserAuthenticationBridgeWriter.SCOPE_TYPE_PLATFORM, null, "LOCAL", "TOTP", true, Map.of("secretKey", "platform-totp"))
         ));
 
         List<UserAuthenticationMethodProfile> profiles = service.loadEnabledMethodProfiles(
@@ -70,9 +65,6 @@ class UserAuthenticationMethodProfileServiceTest {
 
         when(scopePolicyRepository.findByUserIdAndAuthenticationProviderAndAuthenticationTypeAndScopeKey(
                 1L, "LOCAL", "PASSWORD", "TENANT:9"
-        )).thenReturn(Optional.empty());
-        when(scopePolicyRepository.findByUserIdAndAuthenticationProviderAndAuthenticationTypeAndScopeKey(
-                1L, "LOCAL", "PASSWORD", "GLOBAL"
         )).thenReturn(Optional.empty());
 
         Optional<UserAuthenticationMethodProfile> profile = service.findEffectiveMethodProfile(

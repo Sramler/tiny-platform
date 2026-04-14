@@ -83,10 +83,29 @@ class MenuControllerRbacIntegrationTest {
         }
 
         @Test
+        void checkName_allowsReadAuthority() throws Exception {
+            when(menuService.existsByName("menu", 7L)).thenReturn(true);
+
+            mockMvc.perform(get("/sys/menus/check-name")
+                    .param("name", "menu")
+                    .param("excludeId", "7")
+                    .with(user("menu-reader").authorities(new SimpleGrantedAuthority("system:menu:list"))))
+                .andExpect(status().isOk());
+        }
+
+        @Test
         @WithAnonymousUser
         void list_deniesAnonymous() throws Exception {
             mockMvc.perform(get("/sys/menus"))
                 .andExpect(status().is4xxClientError());
+        }
+
+        @Test
+        void checkUrl_deniesWithoutReadAuthority() throws Exception {
+            mockMvc.perform(get("/sys/menus/check-url")
+                    .param("url", "/menu")
+                    .with(user("plain-user").authorities(new SimpleGrantedAuthority("ROLE_USER"))))
+                .andExpect(status().isForbidden());
         }
     }
 

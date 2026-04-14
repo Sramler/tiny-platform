@@ -61,6 +61,22 @@ class MenuControllerTest {
     }
 
     @Test
+    void checkEndpoints_shouldDelegateToMenuCarrierValidation() {
+        when(menuService.existsByName("menu", 9L)).thenReturn(true);
+        when(menuService.existsByUrl("/menu", 9L)).thenReturn(false);
+
+        ResponseEntity<Map<String, Boolean>> nameResp = controller.checkNameExists("menu", 9L);
+        ResponseEntity<Map<String, Boolean>> urlResp = controller.checkUrlExists("/menu", 9L);
+
+        assertEquals(HttpStatus.OK, nameResp.getStatusCode());
+        assertEquals(Map.of("exists", true), nameResp.getBody());
+        assertEquals(HttpStatus.OK, urlResp.getStatusCode());
+        assertEquals(Map.of("exists", false), urlResp.getBody());
+        verify(menuService).existsByName("menu", 9L);
+        verify(menuService).existsByUrl("/menu", 9L);
+    }
+
+    @Test
     void create_update_delete_shouldDelegate() {
         ResourceCreateUpdateDto dto = new ResourceCreateUpdateDto();
         Resource created = mock(Resource.class);

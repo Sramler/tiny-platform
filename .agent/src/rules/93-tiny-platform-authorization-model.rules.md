@@ -18,7 +18,7 @@
 
 ## 必须（Must）
 
-- ✅ 当前 tiny-platform 的运行态功能权限真相源以 `role_permission -> permission` 为准；`resource` 仅作为目录/菜单/按钮/API 载体层，兼容期可保留 `resource.permission`，但新逻辑应优先维护 `resource.required_permission_id -> permission.id`。
+- ✅ 当前 tiny-platform 的运行态功能权限真相源以 `role_permission -> permission` 为准；`resource` 仅作为目录/菜单/按钮/API 载体层，兼容期可保留历史 `resource` 权限字符串字段，但新逻辑应优先维护 `resource.required_permission_id -> permission.id`。
 - ✅ 新增授权模型能力时，必须同时更新 `docs/TINY_PLATFORM_AUTHORIZATION_MODEL.md`，说明目标、边界、迁移与兼容策略。
 - ✅ 目标态多租户授权采用 membership 模型；如从 `user.tenant_id` 迁移到 `tenant_user`，必须经过回填、兼容读取和双写阶段，不能一步删除旧字段。
 - ✅ 若引入 Scope，必须通过正式授权关系表达，例如 `role_assignment` 的 `scope_type/scope_id`，而不是在 `user_role`、业务表或代码常量中临时拼接。
@@ -31,6 +31,10 @@
 - ✅ 平台模板只允许平台控制面创建、修改和删除；租户侧最多只能读取平台模板或派生租户副本，不得直接更新或删除平台模板记录。
 - ✅ 判断“当前是否已落地 / 是否已闭合 / 证据等级到哪一档”时，不得引用历史设计稿直接下结论；应按 `docs/TINY_PLATFORM_AUTHORIZATION_DOC_MAP.md` 的裁决顺序，分别回到 `AUTHORIZATION_TASK_LIST`、`AUTHORIZATION_LAYERED_MODEL`、`API_ENDPOINT_GUARD_COVERAGE` 与 `RBAC3_ORG_DATASCOPE_ALLOCATION_ER_MODEL`。
 - ✅ 涉及 **`GET /sys/users/current`** 与 **`POST /sys/users/current/active-scope`** 的产品语义、文档或测试时，必须区分 **M4 读** 与 **M4 写**（Session 权威落点、写后 `tokenRefreshRequired`），以 `docs/TINY_PLATFORM_SESSION_BEARER_AUTH_MATRIX.md` §8 与 `91-tiny-platform-auth.rules.md` 为准；不得将矩阵 §4 的 M4 行泛化为“所有 user 端点同一行为”。
+- ✅ 调整 `resource.permission` / `required_permission_id` / carrier 写链等兼容收口语义时，必须同批同步后端 DTO、前端 TS 请求类型、表单/适配层透传规则与定向回归测试；禁止只改服务层而放任前端继续隐式携带旧绑定或漏传新字段。
+- ✅ `POST /sys/roles/{id}/resources` 当前契约只允许 `{ permissionIds }`；前端 API、组件事件、表单 payload 与测试命名不得继续传播 `resourceIds` 作为运行态写链语义。
+- ✅ 菜单控制面主入口是 `/sys/menus`；新增或收口菜单 CRUD/tree/parent/校验接口时，不得继续恢复 `/sys/resources/menus*`，`menu.ts` 也不得再回指 `/sys/resources/check-*`。`/sys/resources` 仅保留资源聚合控制面与运行时自省端点。
+- ✅ 若继续收口 `permission` 历史写链，不得只改 `ResourceForm`/资源控制面；`MenuForm`、`MenuServiceImpl` 与菜单 DTO 也必须同步切到显式 `requiredPermissionId` 主入口，否则 `CARD-15A` 不算真正闭合。
 
 ## 应该（Should）
 
@@ -63,7 +67,7 @@
 
 ```text
 阶段 1：保持 role_permission -> permission 作为功能权限真相源，新增 role_assignment 替换 user_role
-阶段 1.5：为 resource 维护 required_permission_id，逐步退场 resource.permission 的字符串 join
+阶段 1.5：为 resource 维护 required_permission_id，逐步退场历史 resource 权限字符串字段的 join
 阶段 2：新增 role_hierarchy / role_mutex / role_prerequisite / role_cardinality
 阶段 3：新增 organization_unit / user_unit，再扩展 scope_type=ORG/DEPT
 阶段 4：新增 role_data_scope / role_data_scope_item，并在查询层统一下推数据过滤
@@ -74,5 +78,5 @@
 ```text
 在 user_role 上直接加 dept_id，当作部门 Scope 使用
 在角色编码里写死 DEPT_SELF、ORG_ALL，代替正式数据权限模型
-新建 permission 表，但运行态仍继续新增 `resource.permission = permission_code` 的新主链路，长期双轨并存
+新建 permission 表，但运行态仍继续新增“历史 resource 权限字符串字段 = permission_code”的新主链路，长期双轨并存
 ```

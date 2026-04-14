@@ -232,8 +232,6 @@ class PartialMfaFormLoginIntegrationTest {
                         tenantScopePolicy(user.getId(), 1L, "LOCAL", "TOTP",
                                 Map.of("secret", "BASE32SECRET"), 1)
                 ));
-        when(scopePolicyRepository.findByUserIdAndScopeKey(eq(1L), eq(buildScopeKey("GLOBAL", null))))
-                .thenReturn(List.of());
         when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
                 "totpBound", true,
                 "totpActivated", true,
@@ -323,8 +321,6 @@ class PartialMfaFormLoginIntegrationTest {
                         tenantScopePolicy(user.getId(), 1L, "LOCAL", "PASSWORD",
                                 Map.of("password", "{noop}raw-password"), 0)
                 ));
-        when(scopePolicyRepository.findByUserIdAndScopeKey(eq(1L), eq(buildScopeKey("GLOBAL", null))))
-                .thenReturn(List.of());
         when(securityService.getSecurityStatus(user)).thenReturn(Map.of(
                 "totpBound", false,
                 "totpActivated", false,

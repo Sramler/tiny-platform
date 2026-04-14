@@ -118,7 +118,7 @@ class RoleConstraintRuleControllerRbacIntegrationTest {
             mockMvc.perform(post("/sys/role-constraints/hierarchy")
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(dto))
-                    .with(user("role-permission-assigner").authorities(new SimpleGrantedAuthority("system:role:permission:assign"))))
+                    .with(user("role-constraint-editor").authorities(new SimpleGrantedAuthority("system:role:constraint:edit"))))
                 .andExpect(status().isOk());
         } finally {
             TenantContext.clear();
@@ -144,7 +144,7 @@ class RoleConstraintRuleControllerRbacIntegrationTest {
             when(adminService.listRoleHierarchyEdges(any())).thenReturn(java.util.List.of());
 
             mockMvc.perform(get("/sys/role-constraints/hierarchy")
-                    .with(user("role-permission-assigner").authorities(new SimpleGrantedAuthority("system:role:permission:assign"))))
+                    .with(user("role-constraint-viewer").authorities(new SimpleGrantedAuthority("system:role:constraint:view"))))
                 .andExpect(status().isOk());
         } finally {
             TenantContext.clear();
@@ -160,7 +160,7 @@ class RoleConstraintRuleControllerRbacIntegrationTest {
             mockMvc.perform(delete("/sys/role-constraints/hierarchy")
                     .param("childRoleId", "10")
                     .param("parentRoleId", "11")
-                    .with(user("role-permission-assigner").authorities(new SimpleGrantedAuthority("system:role:permission:assign"))))
+                    .with(user("role-constraint-editor").authorities(new SimpleGrantedAuthority("system:role:constraint:edit"))))
                 .andExpect(status().isNoContent());
         } finally {
             TenantContext.clear();
@@ -171,7 +171,7 @@ class RoleConstraintRuleControllerRbacIntegrationTest {
     void listHierarchy_returnsBadRequest_whenTenantMissing() throws Exception {
         TenantContext.clear();
         mockMvc.perform(get("/sys/role-constraints/hierarchy")
-                .with(user("role-permission-assigner").authorities(new SimpleGrantedAuthority("system:role:permission:assign"))))
+                .with(user("role-constraint-viewer").authorities(new SimpleGrantedAuthority("system:role:constraint:view"))))
             .andExpect(status().isBadRequest());
     }
 
@@ -206,7 +206,7 @@ class RoleConstraintRuleControllerRbacIntegrationTest {
             mockMvc.perform(post("/sys/role-constraints/mutex")
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(dto))
-                    .with(user("role-permission-assigner").authorities(new SimpleGrantedAuthority("system:role:permission:assign"))))
+                    .with(user("role-constraint-editor").authorities(new SimpleGrantedAuthority("system:role:constraint:edit"))))
                 .andExpect(status().isOk());
         } finally {
             TenantContext.clear();
@@ -232,7 +232,7 @@ class RoleConstraintRuleControllerRbacIntegrationTest {
             when(adminService.listRoleMutexRules(any())).thenReturn(java.util.List.of());
 
             mockMvc.perform(get("/sys/role-constraints/mutex")
-                    .with(user("role-permission-assigner").authorities(new SimpleGrantedAuthority("system:role:permission:assign"))))
+                    .with(user("role-constraint-viewer").authorities(new SimpleGrantedAuthority("system:role:constraint:view"))))
                 .andExpect(status().isOk());
         } finally {
             TenantContext.clear();
@@ -248,7 +248,7 @@ class RoleConstraintRuleControllerRbacIntegrationTest {
             mockMvc.perform(delete("/sys/role-constraints/mutex")
                     .param("roleIdA", "10")
                     .param("roleIdB", "11")
-                    .with(user("role-permission-assigner").authorities(new SimpleGrantedAuthority("system:role:permission:assign"))))
+                    .with(user("role-constraint-editor").authorities(new SimpleGrantedAuthority("system:role:constraint:edit"))))
                 .andExpect(status().isNoContent());
         } finally {
             TenantContext.clear();
@@ -259,7 +259,7 @@ class RoleConstraintRuleControllerRbacIntegrationTest {
     void listMutex_returnsBadRequest_whenTenantMissing() throws Exception {
         TenantContext.clear();
         mockMvc.perform(get("/sys/role-constraints/mutex")
-                .with(user("role-permission-assigner").authorities(new SimpleGrantedAuthority("system:role:permission:assign"))))
+                .with(user("role-constraint-viewer").authorities(new SimpleGrantedAuthority("system:role:constraint:view"))))
             .andExpect(status().isBadRequest());
     }
 
@@ -294,7 +294,7 @@ class RoleConstraintRuleControllerRbacIntegrationTest {
             mockMvc.perform(post("/sys/role-constraints/prerequisite")
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(dto))
-                    .with(user("role-permission-assigner").authorities(new SimpleGrantedAuthority("system:role:permission:assign"))))
+                    .with(user("role-constraint-editor").authorities(new SimpleGrantedAuthority("system:role:constraint:edit"))))
                 .andExpect(status().isOk());
         } finally {
             TenantContext.clear();
@@ -320,7 +320,7 @@ class RoleConstraintRuleControllerRbacIntegrationTest {
             when(adminService.listRolePrerequisiteRules(any())).thenReturn(java.util.List.of());
 
             mockMvc.perform(get("/sys/role-constraints/prerequisite")
-                    .with(user("role-permission-assigner").authorities(new SimpleGrantedAuthority("system:role:permission:assign"))))
+                    .with(user("role-constraint-viewer").authorities(new SimpleGrantedAuthority("system:role:constraint:view"))))
                 .andExpect(status().isOk());
         } finally {
             TenantContext.clear();
@@ -336,7 +336,7 @@ class RoleConstraintRuleControllerRbacIntegrationTest {
             mockMvc.perform(delete("/sys/role-constraints/prerequisite")
                     .param("roleId", "10")
                     .param("requiredRoleId", "11")
-                    .with(user("role-permission-assigner").authorities(new SimpleGrantedAuthority("system:role:permission:assign"))))
+                    .with(user("role-constraint-editor").authorities(new SimpleGrantedAuthority("system:role:constraint:edit"))))
                 .andExpect(status().isNoContent());
         } finally {
             TenantContext.clear();
@@ -347,7 +347,7 @@ class RoleConstraintRuleControllerRbacIntegrationTest {
     void listPrerequisite_returnsBadRequest_whenTenantMissing() throws Exception {
         TenantContext.clear();
         mockMvc.perform(get("/sys/role-constraints/prerequisite")
-                .with(user("role-permission-assigner").authorities(new SimpleGrantedAuthority("system:role:permission:assign"))))
+                .with(user("role-constraint-viewer").authorities(new SimpleGrantedAuthority("system:role:constraint:view"))))
             .andExpect(status().isBadRequest());
     }
 
@@ -384,7 +384,7 @@ class RoleConstraintRuleControllerRbacIntegrationTest {
             mockMvc.perform(post("/sys/role-constraints/cardinality")
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(dto))
-                    .with(user("role-permission-assigner").authorities(new SimpleGrantedAuthority("system:role:permission:assign"))))
+                    .with(user("role-constraint-editor").authorities(new SimpleGrantedAuthority("system:role:constraint:edit"))))
                 .andExpect(status().isOk());
         } finally {
             TenantContext.clear();
@@ -410,7 +410,7 @@ class RoleConstraintRuleControllerRbacIntegrationTest {
             when(adminService.listRoleCardinalityRules(any())).thenReturn(java.util.List.of());
 
             mockMvc.perform(get("/sys/role-constraints/cardinality")
-                    .with(user("role-permission-assigner").authorities(new SimpleGrantedAuthority("system:role:permission:assign"))))
+                    .with(user("role-constraint-viewer").authorities(new SimpleGrantedAuthority("system:role:constraint:view"))))
                 .andExpect(status().isOk());
         } finally {
             TenantContext.clear();
@@ -426,7 +426,7 @@ class RoleConstraintRuleControllerRbacIntegrationTest {
             mockMvc.perform(delete("/sys/role-constraints/cardinality")
                     .param("roleId", "10")
                     .param("scopeType", "TENANT")
-                    .with(user("role-permission-assigner").authorities(new SimpleGrantedAuthority("system:role:permission:assign"))))
+                    .with(user("role-constraint-editor").authorities(new SimpleGrantedAuthority("system:role:constraint:edit"))))
                 .andExpect(status().isNoContent());
         } finally {
             TenantContext.clear();
@@ -437,7 +437,7 @@ class RoleConstraintRuleControllerRbacIntegrationTest {
     void listCardinality_returnsBadRequest_whenTenantMissing() throws Exception {
         TenantContext.clear();
         mockMvc.perform(get("/sys/role-constraints/cardinality")
-                .with(user("role-permission-assigner").authorities(new SimpleGrantedAuthority("system:role:permission:assign"))))
+                .with(user("role-constraint-viewer").authorities(new SimpleGrantedAuthority("system:role:constraint:view"))))
             .andExpect(status().isBadRequest());
     }
 
@@ -461,7 +461,7 @@ class RoleConstraintRuleControllerRbacIntegrationTest {
                 .thenReturn(org.springframework.data.domain.Page.empty());
 
             mockMvc.perform(get("/sys/role-constraints/violations")
-                    .with(user("role-permission-assigner").authorities(new SimpleGrantedAuthority("system:role:permission:assign"))))
+                    .with(user("role-constraint-violation-viewer").authorities(new SimpleGrantedAuthority("system:role:constraint:violation:view"))))
                 .andExpect(status().isOk());
         } finally {
             TenantContext.clear();
@@ -488,8 +488,7 @@ class RoleConstraintRuleControllerRbacIntegrationTest {
     void listViolations_returnsBadRequest_whenTenantMissing() throws Exception {
         TenantContext.clear();
         mockMvc.perform(get("/sys/role-constraints/violations")
-                .with(user("role-permission-assigner").authorities(new SimpleGrantedAuthority("system:role:permission:assign"))))
+                .with(user("role-constraint-violation-viewer").authorities(new SimpleGrantedAuthority("system:role:constraint:violation:view"))))
             .andExpect(status().isBadRequest());
     }
 }
-

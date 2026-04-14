@@ -76,6 +76,13 @@ const dbPassword = readEnv(['E2E_DB_PASSWORD', 'E2E_MYSQL_PASSWORD', 'MYSQL_ROOT
 const skipRealSetup = process.env.E2E_SKIP_REAL_SETUP === 'true'
 const skipWebServer = process.env.E2E_SKIP_WEBSERVER === 'true'
 
+// CARD-13E：`real.global.setup.ts` 主链始终调用 `requireRealLinkPlatformTenantCode`；在加载本配置时尽早 fail-fast，避免启动 webServer 后才报错。
+if (!skipRealSetup && !readEnvOptional(['E2E_PLATFORM_TENANT_CODE'])) {
+  throw new Error(
+    'playwright.real.config: real-link 需要显式 E2E_PLATFORM_TENANT_CODE（禁止静默 default）。请在 .env.e2e.local 或 CI secrets 中配置；仅跑 mock/跳过 globalSetup 时设 E2E_SKIP_REAL_SETUP=true。',
+  )
+}
+
 export default defineConfig({
   testDir: './e2e',
   timeout: 120_000,

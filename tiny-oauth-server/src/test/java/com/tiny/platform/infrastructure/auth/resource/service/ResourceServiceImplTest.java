@@ -16,7 +16,6 @@ import com.tiny.platform.infrastructure.auth.resource.enums.ResourceType;
 import com.tiny.platform.infrastructure.auth.resource.repository.ApiEndpointPermissionRequirementRepository;
 import com.tiny.platform.infrastructure.auth.resource.repository.CarrierPermissionRequirementRow;
 import com.tiny.platform.infrastructure.auth.resource.repository.ApiEndpointEntryRepository;
-import com.tiny.platform.infrastructure.auth.resource.repository.ResourceRepository;
 import com.tiny.platform.infrastructure.auth.resource.repository.UiActionEntryRepository;
 import com.tiny.platform.infrastructure.auth.resource.repository.UiActionPermissionRequirementRepository;
 import com.tiny.platform.infrastructure.auth.role.repository.RoleRepository;
@@ -69,7 +68,6 @@ class ResourceServiceImplTest {
 
     @Test
     void findByUserId_should_prefer_assignment_backed_role_ids() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -78,7 +76,7 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
         MenuPermissionRequirementRepository menuPermissionRequirementRepository =
             mock(MenuPermissionRequirementRepository.class);
         UiActionPermissionRequirementRepository uiActionPermissionRequirementRepository =
@@ -92,7 +90,6 @@ class ResourceServiceImplTest {
         );
         authorizationAuditService = mock(AuthorizationAuditService.class);
         ResourceServiceImpl service = new ResourceServiceImpl(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -101,7 +98,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService,
+            carrierPermissionReferenceSafetyService,
             evaluator,
             authorizationAuditService
         );
@@ -133,13 +130,11 @@ class ResourceServiceImplTest {
         assertThat(result).hasSize(1);
         assertThat(result.getFirst().getId()).isEqualTo(9L);
         verify(effectiveRoleResolutionService).findEffectiveRoleIdsForUserInTenant(5L, 1L);
-        verify(resourceRepository, never()).findAllById(any());
         verify(roleRepository, never()).findResourceIdsByRoleId(any());
     }
 
     @Test
     void findByRoleId_should_load_mixed_carriers_by_permission_ids_without_resource_table_main_read() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -148,7 +143,7 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
         MenuPermissionRequirementRepository menuPermissionRequirementRepository = mock(MenuPermissionRequirementRepository.class);
         UiActionPermissionRequirementRepository uiActionPermissionRequirementRepository = mock(UiActionPermissionRequirementRepository.class);
         ApiEndpointPermissionRequirementRepository apiEndpointPermissionRequirementRepository = mock(ApiEndpointPermissionRequirementRepository.class);
@@ -159,7 +154,6 @@ class ResourceServiceImplTest {
         );
         authorizationAuditService = mock(AuthorizationAuditService.class);
         ResourceServiceImpl service = new ResourceServiceImpl(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -168,7 +162,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService,
+            carrierPermissionReferenceSafetyService,
             evaluator,
             authorizationAuditService
         );
@@ -218,13 +212,11 @@ class ResourceServiceImplTest {
         assertThat(result).hasSize(3);
         assertThat(result).extracting(Resource::getType)
             .containsExactly(ResourceType.API, ResourceType.MENU, ResourceType.BUTTON);
-        verify(resourceRepository, never()).findAllById(any());
         verify(roleRepository, never()).findResourceIdsByRoleId(any());
     }
 
     @Test
     void resources_should_expose_record_tenant_id_in_response_dto() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -233,7 +225,7 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
         MenuPermissionRequirementRepository menuPermissionRequirementRepository = mock(MenuPermissionRequirementRepository.class);
         UiActionPermissionRequirementRepository uiActionPermissionRequirementRepository = mock(UiActionPermissionRequirementRepository.class);
         ApiEndpointPermissionRequirementRepository apiEndpointPermissionRequirementRepository = mock(ApiEndpointPermissionRequirementRepository.class);
@@ -244,7 +236,6 @@ class ResourceServiceImplTest {
         );
         authorizationAuditService = mock(AuthorizationAuditService.class);
         ResourceServiceImpl service = new ResourceServiceImpl(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -253,7 +244,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService,
+            carrierPermissionReferenceSafetyService,
             evaluator,
             authorizationAuditService
         );
@@ -283,12 +274,10 @@ class ResourceServiceImplTest {
         assertThat(page.getContent()).hasSize(1);
         ResourceResponseDto dto = page.getContent().getFirst();
         assertThat(dto.getRecordTenantId()).isEqualTo(8L);
-        verify(resourceRepository, never()).findAll(any(Specification.class), org.mockito.ArgumentMatchers.eq(pageable));
     }
 
     @Test
     void resources_should_apply_self_scoped_creator_filter() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -297,7 +286,7 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
         MenuPermissionRequirementRepository menuPermissionRequirementRepository = mock(MenuPermissionRequirementRepository.class);
         UiActionPermissionRequirementRepository uiActionPermissionRequirementRepository = mock(UiActionPermissionRequirementRepository.class);
         ApiEndpointPermissionRequirementRepository apiEndpointPermissionRequirementRepository = mock(ApiEndpointPermissionRequirementRepository.class);
@@ -308,7 +297,6 @@ class ResourceServiceImplTest {
         );
         authorizationAuditService = mock(AuthorizationAuditService.class);
         ResourceServiceImpl service = new ResourceServiceImpl(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -317,7 +305,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService,
+            carrierPermissionReferenceSafetyService,
             evaluator,
             authorizationAuditService
         );
@@ -355,12 +343,10 @@ class ResourceServiceImplTest {
         assertThat(page.getContent()).extracting(ResourceResponseDto::getName).containsExactly("owned-resource");
         verify(tenantUserRepository).findUserIdsByTenantIdAndStatus(8L, "ACTIVE");
         verify(userUnitRepository, never()).findUserIdsByTenantIdAndUnitIdInAndStatus(any(), any(), any());
-        verify(resourceRepository, never()).findAll(any(Specification.class), any(Pageable.class));
     }
 
     @Test
     void resources_should_apply_unit_scoped_creator_filter() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -369,7 +355,7 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
         MenuPermissionRequirementRepository menuPermissionRequirementRepository = mock(MenuPermissionRequirementRepository.class);
         UiActionPermissionRequirementRepository uiActionPermissionRequirementRepository = mock(UiActionPermissionRequirementRepository.class);
         ApiEndpointPermissionRequirementRepository apiEndpointPermissionRequirementRepository = mock(ApiEndpointPermissionRequirementRepository.class);
@@ -380,7 +366,6 @@ class ResourceServiceImplTest {
         );
         authorizationAuditService = mock(AuthorizationAuditService.class);
         ResourceServiceImpl service = new ResourceServiceImpl(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -389,7 +374,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService,
+            carrierPermissionReferenceSafetyService,
             evaluator,
             authorizationAuditService
         );
@@ -423,12 +408,10 @@ class ResourceServiceImplTest {
 
         assertThat(page.getContent()).extracting(ResourceResponseDto::getName).containsExactly("dept-resource");
         verify(userUnitRepository).findUserIdsByTenantIdAndUnitIdInAndStatus(8L, java.util.Set.of(300L), "ACTIVE");
-        verify(resourceRepository, never()).findAll(any(Specification.class), any(Pageable.class));
     }
 
     @Test
     void resources_should_apply_custom_creator_filter() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -437,7 +420,7 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
         MenuPermissionRequirementRepository menuPermissionRequirementRepository = mock(MenuPermissionRequirementRepository.class);
         UiActionPermissionRequirementRepository uiActionPermissionRequirementRepository = mock(UiActionPermissionRequirementRepository.class);
         ApiEndpointPermissionRequirementRepository apiEndpointPermissionRequirementRepository = mock(ApiEndpointPermissionRequirementRepository.class);
@@ -448,7 +431,6 @@ class ResourceServiceImplTest {
         );
         authorizationAuditService = mock(AuthorizationAuditService.class);
         ResourceServiceImpl service = new ResourceServiceImpl(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -457,7 +439,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService,
+            carrierPermissionReferenceSafetyService,
             evaluator,
             authorizationAuditService
         );
@@ -489,12 +471,10 @@ class ResourceServiceImplTest {
 
         assertThat(page.getContent()).extracting(ResourceResponseDto::getName).containsExactly("custom-resource");
         verify(userUnitRepository, never()).findUserIdsByTenantIdAndUnitIdInAndStatus(any(), any(), any());
-        verify(resourceRepository, never()).findAll(any(Specification.class), any(Pageable.class));
     }
 
     @Test
     void resources_should_ignore_tenant_membership_resolution_when_platform_scope() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -503,7 +483,7 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
         MenuPermissionRequirementRepository menuPermissionRequirementRepository = mock(MenuPermissionRequirementRepository.class);
         UiActionPermissionRequirementRepository uiActionPermissionRequirementRepository = mock(UiActionPermissionRequirementRepository.class);
         ApiEndpointPermissionRequirementRepository apiEndpointPermissionRequirementRepository = mock(ApiEndpointPermissionRequirementRepository.class);
@@ -514,7 +494,6 @@ class ResourceServiceImplTest {
         );
         authorizationAuditService = mock(AuthorizationAuditService.class);
         ResourceServiceImpl service = new ResourceServiceImpl(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -523,7 +502,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService,
+            carrierPermissionReferenceSafetyService,
             evaluator,
             authorizationAuditService
         );
@@ -562,12 +541,10 @@ class ResourceServiceImplTest {
         assertThat(page.getContent().getFirst().getRecordTenantId()).isNull();
         verify(tenantUserRepository, never()).findUserIdsByTenantIdAndStatus(any(), any());
         verify(userUnitRepository, never()).findUserIdsByTenantIdAndUnitIdInAndStatus(any(), any(), any());
-        verify(resourceRepository, never()).findAll(any(Specification.class), any(Pageable.class));
     }
 
     @Test
     void resources_should_query_ui_action_projection_when_type_is_button() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -576,9 +553,8 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
         ResourceServiceImpl service = newService(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -587,7 +563,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService
+            carrierPermissionReferenceSafetyService
         );
 
         TenantContext.setActiveTenantId(8L);
@@ -616,12 +592,10 @@ class ResourceServiceImplTest {
         assertThat(page.getContent().getFirst().getPermission()).isEqualTo("system:resource:create");
         assertThat(page.getContent().getFirst().getCarrierKind()).isEqualTo("ui_action");
         verify(uiActionEntryRepository).findAll(any(Specification.class), any(Pageable.class));
-        verify(resourceRepository, never()).findAll(any(Specification.class), any(Pageable.class));
     }
 
     @Test
     void resources_should_query_api_endpoint_projection_when_type_is_api() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -630,9 +604,8 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
         ResourceServiceImpl service = newService(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -641,7 +614,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService
+            carrierPermissionReferenceSafetyService
         );
 
         TenantContext.setActiveTenantId(8L);
@@ -669,12 +642,10 @@ class ResourceServiceImplTest {
         assertThat(page.getContent().getFirst().getUri()).isEqualTo("/sys/resources");
         assertThat(page.getContent().getFirst().getCarrierKind()).isEqualTo("api_endpoint");
         verify(apiEndpointEntryRepository).findAll(any(Specification.class), any(Pageable.class));
-        verify(resourceRepository, never()).findAll(any(Specification.class), any(Pageable.class));
     }
 
     @Test
     void findAllowedUiActionDtos_should_filter_runtime_actions_by_current_authorities() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -683,7 +654,7 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
         MenuPermissionRequirementRepository menuPermissionRequirementRepository = mock(MenuPermissionRequirementRepository.class);
         UiActionPermissionRequirementRepository uiActionPermissionRequirementRepository = mock(UiActionPermissionRequirementRepository.class);
         ApiEndpointPermissionRequirementRepository apiEndpointPermissionRequirementRepository = mock(ApiEndpointPermissionRequirementRepository.class);
@@ -694,7 +665,6 @@ class ResourceServiceImplTest {
         );
         authorizationAuditService = mock(AuthorizationAuditService.class);
         ResourceServiceImpl service = new ResourceServiceImpl(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -703,7 +673,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService,
+            carrierPermissionReferenceSafetyService,
             evaluator,
             authorizationAuditService
         );
@@ -784,7 +754,6 @@ class ResourceServiceImplTest {
 
     @Test
     void findAllowedUiActionDtos_should_support_and_or_and_negated_requirements_with_audit_details() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -793,7 +762,7 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
 
         MenuPermissionRequirementRepository menuPermissionRequirementRepository =
             mock(MenuPermissionRequirementRepository.class);
@@ -808,7 +777,6 @@ class ResourceServiceImplTest {
         );
         authorizationAuditService = mock(AuthorizationAuditService.class);
         ResourceServiceImpl service = new ResourceServiceImpl(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -817,7 +785,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService,
+            carrierPermissionReferenceSafetyService,
             evaluator,
             authorizationAuditService
         );
@@ -929,7 +897,6 @@ class ResourceServiceImplTest {
 
     @Test
     void canAccessApiEndpoint_should_respect_runtime_api_requirements() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -938,7 +905,7 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
         MenuPermissionRequirementRepository menuPermissionRequirementRepository =
             mock(MenuPermissionRequirementRepository.class);
         UiActionPermissionRequirementRepository uiActionPermissionRequirementRepository =
@@ -952,7 +919,6 @@ class ResourceServiceImplTest {
         );
         authorizationAuditService = mock(AuthorizationAuditService.class);
         ResourceServiceImpl service = new ResourceServiceImpl(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -961,7 +927,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService,
+            carrierPermissionReferenceSafetyService,
             evaluator,
             authorizationAuditService
         );
@@ -1002,7 +968,6 @@ class ResourceServiceImplTest {
 
     @Test
     void evaluateApiEndpointRequirement_should_log_deny_when_requiredPermissionId_missing() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -1011,10 +976,9 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
 
         ResourceServiceImpl service = newService(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -1023,7 +987,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService
+            carrierPermissionReferenceSafetyService
         );
 
         TenantContext.setActiveTenantId(8L);
@@ -1069,7 +1033,6 @@ class ResourceServiceImplTest {
 
     @Test
     void evaluateApiEndpointRequirement_should_match_template_uri_allow() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -1078,7 +1041,7 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
 
         ApiEndpointPermissionRequirementRepository apiEndpointPermissionRequirementRepository =
             mock(ApiEndpointPermissionRequirementRepository.class);
@@ -1089,7 +1052,6 @@ class ResourceServiceImplTest {
         );
         authorizationAuditService = mock(AuthorizationAuditService.class);
         ResourceServiceImpl service = new ResourceServiceImpl(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -1098,7 +1060,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService,
+            carrierPermissionReferenceSafetyService,
             evaluator,
             authorizationAuditService
         );
@@ -1141,7 +1103,6 @@ class ResourceServiceImplTest {
 
     @Test
     void evaluateApiEndpointRequirement_should_match_template_uri_deny_when_permission_disabled() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -1150,7 +1111,7 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
 
         ApiEndpointPermissionRequirementRepository apiEndpointPermissionRequirementRepository =
             mock(ApiEndpointPermissionRequirementRepository.class);
@@ -1161,7 +1122,6 @@ class ResourceServiceImplTest {
         );
         authorizationAuditService = mock(AuthorizationAuditService.class);
         ResourceServiceImpl service = new ResourceServiceImpl(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -1170,7 +1130,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService,
+            carrierPermissionReferenceSafetyService,
             evaluator,
             authorizationAuditService
         );
@@ -1213,7 +1173,6 @@ class ResourceServiceImplTest {
 
     @Test
     void evaluateApiEndpointRequirement_should_return_not_registered_when_template_does_not_match() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -1222,7 +1181,7 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
         MenuPermissionRequirementRepository menuPermissionRequirementRepository =
             mock(MenuPermissionRequirementRepository.class);
         UiActionPermissionRequirementRepository uiActionPermissionRequirementRepository =
@@ -1236,7 +1195,6 @@ class ResourceServiceImplTest {
         );
         authorizationAuditService = mock(AuthorizationAuditService.class);
         ResourceServiceImpl service = new ResourceServiceImpl(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -1245,7 +1203,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService,
+            carrierPermissionReferenceSafetyService,
             evaluator,
             authorizationAuditService
         );
@@ -1268,14 +1226,13 @@ class ResourceServiceImplTest {
         when(apiEndpointEntryRepository.findAll(any(Specification.class), any(org.springframework.data.domain.Sort.class)))
             .thenReturn(List.of(endpoint));
 
-        // Segment count mismatch => template does not match => treated as NOT_REGISTERED (no false positive)
+        // Segment count mismatch => template does not match => fail-closed
         assertThat(service.evaluateApiEndpointRequirement("PUT", "/sys/resources/9/extra"))
-            .isEqualTo(com.tiny.platform.infrastructure.auth.resource.service.ApiEndpointRequirementDecision.NOT_REGISTERED);
+            .isEqualTo(com.tiny.platform.infrastructure.auth.resource.service.ApiEndpointRequirementDecision.DENIED);
     }
 
     @Test
     void findAllowedUiActionDtos_should_support_system_user_page_path() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -1284,7 +1241,7 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
         MenuPermissionRequirementRepository menuPermissionRequirementRepository = mock(MenuPermissionRequirementRepository.class);
         UiActionPermissionRequirementRepository uiActionPermissionRequirementRepository = mock(UiActionPermissionRequirementRepository.class);
         ApiEndpointPermissionRequirementRepository apiEndpointPermissionRequirementRepository = mock(ApiEndpointPermissionRequirementRepository.class);
@@ -1295,7 +1252,6 @@ class ResourceServiceImplTest {
         );
         authorizationAuditService = mock(AuthorizationAuditService.class);
         ResourceServiceImpl service = new ResourceServiceImpl(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -1304,7 +1260,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService,
+            carrierPermissionReferenceSafetyService,
             evaluator,
             authorizationAuditService
         );
@@ -1365,7 +1321,6 @@ class ResourceServiceImplTest {
 
     @Test
     void create_should_set_created_by_from_authenticated_user() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -1374,9 +1329,8 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
         ResourceServiceImpl service = newService(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -1385,7 +1339,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService
+            carrierPermissionReferenceSafetyService
         );
 
         TenantContext.setActiveTenantId(8L);
@@ -1407,12 +1361,10 @@ class ResourceServiceImplTest {
         assertThat(saved.getTenantId()).isEqualTo(8L);
         assertThat(saved.getCreatedBy()).isEqualTo(26L);
         verify(resourcePermissionBindingService).bindResource(any(Resource.class), eq(26L));
-        verify(resourceRepository, never()).save(any(Resource.class));
     }
 
     @Test
     void createFromDto_should_write_platform_template_when_platform_scope() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -1421,9 +1373,8 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
         ResourceServiceImpl service = newService(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -1432,7 +1383,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService
+            carrierPermissionReferenceSafetyService
         );
 
         TenantContext.setActiveTenantId(1L);
@@ -1466,12 +1417,10 @@ class ResourceServiceImplTest {
         assertThat(saved.getCreatedBy()).isEqualTo(30L);
         verify(resourcePermissionBindingService).bindResource(any(Resource.class), eq(30L));
         verify(menuEntryRepository).save(any(com.tiny.platform.infrastructure.menu.domain.MenuEntry.class));
-        verify(resourceRepository, never()).save(any(Resource.class));
     }
 
     @Test
     void findByType_should_return_platform_templates_when_platform_scope() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -1480,9 +1429,8 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
         ResourceServiceImpl service = newService(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -1491,7 +1439,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService
+            carrierPermissionReferenceSafetyService
         );
 
         TenantContext.setActiveTenantId(1L);
@@ -1514,12 +1462,10 @@ class ResourceServiceImplTest {
         List<Resource> result = service.findByType(ResourceType.MENU);
 
         assertThat(result).extracting(Resource::getId).containsExactly(40L);
-        verify(resourceRepository, never()).findByTypeOrderBySortAsc(ResourceType.MENU);
     }
 
     @Test
     void findTopLevelDtos_should_read_platform_carriers_without_tenant_membership_resolution() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -1528,9 +1474,8 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
         ResourceServiceImpl service = newService(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -1539,7 +1484,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService
+            carrierPermissionReferenceSafetyService
         );
 
         TenantContext.setActiveTenantId(1L);
@@ -1571,12 +1516,10 @@ class ResourceServiceImplTest {
         assertThat(result.getFirst().getRecordTenantId()).isNull();
         verify(tenantUserRepository, never()).findUserIdsByTenantIdAndStatus(any(), any());
         verify(userUnitRepository, never()).findUserIdsByTenantIdAndUnitIdInAndStatus(any(), any(), any());
-        verify(resourceRepository, never()).findAll(any(Specification.class), any(Pageable.class));
     }
 
     @Test
     void findDetailById_should_read_menu_carrier_without_resource_table_main_read() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -1585,9 +1528,8 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
         ResourceServiceImpl service = newService(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -1596,7 +1538,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService
+            carrierPermissionReferenceSafetyService
         );
 
         TenantContext.setActiveTenantId(8L);
@@ -1618,12 +1560,10 @@ class ResourceServiceImplTest {
 
         assertThat(detail).isPresent();
         assertThat(detail.get().getCarrierKind()).isEqualTo("menu");
-        verify(resourceRepository, never()).findById(88L);
     }
 
     @Test
     void existsByUri_should_check_api_carrier_without_resource_table_main_read() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -1632,9 +1572,8 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
         ResourceServiceImpl service = newService(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -1643,7 +1582,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService
+            carrierPermissionReferenceSafetyService
         );
 
         TenantContext.setActiveTenantId(8L);
@@ -1660,12 +1599,10 @@ class ResourceServiceImplTest {
         when(apiEndpointEntryRepository.findAll(any(Specification.class))).thenReturn(List.of(endpoint));
 
         assertThat(service.existsByUri("/sys/resources", null)).isTrue();
-        verify(resourceRepository, never()).findOne(org.mockito.ArgumentMatchers.<Specification<Resource>>any());
     }
 
     @Test
     void findByType_should_read_ui_action_projection_for_button() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -1673,9 +1610,8 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
         ResourceServiceImpl service = newService(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -1683,7 +1619,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService
+            carrierPermissionReferenceSafetyService
         );
 
         TenantContext.setActiveTenantId(8L);
@@ -1708,12 +1644,10 @@ class ResourceServiceImplTest {
         assertThat(result.getFirst().getType()).isEqualTo(ResourceType.BUTTON);
         assertThat(result.getFirst().getPermission()).isEqualTo("system:resource:create");
         verify(uiActionEntryRepository).findAll(any(Specification.class), any(org.springframework.data.domain.Sort.class));
-        verify(resourceRepository, never()).findByTypeOrderBySortAsc(ResourceType.BUTTON);
     }
 
     @Test
     void findByType_should_read_api_endpoint_projection_for_api() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -1721,9 +1655,8 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
         ResourceServiceImpl service = newService(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -1731,7 +1664,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService
+            carrierPermissionReferenceSafetyService
         );
 
         TenantContext.setActiveTenantId(8L);
@@ -1755,12 +1688,10 @@ class ResourceServiceImplTest {
         assertThat(result.getFirst().getType()).isEqualTo(ResourceType.API);
         assertThat(result.getFirst().getUri()).isEqualTo("/sys/resources");
         verify(apiEndpointEntryRepository).findAll(any(Specification.class), any(org.springframework.data.domain.Sort.class));
-        verify(resourceRepository, never()).findByTypeOrderBySortAsc(ResourceType.API);
     }
 
     @Test
     void findByTypeIn_should_compose_resources_from_carrier_tables() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -1769,9 +1700,8 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
         ResourceServiceImpl service = newService(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -1780,7 +1710,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService
+            carrierPermissionReferenceSafetyService
         );
 
         TenantContext.setActiveTenantId(8L);
@@ -1823,12 +1753,10 @@ class ResourceServiceImplTest {
 
         assertThat(result).extracting(Resource::getType)
             .containsExactly(ResourceType.DIRECTORY, ResourceType.BUTTON, ResourceType.API);
-        verify(resourceRepository, never()).findByTypeInOrderBySortAsc(any());
     }
 
     @Test
     void findTopLevel_should_compose_menu_ui_action_and_api_from_carriers() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -1837,9 +1765,8 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
         ResourceServiceImpl service = newService(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -1848,7 +1775,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService
+            carrierPermissionReferenceSafetyService
         );
 
         TenantContext.setActiveTenantId(8L);
@@ -1897,12 +1824,10 @@ class ResourceServiceImplTest {
         assertThat(result).hasSize(3);
         assertThat(result).extracting(Resource::getType)
             .containsExactly(ResourceType.MENU, ResourceType.BUTTON, ResourceType.API);
-        verify(resourceRepository, never()).findByParentIdIsNullOrderBySortAsc();
     }
 
     @Test
     void findByParentId_should_compose_menu_and_ui_action_children_from_carriers() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -1911,9 +1836,8 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
         ResourceServiceImpl service = newService(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -1922,7 +1846,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService
+            carrierPermissionReferenceSafetyService
         );
 
         TenantContext.setActiveTenantId(8L);
@@ -1960,12 +1884,10 @@ class ResourceServiceImplTest {
         assertThat(result).hasSize(2);
         assertThat(result).extracting(Resource::getType)
             .containsExactly(ResourceType.MENU, ResourceType.BUTTON);
-        verify(resourceRepository, never()).findByParentIdOrderBySortAsc(1L);
     }
 
     @Test
     void findTopLevelDtos_returnsEmptyWhenRestrictedDataScopeYieldsNoVisibleCreators() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -1974,9 +1896,8 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
         ResourceServiceImpl service = newService(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -1985,7 +1906,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService
+            carrierPermissionReferenceSafetyService
         );
 
         TenantContext.setActiveTenantId(8L);
@@ -2016,7 +1937,6 @@ class ResourceServiceImplTest {
 
     @Test
     void findResourceTreeDtos_should_build_tree_directly_from_carrier_read_models() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -2025,9 +1945,8 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
         ResourceServiceImpl service = newService(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -2036,7 +1955,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService
+            carrierPermissionReferenceSafetyService
         );
 
         TenantContext.setActiveTenantId(8L);
@@ -2100,12 +2019,10 @@ class ResourceServiceImplTest {
             .containsExactly("menu", "ui_action");
         assertThat(rootDto.getChildren()).extracting(ResourceResponseDto::getLeaf)
             .containsExactly(true, true);
-        verify(resourceRepository, never()).findByParentIdOrderBySortAsc(any());
     }
 
     @Test
     void findResourceTreeDtos_should_build_platform_tree_without_tenant_membership_resolution() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -2114,9 +2031,8 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
         ResourceServiceImpl service = newService(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -2125,7 +2041,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService
+            carrierPermissionReferenceSafetyService
         );
 
         TenantContext.setActiveTenantId(1L);
@@ -2190,12 +2106,10 @@ class ResourceServiceImplTest {
             .containsExactly("menu", "ui_action");
         verify(tenantUserRepository, never()).findUserIdsByTenantIdAndStatus(any(), any());
         verify(userUnitRepository, never()).findUserIdsByTenantIdAndUnitIdInAndStatus(any(), any(), any());
-        verify(resourceRepository, never()).findByParentIdOrderBySortAsc(any());
     }
 
     @Test
     void delete_should_check_child_conflict_from_carrier_reads_for_non_menu_resource() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -2204,9 +2118,8 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
         ResourceServiceImpl service = newService(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -2215,7 +2128,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService
+            carrierPermissionReferenceSafetyService
         );
 
         TenantContext.setActiveTenantId(8L);
@@ -2252,13 +2165,10 @@ class ResourceServiceImplTest {
             .isInstanceOf(com.tiny.platform.infrastructure.core.exception.exception.BusinessException.class)
             .hasMessageContaining("无法删除有子资源的资源");
 
-        verify(resourceRepository, never()).findByParentIdOrderBySortAsc(10L);
-        verify(resourceRepository, never()).delete(any(Resource.class));
     }
 
     @Test
     void delete_should_cascade_menu_tree_using_carrier_children_reads() {
-        ResourceRepository resourceRepository = mock(ResourceRepository.class);
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
@@ -2267,9 +2177,8 @@ class ResourceServiceImplTest {
         UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
         ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
         ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
-        CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = mock(CarrierCompatibilitySafetyService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
         ResourceServiceImpl service = newService(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -2278,7 +2187,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService
+            carrierPermissionReferenceSafetyService
         );
 
         TenantContext.setActiveTenantId(8L);
@@ -2335,12 +2244,11 @@ class ResourceServiceImplTest {
             .thenReturn(List.of(childAction))
             .thenReturn(List.of())
             .thenReturn(List.of());
-        when(carrierCompatibilitySafetyService.existsPermissionReference(any(Long.class), eq(8L)))
+        when(carrierPermissionReferenceSafetyService.existsPermissionReference(any(Long.class), eq(8L)))
             .thenReturn(false);
 
         service.delete(10L);
 
-        verify(resourceRepository, never()).findByParentIdAndTenantIdOrderBySortAsc(10L, 8L);
         verify(menuEntryRepository, times(3)).deleteAllByIdInBatch(any());
         verify(uiActionEntryRepository, times(3)).deleteAllByIdInBatch(any());
         verify(apiEndpointEntryRepository, times(3)).deleteAllByIdInBatch(any());
@@ -2349,17 +2257,15 @@ class ResourceServiceImplTest {
         verify(roleRepository).deleteRolePermissionRelationsByPermissionIdAndTenantId(7000L, 8L);
     }
 
-    private ResourceServiceImpl newService(ResourceRepository resourceRepository,
-                                           RoleRepository roleRepository,
+    private ResourceServiceImpl newService(RoleRepository roleRepository,
                                            EffectiveRoleResolutionService effectiveRoleResolutionService,
                                            TenantUserRepository tenantUserRepository,
                                            UserUnitRepository userUnitRepository,
                                            UiActionEntryRepository uiActionEntryRepository,
                                            ApiEndpointEntryRepository apiEndpointEntryRepository,
                                            ResourcePermissionBindingService resourcePermissionBindingService,
-                                           CarrierCompatibilitySafetyService carrierCompatibilitySafetyService) {
+                                           CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService) {
         return newService(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -2368,12 +2274,11 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService
+            carrierPermissionReferenceSafetyService
         );
     }
 
-    private ResourceServiceImpl newService(ResourceRepository resourceRepository,
-                                           RoleRepository roleRepository,
+    private ResourceServiceImpl newService(RoleRepository roleRepository,
                                            EffectiveRoleResolutionService effectiveRoleResolutionService,
                                            TenantUserRepository tenantUserRepository,
                                            UserUnitRepository userUnitRepository,
@@ -2381,7 +2286,7 @@ class ResourceServiceImplTest {
                                            UiActionEntryRepository uiActionEntryRepository,
                                            ApiEndpointEntryRepository apiEndpointEntryRepository,
                                            ResourcePermissionBindingService resourcePermissionBindingService,
-                                           CarrierCompatibilitySafetyService carrierCompatibilitySafetyService) {
+                                           CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService) {
         CarrierPermissionRequirementEvaluator evaluator = new CarrierPermissionRequirementEvaluator(
             mock(com.tiny.platform.infrastructure.menu.repository.MenuPermissionRequirementRepository.class),
             mock(com.tiny.platform.infrastructure.auth.resource.repository.UiActionPermissionRequirementRepository.class),
@@ -2390,7 +2295,6 @@ class ResourceServiceImplTest {
 
         authorizationAuditService = mock(AuthorizationAuditService.class);
         return new ResourceServiceImpl(
-            resourceRepository,
             roleRepository,
             effectiveRoleResolutionService,
             tenantUserRepository,
@@ -2399,7 +2303,7 @@ class ResourceServiceImplTest {
             uiActionEntryRepository,
             apiEndpointEntryRepository,
             resourcePermissionBindingService,
-            carrierCompatibilitySafetyService,
+            carrierPermissionReferenceSafetyService,
             evaluator,
             authorizationAuditService
         );

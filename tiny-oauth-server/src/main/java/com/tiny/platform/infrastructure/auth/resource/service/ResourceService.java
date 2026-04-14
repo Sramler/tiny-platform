@@ -101,7 +101,7 @@ public interface ResourceService {
      * <p>
      * - Only enforces when request matches an enabled api_endpoint by exact method+uri under current tenant scope.
      * - When matched, must fail-closed unless requirement rows exist and are satisfied (including permission.enabled).
-     * - When not registered, keep legacy behavior (do not block).
+     * - When request is unregistered or ambiguous, fail-closed.
      */
     ApiEndpointRequirementDecision evaluateApiEndpointRequirement(String method, String uri);
     
@@ -164,15 +164,6 @@ public interface ResourceService {
     Optional<Resource> findByUri(String uri);
     
     /**
-     * 根据权限标识查找资源
-     * @param permission 权限标识
-     * @return 资源列表
-     */
-    List<Resource> findByPermission(String permission);
-
-    List<ResourceResponseDto> findDtosByPermission(String permission);
-    
-    /**
      * 检查资源名称是否存在
      * @param name 资源名称
      * @param excludeId 要排除的资源ID
@@ -223,4 +214,5 @@ public interface ResourceService {
      * @return 资源列表
      */
     List<Resource> findByUserId(Long userId);
+
 } 

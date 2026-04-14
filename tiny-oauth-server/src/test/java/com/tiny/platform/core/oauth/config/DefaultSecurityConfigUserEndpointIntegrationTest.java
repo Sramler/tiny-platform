@@ -21,6 +21,7 @@ import com.tiny.platform.core.oauth.session.UserSessionActivityFilter;
 import com.tiny.platform.core.oauth.session.UserSessionService;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.core.oauth.tenant.TenantContextContract;
+import com.tiny.platform.infrastructure.auth.resource.service.ApiEndpointRequirementDecision;
 import com.tiny.platform.infrastructure.auth.resource.service.ResourceService;
 import com.tiny.platform.infrastructure.auth.user.repository.UserAuthenticationAuditRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
@@ -533,7 +534,11 @@ class DefaultSecurityConfigUserEndpointIntegrationTest {
 
         @Bean
         ResourceService resourceService() {
-            return Mockito.mock(ResourceService.class);
+            ResourceService mock = Mockito.mock(ResourceService.class);
+            Mockito.lenient()
+                .when(mock.evaluateApiEndpointRequirement(Mockito.anyString(), Mockito.anyString()))
+                .thenReturn(ApiEndpointRequirementDecision.ALLOWED);
+            return mock;
         }
 
         @Bean

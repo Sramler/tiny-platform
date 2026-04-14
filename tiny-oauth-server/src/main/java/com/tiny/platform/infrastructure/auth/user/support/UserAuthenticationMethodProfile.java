@@ -5,7 +5,7 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * 认证桥接视图：把旧表 {@code user_authentication_method} 拆解成
+ * 认证桥接视图：把运行时认证记录整理成
  * 「凭证」+「作用域策略」两层，同时保留底层存储记录供桥接期写回。
  */
 public record UserAuthenticationMethodProfile(

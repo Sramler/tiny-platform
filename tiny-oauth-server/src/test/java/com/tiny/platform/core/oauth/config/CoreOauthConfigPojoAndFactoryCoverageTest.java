@@ -102,8 +102,6 @@ class CoreOauthConfigPojoAndFactoryCoverageTest {
         @SuppressWarnings("unchecked")
         ObjectProvider<PermissionVersionService> permissionVersionProvider = mock(ObjectProvider.class);
         @SuppressWarnings("unchecked")
-        ObjectProvider<com.tiny.platform.infrastructure.tenant.config.PlatformTenantResolver> platformTenantResolverProvider = mock(ObjectProvider.class);
-        @SuppressWarnings("unchecked")
         ObjectProvider<com.tiny.platform.infrastructure.auth.audit.service.AuthorizationAuditService> authorizationAuditServiceProvider = mock(ObjectProvider.class);
         @SuppressWarnings("unchecked")
         ObjectProvider<com.tiny.platform.core.oauth.tenant.TenantLifecycleReadPolicy> tenantLifecycleReadPolicyProvider = mock(ObjectProvider.class);
@@ -114,7 +112,6 @@ class CoreOauthConfigPojoAndFactoryCoverageTest {
         assertThat(securityConfig.tenantContextFilter(
                 tenantRepository,
                 permissionVersionProvider,
-                platformTenantResolverProvider,
                 authorizationAuditServiceProvider,
                 tenantLifecycleReadPolicyProvider,
                 organizationUnitRepositoryProvider,

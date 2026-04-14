@@ -96,8 +96,11 @@ class RoleConstraintRuleControllerIntegrationTest {
 
     @Test
     void crud_shouldPersistAndListRules_asDtos() throws Exception {
-        var principal = user("role-permission-assigner")
-            .authorities(new SimpleGrantedAuthority("system:role:permission:assign"));
+        var principal = user("role-constraint-operator")
+            .authorities(
+                new SimpleGrantedAuthority("system:role:constraint:edit"),
+                new SimpleGrantedAuthority("system:role:constraint:view")
+            );
         long base = (System.currentTimeMillis() % 1_000_000L) * 10_000L;
         hChild = base + 1;
         hParent = base + 2;
@@ -188,4 +191,3 @@ class RoleConstraintRuleControllerIntegrationTest {
             .andExpect(jsonPath("$[?(@.roleId == " + cRole + " && @.scopeType == 'TENANT' && @.maxAssignments == 1)]").exists());
     }
 }
-

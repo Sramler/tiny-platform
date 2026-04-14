@@ -6,6 +6,8 @@ import com.tiny.platform.infrastructure.auth.role.dto.RoleRequestDto;
 import com.tiny.platform.infrastructure.auth.role.dto.RoleResponseDto;
 import com.tiny.platform.infrastructure.auth.role.service.RoleService;
 import com.tiny.platform.infrastructure.core.dto.PageResponse;
+import com.tiny.platform.infrastructure.core.exception.code.ErrorCode;
+import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.domain.PageImpl;
@@ -119,12 +121,19 @@ class RoleControllerTest {
     }
 
     @Test
+    void updateRoleUsers_shouldRejectBareJsonArray() {
+        BusinessException ex = assertThrows(BusinessException.class, () -> controller.updateRoleUsers(10L, List.of(3L)));
+        assertTrue(ex.getMessage().contains("CARD-14C"));
+        verifyNoInteractions(roleService);
+    }
+
+    @Test
     void roleUsers_and_resources_shouldDelegate() {
         when(roleService.getDirectUserIdsByRoleId(10L, null, null)).thenReturn(List.of(1L, 2L));
         ResponseEntity<List<Long>> users = controller.getRoleUsers(10L, null, null);
         assertEquals(List.of(1L, 2L), users.getBody());
 
-        controller.updateRoleUsers(10L, List.of(3L));
+        controller.updateRoleUsers(10L, java.util.Map.of("userIds", List.of(3L)));
         verify(roleService).updateRoleUsers(10L, null, null, List.of(3L));
 
         controller.updateRoleUsers(10L, java.util.Map.of("scopeType", "DEPT", "scopeId", 200L, "userIds", List.of(3L)));
@@ -134,7 +143,16 @@ class RoleControllerTest {
         ResponseEntity<List<Long>> resources = controller.getRoleResources(10L);
         assertEquals(List.of(7L), resources.getBody());
 
-        controller.updateRoleResources(10L, List.of(8L, 9L));
-        verify(roleService).updateRoleResources(10L, List.of(8L, 9L));
+        controller.updateRoleResources(10L, java.util.Map.of("permissionIds", List.of(8L, 9L)));
+        verify(roleService).updateRolePermissions(10L, List.of(8L, 9L));
+    }
+
+    @Test
+    void updateRoleResources_shouldRejectMissingPermissionIdsAsValidationError() {
+        BusinessException ex = assertThrows(BusinessException.class, () -> controller.updateRoleResources(10L, java.util.Map.of()));
+
+        assertEquals(ErrorCode.VALIDATION_ERROR, ex.getErrorCode());
+        assertTrue(ex.getMessage().contains("permissionIds"));
+        verifyNoInteractions(roleService);
     }
 }

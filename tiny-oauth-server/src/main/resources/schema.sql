@@ -1,5 +1,6 @@
 -- 注意：当前仓库的数据库权威迁移路径是 Liquibase（见 db/changelog/db.changelog-master.yaml）。
--- 本文件仅保留为历史结构参考，不应作为当前运行态权限模型的证明依据。
+-- 本文件仅保留为历史 schema 快照 / 结构参考，不应作为当前活动 schema 或当前运行态权限模型的证明依据。
+-- 当前完成度与兼容下线状态，请以 docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md 与 docs/TINY_PLATFORM_LEGACY_COMPATIBILITY_INVENTORY.md 为准。
 -- 尤其是 permission / role_permission / role_resource / resource 相关结构，请以 Liquibase 114-117、131 及后续变更为准。
 -- 说明：下方仍保留 pre-131 的 resource / role_resource 结构片段，仅用于历史对账与旧迁移背景参考；
 -- 在已完成 Liquibase 131 的活动数据库中，resource 表已物理删除，不应再把这些片段当作当前 schema 事实。

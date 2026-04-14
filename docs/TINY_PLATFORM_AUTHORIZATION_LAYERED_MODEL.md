@@ -195,7 +195,7 @@ api_endpoint.required_permission_id -> permission.id
 - `MenuServiceImpl.mergeTreeMenus(...)`
 - `MenuServiceImpl.resolveCurrentUsername()`
 - `MenuEntryRepository.findGranted*ByUsername*` 旧菜单运行时查询
-- `ResourceRepository.findGrantedResourcesByUsername*` 旧资源运行时查询
+- `ResourceRepository.findGrantedResourcesByUsername*` 历史资源运行时查询（已退场，仅作阶段回顾名词）
 
 这些逻辑已经不再被当前菜单树、资源管理控制面或 requirement evaluator 使用，删除后后端回归已通过。
 
@@ -212,10 +212,10 @@ api_endpoint.required_permission_id -> permission.id
 
 - `resource`：已不再是活动表；若在旧文档、旧 SQL 或历史 runbook 中出现，应按“pre-131 兼容层”理解，而不是当前数据库事实；
 - `resource.permission`：仅作为历史迁移命名口径、运营可读字段来源和旧文档术语保留；运行时逻辑与当前 schema 均不依赖该字段；
-- `CarrierCompatibilitySafetyService`：承接 legacy projection bridge 剩余的两段显式安全语义：`replaceCompatibilityRequirement(requirement_group=0)` 与 `existsPermissionReference`（用于“最后载体撤 role_permission”的判断）；运行时主线不再依赖 `ResourceCarrierProjectionSyncService`；
-- `ResourceRepository` 中依赖总表的写链装载 / 回填查询：已退出运行时主线；如仍存在仅允许用于历史/迁移脚本，不得回流主链。
+- `CarrierPermissionReferenceSafetyService`：当前仅保留 `existsPermissionReference`（用于“最后载体撤 role_permission”的判断）；`replaceCompatibilityRequirement(requirement_group=0)` 已随 CARD-13B 退场；运行时主线不再依赖 `ResourceCarrierProjectionSyncService`；
+- legacy `ResourceRepository` seam 中依赖总表的写链装载 / 回填查询：已退出运行时主线；当前若在历史材料中出现，仅允许理解为迁移阶段名词，不得回流主链。
 - 2026-03-27 收缩进展：菜单父子关系校验、循环引用检查和递归删除子菜单已优先改读 `menu` 载体（`MenuEntryRepository`）；运行时删除链 direct-delete carrier，不再依赖 `resource` 表。
-- 2026-03-27 收缩进展（追加）：`ResourceServiceImpl.findByRoleId/findByUserId` 已从 `resourceId -> ResourceRepository.findAllById` 回读收缩为 `role_permission(permission_id)` -> `menu/ui_action/api_endpoint(required_permission_id)` 组装返回。
+- 2026-03-27 收缩进展（追加）：`ResourceServiceImpl.findByRoleId/findByUserId` 已从 `resourceId -> legacy ResourceRepository.findAllById` 回读收缩为 `role_permission(permission_id)` -> `menu/ui_action/api_endpoint(required_permission_id)` 组装返回。
 - 2026-03-27 收缩进展（追加）：`RoleServiceImpl.updateRoleResources` 已从 `resource` 投影校验切换为 carrier 读模型校验并按 `required_permission_id` 去重写入 `role_permission`；`TenantBootstrapServiceImpl` 模板资源主读已切到 carrier template snapshot（`menu/ui_action/api_endpoint` 统一快照）。
 - 2026-03-27 收缩进展（追加）：`RoleServiceImpl.updateRoleResources` 已补事务边界并改为先校验后删写，fail-closed 异常不会留下授权中间态。
 - 2026-03-27 收缩进展（追加）：`TenantBootstrapServiceImpl` 已将模板资源实体复制主读切到 carrier template snapshot，并改为直接写入 carrier 表；授权回放仅依赖 carrier `required_permission_id`，缺失即 fail-closed，不再保留 resource fallback。
@@ -223,9 +223,8 @@ api_endpoint.required_permission_id -> permission.id
 - 2026-03-27 收缩进展（追加）：`ResourceServiceImpl` / `MenuServiceImpl` 的正常 create/update/updateSort/delete 已下线 bridge `sync/delete` 双写，改为 service 内 direct-write / direct-delete carrier；`resource` 仅作为历史字段承载/可观测/迁移输入保留，不再参与运行时主线读写。
 - 2026-03-27 收缩进展（追加）：`RoleRepository.findResourceIdsByRoleId/findGrantedRoleCarrierPairs*` 已从 `resource.required_permission_id` 反查改为 carrier union 推导；`TenantBootstrapServiceImpl.assertPermissionBindingsReady` 也已改为 carrier template snapshot 校验，不再依赖 `resource` 快照做绑定就绪判定。
 - 2026-03-27 收缩进展（追加）：`resource` 的 locator 字段（`carrier_type + carrier_source_id`）作为历史资产维度保留（用于归档/迁移/排障等）；运行时主线不依赖 locator 做兼容删除或定位。
-- 2026-03-27 收缩进展（追加）：角色授权 API 主契约已支持 `permissionIds`，`resourceIds` 仅保留兼容 alias；最终写入仍统一落 `role_permission(permission_id)`。
-- 2026-03-27 收缩进展（追加）：`replaceCompatibilityRequirement` 已改为显式 carrier 主键输入，compatibility group 回填写入 requirement 表时不再读取 `resource.id`。
-- 2026-03-27 收缩进展（追加）：legacy `ResourceCarrierProjectionSyncService` 已退出运行时主线；剩余 `replaceCompatibilityRequirement` / `existsPermissionReference` 已迁入 `CarrierCompatibilitySafetyService`，不再作为 projection sync bridge 保留。
+- 2026-03-27 收缩进展（追加）：角色授权 API 主契约已支持 `permissionIds`；`resourceIds` alias 已在 CARD-13D 删除，最终写入统一落 `role_permission(permission_id)`。
+- 2026-03-27 收缩进展（追加）：legacy `ResourceCarrierProjectionSyncService` 已退出运行时主线；剩余 `existsPermissionReference` 已迁入 `CarrierPermissionReferenceSafetyService`（CARD-14B 由 `CarrierCompatibilitySafetyService` 重命名），不再作为 projection sync bridge 保留。
 - 2026-03-27 收缩进展（追加）：新增 `128-carrier-id-autoincrement-safe-migration.yaml`，在 requirement 外键约束不丢失前提下启用 carrier 主键自增；新建 carrier 默认允许与 compatibility resource 使用不同 id。
 
 这些兼容项的退场前提：
@@ -255,7 +254,7 @@ api_endpoint.required_permission_id -> permission.id
 
 - 已维护 `resource.required_permission_id`
 - 新增 / 更新 / bootstrap 已同步写入 `required_permission_id`
-- rollout 已检查非空 `resource.permission` 是否全部绑定
+- rollout 已检查历史 `resource` 权限字符串字段的非空记录是否全部完成 `required_permission_id` 绑定
 
 ### 第三步：把 carrier 表拆出并回填（已完成）
 
@@ -292,7 +291,7 @@ api_endpoint.required_permission_id -> permission.id
 
 - 禁止把数据权限编码进 `permission_code`
 - 禁止在 `resource/menu/api` 上直接拼接组织、部门或 SQL 条件
-- 禁止新写链路继续依赖 `resource.permission = permission.permission_code`
+- 禁止新写链路继续依赖历史 `resource` 权限字符串与 `permission.permission_code` 的字面对齐关系
 - 禁止让 `resource` 重新变成“能力真相源 + 载体真相源 + 数据权限真相源”三者合一
 - 禁止在 requirement 层之外新增第二套 AND/OR 判定语义
 

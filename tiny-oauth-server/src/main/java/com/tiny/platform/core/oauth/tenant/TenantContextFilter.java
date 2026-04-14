@@ -9,7 +9,6 @@ import com.tiny.platform.infrastructure.auth.audit.domain.AuthorizationAuditEven
 import com.tiny.platform.infrastructure.auth.audit.service.AuthorizationAuditService;
 import com.tiny.platform.infrastructure.auth.org.repository.OrganizationUnitRepository;
 import com.tiny.platform.infrastructure.auth.org.repository.UserUnitRepository;
-import com.tiny.platform.infrastructure.tenant.config.PlatformTenantResolver;
 import com.tiny.platform.infrastructure.tenant.domain.Tenant;
 import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import jakarta.servlet.FilterChain;
@@ -92,24 +91,6 @@ public class TenantContextFilter extends OncePerRequestFilter {
         this(tenantRepository, permissionVersionService, null, new TenantLifecycleReadPolicy(), null, null);
     }
 
-    // Backward-compatible constructor for tests/config call sites.
-    @Deprecated
-    public TenantContextFilter(TenantRepository tenantRepository,
-                               PermissionVersionService permissionVersionService,
-                               PlatformTenantResolver ignoredPlatformTenantResolver) {
-        this(tenantRepository, permissionVersionService, null, new TenantLifecycleReadPolicy(), null, null);
-    }
-
-    // Backward-compatible constructor for tests/config call sites.
-    @Deprecated
-    public TenantContextFilter(TenantRepository tenantRepository,
-                               PermissionVersionService permissionVersionService,
-                               PlatformTenantResolver ignoredPlatformTenantResolver,
-                               AuthorizationAuditService authorizationAuditService,
-                               TenantLifecycleReadPolicy tenantLifecycleReadPolicy) {
-        this(tenantRepository, permissionVersionService, authorizationAuditService, tenantLifecycleReadPolicy, null, null);
-    }
-
     public TenantContextFilter(TenantRepository tenantRepository,
                                PermissionVersionService permissionVersionService,
                                AuthorizationAuditService authorizationAuditService,
@@ -126,25 +107,12 @@ public class TenantContextFilter extends OncePerRequestFilter {
         this.userUnitRepository = userUnitRepository;
     }
 
-    // Backward-compatible constructor for older tests/config code paths.
+    // Convenience constructor for focused tests that don't need org/unit repositories.
     public TenantContextFilter(TenantRepository tenantRepository,
                                PermissionVersionService permissionVersionService,
                                AuthorizationAuditService authorizationAuditService,
                                TenantLifecycleReadPolicy tenantLifecycleReadPolicy) {
         this(tenantRepository, permissionVersionService, authorizationAuditService, tenantLifecycleReadPolicy, null, null);
-    }
-
-    // Backward-compatible constructor for tests/config call sites.
-    @Deprecated
-    public TenantContextFilter(TenantRepository tenantRepository,
-                               PermissionVersionService permissionVersionService,
-                               PlatformTenantResolver ignoredPlatformTenantResolver,
-                               AuthorizationAuditService authorizationAuditService,
-                               TenantLifecycleReadPolicy tenantLifecycleReadPolicy,
-                               OrganizationUnitRepository organizationUnitRepository,
-                               UserUnitRepository userUnitRepository) {
-        this(tenantRepository, permissionVersionService, authorizationAuditService, tenantLifecycleReadPolicy,
-            organizationUnitRepository, userUnitRepository);
     }
 
     @Override

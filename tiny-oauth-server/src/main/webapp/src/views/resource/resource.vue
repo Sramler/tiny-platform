@@ -13,40 +13,6 @@
     </div>
 
     <div v-else class="content-card">
-      <!-- 查询表单 -->
-      <div class="form-container">
-        <a-form layout="inline" :model="query">
-          <a-form-item label="资源名称">
-            <a-input v-model:value="query.name" placeholder="请输入资源名称" />
-          </a-form-item>
-          <a-form-item label="资源标题">
-            <a-input v-model:value="query.title" placeholder="请输入资源标题" />
-          </a-form-item>
-          <a-form-item label="URL(路由路径)">
-            <a-input v-model:value="query.url" placeholder="请输入路由路径" style="width: 160px;" />
-          </a-form-item>
-          <a-form-item label="URI(API路径)">
-            <a-input v-model:value="query.uri" placeholder="请输入API路径" style="width: 160px;" />
-          </a-form-item>
-          <a-form-item label="权限标识">
-            <a-input v-model:value="query.permission" placeholder="请输入权限标识" />
-          </a-form-item>
-          <a-form-item label="资源类型">
-            <a-select v-model:value="query.type" placeholder="请选择资源类型">
-              <a-select-option :value="undefined">全部</a-select-option>
-              <a-select-option :value="ResourceType.DIRECTORY">目录</a-select-option>
-              <a-select-option :value="ResourceType.MENU">菜单</a-select-option>
-              <a-select-option :value="ResourceType.BUTTON">按钮</a-select-option>
-              <a-select-option :value="ResourceType.API">API</a-select-option>
-            </a-select>
-          </a-form-item>
-          <a-form-item>
-            <a-button type="primary" @click="throttledSearch">搜索</a-button>
-            <a-button class="ml-2" @click="throttledReset">重置</a-button>
-          </a-form-item>
-        </a-form>
-      </div>
-      
       <!-- 工具栏 -->
       <div class="toolbar-container">
         <div class="table-title">资源管理</div>
@@ -219,7 +185,7 @@
 import { ref, computed, onMounted, watch, nextTick, onBeforeUnmount } from 'vue'
 import { useAuth } from '@/auth/auth'
 // 引入资源API
-import { getResourceTree, getRuntimeUiActions, createResource, updateResource, deleteResource, batchDeleteResources, type ResourceItem, type ResourceQuery, ResourceType } from '@/api/resource'
+import { getResourceTree, getRuntimeUiActions, createResource, updateResource, deleteResource, batchDeleteResources, type ResourceItem, ResourceType } from '@/api/resource'
 import { ACTIVE_SCOPE_CHANGED_EVENT } from '@/utils/activeScopeEvents'
 // 引入Antd组件和图标
 import { message, Modal } from 'ant-design-vue'
@@ -238,13 +204,6 @@ import Icon from '@/components/Icon.vue'
 import { extractAuthoritiesFromJwt } from '@/utils/jwt'
 import { RESOURCE_MANAGEMENT_READ_AUTHORITIES } from '@/constants/permission'
 
-// 查询条件
-const query = ref<ResourceQuery>({ 
-  name: '', 
-  uri: '',
-  permission: '',
-  type: undefined
-})
 const { user } = useAuth()
 const resourceAuthorities = computed(() => new Set(extractAuthoritiesFromJwt(user.value?.access_token)))
 
@@ -288,7 +247,7 @@ const INITIAL_COLUMNS = [
   { title: 'URL(路由路径)', dataIndex: 'url', width: 200 },
   { title: 'URI(API路径)', dataIndex: 'uri', width: 200 },
   { title: '请求方法', dataIndex: 'method', width: 100, align: 'center' as const },
-  { title: '权限标识', dataIndex: 'permission', width: 200 },
+  { title: '权限编码（派生）', dataIndex: 'permission', width: 200 },
   { title: '资源类型', dataIndex: 'type', width: 100, align: 'center' as const },
   { title: '载体', dataIndex: 'carrierKind', width: 120, align: 'center' as const },
   { title: '排序', dataIndex: 'sort', width: 80, align: 'center' as const },
@@ -445,19 +404,6 @@ async function loadData() {
     loading.value = false
   }
 }
-
-// 查询
-function handleSearch() {
-  loadData()
-}
-const throttledSearch = handleSearch
-
-// 重置
-function handleReset() {
-  query.value = { name: '', title: '', uri: '', permission: '', type: undefined }
-  loadData()
-}
-const throttledReset = handleReset
 
 // 刷新
 async function handleRefresh() {

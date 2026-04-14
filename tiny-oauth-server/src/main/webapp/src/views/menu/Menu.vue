@@ -21,9 +21,6 @@
           <a-form-item label="菜单标题">
             <a-input v-model:value="query.title" placeholder="请输入菜单标题" />
           </a-form-item>
-          <a-form-item label="权限标识">
-            <a-input v-model:value="query.permission" placeholder="请输入权限标识" />
-          </a-form-item>
           <a-form-item label="是否启用">
             <a-select v-model:value="query.enabled" allow-clear placeholder="全部">
               <a-select-option value="true">启用</a-select-option>
@@ -222,7 +219,6 @@ type MenuColumnConfig = { title: string; dataIndex: string; align?: 'left' | 'ce
 type MenuQueryState = {
   name: string
   title: string
-  permission: string
   enabled: string | undefined
   parentId: number | null
 }
@@ -231,7 +227,6 @@ type MenuQueryState = {
 const query = ref<MenuQueryState>({
   name: '',
   title: '',
-  permission: '',
   enabled: undefined as string | undefined,
   parentId: null // 默认查询顶级菜单，允许 null
 })
@@ -508,7 +503,6 @@ async function loadData() {
     const params: any = {
       name: query.value.name?.trim() || '',
       title: query.value.title?.trim() || '',
-      permission: query.value.permission?.trim() || '',
       enabled: query.value.enabled === undefined ? undefined : query.value.enabled === 'true'
     }
     if (query.value.parentId !== undefined && query.value.parentId !== null) {
@@ -589,7 +583,7 @@ const throttledSearch = handleSearch
 function handleReset() {
   try {
     if (!canReadMenuManagement.value) return
-    query.value = { name: '', title: '', permission: '', enabled: undefined, parentId: null }
+    query.value = { name: '', title: '', enabled: undefined, parentId: null }
     loadData()
   } catch (error) {
     console.warn('handleReset error:', error)
@@ -617,6 +611,7 @@ function handleCreate() {
       component: '',
       redirect: '',
       permission: '',
+      requiredPermissionId: undefined,
       parentId: null
     }
     parentMenu.value = null
@@ -759,6 +754,7 @@ function handleEdit(record: any) {
       hidden: Boolean(record.hidden),
       keepAlive: Boolean(record.keepAlive),
       permission: record.permission || '',
+      requiredPermissionId: record.requiredPermissionId,
       parentId: record.parentId || null
     }
 
@@ -801,6 +797,7 @@ function handleAddChild(record: any) {
       component: '',
       redirect: '',
       permission: '',
+      requiredPermissionId: undefined,
       parentId: null
     }
     parentMenu.value = { ...record }
@@ -854,6 +851,7 @@ async function handleFormSubmit(formData: any) {
       hidden: Boolean(formData.hidden),
       keepAlive: Boolean(formData.keepAlive),
       permission: formData.permission || '',
+      requiredPermissionId: formData.requiredPermissionId,
       parentId: formData.parentId || null,
       // 根据是否有组件路径判断菜单类型
       type: formData.component ? 1 : 0, // 0-目录，1-菜单

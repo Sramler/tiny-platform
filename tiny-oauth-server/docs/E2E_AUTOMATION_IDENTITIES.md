@@ -38,7 +38,7 @@
 
 同时，租户管理接口 `/sys/tenants` 现已收口为平台管理员入口。凡是需要在 real-link 中动态创建第二租户、readonly 租户的场景，还需要一组平台自动化身份：
 
-- 平台租户编码：`E2E_PLATFORM_TENANT_CODE`（默认 `default`）
+- 平台租户编码：`E2E_PLATFORM_TENANT_CODE`（**须显式配置**，与库内平台来源租户 `tenant.code` 一致；禁止在未配置时假定 `default`，见 CARD-13E / `real.global.setup.ts`）
 - 平台管理员账号：`E2E_PLATFORM_USERNAME`
 - 平台管理员密码：`E2E_PLATFORM_PASSWORD`
 - 平台管理员 TOTP secret：`E2E_PLATFORM_TOTP_SECRET`

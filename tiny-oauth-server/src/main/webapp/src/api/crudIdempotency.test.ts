@@ -27,14 +27,14 @@ describe('role/resource/menu API idempotency', () => {
       await import('@/api/role')
     const createData = { name: 'admin' }
     const updateData = { name: 'admin-2' }
-    const userIds = [10, 11]
-    const resourceIds = [20, 21]
+    const userPayload = { scopeType: 'TENANT' as const, userIds: [10, 11] }
+    const rolePermissionPayload = { permissionIds: [2001, 2002] }
 
     await createRole(createData)
     await updateRole('9', updateData)
     await deleteRole('9')
-    await updateRoleUsers(9, userIds)
-    await updateRoleResources(9, resourceIds)
+    await updateRoleUsers(9, userPayload)
+    await updateRoleResources(9, rolePermissionPayload)
 
     expect(mocks.post).toHaveBeenCalledWith('/sys/roles', createData, {
       idempotency: {
@@ -54,16 +54,16 @@ describe('role/resource/menu API idempotency', () => {
         payload: { id: '9' },
       },
     })
-    expect(mocks.post).toHaveBeenCalledWith('/sys/roles/9/users', userIds, {
+    expect(mocks.post).toHaveBeenCalledWith('/sys/roles/9/users', userPayload, {
       idempotency: {
         scope: 'sys-roles:users:update:9',
-        payload: userIds,
+        payload: userPayload,
       },
     })
-    expect(mocks.post).toHaveBeenCalledWith('/sys/roles/9/resources', resourceIds, {
+    expect(mocks.post).toHaveBeenCalledWith('/sys/roles/9/resources', rolePermissionPayload, {
       idempotency: {
         scope: 'sys-roles:resources:update:9',
-        payload: resourceIds,
+        payload: rolePermissionPayload,
       },
     })
   })

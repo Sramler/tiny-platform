@@ -8,12 +8,11 @@ import org.springframework.data.repository.query.Param;
 import java.util.List;
 
 /**
- * Carrier-backed read projections that must no longer hang off the legacy
- * {@code resource} repository.
+ * Carrier-backed read projections that must no longer hang off the retired
+ * legacy {@code resource} repository seam.
  *
- * <p>These queries already read from {@code menu/ui_action/api_endpoint}; the
- * dedicated repository makes that runtime dependency explicit and keeps
- * {@link ResourceRepository} focused on legacy compatibility only.</p>
+ * <p>These queries read directly from {@code menu/ui_action/api_endpoint},
+ * making the current carrier-backed runtime dependency explicit.</p>
  */
 @org.springframework.stereotype.Repository
 public interface CarrierProjectionRepository extends Repository<MenuEntry, Long> {

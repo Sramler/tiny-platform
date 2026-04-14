@@ -8,10 +8,9 @@ import com.tiny.platform.infrastructure.auth.resource.domain.ApiEndpointEntry;
 import com.tiny.platform.infrastructure.auth.resource.repository.ApiEndpointEntryRepository;
 import com.tiny.platform.infrastructure.auth.resource.repository.ApiEndpointPermissionRequirementRepository;
 import com.tiny.platform.infrastructure.auth.resource.repository.CarrierPermissionRequirementRow;
-import com.tiny.platform.infrastructure.auth.resource.repository.ResourceRepository;
 import com.tiny.platform.infrastructure.auth.resource.repository.UiActionEntryRepository;
 import com.tiny.platform.infrastructure.auth.resource.service.CarrierPermissionRequirementEvaluator;
-import com.tiny.platform.infrastructure.auth.resource.service.CarrierCompatibilitySafetyService;
+import com.tiny.platform.infrastructure.auth.resource.service.CarrierPermissionReferenceSafetyService;
 import com.tiny.platform.infrastructure.auth.resource.service.ResourcePermissionBindingService;
 import com.tiny.platform.infrastructure.auth.resource.service.ResourceService;
 import com.tiny.platform.infrastructure.auth.resource.service.ResourceServiceImpl;
@@ -135,14 +134,14 @@ class ResourceControllerApiEndpointTemplateUriIntegrationTest {
     }
 
     @Test
-    void unregisteredTemplateUri_shouldNotBeBlockedByUnifiedGuard() throws Exception {
+    void unregisteredTemplateUri_shouldFailClosedInUnifiedGuard() throws Exception {
         stubRegisteredEndpoints(templateEndpoint());
         // 传入 URI 与模板 /sys/resources/{id} 不满足「段数一致」的严格匹配：
-        // template: 3 segments, request: 4 segments => NOT_REGISTERED => 不应触发 DENIED/403
+        // template: 3 segments, request: 4 segments => unregistered => fail-closed
         mockMvc.perform(get("/sys/resources/{id}/extra", 9L)
                 .accept(MediaType.APPLICATION_JSON)
                 .with(authenticatedTenantUser()))
-            .andExpect(result -> assertThat(result.getResponse().getStatus()).isNotEqualTo(403));
+            .andExpect(status().isForbidden());
 
         verify(apiEndpointPermissionRequirementRepository, never())
             .findRowsByApiEndpointIdIn(anyCollection());
@@ -265,7 +264,6 @@ class ResourceControllerApiEndpointTemplateUriIntegrationTest {
         public ResourceService resourceService(ApiEndpointEntryRepository apiEndpointEntryRepository,
                                                ApiEndpointPermissionRequirementRepository apiEndpointPermissionRequirementRepository,
                                                AuthorizationAuditService authorizationAuditService) {
-            ResourceRepository resourceRepository = Mockito.mock(ResourceRepository.class);
             RoleRepository roleRepository = Mockito.mock(RoleRepository.class);
             EffectiveRoleResolutionService effectiveRoleResolutionService = Mockito.mock(EffectiveRoleResolutionService.class);
             TenantUserRepository tenantUserRepository = Mockito.mock(TenantUserRepository.class);
@@ -273,7 +271,7 @@ class ResourceControllerApiEndpointTemplateUriIntegrationTest {
             MenuEntryRepository menuEntryRepository = Mockito.mock(MenuEntryRepository.class);
             UiActionEntryRepository uiActionEntryRepository = Mockito.mock(UiActionEntryRepository.class);
             ResourcePermissionBindingService resourcePermissionBindingService = Mockito.mock(ResourcePermissionBindingService.class);
-            CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = Mockito.mock(CarrierCompatibilitySafetyService.class);
+            CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = Mockito.mock(CarrierPermissionReferenceSafetyService.class);
 
             CarrierPermissionRequirementEvaluator evaluator = new CarrierPermissionRequirementEvaluator(
                 Mockito.mock(MenuPermissionRequirementRepository.class),
@@ -282,7 +280,6 @@ class ResourceControllerApiEndpointTemplateUriIntegrationTest {
             );
 
             return new ResourceServiceImpl(
-                resourceRepository,
                 roleRepository,
                 effectiveRoleResolutionService,
                 tenantUserRepository,
@@ -291,7 +288,7 @@ class ResourceControllerApiEndpointTemplateUriIntegrationTest {
                 uiActionEntryRepository,
                 apiEndpointEntryRepository,
                 resourcePermissionBindingService,
-                carrierCompatibilitySafetyService,
+                carrierPermissionReferenceSafetyService,
                 evaluator,
                 authorizationAuditService
             );
@@ -314,4 +311,3 @@ class ResourceControllerApiEndpointTemplateUriIntegrationTest {
         }
     }
 }
-

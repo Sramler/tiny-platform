@@ -37,11 +37,14 @@ async function flushPromises() {
 describe('ResourceTransfer.vue', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    resourceMocks.getResourceTree.mockResolvedValue([])
+    resourceMocks.getResourceTree.mockResolvedValue([
+      { id: 1, title: '菜单 1', requiredPermissionId: 101 },
+      { id: 2, title: '菜单 2', requiredPermissionId: 102 },
+    ])
     roleMocks.getRoleResources.mockResolvedValue([1, 2])
   })
 
-  it('should load data when opened and emit submit on ok', async () => {
+  it('should load data when opened and emit permissionIds-only submit payload on ok', async () => {
     const wrapper = mount(ResourceTransfer, {
       props: { open: true, roleId: 9, title: '配置资源' },
       global: {
@@ -58,7 +61,9 @@ describe('ResourceTransfer.vue', () => {
     expect(roleMocks.getRoleResources).toHaveBeenCalledWith(9)
 
     await wrapper.find('button.ok').trigger('click')
-    expect(wrapper.emitted('submit')).toBeTruthy()
+    const submitEvents = wrapper.emitted('submit')
+    expect(submitEvents).toBeTruthy()
+    expect(submitEvents?.[0]).toEqual([{ permissionIds: [101, 102] }])
+    expect(submitEvents?.[0]?.[0]).not.toHaveProperty('resourceIds')
   })
 })
-

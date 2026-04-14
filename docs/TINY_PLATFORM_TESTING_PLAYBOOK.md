@@ -111,6 +111,7 @@
 - **real-link auth-state**
   - auth-state 生成器必须显式区分 platform login 与 tenant login，并用单测锁住 tenant code、TOTP secret/code、输出路径不串用。
   - 当 primary tenant 与 platform tenant 同值时，必须显式派生租户态 code，不能让 tenant real-link 误落入 platform scope。
+  - **CARD-13E**：real-link 工具链须显式 **`E2E_PLATFORM_TENANT_CODE`**（`playwright.real.config.ts` 在未 `E2E_SKIP_REAL_SETUP` 时加载即校验；`real.global.setup.ts` 主链 `requireRealLinkPlatformTenantCode`）；`verify-platform-dev-bootstrap.sh` → `ensure-platform-admin.sh` 须能从 **`PLATFORM_TENANT_CODE` 或 `E2E_PLATFORM_TENANT_CODE`** 得到平台租户 code，禁止隐式 `default`。
 
 - **E2E 断言稳定性**
   - 对 active-scope refresh、OIDC silent renew、菜单懒加载、壳页跳转等链路，优先断言 durable evidence：真实网络、稳定页面态、后续 API 200、modal 关闭、trace/storageState 收敛。
@@ -132,10 +133,10 @@
     - 与写链直接相关的 `UserServiceImplTest` / `TenantServiceImplTest` / `SecurityServiceImpl*`（按改动范围选择）
   - 必须覆盖“允许路径 + 拒绝路径 + 平台/租户作用域差异”。
 
-- **新模型运行时强约束（CARD-09A 后）**
+- **新模型运行时强约束（CARD-09A 数据面 + CARD-13A 读侧）**
   - production runtime 主链只允许读取 `user_auth_credential + user_auth_scope_policy`，不再允许旧表 fallback 参与鉴权。
   - `scope_key` 必须统一为：`GLOBAL` / `PLATFORM` / `TENANT:{id}`；读写、回填脚本、迁移脚本不得各写一套格式。
-  - 平台态 bulk/read 语义必须锁定 `PLATFORM > GLOBAL`；租户态保持 `TENANT > GLOBAL`。
+  - **读侧（CARD-13A 起）**：认证主链只查询与当前激活作用域一致的**单个** `scope_key`（平台登录 `PLATFORM`、租户登录 `TENANT:{id}`、仅全局会话 `GLOBAL`），**不再**在运行时做「先 `PLATFORM`/`TENANT` 再合并 `GLOBAL`」的桥接顺序。数据侧应在各 `scope_key` 上具备完整策略行；存量缺口用 Liquibase `135-duplicate-global-auth-scope-policy-card-13a`（或等价）与 `tiny-oauth-server/scripts/verify-card-13a-global-auth-scope-policy-rollout.sh` 验收（口径见 `docs/TINY_PLATFORM_TENANT_GOVERNANCE.md` §3.1）。
   - 旧表 `user_authentication_method` 若仍存在，仅允许用于迁移、审计、历史对账，不得作为测试验证“主链读取正确性”的依据。
   - 回归时若发现认证主链重新读取旧表，应按阻断问题处理，而不是再补 compat/fallback 配置。
 

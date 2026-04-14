@@ -1,7 +1,7 @@
 # Tiny Platform 授权模型第一阶段主交付技术设计
 
-> 状态更新：本文件保留为 **Phase1 历史技术设计基线 / 非当前运行态真相**。  
-> 当前仓库的运行态授权主链、权限重构封版状态与当前真相，请以 [TINY_PLATFORM_AUTHORIZATION_MODEL.md](./TINY_PLATFORM_AUTHORIZATION_MODEL.md) 和 [TINY_PLATFORM_PERMISSION_REFACTOR_FINAL_APPROVAL.md](./TINY_PLATFORM_PERMISSION_REFACTOR_FINAL_APPROVAL.md) 为准。
+> 状态更新：本文件保留为 **Phase1 历史技术设计基线 / 非当前运行态真相源**。  
+> 当前仓库的运行态授权主链、当前完成度与平台/租户边界，请优先以 [TINY_PLATFORM_AUTHORIZATION_MODEL.md](./TINY_PLATFORM_AUTHORIZATION_MODEL.md)、[TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md](./TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md) 与 [TINY_PLATFORM_TENANT_GOVERNANCE.md](./TINY_PLATFORM_TENANT_GOVERNANCE.md) 为准。
 
 > 状态：技术设计基线  
 > 适用范围：`auth / oauth / security / tenant / role / resource / menu / user`  

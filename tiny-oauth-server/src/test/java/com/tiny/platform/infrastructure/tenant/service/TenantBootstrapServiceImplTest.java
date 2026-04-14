@@ -14,7 +14,6 @@ import com.tiny.platform.infrastructure.auth.resource.domain.UiActionEntry;
 import com.tiny.platform.infrastructure.auth.resource.enums.ResourceType;
 import com.tiny.platform.infrastructure.auth.resource.repository.CarrierProjectionRepository;
 import com.tiny.platform.infrastructure.auth.resource.repository.RoleResourcePermissionBindingView;
-import com.tiny.platform.infrastructure.auth.resource.repository.ResourceRepository;
 import com.tiny.platform.infrastructure.auth.resource.repository.ApiEndpointEntryRepository;
 import com.tiny.platform.infrastructure.auth.resource.repository.UiActionEntryRepository;
 import com.tiny.platform.infrastructure.auth.resource.service.ResourcePermissionBindingService;
@@ -36,7 +35,6 @@ import org.mockito.ArgumentCaptor;
 class TenantBootstrapServiceImplTest {
 
     private TenantRepository tenantRepository;
-    private ResourceRepository resourceRepository;
     private CarrierProjectionRepository carrierProjectionRepository;
     private MenuEntryRepository menuEntryRepository;
     private UiActionEntryRepository uiActionEntryRepository;
@@ -49,7 +47,6 @@ class TenantBootstrapServiceImplTest {
     @BeforeEach
     void setUp() {
         tenantRepository = org.mockito.Mockito.mock(TenantRepository.class);
-        resourceRepository = org.mockito.Mockito.mock(ResourceRepository.class);
         carrierProjectionRepository = org.mockito.Mockito.mock(CarrierProjectionRepository.class);
         menuEntryRepository = org.mockito.Mockito.mock(MenuEntryRepository.class);
         uiActionEntryRepository = org.mockito.Mockito.mock(UiActionEntryRepository.class);
@@ -206,7 +203,6 @@ class TenantBootstrapServiceImplTest {
 
         service.bootstrapFromPlatformTemplate(targetTenant);
 
-        verify(resourceRepository, never()).saveAll(any());
         ArgumentCaptor<List<UiActionEntry>> uiActionCaptor = ArgumentCaptor.forClass(List.class);
         verify(uiActionEntryRepository, times(2)).saveAll(uiActionCaptor.capture());
         UiActionEntry clonedButton = uiActionCaptor.getAllValues().getFirst().stream()
@@ -250,16 +246,6 @@ class TenantBootstrapServiceImplTest {
         when(roleRepository.findByTenantIdIsNullOrderByIdAsc()).thenReturn(List.of(sourceAdmin));
         when(roleRepository.findGrantedRoleCarrierPairsForPlatformTemplate()).thenReturn(List.of(relation(20L, 11L)));
 
-        AtomicLong nextResourceId = new AtomicLong(100L);
-        when(resourceRepository.saveAll(any())).thenAnswer(invocation -> {
-            List<Resource> resources = invocation.getArgument(0);
-            for (Resource resource : resources) {
-                if (resource.getId() == null) {
-                    resource.setId(nextResourceId.getAndIncrement());
-                }
-            }
-            return resources;
-        });
 
         AtomicLong nextRoleId = new AtomicLong(200L);
         when(roleRepository.saveAll(any())).thenAnswer(invocation -> {
@@ -279,7 +265,6 @@ class TenantBootstrapServiceImplTest {
             .hasMessageContaining("平台模板权限绑定快照不完整");
 
         verify(carrierProjectionRepository).findPermissionBindingViewsByIdsAndScope(List.of(100L, 101L), 9L, "TENANT");
-        verify(resourceRepository, never()).findRolePermissionBindingViewsByIdsAndScope(any(), any(), any());
     }
 
     @Test
@@ -298,16 +283,6 @@ class TenantBootstrapServiceImplTest {
         when(roleRepository.findByTenantIdIsNullOrderByIdAsc()).thenReturn(List.of(sourceAdmin));
         when(roleRepository.findGrantedRoleCarrierPairsForPlatformTemplate()).thenReturn(List.of(relation(20L, 11L)));
 
-        AtomicLong nextResourceId = new AtomicLong(100L);
-        when(resourceRepository.saveAll(any())).thenAnswer(invocation -> {
-            List<Resource> resources = invocation.getArgument(0);
-            for (Resource resource : resources) {
-                if (resource.getId() == null) {
-                    resource.setId(nextResourceId.getAndIncrement());
-                }
-            }
-            return resources;
-        });
 
         AtomicLong nextRoleId = new AtomicLong(200L);
         when(roleRepository.saveAll(any())).thenAnswer(invocation -> {
@@ -327,7 +302,6 @@ class TenantBootstrapServiceImplTest {
             .hasMessageContaining("平台模板权限绑定快照不完整");
 
         verify(carrierProjectionRepository).findPermissionBindingViewsByIdsAndScope(List.of(100L, 101L), 9L, "TENANT");
-        verify(resourceRepository, never()).findRolePermissionBindingViewsByIdsAndScope(any(), any(), any());
     }
 
     @Test
@@ -346,16 +320,6 @@ class TenantBootstrapServiceImplTest {
         when(roleRepository.findByTenantIdIsNullOrderByIdAsc()).thenReturn(List.of(sourceAdmin));
         when(roleRepository.findGrantedRoleCarrierPairsForPlatformTemplate()).thenReturn(List.of(relation(20L, 11L)));
 
-        AtomicLong nextResourceId = new AtomicLong(100L);
-        when(resourceRepository.saveAll(any())).thenAnswer(invocation -> {
-            List<Resource> resources = invocation.getArgument(0);
-            for (Resource resource : resources) {
-                if (resource.getId() == null) {
-                    resource.setId(nextResourceId.getAndIncrement());
-                }
-            }
-            return resources;
-        });
 
         AtomicLong nextRoleId = new AtomicLong(200L);
         when(roleRepository.saveAll(any())).thenAnswer(invocation -> {
@@ -380,6 +344,7 @@ class TenantBootstrapServiceImplTest {
 
     @Test
     void bootstrapFromPlatformTemplate_whenTemplatesMissing_shouldBackfillFromConfiguredTenant() {
+        platformTenantProperties.setPlatformTenantCode("default");
         Tenant defaultTenant = tenant(1L, "default");
         Tenant targetTenant = tenant(9L, "tenant-9");
 
@@ -404,16 +369,6 @@ class TenantBootstrapServiceImplTest {
         when(roleRepository.findByTenantIdOrderByIdAsc(1L)).thenReturn(List.of(sourceAdmin));
         when(roleRepository.findGrantedRoleCarrierPairsByTenantId(1L)).thenReturn(List.of(relation(20L, 11L)));
 
-        AtomicLong nextResourceId = new AtomicLong(100L);
-        when(resourceRepository.saveAll(any())).thenAnswer(invocation -> {
-            List<Resource> resources = invocation.getArgument(0);
-            for (Resource resource : resources) {
-                if (resource.getId() == null) {
-                    resource.setId(nextResourceId.getAndIncrement());
-                }
-            }
-            return resources;
-        });
 
         AtomicLong nextRoleId = new AtomicLong(200L);
         when(roleRepository.saveAll(any())).thenAnswer(invocation -> {
@@ -454,12 +409,12 @@ class TenantBootstrapServiceImplTest {
         verify(resourcePermissionBindingService).backfillPermissionCatalogFromResources(null);
         verify(resourcePermissionBindingService).bindRequiredPermissionIdsForResources(null);
         verify(tenantRepository, times(0)).findByCode(any());
-        verify(resourceRepository, times(0)).saveAll(any());
         verify(roleRepository, times(0)).saveAll(any());
     }
 
     @Test
     void ensurePlatformTemplatesInitialized_whenTemplatesMissing_shouldBackfillFromConfiguredTenant() {
+        platformTenantProperties.setPlatformTenantCode("default");
         Tenant defaultTenant = tenant(1L, "default");
         Resource sourceRoot = resource(10L, 1L, "system", null, "/system", "", "system:entry:view", ResourceType.DIRECTORY);
         Role sourceAdmin = role(20L, 1L, "ROLE_ADMIN", "管理员");
@@ -472,16 +427,6 @@ class TenantBootstrapServiceImplTest {
         when(roleRepository.findByTenantIdOrderByIdAsc(1L)).thenReturn(List.of(sourceAdmin));
         when(roleRepository.findGrantedRoleCarrierPairsByTenantId(1L)).thenReturn(List.of(relation(20L, 10L)));
 
-        AtomicLong nextResourceId = new AtomicLong(100L);
-        when(resourceRepository.saveAll(any())).thenAnswer(invocation -> {
-            List<Resource> resources = invocation.getArgument(0);
-            for (Resource resource : resources) {
-                if (resource.getId() == null) {
-                    resource.setId(nextResourceId.getAndIncrement());
-                }
-            }
-            return resources;
-        });
 
         AtomicLong nextRoleId = new AtomicLong(200L);
         when(roleRepository.saveAll(any())).thenAnswer(invocation -> {
@@ -505,6 +450,7 @@ class TenantBootstrapServiceImplTest {
 
     @Test
     void ensurePlatformTemplatesInitialized_shouldNormalizeRoleNamesAndSuffixPlatformTemplateCodes() {
+        platformTenantProperties.setPlatformTenantCode("default");
         Tenant defaultTenant = tenant(1L, "default");
         Resource sourceRoot = resource(10L, 1L, "system", null, "/system", "", "system:entry:view", ResourceType.DIRECTORY);
         Role dirtyAdmin = role(20L, 1L, "ROLE_ADMIN", " 超级管理员 \n\n ");
@@ -519,16 +465,6 @@ class TenantBootstrapServiceImplTest {
         when(roleRepository.findByTenantIdOrderByIdAsc(1L)).thenReturn(List.of(dirtyAdmin, userRole));
         when(roleRepository.findGrantedRoleCarrierPairsByTenantId(1L)).thenReturn(List.of(relation(20L, 10L)));
 
-        AtomicLong nextResourceId = new AtomicLong(100L);
-        when(resourceRepository.saveAll(any())).thenAnswer(invocation -> {
-            List<Resource> resources = invocation.getArgument(0);
-            for (Resource resource : resources) {
-                if (resource.getId() == null) {
-                    resource.setId(nextResourceId.getAndIncrement());
-                }
-            }
-            return resources;
-        });
 
         AtomicLong nextRoleId = new AtomicLong(200L);
         when(roleRepository.saveAll(any())).thenAnswer(invocation -> {
@@ -556,6 +492,7 @@ class TenantBootstrapServiceImplTest {
 
     @Test
     void ensurePlatformTemplatesInitialized_shouldTruncateLongPlatformRoleNamesToFitColumn() {
+        platformTenantProperties.setPlatformTenantCode("default");
         Tenant defaultTenant = tenant(1L, "default");
         Resource sourceRoot = resource(10L, 1L, "system", null, "/system", "", "system:entry:view", ResourceType.DIRECTORY);
         String longBase = "x".repeat(50);
@@ -572,16 +509,6 @@ class TenantBootstrapServiceImplTest {
         when(roleRepository.findByTenantIdOrderByIdAsc(1L)).thenReturn(List.of(longNameAdmin, longCodeRole));
         when(roleRepository.findGrantedRoleCarrierPairsByTenantId(1L)).thenReturn(List.of(relation(20L, 10L)));
 
-        AtomicLong nextResourceId = new AtomicLong(100L);
-        when(resourceRepository.saveAll(any())).thenAnswer(invocation -> {
-            List<Resource> resources = invocation.getArgument(0);
-            for (Resource resource : resources) {
-                if (resource.getId() == null) {
-                    resource.setId(nextResourceId.getAndIncrement());
-                }
-            }
-            return resources;
-        });
 
         AtomicLong nextRoleId = new AtomicLong(200L);
         when(roleRepository.saveAll(any())).thenAnswer(invocation -> {
@@ -625,11 +552,11 @@ class TenantBootstrapServiceImplTest {
         Tenant targetTenant = tenant(9L, "tenant-9");
         when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(null, "PLATFORM")).thenReturn(List.of());
         when(roleRepository.findByTenantIdIsNullOrderByIdAsc()).thenReturn(List.of());
-        when(tenantRepository.findByCode("default")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.bootstrapFromPlatformTemplate(targetTenant))
             .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("平台模板缺失");
+            .hasMessageContaining("【bootstrap 历史入口，非运行时平台语义】")
+            .hasMessageContaining("未显式配置 tiny.platform.tenant.platform-tenant-code");
     }
 
     @Test
@@ -727,16 +654,6 @@ class TenantBootstrapServiceImplTest {
         when(roleRepository.findGrantedRoleCarrierPairsForPlatformTemplate())
             .thenReturn(List.of(relation(20L, 2L), relation(20L, 3L), relation(20L, 4L)));
 
-        AtomicLong nextResourceId = new AtomicLong(100L);
-        when(resourceRepository.saveAll(any())).thenAnswer(invocation -> {
-            List<Resource> resources = invocation.getArgument(0);
-            for (Resource resource : resources) {
-                if (resource.getId() == null) {
-                    resource.setId(nextResourceId.getAndIncrement());
-                }
-            }
-            return resources;
-        });
 
         AtomicLong nextRoleId = new AtomicLong(200L);
         when(roleRepository.saveAll(any())).thenAnswer(invocation -> {
@@ -753,7 +670,6 @@ class TenantBootstrapServiceImplTest {
 
         service.bootstrapFromPlatformTemplate(targetTenant);
 
-        verify(resourceRepository, never()).saveAll(any());
         ArgumentCaptor<List<MenuEntry>> menuCaptor = ArgumentCaptor.forClass(List.class);
         verify(menuEntryRepository, times(2)).saveAll(menuCaptor.capture());
         List<MenuEntry> clonedMenus = menuCaptor.getAllValues().getFirst();
@@ -784,16 +700,6 @@ class TenantBootstrapServiceImplTest {
         when(roleRepository.findByTenantIdIsNullOrderByIdAsc()).thenReturn(List.of(sourceAdmin));
         when(roleRepository.findGrantedRoleCarrierPairsForPlatformTemplate()).thenReturn(List.of(relation(20L, 11L)));
 
-        AtomicLong nextResourceId = new AtomicLong(100L);
-        when(resourceRepository.saveAll(any())).thenAnswer(invocation -> {
-            List<Resource> resources = invocation.getArgument(0);
-            for (Resource resource : resources) {
-                if (resource.getId() == null) {
-                    resource.setId(nextResourceId.getAndIncrement());
-                }
-            }
-            return resources;
-        });
 
         AtomicLong nextRoleId = new AtomicLong(200L);
         when(roleRepository.saveAll(any())).thenAnswer(invocation -> {

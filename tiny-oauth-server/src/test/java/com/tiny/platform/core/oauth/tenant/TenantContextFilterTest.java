@@ -8,7 +8,6 @@ import com.tiny.platform.infrastructure.auth.audit.service.AuthorizationAuditSer
 import com.tiny.platform.infrastructure.auth.org.domain.OrganizationUnit;
 import com.tiny.platform.infrastructure.auth.org.repository.OrganizationUnitRepository;
 import com.tiny.platform.infrastructure.auth.org.repository.UserUnitRepository;
-import com.tiny.platform.infrastructure.tenant.config.PlatformTenantResolver;
 import com.tiny.platform.infrastructure.tenant.domain.Tenant;
 import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import org.junit.jupiter.api.AfterEach;
@@ -330,12 +329,10 @@ class TenantContextFilterTest {
 
     @Test
     void shouldRejectWhitelistedAuditReadWhenPlatformScopeIsNotExplicit() throws Exception {
-        PlatformTenantResolver platformTenantResolver = Mockito.mock(PlatformTenantResolver.class);
         AuthorizationAuditService authorizationAuditService = Mockito.mock(AuthorizationAuditService.class);
         TenantContextFilter platformFilter = new TenantContextFilter(
             tenantRepository,
             null,
-            platformTenantResolver,
             authorizationAuditService,
             new TenantLifecycleReadPolicy()
         );
@@ -375,12 +372,10 @@ class TenantContextFilterTest {
 
     @Test
     void shouldRejectNonWhitelistedReadForFrozenPlatformScope() throws Exception {
-        PlatformTenantResolver platformTenantResolver = Mockito.mock(PlatformTenantResolver.class);
         AuthorizationAuditService authorizationAuditService = Mockito.mock(AuthorizationAuditService.class);
         TenantContextFilter platformFilter = new TenantContextFilter(
             tenantRepository,
             null,
-            platformTenantResolver,
             authorizationAuditService,
             new TenantLifecycleReadPolicy()
         );
@@ -405,7 +400,6 @@ class TenantContextFilterTest {
             AuthorityUtils.createAuthorityList("system:audit:auth:view")
         );
         SecurityContextHolder.getContext().setAuthentication(auth);
-        when(platformTenantResolver.isPlatformTenant(50L)).thenReturn(true);
         when(tenantRepository.findLoginBlockedLifecycleStatus(50L)).thenReturn(Optional.of("FROZEN"));
 
         platformFilter.doFilter(request, response, (req, resp) -> {
@@ -431,12 +425,10 @@ class TenantContextFilterTest {
 
     @Test
     void shouldRejectWhitelistedReadWithoutExplicitPlatformScopeForDecommissionedTenant() throws Exception {
-        PlatformTenantResolver platformTenantResolver = Mockito.mock(PlatformTenantResolver.class);
         AuthorizationAuditService authorizationAuditService = Mockito.mock(AuthorizationAuditService.class);
         TenantContextFilter platformFilter = new TenantContextFilter(
             tenantRepository,
             null,
-            platformTenantResolver,
             authorizationAuditService,
             new TenantLifecycleReadPolicy()
         );
@@ -790,7 +782,7 @@ class TenantContextFilterTest {
         OrganizationUnitRepository orgRepo = Mockito.mock(OrganizationUnitRepository.class);
         UserUnitRepository userUnitRepo = Mockito.mock(UserUnitRepository.class);
         TenantContextFilter scopedFilter = new TenantContextFilter(
-            tenantRepository, null, null, null, new TenantLifecycleReadPolicy(), orgRepo, userUnitRepo);
+            tenantRepository, null, null, new TenantLifecycleReadPolicy(), orgRepo, userUnitRepo);
         when(tenantRepository.findLoginBlockedLifecycleStatus(anyLong())).thenReturn(Optional.empty());
 
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/sys/menus/tree");
@@ -820,7 +812,7 @@ class TenantContextFilterTest {
         OrganizationUnitRepository orgRepo = Mockito.mock(OrganizationUnitRepository.class);
         UserUnitRepository userUnitRepo = Mockito.mock(UserUnitRepository.class);
         TenantContextFilter scopedFilter = new TenantContextFilter(
-            tenantRepository, null, null, null, new TenantLifecycleReadPolicy(), orgRepo, userUnitRepo);
+            tenantRepository, null, null, new TenantLifecycleReadPolicy(), orgRepo, userUnitRepo);
         when(tenantRepository.findLoginBlockedLifecycleStatus(anyLong())).thenReturn(Optional.empty());
         when(orgRepo.findByIdAndTenantId(99L, 1L)).thenReturn(Optional.empty());
 
@@ -850,7 +842,7 @@ class TenantContextFilterTest {
         OrganizationUnitRepository orgRepo = Mockito.mock(OrganizationUnitRepository.class);
         UserUnitRepository userUnitRepo = Mockito.mock(UserUnitRepository.class);
         TenantContextFilter scopedFilter = new TenantContextFilter(
-            tenantRepository, null, null, null, new TenantLifecycleReadPolicy(), orgRepo, userUnitRepo);
+            tenantRepository, null, null, new TenantLifecycleReadPolicy(), orgRepo, userUnitRepo);
         when(tenantRepository.findLoginBlockedLifecycleStatus(anyLong())).thenReturn(Optional.empty());
 
         OrganizationUnit dept = new OrganizationUnit();
@@ -884,7 +876,7 @@ class TenantContextFilterTest {
         OrganizationUnitRepository orgRepo = Mockito.mock(OrganizationUnitRepository.class);
         UserUnitRepository userUnitRepo = Mockito.mock(UserUnitRepository.class);
         TenantContextFilter scopedFilter = new TenantContextFilter(
-            tenantRepository, null, null, null, new TenantLifecycleReadPolicy(), orgRepo, userUnitRepo);
+            tenantRepository, null, null, new TenantLifecycleReadPolicy(), orgRepo, userUnitRepo);
         when(tenantRepository.findLoginBlockedLifecycleStatus(anyLong())).thenReturn(Optional.empty());
 
         OrganizationUnit dept = new OrganizationUnit();
@@ -917,7 +909,7 @@ class TenantContextFilterTest {
     @Test
     void shouldRejectOrgDeptScopeWhenReposMissing_withoutServerError() throws Exception {
         TenantContextFilter scopedFilter = new TenantContextFilter(
-            tenantRepository, null, null, null, new TenantLifecycleReadPolicy(), null, null);
+            tenantRepository, null, null, new TenantLifecycleReadPolicy(), null, null);
         when(tenantRepository.findLoginBlockedLifecycleStatus(anyLong())).thenReturn(Optional.empty());
 
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/sys/menus/tree");
@@ -944,7 +936,7 @@ class TenantContextFilterTest {
         OrganizationUnitRepository orgRepo = Mockito.mock(OrganizationUnitRepository.class);
         UserUnitRepository userUnitRepo = Mockito.mock(UserUnitRepository.class);
         TenantContextFilter scopedFilter = new TenantContextFilter(
-            tenantRepository, null, null, null, new TenantLifecycleReadPolicy(), orgRepo, userUnitRepo);
+            tenantRepository, null, null, new TenantLifecycleReadPolicy(), orgRepo, userUnitRepo);
         when(tenantRepository.findLoginBlockedLifecycleStatus(anyLong())).thenReturn(Optional.empty());
         when(orgRepo.findByIdAndTenantId(5L, 1L)).thenReturn(Optional.empty());
 
@@ -968,7 +960,7 @@ class TenantContextFilterTest {
         OrganizationUnitRepository orgRepo = Mockito.mock(OrganizationUnitRepository.class);
         UserUnitRepository userUnitRepo = Mockito.mock(UserUnitRepository.class);
         TenantContextFilter scopedFilter = new TenantContextFilter(
-            tenantRepository, null, null, null, new TenantLifecycleReadPolicy(), orgRepo, userUnitRepo);
+            tenantRepository, null, null, new TenantLifecycleReadPolicy(), orgRepo, userUnitRepo);
         when(tenantRepository.findLoginBlockedLifecycleStatus(anyLong())).thenReturn(Optional.empty());
 
         OrganizationUnit org = new OrganizationUnit();
@@ -1006,7 +998,7 @@ class TenantContextFilterTest {
         OrganizationUnitRepository orgRepo = Mockito.mock(OrganizationUnitRepository.class);
         UserUnitRepository userUnitRepo = Mockito.mock(UserUnitRepository.class);
         TenantContextFilter scopedFilter = new TenantContextFilter(
-            tenantRepository, null, null, null, new TenantLifecycleReadPolicy(), orgRepo, userUnitRepo);
+            tenantRepository, null, null, new TenantLifecycleReadPolicy(), orgRepo, userUnitRepo);
         when(tenantRepository.findLoginBlockedLifecycleStatus(anyLong())).thenReturn(Optional.empty());
 
         OrganizationUnit org5 = new OrganizationUnit();
@@ -1047,7 +1039,7 @@ class TenantContextFilterTest {
         OrganizationUnitRepository orgRepo = Mockito.mock(OrganizationUnitRepository.class);
         UserUnitRepository userUnitRepo = Mockito.mock(UserUnitRepository.class);
         TenantContextFilter scopedFilter = new TenantContextFilter(
-            tenantRepository, null, null, null, new TenantLifecycleReadPolicy(), orgRepo, userUnitRepo);
+            tenantRepository, null, null, new TenantLifecycleReadPolicy(), orgRepo, userUnitRepo);
         when(tenantRepository.findLoginBlockedLifecycleStatus(anyLong())).thenReturn(Optional.empty());
 
         OrganizationUnit org5 = new OrganizationUnit();
@@ -1083,7 +1075,7 @@ class TenantContextFilterTest {
         OrganizationUnitRepository orgRepo = Mockito.mock(OrganizationUnitRepository.class);
         UserUnitRepository userUnitRepo = Mockito.mock(UserUnitRepository.class);
         TenantContextFilter scopedFilter = new TenantContextFilter(
-            tenantRepository, null, null, null, new TenantLifecycleReadPolicy(), orgRepo, userUnitRepo);
+            tenantRepository, null, null, new TenantLifecycleReadPolicy(), orgRepo, userUnitRepo);
         when(tenantRepository.findLoginBlockedLifecycleStatus(anyLong())).thenReturn(Optional.empty());
 
         OrganizationUnit org5 = new OrganizationUnit();
@@ -1118,7 +1110,7 @@ class TenantContextFilterTest {
         OrganizationUnitRepository orgRepo = Mockito.mock(OrganizationUnitRepository.class);
         UserUnitRepository userUnitRepo = Mockito.mock(UserUnitRepository.class);
         TenantContextFilter scopedFilter = new TenantContextFilter(
-            tenantRepository, null, null, null, new TenantLifecycleReadPolicy(), orgRepo, userUnitRepo);
+            tenantRepository, null, null, new TenantLifecycleReadPolicy(), orgRepo, userUnitRepo);
         when(tenantRepository.findLoginBlockedLifecycleStatus(anyLong())).thenReturn(Optional.empty());
 
         OrganizationUnit org5 = new OrganizationUnit();
@@ -1155,7 +1147,7 @@ class TenantContextFilterTest {
         OrganizationUnitRepository orgRepo = Mockito.mock(OrganizationUnitRepository.class);
         UserUnitRepository userUnitRepo = Mockito.mock(UserUnitRepository.class);
         TenantContextFilter scopedFilter = new TenantContextFilter(
-            tenantRepository, null, null, null, new TenantLifecycleReadPolicy(), orgRepo, userUnitRepo);
+            tenantRepository, null, null, new TenantLifecycleReadPolicy(), orgRepo, userUnitRepo);
         when(tenantRepository.findLoginBlockedLifecycleStatus(anyLong())).thenReturn(Optional.empty());
         when(orgRepo.findByIdAndTenantId(5L, 1L)).thenReturn(Optional.empty());
 
@@ -1182,7 +1174,7 @@ class TenantContextFilterTest {
         OrganizationUnitRepository orgRepo = Mockito.mock(OrganizationUnitRepository.class);
         UserUnitRepository userUnitRepo = Mockito.mock(UserUnitRepository.class);
         TenantContextFilter scopedFilter = new TenantContextFilter(
-            tenantRepository, null, null, null, new TenantLifecycleReadPolicy(), orgRepo, userUnitRepo);
+            tenantRepository, null, null, new TenantLifecycleReadPolicy(), orgRepo, userUnitRepo);
         when(tenantRepository.findLoginBlockedLifecycleStatus(anyLong())).thenReturn(Optional.empty());
 
         OrganizationUnit dept = new OrganizationUnit();
@@ -1215,7 +1207,7 @@ class TenantContextFilterTest {
         OrganizationUnitRepository orgRepo = Mockito.mock(OrganizationUnitRepository.class);
         UserUnitRepository userUnitRepo = Mockito.mock(UserUnitRepository.class);
         TenantContextFilter scopedFilter = new TenantContextFilter(
-            tenantRepository, null, null, null, new TenantLifecycleReadPolicy(), orgRepo, userUnitRepo);
+            tenantRepository, null, null, new TenantLifecycleReadPolicy(), orgRepo, userUnitRepo);
         when(tenantRepository.findLoginBlockedLifecycleStatus(anyLong())).thenReturn(Optional.empty());
 
         OrganizationUnit dept = new OrganizationUnit();

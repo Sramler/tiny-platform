@@ -212,16 +212,16 @@ profile:entry:view
 
 ### 5.5 控制面与平台级
 
-平台级控制面（租户管理、幂等治理、字典平台、导出等）在迁移期允许**规范码或管理员角色**二选一通过；目标态仅依赖 resource 下发的规范码。
+平台级控制面（租户管理、幂等治理、字典平台等）当前态已收口为“**平台 scope + 规范码**”；不再把 `ROLE_ADMIN` / `ADMIN` 当作运行时 Guard 的快捷判断。导出能力另按 `system:export:view` / `system:export:manage` 区分“本人任务”与“管理全部任务”。
 
 | 能力 | 规范码 | 说明 |
 | --- | --- | --- |
-| 租户管理（平台租户内） | `system:tenant:list`、`system:tenant:create` 等 | 当前 Guard 为“平台租户 + 管理员”；后续可扩展为“平台租户 + 上述任一规范码”。 |
-| 幂等治理页 | `idempotent:ops:view` | 平台租户 + 管理员 + 本码。 |
-| 字典平台管理 | `dict:platform:manage` | 平台级字典维护。 |
-| 导出（提交/查看本人任务） | `system:export:view` | 具备本码或管理员均可使用导出；查看全部任务/下载他人结果仅管理员。 |
+| 租户管理（平台作用域） | `system:tenant:list`、`system:tenant:create` 等 | 当前 Guard 为“平台 scope + 对应规范码”。 |
+| 幂等治理页 | `idempotent:ops:view` | 平台 scope + 本码。 |
+| 字典平台管理 | `dict:platform:manage` | 平台级字典维护；Guard 为纯规范码。 |
+| 导出（提交/查看本人任务） | `system:export:view` | 具备本码即可使用导出；查看全部任务/下载他人结果需 `system:export:manage`。 |
 
-角色码 `ROLE_ADMIN` / 兼容码 `ADMIN` 仅作迁移期“平台管理员”快捷判断，见 [TINY_PLATFORM_LEGACY_COMPATIBILITY_INVENTORY.md](./TINY_PLATFORM_LEGACY_COMPATIBILITY_INVENTORY.md)。
+角色码 `ROLE_ADMIN` / 历史兼容码 `ADMIN` 仅作为角色数据、seed 与显式 `roleCodes` 语义存在，不再作为平台控制面 Guard 的快捷判断，见 [TINY_PLATFORM_LEGACY_COMPATIBILITY_INVENTORY.md](./TINY_PLATFORM_LEGACY_COMPATIBILITY_INVENTORY.md)。
 
 ## 6. 现状与迁移策略
 
@@ -267,7 +267,8 @@ profile:entry:view
 
 数据与字典：
 
-- `resource.permission`
+- `menu / ui_action / api_endpoint.permission`（兼容字符串 / 运营可读字段）
+- `menu / ui_action / api_endpoint.required_permission_id`
 - 初始化 SQL / Liquibase
 - 权限字典导出接口与权限管理页面
 
@@ -299,11 +300,17 @@ profile:entry:view
 - `Scope`（PLATFORM/TENANT/ORG/DEPT）如何表达
 - `Data Scope` 如何建模与计算
 
-当前 tiny-platform 的运行态权限真相源仍然是：
+当前 tiny-platform 的运行态功能权限真相源是：
 
-- `resource.permission`
-- 后端 `@PreAuthorize` / AccessGuard
-- 前端路由权限与按钮权限
-- 初始化 SQL / Liquibase 中的资源权限定义
+- `role_permission -> permission`
+- 后端 `@PreAuthorize` / AccessGuard 与 `*_permission_requirement` 的消费链
+- JWT / Session 中显式 `permissions` 契约
+- 初始化 SQL / Liquibase 中的 `permission` 主数据与 carrier 绑定
 
-在未完成统一迁移前，不应在业务模块中自行引入第二套独立 `permission` 目录或平行权限语义。
+当前仍可能被误读为“真相源”、但实际上只剩兼容/运营语义的包括：
+
+- `menu / ui_action / api_endpoint.permission` 字符串
+- `/sys/resources` 与 `Resource` 兼容聚合 DTO
+- 显式 `roleCodes` 与少量角色码兼容承接
+
+在已完成统一迁移的前提下，不应在业务模块中自行引入第二套独立 `permission` 目录或平行权限语义；若文档叙述与 `.agent/src/rules/**` 冲突，以规则源为准。

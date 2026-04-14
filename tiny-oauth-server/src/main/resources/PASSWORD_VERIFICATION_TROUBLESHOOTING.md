@@ -25,10 +25,79 @@
   - 密码哈希规范化过程
   - 密码验证结果
 
-### 4. 平台登录（无 tenantCode）误用硬编码 default 租户查认证方式
+### 4. 平台登录（无 tenantCode）与认证方式解析口径不一致
 
-- **问题**：`MultiAuthenticationProvider` 在 PLATFORM 作用域下曾用 `tenant.code=default` 解析 `user_authentication_method.tenant_id`，与 `tiny.platform.tenant.platform-tenant-code`、`ensure-platform-admin.sh` 的 `PLATFORM_TENANT_CODE` 不一致时，会查错行或查不到行，表现为「密码错误」或「未配置认证方式」。
-- **修复**：PLATFORM 登录改为使用 `PlatformTenantResolver.getPlatformTenantId()`（与配置一致）；仅在解析失败时回退 `default` 并打 WARN 日志（见 `[auth-login] PLATFORM 登录`）。
+- **历史问题**：在旧实现中，PLATFORM 作用域曾把「平台租户主键」与 `tenant.code=default` 等混用，用于解析 `user_authentication_method.tenant_id`；当该主键与 `tiny.platform.tenant.platform-tenant-code` / 种子脚本中的平台租户编码不一致时，会查错行或查不到行，表现为「密码错误」或「未配置认证方式」。
+- **当前主链（CARD-12B / CARD-13A / CARD-13C）**：
+  - 运行时已**不再**通过 `PlatformTenantResolver` Bean 参与登录；平台用户解析由 `AuthUserResolutionService.resolveUserRecordInPlatform` 完成：用户名全局唯一命中一条 `user` 记录，且必须具备 **PLATFORM 作用域下的有效赋权**（否则拒绝平台登录）。
+  - 密码等认证配置只从新模型 **`user_auth_credential` + `user_auth_scope_policy`** 读取；PLATFORM 登录使用 **`scope_key=PLATFORM`**（见 `UserAuthenticationMethodProfileService`），不再依赖把某租户 `tenant_id` 当作「平台登录载体」去拼旧表行。
+  - `tiny.platform.tenant.platform-tenant-code` / `default` 仅用于 **bootstrap、种子与运维脚本** 等显式配置场景，不应再被理解为「表单登录时解析密码行的运行时入口」。
+- **平台登录仍失败时建议核对**：是否存在 `user_auth_scope_policy` 下 **PLATFORM** 策略与对应凭证；是否仅有 TENANT 策略而无 PLATFORM；用户名是否在库中重复；以及是否缺少 PLATFORM 侧 `role_assignment`（会导致 `resolveUserRecordInPlatform` 直接拒绝）。
+
+#### 示例 SQL：核对 PLATFORM 策略、密码凭证与平台赋权
+
+将下面查询中的 `user_0001` 换成实际登录用户名。表名、列名以当前 Liquibase/schema 为准（`scope_key` 在 PLATFORM 下为字面量 **`PLATFORM`**，见 `UserAuthenticationBridgeWriter.buildScopeKey`）。
+
+```sql
+-- 1) 该用户在 PLATFORM 作用域下是否有一条启用的密码凭证策略（新模型主链）
+SELECT
+    u.id AS user_id,
+    u.username,
+    p.id AS scope_policy_id,
+    p.scope_type,
+    p.scope_key,
+    p.is_method_enabled,
+    p.authentication_priority,
+    c.id AS credential_id,
+    c.authentication_provider,
+    c.authentication_type,
+    CASE
+        WHEN JSON_UNQUOTE(JSON_EXTRACT(c.authentication_configuration, '$.password')) IS NOT NULL THEN 'password 键存在'
+        WHEN JSON_EXTRACT(c.authentication_configuration, '$.passwordHash') IS NOT NULL THEN '仅 passwordHash（旧键）'
+        ELSE '未见到 password/passwordHash'
+    END AS password_field_hint
+FROM `user` u
+JOIN user_auth_credential c
+  ON c.user_id = u.id
+ AND c.authentication_provider = 'LOCAL'
+ AND c.authentication_type = 'PASSWORD'
+JOIN user_auth_scope_policy p
+  ON p.credential_id = c.id
+ AND p.scope_key = 'PLATFORM'
+WHERE u.username = 'user_0001';
+```
+
+```sql
+-- 2) 是否存在全局重名用户（>1 条时 PLATFORM 解析会拒绝）
+SELECT username, COUNT(*) AS cnt
+FROM `user`
+GROUP BY username
+HAVING COUNT(*) > 1;
+```
+
+```sql
+-- 3) PLATFORM 作用域下是否有当前有效的 role_assignment（与 AuthUserResolutionService.resolveUserRecordInPlatform 一致）
+SELECT
+    ra.id,
+    ra.role_id,
+    ra.status,
+    ra.scope_type,
+    ra.tenant_id,
+    ra.scope_id,
+    ra.start_time,
+    ra.end_time
+FROM role_assignment ra
+JOIN `user` u ON u.id = ra.principal_id AND ra.principal_type = 'USER'
+WHERE u.username = 'user_0001'
+  AND ra.scope_type = 'PLATFORM'
+  AND ra.tenant_id IS NULL
+  AND ra.scope_id IS NULL
+  AND ra.status = 'ACTIVE'
+  AND ra.start_time <= NOW()
+  AND (ra.end_time IS NULL OR ra.end_time > NOW());
+```
+
+若 **(1)** 无行：需为新模型补 **PLATFORM** 的 `user_auth_scope_policy`（及对应 `user_auth_credential`），或确认仅存在 `TENANT:{tenant_id}` / `GLOBAL` 策略——平台表单登录不会用其作为密码来源。若 **(2)** 有命中：先解决用户名唯一性。若 **(3)** 无行：用户不具备平台赋权，会在解析阶段被拒绝（未必走到密码比对）。
 
 ## 排查步骤
 

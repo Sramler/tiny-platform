@@ -52,7 +52,10 @@ function deriveTenantCodeForTenantScope(primaryTenantCode: string, platformTenan
 function resolveBindTenantCode(): string {
   const explicitBindTenantCode = readEnv('E2E_TENANT_CODE_BIND')
   const primaryTenantCode = requireEnv('E2E_TENANT_CODE')
-  const platformTenantCode = readEnv('E2E_PLATFORM_TENANT_CODE') ?? 'default'
+  const platformTenantCode = readEnv('E2E_PLATFORM_TENANT_CODE')
+  if (!platformTenantCode?.trim()) {
+    throw new Error('缺少 E2E_PLATFORM_TENANT_CODE（CARD-13E：禁止隐式 default）')
+  }
   if (explicitBindTenantCode && explicitBindTenantCode.trim().toLowerCase() !== platformTenantCode.trim().toLowerCase()) {
     return explicitBindTenantCode
   }

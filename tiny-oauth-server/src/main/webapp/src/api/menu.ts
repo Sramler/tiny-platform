@@ -15,7 +15,11 @@ export interface MenuItem {
   redirect?: string
   hidden?: boolean
   keepAlive?: boolean
+  /**
+   * 派生字段（由 requiredPermissionId 对应权限主数据回填），不作为写链主入口。
+   */
   permission?: string
+  requiredPermissionId?: number
   parentId?: number | null
   children?: MenuItem[]
   createdAt?: string
@@ -28,7 +32,6 @@ export interface MenuQuery {
   name?: string
   title?: string
   url?: string
-  permission?: string
   parentId?: number | null
   hidden?: boolean
   enabled?: boolean
@@ -49,7 +52,14 @@ export interface MenuCreateUpdateDto {
   redirect?: string
   hidden?: boolean
   keepAlive?: boolean
+  /**
+   * 只读/展示字段；提交时不再依赖手输 permission。
+   */
   permission?: string
+  /**
+   * 写链主字段：显式权限主数据ID。
+   */
+  requiredPermissionId?: number
   parentId?: number | null
 }
 
@@ -57,7 +67,6 @@ export interface MenuCreateUpdateDto {
 export function menuList(params: {
   name?: string
   title?: string
-  permission?: string
   parentId?: number | null
   enabled?: boolean
 }) {
@@ -93,7 +102,8 @@ export function createMenu(data: {
   redirect: string
   hidden: boolean
   keepAlive: boolean
-  permission: string
+  permission?: string
+  requiredPermissionId?: number
   type: number // 0-目录，1-菜单
   parentId?: number
 }) {
@@ -122,7 +132,8 @@ export function updateMenu(
     redirect: string
     hidden: boolean
     keepAlive: boolean
-    permission: string
+    permission?: string
+    requiredPermissionId?: number
     type: number // 0-目录，1-菜单
     parentId?: number
   },
@@ -173,12 +184,12 @@ export function getMenusByParentId(parentId: number): Promise<MenuItem[]> {
 
 // 检查菜单名称是否存在
 export function checkMenuNameExists(name: string, excludeId?: string | number) {
-  return request.get('/sys/resources/check-name', { params: { name, excludeId } })
+  return request.get('/sys/menus/check-name', { params: { name, excludeId } })
 }
 
 // 检查菜单路径是否存在
 export function checkMenuUrlExists(url: string, excludeId?: string | number) {
-  return request.get('/sys/resources/check-url', { params: { url, excludeId } })
+  return request.get('/sys/menus/check-url', { params: { url, excludeId } })
 }
 
 // 获取菜单类型选项

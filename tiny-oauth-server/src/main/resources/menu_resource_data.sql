@@ -1,5 +1,6 @@
 -- 参考脚本：历史菜单/资源示例数据。
 -- 注意：该文件不参与默认 Liquibase 初始化，仅保留为人工排查/回顾用示例；
+-- 当前控制面权限模型、完成度与兼容清退状态，请以 docs/TINY_PLATFORM_AUTHORIZATION_MODEL.md、docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md 与 docs/TINY_PLATFORM_LEGACY_COMPATIBILITY_INVENTORY.md 为准。
 -- 当前仓库的运行态权限主链已切换到 role_permission -> permission -> resource；
 -- 本文件中的 role_resource / role_menu 片段均为历史示例，不代表当前初始化或运行态真相。
 -- 权限码与控制器路径仍应尽量对齐当前规范，避免形成第二套“伪真相”。

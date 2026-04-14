@@ -80,10 +80,23 @@
         </a-select>
       </a-form-item>
       
-      <a-form-item label="权限标识" name="permission">
-        <a-input 
-          v-model:value="formData.permission" 
-          placeholder="请输入权限标识，如：system:user:list"
+      <a-form-item label="权限主数据" name="requiredPermissionId">
+        <a-select
+          v-model:value="formData.requiredPermissionId"
+          show-search
+          :filter-option="false"
+          :options="permissionSelectOptions"
+          placeholder="请选择权限主数据"
+          @search="handlePermissionSearch"
+          @change="handleRequiredPermissionIdChange"
+        />
+      </a-form-item>
+
+      <a-form-item label="权限编码（派生，只读）" name="permission">
+        <a-input
+          :value="formData.permission"
+          disabled
+          placeholder="由已选权限主数据自动派生，不可手填"
           :maxlength="100"
           show-count
         />
@@ -155,11 +168,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, watch } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount, watch, computed } from 'vue'
 import type { FormInstance } from 'ant-design-vue'
 import type { Rule } from 'ant-design-vue/es/form'
 // 引入资源API
-import { getResourceTree, type ResourceItem, ResourceType } from '@/api/resource'
+import {
+  getResourceTree,
+  type ResourceItem,
+  ResourceType,
+} from '@/api/resource'
+import { getPermissionOptions, type PermissionOptionItem } from '@/api/permission'
 
 // 定义组件属性
 interface Props {
@@ -196,6 +214,7 @@ const formData = reactive({
   hidden: false,
   keepAlive: false,
   permission: '',
+  requiredPermissionId: undefined as number | undefined,
   type: ResourceType.API,
   parentId: null as number | null
 })
@@ -205,6 +224,17 @@ const submitting = ref(false)
 
 // 资源树数据
 const resourceTreeData = ref<ResourceItem[]>([])
+const permissionOptions = ref<PermissionOptionItem[]>([])
+const permissionKeyword = ref('')
+const permissionOptionMap = ref<Map<number, PermissionOptionItem>>(new Map())
+const permissionSearchTimer = ref<number | null>(null)
+
+const permissionSelectOptions = computed(() =>
+  permissionOptions.value.map((option) => ({
+    value: option.id,
+    label: `${option.permissionCode} (${option.permissionName || option.permissionCode})`,
+  })),
+)
 
 // 表单验证规则
 const rules: Record<string, Rule[]> = {
@@ -222,7 +252,10 @@ const rules: Record<string, Rule[]> = {
   sort: [
     { required: true, message: '请输入排序权重', trigger: 'blur' },
     { type: 'number', min: 0, max: 9999, message: '排序权重必须在 0-9999 之间', trigger: 'blur' }
-  ]
+  ],
+  requiredPermissionId: [
+    { required: true, message: '请选择权限主数据', trigger: 'change' },
+  ],
 }
 
 // 加载资源树数据
@@ -255,10 +288,70 @@ function resolveCarrierSuffix(node: ResourceItem) {
   return carrierKind ? ` [${carrierKind}]` : ''
 }
 
+async function loadPermissionOptions(keyword = '') {
+  permissionKeyword.value = keyword
+  try {
+    const options = await getPermissionOptions(keyword, 50)
+    permissionOptions.value = options || []
+    const mapping = new Map<number, PermissionOptionItem>()
+    permissionOptions.value.forEach((option) => {
+      mapping.set(option.id, option)
+    })
+    permissionOptionMap.value = mapping
+    ensureSelectedPermissionOptionExists()
+  } catch (error) {
+    console.error('加载权限主数据选项失败:', error)
+    permissionOptions.value = []
+    permissionOptionMap.value = new Map()
+  }
+}
+
+function ensureSelectedPermissionOptionExists() {
+  if (!formData.requiredPermissionId || !formData.permission) {
+    return
+  }
+  if (permissionOptionMap.value.has(formData.requiredPermissionId)) {
+    return
+  }
+  const fallbackOption: PermissionOptionItem = {
+    id: formData.requiredPermissionId,
+    permissionCode: formData.permission,
+    permissionName: formData.permission,
+  }
+  permissionOptions.value = [fallbackOption, ...permissionOptions.value]
+  const mapping = new Map<number, PermissionOptionItem>()
+  permissionOptions.value.forEach((option) => {
+    mapping.set(option.id, option)
+  })
+  permissionOptionMap.value = mapping
+}
+
+function handleRequiredPermissionIdChange(value?: number) {
+  if (!value) {
+    formData.permission = ''
+    return
+  }
+  const selectedOption = permissionOptionMap.value.get(value)
+  formData.permission = selectedOption?.permissionCode || ''
+}
+
+function handlePermissionSearch(keyword: string) {
+  if (permissionSearchTimer.value !== null) {
+    window.clearTimeout(permissionSearchTimer.value)
+  }
+  permissionSearchTimer.value = window.setTimeout(() => {
+    loadPermissionOptions(keyword)
+  }, 200)
+}
+
 // 初始化表单数据
 function initFormData() {
   if (props.resourceData) {
     Object.assign(formData, props.resourceData)
+    if (formData.requiredPermissionId && !formData.permission) {
+      handleRequiredPermissionIdChange(formData.requiredPermissionId)
+    }
+    ensureSelectedPermissionOptionExists()
   } else {
     // 重置表单数据
     Object.assign(formData, {
@@ -276,6 +369,7 @@ function initFormData() {
       hidden: false,
       keepAlive: false,
       permission: '',
+      requiredPermissionId: undefined,
       type: ResourceType.API,
       parentId: null
     })
@@ -310,6 +404,14 @@ watch(() => props.resourceData, () => {
 // 组件挂载时加载资源树
 onMounted(() => {
   loadResourceTree()
+  loadPermissionOptions()
+})
+
+onBeforeUnmount(() => {
+  if (permissionSearchTimer.value !== null) {
+    window.clearTimeout(permissionSearchTimer.value)
+    permissionSearchTimer.value = null
+  }
 })
 </script>
 

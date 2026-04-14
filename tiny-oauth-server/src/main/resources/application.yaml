@@ -270,16 +270,14 @@ management:
       show-details: when_authorized
 
 tiny:
-  # 平台租户：迁移期用该 code 的租户表示“平台”或模板来源，与 idempotent.ops.platform-tenant-code 建议一致
+  # 平台模板来源：仅 bootstrap / 历史入口兼容时显式配置；不再默认使用 default
   platform:
     tenant:
-      platform-tenant-code: default
       # 缺省 false：缺少 tenant_id IS NULL 平台模板时不要自动写库；开发见 application-dev.yaml
       auto-initialize-platform-template-if-missing: false
   idempotent:
     ops:
-      # 平台级幂等治理指标默认仅对该租户下的平台管理员开放
-      platform-tenant-code: default
+      # 历史治理入口如需显式绑定平台模板来源租户，可单独配置 platform-tenant-code；默认不再落 default
       # database: 写入分钟聚合表，适用于多实例；memory: 仅单实例内存窗口
       metrics-store: database
       # 治理页默认展示最近 60 分钟内的指标窗口，而不是进程启动以来的累计值

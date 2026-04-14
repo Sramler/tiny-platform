@@ -50,7 +50,7 @@ class IdempotentStarterCoverageTest {
         assertThat(properties.getHttpApi()).isNotNull();
         assertThat(properties.getHttpApi().isEnabled()).isFalse();
         assertThat(properties.getOps()).isNotNull();
-        assertThat(properties.getOps().getPlatformTenantCode()).isEqualTo("default");
+        assertThat(properties.getOps().getPlatformTenantCode()).isNull();
         assertThat(properties.getOps().getMetricsWindowMinutes()).isEqualTo(60);
         assertThat(properties.getOps().getMetricsStore()).isEqualTo("database");
         assertThat(properties.getOps().getMetricsRetentionDays()).isEqualTo(7);

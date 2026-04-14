@@ -29,7 +29,7 @@
 
 | 操作                            | 允许发起者                                                           | 影响范围                                                                                                                                                                                               | 基本约束                                                                                                                                  | 审计要点                                                                    |
 | ------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
-| 创建租户                        | 平台租户内具备租户管理权限的管理员（`@tenantManagementAccessGuard`） | 新建 `tenant` 记录、触发 `TenantBootstrapServiceImpl` 从平台模板派生角色/资源/菜单，并在同一事务中创建初始管理员用户、建立 `tenant_user` membership、赋 `ROLE_ADMIN`、初始化 `LOCAL/PASSWORD` 认证方法 | 禁止在普通业务租户内创建其他租户；必须通过平台租户控制面执行；需幂等保护（已有 `@Idempotent`）                                            | 记录 `createdTenantId`、初始管理员用户名/ID、发起人、plan、配额、来源 IP 等 |
+| 创建租户                        | 平台租户内具备租户管理权限的管理员（`@tenantManagementAccessGuard`） | 新建 `tenant` 记录、触发 `TenantBootstrapServiceImpl` 从平台模板派生角色/资源/菜单，并在同一事务中创建初始管理员用户、建立 `tenant_user` membership、赋 **`ROLE_TENANT_ADMIN`**、初始化 `LOCAL/PASSWORD` 认证方法 | 禁止在普通业务租户内创建其他租户；必须通过平台租户控制面执行；需幂等保护（已有 `@Idempotent`）                                            | 记录 `createdTenantId`、初始管理员用户名/ID、发起人、plan、配额、来源 IP 等 |
 | 更新租户（名称/域名/配额/plan） | 同上                                                                 | 更新 `tenant` 基本信息及配额字段                                                                                                                                                                       | 不得在业务 API 中直接修改租户配额，仅允许通过控制面；当前已对用户创建、头像上传、导出文件落盘执行第一阶段配额校验，剩余写链路后续继续补齐 | 记录变更前后 diff、发起人、时间点                                           |
 | 冻结租户（ACTIVE → FROZEN）     | 平台管理员                                                           | 限制该租户的登录、业务写入、调度/导出执行                                                                                                                                                              | - 登录入口应拒绝该租户的新会话创建；<br>- 业务写 API 必须 fail-closed；<br>- 调度/导出 job 可选暂停或仅允许查看历史                       | 记录冻结原因、发起人、影响模块、预计恢复时间（如有）                        |
 | 解冻租户（FROZEN → ACTIVE）     | 平台管理员                                                           | 恢复登录与业务写入能力                                                                                                                                                                                 | 仅在风险排查完成后执行；如涉及账单/合规，需要额外确认                                                                                     | 记录解冻原因、发起人、时间点                                                |
@@ -83,8 +83,7 @@
 
 迁移兼容层面仍保留：
 
-- `PlatformTenantProperties.platformTenantCode`
-- `PlatformTenantResolver`
+- `PlatformTenantProperties.platformTenantCode`（仅 bootstrap / 历史入口兼容口径）
 
 它们当前主要用于迁移期的平台租户识别和模板回填，不再应被视为平台语义本身。
 
@@ -99,7 +98,8 @@
 - **运行时读写现状**：
   - production runtime 主链已只读新模型，不再通过 `user_authentication_method` 做 fallback。
   - 密码创建/更新、TOTP 预绑/激活/解绑、MFA remind skip、认证验证记录、TOTP 锁定状态均已写入新模型。
-  - 平台态 bulk/read 已固定为 `PLATFORM > GLOBAL`；租户态保持 `TENANT > GLOBAL`。
+  - **读侧（CARD-13A 起）**：`UserAuthenticationMethodProfileService` 只查询与当前激活作用域一致的单个 `scope_key`，不再把 `GLOBAL` 作为平台/租户上下文下的第二段合并来源。平台登录只读 `scope_key=PLATFORM`；租户登录只读 `TENANT:{id}`；仅当会话显式为全局作用域时才读 `GLOBAL`。
+  - **历史口径**：迁移/桥接阶段曾文档化「`PLATFORM`/`TENANT` 优先、再合并 `GLOBAL`」的查询顺序；该合并逻辑已随 CARD-13A 从运行时移除，数据侧应在各 `scope_key` 上具备完整策略行。存量库若经 CARD-06 回填产生仅 `GLOBAL` 的策略行，须执行 Liquibase `135-duplicate-global-auth-scope-policy-card-13a`（或等价修复），并用 `tiny-oauth-server/scripts/verify-card-13a-global-auth-scope-policy-rollout.sh` 对账。
 - **旧表角色**：
   - `user_authentication_method` 仍保留，但当前只允许用于迁移、审计、历史对账；不再参与 production runtime 主链鉴权。
 

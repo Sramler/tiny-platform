@@ -481,3 +481,18 @@ databaseChangeLog:
   - include:
       file: 134-drop-user-authentication-method.yaml
       relativeToChangelogFile: true
+
+  # CARD-13A 数据收口：将 CARD-06 回填的 GLOBAL 策略复制到 TENANT:{id} 与 PLATFORM（避免读侧单 scope_key 断链）
+  - include:
+      file: 135-duplicate-global-auth-scope-policy-card-13a.yaml
+      relativeToChangelogFile: true
+
+  # CARD-13B：补全角色约束控制面 api_endpoint，避免集成测试/真实链路被统一守卫 fail-closed
+  - include:
+      file: 136-backfill-role-constraint-api-endpoints.yaml
+      relativeToChangelogFile: true
+
+  # CARD-13B 收口：136 历史基线仅 tenant_id=1；本变更按 tenant 表 + 平台模板 permission 全量补登记（幂等）
+  - include:
+      file: 137-backfill-role-constraint-api-endpoints-all-scopes.yaml
+      relativeToChangelogFile: true

@@ -1,0 +1,27 @@
+# 在 136（历史基线仅 tenant_id=1）之后：按「每个租户 + 平台模板」补全 /sys/role-constraints/* 的 api_endpoint 与 requirement（幂等）。
+databaseChangeLog:
+  - changeSet:
+      id: 137-backfill-role-constraint-api-endpoints-all-scopes
+      author: tiny
+      comment: 全租户与 PLATFORM 模板载体上的角色约束 api_endpoint 登记（CARD-13B 收口）
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: tenant
+            - tableExists:
+                tableName: api_endpoint
+            - tableExists:
+                tableName: permission
+            - tableExists:
+                tableName: api_endpoint_permission_requirement
+      changes:
+        - sqlFile:
+            path: 137-backfill-role-constraint-api-endpoints-all-scopes.sql
+            relativeToChangelogFile: true
+            splitStatements: true
+            endDelimiter: ;
+            stripComments: false

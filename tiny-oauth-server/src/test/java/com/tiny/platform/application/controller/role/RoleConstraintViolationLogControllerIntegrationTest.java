@@ -82,8 +82,8 @@ class RoleConstraintViolationLogControllerIntegrationTest {
         log = logRepository.save(log);
         logId = log.getId();
 
-        var principal = user("role-permission-assigner")
-            .authorities(new SimpleGrantedAuthority("system:role:permission:assign"));
+        var principal = user("role-constraint-violation-viewer")
+            .authorities(new SimpleGrantedAuthority("system:role:constraint:violation:view"));
 
         mockMvc.perform(get("/sys/role-constraints/violations")
                 .param("violationType", "MUTEX")
@@ -102,4 +102,3 @@ class RoleConstraintViolationLogControllerIntegrationTest {
             .andExpect(jsonPath("$.content[0].principalId", equalTo((int) uniquePrincipalId)));
     }
 }
-

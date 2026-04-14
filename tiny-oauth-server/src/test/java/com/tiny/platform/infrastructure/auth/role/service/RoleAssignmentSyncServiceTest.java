@@ -268,7 +268,7 @@ class RoleAssignmentSyncServiceTest {
     }
 
     @Test
-    void replaceUserTenantRoleAssignments_should_fail_and_not_delete_when_compat_roles_frozen() {
+    void replaceUserTenantRoleAssignments_should_fail_and_not_delete_when_grant_validation_rejects() {
         TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
         OrganizationUnitRepository organizationUnitRepository = mock(OrganizationUnitRepository.class);
         UserUnitRepository userUnitRepository = mock(UserUnitRepository.class);
@@ -288,7 +288,7 @@ class RoleAssignmentSyncServiceTest {
         when(tenantUserRepository.findByTenantIdAndUserId(1L, 5L)).thenReturn(Optional.empty());
         doThrow(new BusinessException(
             ErrorCode.RESOURCE_STATE_INVALID,
-            "兼容性角色已冻结（ROLE_SYSTEM_ADMIN / ROLE_TENANT_USER），不允许新增授权"
+            "角色约束校验失败"
         )).when(roleConstraintService).validateAssignmentsBeforeGrant(
             eq("USER"),
             eq(5L),
@@ -302,7 +302,7 @@ class RoleAssignmentSyncServiceTest {
                 service.replaceUserTenantRoleAssignments(5L, 1L, List.of(10L, 5L))
             )
             .isInstanceOf(BusinessException.class)
-            .hasMessageContaining("兼容性角色已冻结");
+            .hasMessageContaining("角色约束校验失败");
 
         // 核心验收点：失败时不会误删原有 role_assignment，也不会新增任何 assignment。
         verify(roleAssignmentRepository, never()).deleteUserAssignmentsInScope(5L, 1L, "TENANT", 1L);

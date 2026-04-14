@@ -27,11 +27,6 @@ public class ResourceRequestDto {
     private String uri;
     
     /**
-     * 权限标识
-     */
-    private String permission;
-    
-    /**
      * 显示标题
      */
     private String title;
@@ -92,14 +87,6 @@ public class ResourceRequestDto {
     
     public void setUri(String uri) {
         this.uri = uri;
-    }
-    
-    public String getPermission() {
-        return permission;
-    }
-    
-    public void setPermission(String permission) {
-        this.permission = permission;
     }
     
     public String getTitle() {

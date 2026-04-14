@@ -387,31 +387,19 @@ Long findRoleIdByCode(Connection connection, Long tenantId, String roleCode) thr
 }
 
 void ensureDefaultSchedulingBootstrapTemplate(Connection connection) throws SQLException {
-    Long defaultTenantId = findTenantIdByCode(connection, "default");
-    if (defaultTenantId == null) {
-        throw new IllegalStateException("默认租户 default 不存在，无法作为调度 E2E 权限模板来源");
+    String rawPlatformTenantCode = System.getenv("E2E_PLATFORM_TENANT_CODE");
+    if (rawPlatformTenantCode == null || rawPlatformTenantCode.isBlank()) {
+        throw new IllegalStateException("缺少 E2E_PLATFORM_TENANT_CODE：调度 E2E bootstrap 模板来源必须显式配置平台租户编码");
+    }
+    String platformTenantCode = rawPlatformTenantCode.trim().toLowerCase(Locale.ROOT);
+    Long platformTenantId = findTenantIdByCode(connection, platformTenantCode);
+    if (platformTenantId == null) {
+        throw new IllegalStateException("平台租户不存在: code=" + platformTenantCode + "；请先校准 E2E_PLATFORM_TENANT_CODE 或 seed 租户");
     }
 
-    Long adminRoleId = findRoleIdByCode(connection, defaultTenantId, "ROLE_TENANT_ADMIN");
+    Long adminRoleId = findRoleIdByCode(connection, platformTenantId, "ROLE_TENANT_ADMIN");
     if (adminRoleId == null) {
-        // 兼容历史库：旧模板仍可能使用 ROLE_ADMIN。
-        adminRoleId = findRoleIdByCode(connection, defaultTenantId, "ROLE_ADMIN");
-    }
-    if (adminRoleId == null) {
-        try (PreparedStatement ps = connection.prepareStatement(
-                "INSERT INTO role (tenant_id, code, name, description, builtin, enabled) VALUES (?, 'ROLE_TENANT_ADMIN', '系统管理员', 'real e2e default scheduling bootstrap role', true, true)",
-                Statement.RETURN_GENERATED_KEYS)) {
-            ps.setLong(1, defaultTenantId);
-            ps.executeUpdate();
-            try (ResultSet rs = ps.getGeneratedKeys()) {
-                if (rs.next()) {
-                    adminRoleId = rs.getLong(1);
-                }
-            }
-        }
-    }
-    if (adminRoleId == null) {
-        throw new IllegalStateException("默认租户缺少 ROLE_TENANT_ADMIN / ROLE_ADMIN，且自动补建失败");
+        throw new IllegalStateException("平台模板租户缺少 ROLE_TENANT_ADMIN: tenantCode=" + platformTenantCode + "；请先补齐模板角色后再执行脚本");
     }
 
     String[][] requiredAuthorities = new String[][] {
@@ -426,12 +414,12 @@ void ensureDefaultSchedulingBootstrapTemplate(Connection connection) throws SQLE
     for (String[] authority : requiredAuthorities) {
         Long permissionId = ensurePermission(
                 connection,
-                defaultTenantId,
+                platformTenantId,
                 authority[0],
                 authority[1],
                 authority[2],
                 "real e2e default scheduling bootstrap authority");
-        ensureRolePermissionBinding(connection, defaultTenantId, adminRoleId, permissionId);
+        ensureRolePermissionBinding(connection, platformTenantId, adminRoleId, permissionId);
     }
 
     boolean wildcardBound = false;
@@ -447,17 +435,17 @@ void ensureDefaultSchedulingBootstrapTemplate(Connection connection) throws SQLE
               AND p.permission_code = 'scheduling:*'
             LIMIT 1
             """)) {
-        ps.setLong(1, defaultTenantId);
+        ps.setLong(1, platformTenantId);
         ps.setLong(2, adminRoleId);
         try (ResultSet rs = ps.executeQuery()) {
             wildcardBound = rs.next();
         }
     }
     if (!wildcardBound) {
-        throw new IllegalStateException("默认租户 ROLE_TENANT_ADMIN 未绑定 scheduling:*，调度 E2E 权限模板不完整");
+        throw new IllegalStateException("平台模板租户 ROLE_TENANT_ADMIN 未绑定 scheduling:*，调度 E2E 权限模板不完整");
     }
 
-    System.out.println("Ensured default scheduling bootstrap template: tenant=default");
+    System.out.println("Ensured scheduling bootstrap template: tenant=" + platformTenantCode);
 }
 
 void ensureRolePermissionBinding(Connection connection, Long tenantId, Long roleId, Long permissionId) throws SQLException {

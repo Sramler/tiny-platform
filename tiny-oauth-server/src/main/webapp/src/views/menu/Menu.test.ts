@@ -36,11 +36,30 @@ vi.mock('@/auth/auth', () => ({
     getAccessToken: vi.fn(),
     fetchWithAuth: vi.fn(),
   }),
+  initPromise: Promise.resolve(),
 }))
 
 vi.mock('@/api/resource', () => ({
   getRuntimeUiActions: apiMocks.getRuntimeUiActions,
 }))
+
+vi.mock('@/utils/logger', () => {
+  const logger = {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    log: vi.fn(),
+    group: vi.fn(),
+    groupEnd: vi.fn(),
+    table: vi.fn(),
+  }
+  return {
+    logger,
+    persistentLogger: logger,
+    default: logger,
+  }
+})
 
 const PassThrough = defineComponent({
   template: '<div><slot /></div>',
@@ -110,6 +129,9 @@ describe('Menu.vue', () => {
 
     expect(wrapper.text()).toContain('菜单列表')
     expect(apiMocks.menuList).toHaveBeenCalled()
+    const firstCallParams = apiMocks.menuList.mock.calls[0]?.[0] as Record<string, unknown>
+    expect(firstCallParams).toBeTruthy()
+    expect(firstCallParams).not.toHaveProperty('permission')
   })
 
   it('should refetch menu list when active scope changes', async () => {

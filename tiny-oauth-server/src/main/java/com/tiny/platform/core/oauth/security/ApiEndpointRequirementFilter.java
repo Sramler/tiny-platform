@@ -19,7 +19,7 @@ import java.io.IOException;
  * <p>Behavior:
  * - Only enforces for requests that match an enabled api_endpoint by exact method+uri within current tenant scope.
  * - When matched, require api_endpoint_permission_requirement to be present and satisfied (including permission.enabled).
- * - When not registered, keep legacy behavior (do not block).
+ * - When request is unregistered or ambiguous, fail-closed.
  */
 public class ApiEndpointRequirementFilter extends OncePerRequestFilter {
 
@@ -66,10 +66,10 @@ public class ApiEndpointRequirementFilter extends OncePerRequestFilter {
         ApiEndpointRequirementDecision decision =
             resourceService.evaluateApiEndpointRequirement(request.getMethod(), request.getRequestURI());
 
-        if (decision == ApiEndpointRequirementDecision.DENIED) {
-            response.sendError(HttpServletResponse.SC_FORBIDDEN, "api_endpoint requirement denied");
+        if (decision == ApiEndpointRequirementDecision.ALLOWED) {
+            filterChain.doFilter(request, response);
             return;
         }
-        filterChain.doFilter(request, response);
+        response.sendError(HttpServletResponse.SC_FORBIDDEN, "api_endpoint requirement denied");
     }
 }

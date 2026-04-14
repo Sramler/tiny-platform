@@ -64,7 +64,7 @@ public class SecurityUser implements UserDetails {
     /**
      * 构造函数，基于数据库中查询出的 User 实体构建出安全框架使用的对象。
      * 这样可以避免将 User 实体（含懒加载字段）直接放入 Session。
-     * 注意：User 表的 password 字段已废弃，实际密码在 user_authentication_method 表中。
+     * 注意：User 表的 password 字段已废弃，实际密码由认证凭证模型承载。
      */
     public SecurityUser(User user) {
         this(user, "");
@@ -72,7 +72,7 @@ public class SecurityUser implements UserDetails {
 
     /**
      * 构造函数，基于数据库中查询出的 User 实体和自定义密码构建出安全框架使用的对象。
-     * 用于从 user_authentication_method 表获取密码的场景。
+     * 用于认证链已显式解析出密码凭证的场景。
      */
     public SecurityUser(User user, String password) {
         this(user, password, resolveActiveTenantId(user), Set.of());
@@ -95,7 +95,7 @@ public class SecurityUser implements UserDetails {
                         Long activeTenantId,
                         Collection<? extends GrantedAuthority> authorities,
                         String permissionsVersion) {
-        this(user, password, activeTenantId, authorities, extractRoleCodesFromAuthorities(authorities), permissionsVersion);
+        this(user, password, activeTenantId, authorities, Set.of(), permissionsVersion);
     }
 
     public SecurityUser(User user,
@@ -143,7 +143,7 @@ public class SecurityUser implements UserDetails {
                 username,
                 password,
                 authorities,
-                extractRoleCodesFromAuthorities(authorities),
+                Set.of(),
                 accountNonExpired,
                 accountNonLocked,
                 credentialsNonExpired,
@@ -169,7 +169,7 @@ public class SecurityUser implements UserDetails {
                 username,
                 password,
                 authorities,
-                extractRoleCodesFromAuthorities(authorities),
+                Set.of(),
                 accountNonExpired,
                 accountNonLocked,
                 credentialsNonExpired,
@@ -231,14 +231,11 @@ public class SecurityUser implements UserDetails {
     }
 
     /**
-     * 构建 authority 列表：仅使用 role.code，不使用 role.name。
-     * 历史 role.resources 授权聚合已迁移到 SecurityUserAuthorityService（role_permission 主链路）。
+     * 构建 authority 列表：运行时 authority 以 permission 风格为主，不再把 role.code 注入一般 authorities。
+     * 显式角色码请通过 {@link #getRoleCodes()} 供少量合法消费者读取。
      */
     private static Collection<? extends GrantedAuthority> buildAuthorities(Set<Role> roles) {
-        Set<Role> effectiveRoles = roles != null ? roles : Set.of();
-        return effectiveRoles.stream()
-                .flatMap(role -> authorityStream(role.getCode()))
-                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        return java.util.List.of();
     }
 
     public static Collection<? extends GrantedAuthority> buildAuthoritiesFromRoles(Set<Role> roles) {
@@ -271,23 +268,6 @@ public class SecurityUser implements UserDetails {
         if (!normalized.isEmpty()) {
             values.add(normalized);
         }
-    }
-
-    private static Set<String> extractRoleCodesFromAuthorities(Collection<? extends GrantedAuthority> authorities) {
-        if (authorities == null) {
-            return Set.of();
-        }
-        LinkedHashSet<String> values = new LinkedHashSet<>();
-        for (GrantedAuthority authority : authorities) {
-            if (authority == null || authority.getAuthority() == null) {
-                continue;
-            }
-            String code = authority.getAuthority().trim();
-            if (code.startsWith("ROLE_")) {
-                values.add(code);
-            }
-        }
-        return Set.copyOf(values);
     }
 
     /**

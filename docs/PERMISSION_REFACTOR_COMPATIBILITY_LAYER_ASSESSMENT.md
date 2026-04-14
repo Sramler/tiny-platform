@@ -1,7 +1,7 @@
 # Permission Refactor Compatibility Layer Assessment
 
 > Status: archived compatibility assessment snapshot / historical evidence only.  
-> This file records a phase-by-phase compatibility review context and must not be used as the current runtime truth source. Current runtime truth is defined by `docs/TINY_PLATFORM_AUTHORIZATION_MODEL.md` and `docs/TINY_PLATFORM_PERMISSION_REFACTOR_FINAL_APPROVAL.md`.
+> This file records a phase-by-phase compatibility review context and must not be used as the current runtime truth source. Current runtime truth and closure should be checked in `docs/TINY_PLATFORM_AUTHORIZATION_DOC_MAP.md`, `docs/TINY_PLATFORM_AUTHORIZATION_MODEL.md`, `docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md`, and `docs/TINY_PLATFORM_PERMISSION_REFACTOR_FINAL_APPROVAL.md`.
 
 ## Scope
 
@@ -16,6 +16,8 @@
 
 ## Historical Compatibility Inventory (Archived Snapshot)
 
+> Reading note: all `ACTIVE / REMOVED / CLOSED / Level A/B/... / READY / NOT_NOW` labels below are point-in-time assessment results from the review window when this file was written. They preserve historical evidence, but they do not by themselves prove today's runtime closure or current removal priority.
+
 | compat_id | code_location | compat_type | description | current_usage | protected_by | note |
 | --- | --- | --- | --- | --- | --- | --- |
 | COMPAT-001 | `SecurityUserAuthorityService.chooseCandidatePermissionCodeSet()` | OLD_AUTHORITY_FALLBACK | new path not covering old set then fallback to old set | ACTIVE | ORG未全量、灰度兼容策略 | 主兼容分支 |
@@ -23,8 +25,8 @@
 | COMPAT-003 | `UserDetailsServiceImpl.resolveAuthorities()` | TEMPORARY_GRAY_COMPAT | authority service not injected then fallback to `SecurityUser.buildAuthoritiesFromRoles` | REMOVED | 已完成二次试删验证 | 删除后 guard/smoke/e2e/runtime 全 PASS |
 | COMPAT-004 | `PermissionVersionService.buildOldPermissionInput()` | OLD_PERMISSION_VERSION_INPUT | keep old permission input in fingerprint to avoid under-refresh | ACTIVE | 不漏刷策略、灰度兼容 | 版本口径兼容项 |
 | COMPAT-005 | `PermissionVersionService.resolveVersionChangeReasons()` | TEMPORARY_GRAY_COMPAT | old/new/hierarchy parallel reasons in one phase | REMOVED | 已完成单点试删并保留 | `PERMISSION_MASTER_CHANGED` 并行 reason 已收缩 |
-| COMPAT-006 | `ResourceRepository.findGrantedResourcesByUsernameAndTenantId*` | MENU_OLD_PATH | tenant menu still granted by `role_resource` + legacy permission model | MENU_ONLY | 菜单链路 | Level A |
-| COMPAT-007 | `ResourceRepository.findGrantedPlatformResourcesByUsername*` | MENU_OLD_PATH | platform menu still granted by platform role_resource chain | MENU_ONLY | 菜单链路 | Level A |
+| COMPAT-006 | `ResourceRepository.findGrantedResourcesByUsernameAndTenantId*` | MENU_OLD_PATH | historical tenant menu grant query seam (`role_resource` + legacy permission model); retained here only as archived evidence | MENU_ONLY | 菜单链路 | Level A |
+| COMPAT-007 | `ResourceRepository.findGrantedPlatformResourcesByUsername*` | MENU_OLD_PATH | historical platform menu grant query seam; retained here only as archived evidence | MENU_ONLY | 菜单链路 | Level A |
 | COMPAT-008 | `MenuServiceImpl.findTreeMenusForCurrentUser()` | MENU_OLD_PATH | menu tree uses repository old grant queries | MENU_ONLY | 菜单链路、DEPT后置 | Level A |
 | COMPAT-009 | `PermissionRefactorObservabilityProperties` related switches | TEMPORARY_GRAY_COMPAT | gray-window/sample switches for compatibility observation | ACTIVE | 灰度策略 | 不是主逻辑兼容但属阶段性 |
 | COMPAT-010 | `ActiveTenantResponseSupport.resolveSignalSourceFromRequestContext()` default | SCOPE_COMPAT | default signal source fallback for no-header requests | ACTIVE | 历史日志兼容 | 统计口径兼容项 |
@@ -106,6 +108,8 @@
 - runtime strict breakdown remained `rows=0`; no new compat runtime dependency observed.
 
 ## Dependency Matrix
+
+> Table note: the matrices below continue the same archived assessment window. If a row here differs from current code or current task status, prefer `AUTHORIZATION_TASK_LIST` for completion and `AUTHORIZATION_MODEL` / `FINAL_APPROVAL` for current runtime interpretation.
 
 | compat_id | runtime_dependency | test_dependency | menu_dependency | scope_dependency | data_dependency |
 | --- | --- | --- | --- | --- | --- |

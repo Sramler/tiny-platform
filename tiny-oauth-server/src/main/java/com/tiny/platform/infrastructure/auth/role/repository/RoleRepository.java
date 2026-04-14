@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
@@ -152,4 +153,24 @@ public interface RoleRepository extends JpaRepository<Role, Long>, JpaSpecificat
         ORDER BY ro.id ASC, c.id ASC
         """, nativeQuery = true)
     List<RoleResourceRelationProjection> findGrantedRoleCarrierPairsForPlatformTemplate();
+
+    @Query(value = """
+        SELECT
+          p.id AS id,
+          p.permission_code AS permissionCode,
+          p.permission_name AS permissionName
+        FROM permission p
+        WHERE p.normalized_tenant_id = IFNULL(:tenantId, 0)
+          AND p.enabled = 1
+          AND (
+            :keyword IS NULL
+            OR :keyword = ''
+            OR LOWER(p.permission_code) LIKE CONCAT('%', LOWER(:keyword), '%')
+            OR LOWER(p.permission_name) LIKE CONCAT('%', LOWER(:keyword), '%')
+          )
+        ORDER BY p.permission_code ASC
+        """, nativeQuery = true)
+    List<PermissionOptionProjection> findPermissionOptionsByTenantIdAndKeyword(@Param("tenantId") Long tenantId,
+                                                                                @Param("keyword") String keyword,
+                                                                                Pageable pageable);
 }

@@ -37,6 +37,8 @@
 
 当前“做到了哪一步、下一步先做什么”的判断，应以 [TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md](./TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md) 为准；本文件不再独立维护逐项执行口径。
 
+> **（CARD-14E）** 涉及认证读链、`scope_key`、历史上「`PLATFORM`/`TENANT` 与 `GLOBAL` 的合并读序」、`default` / `platformTenantCode` 是否表达平台语义：若下文某节未逐句标注「历史/桥接期」，**当前运行态**以 [TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md](./TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md)、[TINY_PLATFORM_TESTING_PLAYBOOK.md](./TINY_PLATFORM_TESTING_PLAYBOOK.md) §1.7、[TINY_PLATFORM_TENANT_GOVERNANCE.md](./TINY_PLATFORM_TENANT_GOVERNANCE.md) §3.1 为准（**CARD-13A** 起只读**单** active `scope_key`；平台主语义 **`PLATFORM` scope**；active 工具链不隐式 `default`，见 **CARD-13E**）。
+
 ---
 
 ## 2. 为什么现在补文档和 `.agent` 规则是合理的
@@ -93,11 +95,11 @@
 
 - **membership + role_assignment 主链已落地**
 - **权限主数据以 `permission` 为表级真相源；角色绑定以 `role_permission` 为关系真相源**
-- **carrier split 已落地到当前态**：`menu / ui_action / api_endpoint` 表、`required_permission_id` 显式绑定、`*_permission_requirement` 与管理面主要读链已就绪；`resource` 兼容表已退场
+- **carrier split 已落地到当前态**：`menu / ui_action / api_endpoint` 表、`required_permission_id` 显式绑定、`*_permission_requirement` 与管理面主要读链已就绪；`resource` 兼容表已退场，但 `/sys/resources` 与 `Resource` 兼容聚合 facade 仍在运行态承接控制面
 - **requirement 层已落地最小语义**：三张 `*_permission_requirement` 表 + compatibility group 回填 + `AND/OR/negated` evaluator；当前菜单运行时已消费 requirement
 - **RBAC3 / 组织部门 / 数据范围 / 审计基座已进入运行态**
 
-**主授权关系（permission 重构收口后）**：角色到可授权能力的关系以 **`role_permission → permission`** 为关系表真相源；菜单/接口/按钮等载体通过 **`menu / ui_action / api_endpoint.required_permission_id`** 与 `*_permission_requirement` 进行显式绑定。`resource.required_permission_id` / `resource.permission` 仅应视为历史迁移阶段名词，不再代表当前数据库表结构。遗留表 **`role_resource` 已由 Liquibase 117 删除**、兼容总表 **`resource` 已由 Liquibase 131 删除**；迁移与验证见 [PERMISSION_REFACTOR_LIQUIBASE_117_RUNBOOK.md](./PERMISSION_REFACTOR_LIQUIBASE_117_RUNBOOK.md) 与 [TINY_PLATFORM_RESOURCE_RETIREMENT_PLAN.md](./TINY_PLATFORM_RESOURCE_RETIREMENT_PLAN.md)。
+**主授权关系（permission 重构收口后）**：角色到可授权能力的关系以 **`role_permission → permission`** 为关系表真相源；菜单/接口/按钮等载体通过 **`menu / ui_action / api_endpoint.required_permission_id`** 与 `*_permission_requirement` 进行显式绑定。`resource.required_permission_id` / `resource.permission` 仅应视为历史迁移阶段名词，不再代表当前数据库表结构；但 `/sys/resources` compatibility facade 当前仍复用这些字段名做 carrier 聚合与控制面 DTO 语义。遗留表 **`role_resource` 已由 Liquibase 117 删除**、兼容总表 **`resource` 已由 Liquibase 131 删除**；迁移与验证见 [PERMISSION_REFACTOR_LIQUIBASE_117_RUNBOOK.md](./PERMISSION_REFACTOR_LIQUIBASE_117_RUNBOOK.md) 与 [TINY_PLATFORM_RESOURCE_RETIREMENT_PLAN.md](./TINY_PLATFORM_RESOURCE_RETIREMENT_PLAN.md)。
 
 历史叙述（表仍存在时的结构示意）：
 
@@ -108,15 +110,16 @@ user
   -> role_hierarchy(optional expansion)
   -> role
   -> role_resource   -- 已废止：由 role_permission 替代，117 后表删除
-  -> resource.permission
+  -> legacy resource permission string
 ```
 
 其中，用户列表与资源列表已开始叠加 `role_data_scope` 的模块级解析结果。
 
 当前 `SecurityUser` / JWT / Session 的授权契约是（09C3/09C4 后）：
 
-- 新签发 `authorities` 以 permission/factor/scope 为主，不再把 `role.code` 作为主链 authority 输出
+- 新签发 `authorities` 以 permission/factor/scope 为主，不再把 `role.code` 作为**新签发 token**的主链 authority 输出
 - `roleCodes` 作为显式字段保留，仅供少量合法角色码消费者（如 workflow bridge）
+- （更新：CARD-15B 已完成）`SecurityUser.buildAuthorities(...)` 已不再在 Session carrier 中保留 `role.code` authorities；`JwtTokenCustomizer.resolveRoleCodes(...)` 也只接受显式 `roleCodes`
 - 不再把 `role.name` 放入 authority / JWT / Session
 - claims 已包含 `permissions`、`roleCodes`、`activeTenantId`、`activeScopeType`、`permissionsVersion`
 
@@ -137,7 +140,7 @@ user
 | `role_assignment` | 已实现并作为运行态授权主来源 |
 | `role_hierarchy` / `role_mutex` / `role_prerequisite` / `role_cardinality` | 已实现，含控制面与 enforce/dry-run |
 | `role_data_scope` / `role_data_scope_item` | 已实现 |
-| 角色-权限关系 | 已有 `role_permission`；主授权关系为 `role_permission → permission`（permission_code 与 `resource.permission` 对齐）；运行态权限由 `role_permission → permission` 计算 |
+| 角色-权限关系 | 已有 `role_permission`；主授权关系为 `role_permission → permission`（`permission_code` 与历史 `resource` 权限字符串命名口径对齐）；运行态权限由 `role_permission → permission` 计算 |
 | 权限码规范 | 已有专门规范文档与迁移收口 |
 | 控制面 RBAC | 菜单、资源、用户、角色、租户、组织、数据范围、审计、RBAC3 页面均已接入 Guard |
 | 平台入口隔离 | 已用 `TenantContext.isPlatformScope()` 收口大部分平台控制面 |
@@ -156,7 +159,7 @@ user
 
 | 项 | 改进方向 |
 | --- | --- |
-| 平台模板与默认租户回退 | 继续从 `default` 模板回退演进为“平台模板 + 租户派生” |
+| 平台模板与历史租户回填 | **当前态**：新租户与 carrier 派生以 `tenant_id IS NULL` 平台模板为主链；仅历史缺模板环境可按**显式**配置的 `platform-tenant-code` 做一次回填（CARD-13C），不再把 `default` 当作隐式入口；real-link 须显式 `E2E_PLATFORM_TENANT_CODE`（CARD-13E） |
 | JWT / Session 最小契约 | 长期逐步缩到 `permissions` 为主，减少对 `role.code` 的兼容依赖 |
 | 数据范围接入面 | 在 `user` / `resource` / `menu` / `org` / `scheduling` / `export` 基础上继续扩展到更多核心业务查询 |
 | 组织/部门 scope | 在更多运行态授权与查询场景真正消费 `scope_type/scope_id` |
@@ -228,9 +231,9 @@ user
 
 说明：
 
-1. `permission.permission_code` 的命名口径直接复用 `resource.permission`（由 resource.permission 抽取并同步初始化）。
+1. `permission.permission_code` 的命名口径直接复用历史 `resource` 权限字符串字段（由旧字段抽取并同步初始化）。
 2. 运行态权限的主判定链路为：`role_permission → permission`，并以 `permission_code` 作为 authority 的能力标识。
-3. `resource.permission` 仍作为兼容字段保留，用于最小风险迁移与初始化映射；但不再是“计算真相源”的唯一入口。
+3. 旧 `resource` 权限字符串字段仍作为兼容字段保留，用于最小风险迁移与初始化映射；但不再是“计算真相源”的唯一入口。
 
 结论：本项目当前阶段应以 `permission / role_permission` 作为运行态权限主链路表述口径。
 
@@ -267,7 +270,7 @@ user
 
 - `scope_type=PLATFORM` 必须作为正式作用域进入授权模型；
 - 平台级角色、平台级授权、平台级控制面不再以“默认租户就是平台”作为逻辑语义；
-- 当前 `default` 租户只允许在迁移期继续作为初始化模板或兼容承载，不得继续作为平台语义本身。
+- **（历史）** 曾允许业务租户行（含 `code=default`）承担初始化/模板数据承载。**（当前态）** 运行态平台身份不得以「默认租户即平台」判定；须以 `activeScopeType=PLATFORM` 与显式平台模板载体为准；`platformTenantCode` 仅作 **bootstrap / 历史缺模板** 显式配置边界（见任务清单 CARD-13C/E、`TINY_PLATFORM_TENANT_GOVERNANCE.md`），**不是**请求路径上的平台语义来源。
 - 平台级角色模板和资源模板可继续与租户级模板共表存储，但必须通过独立字段区分模板层级，例如：
   - `role_level`
   - `resource_level`
@@ -521,9 +524,9 @@ user
      - `role_assignment_id`
      - `permission_code`
 
-6. **控制面剩余 RBAC 收口时间点**
-   - 当前 `RoleController` / `ResourceController` 仍未完全纳入新收口标准；
-   - 必须在第一阶段主交付内补齐，而不是拖到后续 Scope/Data Scope 阶段。
+6. **控制面 RBAC 收口剩余例外点**
+   - `RoleController` 与 `ResourceController` 的管理型接口已纳入显式 `@PreAuthorize` / AccessGuard，不能再笼统表述为“整组 controller 未收口”；
+   - 若继续评估剩余收口，应聚焦 `ResourceController` 的运行时自省接口（如 `/runtime/ui-actions`、`/runtime/api-access`）这类 `isAuthenticated()` 自服务端点，以及是否需要进一步拆分证据等级。
 
 7. **平台模板派生的生命周期**
    - 平台模板更新后，已有租户副本是否跟随同步；
@@ -536,7 +539,7 @@ user
 
 1. **不建议重新引入第二套权限目录真相源**
    - `permission` 表已经是当前运行态真相源；
-   - 后续不应再把 `resource.permission`、menu 字符串或 API 元数据重新做成并行权限目录。
+   - 后续不应再把历史 `resource` 权限字符串、menu 字符串或 API 元数据重新做成并行权限目录。
 
 2. **不建议把 `DENY` 作为第一阶段必做能力**
    - 先把 ALLOW-only 的功能权限、Data Scope 和授权关系模型做稳。
@@ -563,7 +566,7 @@ user
 应完成：
 
 1. 控制面剩余模块的 RBAC 补齐；
-2. `resource.permission` 规范码继续统一；
+2. 历史 `resource` 权限字符串与 `permission_code` 的命名口径继续统一；
 3. 平台级入口、租户级入口、普通用户入口分离；
 4. 统一“权限来源于角色+资源”的口径。
 
@@ -715,6 +718,8 @@ user
 
 ## 10. 当前项目的结论
 
+> **（CARD-14E）** 本章为**模型层结论快照**；逐项是否“已/未”完成以实现为准，见 [TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md](./TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md)。
+
 ### 10.1 已经完成的部分
 
 - 权限码规范已统一到 `permission` / 规范权限码体系；
@@ -726,10 +731,10 @@ user
 
 ### 10.2 尚未完成的部分
 
-- 平台模板与 `default` 回退语义仍未完全拆离
+- **（CARD-14E 口径）** 运行态已与「`default` 租户即平台语义」拆离（任务清单 CARD-11C/13C/E 等）；剩余主要是 **平台模板治理**（副本差异审计、回退/同步产品策略），**不是**把 `default`/租户 code 恢复为平台身份判定。
 - ORG/DEPT scope 的运行态消费还没有覆盖到所有核心业务
 - `@DataScope` 已接入 `user` / `resource` / `menu` / `org` / `scheduling` / `export`，但尚未覆盖更多业务查询
-- JWT / Session 仍保留 `role.code` 兼容 authority
+- **（历史表述，已过时）** 本文曾写 “JWT / Session 仍保留 `role.code` 兼容 authority”。**（当前态）** 新签发契约已收缩（任务清单 09C3/09C4、CARD-11D）；解码边界以任务清单与 `TINY_PLATFORM_SESSION_BEARER_AUTH_MATRIX.md` 为准。
 - **角色/资源模板层级**：`role` 表、`resource` 表的 `role_level`、`resource_level` 字段已落地，平台 scope 下的角色/资源管理已切到 `tenant_id IS NULL` 模板行；`/sys/tenants/platform-template/initialize` 已补显式初始化/回填入口；`TenantBootstrapServiceImpl` 已补平台模板快照合法性校验与“目标租户存在副本时拒绝重复派生”保护。剩余缺口主要是副本差异审计、回退与同步策略。
 
 ### 10.3 最需要改进的部分

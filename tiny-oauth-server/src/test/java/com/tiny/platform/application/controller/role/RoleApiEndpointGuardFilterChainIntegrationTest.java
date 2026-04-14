@@ -8,10 +8,9 @@ import com.tiny.platform.infrastructure.auth.resource.domain.ApiEndpointEntry;
 import com.tiny.platform.infrastructure.auth.resource.repository.ApiEndpointEntryRepository;
 import com.tiny.platform.infrastructure.auth.resource.repository.ApiEndpointPermissionRequirementRepository;
 import com.tiny.platform.infrastructure.auth.resource.repository.CarrierPermissionRequirementRow;
-import com.tiny.platform.infrastructure.auth.resource.repository.ResourceRepository;
 import com.tiny.platform.infrastructure.auth.resource.repository.UiActionEntryRepository;
 import com.tiny.platform.infrastructure.auth.resource.service.CarrierPermissionRequirementEvaluator;
-import com.tiny.platform.infrastructure.auth.resource.service.CarrierCompatibilitySafetyService;
+import com.tiny.platform.infrastructure.auth.resource.service.CarrierPermissionReferenceSafetyService;
 import com.tiny.platform.infrastructure.auth.resource.service.ResourcePermissionBindingService;
 import com.tiny.platform.infrastructure.auth.resource.service.ResourceService;
 import com.tiny.platform.infrastructure.auth.resource.service.ResourceServiceImpl;
@@ -187,7 +186,6 @@ class RoleApiEndpointGuardFilterChainIntegrationTest {
         public ResourceService resourceService(ApiEndpointEntryRepository apiEndpointEntryRepository,
                                                ApiEndpointPermissionRequirementRepository apiEndpointPermissionRequirementRepository,
                                                AuthorizationAuditService authorizationAuditService) {
-            ResourceRepository resourceRepository = Mockito.mock(ResourceRepository.class);
             RoleRepository roleRepository = Mockito.mock(RoleRepository.class);
             EffectiveRoleResolutionService effectiveRoleResolutionService = Mockito.mock(EffectiveRoleResolutionService.class);
             TenantUserRepository tenantUserRepository = Mockito.mock(TenantUserRepository.class);
@@ -195,7 +193,7 @@ class RoleApiEndpointGuardFilterChainIntegrationTest {
             MenuEntryRepository menuEntryRepository = Mockito.mock(MenuEntryRepository.class);
             UiActionEntryRepository uiActionEntryRepository = Mockito.mock(UiActionEntryRepository.class);
             ResourcePermissionBindingService resourcePermissionBindingService = Mockito.mock(ResourcePermissionBindingService.class);
-            CarrierCompatibilitySafetyService carrierCompatibilitySafetyService = Mockito.mock(CarrierCompatibilitySafetyService.class);
+            CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = Mockito.mock(CarrierPermissionReferenceSafetyService.class);
 
             CarrierPermissionRequirementEvaluator evaluator = new CarrierPermissionRequirementEvaluator(
                 Mockito.mock(MenuPermissionRequirementRepository.class),
@@ -204,7 +202,6 @@ class RoleApiEndpointGuardFilterChainIntegrationTest {
             );
 
             return new ResourceServiceImpl(
-                resourceRepository,
                 roleRepository,
                 effectiveRoleResolutionService,
                 tenantUserRepository,
@@ -213,7 +210,7 @@ class RoleApiEndpointGuardFilterChainIntegrationTest {
                 uiActionEntryRepository,
                 apiEndpointEntryRepository,
                 resourcePermissionBindingService,
-                carrierCompatibilitySafetyService,
+                carrierPermissionReferenceSafetyService,
                 evaluator,
                 authorizationAuditService
             );

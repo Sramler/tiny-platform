@@ -6,17 +6,12 @@ import com.tiny.platform.infrastructure.auth.role.dto.RoleCreateUpdateDto;
 import com.tiny.platform.infrastructure.auth.role.dto.RoleRequestDto;
 import com.tiny.platform.infrastructure.auth.role.dto.RoleResponseDto;
 import com.tiny.platform.infrastructure.auth.role.repository.RoleRepository;
-import com.tiny.platform.infrastructure.auth.resource.repository.CarrierProjectionRepository;
-import com.tiny.platform.infrastructure.auth.resource.repository.RoleResourcePermissionBindingView;
 import com.tiny.platform.infrastructure.auth.user.repository.TenantUserRepository;
-import com.tiny.platform.infrastructure.core.exception.code.ErrorCode;
-import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
 import org.springframework.beans.BeanUtils;
 import org.springframework.data.domain.*;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -28,20 +23,17 @@ public class RoleServiceImpl implements RoleService {
     private static final String ROLE_LEVEL_PLATFORM = "PLATFORM";
     private static final String ROLE_LEVEL_TENANT = "TENANT";
     private final RoleRepository roleRepository;
-    private final CarrierProjectionRepository carrierProjectionRepository;
     private final TenantUserRepository tenantUserRepository;
     private final RoleAssignmentSyncService roleAssignmentSyncService;
     private final EffectiveRoleResolutionService effectiveRoleResolutionService;
     private final RoleConstraintService roleConstraintService;
 
     public RoleServiceImpl(RoleRepository roleRepository,
-                           CarrierProjectionRepository carrierProjectionRepository,
                            TenantUserRepository tenantUserRepository,
                            RoleAssignmentSyncService roleAssignmentSyncService,
                            EffectiveRoleResolutionService effectiveRoleResolutionService,
                            RoleConstraintService roleConstraintService) {
         this.roleRepository = roleRepository;
-        this.carrierProjectionRepository = carrierProjectionRepository;
         this.tenantUserRepository = tenantUserRepository;
         this.roleAssignmentSyncService = roleAssignmentSyncService;
         this.effectiveRoleResolutionService = effectiveRoleResolutionService;
@@ -167,12 +159,6 @@ public class RoleServiceImpl implements RoleService {
 
     @Override
     @Transactional
-    public void updateRoleResources(Long roleId, List<Long> resourceIds) {
-        updateRolePermissions(roleId, new ArrayList<>(resolvePermissionIdsFromResourceIds(resourceIds)));
-    }
-
-    @Override
-    @Transactional
     public void updateRolePermissions(Long roleId, List<Long> permissionIds) {
         Long tenantId = currentManagedTenantId();
         Optional<Role> roleOpt = findManagedRole(roleId);
@@ -247,54 +233,5 @@ public class RoleServiceImpl implements RoleService {
         if (visibleIds.size() != requestedIds.size()) {
             throw new RuntimeException("部分用户不存在");
         }
-    }
-
-    private void assertPermissionBindingsReady(List<Long> requestedResourceIds,
-                                               List<RoleResourcePermissionBindingView> resources) {
-        List<RoleResourcePermissionBindingView> resolvedResources = resources == null ? List.of() : resources;
-        LinkedHashSet<Long> requestedIds = requestedResourceIds == null ? new LinkedHashSet<>() : new LinkedHashSet<>(requestedResourceIds);
-        LinkedHashSet<Long> resolvedIds = resolvedResources.stream()
-            .map(RoleResourcePermissionBindingView::getId)
-            .filter(Objects::nonNull)
-            .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
-        if (resolvedIds.size() != requestedIds.size()) {
-            List<Long> missingIds = requestedIds.stream()
-                .filter(id -> !resolvedIds.contains(id))
-                .toList();
-            throw new BusinessException(ErrorCode.BUSINESS_ERROR, "资源作用域校验失败: " + missingIds);
-        }
-        List<Long> invalidResourceIds = resolvedResources.stream()
-            .filter(resource -> resource != null && StringUtils.hasText(resource.getPermission()))
-            .filter(resource -> resource.getRequiredPermissionId() == null)
-            .map(RoleResourcePermissionBindingView::getId)
-            .filter(Objects::nonNull)
-            .toList();
-        if (!invalidResourceIds.isEmpty()) {
-            throw new BusinessException(
-                ErrorCode.BUSINESS_ERROR,
-                "资源权限绑定缺失，请先修复 required_permission_id 后再授权: " + invalidResourceIds
-            );
-        }
-    }
-
-    private LinkedHashSet<Long> resolvePermissionIdsFromResourceIds(List<Long> resourceIds) {
-        if (resourceIds == null || resourceIds.isEmpty()) {
-            return new LinkedHashSet<>();
-        }
-        String resourceLevel = currentRoleLevel();
-        Long tenantId = currentManagedTenantId();
-        List<RoleResourcePermissionBindingView> resources = carrierProjectionRepository.findPermissionBindingViewsByIdsAndScope(
-            resourceIds,
-            tenantId,
-            resourceLevel
-        );
-        assertPermissionBindingsReady(resourceIds, resources);
-        LinkedHashSet<Long> permissionIds = new LinkedHashSet<>();
-        for (RoleResourcePermissionBindingView resource : resources) {
-            if (resource != null && resource.getRequiredPermissionId() != null) {
-                permissionIds.add(resource.getRequiredPermissionId());
-            }
-        }
-        return permissionIds;
     }
 }
