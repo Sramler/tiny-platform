@@ -101,27 +101,27 @@ public class ResourcePermissionBindingService {
                 END AS `enabled`
               FROM (
                 SELECT
-                  TRIM(m.`permission`) AS `permission`,
+                  CONVERT(TRIM(m.`permission`) USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS `permission`,
                   m.`enabled`,
-                  'MENU' AS `carrier_type`
+                  CONVERT('MENU' USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS `carrier_type`
                 FROM `menu` m
                 WHERE ((:tenantId IS NULL AND m.`tenant_id` IS NULL) OR m.`tenant_id` = :tenantId)
                   AND m.`permission` IS NOT NULL
                   AND TRIM(m.`permission`) <> ''
                 UNION ALL
                 SELECT
-                  TRIM(a.`permission`) AS `permission`,
+                  CONVERT(TRIM(a.`permission`) USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS `permission`,
                   a.`enabled`,
-                  'BUTTON' AS `carrier_type`
+                  CONVERT('BUTTON' USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS `carrier_type`
                 FROM `ui_action` a
                 WHERE ((:tenantId IS NULL AND a.`tenant_id` IS NULL) OR a.`tenant_id` = :tenantId)
                   AND a.`permission` IS NOT NULL
                   AND TRIM(a.`permission`) <> ''
                 UNION ALL
                 SELECT
-                  TRIM(e.`permission`) AS `permission`,
+                  CONVERT(TRIM(e.`permission`) USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS `permission`,
                   e.`enabled`,
-                  'API' AS `carrier_type`
+                  CONVERT('API' USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS `carrier_type`
                 FROM `api_endpoint` e
                 WHERE ((:tenantId IS NULL AND e.`tenant_id` IS NULL) OR e.`tenant_id` = :tenantId)
                   AND e.`permission` IS NOT NULL
@@ -139,7 +139,7 @@ public class ResourcePermissionBindingService {
             UPDATE `menu` m
             JOIN `permission` p
               ON p.`normalized_tenant_id` = IFNULL(m.`tenant_id`, 0)
-             AND p.`permission_code` = TRIM(m.`permission`)
+             AND p.`permission_code` = CONVERT(TRIM(m.`permission`) USING utf8mb4) COLLATE utf8mb4_0900_ai_ci
             SET m.`required_permission_id` = p.`id`
             WHERE ((:tenantId IS NULL AND m.`tenant_id` IS NULL) OR m.`tenant_id` = :tenantId)
               AND m.`permission` IS NOT NULL
@@ -150,7 +150,7 @@ public class ResourcePermissionBindingService {
             UPDATE `ui_action` a
             JOIN `permission` p
               ON p.`normalized_tenant_id` = IFNULL(a.`tenant_id`, 0)
-             AND p.`permission_code` = TRIM(a.`permission`)
+             AND p.`permission_code` = CONVERT(TRIM(a.`permission`) USING utf8mb4) COLLATE utf8mb4_0900_ai_ci
             SET a.`required_permission_id` = p.`id`
             WHERE ((:tenantId IS NULL AND a.`tenant_id` IS NULL) OR a.`tenant_id` = :tenantId)
               AND a.`permission` IS NOT NULL
@@ -161,7 +161,7 @@ public class ResourcePermissionBindingService {
             UPDATE `api_endpoint` e
             JOIN `permission` p
               ON p.`normalized_tenant_id` = IFNULL(e.`tenant_id`, 0)
-             AND p.`permission_code` = TRIM(e.`permission`)
+             AND p.`permission_code` = CONVERT(TRIM(e.`permission`) USING utf8mb4) COLLATE utf8mb4_0900_ai_ci
             SET e.`required_permission_id` = p.`id`
             WHERE ((:tenantId IS NULL AND e.`tenant_id` IS NULL) OR e.`tenant_id` = :tenantId)
               AND e.`permission` IS NOT NULL
