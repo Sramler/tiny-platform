@@ -65,6 +65,50 @@ const PassThrough = defineComponent({
   template: '<div><slot /></div>',
 })
 
+const TableStub = defineComponent({
+  name: 'TableStub',
+  props: ['dataSource', 'scroll', 'expandable', 'indentSize', 'childrenColumnName'],
+  template: `
+    <div class="menu-table-stub ant-table">
+      <div class="ant-table-header"></div>
+      <table>
+        <thead class="ant-table-thead">
+          <tr><th>标题</th></tr>
+        </thead>
+        <tbody class="ant-table-tbody">
+          <tr v-for="record in (dataSource || [])" :key="record.id">
+            <td>{{ record.title || record.name || record.id }}</td>
+          </tr>
+        </tbody>
+      </table>
+      <div v-if="!(dataSource || []).length" class="ant-table-placeholder"></div>
+    </div>
+  `,
+})
+
+const globalStubs = {
+  'a-table': TableStub,
+  'a-form': PassThrough,
+  'a-form-item': PassThrough,
+  'a-input': PassThrough,
+  'a-select': PassThrough,
+  'a-select-option': PassThrough,
+  'a-button': PassThrough,
+  'a-tooltip': PassThrough,
+  'a-popover': PassThrough,
+  'a-checkbox': PassThrough,
+  'a-tag': PassThrough,
+  'a-modal': defineComponent({ props: ['open'], template: '<div v-if="open"><slot /></div>' }),
+  'a-drawer': defineComponent({ props: ['open'], template: '<div v-if="open"><slot /></div>' }),
+  VueDraggable: PassThrough,
+  PlusOutlined: PassThrough,
+  ReloadOutlined: PassThrough,
+  EditOutlined: PassThrough,
+  DeleteOutlined: PassThrough,
+  SettingOutlined: PassThrough,
+  HolderOutlined: PassThrough,
+}
+
 import { ACTIVE_SCOPE_CHANGED_EVENT } from '@/utils/activeScopeEvents'
 import Menu from '@/views/menu/Menu.vue'
 
@@ -75,10 +119,10 @@ function createToken(authorities: string[]) {
 }
 
 async function flushPromises() {
-  await Promise.resolve()
-  await nextTick()
-  await Promise.resolve()
-  await nextTick()
+  for (let index = 0; index < 6; index += 1) {
+    await Promise.resolve()
+    await nextTick()
+  }
 }
 
 describe('Menu.vue', () => {
@@ -98,31 +142,7 @@ describe('Menu.vue', () => {
   it('should display menu list title and load data on mount', async () => {
     const wrapper = mount(Menu, {
       global: {
-        stubs: {
-          'a-table': defineComponent({
-            props: ['dataSource'],
-            template: '<div class="menu-table-stub">table rows: {{ (dataSource || []).length }}</div>',
-          }),
-          'a-form': PassThrough,
-          'a-form-item': PassThrough,
-          'a-input': PassThrough,
-          'a-select': PassThrough,
-          'a-select-option': PassThrough,
-          'a-button': PassThrough,
-          'a-tooltip': PassThrough,
-          'a-popover': PassThrough,
-          'a-checkbox': PassThrough,
-          'a-tag': PassThrough,
-          'a-modal': defineComponent({ props: ['open'], template: '<div v-if="open"><slot /></div>' }),
-          'a-drawer': defineComponent({ props: ['open'], template: '<div v-if="open"><slot /></div>' }),
-          VueDraggable: PassThrough,
-          PlusOutlined: PassThrough,
-          ReloadOutlined: PassThrough,
-          EditOutlined: PassThrough,
-          DeleteOutlined: PassThrough,
-          SettingOutlined: PassThrough,
-          HolderOutlined: PassThrough,
-        },
+        stubs: globalStubs,
       },
     })
     await flushPromises()
@@ -137,31 +157,7 @@ describe('Menu.vue', () => {
   it('should refetch menu list when active scope changes', async () => {
     const wrapper = mount(Menu, {
       global: {
-        stubs: {
-          'a-table': defineComponent({
-            props: ['dataSource'],
-            template: '<div class="menu-table-stub">table rows: {{ (dataSource || []).length }}</div>',
-          }),
-          'a-form': PassThrough,
-          'a-form-item': PassThrough,
-          'a-input': PassThrough,
-          'a-select': PassThrough,
-          'a-select-option': PassThrough,
-          'a-button': PassThrough,
-          'a-tooltip': PassThrough,
-          'a-popover': PassThrough,
-          'a-checkbox': PassThrough,
-          'a-tag': PassThrough,
-          'a-modal': defineComponent({ props: ['open'], template: '<div v-if="open"><slot /></div>' }),
-          'a-drawer': defineComponent({ props: ['open'], template: '<div v-if="open"><slot /></div>' }),
-          VueDraggable: PassThrough,
-          PlusOutlined: PassThrough,
-          ReloadOutlined: PassThrough,
-          EditOutlined: PassThrough,
-          DeleteOutlined: PassThrough,
-          SettingOutlined: PassThrough,
-          HolderOutlined: PassThrough,
-        },
+        stubs: globalStubs,
       },
     })
     await flushPromises()
@@ -180,31 +176,7 @@ describe('Menu.vue', () => {
 
     const wrapper = mount(Menu, {
       global: {
-        stubs: {
-          'a-table': defineComponent({
-            props: ['dataSource'],
-            template: '<div class="menu-table-stub">table rows: {{ (dataSource || []).length }}</div>',
-          }),
-          'a-form': PassThrough,
-          'a-form-item': PassThrough,
-          'a-input': PassThrough,
-          'a-select': PassThrough,
-          'a-select-option': PassThrough,
-          'a-button': PassThrough,
-          'a-tooltip': PassThrough,
-          'a-popover': PassThrough,
-          'a-checkbox': PassThrough,
-          'a-tag': PassThrough,
-          'a-modal': defineComponent({ props: ['open'], template: '<div v-if="open"><slot /></div>' }),
-          'a-drawer': defineComponent({ props: ['open'], template: '<div v-if="open"><slot /></div>' }),
-          VueDraggable: PassThrough,
-          PlusOutlined: PassThrough,
-          ReloadOutlined: PassThrough,
-          EditOutlined: PassThrough,
-          DeleteOutlined: PassThrough,
-          SettingOutlined: PassThrough,
-          HolderOutlined: PassThrough,
-        },
+        stubs: globalStubs,
       },
     })
     await flushPromises()
@@ -227,31 +199,7 @@ describe('Menu.vue', () => {
 
     const wrapper = mount(Menu, {
       global: {
-        stubs: {
-          'a-table': defineComponent({
-            props: ['dataSource'],
-            template: '<div class="menu-table-stub">table rows: {{ (dataSource || []).length }}</div>',
-          }),
-          'a-form': PassThrough,
-          'a-form-item': PassThrough,
-          'a-input': PassThrough,
-          'a-select': PassThrough,
-          'a-select-option': PassThrough,
-          'a-button': PassThrough,
-          'a-tooltip': PassThrough,
-          'a-popover': PassThrough,
-          'a-checkbox': PassThrough,
-          'a-tag': PassThrough,
-          'a-modal': defineComponent({ props: ['open'], template: '<div v-if="open"><slot /></div>' }),
-          'a-drawer': defineComponent({ props: ['open'], template: '<div v-if="open"><slot /></div>' }),
-          VueDraggable: PassThrough,
-          PlusOutlined: PassThrough,
-          ReloadOutlined: PassThrough,
-          EditOutlined: PassThrough,
-          DeleteOutlined: PassThrough,
-          SettingOutlined: PassThrough,
-          HolderOutlined: PassThrough,
-        },
+        stubs: globalStubs,
       },
     })
     await flushPromises()
@@ -261,5 +209,173 @@ describe('Menu.vue', () => {
     expect(wrapper.text()).not.toContain('批量删除')
     expect(wrapper.text()).not.toContain('编辑')
     expect(wrapper.text()).not.toContain('删除')
+  })
+
+  it('should not force vertical table scroll for small datasets', async () => {
+    apiMocks.menuList.mockResolvedValue(
+      Array.from({ length: 5 }, (_, index) => ({
+        id: index + 1,
+        name: `menu-${index + 1}`,
+        title: `菜单${index + 1}`,
+        type: 1,
+        parentId: null,
+        enabled: true,
+      })),
+    )
+
+    const wrapper = mount(Menu, {
+      global: {
+        stubs: globalStubs,
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.findComponent(TableStub).props('scroll')).toEqual({ x: 'max-content' })
+  })
+
+  it('should configure the table as a tree hierarchy', async () => {
+    const wrapper = mount(Menu, {
+      global: {
+        stubs: globalStubs,
+      },
+    })
+    await flushPromises()
+
+    const table = wrapper.findComponent(TableStub)
+    expect(table.props('childrenColumnName')).toBe('children')
+    expect(table.props('indentSize')).toBe(24)
+    expect(table.props('expandable').expandIconColumnIndex).toBe(4)
+  })
+
+  it('should preload direct child menus for top-level directories', async () => {
+    apiMocks.menuList.mockResolvedValue([
+      { id: 1, name: 'sys', title: '系统管理', type: 0, parentId: null, enabled: true, leaf: false, children: [] },
+    ])
+    apiMocks.getMenusByParentId.mockResolvedValue([
+      { id: 2, name: 'sys-user', title: '用户管理', type: 1, parentId: 1, enabled: true, leaf: true },
+    ])
+
+    const wrapper = mount(Menu, {
+      global: {
+        stubs: globalStubs,
+      },
+    })
+    await flushPromises()
+
+    const afterExpandData = wrapper.findComponent(TableStub).props('dataSource') as Array<Record<string, any>>
+    expect(apiMocks.getMenusByParentId).toHaveBeenCalledWith(1)
+    expect(afterExpandData).toHaveLength(1)
+    expect(afterExpandData[0].children).toHaveLength(1)
+    expect(afterExpandData[0].children[0].title).toBe('用户管理')
+    expect(afterExpandData[0].children[0].parentId).toBe(1)
+  })
+
+  it('should preload direct children even when non-leaf rows are returned with empty children arrays', async () => {
+    apiMocks.menuList.mockResolvedValue([
+      { id: 2, name: 'system', title: '系统管理', type: 0, parentId: null, enabled: true, leaf: false, children: [] },
+    ])
+    apiMocks.getMenusByParentId.mockResolvedValue([
+      { id: 21, name: 'role', title: '角色管理', type: 1, parentId: 2, enabled: true, leaf: true },
+    ])
+
+    const wrapper = mount(Menu, {
+      global: {
+        stubs: globalStubs,
+      },
+    })
+    await flushPromises()
+
+    const afterExpandData = wrapper.findComponent(TableStub).props('dataSource') as Array<Record<string, any>>
+    expect(apiMocks.getMenusByParentId).toHaveBeenCalledWith(2)
+    expect(afterExpandData[0].children).toHaveLength(1)
+    expect(afterExpandData[0].children[0].title).toBe('角色管理')
+  })
+
+  it('should attach lazy-loaded children when menu ids are returned as strings', async () => {
+    apiMocks.menuList.mockResolvedValue([
+      { id: '2', name: 'system', title: '系统管理', type: 0, parentId: null, enabled: true, leaf: false, children: [] },
+    ])
+    apiMocks.getMenusByParentId.mockResolvedValue([
+      { id: '21', name: 'role', title: '角色管理', type: 1, parentId: '2', enabled: true, leaf: true },
+    ])
+
+    const wrapper = mount(Menu, {
+      global: {
+        stubs: globalStubs,
+      },
+    })
+    await flushPromises()
+
+    const afterExpandData = wrapper.findComponent(TableStub).props('dataSource') as Array<Record<string, any>>
+    expect(apiMocks.getMenusByParentId).toHaveBeenCalledWith(2)
+    expect(afterExpandData[0].children).toHaveLength(1)
+    expect(afterExpandData[0].children[0].id).toBe('21')
+    expect(afterExpandData[0].children[0].parentId).toBe('2')
+  })
+
+  it('should normalize non-leaf rows without real children into leaf rows during preload', async () => {
+    apiMocks.menuList.mockResolvedValue([
+      { id: 1, name: 'workbench', title: '工作台', type: 0, parentId: null, enabled: true, leaf: false },
+    ])
+    apiMocks.getMenusByParentId.mockResolvedValue([])
+
+    const wrapper = mount(Menu, {
+      global: {
+        stubs: globalStubs,
+      },
+    })
+    await flushPromises()
+
+    const table = wrapper.findComponent(TableStub)
+    const afterPreloadData = table.props('dataSource') as Array<Record<string, any>>
+    const afterExpandable = table.props('expandable') as { expandedRowKeys: string[] }
+    expect(apiMocks.getMenusByParentId).toHaveBeenCalledWith(1)
+    expect(afterPreloadData[0].leaf).toBe(true)
+    expect(afterPreloadData[0].children).toBeUndefined()
+    expect(afterExpandable.expandedRowKeys).toEqual([])
+  })
+
+  it('should keep expanded medium datasets using native container height', async () => {
+    apiMocks.menuList.mockResolvedValue(
+      Array.from({ length: 7 }, (_, index) => ({
+        id: index + 1,
+        name: `menu-${index + 1}`,
+        title: `菜单${index + 1}`,
+        type: 1,
+        parentId: null,
+        enabled: true,
+      })),
+    )
+
+    const wrapper = mount(Menu, {
+      global: {
+        stubs: globalStubs,
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.findComponent(TableStub).props('scroll')).toEqual({ x: 'max-content' })
+  })
+
+  it('should keep larger datasets free of internal y scroll', async () => {
+    apiMocks.menuList.mockResolvedValue(
+      Array.from({ length: 10 }, (_, index) => ({
+        id: index + 1,
+        name: `menu-${index + 1}`,
+        title: `菜单${index + 1}`,
+        type: 1,
+        parentId: null,
+        enabled: true,
+      })),
+    )
+
+    const wrapper = mount(Menu, {
+      global: {
+        stubs: globalStubs,
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.findComponent(TableStub).props('scroll')).toEqual({ x: 'max-content' })
   })
 })

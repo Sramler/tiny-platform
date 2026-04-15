@@ -431,6 +431,35 @@ class MenuServiceImplTest {
     }
 
     @Test
+    void menuTreeShouldFallbackDirectoryRedirectToFirstVisibleChildWhenOriginalRedirectIsInvisible() {
+        TenantContext.setActiveTenantId(2L);
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_TENANT);
+        authenticate(5L, 2L, "tenant-user", "system:user:list");
+
+        MenuEntry system = menuEntry(1L, 2L, "system", null, "/system", "", ResourceType.DIRECTORY.getCode());
+        system.setRedirect("/system/role");
+
+        when(menuEntryRepository.findByTenantIdAndTypeInOrderBySortAsc(2L, List.of(ResourceType.DIRECTORY.getCode(), ResourceType.MENU.getCode())))
+            .thenReturn(List.of(
+                system,
+                menuEntry(2L, 2L, "role", 1L, "/system/role", "system:role:list", ResourceType.MENU.getCode()),
+                menuEntry(3L, 2L, "user", 1L, "/system/user", "system:user:list", ResourceType.MENU.getCode())
+            ));
+        when(menuPermissionRequirementRepository.findRowsByMenuIdIn(anyCollection())).thenReturn(List.of(
+            row(1L, 1, 1, "system:user:list", false),
+            row(2L, 1, 1, "system:role:list", false),
+            row(3L, 1, 1, "system:user:list", false)
+        ));
+
+        List<ResourceResponseDto> tree = service.menuTree();
+
+        assertThat(tree).singleElement().satisfies(systemNode -> {
+            assertThat(systemNode.getRedirect()).isEqualTo("/system/user");
+            assertThat(systemNode.getChildren()).extracting(ResourceResponseDto::getName).containsExactly("user");
+        });
+    }
+
+    @Test
     void menuTreeShouldKeepPlatformRuntimeMenusForPlatformAdmin() {
         TenantContext.setActiveTenantId(null);
         TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_PLATFORM);
@@ -546,23 +575,24 @@ class MenuServiceImplTest {
     }
 
     @Test
-    void getMenusByParentIdShouldFilterChildrenByRequirements() {
+    void getMenusByParentIdShouldUseControlPlaneReadScope() {
         TenantContext.setActiveTenantId(2L);
         authenticate(5L, 2L, "tenant-user", "system:user:list");
 
-        when(menuEntryRepository.findByTenantIdAndTypeInAndParentIdOrderBySortAsc(2L, List.of(ResourceType.DIRECTORY.getCode(), ResourceType.MENU.getCode()), 1L))
+        when(menuEntryRepository.findAll(any(org.springframework.data.jpa.domain.Specification.class), any(org.springframework.data.domain.Sort.class)))
             .thenReturn(List.of(
                 menuEntry(2L, 2L, "user", 1L, "/system/user", "system:user:list", ResourceType.MENU.getCode()),
-                menuEntry(3L, 2L, "tenant", 1L, "/system/tenant", "system:tenant:list", ResourceType.MENU.getCode())
+                menuEntry(3L, 2L, "audit", 1L, "/system/audit/authorization", "system:audit:auth:view", ResourceType.MENU.getCode())
             ));
-        when(menuPermissionRequirementRepository.findRowsByMenuIdIn(anyCollection())).thenReturn(List.of(
-            row(2L, 1, 1, "system:user:list", false),
-            row(3L, 1, 1, "system:tenant:list", false)
-        ));
 
         List<ResourceResponseDto> children = service.getMenusByParentId(1L);
 
-        assertThat(children).extracting(ResourceResponseDto::getName).containsExactly("user");
+        assertThat(children).extracting(ResourceResponseDto::getName).containsExactly("user", "audit");
+        verify(menuEntryRepository).findAll(
+            any(org.springframework.data.jpa.domain.Specification.class),
+            any(org.springframework.data.domain.Sort.class)
+        );
+        verify(menuPermissionRequirementRepository, never()).findRowsByMenuIdIn(anyCollection());
     }
 
     private MenuEntry menuEntry(

@@ -91,18 +91,12 @@
       </div>
 
       <!-- 表格区域，支持多选、动态列 -->
-      <div class="table-container" ref="tableContentRef">
-        <div class="table-scroll-container" ref="tableScrollContainerRef">
+      <div class="table-container">
+        <div class="table-scroll-container">
           <a-table :columns="columns" :data-source="tableData" :row-key="(record: any) => String(record.id)" bordered
             :loading="loading" :row-selection="rowSelection" :custom-row="onCustomRow" :row-class-name="getRowClassName"
-            :scroll="{ x: 'max-content', y: tableBodyHeight }" :expandable="expandableConfig" :pagination="false">
-            <template #expandIcon="slotProps">
-              <span v-if="slotProps?.record && !slotProps.record.leaf" style="cursor:pointer; color:#1890ff; margin-right:4px;"
-                @click.stop="() => onExpandIconClick(slotProps.record)">
-                <MinusOutlined v-if="expandedRowKeys.includes(String(slotProps.record.id))" />
-                <PlusOutlined v-else />
-              </span>
-            </template>
+            :scroll="tableScroll" :expandable="expandableConfig" :children-column-name="MENU_TREE_CHILDREN_COLUMN"
+            :indent-size="MENU_TREE_INDENT_SIZE" :pagination="false">
             <template #bodyCell="{ column, record }">
               <template v-if="column.dataIndex === 'icon'">
                 <div class="icon-cell">
@@ -181,7 +175,7 @@
 
 <script setup lang="ts">
 // 引入Vue相关API
-import { ref, computed, onMounted, watch, nextTick, onBeforeUnmount } from 'vue'
+import { h, ref, computed, onMounted, watch, onBeforeUnmount } from 'vue'
 import { useAuth } from '@/auth/auth'
 import type { ColumnsType } from 'ant-design-vue/es/table'
 import type { CheckboxChangeEvent } from 'ant-design-vue/es/checkbox/interface'
@@ -195,8 +189,7 @@ import {
   EditOutlined,
   DeleteOutlined,
   SettingOutlined,
-  HolderOutlined,
-  MinusOutlined
+  HolderOutlined
 } from '@ant-design/icons-vue'
 import VueDraggable from 'vuedraggable'
 import MenuForm from './MenuForm.vue'
@@ -214,6 +207,7 @@ type MenuItemEx = MenuItem & {
   _childrenLoaded?: boolean;
   leaf?: boolean | number; // 添加 leaf 属性，支持 boolean 或 number 类型
   _loading?: boolean; // 添加加载状态属性
+  children?: MenuItemEx[];
 }
 type MenuColumnConfig = { title: string; dataIndex: string; align?: 'left' | 'center' | 'right'; width?: number; fixed?: 'left' | 'right' }
 type MenuQueryState = {
@@ -260,6 +254,9 @@ const loading = ref(false)
 
 // 选中行key
 const selectedRowKeys = ref<string[]>([])
+const MENU_TREE_CHILDREN_COLUMN = 'children'
+const MENU_TREE_INDENT_SIZE = 24
+const TREE_EXPAND_ICON_SELECTION_OFFSET = 2
 
 // 所有列定义
 const INITIAL_COLUMNS: MenuColumnConfig[] = [
@@ -407,85 +404,181 @@ const expandedRowKeys = ref<string[]>([])
 
 // 计算菜单标题列的索引
 const expandIconColumnIndex = computed(() => {
-  return columns.value.findIndex(col => 'dataIndex' in col && col.dataIndex === 'title')
+  const preferredColumnIndexes = [
+    columns.value.findIndex((col) => 'dataIndex' in col && col.dataIndex === 'title'),
+    columns.value.findIndex((col) => 'dataIndex' in col && col.dataIndex === 'name'),
+  ]
+  const targetColumnIndex = preferredColumnIndexes.find((index) => index >= 0)
+  if (targetColumnIndex === undefined) {
+    return undefined
+  }
+  return targetColumnIndex + TREE_EXPAND_ICON_SELECTION_OFFSET
 })
 
-// 展开配置（平铺结构专用）
+function normalizeMenuItem(item: MenuItem): MenuItemEx {
+  const hasChildrenFromServer = Array.isArray(item.children) && item.children.length > 0
+  const isNonLeafNode = item.leaf === false || item.leaf === 0
+  const normalizedChildren = hasChildrenFromServer
+    ? item.children.map((child) => normalizeMenuItem(child))
+    : undefined
+
+  return {
+    ...item,
+    enabled: item.enabled !== undefined ? item.enabled : true,
+    expanded: false,
+    _loading: false,
+    _childrenLoaded: hasChildrenFromServer || !isNonLeafNode,
+    children: hasChildrenFromServer ? normalizedChildren : (isNonLeafNode ? [] : undefined),
+  }
+}
+
+function isExpandableMenuNode(node: MenuItemEx) {
+  return node.leaf === false || node.leaf === 0
+}
+
+async function hydrateDirectChildren(nodes: MenuItemEx[]): Promise<MenuItemEx[]> {
+  return Promise.all(
+    nodes.map(async (node) => {
+      if (!isExpandableMenuNode(node) || node._childrenLoaded) {
+        return node
+      }
+
+      const nodeId = Number(node.id)
+      if (!Number.isFinite(nodeId) || nodeId <= 0) {
+        return node
+      }
+
+      try {
+        const childMenus = await getMenusByParentId(nodeId)
+        const normalizedChildren = (childMenus || []).map((item) => normalizeMenuItem(item))
+        return {
+          ...node,
+          _childrenLoaded: true,
+          children: normalizedChildren.length > 0 ? normalizedChildren : undefined,
+          leaf: normalizedChildren.length === 0 ? true : node.leaf,
+        }
+      } catch (error) {
+        console.error('[菜单调试] 预加载直子菜单失败', error)
+        return node
+      }
+    }),
+  )
+}
+
+function updateMenuTree(
+  nodes: MenuItemEx[],
+  targetKey: string,
+  updater: (node: MenuItemEx) => MenuItemEx,
+): MenuItemEx[] {
+  return nodes.map((node) => {
+    if (String(node.id) === targetKey) {
+      return updater(node)
+    }
+    if (node.children?.length) {
+      return {
+        ...node,
+        children: updateMenuTree(node.children, targetKey, updater),
+      }
+    }
+    return node
+  })
+}
+
+async function handleTreeExpand(expanded: boolean, record: MenuItemEx) {
+  const recordKey = String(record.id ?? '')
+  const recordId = Number(record.id)
+  if (!recordKey || !Number.isFinite(recordId) || recordId <= 0) {
+    return
+  }
+
+  if (!expanded) {
+    expandedRowKeys.value = expandedRowKeys.value.filter((key) => key !== recordKey)
+    return
+  }
+
+  if (!expandedRowKeys.value.includes(recordKey)) {
+    expandedRowKeys.value = [...expandedRowKeys.value, recordKey]
+  }
+
+  if (!isExpandableMenuNode(record) || record._childrenLoaded || record._loading) {
+    return
+  }
+
+  tableData.value = updateMenuTree(tableData.value, recordKey, (node) => ({
+    ...node,
+    _loading: true,
+  }))
+
+  try {
+    const childMenus = await getMenusByParentId(recordId)
+    const normalizedChildren = (childMenus || []).map((item) => normalizeMenuItem(item))
+    tableData.value = updateMenuTree(tableData.value, recordKey, (node) => ({
+      ...node,
+      _loading: false,
+      _childrenLoaded: true,
+      children: normalizedChildren.length > 0 ? normalizedChildren : undefined,
+      leaf: normalizedChildren.length === 0 ? true : node.leaf,
+    }))
+    if (normalizedChildren.length === 0) {
+      expandedRowKeys.value = expandedRowKeys.value.filter((key) => key !== recordKey)
+    }
+  } catch (error) {
+    console.error('[菜单调试] getMenusByParentId 请求异常', error)
+    tableData.value = updateMenuTree(tableData.value, recordKey, (node) => ({
+      ...node,
+      _loading: false,
+    }))
+  }
+}
+
+// 展开配置（树形结构专用）
 const expandableConfig = computed(() => ({
   expandedRowKeys: expandedRowKeys.value,
+  childrenColumnName: MENU_TREE_CHILDREN_COLUMN,
+  indentSize: MENU_TREE_INDENT_SIZE,
   expandIconColumnIndex: expandIconColumnIndex.value,
-  rowExpandable: (record: any) => !record.leaf,
-  onExpand: async (expanded: boolean, record: any) => {
-    console.log('[菜单调试] onExpand 触发', { expanded, record });
-    if (expanded) {
-      console.log('[菜单调试] 进入展开分支，准备请求子菜单', record.id);
-      // 不判断 _childrenLoaded，每次都请求
-      try {
-        const childMenus = await getMenusByParentId(record.id);
-        console.log('[菜单调试] getMenusByParentId 返回', childMenus);
-        if (childMenus && Array.isArray(childMenus) && childMenus.length > 0) {
-          const childMenusArray = childMenus as MenuItemEx[];
-          childMenusArray.forEach(item => {
-            item.expanded = false;
-            item._childrenLoaded = false;
-            item._loading = false;
-            if (item.leaf === false || item.leaf === 0) {
-              item.children = [];
-            }
-          });
-          record._childrenLoaded = true;
-          const parentIndex = tableData.value.findIndex(item => item.id === record.id);
-          if (parentIndex !== -1) {
-            const newData = [
-              ...tableData.value.slice(0, parentIndex + 1),
-              ...childMenusArray,
-              ...tableData.value.slice(parentIndex + 1)
-            ];
-            tableData.value = newData;
-          }
-        } else {
-          console.log('[菜单调试] 没有子菜单数据');
-        }
-      } catch (err) {
-        console.error('[菜单调试] getMenusByParentId 请求异常', err);
-      }
-    } else {
-      console.log('[菜单调试] 进入收起分支', record.id);
-      collapseChildren(record);
-      expandedRowKeys.value = expandedRowKeys.value.filter(key => key !== String(record.id));
-      record._childrenLoaded = false;
-    }
+  expandIcon: ({ prefixCls, expanded, expandable, record, onExpand }: {
+    prefixCls: string
+    expanded: boolean
+    expandable: boolean
+    record: MenuItemEx
+    onExpand: (record: MenuItemEx, event: MouseEvent) => void
+  }) => {
+    const iconPrefix = `${prefixCls}-row-expand-icon`
+    return h('button', {
+      type: 'button',
+      class: [
+        iconPrefix,
+        {
+          [`${iconPrefix}-spaced`]: !expandable,
+          [`${iconPrefix}-expanded`]: expandable && expanded,
+          [`${iconPrefix}-collapsed`]: expandable && !expanded,
+          'menu-tree-expand-icon': true,
+        },
+      ],
+      'aria-expanded': expanded,
+      'aria-label': expanded ? '收起子菜单' : '展开子菜单',
+      onClick: (event: MouseEvent) => {
+        event.stopPropagation()
+        onExpand(record, event)
+      },
+    }, expandable ? [expanded ? h(MinusOutlined) : h(PlusOutlined)] : [])
   },
-  onExpandedRowsChange: (expandedRows: any[]) => {
+  rowExpandable: (record: MenuItemEx) =>
+    (record.leaf === false || record.leaf === 0) && (!record._childrenLoaded || Boolean(record.children?.length)),
+  onExpand: (expanded: boolean, record: MenuItemEx) => {
+    void handleTreeExpand(expanded, record)
+  },
+  onExpandedRowsChange: (expandedKeys: (string | number)[]) => {
     try {
-      expandedRowKeys.value = expandedRows.map(row => String(row.id));
-      console.log('[菜单调试] onExpandedRowsChange', expandedRows);
+      expandedRowKeys.value = expandedKeys.map(String)
     } catch (error) {
-      console.warn('expandable onExpandedRowsChange error:', error);
+      console.warn('expandable onExpandedRowsChange error:', error)
     }
   }
 }))
 
-// 表格内容区高度自适应
-const tableContentRef = ref<HTMLElement | null>(null)
-const tableScrollContainerRef = ref<HTMLElement | null>(null)
-const tableBodyHeight = ref(400)
-
-function updateTableBodyHeight() {
-  try {
-    nextTick(() => {
-      if (tableContentRef.value && tableScrollContainerRef.value) {
-        const tableHeader = tableContentRef.value.querySelector('.ant-table-header') as HTMLElement
-        const containerHeight = tableContentRef.value.clientHeight
-        const tableHeaderHeight = tableHeader ? tableHeader.clientHeight : 55
-        const bodyHeight = containerHeight - tableHeaderHeight
-        tableBodyHeight.value = Math.max(bodyHeight, 200)
-      }
-    })
-  } catch (error) {
-    console.warn('updateTableBodyHeight error:', error)
-  }
-}
+const tableScroll = { x: 'max-content' }
 
 // 加载数据 - 使用list结构加载
 async function loadData() {
@@ -511,20 +604,8 @@ async function loadData() {
     const res = await menuList(params)
     // 验证响应数据
     if (res && Array.isArray(res)) {
-      tableData.value = res.map(item => {
-        const obj: MenuItemEx = {
-          ...item,
-          expanded: false,
-          _childrenLoaded: false,
-          // 确保 enabled 字段有默认值
-          enabled: item.enabled !== undefined ? item.enabled : true
-        }
-        // 只要 leaf 为 false 或 0，就加 children: []
-        if (item.leaf === false || item.leaf === 0) {
-          obj.children = []
-        }
-        return obj
-      })
+      const normalizedMenus = res.map((item) => normalizeMenuItem(item))
+      tableData.value = await hydrateDirectChildren(normalizedMenus)
     } else {
       tableData.value = []
     }
@@ -897,8 +978,6 @@ function handleActiveScopeChanged() {
 onMounted(() => {
   try {
     loadData()
-    updateTableBodyHeight()
-    window.addEventListener('resize', updateTableBodyHeight)
     window.addEventListener(ACTIVE_SCOPE_CHANGED_EVENT, handleActiveScopeChanged)
   } catch (error) {
     console.warn('Menu onMounted error:', error)
@@ -908,7 +987,6 @@ onMounted(() => {
 onBeforeUnmount(() => {
   try {
     // 清理事件监听器
-    window.removeEventListener('resize', updateTableBodyHeight)
     window.removeEventListener(ACTIVE_SCOPE_CHANGED_EVENT, handleActiveScopeChanged)
 
     // 清理响应式数据，避免卸载时访问已销毁的数据
@@ -997,80 +1075,6 @@ function getTypeText(type: number) {
   }
 }
 
-// 递归移除所有子节点
-function collapseChildren(record: any) {
-  try {
-    const parentId = record.id;
-    // 收集所有要删除的 id
-    const idsToDelete: any[] = [];
-    function collectIds(id: any) {
-      tableData.value.forEach(item => {
-        if (item.parentId === id) {
-          idsToDelete.push(item.id);
-          collectIds(item.id);
-        }
-      });
-    }
-    collectIds(parentId);
-    tableData.value = tableData.value.filter(item => !idsToDelete.includes(item.id));
-  } catch (error) {
-    console.warn('collapseChildren error:', error);
-  }
-}
-
-// 新增的 handleExpand 函数
-async function handleExpand(expanded: boolean, record: any) {
-  console.log('[菜单调试] handleExpand 触发', { expanded, record });
-  if (expanded) {
-    // 展开逻辑
-    try {
-      const childMenus = await getMenusByParentId(record.id);
-      console.log('[菜单调试] getMenusByParentId 返回', childMenus);
-      if (childMenus && Array.isArray(childMenus) && childMenus.length > 0) {
-        const childMenusArray = childMenus as MenuItemEx[];
-        childMenusArray.forEach(item => {
-          item.expanded = false;
-          item._childrenLoaded = false;
-          item._loading = false;
-          if (item.leaf === false || item.leaf === 0) {
-            item.children = [];
-          }
-        });
-        record._childrenLoaded = true;
-        const parentIndex = tableData.value.findIndex(item => item.id === record.id);
-        if (parentIndex !== -1) {
-          const newData = [
-            ...tableData.value.slice(0, parentIndex + 1),
-            ...childMenusArray,
-            ...tableData.value.slice(parentIndex + 1)
-          ];
-          tableData.value = newData;
-        }
-      } else {
-        console.log('[菜单调试] 没有子菜单数据');
-      }
-    } catch (err) {
-      console.error('[菜单调试] getMenusByParentId 请求异常', err);
-    }
-  } else {
-    // 收起逻辑
-    console.log('[菜单调试] 进入收起分支', record.id);
-    collapseChildren(record);
-    record._childrenLoaded = false;
-  }
-}
-
-// 新增的 onExpandIconClick 方法
-function onExpandIconClick(record: any) {
-  const key = String(record.id);
-  const isExpanded = expandedRowKeys.value.includes(key);
-  if (!isExpanded) {
-    expandedRowKeys.value.push(key);
-  } else {
-    expandedRowKeys.value = expandedRowKeys.value.filter(k => k !== key);
-  }
-  handleExpand(!isExpanded, record);
-}
 </script>
 
 <style scoped>
@@ -1116,9 +1120,11 @@ function onExpandIconClick(record: any) {
 }
 
 .table-scroll-container {
+  flex: 1;
   min-height: 0;
-  overflow-x: auto;
-  overflow-y: auto;
+  box-sizing: border-box;
+  overflow: auto;
+  padding: 12px 0;
 }
 
 .ml-2 {
@@ -1252,6 +1258,13 @@ function onExpandIconClick(record: any) {
 .action-btn:hover {
   background-color: #f5f5f5;
   border-radius: 4px;
+}
+
+:deep(.menu-tree-expand-icon) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #1677ff;
 }
 
 .icon-cell {

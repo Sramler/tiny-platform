@@ -206,6 +206,9 @@ public class MenuServiceImpl implements MenuService {
                 if (node.getChildren() != null && !node.getChildren().isEmpty()) {
                     node.setChildren(filterVisibleMenus(node.getChildren(), visibleUrls));
                 }
+                if (node.getType() != null && node.getType() == ResourceType.DIRECTORY.getCode()) {
+                    node.setRedirect(normalizeDirectoryRedirect(node, visibleUrls));
+                }
                 return node;
             })
             // 过滤掉没有可访问子菜单的目录，除非它有有效的重定向
@@ -226,6 +229,42 @@ public class MenuServiceImpl implements MenuService {
             .collect(Collectors.toList());
     }
 
+    private String normalizeDirectoryRedirect(ResourceResponseDto node, Set<String> visibleUrls) {
+        if (node == null) {
+            return null;
+        }
+        if (StringUtils.hasText(node.getRedirect()) && visibleUrls.contains(node.getRedirect())) {
+            return node.getRedirect();
+        }
+        return resolveFirstVisibleNavigableUrl(node.getChildren(), visibleUrls);
+    }
+
+    private String resolveFirstVisibleNavigableUrl(List<ResourceResponseDto> nodes, Set<String> visibleUrls) {
+        if (nodes == null || nodes.isEmpty()) {
+            return null;
+        }
+        for (ResourceResponseDto node : nodes) {
+            String target = resolveNavigableUrl(node, visibleUrls);
+            if (StringUtils.hasText(target)) {
+                return target;
+            }
+        }
+        return null;
+    }
+
+    private String resolveNavigableUrl(ResourceResponseDto node, Set<String> visibleUrls) {
+        if (node == null || !isNodeVisible(node)) {
+            return null;
+        }
+        if (node.getType() != null && node.getType() == ResourceType.DIRECTORY.getCode()) {
+            return normalizeDirectoryRedirect(node, visibleUrls);
+        }
+        if (StringUtils.hasText(node.getUrl())) {
+            return node.getUrl();
+        }
+        return resolveFirstVisibleNavigableUrl(node.getChildren(), visibleUrls);
+    }
+
     private boolean isNodeVisible(ResourceResponseDto node) {
         boolean enabled = !Boolean.FALSE.equals(node.getEnabled());
         boolean hidden = Boolean.TRUE.equals(node.getHidden());
@@ -233,13 +272,30 @@ public class MenuServiceImpl implements MenuService {
     }
 
     /**
-     * 根据父级ID查询子菜单（只查 type=0/1）
+     * 根据父级ID查询子菜单（只查 type=0/1）。
+     * <p>该入口服务于菜单管理控制面，应返回当前作用域下可管理的完整菜单载体，
+     * 不再复用运行态菜单树的 requirement-aware 过滤口径。</p>
      */
     @Override
+    @DataScope(module = "menu")
     public List<ResourceResponseDto> getMenusByParentId(Long parentId) {
         Long tenantId = resolveReadTenantId();
-        List<MenuEntry> menus = findChildMenusForCurrentUser(normalizeParentId(parentId), tenantId);
-        return menus.stream().map(this::toDto).collect(Collectors.toList());
+        LinkedHashSet<Long> visibleCreatorIds = resolveVisibleCreatorIdsForRead(tenantId);
+        if (requiresDataScopeFilterForScope(tenantId) && visibleCreatorIds.isEmpty()) {
+            return List.of();
+        }
+
+        ResourceRequestDto query = new ResourceRequestDto();
+        query.setParentId(normalizeParentId(parentId));
+
+        return menuEntryRepository.findAll(
+                buildMenuEntrySpecification(query, tenantId, visibleCreatorIds, false),
+                Sort.by(Sort.Order.asc("sort"), Sort.Order.asc("id"))
+            )
+            .stream()
+            .map(menu -> toDto(menu, tenantId))
+            .filter(this::canAccessPlatformMenu)
+            .collect(Collectors.toList());
     }
 
     /**
