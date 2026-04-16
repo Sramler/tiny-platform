@@ -1,0 +1,226 @@
+databaseChangeLog:
+  - changeSet:
+      id: 151-backfill-platform-export-test-data-menu-permission
+      author: codex
+      comment: 补齐平台模板 exportTestData 菜单的 permission 绑定，避免 rollout 检查继续报未绑定载体
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: menu
+            - tableExists:
+                tableName: permission
+            - tableExists:
+                tableName: role
+            - tableExists:
+                tableName: role_permission
+            - tableExists:
+                tableName: menu_permission_requirement
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT INTO `permission` (
+                `permission_code`,
+                `permission_name`,
+                `module_code`,
+                `action_code`,
+                `permission_type`,
+                `description`,
+                `enabled`,
+                `built_in_flag`,
+                `tenant_id`,
+                `created_by`,
+                `created_at`,
+                `updated_by`,
+                `updated_at`
+              )
+              SELECT
+                src.`permission_code`,
+                src.`permission_name`,
+                src.`module_code`,
+                src.`action_code`,
+                src.`permission_type`,
+                src.`description`,
+                src.`enabled`,
+                src.`built_in_flag`,
+                NULL AS `tenant_id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`,
+                NULL AS `updated_by`,
+                NOW() AS `updated_at`
+              FROM `permission` src
+              WHERE src.`tenant_id` IS NOT NULL
+                AND src.`permission_code` = 'exportTestData:view'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `permission` existing
+                  WHERE existing.`tenant_id` IS NULL
+                    AND existing.`permission_code` = 'exportTestData:view'
+                )
+              ORDER BY src.`tenant_id`, src.`id`
+              LIMIT 1;
+
+              UPDATE `menu` export_menu
+              LEFT JOIN `menu` platform_monitor
+                ON platform_monitor.`tenant_id` IS NULL
+               AND platform_monitor.`name` = 'monitor'
+              JOIN `permission` platform_permission
+                ON platform_permission.`tenant_id` IS NULL
+               AND platform_permission.`permission_code` = 'exportTestData:view'
+              SET
+                export_menu.`resource_level` = 'PLATFORM',
+                export_menu.`permission` = 'exportTestData:view',
+                export_menu.`required_permission_id` = platform_permission.`id`,
+                export_menu.`parent_id` = COALESCE(platform_monitor.`id`, export_menu.`parent_id`),
+                export_menu.`updated_at` = NOW(),
+                export_menu.`updated_by` = NULL
+              WHERE export_menu.`tenant_id` IS NULL
+                AND (
+                  export_menu.`name` = 'exportTestData'
+                  OR export_menu.`path` = '/export/testData'
+                )
+                AND (
+                  export_menu.`resource_level` <> 'PLATFORM'
+                  OR export_menu.`permission` <> 'exportTestData:view'
+                  OR NOT (export_menu.`required_permission_id` <=> platform_permission.`id`)
+                  OR (
+                    platform_monitor.`id` IS NOT NULL
+                    AND NOT (export_menu.`parent_id` <=> platform_monitor.`id`)
+                  )
+                );
+
+              INSERT INTO `menu` (
+                `tenant_id`,
+                `resource_level`,
+                `name`,
+                `title`,
+                `path`,
+                `icon`,
+                `show_icon`,
+                `sort`,
+                `component`,
+                `redirect`,
+                `hidden`,
+                `keep_alive`,
+                `permission`,
+                `required_permission_id`,
+                `type`,
+                `parent_id`,
+                `enabled`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                'PLATFORM' AS `resource_level`,
+                src.`name`,
+                src.`title`,
+                src.`path`,
+                src.`icon`,
+                src.`show_icon`,
+                src.`sort`,
+                src.`component`,
+                src.`redirect`,
+                src.`hidden`,
+                src.`keep_alive`,
+                'exportTestData:view' AS `permission`,
+                platform_permission.`id` AS `required_permission_id`,
+                src.`type`,
+                platform_monitor.`id` AS `parent_id`,
+                src.`enabled`,
+                NOW() AS `created_at`,
+                NULL AS `created_by`,
+                NOW() AS `updated_at`,
+                NULL AS `updated_by`
+              FROM `menu` src
+              JOIN `menu` platform_monitor
+                ON platform_monitor.`tenant_id` IS NULL
+               AND platform_monitor.`name` = 'monitor'
+              JOIN `permission` platform_permission
+                ON platform_permission.`tenant_id` IS NULL
+               AND platform_permission.`permission_code` = 'exportTestData:view'
+              WHERE src.`tenant_id` = 1
+                AND (
+                  src.`name` = 'exportTestData'
+                  OR src.`path` = '/export/testData'
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `menu` existing
+                  WHERE existing.`tenant_id` IS NULL
+                    AND (
+                      existing.`name` = 'exportTestData'
+                      OR existing.`path` = '/export/testData'
+                    )
+                )
+              ORDER BY src.`id`
+              LIMIT 1;
+
+              DELETE requirement
+              FROM `menu_permission_requirement` requirement
+              JOIN `menu` export_menu
+                ON export_menu.`id` = requirement.`menu_id`
+              WHERE export_menu.`tenant_id` IS NULL
+                AND (
+                  export_menu.`name` = 'exportTestData'
+                  OR export_menu.`path` = '/export/testData'
+                );
+
+              INSERT INTO `menu_permission_requirement` (
+                `tenant_id`,
+                `menu_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                export_menu.`id` AS `menu_id`,
+                0 AS `requirement_group`,
+                1 AS `sort_order`,
+                export_menu.`required_permission_id` AS `permission_id`,
+                0 AS `negated`,
+                NOW() AS `created_at`,
+                NULL AS `created_by`,
+                NOW() AS `updated_at`,
+                NULL AS `updated_by`
+              FROM `menu` export_menu
+              WHERE export_menu.`tenant_id` IS NULL
+                AND (
+                  export_menu.`name` = 'exportTestData'
+                  OR export_menu.`path` = '/export/testData'
+                )
+                AND export_menu.`required_permission_id` IS NOT NULL;
+
+              INSERT IGNORE INTO `role_permission` (
+                `tenant_id`,
+                `role_id`,
+                `permission_id`,
+                `created_by`,
+                `created_at`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                role_entity.`id` AS `role_id`,
+                platform_permission.`id` AS `permission_id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`
+              FROM `role` role_entity
+              JOIN `permission` platform_permission
+                ON platform_permission.`tenant_id` IS NULL
+               AND platform_permission.`permission_code` = 'exportTestData:view'
+              WHERE role_entity.`tenant_id` IS NULL
+                AND role_entity.`code` IN ('ROLE_PLATFORM_ADMIN', 'ROLE_TENANT_ADMIN');

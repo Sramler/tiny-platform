@@ -385,8 +385,21 @@ const paginationConfig = computed(() => {
   return config
 })
 
+type UserTableColumn = {
+  title: string
+  dataIndex: string
+  sorter?: boolean
+  width?: number
+  minWidth?: number
+  maxWidth?: number
+  resizable?: boolean
+  fixed?: 'left' | 'right'
+  align?: 'left' | 'center' | 'right'
+  customRender?: (args: { text: unknown; index?: number }) => unknown
+}
+
 // 定义初始列顺序常量
-const INITIAL_COLUMNS = [
+const INITIAL_COLUMNS: UserTableColumn[] = [
   { title: 'ID', dataIndex: 'id', sorter: true },
   { title: '用户名', dataIndex: 'username', sorter: true },
   { title: '昵称', dataIndex: 'nickname', sorter: true },
@@ -432,8 +445,8 @@ const INITIAL_COLUMNS = [
 ]
 
 // 用初始列顺序初始化
-const allColumns = ref([...INITIAL_COLUMNS])
-const draggableColumns = ref([...INITIAL_COLUMNS])
+const allColumns = ref<UserTableColumn[]>([...INITIAL_COLUMNS])
+const draggableColumns = ref<UserTableColumn[]>([...INITIAL_COLUMNS])
 const showColumnKeys = ref(
   INITIAL_COLUMNS.map(col => col.dataIndex).filter(key => typeof key === 'string' && key)
 )

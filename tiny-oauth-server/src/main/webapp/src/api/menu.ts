@@ -21,6 +21,7 @@ export interface MenuItem {
   permission?: string
   requiredPermissionId?: number
   parentId?: number | null
+  leaf?: boolean | number
   children?: MenuItem[]
   createdAt?: string
   updatedAt?: string

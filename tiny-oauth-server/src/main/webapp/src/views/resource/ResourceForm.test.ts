@@ -129,7 +129,10 @@ describe('ResourceForm.vue', () => {
     await wrapper.findAll('button')[1]?.trigger('click')
     await flushPromises()
 
-    const submitPayload = wrapper.emitted('submit')?.[0]?.[0]
+    const submitPayload = wrapper.emitted('submit')?.[0]?.[0] as {
+      requiredPermissionId?: number
+      permission?: string
+    }
     expect(submitPayload.requiredPermissionId).toBe(7001)
     expect(submitPayload.permission).toBe('system:resource:list')
   })
@@ -177,7 +180,10 @@ describe('ResourceForm.vue', () => {
     await wrapper.findAll('button')[1]?.trigger('click')
     await flushPromises()
 
-    const submitPayload = wrapper.emitted('submit')?.[0]?.[0]
+    const submitPayload = wrapper.emitted('submit')?.[0]?.[0] as {
+      requiredPermissionId?: number
+      permission?: string
+    }
     expect(submitPayload.requiredPermissionId).toBe(7002)
     expect(submitPayload.permission).toBe('system:resource:edit')
   })

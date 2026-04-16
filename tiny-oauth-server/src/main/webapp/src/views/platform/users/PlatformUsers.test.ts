@@ -159,7 +159,7 @@ const TableStub = defineComponent({
                         record,
                         index,
                       })
-                    : null,
+                    : [],
                 ),
               ),
             ),

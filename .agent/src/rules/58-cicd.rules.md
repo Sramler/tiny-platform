@@ -74,6 +74,7 @@
 - ✅ 如果 workflow 的 readiness 窗口会受到依赖下载或首次构建影响，必须将依赖预热、构建下载、schema 初始化等前置成本移到显式步骤，避免把“未 ready”误判成应用启动失败。
 - ✅ 涉及多身份、多租户、平台/租户双口径 real-link 的 workflow，必须在 job 内显式归一化环境变量（如平台身份、租户身份、bind/readonly 身份、fallback tenant code）；不能只依赖 GitHub Actions `env:` 表达式或 trigger 差异（`push` / `schedule` / `workflow_dispatch`）来“碰巧”得到正确值。
 - ✅ fresh DB / CI baseline 使用 Liquibase `sqlFile` 时，路径必须采用 changelog-relative 解析并在干净库路径上验证；不能依赖本地工作目录、classpath 偶然命中或已初始化数据库兜底。
+- ✅ 已在共享环境 / fresh DB 执行过的 Liquibase changeset 不得直接改写正文来修问题；必须追加新的尾部 changeset 做幂等回填或收口，并在干净库与已执行库两种路径上验证不会触发 checksum 漂移或启动失败。
 - ✅ 对依赖菜单懒加载、动态路由注入、登录后壳页收敛的 real-link workflow，必须把“菜单点击进入”和“直接 deep-link / 刷新进入”视为不同风险面；至少有一层自动化覆盖 direct deep-link / refresh，不得默认二者等价。
 
 ### 4) 发布与部署

@@ -419,10 +419,11 @@ const expandIconColumnIndex = computed(() => {
 })
 
 function normalizeMenuItem(item: MenuItem): MenuItemEx {
-  const hasChildrenFromServer = Array.isArray(item.children) && item.children.length > 0
+  const serverChildren = Array.isArray(item.children) ? item.children : []
+  const hasChildrenFromServer = serverChildren.length > 0
   const isNonLeafNode = item.leaf === false || item.leaf === 0
   const normalizedChildren = hasChildrenFromServer
-    ? item.children.map((child) => normalizeMenuItem(child))
+    ? serverChildren.map((child) => normalizeMenuItem(child))
     : undefined
 
   return {

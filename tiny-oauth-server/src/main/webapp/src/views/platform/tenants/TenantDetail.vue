@@ -127,8 +127,11 @@ function formatFieldDiffs(entry: PlatformTemplateEntryDiff) {
     return '-'
   }
   return FIELD_ORDER
-    .filter((field) => entry.fieldDiffs[field])
-    .map((field) => `${field}: ${entry.fieldDiffs[field].platformValue} -> ${entry.fieldDiffs[field].tenantValue}`)
+    .map((field) => {
+      const diff = entry.fieldDiffs[field]
+      return diff ? `${field}: ${diff.platformValue} -> ${diff.tenantValue}` : null
+    })
+    .filter((value): value is string => Boolean(value))
     .join(' | ')
 }
 

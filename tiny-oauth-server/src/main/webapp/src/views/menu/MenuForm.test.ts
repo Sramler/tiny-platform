@@ -119,7 +119,7 @@ describe('MenuForm.vue', () => {
     await flushPromises()
 
     const buttons = wrapper.findAll('button')
-    const submitButton = buttons.at(-1)
+    const submitButton = buttons[buttons.length - 1]
     await submitButton?.trigger('click')
     await flushPromises()
 

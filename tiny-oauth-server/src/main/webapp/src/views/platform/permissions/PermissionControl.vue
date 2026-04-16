@@ -76,10 +76,11 @@ async function syncRolePermissions() {
   }
 }
 
-async function handleToggleEnabled(row: PermissionListItem, checked: boolean) {
+async function handleToggleEnabled(row: PermissionListItem, checked: unknown) {
+  const enabled = checked === true
   try {
-    await updatePermissionEnabled(row.id, checked)
-    row.enabled = checked
+    await updatePermissionEnabled(row.id, enabled)
+    row.enabled = enabled
     message.success('权限状态已更新')
   } catch (error: any) {
     message.error(error?.message || '权限状态更新失败')
@@ -144,7 +145,7 @@ onMounted(async () => {
             <a-table-column title="名称" data-index="permissionName" key="permissionName" />
             <a-table-column title="启用" key="enabled">
               <template #default="{ record }">
-                <a-switch :checked="record.enabled" @change="(checked: boolean) => handleToggleEnabled(record, checked)" />
+                <a-switch :checked="record.enabled" @change="(checked) => handleToggleEnabled(record, checked)" />
               </template>
             </a-table-column>
             <a-table-column title="绑定角色数" data-index="boundRoleCount" key="boundRoleCount" />

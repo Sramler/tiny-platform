@@ -61,6 +61,7 @@ globs:
 - ✅ 表格分页：使用 `v-model:current` 和 `v-model:pageSize`。
 - ✅ 涉及 `a-table` 树形数据、懒加载子节点、受控展开、`expand-icon`、`expanded-row-keys`、`row-expandable`、`@expand`、`@expandedRowsChange` 等高阶行为时，必须先以**当前仓库安装的 ant-design-vue 版本**源码 / 类型定义 / 真实运行时为准核对接法，再落代码；不得直接照搬其他版本文档或历史写法。
 - ✅ 如果第三方组件行为依赖运行时事件回调顺序或受控状态回写（如树表先回写 `expandedKeys` 再挂载 `children`），必须把状态恢复逻辑写在业务组件中，并补回归测试锁住。
+- ✅ 对树表懒加载链路，如果后端用 `leaf=false` 表示“仍有子节点可加载”，即使本次响应里的 `children` 是空数组，前端也不能把它当成终态叶子节点；必须保留可展开语义、在 `@expand` 时按需请求直子节点，并补浏览器/组件契约回归测试锁住该行为。
 
 ### 4) 类型定义
 

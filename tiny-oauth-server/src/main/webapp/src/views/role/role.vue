@@ -305,7 +305,16 @@ import { useAuth } from '@/auth/auth'
 import type { ColumnsType } from 'ant-design-vue/es/table'
 import type { CheckboxChangeEvent } from 'ant-design-vue/es/checkbox/interface'
 // 引入角色API
-import { roleList, createRole, updateRole, deleteRole, getRoleUsers, updateRoleUsers, updateRolePermissions } from '@/api/role'
+import {
+  roleList,
+  createRole,
+  updateRole,
+  deleteRole,
+  getRoleUsers,
+  updateRoleUsers,
+  updateRolePermissions,
+  type RoleUserAssignmentPayload,
+} from '@/api/role'
 // 引入Antd组件和图标
 import { message, Modal } from 'ant-design-vue'
 import { ReloadOutlined, SettingOutlined, HolderOutlined, PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons-vue'
@@ -852,9 +861,11 @@ async function handleBatchUserAssign(newUserIds: string[]) {
     return
   }
   try {
-    const payload = {
+    const payload: RoleUserAssignmentPayload = {
       scopeType: batchUserScopeType.value,
-      scopeId: batchUserScopeType.value === 'TENANT' ? null : (batchUserScopeId.value ?? undefined),
+      ...(batchUserScopeType.value === 'TENANT'
+        ? {}
+        : { scopeId: batchUserScopeId.value ?? undefined }),
       userIds: newUserIds.map(id => Number(id)),
     }
     for (const roleIdStr of selectedRowKeys.value) {

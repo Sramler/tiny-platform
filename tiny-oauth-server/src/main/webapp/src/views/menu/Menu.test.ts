@@ -121,6 +121,13 @@ const globalStubs = {
   HolderOutlined: PassThrough,
 }
 
+function firstItem<T>(items: T[] | undefined, label = 'item'): T {
+  if (!items || items.length === 0) {
+    throw new Error(`Expected at least one ${label}`)
+  }
+  return items[0]!
+}
+
 import { ACTIVE_SCOPE_CHANGED_EVENT } from '@/utils/activeScopeEvents'
 import Menu from '@/views/menu/Menu.vue'
 
@@ -278,9 +285,10 @@ describe('Menu.vue', () => {
 
     const table = wrapper.findComponent(TableStub)
     const data = table.props('dataSource') as Array<Record<string, any>>
+    const firstNode = firstItem(data, 'menu row')
     expect(apiMocks.getMenusByParentId).not.toHaveBeenCalled()
     expect(data).toHaveLength(1)
-    expect(data[0].children).toEqual([])
+    expect(firstNode.children).toEqual([])
   })
 
   it('should lazy load direct children when a top-level directory is expanded', async () => {
@@ -303,13 +311,15 @@ describe('Menu.vue', () => {
     const onExpand = table.props('onExpand') as (expanded: boolean, record: Record<string, any>) => void
     expect(apiMocks.getMenusByParentId).not.toHaveBeenCalled()
 
-    onExpand(true, beforeExpandData[0])
+    onExpand(true, firstItem(beforeExpandData, 'menu row'))
     await flushPromises()
 
     const afterExpandData = wrapper.findComponent(TableStub).props('dataSource') as Array<Record<string, any>>
+    const firstNode = firstItem(afterExpandData, 'expanded menu row')
+    const firstChild = firstItem(firstNode.children as Array<Record<string, any>>, 'child menu row')
     expect(apiMocks.getMenusByParentId).toHaveBeenCalledWith(1)
-    expect(afterExpandData[0].children).toHaveLength(1)
-    expect(afterExpandData[0].children[0].title).toBe('用户管理')
+    expect(firstNode.children).toHaveLength(1)
+    expect(firstChild.title).toBe('用户管理')
   })
 
   it('should keep a lazily loaded node expanded when expanded row keys are cleared before children mount', async () => {
@@ -332,15 +342,16 @@ describe('Menu.vue', () => {
     const onExpand = table.props('onExpand') as (expanded: boolean, record: Record<string, any>) => void
     const onExpandedRowsChange = table.props('onExpandedRowsChange') as (expandedKeys: Array<string | number>) => void
 
-    onExpand(true, beforeExpandData[0])
+    onExpand(true, firstItem(beforeExpandData, 'menu row'))
     onExpandedRowsChange([])
     await flushPromises()
 
     const afterExpandData = wrapper.findComponent(TableStub).props('dataSource') as Array<Record<string, any>>
     const afterExpandedRowKeys = wrapper.findComponent(TableStub).props('expandedRowKeys') as string[]
+    const firstNode = firstItem(afterExpandData, 'expanded menu row')
 
     expect(apiMocks.getMenusByParentId).toHaveBeenCalledWith(1)
-    expect(afterExpandData[0].children).toHaveLength(1)
+    expect(firstNode.children).toHaveLength(1)
     expect(afterExpandedRowKeys).toEqual(['1'])
   })
 
@@ -363,13 +374,15 @@ describe('Menu.vue', () => {
     const beforeExpandData = table.props('dataSource') as Array<Record<string, any>>
     const onExpand = table.props('onExpand') as (expanded: boolean, record: Record<string, any>) => void
 
-    onExpand(true, beforeExpandData[0])
+    onExpand(true, firstItem(beforeExpandData, 'menu row'))
     await flushPromises()
 
     const afterExpandData = wrapper.findComponent(TableStub).props('dataSource') as Array<Record<string, any>>
+    const firstNode = firstItem(afterExpandData, 'expanded menu row')
+    const firstChild = firstItem(firstNode.children as Array<Record<string, any>>, 'child menu row')
     expect(apiMocks.getMenusByParentId).toHaveBeenCalledWith(2)
-    expect(afterExpandData[0].children).toHaveLength(1)
-    expect(afterExpandData[0].children[0].title).toBe('角色管理')
+    expect(firstNode.children).toHaveLength(1)
+    expect(firstChild.title).toBe('角色管理')
   })
 
   it('should attach lazy-loaded children when menu ids are returned as strings', async () => {
@@ -391,14 +404,16 @@ describe('Menu.vue', () => {
     const beforeExpandData = table.props('dataSource') as Array<Record<string, any>>
     const onExpand = table.props('onExpand') as (expanded: boolean, record: Record<string, any>) => void
 
-    onExpand(true, beforeExpandData[0])
+    onExpand(true, firstItem(beforeExpandData, 'menu row'))
     await flushPromises()
 
     const afterExpandData = wrapper.findComponent(TableStub).props('dataSource') as Array<Record<string, any>>
+    const firstNode = firstItem(afterExpandData, 'expanded menu row')
+    const firstChild = firstItem(firstNode.children as Array<Record<string, any>>, 'child menu row')
     expect(apiMocks.getMenusByParentId).toHaveBeenCalledWith(2)
-    expect(afterExpandData[0].children).toHaveLength(1)
-    expect(afterExpandData[0].children[0].id).toBe('21')
-    expect(afterExpandData[0].children[0].parentId).toBe('2')
+    expect(firstNode.children).toHaveLength(1)
+    expect(firstChild.id).toBe('21')
+    expect(firstChild.parentId).toBe('2')
   })
 
   it('should normalize non-leaf rows without real children into leaf rows after lazy loading', async () => {
@@ -418,14 +433,15 @@ describe('Menu.vue', () => {
     const beforeExpandData = table.props('dataSource') as Array<Record<string, any>>
     const onExpand = table.props('onExpand') as (expanded: boolean, record: Record<string, any>) => void
 
-    onExpand(true, beforeExpandData[0])
+    onExpand(true, firstItem(beforeExpandData, 'menu row'))
     await flushPromises()
 
     const afterPreloadData = wrapper.findComponent(TableStub).props('dataSource') as Array<Record<string, any>>
     const afterExpandedRowKeys = wrapper.findComponent(TableStub).props('expandedRowKeys') as string[]
+    const firstNode = firstItem(afterPreloadData, 'expanded menu row')
     expect(apiMocks.getMenusByParentId).toHaveBeenCalledWith(1)
-    expect(afterPreloadData[0].leaf).toBe(true)
-    expect(afterPreloadData[0].children).toBeUndefined()
+    expect(firstNode.leaf).toBe(true)
+    expect(firstNode.children).toBeUndefined()
     expect(afterExpandedRowKeys).toEqual([])
   })
 

@@ -561,3 +561,8 @@ databaseChangeLog:
   - include:
       file: 150-backfill-tenant-admin-runtime-ui-action-permissions.yaml
       relativeToChangelogFile: true
+
+  # 补齐平台模板 exportTestData 菜单的 permission 绑定，避免 rollout 检查继续报未绑定载体
+  - include:
+      file: 151-backfill-platform-export-test-data-menu-permission.yaml
+      relativeToChangelogFile: true

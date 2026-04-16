@@ -278,12 +278,25 @@ function ensureSelectedPermissionOptionExists() {
   permissionOptionMap.value = mapping
 }
 
-function handleRequiredPermissionIdChange(value?: number) {
-  if (!value) {
+function normalizePermissionOptionId(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const normalized = Number(value)
+    return Number.isFinite(normalized) ? normalized : undefined
+  }
+  return undefined
+}
+
+function handleRequiredPermissionIdChange(value: unknown) {
+  const permissionId = normalizePermissionOptionId(value)
+  formData.requiredPermissionId = permissionId
+  if (!permissionId) {
     formData.permission = ''
     return
   }
-  const selectedOption = permissionOptionMap.value.get(value)
+  const selectedOption = permissionOptionMap.value.get(permissionId)
   formData.permission = selectedOption?.permissionCode || ''
 }
 

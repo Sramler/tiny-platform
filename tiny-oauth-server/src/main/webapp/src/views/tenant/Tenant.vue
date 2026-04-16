@@ -409,14 +409,14 @@ async function loadData() {
   }
 }
 
-function resolveRuntimePagePath() {
+function resolveRuntimePagePath(): string {
   const aliasPath = Object.keys(RUNTIME_PAGE_PATH_ALIAS).find((pathPrefix) =>
     route.path.startsWith(pathPrefix),
   )
   if (aliasPath) {
-    return RUNTIME_PAGE_PATH_ALIAS[aliasPath]
+    return RUNTIME_PAGE_PATH_ALIAS[aliasPath] ?? '/system/tenant'
   }
-  const currentPath = window?.location?.pathname
+  const currentPath = window.location.pathname
   if (currentPath === '/system/tenant') {
     return currentPath
   }

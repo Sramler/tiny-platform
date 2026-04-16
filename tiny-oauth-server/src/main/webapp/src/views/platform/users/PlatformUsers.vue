@@ -132,6 +132,32 @@ const tenantEntryColumns = [
 ]
 const visiblePlatformUserColumns = ref<PlatformUserColumnKey[]>(platformUserColumnOptions.map((item) => item.key))
 const visibleTenantUserColumns = ref<TenantUserColumnKey[]>(tenantUserColumnOptions.map((item) => item.key))
+const queryEnabledValue = computed<string | undefined>({
+  get: () => {
+    if (query.value.enabled === undefined) {
+      return undefined
+    }
+    return query.value.enabled ? 'true' : 'false'
+  },
+  set: (value) => {
+    if (value === undefined) {
+      query.value.enabled = undefined
+      return
+    }
+    query.value.enabled = value === 'true'
+  },
+})
+
+function normalizeTenantRecord(tenant: Tenant | Record<string, any>): Tenant {
+  return {
+    id: Number(tenant.id),
+    code: typeof tenant.code === 'string' ? tenant.code : '',
+    name: typeof tenant.name === 'string' ? tenant.name : '',
+    domain: typeof tenant.domain === 'string' ? tenant.domain : undefined,
+    enabled: typeof tenant.enabled === 'boolean' ? tenant.enabled : undefined,
+    lifecycleStatus: typeof tenant.lifecycleStatus === 'string' ? tenant.lifecycleStatus : undefined,
+  }
+}
 
 function hasAnyAuthority(requiredAuthorities: string[]) {
   return requiredAuthorities.some((authority) => authorities.value.has(authority))
@@ -175,8 +201,12 @@ function lifecycleColor(status?: string) {
   return 'green'
 }
 
-function isSelectedStewardshipTenant(tenant?: Tenant | null) {
-  return Boolean(tenant?.id && tenant.id === selectedStewardshipTenant.value?.id)
+function isSelectedStewardshipTenant(tenant?: Tenant | Record<string, any> | null) {
+  if (!tenant) {
+    return false
+  }
+  const normalizedTenant = normalizeTenantRecord(tenant)
+  return Boolean(normalizedTenant.id && normalizedTenant.id === selectedStewardshipTenant.value?.id)
 }
 
 function getTenantEntryRowClassName(record: Tenant) {
@@ -498,8 +528,9 @@ const tenantStewardshipDrawerOpen = computed({
   },
 })
 
-async function openTenantDetail(tenant: Tenant) {
-  if (!tenant?.id || tenant.id <= 0) {
+async function openTenantDetail(tenantRecord: Tenant | Record<string, any>) {
+  const tenant = normalizeTenantRecord(tenantRecord)
+  if (!tenant.id || tenant.id <= 0) {
     message.warning('缺少有效租户 ID，暂无法进入平台详情')
     return
   }
@@ -527,8 +558,9 @@ async function openTenantDetail(tenant: Tenant) {
   }
 }
 
-async function enterTenantUserManagement(tenant: Tenant) {
-  if (!tenant?.id || tenant.id <= 0) {
+async function enterTenantUserManagement(tenantRecord: Tenant | Record<string, any>) {
+  const tenant = normalizeTenantRecord(tenantRecord)
+  if (!tenant.id || tenant.id <= 0) {
     message.warning('缺少有效租户 ID，暂无法进入租户用户管理')
     return
   }
@@ -675,9 +707,9 @@ onMounted(() => {
                       <a-input v-model:value="query.keyword" placeholder="用户名 / 昵称 / 展示名" />
                     </a-form-item>
                     <a-form-item label="账号启用">
-                      <a-select v-model:value="query.enabled" allow-clear style="width: 140px" placeholder="全部">
-                        <a-select-option :value="true">启用</a-select-option>
-                        <a-select-option :value="false">禁用</a-select-option>
+                      <a-select v-model:value="queryEnabledValue" allow-clear style="width: 140px" placeholder="全部">
+                        <a-select-option value="true">启用</a-select-option>
+                        <a-select-option value="false">禁用</a-select-option>
                       </a-select>
                     </a-form-item>
                     <a-form-item label="平台档案">

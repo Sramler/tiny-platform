@@ -125,7 +125,7 @@ describe('router guards', () => {
       },
     ])
 
-    const unresolvedTarget = router.resolve('/system/menu')
+    const unresolvedTarget = router.resolve('/system/menu') as any
     expect(unresolvedTarget.name).toBe('NotFound')
 
     const result = await module.dynamicRoutesGuard(

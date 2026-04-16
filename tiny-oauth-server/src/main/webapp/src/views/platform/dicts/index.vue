@@ -150,15 +150,20 @@ async function loadOverrideSummary() {
   }
 }
 
-async function selectTenant(record: PlatformDictOverrideSummary) {
+async function selectTenant(record: PlatformDictOverrideSummary | Record<string, any>) {
   if (!selectedDictTypeId.value) {
     return
   }
-  selectedTenantId.value = record.tenantId
-  selectedTenantLabel.value = record.tenantName || record.tenantCode || String(record.tenantId)
+  const tenantId = Number(record.tenantId)
+  if (!Number.isFinite(tenantId)) {
+    message.warning('租户覆盖摘要数据异常，缺少 tenantId')
+    return
+  }
+  selectedTenantId.value = tenantId
+  selectedTenantLabel.value = String(record.tenantName || record.tenantCode || tenantId)
   detailLoading.value = true
   try {
-    overrideDetails.value = await getPlatformDictOverrideDetails(selectedDictTypeId.value, record.tenantId)
+    overrideDetails.value = await getPlatformDictOverrideDetails(selectedDictTypeId.value, tenantId)
   } catch (error: any) {
     message.error('加载租户覆盖明细失败: ' + (error?.message || '未知错误'))
   } finally {
