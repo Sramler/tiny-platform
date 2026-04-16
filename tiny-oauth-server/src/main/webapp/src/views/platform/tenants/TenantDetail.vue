@@ -2,7 +2,7 @@
   <div class="content-container">
     <div class="content-card">
       <div class="toolbar">
-        <a-button type="link" @click="goBack">返回租户列表</a-button>
+        <a-button type="link" @click="goBack">{{ backButtonLabel }}</a-button>
         <a-button type="primary" ghost @click="reload">刷新</a-button>
       </div>
 
@@ -73,6 +73,7 @@ import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import type { ColumnsType } from 'ant-design-vue/es/table'
+import { sanitizeInternalRedirect } from '@/utils/redirect'
 import {
   diffTenantPlatformTemplate,
   getTenantById,
@@ -105,6 +106,12 @@ const diffColumns: ColumnsType<DisplayDiffRow> = [
 ]
 
 const tenantId = computed(() => route.params.id as string)
+const backTarget = computed(() =>
+  sanitizeInternalRedirect(typeof route.query.from === 'string' ? route.query.from : null, '/platform/tenants'),
+)
+const backButtonLabel = computed(() =>
+  backTarget.value.startsWith('/platform/users') ? '返回租户用户代管' : '返回租户列表',
+)
 const displayDiffs = computed<DisplayDiffRow[]>(() => {
   if (!diffResult.value) return []
   return diffResult.value.diffs.map((item) => ({
@@ -157,7 +164,7 @@ async function loadTenantControlPlaneData() {
 }
 
 function goBack() {
-  router.push('/platform/tenants')
+  router.push(backTarget.value)
 }
 
 function reload() {

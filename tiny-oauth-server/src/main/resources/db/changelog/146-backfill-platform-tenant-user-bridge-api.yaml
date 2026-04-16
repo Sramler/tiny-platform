@@ -1,0 +1,118 @@
+databaseChangeLog:
+  - changeSet:
+      id: 146-backfill-platform-tenant-user-bridge-api
+      author: codex
+      comment: 补齐平台侧租户用户代管桥接 API 的 api_endpoint 与 requirement，避免统一守卫 fail-closed
+      preConditions:
+        onFail: MARK_RAN
+        onError: HALT
+        and:
+          - tableExists:
+              tableName: permission
+          - tableExists:
+              tableName: api_endpoint
+          - tableExists:
+              tableName: api_endpoint_permission_requirement
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT INTO `api_endpoint` (
+                `tenant_id`,
+                `resource_level`,
+                `name`,
+                `title`,
+                `uri`,
+                `method`,
+                `permission`,
+                `required_permission_id`,
+                `enabled`,
+                `created_at`,
+                `updated_at`
+              )
+              SELECT NULL, 'PLATFORM', 'platform-tenant-users-get', '平台租户用户列表', '/platform/tenants/{tenantId}/users', 'GET', 'system:user:list', p.`id`, 1, NOW(), NOW()
+              FROM `permission` p
+              WHERE p.`tenant_id` IS NULL
+                AND p.`permission_code` = 'system:user:list'
+                AND NOT EXISTS (
+                  SELECT 1 FROM `api_endpoint` e
+                  WHERE e.`tenant_id` IS NULL
+                    AND e.`uri` = '/platform/tenants/{tenantId}/users'
+                    AND e.`method` = 'GET'
+                );
+
+              INSERT INTO `api_endpoint` (
+                `tenant_id`,
+                `resource_level`,
+                `name`,
+                `title`,
+                `uri`,
+                `method`,
+                `permission`,
+                `required_permission_id`,
+                `enabled`,
+                `created_at`,
+                `updated_at`
+              )
+              SELECT NULL, 'PLATFORM', 'platform-tenant-users-id-get', '平台租户用户详情', '/platform/tenants/{tenantId}/users/{userId}', 'GET', 'system:user:view', p.`id`, 1, NOW(), NOW()
+              FROM `permission` p
+              WHERE p.`tenant_id` IS NULL
+                AND p.`permission_code` = 'system:user:view'
+                AND NOT EXISTS (
+                  SELECT 1 FROM `api_endpoint` e
+                  WHERE e.`tenant_id` IS NULL
+                    AND e.`uri` = '/platform/tenants/{tenantId}/users/{userId}'
+                    AND e.`method` = 'GET'
+                );
+
+              INSERT IGNORE INTO `api_endpoint_permission_requirement` (
+                `tenant_id`,
+                `api_endpoint_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `updated_at`
+              )
+              SELECT
+                e.`tenant_id`,
+                e.`id`,
+                requireds.`requirement_group`,
+                requireds.`sort_order`,
+                p.`id`,
+                0,
+                NOW(),
+                NOW()
+              FROM `api_endpoint` e
+              JOIN (
+                SELECT '/platform/tenants/{tenantId}/users' AS `uri`, 'GET' AS `method`, 1 AS `requirement_group`, 1 AS `sort_order`, 'system:user:list' AS `permission_code`
+                UNION ALL SELECT '/platform/tenants/{tenantId}/users', 'GET', 1, 2, 'system:tenant:list'
+                UNION ALL SELECT '/platform/tenants/{tenantId}/users', 'GET', 2, 1, 'system:user:list'
+                UNION ALL SELECT '/platform/tenants/{tenantId}/users', 'GET', 2, 2, 'system:tenant:view'
+                UNION ALL SELECT '/platform/tenants/{tenantId}/users', 'GET', 3, 1, 'system:user:view'
+                UNION ALL SELECT '/platform/tenants/{tenantId}/users', 'GET', 3, 2, 'system:tenant:list'
+                UNION ALL SELECT '/platform/tenants/{tenantId}/users', 'GET', 4, 1, 'system:user:view'
+                UNION ALL SELECT '/platform/tenants/{tenantId}/users', 'GET', 4, 2, 'system:tenant:view'
+                UNION ALL SELECT '/platform/tenants/{tenantId}/users/{userId}', 'GET', 1, 1, 'system:user:list'
+                UNION ALL SELECT '/platform/tenants/{tenantId}/users/{userId}', 'GET', 1, 2, 'system:tenant:list'
+                UNION ALL SELECT '/platform/tenants/{tenantId}/users/{userId}', 'GET', 2, 1, 'system:user:list'
+                UNION ALL SELECT '/platform/tenants/{tenantId}/users/{userId}', 'GET', 2, 2, 'system:tenant:view'
+                UNION ALL SELECT '/platform/tenants/{tenantId}/users/{userId}', 'GET', 3, 1, 'system:user:view'
+                UNION ALL SELECT '/platform/tenants/{tenantId}/users/{userId}', 'GET', 3, 2, 'system:tenant:list'
+                UNION ALL SELECT '/platform/tenants/{tenantId}/users/{userId}', 'GET', 4, 1, 'system:user:view'
+                UNION ALL SELECT '/platform/tenants/{tenantId}/users/{userId}', 'GET', 4, 2, 'system:tenant:view'
+              ) requireds
+                ON requireds.`uri` = e.`uri`
+               AND requireds.`method` = e.`method`
+              JOIN `permission` p
+                ON p.`tenant_id` IS NULL
+               AND p.`permission_code` = requireds.`permission_code`
+              WHERE e.`tenant_id` IS NULL
+                AND e.`uri` IN (
+                  '/platform/tenants/{tenantId}/users',
+                  '/platform/tenants/{tenantId}/users/{userId}'
+                )
+                AND e.`method` = 'GET';

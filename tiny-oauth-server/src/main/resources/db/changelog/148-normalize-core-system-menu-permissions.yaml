@@ -1,0 +1,86 @@
+databaseChangeLog:
+  - changeSet:
+      id: 148-normalize-core-system-menu-permissions
+      author: codex
+      comment: 统一系统管理核心菜单到当前 permission 主契约，避免历史旧码导致菜单可见性漂移
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: menu
+            - tableExists:
+                tableName: permission
+            - tableExists:
+                tableName: menu_permission_requirement
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              -- 对齐系统管理核心菜单的 permission / required_permission_id，
+              -- 以当前前后端统一使用的 read authority 为准。
+              UPDATE `menu` m
+              JOIN (
+                SELECT 'user' AS `name`, 'system:user:list' AS `permission_code`
+                UNION ALL SELECT 'role', 'system:role:list'
+                UNION ALL SELECT 'menu', 'system:menu:list'
+                UNION ALL SELECT 'resource', 'system:resource:list'
+                UNION ALL SELECT 'dict', 'dict:type:list'
+              ) mapping
+                ON mapping.`name` = m.`name`
+              JOIN `permission` p
+                ON p.`permission_code` = mapping.`permission_code`
+               AND (
+                 (m.`tenant_id` IS NULL AND p.`tenant_id` IS NULL)
+                 OR p.`tenant_id` = m.`tenant_id`
+               )
+              SET
+                m.`permission` = mapping.`permission_code`,
+                m.`required_permission_id` = p.`id`,
+                m.`updated_at` = NOW(),
+                m.`updated_by` = NULL
+              WHERE
+                m.`name` IN ('user', 'role', 'menu', 'resource', 'dict')
+                AND (
+                  m.`permission` <> mapping.`permission_code`
+                  OR NOT (m.`required_permission_id` <=> p.`id`)
+                );
+
+              -- 旧 requirement rows 会让 fail-closed evaluator 继续按历史权限码判定；
+              -- 这里删除后按当前 required_permission_id 重新灌入规范单组规则。
+              DELETE requirement
+              FROM `menu_permission_requirement` requirement
+              JOIN `menu` m
+                ON m.`id` = requirement.`menu_id`
+              WHERE m.`name` IN ('user', 'role', 'menu', 'resource', 'dict');
+
+              INSERT INTO `menu_permission_requirement` (
+                `tenant_id`,
+                `menu_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                m.`tenant_id`,
+                m.`id`,
+                0 AS `requirement_group`,
+                1 AS `sort_order`,
+                m.`required_permission_id` AS `permission_id`,
+                0 AS `negated`,
+                NOW() AS `created_at`,
+                NULL AS `created_by`,
+                NOW() AS `updated_at`,
+                NULL AS `updated_by`
+              FROM `menu` m
+              WHERE m.`name` IN ('user', 'role', 'menu', 'resource', 'dict')
+                AND m.`required_permission_id` IS NOT NULL;

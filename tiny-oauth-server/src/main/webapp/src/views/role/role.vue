@@ -951,9 +951,10 @@ async function handleResourceAssign(payload: { permissionIds: number[] }) {
 }
 
 .table-scroll-container {
-  /* 不要设置 flex: 1; */
+  flex: 1;
   min-height: 0; /* 可选，防止撑开 */
   overflow: auto; /* 内容多时滚动 */
+  padding-bottom: 12px;
   /* 隐藏滚动条但保持滚动功能 */
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* IE and Edge */
@@ -965,6 +966,9 @@ async function handleResourceAssign(payload: { permissionIds: number[] }) {
 }
 
 .pagination-container {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
   display: flex;                /* 启用flex布局 */
   align-items: center;          /* 垂直居中 */
   justify-content: flex-end;    /* 右对齐 */
@@ -973,6 +977,7 @@ async function handleResourceAssign(payload: { permissionIds: number[] }) {
   /* 上下留白，确保有足够空间垂直居中 */
   min-height: 56px;
   /* 最小高度，确保有足够的垂直空间 */
+  border-top: 1px solid #f0f0f0;
 }
 
 :deep(.ant-pagination) {
@@ -1312,4 +1317,7 @@ async function handleResourceAssign(payload: { permissionIds: number[] }) {
   cursor: not-allowed !important;
   outline: none !important;
 }
-</style> 
+::deep(.ant-table-tbody > tr > td) {
+  white-space: nowrap;
+}
+</style>

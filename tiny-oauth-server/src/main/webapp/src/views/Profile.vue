@@ -149,12 +149,14 @@
                       <span>两步验证</span>
                     </template>
                     <template #description>
-                      <span v-if="totpBound">已开启两步验证，账户安全性更高</span>
+                      <span v-if="totpActivated">已开启两步验证，账户安全性更高</span>
+                      <span v-else-if="totpPendingActivation">两步验证待完成激活，请继续完成绑定</span>
                       <span v-else>未开启两步验证，建议开启以提升账户安全性</span>
                     </template>
                   </a-list-item-meta>
                   <template #actions>
-                    <a v-if="totpBound" @click="goToSettings">查看</a>
+                    <a v-if="totpActivated" @click="goToSettings">查看</a>
+                    <a v-else-if="totpPendingActivation" @click="handleBindTotp">继续绑定</a>
                     <a v-else @click="handleBindTotp">开启</a>
                   </template>
                 </a-list-item>
@@ -282,6 +284,8 @@ const activeKey = ref('base')
 
 // TOTP 绑定状态
 const totpBound = ref(false)
+const totpActivated = ref(false)
+const totpPendingActivation = computed(() => totpBound.value && !totpActivated.value)
 
 // 头像相关
 const avatarUrl = ref<string>('')
@@ -409,6 +413,7 @@ const loadSecurityStatus = async () => {
   try {
     const data = await getSecurityStatus()
     totpBound.value = Boolean(data.totpBound)
+    totpActivated.value = Boolean(data.totpActivated)
   } catch (error) {
     console.error('加载安全状态失败:', error)
   }

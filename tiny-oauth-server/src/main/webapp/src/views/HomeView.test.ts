@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   routerPush: vi.fn(),
   messageError: vi.fn(),
   authUser: { value: null as { access_token?: string | null } | null },
+  isPlatformScope: { value: true },
 }))
 
 vi.mock('vue-router', () => ({
@@ -20,6 +21,12 @@ vi.mock('@/auth/auth', () => ({
   useAuth: () => ({
     user: mocks.authUser,
     isAuthenticated: computed(() => !!mocks.authUser.value),
+  }),
+}))
+
+vi.mock('@/composables/usePlatformScope', () => ({
+  usePlatformScope: () => ({
+    isPlatformScope: computed(() => mocks.isPlatformScope.value),
   }),
 }))
 
@@ -52,7 +59,7 @@ const StatisticStub = defineComponent({
 
 function createToken(authorities: string[]) {
   const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')
-  const payload = Buffer.from(JSON.stringify({ authorities })).toString('base64url')
+  const payload = Buffer.from(JSON.stringify({ authorities, activeScopeType: 'PLATFORM' })).toString('base64url')
   return `${header}.${payload}.signature`
 }
 
@@ -87,6 +94,7 @@ describe('HomeView.vue', () => {
     mocks.routerPush.mockReset()
     mocks.messageError.mockReset()
     mocks.authUser.value = null
+    mocks.isPlatformScope.value = true
     window.localStorage.clear()
     mocks.getIdempotentMetrics.mockResolvedValue({
       windowMinutes: 60,
@@ -150,7 +158,22 @@ describe('HomeView.vue', () => {
 
     expect(mocks.getIdempotentMetrics).not.toHaveBeenCalled()
     expect(mocks.getIdempotentTopKeys).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('幂等治理指标仅对具备平台级幂等治理权限的用户开放')
+    expect(wrapper.text()).toContain('平台作用域下具备平台级幂等治理权限')
+    expect(wrapper.text()).not.toContain('进入治理页')
+  })
+
+  it('should not fetch metrics for tenant scoped users even if authority is present', async () => {
+    mocks.isPlatformScope.value = false
+    mocks.authUser.value = {
+      access_token: createToken(['idempotent:ops:view']),
+    }
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(mocks.getIdempotentMetrics).not.toHaveBeenCalled()
+    expect(mocks.getIdempotentTopKeys).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('平台作用域下具备平台级幂等治理权限')
     expect(wrapper.text()).not.toContain('进入治理页')
   })
 })

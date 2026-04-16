@@ -521,3 +521,43 @@ databaseChangeLog:
   - include:
       file: 142-backfill-platform-dict-api-endpoints.yaml
       relativeToChangelogFile: true
+
+  # 平台用户档案与平台用户管理控制面主链
+  - include:
+      file: 143-platform-user-profile-and-api.yaml
+      relativeToChangelogFile: true
+
+  # 补齐平台用户控制面与 controller guard 一致的 requirement OR 组，避免统一守卫提前 403
+  - include:
+      file: 144-backfill-platform-user-api-endpoint-or-groups.yaml
+      relativeToChangelogFile: true
+
+  # 补齐平台用户治理运行态菜单，避免平台态继续落到 tenant-only 的 /system/user
+  - include:
+      file: 145-backfill-platform-user-runtime-menu.yaml
+      relativeToChangelogFile: true
+
+  # 补齐平台侧租户用户代管桥接 API，避免平台治理入口继续回落到 tenant-only 链路
+  - include:
+      file: 146-backfill-platform-tenant-user-bridge-api.yaml
+      relativeToChangelogFile: true
+
+  # 对齐租户治理菜单到 system 目录，并补齐平台模板 ROLE_TENANT_ADMIN 的治理可见链路
+  - include:
+      file: 147-backfill-tenant-governance-system-menus.yaml
+      relativeToChangelogFile: true
+
+  # 对齐系统管理核心菜单到当前 read authority 契约，消除历史旧权限码漂移
+  - include:
+      file: 148-normalize-core-system-menu-permissions.yaml
+      relativeToChangelogFile: true
+
+  # 回填租户管理员用户治理写权限，恢复用户页运行时按钮可见性
+  - include:
+      file: 149-backfill-tenant-admin-user-management-write-permissions.yaml
+      relativeToChangelogFile: true
+
+  # 补齐角色/菜单/资源页 ui_action carrier 与租户管理员按钮权限，避免运行时继续缺按钮
+  - include:
+      file: 150-backfill-tenant-admin-runtime-ui-action-permissions.yaml
+      relativeToChangelogFile: true

@@ -1,0 +1,89 @@
+databaseChangeLog:
+  - changeSet:
+      id: 144-backfill-platform-user-api-endpoint-or-groups
+      author: codex
+      changes:
+        - sql:
+            splitStatements: true
+            stripComments: true
+            sql: |
+              INSERT IGNORE INTO `api_endpoint_permission_requirement` (
+                `tenant_id`,
+                `api_endpoint_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `updated_at`
+              )
+              SELECT
+                e.`tenant_id`,
+                e.`id`,
+                1,
+                1,
+                p.`id`,
+                0,
+                NOW(),
+                NOW()
+              FROM `api_endpoint` e
+              JOIN `permission` p
+                ON p.`tenant_id` IS NULL
+               AND p.`permission_code` = 'platform:user:view'
+              WHERE e.`tenant_id` IS NULL
+                AND e.`uri` = '/platform/users'
+                AND e.`method` = 'GET';
+
+              INSERT IGNORE INTO `api_endpoint_permission_requirement` (
+                `tenant_id`,
+                `api_endpoint_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `updated_at`
+              )
+              SELECT
+                e.`tenant_id`,
+                e.`id`,
+                1,
+                1,
+                p.`id`,
+                0,
+                NOW(),
+                NOW()
+              FROM `api_endpoint` e
+              JOIN `permission` p
+                ON p.`tenant_id` IS NULL
+               AND p.`permission_code` = 'platform:user:list'
+              WHERE e.`tenant_id` IS NULL
+                AND e.`uri` = '/platform/users/{id}'
+                AND e.`method` = 'GET';
+
+              INSERT IGNORE INTO `api_endpoint_permission_requirement` (
+                `tenant_id`,
+                `api_endpoint_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `updated_at`
+              )
+              SELECT
+                e.`tenant_id`,
+                e.`id`,
+                1,
+                1,
+                p.`id`,
+                0,
+                NOW(),
+                NOW()
+              FROM `api_endpoint` e
+              JOIN `permission` p
+                ON p.`tenant_id` IS NULL
+               AND p.`permission_code` = 'platform:user:edit'
+              WHERE e.`tenant_id` IS NULL
+                AND e.`uri` = '/platform/users/{id}/status'
+                AND e.`method` = 'PATCH';

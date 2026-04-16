@@ -18,6 +18,8 @@
 - 路由跳转
 - 请求参数
 - 弹窗确认
+- 第三方组件运行时契约（如 Ant Design Vue Table / Form / Drawer）
+- 菜单点击路径 vs direct deep-link / 刷新路径
 
 测试层级：
 - 组件测试
@@ -30,14 +32,19 @@
 - 提交参数
 - 路由跳转
 - confirm 之后的真实动作
+- 如果页面由菜单或动态路由驱动：菜单点击进入、direct deep-link、浏览器刷新三者中至少覆盖前两者，并明确第三者是否同构
+- 如果页面依赖第三方组件高阶能力：锁住真实 prop / event 契约（例如 `@expand`、`expandedRowKeys`、`@finish`、`open` / `close`）
 
 禁止：
 - 不要用 wrapper.vm 改内部状态
 - 不要手工 $emit 到真实 disabled 的按钮
 - 不要用失真的 Ant Design Vue stub
+- 不要把运行时代码依赖的顶层 props / emits 偷换成测试专用结构
+- 不要只验证“从菜单点进去可以”，却漏掉 direct deep-link / 浏览器刷新
 
 交付：
 - 测试文件清单
 - 执行命令
 - 组件测试和 E2E 的边界说明
+- 哪些行为已用真实浏览器验证，哪些仍是组件层契约验证
 ```

@@ -739,8 +739,10 @@ watch(
 }
 
 .table-scroll-container {
+  flex: 1;
   min-height: 0;
   overflow: auto;
+  padding-bottom: 12px;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -750,12 +752,16 @@ watch(
 }
 
 .pagination-container {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
   background: #fff;
   padding: 12px 24px;
   min-height: 56px;
+  border-top: 1px solid #f0f0f0;
 }
 
 .ml-2 {
@@ -920,5 +926,8 @@ watch(
   height: auto;
   line-height: 1.2;
   font-size: 12px;
+}
+::deep(.ant-table-tbody > tr > td) {
+  white-space: nowrap;
 }
 </style>

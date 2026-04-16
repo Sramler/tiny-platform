@@ -32,9 +32,23 @@ public class UserManagementAccessGuard {
         "system:user:batch-disable",
         "system:user:disable"
     );
+    private static final Set<String> PLATFORM_STEWARD_TENANT_AUTHORITIES = Set.of(
+        "system:tenant:list",
+        "system:tenant:view"
+    );
 
     public boolean canRead(Authentication authentication) {
         return isTenantSideScope(authentication) && hasAnyAuthority(authentication, READ_AUTHORITIES);
+    }
+
+    /**
+     * 平台侧租户用户代管入口：
+     * 保持 PLATFORM scope，不直接放开 `/sys/users`，仅供 `/platform/tenants/{tenantId}/users` 桥接接口使用。
+     */
+    public boolean canPlatformStewardRead(Authentication authentication) {
+        return isPlatformScope(authentication)
+            && hasAnyAuthority(authentication, READ_AUTHORITIES)
+            && hasAnyAuthority(authentication, PLATFORM_STEWARD_TENANT_AUTHORITIES);
     }
 
     public boolean canCreate(Authentication authentication) {
@@ -62,6 +76,12 @@ public class UserManagementAccessGuard {
             return false;
         }
         return !TenantContext.isPlatformScope();
+    }
+
+    private boolean isPlatformScope(Authentication authentication) {
+        return authentication != null
+            && authentication.isAuthenticated()
+            && TenantContext.isPlatformScope();
     }
 
     private boolean hasAnyAuthority(Authentication authentication, Set<String> requiredAuthorities) {

@@ -2,7 +2,9 @@ package com.tiny.platform.core.oauth.security;
 
 import com.tiny.platform.infrastructure.auth.role.domain.Role;
 import com.tiny.platform.infrastructure.auth.role.service.EffectiveRoleResolutionService;
+import com.tiny.platform.infrastructure.auth.user.domain.PlatformUserProfile;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
+import com.tiny.platform.infrastructure.auth.user.repository.PlatformUserProfileRepository;
 import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.TenantUserRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
@@ -23,15 +25,18 @@ public class AuthUserResolutionService {
     private static final String ACTIVE = "ACTIVE";
 
     private final UserRepository userRepository;
+    private final PlatformUserProfileRepository platformUserProfileRepository;
     private final TenantUserRepository tenantUserRepository;
     private final EffectiveRoleResolutionService effectiveRoleResolutionService;
     private final TenantRepository tenantRepository;
 
     public AuthUserResolutionService(UserRepository userRepository,
+                                     PlatformUserProfileRepository platformUserProfileRepository,
                                      TenantUserRepository tenantUserRepository,
                                      EffectiveRoleResolutionService effectiveRoleResolutionService,
                                      TenantRepository tenantRepository) {
         this.userRepository = userRepository;
+        this.platformUserProfileRepository = platformUserProfileRepository;
         this.tenantUserRepository = tenantUserRepository;
         this.effectiveRoleResolutionService = effectiveRoleResolutionService;
         this.tenantRepository = tenantRepository;
@@ -149,6 +154,10 @@ public class AuthUserResolutionService {
             return Optional.empty();
         }
         User resolved = candidates.get(0);
+        if (!platformUserProfileRepository.existsByUserIdAndStatus(resolved.getId(), PlatformUserProfile.STATUS_ACTIVE)) {
+            log.warn("用户 {} 未启用平台用户档案，拒绝平台登录", username);
+            return Optional.empty();
+        }
         if (effectiveRoleResolutionService.findEffectiveRoleIdsForUserInPlatform(resolved.getId()).isEmpty()) {
             log.warn("用户 {} 不具备 PLATFORM 作用域赋权，拒绝平台登录", username);
             return Optional.empty();

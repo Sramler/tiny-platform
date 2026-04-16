@@ -25,6 +25,7 @@
 - ❌ 二次封装组件缺少 Props/Emits 类型定义。
 - ❌ 二次封装组件不透传 `$attrs`（导致样式和事件丢失）。
 - ❌ 直接修改 Ant Design Vue 组件内部样式（应使用 CSS 变量或主题定制）。
+- ❌ 按照通用记忆、其他版本示例或失真的测试替身去接入 Ant Design Vue 高阶能力（如 `Table` 树形展开、懒加载、受控展开、`expandIcon`、`rowExpandable`、表单提交语义），而不先核对仓库当前安装版本的真实 prop / event 契约。
 
 ### 3) 性能与使用
 
@@ -51,11 +52,14 @@
 - ✅ 表格：选中行用 `v-model:selectedRowKeys`；大数据考虑 scroll/virtual。
 - ✅ 表格列：使用 `columns` 配置，避免在模板中硬编码列定义。
 - ✅ 表格分页：使用 `v-model:current` 和 `v-model:pageSize`。
+- ✅ 涉及 `a-table` 树形数据、懒加载子节点、受控展开、`expand-icon`、`expanded-row-keys`、`row-expandable`、`@expand`、`@expandedRowsChange` 等高阶行为时，必须先以**当前仓库安装的 ant-design-vue 版本**源码 / 类型定义 / 真实运行时为准核对接法，再落代码；不得直接照搬其他版本文档或历史写法。
+- ✅ 如果第三方组件行为依赖运行时事件回调顺序或受控状态回写（如树表先回写 `expandedKeys` 再挂载 `children`），必须把状态恢复逻辑写在业务组件中，并补回归测试锁住。
 
 ### 4) 类型定义
 
 - ✅ 二次封装组件：props/emits 必须有 TS 类型；透传 attrs；事件统一命名。
 - ✅ 组件 Props 必须使用 `PropType<T>` 或泛型定义类型。
+- ✅ 自定义 `expandIcon`、`suffixIcon`、`prefixIcon`、render 函数或插槽里引用的图标 / 子组件，必须显式 import；不要依赖模板自动解析或历史全局注册。
 
 ---
 
@@ -76,6 +80,7 @@
 
 - ⚠️ 大数据表格使用虚拟滚动（`scroll={{ y: 400 }}` 或 `virtual` 属性）。
 - ⚠️ 表格列使用 `customRender` 时避免复杂计算（使用 `computed` 预处理）。
+- ⚠️ 遇到 Ant Design Vue 组件“单测能过、浏览器行为不对”的情况，优先怀疑 **运行时 API 接法与当前版本不一致** 或 **测试 stub 语义失真**，先看本地 `node_modules/ant-design-vue` 的类型 / 源码，再决定修法。
 
 ### 4) 表单最佳实践
 

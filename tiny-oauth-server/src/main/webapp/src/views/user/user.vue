@@ -7,7 +7,8 @@
           <h3>当前页面仅支持租户侧作用域</h3>
           <p>
             <code>/sys/users</code> 当前仍是租户侧控制面接口。当前会话处于 <code>PLATFORM</code>，
-            已阻止加载用户列表；请先切换到目标租户后重试。
+            已阻止加载用户列表；若要管理平台用户，请进入 <code>/platform/users</code>，
+            若要管理租户用户，请先切换到目标租户后重试。
           </p>
         </template>
         <template v-else>
@@ -21,256 +22,264 @@
       </div>
 
       <template v-else>
-      <div class="form-container">
-        <a-form layout="inline" :model="query">
-          <a-form-item label="用户名">
-            <a-input v-model:value="query.username" placeholder="请输入用户名" />
-          </a-form-item>
-          <a-form-item label="昵称">
-            <a-input v-model:value="query.nickname" placeholder="请输入昵称" />
-          </a-form-item>
-          <a-form-item>
-            <a-button type="primary" @click="throttledSearch">搜索</a-button>
-            <a-button class="ml-2" @click="throttledReset">重置</a-button>
-          </a-form-item>
-        </a-form>
-      </div>
-
-      <div class="toolbar-container">
-        <div class="table-title">
-          用户列表
+        <div class="form-container">
+          <a-form layout="inline" :model="query">
+            <a-form-item label="用户名">
+              <a-input v-model:value="query.username" placeholder="请输入用户名" />
+            </a-form-item>
+            <a-form-item label="昵称">
+              <a-input v-model:value="query.nickname" placeholder="请输入昵称" />
+            </a-form-item>
+            <a-form-item>
+              <a-button type="primary" @click="throttledSearch">搜索</a-button>
+              <a-button class="ml-2" @click="throttledReset">重置</a-button>
+            </a-form-item>
+          </a-form>
         </div>
-        <div class="table-actions">
-          <div v-if="selectedRowKeys.length > 0" class="batch-actions">
-            <a-button v-if="canDeleteUserManagement" type="primary" danger @click="throttledBatchDelete" class="toolbar-btn">
-              <template #icon>
-                <DeleteOutlined />
-              </template>
-              批量删除 ({{ selectedRowKeys.length }})
-            </a-button>
-            <a-tooltip v-if="canEnableUserManagement && !allDisabled" title="只有全部未启用用户时才可批量启用">
-              <span>
-                <a-button type="primary" class="toolbar-btn" :disabled="!allDisabled">
-                  <template #icon>
-                    <CheckCircleOutlined />
-                  </template>
-                  批量启用
-                </a-button>
-              </span>
-            </a-tooltip>
-            <a-button v-else-if="canEnableUserManagement" type="primary" class="toolbar-btn" @click="throttledBatchEnable">
-              <template #icon>
-                <CheckCircleOutlined />
-              </template>
-              批量启用
-            </a-button>
-            <a-tooltip v-if="canDisableUserManagement && !allEnabled" title="只有全部已启用用户时才可批量禁用">
-              <span>
-                <a-button class="toolbar-btn" :disabled="!allEnabled">
-                  <template #icon>
-                    <StopOutlined />
-                  </template>
-                  批量禁用
-                </a-button>
-              </span>
-            </a-tooltip>
-            <a-button v-else-if="canDisableUserManagement" class="toolbar-btn" @click="throttledBatchDisable">
-              <template #icon>
-                <StopOutlined />
-              </template>
-              批量禁用
-            </a-button>
-            <a-button @click="clearSelection" class="toolbar-btn">
-              <template #icon>
-                <CloseOutlined />
-              </template>
-              取消选择
-            </a-button>
-            <!-- 分配角色按钮，仅单选时可用，否则禁用并提示 -->
-            <a-tooltip v-if="canAssignUserRoles && selectedRowKeys.length !== 1" title="请仅选择一个用户进行角色分配">
-              <span>
-                <a-button type="primary" class="toolbar-btn" disabled style="pointer-events: auto;">
-                  <template #icon>
-                    <SettingOutlined />
-                  </template>
-                  分配角色
-                </a-button>
-              </span>
-            </a-tooltip>
-            <a-button v-else-if="canAssignUserRoles" type="primary" class="toolbar-btn" @click="openBatchRoleTransfer">
-              <template #icon>
-                <SettingOutlined />
-              </template>
-              分配角色
-            </a-button>
+
+        <div class="toolbar-container">
+          <div class="table-title">
+            用户列表
           </div>
-
-          <a-button v-if="canCreateUserManagement" type="link" @click="throttledCreate" class="toolbar-btn">
-            <template #icon>
-              <PlusOutlined />
-            </template>
-            新建
-          </a-button>
-          <a-tooltip title="刷新">
-            <span class="action-icon" @click="throttledRefresh">
-              <ReloadOutlined :spin="refreshing" />
-            </span>
-          </a-tooltip>
-          <a-tooltip :title="showSortTooltip ? '关闭排序提示' : '开启排序提示'">
-            <PoweroffOutlined :class="['action-icon', { active: showSortTooltip }]"
-              @click="showSortTooltip = !showSortTooltip" />
-          </a-tooltip>
-          <a-tooltip :title="cellCopyEnabled ? '关闭单元格复制' : '开启单元格复制'">
-            <CopyOutlined :class="['action-icon', { active: cellCopyEnabled }]" @click="cellCopyEnabled = !cellCopyEnabled" />
-          </a-tooltip>
-          <a-dropdown placement="bottomRight" trigger="click">
-            <a-tooltip title="表格密度">
-              <ColumnHeightOutlined class="action-icon" />
-            </a-tooltip>
-            <template #overlay>
-                <a-menu @click="handleDensityMenuClick" :selected-keys="[tableSize]">
-                <a-menu-item key="default">
-                  <span>默认</span>
-                </a-menu-item>
-                <a-menu-item key="middle">
-                  <span>中等</span>
-                </a-menu-item>
-                <a-menu-item key="small">
-                  <span>紧凑</span>
-                </a-menu-item>
-              </a-menu>
-            </template>
-          </a-dropdown>
-          <a-popover placement="bottomRight" trigger="click" :destroyTooltipOnHide="false">
-            <template #content>
-              <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-                <div style="display: flex; align-items: center;">
-                  <a-checkbox :checked="showColumnKeys.length === allColumns.length"
-                    :indeterminate="showColumnKeys.length > 0 && showColumnKeys.length < allColumns.length"
-                    @change="(e: any) => onCheckAllChange(e)" />
-                  <span style="font-weight: bold; margin-left: 8px;">列展示/排序</span>
-                </div>
-                <span style="font-weight: bold; color: #1677ff; cursor: pointer;" @click="resetColumnOrder">
-                  重置
-                </span>
-              </div>
-              <VueDraggable v-model="draggableColumns"
-                :item-key="(item: any) => item?.dataIndex || `col_${Math.random()}`" handle=".drag-handle"
-                @end="onDragEnd" class="draggable-columns" ghost-class="sortable-ghost" chosen-class="sortable-chosen"
-                tag="div">
-                <template #item="{ element: col }">
-                  <div class="draggable-column-item">
-                    <HolderOutlined class="drag-handle" />
-                    <a-checkbox :checked="showColumnKeys.includes(col.dataIndex)"
-                      @change="(e: any) => onCheckboxChange(col.dataIndex, e.target.checked)">
-                      {{ col.title }}
-                    </a-checkbox>
-                  </div>
-                </template>
-              </VueDraggable>
-            </template>
-            <a-tooltip title="列设置">
-              <SettingOutlined class="action-icon" />
-            </a-tooltip>
-          </a-popover>
-        </div>
-      </div>
-      <div class="table-container" ref="tableContentRef">
-        <div class="table-scroll-container" ref="tableScrollContainerRef">
-          <a-table :columns="columns" :data-source="tableData" :pagination="false"
-            :row-key="(record: any) => String(record.id)" bordered :loading="loading" @change="handleTableChange"
-            :row-selection="rowSelection" :custom-row="onCustomRow" :row-class-name="getRowClassName"
-            :scroll="{ x: 1500, y: tableBodyHeight }" :locale="tableLocale" :show-sorter-tooltip="showSortTooltip"
-            :size="tableSize === 'default' ? undefined : tableSize">
-            <template #bodyCell="{ column, record, index }">
-              <template v-if="column.dataIndex === 'index'">
-                {{
-                  ((Number(pagination.current) || 1) - 1) *
-                    (Number(pagination.pageSize) || 10) +
-                  index + 1
-                }}
-              </template>
-              <template
-                v-else-if="['enabled', 'accountNonExpired', 'accountNonLocked', 'credentialsNonExpired'].includes(String(column.dataIndex || ''))">
-                <a-tag :color="record[String(column.dataIndex || '')] ? 'green' : 'red'">
-                  {{ record[String(column.dataIndex || '')] ? '是' : '否' }}
-                </a-tag>
-              </template>
-              <template v-else-if="column.dataIndex === 'lockStatus'">
-                <a-tag v-if="record.temporarilyLocked" color="orange">临时锁定</a-tag>
-                <a-tag v-else-if="record.accountNonLocked === false" color="red">管理员锁定</a-tag>
-                <a-tag v-else color="green">正常</a-tag>
-              </template>
-              <template v-else-if="column.dataIndex === 'lockRemainingMinutes'">
-                <span v-if="record.temporarilyLocked && record.lockRemainingMinutes">
-                  约 {{ record.lockRemainingMinutes }} 分钟
-                </span>
-                <span v-else>-</span>
-              </template>
-              <template v-else-if="['lastLoginAt', 'lastFailedLoginAt'].includes(String(column.dataIndex || ''))">
-                <span>{{ formatDateTime(record[String(column.dataIndex || '')]) }}</span>
-              </template>
-              <template v-else-if="column.dataIndex === 'action'">
-                <div class="action-buttons">
-                  <a-button v-if="canEditUserManagement" type="link" size="small" @click.stop="throttledEdit(record)" class="action-btn">
-                    <template #icon>
-                      <EditOutlined />
-                    </template>
-                    编辑
-                  </a-button>
-                  <a-button v-if="canDeleteUserManagement" type="link" size="small" danger @click.stop="throttledDelete(record)" class="action-btn">
-                    <template #icon>
-                      <DeleteOutlined />
-                    </template>
-                    删除
-                  </a-button>
-                  <a-button v-if="canReadUserManagement" type="link" size="small" @click.stop="throttledView(record)" class="action-btn">
-                    <template #icon>
-                      <EyeOutlined />
-                    </template>
-                    查看
-                  </a-button>
-                </div>
-              </template>
-              <template v-else>
-                <template v-if="cellCopyEnabled && column.dataIndex && column.dataIndex !== 'action'">
-                  <span class="cell-text">
-                    {{ record[column.dataIndex as string] ?? '-' }}
-                  </span>
-                  <CopyOutlined class="cell-copy-icon"
-                    @click.stop="handleCellCopy(record[column.dataIndex as string], (column.title as string) || '')" />
-                </template>
-                <span v-else-if="column.dataIndex">{{ record[column.dataIndex as string] }}</span>
-                <span v-else>-</span>
-              </template>
-            </template>
-          </a-table>
-        </div>
-        <div class="pagination-container" ref="paginationRef">
-          <div class="pagination-left">
-            <div class="export-group">
-              <a-button type="primary" :loading="exporting" @click="handleExportSync" class="export-btn">
+          <div class="table-actions">
+            <div v-if="selectedRowKeys.length > 0" class="batch-actions">
+              <a-button v-if="canDeleteUserManagement" type="primary" danger @click="throttledBatchDelete"
+                class="toolbar-btn">
                 <template #icon>
-                  <DownloadOutlined />
+                  <DeleteOutlined />
                 </template>
-                导出当前页
+                批量删除 ({{ selectedRowKeys.length }})
               </a-button>
-              <a-button :loading="exportingAsync" @click="handleExportAsync" class="export-btn">
+              <a-tooltip v-if="canEnableUserManagement && !allDisabled" title="只有全部未启用用户时才可批量启用">
+                <span>
+                  <a-button type="primary" class="toolbar-btn" :disabled="!allDisabled">
+                    <template #icon>
+                      <CheckCircleOutlined />
+                    </template>
+                    批量启用
+                  </a-button>
+                </span>
+              </a-tooltip>
+              <a-button v-else-if="canEnableUserManagement" type="primary" class="toolbar-btn"
+                @click="throttledBatchEnable">
                 <template #icon>
-                  <DownloadOutlined />
+                  <CheckCircleOutlined />
                 </template>
-                导出全部（异步）
+                批量启用
+              </a-button>
+              <a-tooltip v-if="canDisableUserManagement && !allEnabled" title="只有全部已启用用户时才可批量禁用">
+                <span>
+                  <a-button class="toolbar-btn" :disabled="!allEnabled">
+                    <template #icon>
+                      <StopOutlined />
+                    </template>
+                    批量禁用
+                  </a-button>
+                </span>
+              </a-tooltip>
+              <a-button v-else-if="canDisableUserManagement" class="toolbar-btn" @click="throttledBatchDisable">
+                <template #icon>
+                  <StopOutlined />
+                </template>
+                批量禁用
+              </a-button>
+              <a-button @click="clearSelection" class="toolbar-btn">
+                <template #icon>
+                  <CloseOutlined />
+                </template>
+                取消选择
+              </a-button>
+              <!-- 分配角色按钮，仅单选时可用，否则禁用并提示 -->
+              <a-tooltip v-if="canAssignUserRoles && selectedRowKeys.length !== 1" title="请仅选择一个用户进行角色分配">
+                <span>
+                  <a-button type="primary" class="toolbar-btn" disabled style="pointer-events: auto;">
+                    <template #icon>
+                      <SettingOutlined />
+                    </template>
+                    分配角色
+                  </a-button>
+                </span>
+              </a-tooltip>
+              <a-button v-else-if="canAssignUserRoles" type="primary" class="toolbar-btn"
+                @click="openBatchRoleTransfer">
+                <template #icon>
+                  <SettingOutlined />
+                </template>
+                分配角色
               </a-button>
             </div>
+
+            <a-button v-if="canCreateUserManagement" type="link" @click="throttledCreate" class="toolbar-btn">
+              <template #icon>
+                <PlusOutlined />
+              </template>
+              新建
+            </a-button>
+            <a-tooltip title="刷新">
+              <span class="action-icon" @click="throttledRefresh">
+                <ReloadOutlined :spin="refreshing" />
+              </span>
+            </a-tooltip>
+            <a-tooltip :title="showSortTooltip ? '关闭排序提示' : '开启排序提示'">
+              <PoweroffOutlined :class="['action-icon', { active: showSortTooltip }]"
+                @click="showSortTooltip = !showSortTooltip" />
+            </a-tooltip>
+            <a-tooltip :title="cellCopyEnabled ? '关闭单元格复制' : '开启单元格复制'">
+              <CopyOutlined :class="['action-icon', { active: cellCopyEnabled }]"
+                @click="cellCopyEnabled = !cellCopyEnabled" />
+            </a-tooltip>
+            <a-dropdown placement="bottomRight" trigger="click">
+              <a-tooltip title="表格密度">
+                <ColumnHeightOutlined class="action-icon" />
+              </a-tooltip>
+              <template #overlay>
+                <a-menu @click="handleDensityMenuClick" :selected-keys="[tableSize]">
+                  <a-menu-item key="default">
+                    <span>默认</span>
+                  </a-menu-item>
+                  <a-menu-item key="middle">
+                    <span>中等</span>
+                  </a-menu-item>
+                  <a-menu-item key="small">
+                    <span>紧凑</span>
+                  </a-menu-item>
+                </a-menu>
+              </template>
+            </a-dropdown>
+            <a-popover placement="bottomRight" trigger="click" :destroyTooltipOnHide="false">
+              <template #content>
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                  <div style="display: flex; align-items: center;">
+                    <a-checkbox :checked="showColumnKeys.length === allColumns.length"
+                      :indeterminate="showColumnKeys.length > 0 && showColumnKeys.length < allColumns.length"
+                      @change="(e: any) => onCheckAllChange(e)" />
+                    <span style="font-weight: bold; margin-left: 8px;">列展示/排序</span>
+                  </div>
+                  <span style="font-weight: bold; color: #1677ff; cursor: pointer;" @click="resetColumnOrder">
+                    重置
+                  </span>
+                </div>
+                <VueDraggable v-model="draggableColumns"
+                  :item-key="(item: any) => item?.dataIndex || `col_${Math.random()}`" handle=".drag-handle"
+                  @end="onDragEnd" class="draggable-columns" ghost-class="sortable-ghost" chosen-class="sortable-chosen"
+                  tag="div">
+                  <template #item="{ element: col }">
+                    <div class="draggable-column-item">
+                      <HolderOutlined class="drag-handle" />
+                      <a-checkbox :checked="showColumnKeys.includes(col.dataIndex)"
+                        @change="(e: any) => onCheckboxChange(col.dataIndex, e.target.checked)">
+                        {{ col.title }}
+                      </a-checkbox>
+                    </div>
+                  </template>
+                </VueDraggable>
+              </template>
+              <a-tooltip title="列设置">
+                <SettingOutlined class="action-icon" />
+              </a-tooltip>
+            </a-popover>
           </div>
-          <a-pagination v-model:current="pagination.current" :page-size="pagination.pageSize" :total="pagination.total"
-            :show-size-changer="pagination.showSizeChanger" :page-size-options="paginationConfig.pageSizeOptions"
-            :show-total="pagination.showTotal" @change="handlePageChange" @showSizeChange="handlePageSizeChange"
-            :locale="{ items_per_page: '条/页' }" />
         </div>
-      </div>
+        <div class="table-container" ref="tableContentRef">
+          <div class="table-scroll-container" ref="tableScrollContainerRef">
+            <a-table :columns="columns" :data-source="tableData" :pagination="false"
+              :row-key="(record: any) => String(record.id)" bordered :loading="loading" @change="handleTableChange"
+              :row-selection="rowSelection" :custom-row="onCustomRow" :row-class-name="getRowClassName"
+              :scroll="{ x: 1500, y: tableBodyHeight }" :locale="tableLocale" :show-sorter-tooltip="showSortTooltip"
+              :size="tableSize === 'default' ? undefined : tableSize" @resizeColumn="handleResizeColumn">
+              <template #bodyCell="{ column, record, index }">
+                <template v-if="column.dataIndex === 'index'">
+                  {{
+                    ((Number(pagination.current) || 1) - 1) *
+                    (Number(pagination.pageSize) || 10) +
+                    index + 1
+                  }}
+                </template>
+                <template
+                  v-else-if="['enabled', 'accountNonExpired', 'accountNonLocked', 'credentialsNonExpired'].includes(String(column.dataIndex || ''))">
+                  <a-tag :color="record[String(column.dataIndex || '')] ? 'green' : 'red'">
+                    {{ record[String(column.dataIndex || '')] ? '是' : '否' }}
+                  </a-tag>
+                </template>
+                <template v-else-if="column.dataIndex === 'lockStatus'">
+                  <a-tag v-if="record.temporarilyLocked" color="orange">临时锁定</a-tag>
+                  <a-tag v-else-if="record.accountNonLocked === false" color="red">管理员锁定</a-tag>
+                  <a-tag v-else color="green">正常</a-tag>
+                </template>
+                <template v-else-if="column.dataIndex === 'lockRemainingMinutes'">
+                  <span v-if="record.temporarilyLocked && record.lockRemainingMinutes">
+                    约 {{ record.lockRemainingMinutes }} 分钟
+                  </span>
+                  <span v-else>-</span>
+                </template>
+                <template v-else-if="['lastLoginAt', 'lastFailedLoginAt'].includes(String(column.dataIndex || ''))">
+                  <span>{{ formatDateTime(record[String(column.dataIndex || '')]) }}</span>
+                </template>
+                <template v-else-if="column.dataIndex === 'action'">
+                  <div class="action-buttons">
+                    <a-button v-if="canEditUserManagement" type="link" size="small" @click.stop="throttledEdit(record)"
+                      class="action-btn">
+                      <template #icon>
+                        <EditOutlined />
+                      </template>
+                      编辑
+                    </a-button>
+                    <a-button v-if="canDeleteUserManagement" type="link" size="small" danger
+                      @click.stop="throttledDelete(record)" class="action-btn">
+                      <template #icon>
+                        <DeleteOutlined />
+                      </template>
+                      删除
+                    </a-button>
+                    <a-button v-if="canReadUserManagement" type="link" size="small" @click.stop="throttledView(record)"
+                      class="action-btn">
+                      <template #icon>
+                        <EyeOutlined />
+                      </template>
+                      查看
+                    </a-button>
+                  </div>
+                </template>
+                <template v-else>
+                  <template v-if="cellCopyEnabled && column.dataIndex && column.dataIndex !== 'action'">
+                    <span class="cell-text">
+                      {{ record[column.dataIndex as string] ?? '-' }}
+                    </span>
+                    <CopyOutlined class="cell-copy-icon"
+                      @click.stop="handleCellCopy(record[column.dataIndex as string], (column.title as string) || '')" />
+                  </template>
+                  <span v-else-if="column.dataIndex" class="cell-text">{{ record[column.dataIndex as string] ?? '-'
+                    }}</span>
+                  <span v-else>-</span>
+                </template>
+              </template>
+            </a-table>
+          </div>
+          <div class="pagination-container" ref="paginationRef">
+            <div class="pagination-left">
+              <div class="export-group">
+                <a-button type="primary" :loading="exporting" @click="handleExportSync" class="export-btn">
+                  <template #icon>
+                    <DownloadOutlined />
+                  </template>
+                  导出当前页
+                </a-button>
+                <a-button :loading="exportingAsync" @click="handleExportAsync" class="export-btn">
+                  <template #icon>
+                    <DownloadOutlined />
+                  </template>
+                  导出全部（异步）
+                </a-button>
+              </div>
+            </div>
+            <a-pagination v-model:current="pagination.current" :page-size="pagination.pageSize"
+              :total="pagination.total" :show-size-changer="pagination.showSizeChanger"
+              :page-size-options="paginationConfig.pageSizeOptions" :show-total="pagination.showTotal"
+              @change="handlePageChange" @showSizeChange="handlePageSizeChange" :locale="{ items_per_page: '条/页' }" />
+          </div>
+        </div>
       </template>
-      </div>
+    </div>
 
     <a-drawer v-model:open="drawerVisible"
       :title="drawerMode === 'create' ? '新建用户' : drawerMode === 'edit' ? '编辑用户' : '查看用户'" width="50%"
@@ -279,20 +288,11 @@
         @cancel="handleDrawerClose" />
     </a-drawer>
 
-    <RoleTransfer
-      v-if="showBatchRoleTransfer"
-      :open="showBatchRoleTransfer"
-      :all-roles="allRoles"
-      :model-value="batchSelectedRoleIds"
-      :scope-type="batchRoleScopeType"
-      :scope-id="batchRoleScopeId ?? undefined"
-      :org-options="roleScopeOrgOptions"
-      :dept-options="roleScopeDeptOptions"
-      @update:open="showBatchRoleTransfer = $event"
-      @update:modelValue="handleBatchRoleAssign"
-      @update:scopeType="handleBatchRoleScopeTypeChange"
-      @update:scopeId="handleBatchRoleScopeIdChange"
-    />
+    <RoleTransfer v-if="showBatchRoleTransfer" :open="showBatchRoleTransfer" :all-roles="allRoles"
+      :model-value="batchSelectedRoleIds" :scope-type="batchRoleScopeType" :scope-id="batchRoleScopeId ?? undefined"
+      :org-options="roleScopeOrgOptions" :dept-options="roleScopeDeptOptions"
+      @update:open="showBatchRoleTransfer = $event" @update:modelValue="handleBatchRoleAssign"
+      @update:scopeType="handleBatchRoleScopeTypeChange" @update:scopeId="handleBatchRoleScopeIdChange" />
   </div>
 </template>
 
@@ -485,6 +485,14 @@ const columns = computed(() => {
   )
   // 打印调试最终columns
   console.log('columns for table:', filtered)
+  const normalizedColumns = filtered.map((col) => ({
+    ...col,
+    width: Number(col.width) > 0 ? Number(col.width) : 160,
+    minWidth: Number(col.minWidth) > 0 ? Number(col.minWidth) : 100,
+    maxWidth: Number(col.maxWidth) > 0 ? Number(col.maxWidth) : 640,
+    resizable: true,
+  }))
+
   return [
     {
       title: '序号',
@@ -492,6 +500,7 @@ const columns = computed(() => {
       width: 80,
       align: 'center' as const,
       fixed: 'left' as const,
+      resizable: false,
       customRender: ({ index }: { index?: number }) => {
         const safeIndex = typeof index === 'number' && !isNaN(index) ? index : 0
         const current = Number(pagination.value.current) || 1
@@ -499,9 +508,26 @@ const columns = computed(() => {
         return (current - 1) * pageSize + safeIndex + 1
       }
     },
-    ...filtered
+    ...normalizedColumns
   ]
 })
+
+function handleResizeColumn(width: number, column: any) {
+  const dataIndex = column?.dataIndex
+  if (!dataIndex) {
+    return
+  }
+  const normalizedWidth = Math.max(100, Math.min(Number(width) || 160, 800))
+  const updateColumnWidth = (targetColumns: any[]) =>
+    targetColumns.map((col) =>
+      col?.dataIndex === dataIndex
+        ? { ...col, width: normalizedWidth }
+        : col,
+    )
+
+  allColumns.value = updateColumnWidth(allColumns.value)
+  draggableColumns.value = updateColumnWidth(draggableColumns.value)
+}
 
 const rowSelection = computed(() => ({
   selectedRowKeys: selectedRowKeys.value,
@@ -815,8 +841,8 @@ function handleBatchDelete() {
         })
         .catch((error: any) => {
           // 优先使用 Problem 格式的 detail，否则使用 error.message
-            const errorMessage = (error as any)?.errorInfo?.message || error?.message || '未知错误'
-            message.error('批量删除失败: ' + errorMessage)
+          const errorMessage = (error as any)?.errorInfo?.message || error?.message || '未知错误'
+          message.error('批量删除失败: ' + errorMessage)
           return Promise.reject(error)
         })
     }
@@ -885,7 +911,7 @@ function getRowClassName(record: any, index: number) {
     return 'checkbox-selected-row'
   }
   if (!zebraStripeEnabled.value) {
-  return ''
+    return ''
   }
   return index % 2 === 0 ? 'table-row-even' : 'table-row-odd'
 }
@@ -1248,10 +1274,10 @@ async function handleBatchRoleAssign(newRoleIds: string[]) {
     const payload = batchRoleScopeType.value === 'TENANT'
       ? newRoleIds.map(id => Number(id))
       : {
-          scopeType: batchRoleScopeType.value,
-          scopeId: batchRoleScopeId.value ?? undefined,
-          roleIds: newRoleIds.map(id => Number(id)),
-        }
+        scopeType: batchRoleScopeType.value,
+        scopeId: batchRoleScopeId.value ?? undefined,
+        roleIds: newRoleIds.map(id => Number(id)),
+      }
     for (const userIdStr of selectedRowKeys.value) {
       const userId = Number(userIdStr)
       await updateUserRoles(userId, payload)
@@ -1313,20 +1339,25 @@ async function handleBatchRoleAssign(newRoleIds: string[]) {
 }
 
 .table-scroll-container {
-  /* 不要设置 flex: 1; */
+  flex: 1;
   min-height: 0;
   /* 可选，防止撑开 */
   overflow: auto;
   /* 内容多时滚动 */
+  padding-bottom: 12px;
 }
 
 .pagination-container {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
   background: #fff;
   padding: 12px 24px;
   min-height: 56px;
+  border-top: 1px solid #f0f0f0;
 }
 
 .pagination-left {
@@ -1743,5 +1774,13 @@ async function handleBatchRoleAssign(newRoleIds: string[]) {
   box-sizing: border-box;
   min-width: 0;
   max-width: 100%;
+}
+
+::deep(.ant-table-tbody > tr > td) {
+  white-space: nowrap;
+}
+
+::deep(.ant-table-cell-resize-handle) {
+  cursor: col-resize;
 }
 </style>

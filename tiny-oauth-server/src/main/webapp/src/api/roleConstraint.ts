@@ -1,55 +1,46 @@
 import request from '@/utils/request'
 
 export type RoleHierarchy = {
-  id: number
-  tenantId: number
-  parentRoleId: number
   childRoleId: number
-  createdAt: string
+  parentRoleId: number
 }
 
 export type RoleMutex = {
-  id: number
-  tenantId: number
-  roleId1: number
-  roleId2: number
-  mutexType: string
-  createdAt: string
+  leftRoleId: number
+  rightRoleId: number
 }
 
 export type RolePrerequisite = {
-  id: number
-  tenantId: number
   roleId: number
-  prerequisiteRoleId: number
-  createdAt: string
+  requiredRoleId: number
 }
 
 export type RoleCardinality = {
-  id: number
-  tenantId: number
   roleId: number
+  scopeType: string
   maxAssignments: number
-  createdAt: string
 }
 
 export type RoleViolation = {
   id: number
-  tenantId: number
-  constraintType: string
-  constraintId: number
-  userId: number
-  roleId: number
-  detail: string
+  principalType: string
+  principalId: number | null
+  scopeType: string | null
+  scopeId: number | null
+  violationType: string
+  violationCode: string
+  directRoleIds: string | null
+  effectiveRoleIds: string | null
+  details: string | null
   createdAt: string
 }
 
-export function listHierarchies(params?: { page?: number; size?: number }) {
-  return request.get<{ content: RoleHierarchy[]; totalElements: number }>('/sys/role-constraints/hierarchies', { params })
+export function listHierarchies() {
+  return request.get<RoleHierarchy[]>('/sys/role-constraints/hierarchy')
 }
 
 export function createHierarchy(data: { parentRoleId: number; childRoleId: number }) {
-  return request.post('/sys/role-constraints/hierarchies', data, {
+  return request.post('/sys/role-constraints/hierarchy', data, {
     idempotency: {
       scope: 'sys-role-constraints:hierarchy:create',
       payload: data,
@@ -57,21 +48,22 @@ export function createHierarchy(data: { parentRoleId: number; childRoleId: numbe
   })
 }
 
-export function deleteHierarchy(id: number) {
-  return request.delete(`/sys/role-constraints/hierarchies/${id}`, {
+export function deleteHierarchy(params: { childRoleId: number; parentRoleId: number }) {
+  return request.delete('/sys/role-constraints/hierarchy', {
+    params,
     idempotency: {
-      scope: `sys-role-constraints:hierarchy:delete:${id}`,
-      payload: { id },
+      scope: `sys-role-constraints:hierarchy:delete:${params.childRoleId}:${params.parentRoleId}`,
+      payload: params,
     },
   })
 }
 
-export function listMutexes(params?: { page?: number; size?: number }) {
-  return request.get<{ content: RoleMutex[]; totalElements: number }>('/sys/role-constraints/mutexes', { params })
+export function listMutexes() {
+  return request.get<RoleMutex[]>('/sys/role-constraints/mutex')
 }
 
-export function createMutex(data: { roleId1: number; roleId2: number; mutexType: string }) {
-  return request.post('/sys/role-constraints/mutexes', data, {
+export function createMutex(data: { roleIdA: number; roleIdB: number }) {
+  return request.post('/sys/role-constraints/mutex', data, {
     idempotency: {
       scope: 'sys-role-constraints:mutex:create',
       payload: data,
@@ -79,21 +71,22 @@ export function createMutex(data: { roleId1: number; roleId2: number; mutexType:
   })
 }
 
-export function deleteMutex(id: number) {
-  return request.delete(`/sys/role-constraints/mutexes/${id}`, {
+export function deleteMutex(params: { roleIdA: number; roleIdB: number }) {
+  return request.delete('/sys/role-constraints/mutex', {
+    params,
     idempotency: {
-      scope: `sys-role-constraints:mutex:delete:${id}`,
-      payload: { id },
+      scope: `sys-role-constraints:mutex:delete:${params.roleIdA}:${params.roleIdB}`,
+      payload: params,
     },
   })
 }
 
-export function listPrerequisites(params?: { page?: number; size?: number }) {
-  return request.get<{ content: RolePrerequisite[]; totalElements: number }>('/sys/role-constraints/prerequisites', { params })
+export function listPrerequisites() {
+  return request.get<RolePrerequisite[]>('/sys/role-constraints/prerequisite')
 }
 
-export function createPrerequisite(data: { roleId: number; prerequisiteRoleId: number }) {
-  return request.post('/sys/role-constraints/prerequisites', data, {
+export function createPrerequisite(data: { roleId: number; requiredRoleId: number }) {
+  return request.post('/sys/role-constraints/prerequisite', data, {
     idempotency: {
       scope: 'sys-role-constraints:prerequisite:create',
       payload: data,
@@ -101,21 +94,22 @@ export function createPrerequisite(data: { roleId: number; prerequisiteRoleId: n
   })
 }
 
-export function deletePrerequisite(id: number) {
-  return request.delete(`/sys/role-constraints/prerequisites/${id}`, {
+export function deletePrerequisite(params: { roleId: number; requiredRoleId: number }) {
+  return request.delete('/sys/role-constraints/prerequisite', {
+    params,
     idempotency: {
-      scope: `sys-role-constraints:prerequisite:delete:${id}`,
-      payload: { id },
+      scope: `sys-role-constraints:prerequisite:delete:${params.roleId}:${params.requiredRoleId}`,
+      payload: params,
     },
   })
 }
 
-export function listCardinalities(params?: { page?: number; size?: number }) {
-  return request.get<{ content: RoleCardinality[]; totalElements: number }>('/sys/role-constraints/cardinalities', { params })
+export function listCardinalities() {
+  return request.get<RoleCardinality[]>('/sys/role-constraints/cardinality')
 }
 
-export function createCardinality(data: { roleId: number; maxAssignments: number }) {
-  return request.post('/sys/role-constraints/cardinalities', data, {
+export function createCardinality(data: { roleId: number; scopeType: string; maxAssignments: number }) {
+  return request.post('/sys/role-constraints/cardinality', data, {
     idempotency: {
       scope: 'sys-role-constraints:cardinality:create',
       payload: data,
@@ -123,11 +117,12 @@ export function createCardinality(data: { roleId: number; maxAssignments: number
   })
 }
 
-export function deleteCardinality(id: number) {
-  return request.delete(`/sys/role-constraints/cardinalities/${id}`, {
+export function deleteCardinality(params: { roleId: number; scopeType: string }) {
+  return request.delete('/sys/role-constraints/cardinality', {
+    params,
     idempotency: {
-      scope: `sys-role-constraints:cardinality:delete:${id}`,
-      payload: { id },
+      scope: `sys-role-constraints:cardinality:delete:${params.roleId}:${params.scopeType}`,
+      payload: params,
     },
   })
 }

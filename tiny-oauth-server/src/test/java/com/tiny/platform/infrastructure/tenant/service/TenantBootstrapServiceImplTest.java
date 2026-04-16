@@ -616,6 +616,8 @@ class TenantBootstrapServiceImplTest {
         assertThat(diff.tenantId()).isEqualTo(tenantId);
         assertThat(diff.summary().missingInTenant()).isEqualTo(1);
         assertThat(diff.summary().changed()).isEqualTo(1);
+        verify(resourcePermissionBindingService, never()).backfillPermissionCatalogFromResources(any());
+        verify(resourcePermissionBindingService, never()).bindRequiredPermissionIdsForResources(any());
         assertThat(diff.diffs()).anySatisfy(d -> {
             assertThat(d.diffType()).isEqualTo(PlatformTemplateDiffResult.DiffType.MISSING_IN_TENANT);
             assertThat(d.carrierType()).isEqualTo("ui_action");
@@ -626,6 +628,23 @@ class TenantBootstrapServiceImplTest {
             assertThat(d.carrierType()).isEqualTo("menu");
             assertThat(d.fieldDiffs()).containsKey("title");
         });
+    }
+
+    @Test
+    void diffPlatformTemplateForTenant_whenPlatformTemplateMissing_shouldFailWithoutBackfill() {
+        Long tenantId = 9L;
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(null, "PLATFORM"))
+            .thenReturn(List.of());
+        when(roleRepository.findByTenantIdIsNullOrderByIdAsc()).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.diffPlatformTemplateForTenant(tenantId))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("尚未初始化")
+            .hasMessageContaining("POST /sys/tenants/platform-template/initialize");
+
+        verify(resourcePermissionBindingService, never()).backfillPermissionCatalogFromResources(any());
+        verify(resourcePermissionBindingService, never()).bindRequiredPermissionIdsForResources(any());
+        verify(tenantRepository, never()).findByCode(any());
     }
 
     @Test

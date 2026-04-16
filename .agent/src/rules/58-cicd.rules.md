@@ -56,6 +56,7 @@
 - ✅ 流水线在执行依赖测试身份的 job 前，必须校验所需凭证和测试身份已准备就绪；缺失时应快速失败并给出明确信息。
 - ✅ PR 快速门禁中的 E2E 必须限制在可快速自举、可重复、可定位的 smoke 或 mock-assisted / isolated real-link 子集，不得把全量 full-chain 场景直接塞进默认 PR 必跑链路。
 - ✅ PR 涉及关键用户路径且存在稳定 E2E 时，必须至少运行与改动范围匹配的一条 smoke 或模块级 real-link E2E；若因环境限制无法执行，必须在 PR 中写明缺口与补跑计划。
+- ✅ PR 若修改 Vue Router guard、动态菜单路由注入、菜单驱动页面入口、壳页跳转或第三方组件运行时契约（如 `a-table` 树表展开 / 懒加载），必须追加针对该链路的自动化回归：至少锁住 direct deep-link / 刷新路径或真实 prop / event 契约之一；不能只靠“手工点菜单能进”放行。
 - ✅ PR 失败必须阻断合并；除紧急例外外，不允许带红合并。
 - ✅ PR 描述必须写清验证方式、执行命令、关键风险和回滚思路。
 
@@ -73,6 +74,7 @@
 - ✅ 如果 workflow 的 readiness 窗口会受到依赖下载或首次构建影响，必须将依赖预热、构建下载、schema 初始化等前置成本移到显式步骤，避免把“未 ready”误判成应用启动失败。
 - ✅ 涉及多身份、多租户、平台/租户双口径 real-link 的 workflow，必须在 job 内显式归一化环境变量（如平台身份、租户身份、bind/readonly 身份、fallback tenant code）；不能只依赖 GitHub Actions `env:` 表达式或 trigger 差异（`push` / `schedule` / `workflow_dispatch`）来“碰巧”得到正确值。
 - ✅ fresh DB / CI baseline 使用 Liquibase `sqlFile` 时，路径必须采用 changelog-relative 解析并在干净库路径上验证；不能依赖本地工作目录、classpath 偶然命中或已初始化数据库兜底。
+- ✅ 对依赖菜单懒加载、动态路由注入、登录后壳页收敛的 real-link workflow，必须把“菜单点击进入”和“直接 deep-link / 刷新进入”视为不同风险面；至少有一层自动化覆盖 direct deep-link / refresh，不得默认二者等价。
 
 ### 4) 发布与部署
 
@@ -117,6 +119,7 @@
 - ⚠️ 依赖测试账号的流水线建议上传失败时的身份初始化日志、测试租户信息和认证 trace，便于定位是代码问题还是环境问题。
 - ⚠️ 真实链路 E2E 建议上传 playwright trace、截图、视频、seed 日志、服务日志摘要，便于复现。
 - ⚠️ 对容易受 UI 壳页、菜单懒加载、首次下载时序影响的 workflow，建议把“稳定状态断言”和“临时提示断言”拆开，优先让 CI 以 durable evidence 判定通过与否。
+- ⚠️ 对第三方组件运行时契约易漂移的页面（表格树形展开、受控弹层、表单 finish、路由守卫），建议在 PR 描述或 CI 产物中附上“组件契约测试 + 真实浏览器证据”的对应关系，方便 reviewer 判断不是 stub 假绿。
 
 ---
 

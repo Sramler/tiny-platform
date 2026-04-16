@@ -717,11 +717,16 @@ function removeEmptyChildren(nodes: ResourceItem[]) {
 }
 
 .table-scroll-container {
+  flex: 1;
   min-height: 0;
   overflow: auto;
+  padding-bottom: 12px;
 }
 
 .pagination-container {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -730,6 +735,7 @@ function removeEmptyChildren(nodes: ResourceItem[]) {
   /* 上下留白，确保有足够空间垂直居中 */
   min-height: 56px;
   /* 最小高度，确保有足够的垂直空间 */
+  border-top: 1px solid #f0f0f0;
 }
 
 :deep(.ant-pagination) {
@@ -907,5 +913,8 @@ function removeEmptyChildren(nodes: ResourceItem[]) {
 }
 :deep(.ant-table-tbody > tr.checkbox-selected-row:hover) {
   background-color: #bae7ff !important;
+}
+::deep(.ant-table-tbody > tr > td) {
+  white-space: nowrap;
 }
 </style> 

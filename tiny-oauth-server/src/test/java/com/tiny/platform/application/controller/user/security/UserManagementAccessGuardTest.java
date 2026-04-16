@@ -44,6 +44,22 @@ class UserManagementAccessGuardTest {
         assertThat(guard.canRead(authentication)).isFalse();
     }
 
+    @Test
+    void should_allow_platform_steward_read_when_platform_scope_and_required_authorities_present() {
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_PLATFORM);
+        JwtAuthenticationToken authentication = jwtAuth("system:user:list", "system:tenant:view");
+
+        assertThat(guard.canPlatformStewardRead(authentication)).isTrue();
+    }
+
+    @Test
+    void should_deny_platform_steward_read_when_tenant_authority_missing() {
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_PLATFORM);
+        JwtAuthenticationToken authentication = jwtAuth("system:user:list");
+
+        assertThat(guard.canPlatformStewardRead(authentication)).isFalse();
+    }
+
     private static JwtAuthenticationToken jwtAuth(String... authorities) {
         Jwt jwt = Jwt.withTokenValue("token")
             .header("alg", "none")

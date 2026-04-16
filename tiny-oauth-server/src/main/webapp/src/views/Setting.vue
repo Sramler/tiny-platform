@@ -98,9 +98,9 @@
                 <div v-if="securityLoading">
                   <a-spin tip="加载中..." />
                 </div>
-                <div v-else-if="totpBound">
+                <div v-else-if="totpActivated">
                   <a-alert
-                    message="两步验证已绑定"
+                    message="两步验证已开启"
                     description="您的账户已启用两步验证，可以提供额外的安全保障。"
                     type="success"
                     show-icon
@@ -109,6 +109,20 @@
                   <a-space>
                     <a-button type="primary" danger @click="showUnbindModal">
                       解绑两步验证
+                    </a-button>
+                  </a-space>
+                </div>
+                <div v-else-if="totpPendingActivation">
+                  <a-alert
+                    message="两步验证待完成激活"
+                    description="系统已生成验证器配置，请继续完成验证后正式启用两步验证。"
+                    type="warning"
+                    show-icon
+                    style="margin-bottom: 16px"
+                  />
+                  <a-space>
+                    <a-button type="primary" @click="handleBindTotp">
+                      继续绑定两步验证
                     </a-button>
                   </a-space>
                 </div>
@@ -379,6 +393,7 @@ const unbindRules: Record<string, Rule[]> = {
 }
 
 const hasOtherSessions = computed(() => activeSessions.value.some((session) => !session.current))
+const totpPendingActivation = computed(() => totpBound.value && !totpActivated.value)
 
 // 加载安全状态
 const loadSecurityStatus = async () => {

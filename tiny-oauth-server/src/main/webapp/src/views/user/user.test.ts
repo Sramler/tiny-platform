@@ -261,6 +261,7 @@ describe('user.vue', () => {
 
     expect(apiMocks.userList).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('当前页面仅支持租户侧作用域')
+    expect(wrapper.text()).toContain('/platform/users')
   })
 
   it('should hide write buttons when runtime ui actions are missing (fail-closed)', async () => {
@@ -315,6 +316,71 @@ describe('user.vue', () => {
     expect(apiMocks.getRuntimeUiActions).toHaveBeenCalledWith('/system/user')
     expect(wrapper.text()).not.toContain('新建')
     expect(wrapper.text()).not.toContain('批量删除')
+    expect(wrapper.text()).not.toContain('批量启用')
+    expect(wrapper.text()).not.toContain('批量禁用')
+  })
+
+  it('should only show batch enable or disable when selected users match the target state', async () => {
+    apiMocks.userList.mockResolvedValue({
+      records: [
+        { id: 1, username: 'alice', nickname: 'Alice', enabled: true },
+        { id: 2, username: 'bob', nickname: 'Bob', enabled: false },
+      ],
+      total: 2,
+    })
+    apiMocks.getRuntimeUiActions.mockResolvedValue([
+      { id: 201, name: 'user:batch-enable', title: '批量启用', type: 2, permission: 'system:user:batch-enable', carrierKind: 'ui_action' },
+      { id: 202, name: 'user:batch-disable', title: '批量禁用', type: 2, permission: 'system:user:batch-disable', carrierKind: 'ui_action' },
+    ])
+
+    const wrapper = mount(User, {
+      global: {
+        stubs: {
+          'a-table': defineComponent({
+            props: ['dataSource'],
+            template: '<div class="user-table-stub">rows: {{ (dataSource || []).length }}</div>',
+          }),
+          'a-form': PassThrough,
+          'a-form-item': PassThrough,
+          'a-input': PassThrough,
+          'a-button': PassThrough,
+          'a-tooltip': PassThrough,
+          'a-tag': PassThrough,
+          'a-modal': defineComponent({ props: ['open'], template: '<div v-if="open"><slot /></div>' }),
+          'a-drawer': defineComponent({ props: ['open'], template: '<div v-if="open"><slot /></div>' }),
+          'a-popover': PassThrough,
+          'a-checkbox': PassThrough,
+          'a-pagination': PassThrough,
+          UserForm: PassThrough,
+          RoleTransfer: PassThrough,
+          PlusOutlined: PassThrough,
+          ReloadOutlined: PassThrough,
+          EditOutlined: PassThrough,
+          DeleteOutlined: PassThrough,
+          SettingOutlined: PassThrough,
+          HolderOutlined: PassThrough,
+          CloseOutlined: PassThrough,
+          CheckCircleOutlined: PassThrough,
+          StopOutlined: PassThrough,
+        },
+      },
+    })
+    await flushPromises()
+
+    const state = (wrapper.vm as any).$?.setupState
+
+    state.selectedRowKeys = ['1']
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('批量启用')
+    expect(wrapper.text()).toContain('批量禁用')
+
+    state.selectedRowKeys = ['2']
+    await flushPromises()
+    expect(wrapper.text()).toContain('批量启用')
+    expect(wrapper.text()).not.toContain('批量禁用')
+
+    state.selectedRowKeys = ['1', '2']
+    await flushPromises()
     expect(wrapper.text()).not.toContain('批量启用')
     expect(wrapper.text()).not.toContain('批量禁用')
   })

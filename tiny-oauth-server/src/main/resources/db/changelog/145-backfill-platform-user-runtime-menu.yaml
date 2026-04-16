@@ -1,0 +1,183 @@
+databaseChangeLog:
+  - changeSet:
+      id: 145-backfill-platform-user-runtime-menu
+      author: codex
+      comment: 补齐平台用户治理运行态菜单，并确保平台态不再误指向 tenant-only 的 /system/user
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: menu
+            - tableExists:
+                tableName: permission
+            - tableExists:
+                tableName: menu_permission_requirement
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              UPDATE `menu` platform_user_menu
+              JOIN `menu` platform_system
+                ON platform_system.`tenant_id` IS NULL
+               AND platform_system.`name` = 'system'
+              JOIN `permission` platform_permission
+                ON platform_permission.`tenant_id` IS NULL
+               AND platform_permission.`permission_code` = 'platform:user:list'
+              SET
+                platform_user_menu.`resource_level` = 'PLATFORM',
+                platform_user_menu.`name` = 'platformUsers',
+                platform_user_menu.`title` = '平台用户治理',
+                platform_user_menu.`path` = '/platform/users',
+                platform_user_menu.`icon` = 'UserOutlined',
+                platform_user_menu.`show_icon` = 0,
+                platform_user_menu.`sort` = 8,
+                platform_user_menu.`component` = '/views/platform/users/PlatformUsers.vue',
+                platform_user_menu.`redirect` = '',
+                platform_user_menu.`hidden` = 0,
+                platform_user_menu.`keep_alive` = 0,
+                platform_user_menu.`permission` = 'platform:user:list',
+                platform_user_menu.`required_permission_id` = platform_permission.`id`,
+                platform_user_menu.`type` = 1,
+                platform_user_menu.`parent_id` = platform_system.`id`,
+                platform_user_menu.`enabled` = 1,
+                platform_user_menu.`updated_at` = NOW(),
+                platform_user_menu.`updated_by` = NULL
+              WHERE platform_user_menu.`tenant_id` IS NULL
+                AND (
+                  platform_user_menu.`path` IN ('/system/user', '/platform/users')
+                  OR platform_user_menu.`name` = 'platformUsers'
+                  OR (
+                    platform_user_menu.`name` = 'user'
+                    AND platform_user_menu.`parent_id` = platform_system.`id`
+                  )
+                );
+
+              INSERT INTO `menu` (
+                `tenant_id`,
+                `resource_level`,
+                `name`,
+                `title`,
+                `path`,
+                `icon`,
+                `show_icon`,
+                `sort`,
+                `component`,
+                `redirect`,
+                `hidden`,
+                `keep_alive`,
+                `permission`,
+                `required_permission_id`,
+                `type`,
+                `parent_id`,
+                `enabled`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                'PLATFORM' AS `resource_level`,
+                'platformUsers' AS `name`,
+                '平台用户治理' AS `title`,
+                '/platform/users' AS `path`,
+                'UserOutlined' AS `icon`,
+                0 AS `show_icon`,
+                8 AS `sort`,
+                '/views/platform/users/PlatformUsers.vue' AS `component`,
+                '' AS `redirect`,
+                0 AS `hidden`,
+                0 AS `keep_alive`,
+                'platform:user:list' AS `permission`,
+                platform_permission.`id` AS `required_permission_id`,
+                1 AS `type`,
+                platform_system.`id` AS `parent_id`,
+                1 AS `enabled`,
+                NOW() AS `created_at`,
+                NULL AS `created_by`,
+                NOW() AS `updated_at`,
+                NULL AS `updated_by`
+              FROM `menu` platform_system
+              JOIN `permission` platform_permission
+                ON platform_permission.`tenant_id` IS NULL
+               AND platform_permission.`permission_code` = 'platform:user:list'
+              WHERE platform_system.`tenant_id` IS NULL
+                AND platform_system.`name` = 'system'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `menu` existing
+                  WHERE existing.`tenant_id` IS NULL
+                    AND existing.`path` = '/platform/users'
+                );
+
+              DELETE requirement
+              FROM `menu_permission_requirement` requirement
+              JOIN `menu` platform_user_menu
+                ON platform_user_menu.`id` = requirement.`menu_id`
+              WHERE platform_user_menu.`tenant_id` IS NULL
+                AND platform_user_menu.`path` = '/platform/users';
+
+              INSERT INTO `menu_permission_requirement` (
+                `tenant_id`,
+                `menu_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                platform_user_menu.`id` AS `menu_id`,
+                0 AS `requirement_group`,
+                1 AS `sort_order`,
+                platform_list_permission.`id` AS `permission_id`,
+                0 AS `negated`,
+                NOW() AS `created_at`,
+                NULL AS `created_by`,
+                NOW() AS `updated_at`,
+                NULL AS `updated_by`
+              FROM `menu` platform_user_menu
+              JOIN `permission` platform_list_permission
+                ON platform_list_permission.`tenant_id` IS NULL
+               AND platform_list_permission.`permission_code` = 'platform:user:list'
+              WHERE platform_user_menu.`tenant_id` IS NULL
+                AND platform_user_menu.`path` = '/platform/users';
+
+              INSERT INTO `menu_permission_requirement` (
+                `tenant_id`,
+                `menu_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                platform_user_menu.`id` AS `menu_id`,
+                1 AS `requirement_group`,
+                1 AS `sort_order`,
+                platform_view_permission.`id` AS `permission_id`,
+                0 AS `negated`,
+                NOW() AS `created_at`,
+                NULL AS `created_by`,
+                NOW() AS `updated_at`,
+                NULL AS `updated_by`
+              FROM `menu` platform_user_menu
+              JOIN `permission` platform_view_permission
+                ON platform_view_permission.`tenant_id` IS NULL
+               AND platform_view_permission.`permission_code` = 'platform:user:view'
+              WHERE platform_user_menu.`tenant_id` IS NULL
+                AND platform_user_menu.`path` = '/platform/users';

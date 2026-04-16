@@ -8,7 +8,7 @@ const tenantApiMocks = vi.hoisted(() => ({
   diffTenantPlatformTemplate: vi.fn(),
 }))
 
-const routeState = reactive({ params: { id: '1' } })
+const routeState = reactive({ params: { id: '1' }, query: {} as Record<string, unknown> })
 const routerMocks = vi.hoisted(() => ({
   push: vi.fn(),
 }))
@@ -25,6 +25,10 @@ vi.mock('vue-router', () => ({
 }))
 
 const PassThrough = defineComponent({ template: '<div><slot /></div>' })
+const ButtonStub = defineComponent({
+  emits: ['click'],
+  template: '<button @click="$emit(\'click\')"><slot /></button>',
+})
 
 import TenantDetail from '@/views/platform/tenants/TenantDetail.vue'
 
@@ -39,6 +43,7 @@ describe('TenantDetail.vue', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     routeState.params.id = '1'
+    routeState.query = {}
     tenantApiMocks.getTenantById.mockResolvedValue({ id: 1, code: 't1', name: 'Tenant 1', lifecycleStatus: 'ACTIVE', enabled: true })
     tenantApiMocks.getTenantPermissionSummary.mockResolvedValue({
       tenantId: 1,
@@ -63,7 +68,7 @@ describe('TenantDetail.vue', () => {
     mount(TenantDetail, {
       global: {
         stubs: {
-          'a-button': PassThrough,
+          'a-button': ButtonStub,
           'a-spin': PassThrough,
           'a-tag': PassThrough,
           'a-table': PassThrough,
@@ -96,5 +101,30 @@ describe('TenantDetail.vue', () => {
 
     expect(tenantApiMocks.getTenantById).toHaveBeenCalledWith('2')
     expect(tenantApiMocks.getTenantById).toHaveBeenCalledTimes(2)
+  })
+
+  it('should go back to platform users stewardship when source query is present', async () => {
+    routeState.query = {
+      from: '/platform/users?tab=tenantStewardship&tenantId=9',
+    }
+
+    const wrapper = mount(TenantDetail, {
+      global: {
+        stubs: {
+          'a-button': ButtonStub,
+          'a-spin': PassThrough,
+          'a-tag': PassThrough,
+          'a-table': PassThrough,
+        },
+      },
+    })
+    await flushPromises()
+
+    const backButton = wrapper.findAll('button').find((button) => button.text().includes('返回租户用户代管'))
+    expect(backButton).toBeDefined()
+
+    await backButton!.trigger('click')
+
+    expect(routerMocks.push).toHaveBeenCalledWith('/platform/users?tab=tenantStewardship&tenantId=9')
   })
 })

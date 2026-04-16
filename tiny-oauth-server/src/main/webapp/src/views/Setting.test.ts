@@ -67,6 +67,32 @@ const ButtonStub = defineComponent({
   template: '<button @click="$emit(\'click\')"><slot /></button>',
 })
 
+function mountSetting() {
+  return mount(Setting, {
+    global: {
+      stubs: {
+        'a-card': CardStub,
+        'a-tabs': PassThrough,
+        'a-tab-pane': PassThrough,
+        'a-form': PassThrough,
+        'a-form-item': PassThrough,
+        'a-input': PassThrough,
+        'a-input-password': PassThrough,
+        'a-button': ButtonStub,
+        'a-upload': PassThrough,
+        'a-avatar': PassThrough,
+        'a-space': PassThrough,
+        'a-spin': PassThrough,
+        'a-alert': PassThrough,
+        'a-modal': PassThrough,
+        'a-empty': PassThrough,
+        'a-tag': PassThrough,
+        UserOutlined: PassThrough,
+      },
+    },
+  })
+}
+
 import Setting from '@/views/Setting.vue'
 
 async function flushPromises() {
@@ -91,29 +117,7 @@ describe('Setting.vue', () => {
   })
 
   it('should render setting page title', async () => {
-    const wrapper = mount(Setting, {
-      global: {
-        stubs: {
-          'a-card': CardStub,
-          'a-tabs': PassThrough,
-          'a-tab-pane': PassThrough,
-          'a-form': PassThrough,
-          'a-form-item': PassThrough,
-          'a-input': PassThrough,
-          'a-input-password': PassThrough,
-          'a-button': ButtonStub,
-          'a-upload': PassThrough,
-          'a-avatar': PassThrough,
-          'a-space': PassThrough,
-          'a-spin': PassThrough,
-          'a-alert': PassThrough,
-          'a-modal': PassThrough,
-          'a-empty': PassThrough,
-          'a-tag': PassThrough,
-          UserOutlined: PassThrough,
-        },
-      },
-    })
+    const wrapper = mountSetting()
     await flushPromises()
     expect(wrapper.text()).toContain('个人设置')
     expect(userApiMocks.getCurrentUser).toHaveBeenCalled()
@@ -122,29 +126,7 @@ describe('Setting.vue', () => {
   it('should preserve activeTenantId when navigating to totp bind', async () => {
     routerMocks.routeQuery.activeTenantId = '11'
 
-    const wrapper = mount(Setting, {
-      global: {
-        stubs: {
-          'a-card': CardStub,
-          'a-tabs': PassThrough,
-          'a-tab-pane': PassThrough,
-          'a-form': PassThrough,
-          'a-form-item': PassThrough,
-          'a-input': PassThrough,
-          'a-input-password': PassThrough,
-          'a-button': ButtonStub,
-          'a-upload': PassThrough,
-          'a-avatar': PassThrough,
-          'a-space': PassThrough,
-          'a-spin': PassThrough,
-          'a-alert': PassThrough,
-          'a-modal': PassThrough,
-          'a-empty': PassThrough,
-          'a-tag': PassThrough,
-          UserOutlined: PassThrough,
-        },
-      },
-    })
+    const wrapper = mountSetting()
     await flushPromises()
 
     const bindButton = wrapper.findAll('button').find((button) => button.text().includes('绑定两步验证'))
@@ -168,29 +150,7 @@ describe('Setting.vue', () => {
     })
     securityApiMocks.revokeOtherSecuritySessions.mockResolvedValue({ success: true, revokedCount: 1, message: '其他会话已强制下线' })
 
-    const wrapper = mount(Setting, {
-      global: {
-        stubs: {
-          'a-card': CardStub,
-          'a-tabs': PassThrough,
-          'a-tab-pane': PassThrough,
-          'a-form': PassThrough,
-          'a-form-item': PassThrough,
-          'a-input': PassThrough,
-          'a-input-password': PassThrough,
-          'a-button': ButtonStub,
-          'a-upload': PassThrough,
-          'a-avatar': PassThrough,
-          'a-space': PassThrough,
-          'a-spin': PassThrough,
-          'a-alert': PassThrough,
-          'a-modal': PassThrough,
-          'a-empty': PassThrough,
-          'a-tag': PassThrough,
-          UserOutlined: PassThrough,
-        },
-      },
-    })
+    const wrapper = mountSetting()
     await flushPromises()
 
     expect(securityApiMocks.getSecuritySessions).toHaveBeenCalled()
@@ -202,5 +162,37 @@ describe('Setting.vue', () => {
     await revokeOthersButton!.trigger('click')
 
     expect(securityApiMocks.revokeOtherSecuritySessions).toHaveBeenCalled()
+  })
+
+  it('should show activated totp state only when totpActivated is true', async () => {
+    securityApiMocks.getSecurityStatus.mockResolvedValue({
+      activeTenantId: 9,
+      totpBound: true,
+      totpActivated: true,
+      disableMfa: false,
+      forceMfa: false,
+    })
+
+    const wrapper = mountSetting()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('解绑两步验证')
+    expect(wrapper.text()).not.toContain('继续绑定两步验证')
+  })
+
+  it('should show pending activation state when totp is bound but not activated', async () => {
+    securityApiMocks.getSecurityStatus.mockResolvedValue({
+      activeTenantId: 9,
+      totpBound: true,
+      totpActivated: false,
+      disableMfa: false,
+      forceMfa: false,
+    })
+
+    const wrapper = mountSetting()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('继续绑定两步验证')
+    expect(wrapper.text()).not.toContain('解绑两步验证')
   })
 })

@@ -4,6 +4,7 @@ import { message } from 'ant-design-vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { ColumnsType } from 'ant-design-vue/es/table'
+import { useAuth } from '@/auth/auth'
 import {
   getIdempotentMetrics,
   getIdempotentMqMetrics,
@@ -13,10 +14,15 @@ import {
   type IdempotentTopKey,
 } from '@/api/idempotent'
 import { tenantList, type Tenant } from '@/api/tenant'
+import { usePlatformScope } from '@/composables/usePlatformScope'
+import { IDEMPOTENT_OPS_VIEW } from '@/constants/permission'
+import { extractAuthoritiesFromJwt } from '@/utils/jwt'
 import { resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
 
 const router = useRouter()
 const route = useRoute()
+const { user } = useAuth()
+const { isPlatformScope } = usePlatformScope()
 const ALL_TENANT_FILTER = 'all'
 const TENANT_PAGE_SIZE = 200
 const MAX_TENANT_FILTER_PAGES = 10
@@ -81,6 +87,18 @@ const selectedActiveTenantId = computed(() =>
   typeof selectedTenantFilter.value === 'number' && selectedTenantFilter.value > 0
     ? selectedTenantFilter.value
     : undefined,
+)
+const hasIdempotentOpsAuthority = computed(() =>
+  extractAuthoritiesFromJwt(user.value?.access_token).includes(IDEMPOTENT_OPS_VIEW),
+)
+const canAccessOpsConsole = computed(() => isPlatformScope.value && hasIdempotentOpsAuthority.value)
+const restrictedTitle = computed(() =>
+  isPlatformScope.value ? '无权查看平台级幂等治理指标' : '平台作用域限制',
+)
+const restrictedCopy = computed(() =>
+  isPlatformScope.value
+    ? '当前会话缺少 `idempotent:ops:view` 权限，因此不会加载平台级幂等治理指标。'
+    : '当前会话不是 PLATFORM 作用域，已阻止加载幂等治理控制面。请切换到平台作用域后重试。'
 )
 
 const tenantFilterOptions = computed(() => [
@@ -252,12 +270,24 @@ async function loadTenantOptions() {
 }
 
 async function handleTenantFilterChange(value: unknown) {
+  if (!canAccessOpsConsole.value) {
+    return
+  }
   selectedTenantFilter.value = normalizeTenantFilterValue(value)
   await syncActiveTenantQuery(selectedTenantFilter.value)
   void loadOverview()
 }
 
 async function loadOverview() {
+  if (!canAccessOpsConsole.value) {
+    accessDenied.value = true
+    loading.value = false
+    metrics.value = { ...emptyMetrics }
+    mqMetrics.value = { ...emptyMqMetrics }
+    topKeys.value = []
+    lastUpdatedAt.value = ''
+    return
+  }
   loading.value = true
   accessDenied.value = false
   try {
@@ -288,12 +318,20 @@ async function loadOverview() {
 }
 
 onMounted(() => {
+  if (!canAccessOpsConsole.value) {
+    accessDenied.value = true
+    return
+  }
   void Promise.all([loadTenantOptions(), loadOverview()])
 })
 
 watch(
   () => getRouteTenantFilterSource(),
   (value) => {
+    if (!canAccessOpsConsole.value) {
+      accessDenied.value = true
+      return
+    }
     const normalized = normalizeTenantFilterValue(value)
     if (normalized === selectedTenantFilter.value) {
       return
@@ -302,6 +340,18 @@ watch(
     void loadOverview()
   },
 )
+
+watch(canAccessOpsConsole, (allowed) => {
+  accessDenied.value = !allowed
+  if (!allowed) {
+    metrics.value = { ...emptyMetrics }
+    mqMetrics.value = { ...emptyMqMetrics }
+    topKeys.value = []
+    lastUpdatedAt.value = ''
+    return
+  }
+  void Promise.all([loadTenantOptions(), loadOverview()])
+})
 </script>
 
 <template>
@@ -365,9 +415,9 @@ watch(
     </section>
 
     <a-card v-if="accessDenied" class="panel-card restricted-card" :bordered="false">
-      <p class="restricted-title">无权查看平台级幂等治理指标</p>
+      <p class="restricted-title">{{ restrictedTitle }}</p>
       <p class="restricted-copy">
-        当前页面承载的是平台级汇总指标，后端已限制为默认平台租户下具备 `idempotent:ops:view` 权限的用户访问。
+        {{ restrictedCopy }}
       </p>
     </a-card>
 

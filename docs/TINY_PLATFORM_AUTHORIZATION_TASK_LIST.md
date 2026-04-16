@@ -16,6 +16,8 @@
   负责模块视角盘点，已降级为附录型参考文档；不再独立维护并行完成状态。
 - `TINY_PLATFORM_AUTHORIZATION_NEXT_PHASE_AND_IMPROVEMENTS.md`
   负责路线图、后续阶段与改进方向，不直接承担当前执行状态维护。
+- `TINY_PLATFORM_PLATFORM_USER_MANAGEMENT_AND_IMPERSONATION_DESIGN.md`
+  负责下一版本“平台用户管理 + 租户用户代管 + impersonation”专题设计；当前属于 vNext 设计稿，不代表运行态已实现。
 - `TINY_PLATFORM_LEGACY_COMPATIBILITY_INVENTORY.md`
   负责兼容/迁移台账，用于说明遗留来源、收口结果和后续下线策略。
 - `TINY_PLATFORM_TENANT_GOVERNANCE.md`
@@ -38,6 +40,7 @@
 7. 涉及 RBAC3 enforce 灰度操作时再看 `TINY_PLATFORM_RBAC3_ENFORCE_ROLLOUT_SOP.md`
 8. 涉及 `@DataScope` 是否可扩面、如何扩面时再看 `TINY_PLATFORM_DATASCOPE_EXPANSION_GUIDE.md`
 9. 需要路线图或遗留背景时再看 `NEXT_PHASE` / `LEGACY_COMPATIBILITY`
+10. 涉及下一版本的平台用户管理、租户用户代管或 impersonation 方案时，再看 `TINY_PLATFORM_PLATFORM_USER_MANAGEMENT_AND_IMPERSONATION_DESIGN.md`
 
 ---
 
@@ -155,6 +158,21 @@
 12. **CARD-16B（已完成，P1）平台权限主数据（Permission Control）**：后端新增 `/sys/permissions` 主数据控制面接口（`GET /sys/permissions`、`GET /sys/permissions/{id}`、`PATCH /sys/permissions/{id}/enabled`），并在 `RoleController` 增加 `/sys/roles/{id}/permissions` 读写主契约（`/resources` 仅兼容入口）。权限生效口径保持 fail-closed：`permission.enabled=false` 或 unknown permission 均不进入 JWT 权限集合，API 鉴权拒绝，`permissionsVersion` 指纹变化。前端新增 `/platform/permissions` 页面，支持按模块分组、enabled 切换、绑定角色查看和角色权限编辑。
 13. **CARD-17A（已完成，P1）平台模板角色（Template Role）**：沿用现有模型 `role.tenant_id IS NULL + role.role_level=PLATFORM`，新增 `/platform/template-roles` 治理页实现模板角色 CRUD、权限绑定与派生影响最小可视化，并在页面显式声明“模板角色不能直接分配用户”。实现复用 `/sys/roles` 主链，不新增第二套模板角色底层模型；与租户模板差异认知通过 `/platform/tenants` diff 入口联动。当前“派生影响范围”区块仅展示**当前已加载租户样本数**（`tenantList size=200` 上限），不宣称为按模板角色计算的全量真实影响面。
 14. **CARD-17X（已完成，P2）平台控制面前端 scope guard 收口**：新增 `usePlatformScope()` 复用 helper，`/platform/permissions`、`/platform/template-roles`、`/platform/audit`、`/platform/token-debug` 已统一按 `activeScopeType=PLATFORM` 做前端守卫；tenant scope 下不再误发平台控制面请求，而是展示明确提示并要求切回平台作用域。
+15. **CARD-18A（已完成，P1）平台用户管理 Phase 1 skeleton**：新增 `platform_user_profile` 作为平台用户管理逻辑域载体，并通过 `143-platform-user-profile-and-api.yaml` 完成 schema、回填、平台权限码（`platform:user:list|view|create|edit|disable`）与 unified `api_endpoint` 主登记；再通过 `144-backfill-platform-user-api-endpoint-or-groups.yaml` 补齐与 `PlatformUserManagementAccessGuard` 一致的 OR requirement 组，避免统一守卫提前 403。后端新增 `/platform/users` 控制面接口（列表、详情、创建 profile、状态更新）以及 `PlatformUserManagementAccessGuard` / `PlatformUserManagementService` / `PlatformUserProfileRepository`。运行态同步收口：`AuthUserResolutionService.resolveUserRecordInPlatform(...)` 现在除现有 `PLATFORM` 角色赋权外，还要求 `platform_user_profile.status=ACTIVE` 才认定为可登录平台。前端新增 `/platform/users` 静态路由、`PlatformUsers.vue` 最小控制面与 `platform-user.ts` API，支持平台 scope 守卫、列表搜索、详情查看、平台档案启停与“为已存在 root user 补建 profile”的最小创建弹窗。补充收口：`145-backfill-platform-user-runtime-menu.yaml` 已把平台运行态菜单挂到 `/platform/users`，并补齐与 read guard 一致的 menu requirement OR 组，避免平台菜单继续误落到 tenant-only 的 `/system/user`。当前边界：该页只管理平台用户档案，不承载平台角色绑定、不复用 `/sys/users`、也不提供 platform -> tenant user bridge。
+
+### 0.2 下一版本专题（设计已建立，尚未开卡）
+
+- 主题：平台用户管理、租户用户代管、impersonation。
+- 设计文稿：`docs/TINY_PLATFORM_PLATFORM_USER_MANAGEMENT_AND_IMPERSONATION_DESIGN.md`。
+- 当前实现边界：
+  - `/sys/users` 继续是租户侧唯一主入口，`PLATFORM` scope 不得复用。
+  - `/platform/users` Phase 1 skeleton 已落地，但当前创建仍是“给已存在 root user 补建 `platform_user_profile`”，不等同于完整平台身份建模，也未提供平台角色绑定 UI。
+  - 当前仓库尚无 platform -> tenant user 的 bridge layer 主链。
+  - 当前仓库尚无 impersonation token / filter / audit 闭环。
+- 建议执行顺序：
+  1. 先补平台用户控制面的剩余体验缺口（平台角色绑定、候选用户 lookup、是否自动补 profile 的策略收口）。
+  2. 再做平台代管租户用户 bridge（显式 `tenantId`，禁止隐式切换）。
+  3. 最后做 impersonation（短时、显式、可审计、不可嵌套）。
 
 ---
 

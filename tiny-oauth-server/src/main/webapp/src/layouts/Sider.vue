@@ -111,6 +111,47 @@ function hasChildren(item: MenuItem): boolean {
   return !!(item.children && item.children.length > 0)
 }
 
+function normalizeMenuPath(path?: string): string | null {
+  if (typeof path !== 'string') {
+    return null
+  }
+  const normalized = path.trim()
+  return normalized ? normalized : null
+}
+
+function isDescendantMenuPath(item: MenuItem, targetPath: string): boolean {
+  if (!hasChildren(item)) {
+    return normalizeMenuPath(item.url) === targetPath
+  }
+  return item.children!.some((child) => isDescendantMenuPath(child, targetPath))
+}
+
+function resolveFirstNavigablePath(items?: MenuItem[]): string | null {
+  if (!Array.isArray(items)) {
+    return null
+  }
+  for (const item of items) {
+    const target = resolveMenuNavigationTarget(item)
+    if (target) {
+      return target
+    }
+  }
+  return null
+}
+
+function resolveMenuNavigationTarget(item: MenuItem): string | null {
+  if (!hasChildren(item)) {
+    return normalizeMenuPath(item.url)
+  }
+
+  const redirect = normalizeMenuPath(item.redirect)
+  if (redirect && isDescendantMenuPath(item, redirect)) {
+    return redirect
+  }
+
+  return resolveFirstNavigablePath(item.children)
+}
+
 /**
  * 菜单位置接口定义
  */
@@ -220,9 +261,9 @@ function toggleMenu(idx: number, item: MenuItem) {
     openMenu.value = openMenu.value === idx ? INVALID_INDEX : idx
     openSubMenu.value = INVALID_INDEX
 
-    // 如果有 redirect 字段，点击父菜单时跳转到 redirect
-    if (item.redirect) {
-      goMenu(item.redirect)
+    const targetPath = resolveMenuNavigationTarget(item)
+    if (targetPath) {
+      goMenu(targetPath)
     }
   } else {
     // 叶子节点直接跳转到 path
@@ -244,6 +285,10 @@ function toggleSubMenu(subIdx: number, sub: MenuItem) {
   if (hasChildren(sub)) {
     // 切换展开/折叠
     openSubMenu.value = openSubMenu.value === subIdx ? INVALID_INDEX : subIdx
+    const targetPath = resolveMenuNavigationTarget(sub)
+    if (targetPath) {
+      goMenu(targetPath)
+    }
   } else {
     // 叶子节点直接跳转
     if (sub.url) {

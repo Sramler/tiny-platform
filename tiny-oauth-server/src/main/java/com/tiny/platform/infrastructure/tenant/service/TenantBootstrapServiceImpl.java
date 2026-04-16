@@ -104,11 +104,8 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
         if (tenantId == null) {
             throw new IllegalArgumentException("tenantId is required");
         }
-        // Ensure platform template is initialized and legal before diffing.
-        ensurePlatformTemplatesInitialized(tenantId);
-        List<Resource> platformResources = loadCarrierTemplateSnapshot(null, RESOURCE_LEVEL_PLATFORM);
-        List<Role> platformRoles = roleRepository.findByTenantIdIsNullOrderByIdAsc();
-        assertPlatformTemplateSnapshot(platformResources, platformRoles);
+        PlatformTemplateSnapshot platformTemplateSnapshot = assertPlatformTemplatesReadyForRead();
+        List<Resource> platformResources = platformTemplateSnapshot.resources();
 
         List<Resource> tenantResources = loadCarrierTemplateSnapshot(tenantId, "TENANT");
         Map<String, Resource> platformByKey = platformResources.stream()
@@ -203,6 +200,26 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
     @Transactional
     public boolean ensurePlatformTemplatesInitialized() {
         return ensurePlatformTemplatesInitialized(null);
+    }
+
+    private PlatformTemplateSnapshot assertPlatformTemplatesReadyForRead() {
+        List<Resource> platformResources = loadCarrierTemplateSnapshot(null, RESOURCE_LEVEL_PLATFORM);
+        List<Role> platformRoles = roleRepository.findByTenantIdIsNullOrderByIdAsc();
+        assertPlatformTemplateSnapshot(platformResources, platformRoles);
+        if (platformResources.isEmpty() && platformRoles.isEmpty()) {
+            throw new IllegalStateException(
+                "平台模板（tenant_id IS NULL 角色与载体）尚未初始化，无法执行差异对比。"
+                    + "请先由平台身份执行 POST /sys/tenants/platform-template/initialize。"
+            );
+        }
+        if (platformResources.isEmpty() || platformRoles.isEmpty()) {
+            throw new IllegalStateException("平台模板数据不完整，请先修复 tenant_id IS NULL 的角色/资源模板后再查看差异");
+        }
+        return new PlatformTemplateSnapshot(
+            platformResources,
+            platformRoles,
+            List.of()
+        );
     }
 
     private PlatformTemplateSnapshot resolvePlatformTemplateSnapshot(Long targetTenantId) {

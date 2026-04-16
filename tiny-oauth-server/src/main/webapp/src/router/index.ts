@@ -1,6 +1,6 @@
 // src/router/index.ts
 import { createRouter, createWebHistory } from 'vue-router'
-import type { NavigationGuard } from 'vue-router'
+import type { NavigationGuard, RouteLocationRaw } from 'vue-router'
 import { watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { useAuth, initPromise, trySilentLoginFromPlatformSession } from '@/auth/auth'
@@ -185,6 +185,12 @@ const routes = [
         component: () => import('@/views/platform/template-roles/TemplateRoles.vue'),
         meta: { requiresAuth: true, title: '平台模板角色' },
       },
+      {
+        path: 'platform/users',
+        name: 'PlatformUsers',
+        component: () => import('@/views/platform/users/PlatformUsers.vue'),
+        meta: { requiresAuth: true, title: '平台用户治理' },
+      },
       // {
       //   path: 'about',
       //   name: 'About',
@@ -244,8 +250,13 @@ const routes = [
       // 菜单路由将在动态加载时添加，这里先留空
     ],
   },
-  // 全局兜底 404（重定向到主框架的 404 页面）
-  { path: '/:pathMatch(.*)*', name: 'NotFound', redirect: '/exception/404' },
+  // 全局兜底占位路由：保留守卫重试动态菜单路由的机会，避免首次刷新动态页时被 redirect 抢先吞掉。
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'NotFound',
+    component: () => import('@/views/exception/404.vue'),
+    meta: { requiresAuth: true, title: '404' },
+  },
 ]
 
 const router = createRouter({
@@ -342,12 +353,11 @@ async function ensureMenuRoutesLoaded(): Promise<boolean> {
 
 const authContext = useAuth()
 
-const authGuard: NavigationGuard = async (to, _from, next) => {
+export const authGuard: NavigationGuard = async (to) => {
   // 错误页面直接放行，不需要认证检查
   if (to.path.startsWith('/exception/')) {
     logger.log('访问错误页面，直接放行:', to.path)
-    next()
-    return
+    return true
   }
 
   try {
@@ -360,25 +370,21 @@ const authGuard: NavigationGuard = async (to, _from, next) => {
 
   if (to.path === '/login' && authContext.isAuthenticated.value) {
     logger.log('用户已认证，重定向到首页')
-    next('/')
-    return
+    return '/'
   }
 
   if (!requiresAuth) {
-    next()
-    return
+    return true
   }
 
   if (authContext.isAuthenticated.value) {
-    next()
-    return
+    return true
   }
 
   const urlParams = new URLSearchParams(window.location.search)
   if (urlParams.has('code') || urlParams.has('error')) {
     logger.log('检测到 OIDC 回调参数，放行当前导航')
-    next()
-    return
+    return true
   }
 
   try {
@@ -387,36 +393,33 @@ const authGuard: NavigationGuard = async (to, _from, next) => {
       // 平台表单登录清除了 tenantCode；若后端 Session 已就绪（含 totp-bind 跳过后的升级），静默 OIDC 可拿到 token
       const silentOk = await trySilentLoginFromPlatformSession()
       if (silentOk && authContext.isAuthenticated.value) {
-        next()
-        return
+        return true
       }
-      next({
+      return {
         path: '/login',
         query: {
           redirect: to.fullPath || '/',
         },
-      })
-      return
+      }
     }
 
     await authContext.login(to.fullPath || '/')
-    return
+    // login() 会触发浏览器重定向；这里显式中止当前导航，避免 Vue Router 报 Invalid navigation guard。
+    return false
   } catch (error) {
     logger.error('登录重定向失败:', error)
-    next('/login')
+    return '/login'
   }
 }
 
-const dynamicRoutesGuard: NavigationGuard = async (to, from, next) => {
+export const dynamicRoutesGuard: NavigationGuard = async (to, from) => {
   // 错误页面不需要动态路由检查
   if (to.path.startsWith('/exception/')) {
-    next()
-    return
+    return true
   }
   
   if (!authContext.isAuthenticated.value || to.meta.requiresAuth === false) {
-    next()
-    return
+    return true
   }
 
   const needRetry = to.matched.length === 0 || to.name === 'NotFound'
@@ -424,8 +427,7 @@ const dynamicRoutesGuard: NavigationGuard = async (to, from, next) => {
 
   if (!routesReady) {
     logger.error('[Router] 菜单路由加载失败，保留默认导航')
-    next()
-    return
+    return true
   }
 
   if (needRetry) {
@@ -433,20 +435,19 @@ const dynamicRoutesGuard: NavigationGuard = async (to, from, next) => {
     const retry = router.resolve(to.fullPath)
     if (retry.matched.length > 0 && retry.name !== 'NotFound') {
       logger.info('[Router] 兜底成功，重新跳转:', to.fullPath)
-      next({
+      return {
         path: to.fullPath,
         query: to.query,
         hash: to.hash,
         replace: true,
-      })
-      return
+      } satisfies RouteLocationRaw
     }
     
     // 如果最终还是没有匹配到路由，跳转到 404 页面并传递错误信息
     if (to.path !== '/exception/404') {
       logger.warn('[Router] 路由未找到，跳转到 404 页面:', to.fullPath)
       const traceId = getCurrentTraceId()
-      next({
+      return {
         path: '/exception/404',
         query: {
           from: from.fullPath || from.path || document.referrer || undefined,
@@ -455,12 +456,11 @@ const dynamicRoutesGuard: NavigationGuard = async (to, from, next) => {
           traceId: traceId || undefined,
         },
         replace: true,
-      })
-      return
+      } satisfies RouteLocationRaw
     }
   }
 
-  next()
+  return true
 }
 
 router.beforeEach(authGuard)

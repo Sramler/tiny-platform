@@ -53,6 +53,50 @@ const ButtonStub = defineComponent({
   emits: ['click'],
   template: '<button @click="$emit(\'click\')"><slot /></button>',
 })
+const ListItemStub = defineComponent({
+  template: '<div><slot /><slot name="actions" /></div>',
+})
+const ListItemMetaStub = defineComponent({
+  template: '<div><slot name="title" /><slot name="description" /><slot /></div>',
+})
+
+function mountProfile() {
+  return mount(Profile, {
+    global: {
+      stubs: {
+        'a-row': PassThrough,
+        'a-col': PassThrough,
+        'a-card': PassThrough,
+        'a-avatar': PassThrough,
+        'a-divider': PassThrough,
+        'a-tag': PassThrough,
+        'a-tabs': PassThrough,
+        'a-tab-pane': PassThrough,
+        'a-descriptions': PassThrough,
+        'a-descriptions-item': PassThrough,
+        'a-form': PassThrough,
+        'a-form-item': PassThrough,
+        'a-input': PassThrough,
+        'a-input-password': PassThrough,
+        'a-button': ButtonStub,
+        'a-upload': PassThrough,
+        'a-space': PassThrough,
+        'a-spin': PassThrough,
+        'a-alert': PassThrough,
+        'a-list': PassThrough,
+        'a-list-item': ListItemStub,
+        'a-list-item-meta': ListItemMetaStub,
+        'a-empty': PassThrough,
+        'a-table': PassThrough,
+        'a-tooltip': PassThrough,
+        UserOutlined: PassThrough,
+        SettingOutlined: PassThrough,
+        CheckCircleOutlined: PassThrough,
+        ClockCircleOutlined: PassThrough,
+      },
+    },
+  })
+}
 
 import Profile from '@/views/Profile.vue'
 
@@ -77,40 +121,7 @@ describe('Profile.vue', () => {
   })
 
   it('should render profile shell', async () => {
-    const wrapper = mount(Profile, {
-      global: {
-        stubs: {
-          'a-row': PassThrough,
-          'a-col': PassThrough,
-          'a-card': PassThrough,
-          'a-avatar': PassThrough,
-          'a-divider': PassThrough,
-          'a-tag': PassThrough,
-          'a-tabs': PassThrough,
-          'a-tab-pane': PassThrough,
-          'a-descriptions': PassThrough,
-          'a-descriptions-item': PassThrough,
-          'a-form': PassThrough,
-          'a-form-item': PassThrough,
-          'a-input': PassThrough,
-          'a-input-password': PassThrough,
-          'a-button': ButtonStub,
-          'a-upload': PassThrough,
-          'a-space': PassThrough,
-          'a-spin': PassThrough,
-          'a-alert': PassThrough,
-          'a-list': PassThrough,
-          'a-list-item': PassThrough,
-          'a-list-item-meta': PassThrough,
-          'a-empty': PassThrough,
-          'a-table': PassThrough,
-          'a-tooltip': PassThrough,
-          UserOutlined: PassThrough,
-          CheckCircleOutlined: PassThrough,
-          ClockCircleOutlined: PassThrough,
-        },
-      },
-    })
+    const wrapper = mountProfile()
     await flushPromises()
 
     expect(wrapper.exists()).toBe(true)
@@ -120,41 +131,7 @@ describe('Profile.vue', () => {
   it('should preserve activeTenantId when navigating to setting and totp bind', async () => {
     routerMocks.routeQuery.activeTenantId = '11'
 
-    const wrapper = mount(Profile, {
-      global: {
-        stubs: {
-          'a-row': PassThrough,
-          'a-col': PassThrough,
-          'a-card': PassThrough,
-          'a-avatar': PassThrough,
-          'a-divider': PassThrough,
-          'a-tag': PassThrough,
-          'a-tabs': PassThrough,
-          'a-tab-pane': PassThrough,
-          'a-descriptions': PassThrough,
-          'a-descriptions-item': PassThrough,
-          'a-form': PassThrough,
-          'a-form-item': PassThrough,
-          'a-input': PassThrough,
-          'a-input-password': PassThrough,
-          'a-button': ButtonStub,
-          'a-upload': PassThrough,
-          'a-space': PassThrough,
-          'a-spin': PassThrough,
-          'a-alert': PassThrough,
-          'a-list': PassThrough,
-          'a-list-item': PassThrough,
-          'a-list-item-meta': PassThrough,
-          'a-empty': PassThrough,
-          'a-table': PassThrough,
-          'a-tooltip': PassThrough,
-          UserOutlined: PassThrough,
-          SettingOutlined: PassThrough,
-          CheckCircleOutlined: PassThrough,
-          ClockCircleOutlined: PassThrough,
-        },
-      },
-    })
+    const wrapper = mountProfile()
     await flushPromises()
 
     const settingButton = wrapper.findAll('button').find((button) => button.text().includes('编辑个人设置'))
@@ -165,5 +142,39 @@ describe('Profile.vue', () => {
       path: '/profile/setting',
       query: { activeTenantId: '11' },
     })
+  })
+
+  it('should show activated totp copy only when totpActivated is true', async () => {
+    securityApiMocks.getSecurityStatus.mockResolvedValue({
+      activeTenantId: 9,
+      totpBound: true,
+      totpActivated: true,
+      disableMfa: false,
+      forceMfa: false,
+    })
+
+    const wrapper = mountProfile()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('已开启两步验证，账户安全性更高')
+    expect(wrapper.text()).not.toContain('两步验证待完成激活，请继续完成绑定')
+    expect(wrapper.text()).toContain('查看')
+  })
+
+  it('should show pending totp copy when totp is bound but not activated', async () => {
+    securityApiMocks.getSecurityStatus.mockResolvedValue({
+      activeTenantId: 9,
+      totpBound: true,
+      totpActivated: false,
+      disableMfa: false,
+      forceMfa: false,
+    })
+
+    const wrapper = mountProfile()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('两步验证待完成激活，请继续完成绑定')
+    expect(wrapper.text()).toContain('继续绑定')
+    expect(wrapper.text()).not.toContain('已开启两步验证，账户安全性更高')
   })
 })

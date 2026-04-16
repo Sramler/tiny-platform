@@ -95,8 +95,10 @@
         <div class="table-scroll-container">
           <a-table :columns="columns" :data-source="tableData" :row-key="(record: any) => String(record.id)" bordered
             :loading="loading" :row-selection="rowSelection" :custom-row="onCustomRow" :row-class-name="getRowClassName"
-            :scroll="tableScroll" :expandable="expandableConfig" :children-column-name="MENU_TREE_CHILDREN_COLUMN"
-            :indent-size="MENU_TREE_INDENT_SIZE" :pagination="false">
+            :scroll="tableScroll" :expanded-row-keys="expandedRowKeys" :expand-icon-column-index="expandIconColumnIndex"
+            :expand-icon="renderTreeExpandIcon" :row-expandable="isTreeRowExpandable"
+            :children-column-name="MENU_TREE_CHILDREN_COLUMN" :indent-size="MENU_TREE_INDENT_SIZE" :pagination="false"
+            @expand="handleTableExpand" @expandedRowsChange="handleExpandedRowsChange">
             <template #bodyCell="{ column, record }">
               <template v-if="column.dataIndex === 'icon'">
                 <div class="icon-cell">
@@ -186,6 +188,7 @@ import { message, Modal } from 'ant-design-vue'
 import {
   ReloadOutlined,
   PlusOutlined,
+  MinusOutlined,
   EditOutlined,
   DeleteOutlined,
   SettingOutlined,
@@ -436,35 +439,6 @@ function isExpandableMenuNode(node: MenuItemEx) {
   return node.leaf === false || node.leaf === 0
 }
 
-async function hydrateDirectChildren(nodes: MenuItemEx[]): Promise<MenuItemEx[]> {
-  return Promise.all(
-    nodes.map(async (node) => {
-      if (!isExpandableMenuNode(node) || node._childrenLoaded) {
-        return node
-      }
-
-      const nodeId = Number(node.id)
-      if (!Number.isFinite(nodeId) || nodeId <= 0) {
-        return node
-      }
-
-      try {
-        const childMenus = await getMenusByParentId(nodeId)
-        const normalizedChildren = (childMenus || []).map((item) => normalizeMenuItem(item))
-        return {
-          ...node,
-          _childrenLoaded: true,
-          children: normalizedChildren.length > 0 ? normalizedChildren : undefined,
-          leaf: normalizedChildren.length === 0 ? true : node.leaf,
-        }
-      } catch (error) {
-        console.error('[菜单调试] 预加载直子菜单失败', error)
-        return node
-      }
-    }),
-  )
-}
-
 function updateMenuTree(
   nodes: MenuItemEx[],
   targetKey: string,
@@ -521,6 +495,9 @@ async function handleTreeExpand(expanded: boolean, record: MenuItemEx) {
     }))
     if (normalizedChildren.length === 0) {
       expandedRowKeys.value = expandedRowKeys.value.filter((key) => key !== recordKey)
+    } else if (!expandedRowKeys.value.includes(recordKey)) {
+      // 懒加载场景下，表格可能在 children 挂载前回写空 expandedKeys，这里补一次展开状态。
+      expandedRowKeys.value = [...expandedRowKeys.value, recordKey]
     }
   } catch (error) {
     console.error('[菜单调试] getMenusByParentId 请求异常', error)
@@ -532,51 +509,49 @@ async function handleTreeExpand(expanded: boolean, record: MenuItemEx) {
 }
 
 // 展开配置（树形结构专用）
-const expandableConfig = computed(() => ({
-  expandedRowKeys: expandedRowKeys.value,
-  childrenColumnName: MENU_TREE_CHILDREN_COLUMN,
-  indentSize: MENU_TREE_INDENT_SIZE,
-  expandIconColumnIndex: expandIconColumnIndex.value,
-  expandIcon: ({ prefixCls, expanded, expandable, record, onExpand }: {
-    prefixCls: string
-    expanded: boolean
-    expandable: boolean
-    record: MenuItemEx
-    onExpand: (record: MenuItemEx, event: MouseEvent) => void
-  }) => {
-    const iconPrefix = `${prefixCls}-row-expand-icon`
-    return h('button', {
-      type: 'button',
-      class: [
-        iconPrefix,
-        {
-          [`${iconPrefix}-spaced`]: !expandable,
-          [`${iconPrefix}-expanded`]: expandable && expanded,
-          [`${iconPrefix}-collapsed`]: expandable && !expanded,
-          'menu-tree-expand-icon': true,
-        },
-      ],
-      'aria-expanded': expanded,
-      'aria-label': expanded ? '收起子菜单' : '展开子菜单',
-      onClick: (event: MouseEvent) => {
-        event.stopPropagation()
-        onExpand(record, event)
+function renderTreeExpandIcon({ prefixCls, expanded, expandable, record, onExpand }: {
+  prefixCls: string
+  expanded: boolean
+  expandable: boolean
+  record: MenuItemEx
+  onExpand: (record: MenuItemEx, event: MouseEvent) => void
+}) {
+  const iconPrefix = `${prefixCls}-row-expand-icon`
+  return h('button', {
+    type: 'button',
+    class: [
+      iconPrefix,
+      {
+        [`${iconPrefix}-spaced`]: !expandable,
+        [`${iconPrefix}-expanded`]: expandable && expanded,
+        [`${iconPrefix}-collapsed`]: expandable && !expanded,
+        'menu-tree-expand-icon': true,
       },
-    }, expandable ? [expanded ? h(MinusOutlined) : h(PlusOutlined)] : [])
-  },
-  rowExpandable: (record: MenuItemEx) =>
-    (record.leaf === false || record.leaf === 0) && (!record._childrenLoaded || Boolean(record.children?.length)),
-  onExpand: (expanded: boolean, record: MenuItemEx) => {
-    void handleTreeExpand(expanded, record)
-  },
-  onExpandedRowsChange: (expandedKeys: (string | number)[]) => {
-    try {
-      expandedRowKeys.value = expandedKeys.map(String)
-    } catch (error) {
-      console.warn('expandable onExpandedRowsChange error:', error)
-    }
+    ],
+    'aria-expanded': expanded,
+    'aria-label': expanded ? '收起子菜单' : '展开子菜单',
+    onClick: (event: MouseEvent) => {
+      event.stopPropagation()
+      onExpand(record, event)
+    },
+  }, expandable ? [expanded ? h(MinusOutlined) : h(PlusOutlined)] : [])
+}
+
+function isTreeRowExpandable(record: MenuItemEx) {
+  return (record.leaf === false || record.leaf === 0) && (!record._childrenLoaded || Boolean(record.children?.length))
+}
+
+function handleTableExpand(expanded: boolean, record: MenuItemEx) {
+  void handleTreeExpand(expanded, record)
+}
+
+function handleExpandedRowsChange(expandedKeys: (string | number)[]) {
+  try {
+    expandedRowKeys.value = expandedKeys.map(String)
+  } catch (error) {
+    console.warn('expandedRowsChange error:', error)
   }
-}))
+}
 
 const tableScroll = { x: 'max-content' }
 
@@ -604,8 +579,7 @@ async function loadData() {
     const res = await menuList(params)
     // 验证响应数据
     if (res && Array.isArray(res)) {
-      const normalizedMenus = res.map((item) => normalizeMenuItem(item))
-      tableData.value = await hydrateDirectChildren(normalizedMenus)
+      tableData.value = res.map((item) => normalizeMenuItem(item))
     } else {
       tableData.value = []
     }

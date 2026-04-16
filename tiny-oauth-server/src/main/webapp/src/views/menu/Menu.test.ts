@@ -67,7 +67,18 @@ const PassThrough = defineComponent({
 
 const TableStub = defineComponent({
   name: 'TableStub',
-  props: ['dataSource', 'scroll', 'expandable', 'indentSize', 'childrenColumnName'],
+  props: [
+    'dataSource',
+    'scroll',
+    'indentSize',
+    'childrenColumnName',
+    'expandIconColumnIndex',
+    'expandIcon',
+    'rowExpandable',
+    'expandedRowKeys',
+    'onExpand',
+    'onExpandedRowsChange',
+  ],
   template: `
     <div class="menu-table-stub ant-table">
       <div class="ant-table-header"></div>
@@ -102,6 +113,7 @@ const globalStubs = {
   'a-drawer': defineComponent({ props: ['open'], template: '<div v-if="open"><slot /></div>' }),
   VueDraggable: PassThrough,
   PlusOutlined: PassThrough,
+  MinusOutlined: PassThrough,
   ReloadOutlined: PassThrough,
   EditOutlined: PassThrough,
   DeleteOutlined: PassThrough,
@@ -244,10 +256,12 @@ describe('Menu.vue', () => {
     const table = wrapper.findComponent(TableStub)
     expect(table.props('childrenColumnName')).toBe('children')
     expect(table.props('indentSize')).toBe(24)
-    expect(table.props('expandable').expandIconColumnIndex).toBe(4)
+    expect(table.props('expandIconColumnIndex')).toBe(4)
+    expect(typeof table.props('expandIcon')).toBe('function')
+    expect(typeof table.props('rowExpandable')).toBe('function')
   })
 
-  it('should preload direct child menus for top-level directories', async () => {
+  it('should not preload direct child menus for top-level directories on mount', async () => {
     apiMocks.menuList.mockResolvedValue([
       { id: 1, name: 'sys', title: '系统管理', type: 0, parentId: null, enabled: true, leaf: false, children: [] },
     ])
@@ -262,15 +276,75 @@ describe('Menu.vue', () => {
     })
     await flushPromises()
 
-    const afterExpandData = wrapper.findComponent(TableStub).props('dataSource') as Array<Record<string, any>>
-    expect(apiMocks.getMenusByParentId).toHaveBeenCalledWith(1)
-    expect(afterExpandData).toHaveLength(1)
-    expect(afterExpandData[0].children).toHaveLength(1)
-    expect(afterExpandData[0].children[0].title).toBe('用户管理')
-    expect(afterExpandData[0].children[0].parentId).toBe(1)
+    const table = wrapper.findComponent(TableStub)
+    const data = table.props('dataSource') as Array<Record<string, any>>
+    expect(apiMocks.getMenusByParentId).not.toHaveBeenCalled()
+    expect(data).toHaveLength(1)
+    expect(data[0].children).toEqual([])
   })
 
-  it('should preload direct children even when non-leaf rows are returned with empty children arrays', async () => {
+  it('should lazy load direct children when a top-level directory is expanded', async () => {
+    apiMocks.menuList.mockResolvedValue([
+      { id: 1, name: 'sys', title: '系统管理', type: 0, parentId: null, enabled: true, leaf: false, children: [] },
+    ])
+    apiMocks.getMenusByParentId.mockResolvedValue([
+      { id: 2, name: 'sys-user', title: '用户管理', type: 1, parentId: 1, enabled: true, leaf: true },
+    ])
+
+    const wrapper = mount(Menu, {
+      global: {
+        stubs: globalStubs,
+      },
+    })
+    await flushPromises()
+
+    const table = wrapper.findComponent(TableStub)
+    const beforeExpandData = table.props('dataSource') as Array<Record<string, any>>
+    const onExpand = table.props('onExpand') as (expanded: boolean, record: Record<string, any>) => void
+    expect(apiMocks.getMenusByParentId).not.toHaveBeenCalled()
+
+    onExpand(true, beforeExpandData[0])
+    await flushPromises()
+
+    const afterExpandData = wrapper.findComponent(TableStub).props('dataSource') as Array<Record<string, any>>
+    expect(apiMocks.getMenusByParentId).toHaveBeenCalledWith(1)
+    expect(afterExpandData[0].children).toHaveLength(1)
+    expect(afterExpandData[0].children[0].title).toBe('用户管理')
+  })
+
+  it('should keep a lazily loaded node expanded when expanded row keys are cleared before children mount', async () => {
+    apiMocks.menuList.mockResolvedValue([
+      { id: 1, name: 'sys', title: '系统管理', type: 0, parentId: null, enabled: true, leaf: false, children: [] },
+    ])
+    apiMocks.getMenusByParentId.mockResolvedValue([
+      { id: 2, name: 'sys-user', title: '用户管理', type: 1, parentId: 1, enabled: true, leaf: true },
+    ])
+
+    const wrapper = mount(Menu, {
+      global: {
+        stubs: globalStubs,
+      },
+    })
+    await flushPromises()
+
+    const table = wrapper.findComponent(TableStub)
+    const beforeExpandData = table.props('dataSource') as Array<Record<string, any>>
+    const onExpand = table.props('onExpand') as (expanded: boolean, record: Record<string, any>) => void
+    const onExpandedRowsChange = table.props('onExpandedRowsChange') as (expandedKeys: Array<string | number>) => void
+
+    onExpand(true, beforeExpandData[0])
+    onExpandedRowsChange([])
+    await flushPromises()
+
+    const afterExpandData = wrapper.findComponent(TableStub).props('dataSource') as Array<Record<string, any>>
+    const afterExpandedRowKeys = wrapper.findComponent(TableStub).props('expandedRowKeys') as string[]
+
+    expect(apiMocks.getMenusByParentId).toHaveBeenCalledWith(1)
+    expect(afterExpandData[0].children).toHaveLength(1)
+    expect(afterExpandedRowKeys).toEqual(['1'])
+  })
+
+  it('should lazy load direct children even when non-leaf rows are returned with empty children arrays', async () => {
     apiMocks.menuList.mockResolvedValue([
       { id: 2, name: 'system', title: '系统管理', type: 0, parentId: null, enabled: true, leaf: false, children: [] },
     ])
@@ -283,6 +357,13 @@ describe('Menu.vue', () => {
         stubs: globalStubs,
       },
     })
+    await flushPromises()
+
+    const table = wrapper.findComponent(TableStub)
+    const beforeExpandData = table.props('dataSource') as Array<Record<string, any>>
+    const onExpand = table.props('onExpand') as (expanded: boolean, record: Record<string, any>) => void
+
+    onExpand(true, beforeExpandData[0])
     await flushPromises()
 
     const afterExpandData = wrapper.findComponent(TableStub).props('dataSource') as Array<Record<string, any>>
@@ -306,6 +387,13 @@ describe('Menu.vue', () => {
     })
     await flushPromises()
 
+    const table = wrapper.findComponent(TableStub)
+    const beforeExpandData = table.props('dataSource') as Array<Record<string, any>>
+    const onExpand = table.props('onExpand') as (expanded: boolean, record: Record<string, any>) => void
+
+    onExpand(true, beforeExpandData[0])
+    await flushPromises()
+
     const afterExpandData = wrapper.findComponent(TableStub).props('dataSource') as Array<Record<string, any>>
     expect(apiMocks.getMenusByParentId).toHaveBeenCalledWith(2)
     expect(afterExpandData[0].children).toHaveLength(1)
@@ -313,7 +401,7 @@ describe('Menu.vue', () => {
     expect(afterExpandData[0].children[0].parentId).toBe('2')
   })
 
-  it('should normalize non-leaf rows without real children into leaf rows during preload', async () => {
+  it('should normalize non-leaf rows without real children into leaf rows after lazy loading', async () => {
     apiMocks.menuList.mockResolvedValue([
       { id: 1, name: 'workbench', title: '工作台', type: 0, parentId: null, enabled: true, leaf: false },
     ])
@@ -327,12 +415,18 @@ describe('Menu.vue', () => {
     await flushPromises()
 
     const table = wrapper.findComponent(TableStub)
-    const afterPreloadData = table.props('dataSource') as Array<Record<string, any>>
-    const afterExpandable = table.props('expandable') as { expandedRowKeys: string[] }
+    const beforeExpandData = table.props('dataSource') as Array<Record<string, any>>
+    const onExpand = table.props('onExpand') as (expanded: boolean, record: Record<string, any>) => void
+
+    onExpand(true, beforeExpandData[0])
+    await flushPromises()
+
+    const afterPreloadData = wrapper.findComponent(TableStub).props('dataSource') as Array<Record<string, any>>
+    const afterExpandedRowKeys = wrapper.findComponent(TableStub).props('expandedRowKeys') as string[]
     expect(apiMocks.getMenusByParentId).toHaveBeenCalledWith(1)
     expect(afterPreloadData[0].leaf).toBe(true)
     expect(afterPreloadData[0].children).toBeUndefined()
-    expect(afterExpandable.expandedRowKeys).toEqual([])
+    expect(afterExpandedRowKeys).toEqual([])
   })
 
   it('should keep expanded medium datasets using native container height', async () => {

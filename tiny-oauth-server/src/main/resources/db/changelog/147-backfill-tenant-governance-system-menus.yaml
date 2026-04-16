@@ -1,0 +1,376 @@
+databaseChangeLog:
+  - changeSet:
+      id: 147-backfill-tenant-governance-system-menus
+      author: codex
+      validCheckSum:
+        - 9:ae799d2353dbd90c3151d1c93b82929f
+      comment: 回填租户治理菜单到系统管理目录，并补齐平台模板与 ROLE_TENANT_ADMIN 的可见性链路
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: menu
+            - tableExists:
+                tableName: permission
+            - tableExists:
+                tableName: role
+            - tableExists:
+                tableName: role_permission
+            - tableExists:
+                tableName: menu_permission_requirement
+            - tableExists:
+                tableName: api_endpoint
+            - tableExists:
+                tableName: api_endpoint_permission_requirement
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              -- 1) 平台模板补齐治理页面所需的 view 级 permission 主数据，
+              --    让后续 tenant bootstrap 有稳定的复制源。
+              INSERT INTO `permission` (
+                `permission_code`,
+                `permission_name`,
+                `module_code`,
+                `action_code`,
+                `permission_type`,
+                `description`,
+                `enabled`,
+                `built_in_flag`,
+                `tenant_id`,
+                `created_by`,
+                `created_at`,
+                `updated_by`,
+                `updated_at`
+              )
+              SELECT
+                src.`permission_code`,
+                src.`permission_name`,
+                src.`module_code`,
+                src.`action_code`,
+                src.`permission_type`,
+                src.`description`,
+                src.`enabled`,
+                src.`built_in_flag`,
+                NULL AS `tenant_id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`,
+                NULL AS `updated_by`,
+                NOW() AS `updated_at`
+              FROM `permission` src
+              WHERE src.`tenant_id` = 1
+                AND src.`permission_code` IN (
+                  'system:org:list',
+                  'system:org:view',
+                  'system:audit:authentication:view',
+                  'system:datascope:view',
+                  'system:audit:auth:view',
+                  'system:role:constraint:view',
+                  'system:role:constraint:violation:view'
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `permission` existing
+                  WHERE existing.`tenant_id` IS NULL
+                    AND existing.`permission_code` = src.`permission_code`
+                );
+
+              -- 2) 现有租户运行态：治理菜单统一挂到各自 tenant 的 system 目录下，
+              --    避免继续漂到 dashboard/workbench。
+              UPDATE `menu` child
+              JOIN `menu` system_dir
+                ON system_dir.`tenant_id` = child.`tenant_id`
+               AND system_dir.`name` = 'system'
+              LEFT JOIN `permission` tenant_permission
+                ON tenant_permission.`tenant_id` = child.`tenant_id`
+               AND tenant_permission.`permission_code` COLLATE utf8mb4_general_ci
+                   = child.`permission` COLLATE utf8mb4_general_ci
+              SET
+                child.`parent_id` = system_dir.`id`,
+                child.`required_permission_id` = COALESCE(tenant_permission.`id`, child.`required_permission_id`),
+                child.`updated_at` = NOW(),
+                child.`updated_by` = NULL
+              WHERE child.`tenant_id` IS NOT NULL
+                AND child.`name` IN (
+                  'tenant',
+                  'authenticationAudit',
+                  'organization',
+                  'dataScope',
+                  'authorizationAudit',
+                  'roleConstraint'
+                )
+                AND (
+                  NOT (child.`parent_id` <=> system_dir.`id`)
+                  OR (
+                    tenant_permission.`id` IS NOT NULL
+                    AND NOT (child.`required_permission_id` <=> tenant_permission.`id`)
+                  )
+                );
+
+              -- 3) 平台模板已有治理菜单需要对齐到 system 目录，并绑定平台模板 permission。
+              UPDATE `menu` child
+              JOIN `menu` platform_system
+                ON platform_system.`tenant_id` IS NULL
+               AND platform_system.`name` = 'system'
+              LEFT JOIN `permission` platform_permission
+                ON platform_permission.`tenant_id` IS NULL
+               AND platform_permission.`permission_code` COLLATE utf8mb4_general_ci
+                   = child.`permission` COLLATE utf8mb4_general_ci
+              SET
+                child.`parent_id` = platform_system.`id`,
+                child.`resource_level` = 'PLATFORM',
+                child.`required_permission_id` = COALESCE(platform_permission.`id`, child.`required_permission_id`),
+                child.`updated_at` = NOW(),
+                child.`updated_by` = NULL
+              WHERE child.`tenant_id` IS NULL
+                AND child.`name` IN (
+                  'authenticationAudit',
+                  'organization',
+                  'dataScope',
+                  'authorizationAudit',
+                  'roleConstraint'
+                )
+                AND (
+                  NOT (child.`parent_id` <=> platform_system.`id`)
+                  OR child.`resource_level` <> 'PLATFORM'
+                  OR (
+                    platform_permission.`id` IS NOT NULL
+                    AND NOT (child.`required_permission_id` <=> platform_permission.`id`)
+                  )
+                );
+
+              -- 4) 平台模板缺失的数据范围 / RBAC3 约束菜单需要补齐，
+              --    否则新租户 bootstrap 仍然拿不到这些 tenant-side 治理入口。
+              INSERT INTO `menu` (
+                `tenant_id`,
+                `resource_level`,
+                `name`,
+                `title`,
+                `path`,
+                `icon`,
+                `show_icon`,
+                `sort`,
+                `component`,
+                `redirect`,
+                `hidden`,
+                `keep_alive`,
+                `permission`,
+                `required_permission_id`,
+                `type`,
+                `parent_id`,
+                `enabled`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                'PLATFORM' AS `resource_level`,
+                src.`name`,
+                src.`title`,
+                src.`path`,
+                src.`icon`,
+                src.`show_icon`,
+                src.`sort`,
+                src.`component`,
+                src.`redirect`,
+                src.`hidden`,
+                src.`keep_alive`,
+                src.`permission`,
+                platform_permission.`id` AS `required_permission_id`,
+                src.`type`,
+                platform_system.`id` AS `parent_id`,
+                src.`enabled`,
+                NOW() AS `created_at`,
+                NULL AS `created_by`,
+                NOW() AS `updated_at`,
+                NULL AS `updated_by`
+              FROM `menu` src
+              JOIN `menu` platform_system
+                ON platform_system.`tenant_id` IS NULL
+               AND platform_system.`name` = 'system'
+              JOIN `permission` platform_permission
+                ON platform_permission.`tenant_id` IS NULL
+               AND platform_permission.`permission_code` COLLATE utf8mb4_general_ci
+                   = src.`permission` COLLATE utf8mb4_general_ci
+              WHERE src.`tenant_id` = 1
+                AND src.`name` IN ('organization', 'authenticationAudit', 'dataScope', 'authorizationAudit', 'roleConstraint')
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `menu` existing
+                  WHERE existing.`tenant_id` IS NULL
+                    AND existing.`name` = src.`name`
+                );
+
+              -- 5) requirement rows 缺失时 fail-closed，会导致菜单仍然不可见；这里统一补齐。
+              INSERT INTO `menu_permission_requirement` (
+                `tenant_id`,
+                `menu_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                m.`tenant_id`,
+                m.`id` AS `menu_id`,
+                0 AS `requirement_group`,
+                1 AS `sort_order`,
+                m.`required_permission_id` AS `permission_id`,
+                0 AS `negated`,
+                NOW() AS `created_at`,
+                NULL AS `created_by`,
+                NOW() AS `updated_at`,
+                NULL AS `updated_by`
+              FROM `menu` m
+              WHERE m.`name` IN (
+                  'authenticationAudit',
+                  'organization',
+                  'dataScope',
+                  'authorizationAudit',
+                  'roleConstraint'
+                )
+                AND m.`required_permission_id` IS NOT NULL
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `menu_permission_requirement` existing
+                  WHERE existing.`menu_id` = m.`id`
+                );
+
+              -- 6) 现有租户 ROLE_TENANT_ADMIN 需要最小 view 链路，
+              --    否则菜单挂回 system 后仍会因为无权限而继续隐藏。
+              INSERT IGNORE INTO `role_permission` (
+                `tenant_id`,
+                `role_id`,
+                `permission_id`,
+                `created_by`,
+                `created_at`
+              )
+              SELECT
+                role_entity.`tenant_id`,
+                role_entity.`id` AS `role_id`,
+                permission_entity.`id` AS `permission_id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`
+              FROM `role` role_entity
+              JOIN `permission` permission_entity
+                ON permission_entity.`tenant_id` = role_entity.`tenant_id`
+              WHERE role_entity.`tenant_id` IS NOT NULL
+                AND role_entity.`code` = 'ROLE_TENANT_ADMIN'
+                AND permission_entity.`permission_code` IN (
+                  'system:org:list',
+                  'system:org:view',
+                  'system:audit:authentication:view',
+                  'system:datascope:view',
+                  'system:audit:auth:view',
+                  'system:role:constraint:view',
+                  'system:role:constraint:violation:view'
+                );
+
+              -- 8) 平台模板补齐 RBAC3 违例日志查询 endpoint。
+              INSERT INTO `api_endpoint` (
+                `tenant_id`,
+                `resource_level`,
+                `name`,
+                `title`,
+                `uri`,
+                `method`,
+                `permission`,
+                `required_permission_id`,
+                `enabled`,
+                `created_at`,
+                `updated_at`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                'PLATFORM' AS `resource_level`,
+                'role-constraint-violations-get' AS `name`,
+                'RBAC3 约束违例日志查询' AS `title`,
+                '/sys/role-constraints/violations' AS `uri`,
+                'GET' AS `method`,
+                'system:role:constraint:violation:view' AS `permission`,
+                permission_entity.`id` AS `required_permission_id`,
+                1 AS `enabled`,
+                NOW() AS `created_at`,
+                NOW() AS `updated_at`
+              FROM `permission` permission_entity
+              WHERE permission_entity.`tenant_id` IS NULL
+                AND permission_entity.`permission_code` = 'system:role:constraint:violation:view'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `api_endpoint` existing
+                  WHERE existing.`tenant_id` IS NULL
+                    AND existing.`resource_level` = 'PLATFORM'
+                    AND existing.`uri` = '/sys/role-constraints/violations'
+                    AND existing.`method` = 'GET'
+                );
+
+              INSERT INTO `api_endpoint_permission_requirement` (
+                `tenant_id`,
+                `api_endpoint_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `updated_at`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                endpoint_entity.`id` AS `api_endpoint_id`,
+                0 AS `requirement_group`,
+                1 AS `sort_order`,
+                endpoint_entity.`required_permission_id` AS `permission_id`,
+                0 AS `negated`,
+                NOW() AS `created_at`,
+                NOW() AS `updated_at`
+              FROM `api_endpoint` endpoint_entity
+              WHERE endpoint_entity.`tenant_id` IS NULL
+                AND endpoint_entity.`resource_level` = 'PLATFORM'
+                AND endpoint_entity.`uri` = '/sys/role-constraints/violations'
+                AND endpoint_entity.`method` = 'GET'
+                AND endpoint_entity.`required_permission_id` IS NOT NULL
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `api_endpoint_permission_requirement` existing
+                  WHERE existing.`api_endpoint_id` = endpoint_entity.`id`
+                );
+
+              -- 7) 平台模板 ROLE_TENANT_ADMIN 同样补齐上述链路，保证新租户 bootstrap 后默认可见。
+              INSERT IGNORE INTO `role_permission` (
+                `tenant_id`,
+                `role_id`,
+                `permission_id`,
+                `created_by`,
+                `created_at`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                role_entity.`id` AS `role_id`,
+                permission_entity.`id` AS `permission_id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`
+              FROM `role` role_entity
+              JOIN `permission` permission_entity
+                ON permission_entity.`tenant_id` IS NULL
+              WHERE role_entity.`tenant_id` IS NULL
+                AND role_entity.`code` = 'ROLE_TENANT_ADMIN'
+                AND permission_entity.`permission_code` IN (
+                  'system:org:list',
+                  'system:org:view',
+                  'system:audit:authentication:view',
+                  'system:datascope:view',
+                  'system:audit:auth:view',
+                  'system:role:constraint:view',
+                  'system:role:constraint:violation:view'
+                );

@@ -1,0 +1,52 @@
+databaseChangeLog:
+  - changeSet:
+      id: 149-backfill-tenant-admin-user-management-write-permissions
+      author: codex
+      comment: 回填各租户 ROLE_TENANT_ADMIN 的用户治理写权限，恢复用户页运行时按钮可见性
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: role
+            - tableExists:
+                tableName: permission
+            - tableExists:
+                tableName: role_permission
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT IGNORE INTO `role_permission` (
+                `tenant_id`,
+                `role_id`,
+                `permission_id`,
+                `created_by`,
+                `created_at`
+              )
+              SELECT
+                role_entity.`tenant_id`,
+                role_entity.`id` AS `role_id`,
+                permission_entity.`id` AS `permission_id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`
+              FROM `role` role_entity
+              JOIN `permission` permission_entity
+                ON permission_entity.`tenant_id` = role_entity.`tenant_id`
+              WHERE role_entity.`tenant_id` IS NOT NULL
+                AND role_entity.`code` = 'ROLE_TENANT_ADMIN'
+                AND permission_entity.`permission_code` IN (
+                  'system:user:create',
+                  'system:user:edit',
+                  'system:user:delete',
+                  'system:user:batch-delete',
+                  'system:user:enable',
+                  'system:user:batch-enable',
+                  'system:user:disable',
+                  'system:user:batch-disable',
+                  'system:user:role:assign'
+                );

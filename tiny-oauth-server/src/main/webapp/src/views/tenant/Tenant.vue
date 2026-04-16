@@ -890,13 +890,23 @@ watch(canRead, (enabled) => {
 .table-scroll-container {
   flex: 1;
   min-height: 0;
+  overflow: auto;
+  padding-bottom: 12px;
 }
 
 .pagination-container {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
   padding: 12px 24px;
   border-top: 1px solid #f0f0f0;
   display: flex;
   justify-content: flex-end;
+  background: #fff;
+}
+
+::deep(.ant-table-tbody > tr > td) {
+  white-space: nowrap;
 }
 
 .toolbar-btn {

@@ -1,0 +1,257 @@
+databaseChangeLog:
+  - changeSet:
+      id: 150-backfill-tenant-admin-runtime-ui-action-permissions
+      author: codex
+      comment: 补齐角色/菜单/资源页 ui_action 载体与 ROLE_TENANT_ADMIN 权限链路，恢复运行时按钮可见性
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: menu
+            - tableExists:
+                tableName: ui_action
+            - tableExists:
+                tableName: permission
+            - tableExists:
+                tableName: role
+            - tableExists:
+                tableName: role_permission
+            - tableExists:
+                tableName: ui_action_permission_requirement
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              -- 1) 平台模板补齐 role/menu/resource 页按钮权限主数据，
+              --    避免新租户 bootstrap 后继续丢运行时按钮。
+              INSERT INTO `permission` (
+                `permission_code`,
+                `permission_name`,
+                `module_code`,
+                `action_code`,
+                `permission_type`,
+                `description`,
+                `enabled`,
+                `built_in_flag`,
+                `tenant_id`,
+                `created_by`,
+                `created_at`,
+                `updated_by`,
+                `updated_at`
+              )
+              SELECT
+                derived.`permission_code`,
+                derived.`permission_code` AS `permission_name`,
+                derived.`module_code`,
+                derived.`action_code`,
+                'BUTTON' AS `permission_type`,
+                '从 tenant ui_action 载体回填平台模板按钮权限' AS `description`,
+                derived.`enabled`,
+                0 AS `built_in_flag`,
+                NULL AS `tenant_id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`,
+                NULL AS `updated_by`,
+                NOW() AS `updated_at`
+              FROM (
+                SELECT
+                  MIN(CONVERT(TRIM(ua.`permission`) USING utf8mb4) COLLATE utf8mb4_0900_ai_ci) AS `permission_code`,
+                  CASE
+                    WHEN MIN(CONVERT(TRIM(ua.`permission`) USING utf8mb4) COLLATE utf8mb4_0900_ai_ci)
+                      REGEXP '^[^:[:space:]]+(:[^:[:space:]]+){2,}$'
+                      THEN SUBSTRING_INDEX(
+                        MIN(CONVERT(TRIM(ua.`permission`) USING utf8mb4) COLLATE utf8mb4_0900_ai_ci),
+                        ':',
+                        1
+                      )
+                    ELSE NULL
+                  END AS `module_code`,
+                  CASE
+                    WHEN MIN(CONVERT(TRIM(ua.`permission`) USING utf8mb4) COLLATE utf8mb4_0900_ai_ci)
+                      REGEXP '^[^:[:space:]]+(:[^:[:space:]]+){2,}$'
+                      THEN SUBSTRING_INDEX(
+                        MIN(CONVERT(TRIM(ua.`permission`) USING utf8mb4) COLLATE utf8mb4_0900_ai_ci),
+                        ':',
+                        -1
+                      )
+                    ELSE NULL
+                  END AS `action_code`,
+                  CASE
+                    WHEN MAX(CASE WHEN ua.`enabled` = 1 THEN 1 ELSE 0 END) = 1 THEN 1
+                    ELSE 0
+                  END AS `enabled`
+                FROM `ui_action` ua
+                JOIN `menu` m
+                  ON m.`id` = ua.`parent_menu_id`
+                 AND m.`tenant_id` <=> ua.`tenant_id`
+                WHERE ua.`tenant_id` IS NOT NULL
+                  AND m.`path` IN ('/system/role', '/system/menu', '/system/resource')
+                  AND ua.`permission` IS NOT NULL
+                  AND TRIM(ua.`permission`) <> ''
+                GROUP BY CONVERT(TRIM(ua.`permission`) USING utf8mb4) COLLATE utf8mb4_0900_ai_ci
+              ) derived
+              WHERE NOT EXISTS (
+                SELECT 1
+                FROM `permission` existing
+                WHERE existing.`tenant_id` IS NULL
+                  AND existing.`permission_code` = derived.`permission_code`
+              );
+
+              -- 2) 平台模板补齐三页运行时 ui_action carrier，
+              --    否则后续 tenant bootstrap 仍然没有可复制的按钮定义。
+              INSERT INTO `ui_action` (
+                `tenant_id`,
+                `resource_level`,
+                `name`,
+                `title`,
+                `action_key`,
+                `page_path`,
+                `permission`,
+                `required_permission_id`,
+                `parent_menu_id`,
+                `sort`,
+                `enabled`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                'PLATFORM' AS `resource_level`,
+                source.`name`,
+                source.`title`,
+                source.`action_key`,
+                platform_menu.`path` AS `page_path`,
+                source.`permission`,
+                platform_permission.`id` AS `required_permission_id`,
+                platform_menu.`id` AS `parent_menu_id`,
+                source.`sort`,
+                source.`enabled`,
+                NOW() AS `created_at`,
+                NULL AS `created_by`,
+                NOW() AS `updated_at`,
+                NULL AS `updated_by`
+              FROM `ui_action` source
+              JOIN `menu` source_menu
+                ON source_menu.`id` = source.`parent_menu_id`
+               AND source_menu.`tenant_id` <=> source.`tenant_id`
+              JOIN (
+                SELECT MIN(ua.`id`) AS `source_ui_action_id`
+                FROM `ui_action` ua
+                JOIN `menu` m
+                  ON m.`id` = ua.`parent_menu_id`
+                 AND m.`tenant_id` <=> ua.`tenant_id`
+                WHERE ua.`tenant_id` IS NOT NULL
+                  AND m.`path` IN ('/system/role', '/system/menu', '/system/resource')
+                  AND ua.`permission` IS NOT NULL
+                  AND TRIM(ua.`permission`) <> ''
+                GROUP BY CONVERT(TRIM(ua.`permission`) USING utf8mb4) COLLATE utf8mb4_0900_ai_ci
+              ) chosen
+                ON chosen.`source_ui_action_id` = source.`id`
+              JOIN `menu` platform_menu
+                ON platform_menu.`tenant_id` IS NULL
+               AND platform_menu.`path` = source_menu.`path`
+              JOIN `permission` platform_permission
+                ON platform_permission.`tenant_id` IS NULL
+               AND platform_permission.`permission_code`
+                   = CONVERT(TRIM(source.`permission`) USING utf8mb4) COLLATE utf8mb4_0900_ai_ci
+              WHERE NOT EXISTS (
+                SELECT 1
+                FROM `ui_action` existing
+                WHERE existing.`tenant_id` IS NULL
+                  AND existing.`parent_menu_id` = platform_menu.`id`
+                  AND existing.`permission` COLLATE utf8mb4_0900_ai_ci
+                      = source.`permission` COLLATE utf8mb4_0900_ai_ci
+              );
+
+              -- 3) 对齐 role/menu/resource 页按钮的 required_permission_id，
+              --    让 current tenant 与 platform template 都走显式 permission 绑定。
+              UPDATE `ui_action` a
+              JOIN `menu` m
+                ON m.`id` = a.`parent_menu_id`
+               AND m.`tenant_id` <=> a.`tenant_id`
+              JOIN `permission` p
+                ON p.`normalized_tenant_id` = IFNULL(a.`tenant_id`, 0)
+               AND p.`permission_code`
+                   = CONVERT(TRIM(a.`permission`) USING utf8mb4) COLLATE utf8mb4_0900_ai_ci
+              SET
+                a.`required_permission_id` = p.`id`,
+                a.`updated_at` = NOW(),
+                a.`updated_by` = NULL
+              WHERE m.`path` IN ('/system/role', '/system/menu', '/system/resource')
+                AND a.`permission` IS NOT NULL
+                AND TRIM(a.`permission`) <> ''
+                AND (a.`required_permission_id` IS NULL OR a.`required_permission_id` <> p.`id`);
+
+              -- 4) requirement rows 缺失会导致 runtime evaluator fail-closed，
+              --    这里统一补齐兼容组。
+              INSERT IGNORE INTO `ui_action_permission_requirement` (
+                `tenant_id`,
+                `ui_action_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                a.`tenant_id`,
+                a.`id` AS `ui_action_id`,
+                0 AS `requirement_group`,
+                1 AS `sort_order`,
+                a.`required_permission_id` AS `permission_id`,
+                0 AS `negated`,
+                COALESCE(a.`created_at`, NOW()) AS `created_at`,
+                a.`created_by`,
+                COALESCE(a.`updated_at`, NOW()) AS `updated_at`,
+                a.`updated_by`
+              FROM `ui_action` a
+              JOIN `menu` m
+                ON m.`id` = a.`parent_menu_id`
+               AND m.`tenant_id` <=> a.`tenant_id`
+              WHERE m.`path` IN ('/system/role', '/system/menu', '/system/resource')
+                AND a.`required_permission_id` IS NOT NULL;
+
+              -- 5) 现有租户与平台模板的 ROLE_TENANT_ADMIN 都补齐这三页按钮权限，
+              --    恢复当前租户运行时可见性，并保证新租户 bootstrap 后默认具备一致行为。
+              INSERT IGNORE INTO `role_permission` (
+                `tenant_id`,
+                `role_id`,
+                `permission_id`,
+                `created_by`,
+                `created_at`
+              )
+              SELECT
+                role_entity.`tenant_id`,
+                role_entity.`id` AS `role_id`,
+                permission_entity.`id` AS `permission_id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`
+              FROM `role` role_entity
+              JOIN `permission` permission_entity
+                ON permission_entity.`normalized_tenant_id` = IFNULL(role_entity.`tenant_id`, 0)
+              JOIN (
+                SELECT DISTINCT
+                  a.`tenant_id`,
+                  CONVERT(TRIM(a.`permission`) USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS `permission_code`
+                FROM `ui_action` a
+                JOIN `menu` m
+                  ON m.`id` = a.`parent_menu_id`
+                 AND m.`tenant_id` <=> a.`tenant_id`
+                WHERE m.`path` IN ('/system/role', '/system/menu', '/system/resource')
+                  AND a.`enabled` = 1
+                  AND a.`permission` IS NOT NULL
+                  AND TRIM(a.`permission`) <> ''
+              ) required_action_permission
+                ON required_action_permission.`tenant_id` <=> role_entity.`tenant_id`
+               AND permission_entity.`permission_code` = required_action_permission.`permission_code`
+              WHERE role_entity.`code` = 'ROLE_TENANT_ADMIN';

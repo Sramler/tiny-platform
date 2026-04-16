@@ -4,6 +4,7 @@ import { message } from 'ant-design-vue'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '@/auth/auth'
+import { usePlatformScope } from '@/composables/usePlatformScope'
 import {
   getIdempotentMetrics,
   getIdempotentTopKeys,
@@ -16,6 +17,7 @@ import { getActiveTenantId, withActiveTenantQuery } from '@/utils/tenant'
 
 const router = useRouter()
 const { user } = useAuth()
+const { isPlatformScope } = usePlatformScope()
 const emptyMetrics: IdempotentMetricsSnapshot = {
   windowMinutes: 60,
   windowStartEpochMillis: 0,
@@ -37,7 +39,8 @@ const metrics = ref<IdempotentMetricsSnapshot>(emptyMetrics)
 const topKeys = ref<IdempotentTopKey[]>([])
 
 const canViewIdempotentOps = computed(() =>
-  extractAuthoritiesFromJwt(user.value?.access_token).includes(IDEMPOTENT_OPS_VIEW),
+  isPlatformScope.value
+    && extractAuthoritiesFromJwt(user.value?.access_token).includes(IDEMPOTENT_OPS_VIEW),
 )
 
 const successRate = computed(() => {
@@ -121,7 +124,7 @@ watch(canViewIdempotentOps, (enabled) => {
           {{
             canViewIdempotentOps
               ? '这里直接展示幂等链路的实时健康度，方便判断重复提交拦截、非法 key 拒绝和存储异常是否在上升。'
-              : '幂等治理指标仅对具备平台级幂等治理权限的用户开放，普通租户管理员和业务用户不会在首页拉取这些平台级统计。'
+              : '幂等治理指标仅对平台作用域下具备平台级幂等治理权限的用户开放，普通租户管理员和业务用户不会在首页拉取这些平台级统计。'
           }}
         </p>
       </div>
@@ -225,7 +228,7 @@ watch(canViewIdempotentOps, (enabled) => {
     <a-card v-else class="restricted-card" :bordered="false">
       <p class="restricted-title">指标已按权限收口</p>
       <p class="restricted-copy">
-        你当前没有平台级幂等治理权限，因此工作台不会主动请求 `/metrics/idempotent`。如需查看，请使用默认平台租户下具备 `idempotent:ops:view` 权限的管理员账号。
+        你当前不处于平台作用域，或缺少平台级幂等治理权限，因此工作台不会主动请求 `/metrics/idempotent`。如需查看，请切换到平台作用域并使用具备 `idempotent:ops:view` 权限的管理员账号。
       </p>
     </a-card>
   </div>

@@ -116,6 +116,15 @@
 - **E2E 断言稳定性**
   - 对 active-scope refresh、OIDC silent renew、菜单懒加载、壳页跳转等链路，优先断言 durable evidence：真实网络、稳定页面态、后续 API 200、modal 关闭、trace/storageState 收敛。
   - success toast、页面标题、过渡文案只能做辅助证据，不能单独作为唯一通过依据。
+  - 对菜单驱动页面、动态路由页面，必须把“菜单点击进入”和“direct deep-link / 浏览器刷新进入”视为两个独立风险面；至少有一层自动化覆盖 direct deep-link / refresh，不能默认两者天然等价。
+
+- **Vue Router guard / 动态路由**
+  - async guard 必须统一使用一种风格：要么全 `next(...)`，要么全 return；禁止在同一 guard 中混用，否则会触发 `Invalid navigation guard`。
+  - 动态菜单路由场景下，catch-all `NotFound` 不得直接无条件 redirect 到 `/exception/404` 抢先吞掉页面；应保留 guard 重试 `resolve` / `replace` 的机会，并用测试锁住“首次未命中 -> 加载菜单 -> 重试命中”的链路。
+
+- **第三方组件运行时契约**
+  - 遇到 Ant Design Vue / 其他第三方组件“单测通过、浏览器行为不对”时，先怀疑当前安装版本的真实 prop / event 契约与测试替身是否一致，再决定修法。
+  - 修复第三方组件接入问题时，至少补一条运行时契约回归测试；如果问题只会在真实浏览器里暴露，还要补一次真实页面验证结论。
 
 - **前端 CI 测试环境**
   - 共享测试 setup 中的浏览器 API shim（`matchMedia` 等）必须对 `restoreMocks/resetMocks` 稳定；不能在本地可过、CI 因监听器方法被还原而失败。
@@ -504,6 +513,8 @@
 - 不要新增纯 getter/setter 测试
 - 如果是编排型业务，必须覆盖并行归并、串行推进或失败重试中的相关场景
 - 如果是 real-link E2E，不要 mock first-party API
+- 如果改动涉及动态路由 / 菜单入口 / 路由守卫，必须单独说明菜单点击路径与 direct deep-link / 刷新路径各自如何验证
+- 如果改动涉及第三方组件高阶行为（如 a-table 树表展开、受控弹层、表单 finish），必须说明测试替身如何保持与真实 props / emits 契约一致
 
 交付物：
 - 测试文件清单
@@ -517,6 +528,7 @@
 - 是否有真实拒绝路径
 - 是否验证了租户边界
 - 是否验证了用户可观察结果
+- 是否验证了菜单点击路径和 direct deep-link / 刷新路径
 - E2E 是否写清环境等级和 seed/reset
 - 是否误用 mock 替代了真实链路
 - 是否新增了低价值 coverage 测试

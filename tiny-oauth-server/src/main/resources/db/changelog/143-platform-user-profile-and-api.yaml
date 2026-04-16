@@ -1,0 +1,241 @@
+databaseChangeLog:
+  - changeSet:
+      id: 143-platform-user-profile-ddl
+      author: codex
+      comment: 新增平台用户档案表并回填已具备 PLATFORM 赋权的用户
+      preConditions:
+        onFail: HALT
+        onError: HALT
+        and:
+          - tableExists:
+              tableName: user
+          - tableExists:
+              tableName: role_assignment
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              CREATE TABLE IF NOT EXISTS `platform_user_profile` (
+                `id` BIGINT NOT NULL AUTO_INCREMENT,
+                `user_id` BIGINT NOT NULL,
+                `status` VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
+                `display_name` VARCHAR(64) NULL,
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uk_platform_user_profile_user` (`user_id`),
+                KEY `idx_platform_user_profile_status` (`status`),
+                CONSTRAINT `fk_platform_user_profile_user`
+                  FOREIGN KEY (`user_id`) REFERENCES `user` (`id`)
+                  ON DELETE CASCADE
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+              INSERT IGNORE INTO `platform_user_profile` (
+                `user_id`,
+                `status`,
+                `display_name`,
+                `created_at`,
+                `updated_at`
+              )
+              SELECT DISTINCT
+                u.`id`,
+                'ACTIVE',
+                COALESCE(NULLIF(TRIM(u.`nickname`), ''), u.`username`),
+                NOW(),
+                NOW()
+              FROM `user` u
+              JOIN `role_assignment` ra
+                ON ra.`principal_type` = 'USER'
+               AND ra.`principal_id` = u.`id`
+               AND ra.`scope_type` = 'PLATFORM'
+               AND ra.`tenant_id` IS NULL
+               AND ra.`scope_id` IS NULL
+               AND ra.`status` = 'ACTIVE'
+               AND ra.`start_time` <= NOW()
+               AND (ra.`end_time` IS NULL OR ra.`end_time` > NOW());
+
+  - changeSet:
+      id: 143-platform-user-permission-and-api-backfill
+      author: codex
+      comment: 补齐平台用户管理权限主数据、ROLE_PLATFORM_ADMIN 授权与 api_endpoint requirement
+      preConditions:
+        onFail: MARK_RAN
+        onError: HALT
+        and:
+          - tableExists:
+              tableName: permission
+          - tableExists:
+              tableName: role
+          - tableExists:
+              tableName: role_permission
+          - tableExists:
+              tableName: api_endpoint
+          - tableExists:
+              tableName: api_endpoint_permission_requirement
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT IGNORE INTO `permission` (
+                `permission_code`,
+                `permission_name`,
+                `module_code`,
+                `action_code`,
+                `permission_type`,
+                `description`,
+                `enabled`,
+                `built_in_flag`,
+                `tenant_id`,
+                `created_by`,
+                `created_at`,
+                `updated_by`,
+                `updated_at`
+              ) VALUES
+                ('platform:user:list', '平台用户列表', 'platform', 'list', 'BUTTON', '平台用户管理控制面读取', 1, 1, NULL, NULL, NOW(), NULL, NOW()),
+                ('platform:user:view', '平台用户详情', 'platform', 'view', 'BUTTON', '平台用户详情读取', 1, 1, NULL, NULL, NOW(), NULL, NOW()),
+                ('platform:user:create', '平台用户创建', 'platform', 'create', 'BUTTON', '创建平台用户档案', 1, 1, NULL, NULL, NOW(), NULL, NOW()),
+                ('platform:user:edit', '平台用户编辑', 'platform', 'edit', 'BUTTON', '编辑平台用户档案', 1, 1, NULL, NULL, NOW(), NULL, NOW()),
+                ('platform:user:disable', '平台用户启停', 'platform', 'disable', 'BUTTON', '启停平台用户档案', 1, 1, NULL, NULL, NOW(), NULL, NOW());
+
+              INSERT IGNORE INTO `role_permission` (
+                `tenant_id`,
+                `role_id`,
+                `permission_id`,
+                `created_by`,
+                `created_at`
+              )
+              SELECT
+                NULL,
+                r_admin.`id`,
+                p.`id`,
+                NULL,
+                NOW()
+              FROM `role` r_admin
+              JOIN `permission` p
+                ON p.`tenant_id` IS NULL
+               AND p.`permission_code` IN (
+                 'platform:user:list',
+                 'platform:user:view',
+                 'platform:user:create',
+                 'platform:user:edit',
+                 'platform:user:disable'
+               )
+              WHERE r_admin.`tenant_id` IS NULL
+                AND r_admin.`code` = 'ROLE_PLATFORM_ADMIN';
+
+              INSERT INTO `api_endpoint` (
+                `tenant_id`,
+                `resource_level`,
+                `name`,
+                `title`,
+                `uri`,
+                `method`,
+                `permission`,
+                `required_permission_id`,
+                `enabled`,
+                `created_at`,
+                `updated_at`
+              )
+              SELECT NULL, 'PLATFORM', 'platform-users-get', '平台用户列表', '/platform/users', 'GET', 'platform:user:list', p.`id`, 1, NOW(), NOW()
+              FROM `permission` p
+              WHERE p.`tenant_id` IS NULL
+                AND p.`permission_code` = 'platform:user:list'
+                AND NOT EXISTS (
+                  SELECT 1 FROM `api_endpoint` e WHERE e.`tenant_id` IS NULL AND e.`uri` = '/platform/users' AND e.`method` = 'GET'
+                );
+
+              INSERT INTO `api_endpoint` (
+                `tenant_id`,
+                `resource_level`,
+                `name`,
+                `title`,
+                `uri`,
+                `method`,
+                `permission`,
+                `required_permission_id`,
+                `enabled`,
+                `created_at`,
+                `updated_at`
+              )
+              SELECT NULL, 'PLATFORM', 'platform-users-post', '平台用户创建', '/platform/users', 'POST', 'platform:user:create', p.`id`, 1, NOW(), NOW()
+              FROM `permission` p
+              WHERE p.`tenant_id` IS NULL
+                AND p.`permission_code` = 'platform:user:create'
+                AND NOT EXISTS (
+                  SELECT 1 FROM `api_endpoint` e WHERE e.`tenant_id` IS NULL AND e.`uri` = '/platform/users' AND e.`method` = 'POST'
+                );
+
+              INSERT INTO `api_endpoint` (
+                `tenant_id`,
+                `resource_level`,
+                `name`,
+                `title`,
+                `uri`,
+                `method`,
+                `permission`,
+                `required_permission_id`,
+                `enabled`,
+                `created_at`,
+                `updated_at`
+              )
+              SELECT NULL, 'PLATFORM', 'platform-users-id-get', '平台用户详情', '/platform/users/{id}', 'GET', 'platform:user:view', p.`id`, 1, NOW(), NOW()
+              FROM `permission` p
+              WHERE p.`tenant_id` IS NULL
+                AND p.`permission_code` = 'platform:user:view'
+                AND NOT EXISTS (
+                  SELECT 1 FROM `api_endpoint` e WHERE e.`tenant_id` IS NULL AND e.`uri` = '/platform/users/{id}' AND e.`method` = 'GET'
+                );
+
+              INSERT INTO `api_endpoint` (
+                `tenant_id`,
+                `resource_level`,
+                `name`,
+                `title`,
+                `uri`,
+                `method`,
+                `permission`,
+                `required_permission_id`,
+                `enabled`,
+                `created_at`,
+                `updated_at`
+              )
+              SELECT NULL, 'PLATFORM', 'platform-users-id-status-patch', '平台用户状态更新', '/platform/users/{id}/status', 'PATCH', 'platform:user:disable', p.`id`, 1, NOW(), NOW()
+              FROM `permission` p
+              WHERE p.`tenant_id` IS NULL
+                AND p.`permission_code` = 'platform:user:disable'
+                AND NOT EXISTS (
+                  SELECT 1 FROM `api_endpoint` e WHERE e.`tenant_id` IS NULL AND e.`uri` = '/platform/users/{id}/status' AND e.`method` = 'PATCH'
+                );
+
+              INSERT IGNORE INTO `api_endpoint_permission_requirement` (
+                `tenant_id`,
+                `api_endpoint_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `updated_at`
+              )
+              SELECT
+                e.`tenant_id`,
+                e.`id`,
+                0,
+                1,
+                e.`required_permission_id`,
+                0,
+                NOW(),
+                NOW()
+              FROM `api_endpoint` e
+              WHERE e.`tenant_id` IS NULL
+                AND e.`uri` IN (
+                  '/platform/users',
+                  '/platform/users/{id}',
+                  '/platform/users/{id}/status'
+                )
+                AND e.`method` IN ('GET', 'POST', 'PATCH')
+                AND e.`required_permission_id` IS NOT NULL;

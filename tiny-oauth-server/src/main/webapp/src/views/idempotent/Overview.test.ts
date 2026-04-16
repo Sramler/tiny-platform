@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { defineComponent, nextTick } from 'vue'
+import { computed, defineComponent, nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
   messageWarning: vi.fn(),
   consoleWarn: vi.fn(),
   routeQuery: {} as Record<string, unknown>,
+  authUser: { value: null as { access_token?: string | null } | null },
+  isPlatformScope: { value: true },
 }))
 
 vi.mock('vue-router', () => ({
@@ -22,6 +24,18 @@ vi.mock('vue-router', () => ({
   }),
   useRoute: () => ({
     query: mocks.routeQuery,
+  }),
+}))
+
+vi.mock('@/auth/auth', () => ({
+  useAuth: () => ({
+    user: mocks.authUser,
+  }),
+}))
+
+vi.mock('@/composables/usePlatformScope', () => ({
+  usePlatformScope: () => ({
+    isPlatformScope: computed(() => mocks.isPlatformScope.value),
   }),
 }))
 
@@ -95,6 +109,12 @@ async function flushPromises() {
   await nextTick()
 }
 
+function createToken(authorities: string[], activeScopeType: 'PLATFORM' | 'TENANT' = 'PLATFORM') {
+  const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')
+  const payload = Buffer.from(JSON.stringify({ authorities, activeScopeType })).toString('base64url')
+  return `${header}.${payload}.signature`
+}
+
 function mountView() {
   return mount(Overview, {
     global: {
@@ -128,6 +148,10 @@ describe('idempotent Overview.vue', () => {
     mocks.messageError.mockReset()
     mocks.messageWarning.mockReset()
     mocks.consoleWarn.mockReset()
+    mocks.authUser.value = {
+      access_token: createToken(['idempotent:ops:view']),
+    }
+    mocks.isPlatformScope.value = true
     Object.keys(mocks.routeQuery).forEach((key) => {
       delete mocks.routeQuery[key]
     })
@@ -240,5 +264,38 @@ describe('idempotent Overview.vue', () => {
       path: '/',
       query: { activeTenantId: '7' },
     })
+  })
+
+  it('should block tenant scoped users before any metrics requests are sent', async () => {
+    mocks.isPlatformScope.value = false
+    mocks.authUser.value = {
+      access_token: createToken(['idempotent:ops:view'], 'TENANT'),
+    }
+
+    const wrapper = mountView()
+    await flushPromises()
+    await flushPromises()
+
+    expect(mocks.tenantList).not.toHaveBeenCalled()
+    expect(mocks.getIdempotentMetrics).not.toHaveBeenCalled()
+    expect(mocks.getIdempotentTopKeys).not.toHaveBeenCalled()
+    expect(mocks.getIdempotentMqMetrics).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('平台作用域限制')
+  })
+
+  it('should block users without idempotent ops permission before requests are sent', async () => {
+    mocks.authUser.value = {
+      access_token: createToken([]),
+    }
+
+    const wrapper = mountView()
+    await flushPromises()
+    await flushPromises()
+
+    expect(mocks.tenantList).not.toHaveBeenCalled()
+    expect(mocks.getIdempotentMetrics).not.toHaveBeenCalled()
+    expect(mocks.getIdempotentTopKeys).not.toHaveBeenCalled()
+    expect(mocks.getIdempotentMqMetrics).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('缺少 `idempotent:ops:view` 权限')
   })
 })

@@ -18,6 +18,13 @@ export const USER_DISABLE = 'system:user:disable'
 export const USER_BATCH_DISABLE = 'system:user:batch-disable'
 export const USER_ROLE_ASSIGN = 'system:user:role:assign'
 
+// ─── 平台用户管理 ───
+export const PLATFORM_USER_LIST = 'platform:user:list'
+export const PLATFORM_USER_VIEW = 'platform:user:view'
+export const PLATFORM_USER_CREATE = 'platform:user:create'
+export const PLATFORM_USER_EDIT = 'platform:user:edit'
+export const PLATFORM_USER_DISABLE = 'platform:user:disable'
+
 // ─── 角色管理 ───
 export const ROLE_LIST = 'system:role:list'
 export const ROLE_CREATE = 'system:role:create'
@@ -124,6 +131,10 @@ export const USER_MANAGEMENT_UPDATE_AUTHORITIES = [USER_EDIT, USER_ROLE_ASSIGN]
 export const USER_MANAGEMENT_DELETE_AUTHORITIES = [USER_DELETE, USER_BATCH_DELETE]
 export const USER_MANAGEMENT_ENABLE_AUTHORITIES = [USER_BATCH_ENABLE, USER_ENABLE]
 export const USER_MANAGEMENT_DISABLE_AUTHORITIES = [USER_BATCH_DISABLE, USER_DISABLE]
+
+export const PLATFORM_USER_MANAGEMENT_READ_AUTHORITIES = [PLATFORM_USER_LIST, PLATFORM_USER_VIEW]
+export const PLATFORM_USER_MANAGEMENT_CREATE_AUTHORITIES = [PLATFORM_USER_CREATE]
+export const PLATFORM_USER_MANAGEMENT_UPDATE_AUTHORITIES = [PLATFORM_USER_EDIT, PLATFORM_USER_DISABLE]
 
 export const ROLE_MANAGEMENT_READ_AUTHORITIES = [ROLE_LIST]
 export const ROLE_MANAGEMENT_CREATE_AUTHORITIES = [ROLE_CREATE]
