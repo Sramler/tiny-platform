@@ -19,6 +19,7 @@ function buildFakeAccessToken(authorities: string[]) {
   const payload = encodeBase64Url(
     JSON.stringify({
       activeTenantId: 1,
+      activeScopeType: 'PLATFORM',
       iss: AUTHORITY,
       authorities,
     }),
@@ -219,7 +220,7 @@ test.describe('idempotent ops access', () => {
 
     await page.goto('/')
 
-    await expect(page.getByText('幂等治理指标仅对平台管理员开放')).toBeVisible()
+    await expect(page.getByText('幂等治理指标仅对平台作用域下具备平台级幂等治理权限的用户开放')).toBeVisible()
     await expect(page.getByRole('button', { name: '进入治理页' })).toHaveCount(0)
     expect(metricsRequestCounter.count).toBe(0)
   })

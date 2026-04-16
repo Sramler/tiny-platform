@@ -38,6 +38,7 @@ const numberFromEnv = (
 export const authRuntimeConfig = Object.freeze({
   forceLogoutOnRenewFail: boolFromEnv('VITE_AUTH_FORCE_LOGOUT_ON_RENEW_FAIL', true),
   fetchTimeoutMs: numberFromEnv('VITE_AUTH_FETCH_TIMEOUT_MS', 8000, { min: 3000, max: 60000 }),
+  enablePlatformSessionSilentLogin: boolFromEnv('VITE_AUTH_ENABLE_PLATFORM_SESSION_SILENT_LOGIN', true),
 })
 
 export type AuthRuntimeConfig = typeof authRuntimeConfig

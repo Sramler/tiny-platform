@@ -31,6 +31,10 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     env: {
       VITE_API_BASE_URL: `${baseURL}/api`,
+      VITE_AUTH_ENABLE_PLATFORM_SESSION_SILENT_LOGIN: 'false',
+      VITE_OIDC_REDIRECT_URI: `${baseURL}/callback`,
+      VITE_OIDC_POST_LOGOUT_REDIRECT_URI: `${baseURL}/`,
+      VITE_OIDC_SILENT_REDIRECT_URI: `${baseURL}/silent-renew.html`,
       VITE_ENABLE_OIDC_TRACE: 'false',
     },
   },

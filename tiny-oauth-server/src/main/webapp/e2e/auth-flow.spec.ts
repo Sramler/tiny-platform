@@ -14,13 +14,18 @@ function buildCsrfResponse() {
 
 test.describe('auth flow pages', () => {
   test('router guard redirects protected route to login with internal redirect only', async ({ page }) => {
+    await page.addInitScript(() => {
+      window.localStorage.clear()
+      window.sessionStorage.clear()
+    })
+
     await page.route('**/api/csrf', async (route) => {
       await route.fulfill(buildCsrfResponse())
     })
 
     await page.goto('/OIDCDebug')
-    await expect(page.getByRole('heading', { name: '欢迎登录' })).toBeVisible()
     await expect(page).toHaveURL(/\/login\?redirect=(%2F|\/)OIDCDebug$/)
+    await expect(page.getByRole('heading', { name: '欢迎登录' })).toBeVisible()
     await expect(page.locator('input[name="redirect"]')).toHaveValue('/OIDCDebug')
   })
 
@@ -172,10 +177,9 @@ test.describe('auth flow pages', () => {
     await page.waitForURL('**/login')
 
     await page.goto('/unknown-page')
-    await page.waitForURL('**/exception/404')
-    await expect(page.getByRole('heading', { name: '页面未找到' })).toBeVisible()
-    await page.getByRole('button', { name: '返回首页' }).click()
-    await page.waitForURL('**/')
+    await expect(page).toHaveURL(/\/login\?redirect=(%2F|\/)unknown-page$/)
+    await expect(page.getByRole('heading', { name: '欢迎登录' })).toBeVisible()
+    await expect(page.locator('input[name="redirect"]')).toHaveValue('/unknown-page')
   })
 
   test('400 and 403 exception pages render details and return to safe destinations', async ({ page }) => {

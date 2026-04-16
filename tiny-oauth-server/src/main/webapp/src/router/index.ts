@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import type { NavigationGuard, RouteLocationRaw } from 'vue-router'
 import { watch } from 'vue'
 import { message } from 'ant-design-vue'
+import { authRuntimeConfig } from '@/auth/config'
 import { useAuth, initPromise, trySilentLoginFromPlatformSession } from '@/auth/auth'
 import { menuTree, type MenuItem } from '@/api/menu' // 引入菜单 API
 import logger from '@/utils/logger' // 引入日志工具
@@ -391,9 +392,11 @@ export const authGuard: NavigationGuard = async (to) => {
     const tenantCode = getTenantCode()
     if (!tenantCode) {
       // 平台表单登录清除了 tenantCode；若后端 Session 已就绪（含 totp-bind 跳过后的升级），静默 OIDC 可拿到 token
-      const silentOk = await trySilentLoginFromPlatformSession()
-      if (silentOk && authContext.isAuthenticated.value) {
-        return true
+      if (authRuntimeConfig.enablePlatformSessionSilentLogin) {
+        const silentOk = await trySilentLoginFromPlatformSession()
+        if (silentOk && authContext.isAuthenticated.value) {
+          return true
+        }
       }
       return {
         path: '/login',
