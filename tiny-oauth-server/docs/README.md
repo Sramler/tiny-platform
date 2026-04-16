@@ -22,7 +22,9 @@
 2. 认证/登录/TOTP：`认证文档索引.md`
 3. 日志与 Trace：`LOGGING_AND_TRACE_ENTERPRISE_GUIDE.md`
 4. 调度/Quartz：本页第 5 节的调度专题
-5. 数据库变更：`LIQUIBASE.md`
+5. Camunda / Workflow 架构策略：`../../docs/TINY_PLATFORM_CAMUNDA7_SPRING_BOOT4_ENGINE_ONLY_STRATEGY.md`
+6. Camunda / Spring Boot 4 fork 任务卡：`../../docs/TINY_PLATFORM_CAMUNDA7_SB4_FORK_TASK_CARDS.md`
+7. 数据库变更：`LIQUIBASE.md`
 
 ## 3. 值班与生产排障入口
 
@@ -138,9 +140,27 @@
 2. 变更集组织方式
 3. 覆盖率治理计划
 
-## 9. 使用建议
+## 9. Workflow / Camunda 架构策略
+
+推荐阅读：
+
+1. `../../docs/TINY_PLATFORM_CAMUNDA7_SPRING_BOOT4_ENGINE_ONLY_STRATEGY.md`
+2. `../../docs/TINY_PLATFORM_CAMUNDA7_SB4_FORK_TASK_CARDS.md`
+
+适用问题：
+
+1. `tiny-platform` 是否需要 Webapps / Admin
+2. `Engine Only` 在本项目中的准确含义
+3. `rest` 是否直出还是平台封装
+4. `camunda-bpm-platform` fork 与业务仓库之间的职责边界
+5. 现在是否应开始 fork 任务卡拆分
+6. `engine` 与 `spring-boot-starter` 应先做哪一层
+
+## 10. 使用建议
 
 1. 值班时先看第 3 节，不要先翻设计文档
 2. 研发排导出问题时，先看导出专题，不要只看代码
 3. 认证问题优先以 `认证文档索引.md` 为准，不要混用旧文档
-4. 新增专题时，优先补自己的专题索引，再把入口挂到本首页
+4. Workflow / Camunda 决策问题优先看平台级策略文档，不要只看 vendor fork
+5. fork 改造执行顺序优先看任务卡，不要直接跳进 `engine` 大改
+6. 新增专题时，优先补自己的专题索引，再把入口挂到本首页
