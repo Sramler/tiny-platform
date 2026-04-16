@@ -13,11 +13,15 @@ import java.util.*;
  */
 public class OAuth2PasswordAuthenticationConverter implements AuthenticationConverter {
 
+    private static final AuthorizationGrantType PASSWORD_GRANT_TYPE = new AuthorizationGrantType("password");
+    private static final String USERNAME_PARAMETER = "username";
+    private static final String PASSWORD_PARAMETER = "password";
+
     @Override
     public OAuth2PasswordAuthenticationToken convert(HttpServletRequest request) {
         // 必须是 password 类型
         String grantType = request.getParameter(OAuth2ParameterNames.GRANT_TYPE);
-        if (!AuthorizationGrantType.PASSWORD.getValue().equals(grantType)) {
+        if (!PASSWORD_GRANT_TYPE.getValue().equals(grantType)) {
             return null;
         }
 
@@ -28,8 +32,8 @@ public class OAuth2PasswordAuthenticationConverter implements AuthenticationConv
         }
 
         // 解析参数
-        String username = request.getParameter(OAuth2ParameterNames.USERNAME);
-        String password = request.getParameter(OAuth2ParameterNames.PASSWORD);
+        String username = request.getParameter(USERNAME_PARAMETER);
+        String password = request.getParameter(PASSWORD_PARAMETER);
         String scopeParam = request.getParameter(OAuth2ParameterNames.SCOPE);
         Set<String> scopes = scopeParam != null ? new HashSet<>(Arrays.asList(scopeParam.split(" "))) : Collections.emptySet();
 

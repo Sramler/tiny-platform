@@ -21,8 +21,8 @@
     <maven.compiler.source>21</maven.compiler.source>
     <maven.compiler.target>21</maven.compiler.target>
     <maven.compiler.release>21</maven.compiler.release>
-    <spring-boot.version>3.5.10</spring-boot.version>
-    <spring-cloud.version>2025.0.0</spring-cloud.version>
+    <spring-boot.version>4.0.0</spring-boot.version>
+    <spring-cloud.version>2025.0.2</spring-cloud.version>
     <fesod.version>2.0.1-incubating</fesod.version>
   </properties>
   <dependencyManagement>
@@ -131,7 +131,7 @@
 
       <!-- Mockito 测试框架 -->
       <!-- 注意：mockito-core 和 mockito-junit-jupiter 已包含在 spring-boot-starter-test 中 -->
-      <!-- 版本与 Spring Boot 3.5.10 BOM 管理的版本保持一致（5.17.0） -->
+      <!-- 版本与 Spring Boot 4.0.0 BOM 管理的版本保持一致（5.17.0） -->
       <!-- 如果子模块需要显式添加 Mockito 依赖，使用以下版本 -->
       <!-- 注意：mockito-inline 仅在需要 mock final 类或静态方法时才需要 -->
       <!-- 如果不需要这些功能，可以移除 mockito-inline 依赖 -->
@@ -190,7 +190,7 @@
       <dependency>
         <groupId>org.camunda.bpm</groupId>
         <artifactId>camunda-bom</artifactId>
-        <version>7.24.0</version>
+        <version>7.24.0-tiny-sb4-01</version>
         <type>pom</type>
         <scope>import</scope>
       </dependency>
@@ -278,6 +278,18 @@
         <enabled>false</enabled>
       </snapshots>
     </repository>
+    <!-- Spring Snapshots 仓库（Spring Boot SNAPSHOT 版本必需） -->
+    <repository>
+      <id>spring-snapshots</id>
+      <name>Spring Snapshots</name>
+      <url>https://repo.spring.io/snapshot</url>
+      <releases>
+        <enabled>false</enabled>
+      </releases>
+      <snapshots>
+        <enabled>true</enabled>
+      </snapshots>
+    </repository>
     <!-- 阿里云 Maven 仓库（优先） -->
     <repository>
       <id>aliyun</id>
@@ -306,6 +318,18 @@
 
   <!-- 插件仓库配置：优先使用阿里云，备用 Maven Central -->
   <pluginRepositories>
+    <!-- Spring Snapshots 插件仓库（Spring Boot SNAPSHOT 插件必需） -->
+    <pluginRepository>
+      <id>spring-snapshots</id>
+      <name>Spring Snapshots</name>
+      <url>https://repo.spring.io/snapshot</url>
+      <releases>
+        <enabled>false</enabled>
+      </releases>
+      <snapshots>
+        <enabled>true</enabled>
+      </snapshots>
+    </pluginRepository>
     <!-- 阿里云 Maven 仓库（优先） -->
     <pluginRepository>
       <id>aliyun-plugin</id>
@@ -331,4 +355,28 @@
       </snapshots>
     </pluginRepository>
   </pluginRepositories>
+  <profiles>
+    <profile>
+      <id>camunda-github-packages</id>
+      <activation>
+        <property>
+          <name>env.CAMUNDA_GITHUB_PACKAGES_ENABLED</name>
+          <value>true</value>
+        </property>
+      </activation>
+      <repositories>
+        <repository>
+          <id>github-camunda-fork</id>
+          <name>Sramler Camunda SB4 Fork Packages</name>
+          <url>https://maven.pkg.github.com/sramler/camunda-bpm-platform</url>
+          <releases>
+            <enabled>true</enabled>
+          </releases>
+          <snapshots>
+            <enabled>true</enabled>
+          </snapshots>
+        </repository>
+      </repositories>
+    </profile>
+  </profiles>
 </project>

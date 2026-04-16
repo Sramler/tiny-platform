@@ -26,7 +26,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -212,9 +212,9 @@ class ResourceControllerApiEndpointTemplateUriIntegrationTest {
 
     @SpringBootConfiguration
     @EnableAutoConfiguration(exclude = {
-        org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration.class,
-        org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration.class,
-        org.springframework.boot.autoconfigure.liquibase.LiquibaseAutoConfiguration.class,
+        org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration.class,
+        org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration.class,
+        org.springframework.boot.liquibase.autoconfigure.LiquibaseAutoConfiguration.class,
         org.camunda.bpm.spring.boot.starter.CamundaBpmAutoConfiguration.class,
         org.camunda.bpm.spring.boot.starter.rest.CamundaBpmRestJerseyAutoConfiguration.class,
         com.tiny.platform.infrastructure.idempotent.starter.autoconfigure.IdempotentAutoConfiguration.class

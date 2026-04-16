@@ -17,14 +17,14 @@ import org.springframework.http.MediaType;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configuration.OAuth2AuthorizationServerConfiguration;
+import org.springframework.security.config.annotation.web.configurers.oauth2.server.authorization.OAuth2AuthorizationServerConfigurer;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsentService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
-import org.springframework.security.oauth2.server.authorization.config.annotation.web.configuration.OAuth2AuthorizationServerConfiguration;
-import org.springframework.security.oauth2.server.authorization.config.annotation.web.configurers.OAuth2AuthorizationServerConfigurer;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings;
 import org.springframework.security.oauth2.server.authorization.token.*;
@@ -64,23 +64,25 @@ public class AuthorizationServerConfig {
                                                                      @Qualifier("registeredClientRepository") RegisteredClientRepository registeredClientRepository,
                                                                      @Qualifier("oauth2AuthorizationService") OAuth2AuthorizationService oauth2AuthorizationService,
                                                                      @Qualifier("customOAuth2AuthorizationConsentService") OAuth2AuthorizationConsentService oauth2AuthorizationConsentService,
+                                                                     AuthorizationServerSettings authorizationServerSettings,
+                                                                     OAuth2TokenGenerator<? extends org.springframework.security.oauth2.core.OAuth2Token> tokenGenerator,
                                                                      MfaAuthorizationEndpointFilter mfaAuthorizationEndpointFilter,
                                                                      TenantContextFilter tenantContextFilter,
                                                                      JwtAuthenticationConverter tinyPlatformJwtAuthenticationConverter)
             throws Exception {
-        // SAS 1.5.x 在部分配置阶段会直接从 ApplicationContext 按类型查 Bean（忽略 @Primary），
-        // 这里提前设置 shared object，避免 default/delegating 双 Bean 导致 NoUniqueBeanDefinitionException。
-        http.setSharedObject(RegisteredClientRepository.class, registeredClientRepository);
-        http.setSharedObject(OAuth2AuthorizationService.class, oauth2AuthorizationService);
-        http.setSharedObject(OAuth2AuthorizationConsentService.class, oauth2AuthorizationConsentService);
+        OAuth2AuthorizationServerConfigurer authorizationServerConfigurer =
+                new OAuth2AuthorizationServerConfigurer();
 
-        OAuth2AuthorizationServerConfiguration.applyDefaultSecurity(http);
-        http.getConfigurer(OAuth2AuthorizationServerConfigurer.class)
-                .registeredClientRepository(registeredClientRepository)
-                .authorizationService(oauth2AuthorizationService)
-                .authorizationConsentService(oauth2AuthorizationConsentService)
-                //开启OpenID Connect 1.0（其中oidc为OpenID Connect的缩写）。
-                .oidc(Customizer.withDefaults());
+        http
+                .securityMatcher(authorizationServerConfigurer.getEndpointsMatcher())
+                .with(authorizationServerConfigurer, authorizationServer -> authorizationServer
+                        .registeredClientRepository(registeredClientRepository)
+                        .authorizationService(oauth2AuthorizationService)
+                        .authorizationConsentService(oauth2AuthorizationConsentService)
+                        .authorizationServerSettings(authorizationServerSettings)
+                        .tokenGenerator(tokenGenerator)
+                        // 开启 OpenID Connect 1.0（其中 oidc 为 OpenID Connect 的缩写）。
+                        .oidc(Customizer.withDefaults()));
         http
                 // 在主要安全过滤器链中尽早增加 MFA 拦截，
                 // 通过 URL 匹配仅拦截 /oauth2/authorize，避免与其他端点冲突。

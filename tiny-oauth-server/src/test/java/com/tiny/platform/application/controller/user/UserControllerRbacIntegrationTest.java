@@ -15,11 +15,11 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringBootConfiguration;
-import org.springframework.boot.autoconfigure.data.web.SpringDataWebAutoConfiguration;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.data.autoconfigure.web.DataWebAutoConfiguration;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.http.MediaType;
@@ -51,34 +51,34 @@ class UserControllerRbacIntegrationTest {
     @Import({
         UserControllerRbacTestConfig.class,
         UserController.class,
-        SpringDataWebAutoConfiguration.class,
-        org.springframework.boot.autoconfigure.http.HttpMessageConvertersAutoConfiguration.class,
-        org.springframework.boot.autoconfigure.web.servlet.WebMvcAutoConfiguration.class
+        DataWebAutoConfiguration.class,
+        org.springframework.boot.http.converter.autoconfigure.HttpMessageConvertersAutoConfiguration.class,
+        org.springframework.boot.webmvc.autoconfigure.WebMvcAutoConfiguration.class
     })
     static class RbacTestApp {}
 
     @Autowired
     private MockMvc mockMvc;
 
-    @MockBean
+    @MockitoBean
     private UserService userService;
 
-    @MockBean
+    @MockitoBean
     private UserAuthenticationAuditRepository auditRepository;
 
-    @MockBean
+    @MockitoBean
     private AvatarService avatarService;
 
-    @MockBean
+    @MockitoBean
     private OrganizationUnitRepository organizationUnitRepository;
 
-    @MockBean
+    @MockitoBean
     private UserUnitRepository userUnitRepository;
 
-    @MockBean
+    @MockitoBean
     private UserDetailsService userDetailsService;
 
-    @MockBean
+    @MockitoBean
     private AuthUserResolutionService authUserResolutionService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();

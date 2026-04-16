@@ -15,14 +15,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringBootConfiguration;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
-import org.springframework.boot.autoconfigure.data.jpa.JpaRepositoriesAutoConfiguration;
-import org.springframework.boot.autoconfigure.domain.EntityScan;
-import org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration;
-import org.springframework.boot.autoconfigure.jdbc.DataSourceTransactionManagerAutoConfiguration;
-import org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration;
-import org.springframework.boot.autoconfigure.transaction.TransactionAutoConfiguration;
+import org.springframework.boot.data.jpa.autoconfigure.DataJpaRepositoriesAutoConfiguration;
+import org.springframework.boot.persistence.autoconfigure.EntityScan;
+import org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration;
+import org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration;
+import org.springframework.boot.transaction.autoconfigure.TransactionAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -65,13 +64,13 @@ class DictServiceJpaIntegrationTest {
     @Autowired
     private DictItemRepository dictItemRepository;
 
-    @MockBean
+    @MockitoBean
     private TenantUserRepository tenantUserRepository;
 
-    @MockBean
+    @MockitoBean
     private UserUnitRepository userUnitRepository;
 
-    @MockBean
+    @MockitoBean
     private UserRepository userRepository;
 
     @AfterEach
@@ -193,9 +192,8 @@ class DictServiceJpaIntegrationTest {
     @EnableJpaRepositories(basePackageClasses = {DictTypeRepository.class, DictItemRepository.class})
     @ImportAutoConfiguration({
             DataSourceAutoConfiguration.class,
-            DataSourceTransactionManagerAutoConfiguration.class,
             HibernateJpaAutoConfiguration.class,
-            JpaRepositoriesAutoConfiguration.class,
+            DataJpaRepositoriesAutoConfiguration.class,
             TransactionAutoConfiguration.class
     })
     @Import({DictTypeServiceImpl.class, DictItemServiceImpl.class})

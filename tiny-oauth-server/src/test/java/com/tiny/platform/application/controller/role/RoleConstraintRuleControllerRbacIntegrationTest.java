@@ -12,13 +12,13 @@ import com.tiny.platform.infrastructure.auth.role.service.RoleConstraintViolatio
 import com.tiny.platform.infrastructure.core.exception.handler.OAuthServerExceptionHandler;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.SpringBootConfiguration;
-import org.springframework.boot.autoconfigure.data.web.SpringDataWebAutoConfiguration;
-import org.springframework.boot.autoconfigure.http.HttpMessageConvertersAutoConfiguration;
-import org.springframework.boot.autoconfigure.web.servlet.WebMvcAutoConfiguration;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.data.autoconfigure.web.DataWebAutoConfiguration;
+import org.springframework.boot.http.converter.autoconfigure.HttpMessageConvertersAutoConfiguration;
+import org.springframework.boot.webmvc.autoconfigure.WebMvcAutoConfiguration;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Profile;
@@ -52,7 +52,7 @@ class RoleConstraintRuleControllerRbacIntegrationTest {
         RbacTestConfig.class,
         RoleConstraintRuleController.class,
         OAuthServerExceptionHandler.class,
-        SpringDataWebAutoConfiguration.class,
+        DataWebAutoConfiguration.class,
         HttpMessageConvertersAutoConfiguration.class,
         WebMvcAutoConfiguration.class
     })
@@ -76,10 +76,10 @@ class RoleConstraintRuleControllerRbacIntegrationTest {
         }
     }
 
-    @MockBean
+    @MockitoBean
     private RoleConstraintRuleAdminService adminService;
 
-    @MockBean
+    @MockitoBean
     private RoleConstraintViolationLogQueryService violationLogQueryService;
 
     @jakarta.annotation.Resource

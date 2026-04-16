@@ -1,6 +1,5 @@
 package com.tiny.platform.core.oauth.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tiny.platform.core.oauth.multitenancy.CurrentIssuerIdentifierResolver;
 import com.tiny.platform.core.oauth.multitenancy.IssuerDelegatingOAuth2AuthorizationConsentService;
 import com.tiny.platform.core.oauth.multitenancy.IssuerDelegatingOAuth2AuthorizationService;
@@ -15,6 +14,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsentService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
+import tools.jackson.databind.json.JsonMapper;
 
 import javax.sql.DataSource;
 import java.time.LocalDateTime;
@@ -43,7 +43,7 @@ class OAuth2DataConfigTest {
         assertThat(wrappedRepo).isInstanceOf(IssuerDelegatingRegisteredClientRepository.class);
 
         DataSource dataSource = mock(DataSource.class);
-        ObjectMapper authorizationMapper = new ObjectMapper();
+        JsonMapper authorizationMapper = JsonMapper.builder().build();
         // JdbcOAuth2AuthorizationService 构造器会在初始化阶段读取 DB 元数据；这里用 mock DataSource 验证配置方法可被调用
         // 且在无真实连接时抛出预期异常（避免引入集成数据库依赖）。
         assertThatThrownBy(() -> config.defaultOAuth2AuthorizationService(dataSource, defaultRepo, authorizationMapper))

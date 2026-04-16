@@ -23,6 +23,9 @@ import java.util.*;
 public class OAuth2PasswordAuthenticationConverter implements AuthenticationConverter {
 
 	static final String PASSWORD_REQUEST_ERROR_URI = "https://datatracker.ietf.org/doc/html/rfc6749#section-4.3.2";
+	private static final AuthorizationGrantType PASSWORD_GRANT_TYPE = new AuthorizationGrantType("password");
+	private static final String USERNAME_PARAMETER = "username";
+	private static final String PASSWORD_PARAMETER = "password";
 
 	@Nullable
 	@Override
@@ -31,21 +34,21 @@ public class OAuth2PasswordAuthenticationConverter implements AuthenticationConv
 
 		// grant_type (REQUIRED)
 		String grantType = parameters.getFirst(OAuth2ParameterNames.GRANT_TYPE);
-		if (!AuthorizationGrantType.PASSWORD.getValue().equals(grantType)) {
+		if (!PASSWORD_GRANT_TYPE.getValue().equals(grantType)) {
 			return null;
 		}
 
 		Authentication clientPrincipal = SecurityContextHolder.getContext().getAuthentication();
 
-		String username = parameters.getFirst(OAuth2ParameterNames.USERNAME);
-		if (!StringUtils.hasText(username) || parameters.get(OAuth2ParameterNames.USERNAME).size() != 1) {
-			OAuth2EndpointUtils.throwError(OAuth2ErrorCodes.INVALID_REQUEST, OAuth2ParameterNames.USERNAME,
+		String username = parameters.getFirst(USERNAME_PARAMETER);
+		if (!StringUtils.hasText(username) || parameters.get(USERNAME_PARAMETER).size() != 1) {
+			OAuth2EndpointUtils.throwError(OAuth2ErrorCodes.INVALID_REQUEST, USERNAME_PARAMETER,
 					PASSWORD_REQUEST_ERROR_URI);
 		}
 
-		String password = parameters.getFirst(OAuth2ParameterNames.PASSWORD);
-		if (!StringUtils.hasText(password) || parameters.get(OAuth2ParameterNames.PASSWORD).size() != 1) {
-			OAuth2EndpointUtils.throwError(OAuth2ErrorCodes.INVALID_REQUEST, OAuth2ParameterNames.PASSWORD,
+		String password = parameters.getFirst(PASSWORD_PARAMETER);
+		if (!StringUtils.hasText(password) || parameters.get(PASSWORD_PARAMETER).size() != 1) {
+			OAuth2EndpointUtils.throwError(OAuth2ErrorCodes.INVALID_REQUEST, PASSWORD_PARAMETER,
 					PASSWORD_REQUEST_ERROR_URI);
 		}
 

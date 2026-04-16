@@ -23,8 +23,9 @@
 3. 日志与 Trace：`LOGGING_AND_TRACE_ENTERPRISE_GUIDE.md`
 4. 调度/Quartz：本页第 5 节的调度专题
 5. Camunda / Workflow 架构策略：`../../docs/TINY_PLATFORM_CAMUNDA7_SPRING_BOOT4_ENGINE_ONLY_STRATEGY.md`
-6. Camunda / Spring Boot 4 fork 任务卡：`../../docs/TINY_PLATFORM_CAMUNDA7_SB4_FORK_TASK_CARDS.md`
-7. 数据库变更：`LIQUIBASE.md`
+6. Camunda / Spring Boot 4 fork 基线冻结：`../../docs/TINY_PLATFORM_CAMUNDA7_SB4_FORK_BASELINE.md`
+7. Camunda / Spring Boot 4 fork 任务卡：`../../docs/TINY_PLATFORM_CAMUNDA7_SB4_FORK_TASK_CARDS.md`
+8. 数据库变更：`LIQUIBASE.md`
 
 ## 3. 值班与生产排障入口
 
@@ -145,7 +146,8 @@
 推荐阅读：
 
 1. `../../docs/TINY_PLATFORM_CAMUNDA7_SPRING_BOOT4_ENGINE_ONLY_STRATEGY.md`
-2. `../../docs/TINY_PLATFORM_CAMUNDA7_SB4_FORK_TASK_CARDS.md`
+2. `../../docs/TINY_PLATFORM_CAMUNDA7_SB4_FORK_BASELINE.md`
+3. `../../docs/TINY_PLATFORM_CAMUNDA7_SB4_FORK_TASK_CARDS.md`
 
 适用问题：
 
@@ -155,6 +157,7 @@
 4. `camunda-bpm-platform` fork 与业务仓库之间的职责边界
 5. 现在是否应开始 fork 任务卡拆分
 6. `engine` 与 `spring-boot-starter` 应先做哪一层
+7. fork 坐标、版本和成功标准是否已经冻结
 
 ## 10. 使用建议
 

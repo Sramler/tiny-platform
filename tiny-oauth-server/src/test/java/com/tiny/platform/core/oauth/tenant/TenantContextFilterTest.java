@@ -764,7 +764,10 @@ class TenantContextFilterTest {
         });
 
         assertThat(response.getStatus()).isEqualTo(302);
-        assertThat(response.getRedirectedUrl()).contains("/login?redirect=");
+        assertThat(response.getRedirectedUrl())
+                .startsWith("/login?redirect=")
+                .doesNotStartWith("http://")
+                .doesNotStartWith("https://");
         assertThat(response.getRedirectedUrl()).contains("error=stale_permissions");
     }
 
@@ -781,7 +784,10 @@ class TenantContextFilterTest {
         });
 
         assertThat(response.getStatus()).isEqualTo(302);
-        assertThat(response.getRedirectedUrl()).contains("/login?redirect=");
+        assertThat(response.getRedirectedUrl())
+                .startsWith("/login?redirect=")
+                .doesNotStartWith("http://")
+                .doesNotStartWith("https://");
         assertThat(response.getRedirectedUrl()).contains("error=missing_tenant");
     }
 

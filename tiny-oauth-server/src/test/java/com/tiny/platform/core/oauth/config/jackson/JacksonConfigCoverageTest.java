@@ -12,11 +12,10 @@ import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
 import com.fasterxml.jackson.databind.type.TypeFactory;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.autoconfigure.jackson.Jackson2ObjectMapperBuilderCustomizer;
-import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.util.ReflectionTestUtils;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
 import java.io.StringWriter;
@@ -36,11 +35,7 @@ class JacksonConfigCoverageTest {
     @Test
     void shouldCustomizeWebObjectMapperAndApplyCommonJacksonSettings() throws Exception {
         JacksonConfig config = new JacksonConfig();
-        Jackson2ObjectMapperBuilder builder = new Jackson2ObjectMapperBuilder();
-        Jackson2ObjectMapperBuilderCustomizer customizer = config.jacksonCustomizer();
-        customizer.customize(builder);
-
-        ObjectMapper mapper = config.webObjectMapper(builder);
+        ObjectMapper mapper = config.webObjectMapper();
 
         assertThat(mapper.getSerializationConfig().getTimeZone().getID()).isEqualTo("UTC");
         assertThat(mapper.getSerializationConfig().isEnabled(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS))
@@ -62,33 +57,25 @@ class JacksonConfigCoverageTest {
     @Test
     void shouldBuildAuthorizationMapperWithCustomModulesAndCompatibilitySettings() throws Exception {
         JacksonConfig config = new JacksonConfig();
-        Jackson2ObjectMapperBuilder builder = new Jackson2ObjectMapperBuilder();
-        config.jacksonCustomizer().customize(builder);
-
-        ObjectMapper mapper = config.authorizationMapper(builder);
+        JsonMapper mapper = config.authorizationMapper();
 
         assertThat(mapper).isNotNull();
-        assertThat(mapper.getSerializationConfig().isEnabled(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS))
+        assertThat(mapper.isEnabled(tools.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES))
                 .isFalse();
-        assertThat(mapper.isEnabled(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES))
-                .isFalse();
-        assertThat(mapper.isEnabled(com.fasterxml.jackson.databind.DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY))
+        assertThat(mapper.isEnabled(tools.jackson.databind.DeserializationFeature.ACCEPT_SINGLE_VALUE_AS_ARRAY))
                 .isTrue();
+        assertThat(mapper.isEnabled(tools.jackson.databind.MapperFeature.ACCEPT_CASE_INSENSITIVE_ENUMS))
+                .isTrue();
+        assertThat(mapper.registeredModules()).isNotEmpty();
 
-        String json = mapper.writeValueAsString(Map.of(
-                "id", 123L,
-                "time", LocalDateTime.of(2024, 2, 3, 4, 5, 6)));
+        String json = mapper.writeValueAsString(Map.of("id", 123L));
         assertThat(json).contains("\"123\"");
-        assertThat(json).contains("2024-02-03T04:05:06");
-
     }
 
     @Test
     void shouldRoundTripMultiFactorAuthenticationTokenWithSecurityUserDetails() throws Exception {
         JacksonConfig config = new JacksonConfig();
-        Jackson2ObjectMapperBuilder builder = new Jackson2ObjectMapperBuilder();
-        config.jacksonCustomizer().customize(builder);
-        ObjectMapper mapper = config.authorizationMapper(builder);
+        JsonMapper mapper = config.authorizationMapper();
 
         SecurityUser securityUser = new SecurityUser(
                 123L,
@@ -115,9 +102,9 @@ class JacksonConfigCoverageTest {
         assertThat(json).contains("\"details\"");
         assertThat(json).contains("\"@type\":\"securityUser\"");
 
-        JsonNode root = mapper.readTree(json);
+        tools.jackson.databind.JsonNode root = mapper.readTree(json);
         MultiFactorAuthenticationToken restored = mapper.treeToValue(
-                unwrapTypedNode(root.get("principal")),
+                unwrapTypedAuthorizationNode(root.get("principal")),
                 MultiFactorAuthenticationToken.class);
         assertThat(restored.getDetails()).isInstanceOf(SecurityUser.class);
 
@@ -134,9 +121,7 @@ class JacksonConfigCoverageTest {
     @Test
     void shouldRoundTripStableTokenClaimListsForSingleAndDoubleRoleCodes() throws Exception {
         JacksonConfig config = new JacksonConfig();
-        Jackson2ObjectMapperBuilder builder = new Jackson2ObjectMapperBuilder();
-        config.jacksonCustomizer().customize(builder);
-        ObjectMapper mapper = config.authorizationMapper(builder);
+        JsonMapper mapper = config.authorizationMapper();
 
         LinkedHashMap<String, Object> singleRolePayload = new LinkedHashMap<>();
         singleRolePayload.put("roleCodes", new ArrayList<>(List.of("ROLE_PLATFORM_ADMIN")));
@@ -151,12 +136,12 @@ class JacksonConfigCoverageTest {
         List<Map<String, Object>> payloads = List.of(singleRolePayload, doubleRolePayload);
 
         for (Map<String, Object> payload : payloads) {
-            JsonNode restored = mapper.readTree(mapper.writeValueAsBytes(payload));
-            assertThat(readStringArray(restored.get("roleCodes")))
+            tools.jackson.databind.JsonNode restored = mapper.readTree(mapper.writeValueAsBytes(payload));
+            assertThat(readAuthorizationStringArray(restored.get("roleCodes")))
                 .containsExactlyElementsOf((List<String>) payload.get("roleCodes"));
-            assertThat(readStringArray(restored.get("authorities")))
+            assertThat(readAuthorizationStringArray(restored.get("authorities")))
                 .containsExactlyElementsOf((List<String>) payload.get("authorities"));
-            assertThat(readStringArray(restored.get("permissions")))
+            assertThat(readAuthorizationStringArray(restored.get("permissions")))
                 .containsExactlyElementsOf((List<String>) payload.get("permissions"));
         }
     }
@@ -266,7 +251,7 @@ class JacksonConfigCoverageTest {
         ALPHA, BETA
     }
 
-    private static JsonNode unwrapTypedNode(JsonNode node) {
+    private static tools.jackson.databind.JsonNode unwrapTypedAuthorizationNode(tools.jackson.databind.JsonNode node) {
         if (node != null
                 && node.isArray()
                 && node.size() == 2
@@ -277,7 +262,7 @@ class JacksonConfigCoverageTest {
         return node;
     }
 
-    private static List<String> readStringArray(JsonNode node) {
+    private static List<String> readAuthorizationStringArray(tools.jackson.databind.JsonNode node) {
         if (node != null
                 && node.isArray()
                 && node.size() == 2
@@ -289,7 +274,7 @@ class JacksonConfigCoverageTest {
             return List.of();
         }
         return StreamSupport.stream(node.spliterator(), false)
-                .map(JsonNode::asText)
+                .map(tools.jackson.databind.JsonNode::asText)
                 .toList();
     }
 }

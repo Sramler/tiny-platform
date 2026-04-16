@@ -21,7 +21,7 @@ public class ResourceAuthorizationManager implements AuthorizationManager<Reques
     private ResourceService resourceService; // 你可以从数据库加载权限信息
 
     @Override
-    public AuthorizationDecision check(Supplier<Authentication> authentication, RequestAuthorizationContext context) {
+    public AuthorizationDecision authorize(Supplier<? extends Authentication> authentication, RequestAuthorizationContext context) {
         String path = context.getRequest().getRequestURI();
         String method = context.getRequest().getMethod();
         Authentication auth = authentication.get();

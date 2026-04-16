@@ -4,7 +4,7 @@ import com.tiny.platform.infrastructure.idempotent.core.repository.IdempotentRep
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration;
+import org.springframework.boot.data.redis.autoconfigure.DataRedisAutoConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
@@ -24,7 +24,7 @@ import org.springframework.context.annotation.Import;
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnClass(name = "org.springframework.data.redis.core.StringRedisTemplate")
 @ConditionalOnProperty(prefix = "tiny.idempotent", name = "store", havingValue = "redis")
-@Import(RedisAutoConfiguration.class) // 只有在需要 Redis 时才导入自动配置
+@Import(DataRedisAutoConfiguration.class) // 只有在需要 Redis 时才导入自动配置
 public class RedisIdempotentRepositoryConfiguration {
     
     /**
@@ -44,4 +44,3 @@ public class RedisIdempotentRepositoryConfiguration {
             .newInstance(redisTemplate);
     }
 }
-

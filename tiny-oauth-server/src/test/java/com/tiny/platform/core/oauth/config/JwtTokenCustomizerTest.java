@@ -1,7 +1,5 @@
 package com.tiny.platform.core.oauth.config;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
@@ -27,7 +25,8 @@ import org.springframework.security.oauth2.server.authorization.settings.ClientS
 import org.springframework.security.oauth2.server.authorization.settings.TokenSettings;
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
-import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -435,9 +434,7 @@ class JwtTokenCustomizerTest {
     @Test
     void accessToken_platform_round_tripped_mfa_principal_should_keep_security_user_claims() throws Exception {
         JacksonConfig jacksonConfig = new JacksonConfig();
-        Jackson2ObjectMapperBuilder builder = new Jackson2ObjectMapperBuilder();
-        jacksonConfig.jacksonCustomizer().customize(builder);
-        ObjectMapper authorizationMapper = jacksonConfig.authorizationMapper(builder);
+        JsonMapper authorizationMapper = jacksonConfig.authorizationMapper();
 
         SecurityUser securityUser = new SecurityUser(
             7L,
@@ -518,7 +515,7 @@ class JwtTokenCustomizerTest {
 
     @Test
     void accessToken_should_persist_stable_list_claims_for_authorization_round_trip() throws Exception {
-        ObjectMapper authorizationMapper = authorizationMapper();
+        JsonMapper authorizationMapper = authorizationMapper();
 
         SecurityUser securityUser = new SecurityUser(
             7L,
@@ -1216,11 +1213,9 @@ class JwtTokenCustomizerTest {
         return node;
     }
 
-    private static ObjectMapper authorizationMapper() {
+    private static JsonMapper authorizationMapper() {
         JacksonConfig jacksonConfig = new JacksonConfig();
-        Jackson2ObjectMapperBuilder builder = new Jackson2ObjectMapperBuilder();
-        jacksonConfig.jacksonCustomizer().customize(builder);
-        return jacksonConfig.authorizationMapper(builder);
+        return jacksonConfig.authorizationMapper();
     }
 
     private static List<String> readStringArray(JsonNode node) {

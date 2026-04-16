@@ -16,7 +16,6 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.springframework.http.MediaType;
-import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -61,7 +60,6 @@ class ExportControllerMockMvcTest {
         ExportController controller = new ExportController(exportService, exportTaskService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
             .setControllerAdvice(new OAuthServerExceptionHandler())
-            .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))
             .build();
     }
 

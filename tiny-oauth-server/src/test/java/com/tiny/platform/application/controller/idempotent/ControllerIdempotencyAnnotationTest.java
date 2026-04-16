@@ -51,11 +51,6 @@ class ControllerIdempotencyAnnotationTest {
         assertIdempotent(ResourceController.class.getDeclaredMethod("update", Long.class, ResourceCreateUpdateDto.class));
         assertIdempotent(ResourceController.class.getDeclaredMethod("delete", Long.class));
         assertIdempotent(ResourceController.class.getDeclaredMethod("batchDelete", java.util.List.class));
-        assertIdempotent(ResourceController.class.getDeclaredMethod("createMenu", ResourceCreateUpdateDto.class));
-        assertIdempotent(ResourceController.class.getDeclaredMethod("updateMenu", Long.class, ResourceCreateUpdateDto.class));
-        assertIdempotent(ResourceController.class.getDeclaredMethod("deleteMenu", Long.class));
-        assertIdempotent(ResourceController.class.getDeclaredMethod("batchDeleteMenus", java.util.List.class));
-        assertIdempotent(ResourceController.class.getDeclaredMethod("updateMenuSort", Long.class, Integer.class));
         assertIdempotent(ResourceController.class.getDeclaredMethod("updateSort", Long.class, Integer.class));
 
         assertIdempotent(MenuController.class.getDeclaredMethod("createMenu", ResourceCreateUpdateDto.class));

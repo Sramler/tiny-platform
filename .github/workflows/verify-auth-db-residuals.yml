@@ -19,6 +19,14 @@ on:
   schedule:
     - cron: '10 2 * * *'
 
+permissions:
+  contents: read
+  packages: read
+
+env:
+  CAMUNDA_PACKAGES_USERNAME: ${{ secrets.CAMUNDA_PACKAGES_USERNAME || github.actor }}
+  CAMUNDA_PACKAGES_TOKEN: ${{ secrets.CAMUNDA_PACKAGES_TOKEN || github.token }}
+
 jobs:
   verify-auth-db-residuals:
     runs-on: ubuntu-latest
@@ -48,16 +56,68 @@ jobs:
       E2E_DB_USER: root
       E2E_DB_PASSWORD: ${{ secrets.E2E_DB_PASSWORD }}
       MYSQL_ROOT_PASSWORD: ${{ secrets.E2E_DB_PASSWORD }}
+      CAMUNDA_FORK_LOCAL_INSTALL_ENABLED: ${{ vars.CAMUNDA_FORK_LOCAL_INSTALL_ENABLED || 'false' }}
+      CAMUNDA_FORK_REPOSITORY: Sramler/camunda-bpm-platform
+      CAMUNDA_FORK_REF: ${{ vars.CAMUNDA_FORK_REF || '' }}
+      CAMUNDA_FORK_CHECKOUT_TOKEN: ${{ secrets.CAMUNDA_FORK_CHECKOUT_TOKEN || '' }}
+      MAVEN_REPO_LOCAL: ${{ runner.temp }}/m2-camunda-fork
 
     steps:
       - uses: actions/checkout@v6
 
-      - name: Set up Java
+      - name: Set up JDK 21 with Camunda fork packages
+        if: env.CAMUNDA_FORK_LOCAL_INSTALL_ENABLED != 'true'
+        uses: ./.github/actions/setup-camunda-fork-java
+        with:
+          java-version: "21"
+
+      - name: Validate CARD-C7-05C fallback inputs
+        if: env.CAMUNDA_FORK_LOCAL_INSTALL_ENABLED == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CAMUNDA_FORK_REF}" ]; then
+            echo "::error title=CARD-C7-05C fallback variable missing::CAMUNDA_FORK_LOCAL_INSTALL_ENABLED=true but CAMUNDA_FORK_REF is empty. Configure repository variable CAMUNDA_FORK_REF for the CARD-C7-05C fallback path."
+            exit 1
+          fi
+
+          if [ -z "${CAMUNDA_FORK_CHECKOUT_TOKEN}" ]; then
+            echo "::error title=CARD-C7-05C fallback secret missing::CAMUNDA_FORK_LOCAL_INSTALL_ENABLED=true but CAMUNDA_FORK_CHECKOUT_TOKEN is empty. Configure repository secret CAMUNDA_FORK_CHECKOUT_TOKEN for the CARD-C7-05C fallback path."
+            exit 1
+          fi
+
+      - name: Set up JDK 21 for CARD-C7-05C fallback
+        if: env.CAMUNDA_FORK_LOCAL_INSTALL_ENABLED == 'true'
         uses: actions/setup-java@v5
         with:
           distribution: temurin
-          java-version: '21'
-          cache: maven
+          java-version: "21"
+
+      - name: Configure shared Maven local repository for CARD-C7-05C fallback
+        if: env.CAMUNDA_FORK_LOCAL_INSTALL_ENABLED == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${MAVEN_REPO_LOCAL}"
+          printf 'MAVEN_OPTS=%s\n' "${MAVEN_OPTS:+${MAVEN_OPTS} }-Dmaven.repo.local=${MAVEN_REPO_LOCAL}" >> "$GITHUB_ENV"
+
+      - name: Checkout Camunda fork for CARD-C7-05C fallback
+        if: env.CAMUNDA_FORK_LOCAL_INSTALL_ENABLED == 'true'
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ env.CAMUNDA_FORK_REPOSITORY }}
+          ref: ${{ env.CAMUNDA_FORK_REF }}
+          token: ${{ env.CAMUNDA_FORK_CHECKOUT_TOKEN }}
+          path: camunda-bpm-platform-fork
+          persist-credentials: false
+
+      - name: Install Camunda fork locally for CARD-C7-05C fallback
+        if: env.CAMUNDA_FORK_LOCAL_INSTALL_ENABLED == 'true'
+        uses: ./.github/actions/install-camunda-fork-local
+        with:
+          fork-path: camunda-bpm-platform-fork
+          maven-repo-local: ${{ env.MAVEN_REPO_LOCAL }}
 
       - name: Prime backend Maven dependencies
         shell: bash

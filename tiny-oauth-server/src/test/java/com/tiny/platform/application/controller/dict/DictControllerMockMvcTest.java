@@ -19,7 +19,8 @@ import org.mockito.Mockito;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.MediaType;
-import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.http.converter.StringHttpMessageConverter;
+import org.springframework.http.converter.json.JacksonJsonHttpMessageConverter;
 import org.springframework.data.web.PageableHandlerMethodArgumentResolver;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -29,6 +30,7 @@ import org.springframework.data.domain.Pageable;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.nio.charset.StandardCharsets;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
@@ -60,7 +62,9 @@ class DictControllerMockMvcTest {
         DictController controller = new DictController(dictTypeService, dictItemService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new OAuthServerExceptionHandler())
-                .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))
+                .setMessageConverters(
+                        new JacksonJsonHttpMessageConverter(),
+                        new StringHttpMessageConverter(StandardCharsets.UTF_8))
                 .setCustomArgumentResolvers(new PageableHandlerMethodArgumentResolver())
                 .build();
     }

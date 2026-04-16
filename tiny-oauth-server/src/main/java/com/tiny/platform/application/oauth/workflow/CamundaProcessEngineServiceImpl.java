@@ -1,7 +1,7 @@
 package com.tiny.platform.application.oauth.workflow;
 
 import org.camunda.bpm.engine.*;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.camunda.bpm.engine.repository.Deployment;
 import org.camunda.bpm.engine.runtime.ProcessInstance;
 import org.camunda.bpm.engine.task.Task;
@@ -20,7 +20,7 @@ import java.util.stream.Collectors;
  * Camunda 7 嵌入式引擎实现
  */
 @Service
-@ConditionalOnBean(ProcessEngine.class)
+@ConditionalOnProperty(prefix = "camunda.bpm", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class CamundaProcessEngineServiceImpl implements ProcessEngineService {
 
     @Autowired
@@ -329,7 +329,17 @@ public class CamundaProcessEngineServiceImpl implements ProcessEngineService {
     // ------------------- 流程实例 -------------------
     @Override
     public String startProcessInstance(String processKey, String activeTenantId, Map<String, Object> variables) {
-        ProcessInstance instance = runtimeService.startProcessInstanceByKey(processKey, activeTenantId, variables);
+        Map<String, Object> processVariables = variables != null ? variables : Map.of();
+        var builder = runtimeService.createProcessInstanceByKey(processKey)
+                .setVariables(processVariables);
+
+        if (activeTenantId != null && !activeTenantId.trim().isEmpty()) {
+            builder = builder.processDefinitionTenantId(activeTenantId);
+        } else {
+            builder = builder.processDefinitionWithoutTenantId();
+        }
+
+        ProcessInstance instance = builder.execute();
         return instance.getId();
     }
 

@@ -1,0 +1,31 @@
+name: Setup Java With Camunda Fork Packages
+description: Sets up JDK and configures Maven access to the Camunda SB4 fork published to GitHub Packages.
+
+inputs:
+  java-version:
+    description: Java version to install
+    required: false
+    default: "21"
+  distribution:
+    description: JDK distribution
+    required: false
+    default: temurin
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Java and Maven server credentials
+      uses: actions/setup-java@v5
+      with:
+        distribution: ${{ inputs.distribution }}
+        java-version: ${{ inputs.java-version }}
+        cache: maven
+        server-id: github-camunda-fork
+        server-username: CAMUNDA_PACKAGES_USERNAME
+        server-password: CAMUNDA_PACKAGES_TOKEN
+
+    - name: Enable Camunda GitHub Packages profile
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "CAMUNDA_GITHUB_PACKAGES_ENABLED=true" >> "$GITHUB_ENV"

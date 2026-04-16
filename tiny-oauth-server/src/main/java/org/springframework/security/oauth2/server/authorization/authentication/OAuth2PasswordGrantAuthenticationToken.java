@@ -18,6 +18,8 @@ import java.util.Set;
  */
 public class OAuth2PasswordGrantAuthenticationToken extends OAuth2AuthorizationGrantAuthenticationToken {
 
+	private static final AuthorizationGrantType PASSWORD_GRANT_TYPE = new AuthorizationGrantType("password");
+
 	private final String username;
 
 	private final String password;
@@ -43,7 +45,7 @@ public class OAuth2PasswordGrantAuthenticationToken extends OAuth2AuthorizationG
 	 */
 	public OAuth2PasswordGrantAuthenticationToken(String username, String password, Authentication clientPrincipal,
 			@Nullable Set<String> scopes, Map<String, Object> additionalParameters) {
-		super(AuthorizationGrantType.PASSWORD, clientPrincipal, additionalParameters);
+		super(PASSWORD_GRANT_TYPE, clientPrincipal, additionalParameters);
 		this.username = username;
 		this.password = password;
 		this.scopes = Collections.unmodifiableSet((scopes != null) ? new HashSet<>(scopes) : Collections.emptySet());

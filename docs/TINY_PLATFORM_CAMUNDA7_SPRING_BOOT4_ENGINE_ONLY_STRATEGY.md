@@ -32,7 +32,7 @@
 
 从当前代码可确认：
 
-- 父工程当前 Spring Boot 基线为 `3.5.10`
+- 父工程当前 Spring Boot 基线为 `3.5.14-SNAPSHOT`
 - 父工程当前 JDK 基线为 `21`
 - 父工程通过 BOM 使用 Camunda `7.24.0`
 - `tiny-oauth-server` 当前已引入：
@@ -118,6 +118,11 @@ Tiny Platform 负责产品化。
 - `cockpit`
 - `admin`
 
+当前仓库中，主配置已经显式关闭 Camunda Webapp：
+
+- `tiny-oauth-server/src/main/resources/application.yaml`
+  - `camunda.bpm.webapp.enabled=false`
+
 ### 6.2 REST
 
 `rest` 是可选的，不是必须的。
@@ -138,6 +143,21 @@ Tiny Platform 负责产品化。
 在 `Engine Only` 策略下，不把 Camunda `starter-security` 作为 `tiny-platform` 的默认生产方案。
 
 认证、授权、租户隔离应统一由平台自身安全体系负责。
+
+为避免后续误引入，当前模块已增加构建级护栏：
+
+- `tiny-oauth-server/pom.xml`
+  - 通过 `maven-enforcer-plugin` 禁止引入：
+    - `camunda-bpm-spring-boot-starter-webapp`
+    - `camunda-bpm-spring-boot-starter-security`
+    - `org.camunda.bpm.webapp:*`
+
+额外说明：
+
+- 当前 `application-e2e.yaml` 已显式设置：
+  - `camunda.bpm.enabled=false`
+  - 排除 `CamundaBpmRestJerseyAutoConfiguration`
+- 因此现阶段 E2E 自动化链路不构成 Camunda 可用性的验收依据
 
 ## 7. Identity / Tenant / Admin 的准确表述
 

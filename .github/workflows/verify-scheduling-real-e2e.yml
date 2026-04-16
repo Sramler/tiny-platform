@@ -5,6 +5,14 @@ on:
   schedule:
     - cron: "40 2 * * *"
 
+permissions:
+  contents: read
+  packages: read
+
+env:
+  CAMUNDA_PACKAGES_USERNAME: ${{ secrets.CAMUNDA_PACKAGES_USERNAME || github.actor }}
+  CAMUNDA_PACKAGES_TOKEN: ${{ secrets.CAMUNDA_PACKAGES_TOKEN || github.token }}
+
 jobs:
   verify-scheduling-real-e2e:
     runs-on: ubuntu-latest
@@ -150,12 +158,10 @@ jobs:
             exit 1
           fi
 
-      - name: Set up Java
-        uses: actions/setup-java@v5
+      - name: Set up Java with Camunda fork packages
+        uses: ./.github/actions/setup-camunda-fork-java
         with:
-          distribution: temurin
           java-version: "21"
-          cache: maven
 
       - name: Set up Node.js
         uses: actions/setup-node@v6

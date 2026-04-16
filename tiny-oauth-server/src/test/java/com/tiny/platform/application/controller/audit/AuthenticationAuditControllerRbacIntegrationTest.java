@@ -11,13 +11,13 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringBootConfiguration;
-import org.springframework.boot.autoconfigure.data.web.SpringDataWebAutoConfiguration;
-import org.springframework.boot.autoconfigure.http.HttpMessageConvertersAutoConfiguration;
-import org.springframework.boot.autoconfigure.web.servlet.WebMvcAutoConfiguration;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.data.autoconfigure.web.DataWebAutoConfiguration;
+import org.springframework.boot.http.converter.autoconfigure.HttpMessageConvertersAutoConfiguration;
+import org.springframework.boot.webmvc.autoconfigure.WebMvcAutoConfiguration;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -45,7 +45,7 @@ class AuthenticationAuditControllerRbacIntegrationTest {
     @Import({
         AuthenticationAuditControllerRbacTestConfig.class,
         AuthenticationAuditController.class,
-        SpringDataWebAutoConfiguration.class,
+        DataWebAutoConfiguration.class,
         HttpMessageConvertersAutoConfiguration.class,
         WebMvcAutoConfiguration.class
     })
@@ -54,10 +54,10 @@ class AuthenticationAuditControllerRbacIntegrationTest {
     @Autowired
     private MockMvc mockMvc;
 
-    @MockBean
+    @MockitoBean
     private AuthenticationAuditService authenticationAuditService;
 
-    @MockBean
+    @MockitoBean
     private TenantLifecycleAccessGuard tenantLifecycleAccessGuard;
 
     @AfterEach

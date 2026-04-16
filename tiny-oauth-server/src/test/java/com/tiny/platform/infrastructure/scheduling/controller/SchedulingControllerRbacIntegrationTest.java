@@ -15,10 +15,10 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringBootConfiguration;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.data.domain.PageImpl;
@@ -53,19 +53,19 @@ class SchedulingControllerRbacIntegrationTest {
     @Import({
         SchedulingControllerRbacTestConfig.class,
         SchedulingController.class,
-        org.springframework.boot.autoconfigure.data.web.SpringDataWebAutoConfiguration.class,
-        org.springframework.boot.autoconfigure.http.HttpMessageConvertersAutoConfiguration.class,
-        org.springframework.boot.autoconfigure.web.servlet.WebMvcAutoConfiguration.class
+        org.springframework.boot.data.autoconfigure.web.DataWebAutoConfiguration.class,
+        org.springframework.boot.http.converter.autoconfigure.HttpMessageConvertersAutoConfiguration.class,
+        org.springframework.boot.webmvc.autoconfigure.WebMvcAutoConfiguration.class
     })
     static class RbacTestApp {}
 
     @Autowired
     private MockMvc mockMvc;
 
-    @MockBean
+    @MockitoBean
     private SchedulingService schedulingService;
 
-    @MockBean
+    @MockitoBean
     private QuartzSchedulerService quartzSchedulerService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();

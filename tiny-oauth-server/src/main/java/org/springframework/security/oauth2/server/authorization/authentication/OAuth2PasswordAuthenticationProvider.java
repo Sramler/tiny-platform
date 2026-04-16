@@ -1,8 +1,7 @@
 package org.springframework.security.oauth2.server.authorization.authentication;
 
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
-import org.springframework.core.log.LogMessage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -38,7 +37,9 @@ public final class OAuth2PasswordAuthenticationProvider implements Authenticatio
 
 	private static final String ERROR_URI = "https://datatracker.ietf.org/doc/html/rfc6749#section-5.2";
 
-	private final Log logger = LogFactory.getLog(getClass());
+	private static final AuthorizationGrantType PASSWORD_GRANT_TYPE = new AuthorizationGrantType("password");
+
+	private final Logger logger = LoggerFactory.getLogger(getClass());
 
 	private final HttpSecurity httpSecurity;
 
@@ -60,6 +61,7 @@ public final class OAuth2PasswordAuthenticationProvider implements Authenticatio
 		this.userDetailsService = userDetailsService;
 		this.passwordEncoder = PasswordEncoderFactories.createDelegatingPasswordEncoder();
 		this.tokenGenerator = OAuth2Utils.getTokenGenerator(httpSecurity);
+		Assert.notNull(this.tokenGenerator, "tokenGenerator cannot be null");
 		httpSecurity.authenticationProvider(this);
 	}
 
@@ -75,6 +77,7 @@ public final class OAuth2PasswordAuthenticationProvider implements Authenticatio
 		this.userDetailsService = userDetailsService;
 		this.passwordEncoder = passwordEncoder;
 		this.tokenGenerator = OAuth2Utils.getTokenGenerator(httpSecurity);
+		Assert.notNull(this.tokenGenerator, "tokenGenerator cannot be null");
 		httpSecurity.authenticationProvider(this);
 	}
 
@@ -108,11 +111,10 @@ public final class OAuth2PasswordAuthenticationProvider implements Authenticatio
 			this.logger.trace("Retrieved registered client");
 		}
 
-		if (!registeredClient.getAuthorizationGrantTypes().contains(AuthorizationGrantType.PASSWORD)) {
+		if (!registeredClient.getAuthorizationGrantTypes().contains(PASSWORD_GRANT_TYPE)) {
 			if (this.logger.isDebugEnabled()) {
-				this.logger.debug(LogMessage.format(
-						"Invalid request: requested grant_type is not allowed" + " for registered client '%s'",
-						registeredClient.getId()));
+				this.logger.debug("Invalid request: requested grant_type is not allowed for registered client '{}'",
+						registeredClient.getId());
 			}
 			throw new OAuth2AuthenticationException(OAuth2ErrorCodes.UNAUTHORIZED_CLIENT);
 		}
@@ -120,11 +122,10 @@ public final class OAuth2PasswordAuthenticationProvider implements Authenticatio
 		Set<String> authorizedScopes = new LinkedHashSet<>(passwordGrantAuthenticationToken.getScopes());
 
 		if (this.logger.isInfoEnabled()) {
-			this.logger.info(LogMessage.format(
-					"Handling password grant token request: client_id=%s, username=%s, scopes=%s",
+			this.logger.info("Handling password grant token request: client_id={}, username={}, scopes={}",
 					registeredClient.getClientId(),
 					passwordGrantAuthenticationToken.getUsername(),
-					authorizedScopes));
+					authorizedScopes);
 		}
 
 		Object credentials = passwordGrantAuthenticationToken.getCredentials();
@@ -148,7 +149,7 @@ public final class OAuth2PasswordAuthenticationProvider implements Authenticatio
 			.authorizationServerContext(AuthorizationServerContextHolder.getContext())
 			.authorizedScopes(authorizedScopes)
 			.tokenType(OAuth2TokenType.ACCESS_TOKEN)
-			.authorizationGrantType(AuthorizationGrantType.PASSWORD)
+			.authorizationGrantType(PASSWORD_GRANT_TYPE)
 			.authorizationGrant(passwordGrantAuthenticationToken);
 
 		// ----- Access token -----
@@ -166,14 +167,13 @@ public final class OAuth2PasswordAuthenticationProvider implements Authenticatio
 			this.logger.trace("Generated access token");
 		}
 		if (this.logger.isInfoEnabled()) {
-			this.logger.info(LogMessage.format(
-					"Issued access token (password grant): client_id=%s, username=%s, scopes=%s",
-					registeredClient.getClientId(), username, authorizedScopes));
+			this.logger.info("Issued access token (password grant): client_id={}, username={}, scopes={}",
+					registeredClient.getClientId(), username, authorizedScopes);
 		}
 
 		OAuth2Authorization.Builder authorizationBuilder = OAuth2Authorization.withRegisteredClient(registeredClient)
 			.principalName(username)
-			.authorizationGrantType(AuthorizationGrantType.PASSWORD)
+			.authorizationGrantType(PASSWORD_GRANT_TYPE)
 			.authorizedScopes(authorizedScopes);
 
 		OAuth2AccessToken accessToken = OAuth2AuthenticationProviderUtils.accessToken(authorizationBuilder,
@@ -196,9 +196,8 @@ public final class OAuth2PasswordAuthenticationProvider implements Authenticatio
 					this.logger.trace("Generated refresh token");
 				}
 				if (this.logger.isInfoEnabled()) {
-					this.logger.info(LogMessage.format(
-							"Issued refresh token (password grant): client_id=%s, username=%s",
-							registeredClient.getClientId(), username));
+					this.logger.info("Issued refresh token (password grant): client_id={}, username={}",
+							registeredClient.getClientId(), username);
 				}
 
 				refreshToken = (OAuth2RefreshToken) generatedRefreshToken;

@@ -1,0 +1,57 @@
+name: Install Camunda Fork Locally
+description: Installs the minimal Camunda SB4 fork artifact set into a shared Maven local repository.
+
+inputs:
+  fork-path:
+    description: Path to the checked-out camunda-bpm-platform fork
+    required: true
+  maven-repo-local:
+    description: Shared Maven local repository path
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Install minimal Camunda fork artifact set
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        FORK_PATH="${{ inputs.fork-path }}"
+        MAVEN_REPO_LOCAL="${{ inputs.maven-repo-local }}"
+
+        if [ -z "${FORK_PATH}" ]; then
+          echo "fork-path is required" >&2
+          exit 1
+        fi
+        if [ -z "${MAVEN_REPO_LOCAL}" ]; then
+          echo "maven-repo-local is required" >&2
+          exit 1
+        fi
+        if [ ! -d "${FORK_PATH}" ]; then
+          echo "Camunda fork path does not exist: ${FORK_PATH}" >&2
+          exit 1
+        fi
+
+        mkdir -p "${MAVEN_REPO_LOCAL}"
+
+        cd "${FORK_PATH}"
+
+        # spin/dataformat-json-jackson depends on camunda-spin-core tests.jar,
+        # so fixed-version fallback must preinstall spin/core before the main slice.
+        mvn -B \
+          -pl spin/core \
+          -am \
+          -Dmaven.repo.local="${MAVEN_REPO_LOCAL}" \
+          -DskipTests \
+          -DskipITs \
+          install
+
+        mvn -B \
+          -pl bom/camunda-bom,bom/camunda-only-bom,spin/bom,commons/bom,connect/bom,spin/dataformat-all,spring-boot-starter/starter,spring-boot-starter/starter-rest \
+          -am \
+          -Dmaven.repo.local="${MAVEN_REPO_LOCAL}" \
+          -Dmaven.test.skip=true \
+          -DskipTests \
+          -DskipITs \
+          install

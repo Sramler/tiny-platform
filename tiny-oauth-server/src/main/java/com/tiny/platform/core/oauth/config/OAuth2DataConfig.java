@@ -1,6 +1,5 @@
 package com.tiny.platform.core.oauth.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tiny.platform.core.oauth.multitenancy.CurrentIssuerIdentifierResolver;
 import com.tiny.platform.core.oauth.multitenancy.IssuerDelegatingOAuth2AuthorizationConsentService;
 import com.tiny.platform.core.oauth.multitenancy.IssuerDelegatingOAuth2AuthorizationService;
@@ -16,13 +15,14 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService;
+import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService.JsonMapperOAuth2AuthorizationParametersMapper;
+import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService.JsonMapperOAuth2AuthorizationRowMapper;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationConsentService;
 import org.springframework.security.oauth2.server.authorization.OAuth2AuthorizationService;
 import org.springframework.security.oauth2.server.authorization.client.JdbcRegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository;
 import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationConsentService;
-import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService.OAuth2AuthorizationRowMapper;
-import org.springframework.security.oauth2.server.authorization.JdbcOAuth2AuthorizationService.OAuth2AuthorizationParametersMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 import javax.sql.DataSource;
 import java.time.LocalDateTime;
@@ -43,8 +43,7 @@ import java.util.Locale;
  * <b>关键配置说明</b>：
  * <ul>
  *   <li>{@code oauth2AuthorizationService} 使用自定义的 {@code authorizationMapper}（来自 {@link com.tiny.platform.core.oauth.config.jackson.JacksonConfig}）</li>
- *   <li>自定义 ObjectMapper 包含 {@link org.springframework.security.jackson2.SecurityJackson2Modules} 和
- *       {@link org.springframework.security.oauth2.server.authorization.jackson2.OAuth2AuthorizationServerJackson2Module}</li>
+ *   <li>授权持久化显式走 Spring Security 7 的 Jackson 3 {@link JsonMapper} 链路</li>
  *   <li>确保 OAuth2AuthorizationRequest、Authentication、Instant 等复杂对象正确序列化/反序列化</li>
  *   <li>避免 {@code ClassCastException: LinkedHashMap cannot be cast to OAuth2AuthorizationRequest}</li>
  * </ul>
@@ -130,26 +129,25 @@ public class OAuth2DataConfig {
      *
      * @param dataSource 数据源
      * @param registeredClientRepository 注册客户端仓库
-     * @param authorizationObjectMapper OAuth2 授权服务专用的 ObjectMapper（通过 {@code @Qualifier("authorizationMapper")} 注入）
+     * @param authorizationJsonMapper OAuth2 授权服务专用的 Jackson 3 {@link JsonMapper}
      * @return OAuth2 授权服务实例
-     * @see com.tiny.platform.core.oauth.config.jackson.JacksonConfig#authorizationMapper(org.springframework.http.converter.json.Jackson2ObjectMapperBuilder)
+     * @see com.tiny.platform.core.oauth.config.jackson.JacksonConfig#authorizationMapper()
      */
     @Bean(name = "defaultOAuth2AuthorizationService")
     public OAuth2AuthorizationService defaultOAuth2AuthorizationService(
             DataSource dataSource,
             @Qualifier("defaultRegisteredClientRepository") RegisteredClientRepository registeredClientRepository,
-            @Qualifier("authorizationMapper") ObjectMapper authorizationObjectMapper
+            @Qualifier("authorizationMapper") JsonMapper authorizationJsonMapper
     ) {
         JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
         JdbcOAuth2AuthorizationService service = new JdbcOAuth2AuthorizationService(jdbcTemplate, registeredClientRepository);
 
-        // 配置 rowMapper 使用自定义 ObjectMapper，确保正确反序列化复杂对象
-        OAuth2AuthorizationRowMapper rowMapper = new OAuth2AuthorizationRowMapper(registeredClientRepository);
-        rowMapper.setObjectMapper(authorizationObjectMapper);
+        // 使用 Spring Security 7 官方 Jackson 3 mapper，避免继续依赖待移除的 Jackson 2 adapter。
+        JsonMapperOAuth2AuthorizationRowMapper rowMapper =
+                new JsonMapperOAuth2AuthorizationRowMapper(registeredClientRepository, authorizationJsonMapper);
 
-        // 配置 parametersMapper 使用自定义 ObjectMapper，确保正确序列化/反序列化授权参数
-        OAuth2AuthorizationParametersMapper parametersMapper = new OAuth2AuthorizationParametersMapper();
-        parametersMapper.setObjectMapper(authorizationObjectMapper);
+        JsonMapperOAuth2AuthorizationParametersMapper parametersMapper =
+                new JsonMapperOAuth2AuthorizationParametersMapper(authorizationJsonMapper);
 
         // 将配置好的 mapper 设置到 service 中
         service.setAuthorizationRowMapper(rowMapper);

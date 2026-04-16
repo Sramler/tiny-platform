@@ -1,6 +1,7 @@
 package com.tiny.platform.application.controller.user;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.tiny.platform.core.oauth.config.jackson.JacksonConfig;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.core.oauth.tenant.TenantContextContract;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
@@ -18,8 +19,6 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.aop.aspectj.annotation.AspectJProxyFactory;
 import org.springframework.http.MediaType;
-import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
-import org.springframework.http.converter.json.Jackson2ObjectMapperBuilder;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.request.RequestContextListener;
@@ -38,7 +37,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class UserControllerIdempotencyIntegrationTest {
 
-    private static final ObjectMapper OBJECT_MAPPER = Jackson2ObjectMapperBuilder.json().build();
+    private static final ObjectMapper OBJECT_MAPPER = new JacksonConfig().webObjectMapper();
 
     @Test
     void create_should_reject_duplicate_request_with_same_key_in_same_tenant() throws Exception {
@@ -111,7 +110,6 @@ class UserControllerIdempotencyIntegrationTest {
 
         return MockMvcBuilders.standaloneSetup(proxiedController)
             .setControllerAdvice(new OAuthServerExceptionHandler())
-            .setMessageConverters(new MappingJackson2HttpMessageConverter(OBJECT_MAPPER))
             .addFilters(new RequestContextListenerFilter(), new TenantHeaderFilter())
             .build();
     }

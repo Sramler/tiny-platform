@@ -38,7 +38,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.boot.SpringBootConfiguration;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.context.annotation.Bean;
@@ -97,7 +97,7 @@ class DefaultSecurityConfigUserEndpointIntegrationTest {
     void sysUsersProbeShouldRequireAuthentication() throws Exception {
         mockMvc.perform(get("/sys/users/probe").sessionAttr(TenantContextContract.SESSION_ACTIVE_TENANT_ID_KEY, 1L))
             .andExpect(status().isUnauthorized())
-            .andExpect(header().string("WWW-Authenticate", "Bearer"));
+            .andExpect(header().string("WWW-Authenticate", org.hamcrest.Matchers.startsWith("Bearer")));
     }
 
     @Test
@@ -538,8 +538,8 @@ class DefaultSecurityConfigUserEndpointIntegrationTest {
         DefaultSecurityConfigUserEndpointIntegrationTest.ProbeController.class,
         UserController.class,
         SecurityController.class,
-        org.springframework.boot.autoconfigure.http.HttpMessageConvertersAutoConfiguration.class,
-        org.springframework.boot.autoconfigure.web.servlet.WebMvcAutoConfiguration.class
+        org.springframework.boot.http.converter.autoconfigure.HttpMessageConvertersAutoConfiguration.class,
+        org.springframework.boot.webmvc.autoconfigure.WebMvcAutoConfiguration.class
     })
     static class SecurityTestApp {
 

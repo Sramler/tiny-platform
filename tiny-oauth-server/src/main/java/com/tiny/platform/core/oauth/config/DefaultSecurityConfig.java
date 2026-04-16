@@ -10,6 +10,7 @@ import org.springframework.security.authentication.AuthenticationDetailsSource;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
@@ -49,6 +50,7 @@ import org.springframework.security.web.authentication.logout.LogoutHandler;
 
 @Configuration
 @Order(2)
+@EnableWebSecurity
 @EnableMethodSecurity(jsr250Enabled = true, securedEnabled = true)
 public class DefaultSecurityConfig {
 

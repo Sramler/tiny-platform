@@ -25,6 +25,8 @@ import java.util.Set;
  */
 public class OAuth2PasswordAuthenticationProvider implements AuthenticationProvider {
 
+    private static final AuthorizationGrantType PASSWORD_GRANT_TYPE = new AuthorizationGrantType("password");
+
     // Spring Security 提供的用于用户名密码认证的组件
     private final AuthenticationManager authenticationManager;
 
@@ -100,7 +102,7 @@ public class OAuth2PasswordAuthenticationProvider implements AuthenticationProvi
         OAuth2TokenContext tokenContext = DefaultOAuth2TokenContext.builder()
                 .registeredClient(registeredClient)                          // 客户端信息
                 .principal(userAuthentication)                               // 用户认证信息
-                .authorizationGrantType(AuthorizationGrantType.PASSWORD)     // 授权类型为 password
+                .authorizationGrantType(PASSWORD_GRANT_TYPE)                 // 授权类型为 password
                 .authorizationGrant(passwordAuthToken)                       // 授权参数对象
                 .authorizedScopes(authorizedScopes)                          // 授权 scope 列表
                 .authorizationServerContext(AuthorizationServerContextHolder.getContext()) // 授权服务器上下文
@@ -128,7 +130,7 @@ public class OAuth2PasswordAuthenticationProvider implements AuthenticationProvi
         OAuth2TokenContext refreshTokenContext = DefaultOAuth2TokenContext.builder()
                 .registeredClient(registeredClient)
                 .principal(userAuthentication)
-                .authorizationGrantType(AuthorizationGrantType.PASSWORD)
+                .authorizationGrantType(PASSWORD_GRANT_TYPE)
                 .authorizationGrant(passwordAuthToken)
                 .authorizedScopes(authorizedScopes)
                 .authorizationServerContext(AuthorizationServerContextHolder.getContext())
@@ -148,7 +150,7 @@ public class OAuth2PasswordAuthenticationProvider implements AuthenticationProvi
 
         OAuth2Authorization.Builder authorizationBuilder = OAuth2Authorization.withRegisteredClient(registeredClient)
                 .principalName(userAuthentication.getName())                       // 设置授权人
-                .authorizationGrantType(AuthorizationGrantType.PASSWORD)          // 设置授权类型
+                .authorizationGrantType(PASSWORD_GRANT_TYPE)                      // 设置授权类型
                 .authorizedScopes(authorizedScopes)                               // 设置授权 scope
                 .attribute(Principal.class.getName(), userAuthentication)         // 保存 Principal 对象
                 .accessToken(accessToken);                                        // 设置 AccessToken
