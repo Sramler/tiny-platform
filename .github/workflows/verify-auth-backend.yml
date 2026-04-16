@@ -23,7 +23,7 @@ jobs:
       CAMUNDA_FORK_REPOSITORY: Sramler/camunda-bpm-platform
       CAMUNDA_FORK_REF: ${{ vars.CAMUNDA_FORK_REF || '' }}
       CAMUNDA_FORK_CHECKOUT_TOKEN: ${{ secrets.CAMUNDA_FORK_CHECKOUT_TOKEN || '' }}
-      MAVEN_REPO_LOCAL: ${{ runner.temp }}/m2-camunda-fork
+      MAVEN_REPO_LOCAL: ${{ github.workspace }}/.m2-camunda-fork
 
     steps:
       - uses: actions/checkout@v6
