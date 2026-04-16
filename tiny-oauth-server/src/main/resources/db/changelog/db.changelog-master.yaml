@@ -566,3 +566,8 @@ databaseChangeLog:
   - include:
       file: 151-backfill-platform-export-test-data-menu-permission.yaml
       relativeToChangelogFile: true
+
+  # 对齐平台 system 根菜单到 platform tenant list 权限，避免 fresh DB 保留未绑定根目录
+  - include:
+      file: 152-backfill-platform-system-root-permission.yaml
+      relativeToChangelogFile: true

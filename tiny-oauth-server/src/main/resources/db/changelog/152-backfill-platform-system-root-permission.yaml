@@ -1,0 +1,116 @@
+databaseChangeLog:
+  - changeSet:
+      id: 152-backfill-platform-system-root-permission
+      author: codex
+      comment: 对齐平台 system 根菜单到 platform tenant list 权限，避免 fresh DB 保留未绑定根目录
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: menu
+            - tableExists:
+                tableName: permission
+            - tableExists:
+                tableName: menu_permission_requirement
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT INTO `permission` (
+                `permission_code`,
+                `permission_name`,
+                `module_code`,
+                `action_code`,
+                `permission_type`,
+                `description`,
+                `enabled`,
+                `built_in_flag`,
+                `tenant_id`,
+                `created_by`,
+                `created_at`,
+                `updated_by`,
+                `updated_at`
+              )
+              SELECT
+                src.`permission_code`,
+                src.`permission_name`,
+                src.`module_code`,
+                src.`action_code`,
+                src.`permission_type`,
+                src.`description`,
+                src.`enabled`,
+                src.`built_in_flag`,
+                NULL AS `tenant_id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`,
+                NULL AS `updated_by`,
+                NOW() AS `updated_at`
+              FROM `permission` src
+              WHERE src.`tenant_id` IS NOT NULL
+                AND src.`permission_code` = 'system:tenant:list'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `permission` existing
+                  WHERE existing.`tenant_id` IS NULL
+                    AND existing.`permission_code` = 'system:tenant:list'
+                )
+              ORDER BY src.`tenant_id`, src.`id`
+              LIMIT 1;
+
+              UPDATE `menu` platform_system
+              JOIN `permission` platform_permission
+                ON platform_permission.`tenant_id` IS NULL
+               AND platform_permission.`permission_code` = 'system:tenant:list'
+              SET
+                platform_system.`resource_level` = 'PLATFORM',
+                platform_system.`permission` = 'system:tenant:list',
+                platform_system.`required_permission_id` = platform_permission.`id`,
+                platform_system.`updated_at` = NOW(),
+                platform_system.`updated_by` = NULL
+              WHERE platform_system.`tenant_id` IS NULL
+                AND platform_system.`name` = 'system'
+                AND (
+                  platform_system.`resource_level` <> 'PLATFORM'
+                  OR platform_system.`permission` <> 'system:tenant:list'
+                  OR NOT (platform_system.`required_permission_id` <=> platform_permission.`id`)
+                );
+
+              DELETE requirement
+              FROM `menu_permission_requirement` requirement
+              JOIN `menu` platform_system
+                ON platform_system.`id` = requirement.`menu_id`
+              WHERE platform_system.`tenant_id` IS NULL
+                AND platform_system.`name` = 'system';
+
+              INSERT INTO `menu_permission_requirement` (
+                `tenant_id`,
+                `menu_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                platform_system.`id` AS `menu_id`,
+                0 AS `requirement_group`,
+                1 AS `sort_order`,
+                platform_system.`required_permission_id` AS `permission_id`,
+                0 AS `negated`,
+                NOW() AS `created_at`,
+                NULL AS `created_by`,
+                NOW() AS `updated_at`,
+                NULL AS `updated_by`
+              FROM `menu` platform_system
+              WHERE platform_system.`tenant_id` IS NULL
+                AND platform_system.`name` = 'system'
+                AND platform_system.`required_permission_id` IS NOT NULL;

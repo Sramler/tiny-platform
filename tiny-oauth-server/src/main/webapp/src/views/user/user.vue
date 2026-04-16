@@ -50,34 +50,14 @@
                 </template>
                 批量删除 ({{ selectedRowKeys.length }})
               </a-button>
-              <a-tooltip v-if="canEnableUserManagement && !allDisabled" title="只有全部未启用用户时才可批量启用">
-                <span>
-                  <a-button type="primary" class="toolbar-btn" :disabled="!allDisabled">
-                    <template #icon>
-                      <CheckCircleOutlined />
-                    </template>
-                    批量启用
-                  </a-button>
-                </span>
-              </a-tooltip>
-              <a-button v-else-if="canEnableUserManagement" type="primary" class="toolbar-btn"
+              <a-button v-if="canEnableUserManagement && allDisabled" type="primary" class="toolbar-btn"
                 @click="throttledBatchEnable">
                 <template #icon>
                   <CheckCircleOutlined />
                 </template>
                 批量启用
               </a-button>
-              <a-tooltip v-if="canDisableUserManagement && !allEnabled" title="只有全部已启用用户时才可批量禁用">
-                <span>
-                  <a-button class="toolbar-btn" :disabled="!allEnabled">
-                    <template #icon>
-                      <StopOutlined />
-                    </template>
-                    批量禁用
-                  </a-button>
-                </span>
-              </a-tooltip>
-              <a-button v-else-if="canDisableUserManagement" class="toolbar-btn" @click="throttledBatchDisable">
+              <a-button v-if="canDisableUserManagement && allEnabled" class="toolbar-btn" @click="throttledBatchDisable">
                 <template #icon>
                   <StopOutlined />
                 </template>
