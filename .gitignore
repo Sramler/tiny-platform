@@ -9,6 +9,8 @@ logs/
 **/logs/
 *.tmp
 *.swp
+/.playwright-cli/
+/node_modules/
 **/test-results/
 **/playwright-report/
 **/blob-report/
