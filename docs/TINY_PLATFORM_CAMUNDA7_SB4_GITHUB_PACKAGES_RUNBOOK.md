@@ -1,6 +1,6 @@
 # Tiny Platform Camunda Fork GitHub Packages Runbook
 
-最后更新：2026-04-16
+最后更新：2026-04-17
 
 适用仓库：
 
@@ -23,7 +23,7 @@
 当前已落地：
 
 - 根 POM 已增加 GitHub Packages `distributionManagement`
-- 已新增手动发布 workflow：
+- 已新增发布 workflow：
   - `.github/workflows/publish-camunda-fork-github-packages.yml`
 - 发布说明文档：
   - `docs/github-packages-publishing.md`
@@ -81,10 +81,11 @@
 - `CAMUNDA_PACKAGES_USERNAME` 未配置时回退 `github.actor`
 - `CAMUNDA_PACKAGES_TOKEN` 未配置时回退 `github.token`
 
-注意：
+本轮远端验证结论：
 
-- 如果走 `github.token` fallback，必须在 GitHub Packages 页面为 `tiny-platform` 仓库授予 Actions 读取权限
-- 否则 consumer workflow 仍会在依赖解析阶段失败
+- `github.actor` / `github.token` fallback 已在真实 GitHub Actions run 中验证通过
+- 当前仓库权限配置已足以支撑 `tiny-platform` 解析私有 fork 制品
+- 如果未来改为新的 consumer 仓库、跨组织访问，或 package 权限模型发生调整，仍需重新核对 `read:packages` 与 package 访问授权
 
 ## 5. 已接入的后端 workflow
 
@@ -103,6 +104,21 @@
 
 - 这些 workflow 已统一声明 `packages: read`
 - 一旦 package 发布完成并授予读取权限，就不再依赖开发机本地 Maven 仓库
+
+本轮已完成远端闭环验证的代表性 workflow：
+
+- `publish-camunda-fork-github-packages`
+  - <https://github.com/Sramler/camunda-bpm-platform/actions/runs/24518485540>
+  - 结果：`success`
+- `verify-auth-backend`
+  - <https://github.com/Sramler/tiny-platform/actions/runs/24519082136>
+  - 结果：`success`
+- `verify-migration-smoke-mysql`
+  - <https://github.com/Sramler/tiny-platform/actions/runs/24519643624>
+  - 结果：`success`
+- `verify-auth-db-residuals`
+  - <https://github.com/Sramler/tiny-platform/actions/runs/24519644111>
+  - 结果：`success`
 
 ## 6. `CARD-C7-05C` 当前落地状态
 
@@ -135,25 +151,28 @@
 
 - `docs/TINY_PLATFORM_CAMUNDA7_SB4_CARD_C7_05C_IMPLEMENTATION_REPORT.md`
 
-## 7. 推荐落地顺序
+## 7. 当前闭环结果
 
-1. 在 `camunda-bpm-platform` 手动执行发布 workflow
-2. 到 GitHub Packages 页面确认关键制品已发布
-3. 为 `tiny-platform` 配置：
-   - `CAMUNDA_PACKAGES_USERNAME`
-   - `CAMUNDA_PACKAGES_TOKEN`
-4. 或在 package 设置页为 `tiny-platform` 开启 Actions 访问权限
-5. 先跑一条后端 workflow 验证
-6. 再扩大到常规 CI 路径
+- `CARD-C7-05B` 已完成最小闭环：
+  - fork 发布成功
+  - consumer 仓库在“无开发机本地预装仓库”的远端 runner 上完成依赖解析与 workflow 通过
+- 曾出现一条发布前的瞬时失败：
+  - <https://github.com/Sramler/tiny-platform/actions/runs/24518879704>
+  - 失败原因为 `org.camunda.bpm:camunda-bom:7.24.0-tiny-sb4-01` 在首轮发布完成前尚不可解析
+  - 发布成功后重跑相关 workflow 已全部通过，因此该失败已收口
+- 当前主线结论：
+  - `7.24.0-tiny-sb4-01` 已可作为 `tiny-platform` 的固定消费版本
+  - `CARD-C7-05C` 只保留为发布仓库异常时的兜底
+  - `CARD-C7-05D` 已在此基础上完成固定版收敛
 
-## 8. 后续收口
+## 8. 后续维护
 
-`CARD-C7-05B` 解决的是“CI 可解析私有 fork 产物”。
+`CARD-C7-05B` 已解决“CI 可解析私有 fork 产物”这一主问题。
 
 后续仍需继续：
 
 - `CARD-C7-05C`
-  - 仅当共享 Maven 仓库暂未就绪时，作为 checkout fork + `mvn install` 的临时兜底
+  - 仅当 GitHub Packages 发布链路或读取权限再次出现异常时，作为 checkout fork + `mvn install` 的临时兜底
   - 额外仓库外前置：
     - `CAMUNDA_FORK_REF`
     - `CAMUNDA_FORK_CHECKOUT_TOKEN`

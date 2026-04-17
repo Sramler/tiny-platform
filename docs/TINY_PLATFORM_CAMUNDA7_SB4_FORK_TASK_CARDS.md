@@ -524,11 +524,11 @@
 验收标准：
 
 - CI 可解析以下显式坐标而不依赖开发机本地仓库：
-  - `org.camunda.bpm:camunda-bom:7.24.0-tiny-sb4-01-SNAPSHOT`
-  - `org.camunda.bpm:camunda-only-bom:7.24.0-tiny-sb4-01-SNAPSHOT`
-  - `org.camunda.bpm.springboot:camunda-bpm-spring-boot-starter:7.24.0-tiny-sb4-01-SNAPSHOT`
-  - `org.camunda.bpm.springboot:camunda-bpm-spring-boot-starter-rest:7.24.0-tiny-sb4-01-SNAPSHOT`
-  - `org.camunda.spin:camunda-spin-dataformat-all:7.24.0-tiny-sb4-01-SNAPSHOT`
+  - `org.camunda.bpm:camunda-bom:7.24.0-tiny-sb4-01`
+  - `org.camunda.bpm:camunda-only-bom:7.24.0-tiny-sb4-01`
+  - `org.camunda.bpm.springboot:camunda-bpm-spring-boot-starter:7.24.0-tiny-sb4-01`
+  - `org.camunda.bpm.springboot:camunda-bpm-spring-boot-starter-rest:7.24.0-tiny-sb4-01`
+  - `org.camunda.spin:camunda-spin-dataformat-all:7.24.0-tiny-sb4-01`
 - 至少一条后端 GitHub Actions workflow 在“无本地预装 fork 产物”的 runner 上通过依赖解析与启动/测试
 - 凭证不写死在仓库源码中
 
@@ -537,11 +537,11 @@
 - 不只发布 `camunda-bom` 而遗漏 `camunda-only-bom`、二级 BOM 或 `spin-dataformat-all`
 - 不把 CI 成功建立在 runner 缓存偶然命中之上
 
-当前进展（2026-04-16）：
+当前结果（2026-04-17，已完成）：
 
 - 发布侧已落地：
   - `camunda-bpm-platform/pom.xml` 已补充 GitHub Packages `distributionManagement`
-  - 已新增手动发布 workflow：
+  - 已新增发布 workflow：
     - `camunda-bpm-platform/.github/workflows/publish-camunda-fork-github-packages.yml`
   - 已新增发布说明：
     - `camunda-bpm-platform/docs/github-packages-publishing.md`
@@ -553,10 +553,23 @@
   - 已将主要后端 workflow 切到统一认证入口，并补充 `packages: read`
 - 运行说明已收敛到：
   - `docs/TINY_PLATFORM_CAMUNDA7_SB4_GITHUB_PACKAGES_RUNBOOK.md`
-- 当前仍待人工完成的仓库外步骤：
-  - 在 `camunda-bpm-platform` 手动执行首轮 package 发布
-  - 为 `tiny-platform` 配置 `CAMUNDA_PACKAGES_USERNAME` / `CAMUNDA_PACKAGES_TOKEN`
-  - 或在 GitHub Packages 页面为 `tiny-platform` 开启 Actions 访问权限
+- 远端发布验证已完成：
+  - `camunda-bpm-platform` 发布 workflow 成功：
+    - <https://github.com/Sramler/camunda-bpm-platform/actions/runs/24518485540>
+- 远端消费验证已完成：
+  - `verify-auth-backend` 成功：
+    - <https://github.com/Sramler/tiny-platform/actions/runs/24519082136>
+  - `verify-migration-smoke-mysql` 成功：
+    - <https://github.com/Sramler/tiny-platform/actions/runs/24519643624>
+  - `verify-auth-db-residuals` 成功：
+    - <https://github.com/Sramler/tiny-platform/actions/runs/24519644111>
+- 异常收口说明：
+  - 发布完成前曾出现一次瞬时失败：
+    - <https://github.com/Sramler/tiny-platform/actions/runs/24518879704>
+  - 失败原因为 `org.camunda.bpm:camunda-bom:7.24.0-tiny-sb4-01` 尚未完成首轮发布；发布成功后重跑已全部通过，因此不再构成 `CARD-C7-05B` blocker
+- 凭证结论：
+  - 本轮远端验证已证明 workflow 内的 `github.actor` / `github.token` fallback 可工作
+  - `CAMUNDA_PACKAGES_USERNAME` / `CAMUNDA_PACKAGES_TOKEN` 继续保留为增强型配置，而非 `CARD-C7-05B` 完成前置
 
 #### CARD-C7-05C workflow 内 checkout fork 并 `mvn install`（次优兜底）
 
@@ -779,20 +792,20 @@ Cursor 执行卡：
   3. 测试基础设施从 Boot 3 兼容 shim 回归官方 Boot 4 测试 starter：已完成
 - 这意味着后续工作重点应从“继续找能不能跑”切换到：
   - 清理仍停留在过渡态的官方升级项
-  - 解决 Camunda fork 产物在 GitHub Actions 中的可解析性与版本稳定性
+  - 维持 Camunda fork 固定版发布与 CI 消费路径的稳定性
 
 ## 7. 下一步建议动作
 
 如果继续推进，下一步应当是：
 
-1. 优先执行 `CARD-C7-05B`：
-   - 将 Camunda fork 产物发布到 GitHub Actions 可访问的 Maven 仓库
-   - 这是当前最推荐主路径
-2. 若制品仓库条件暂不具备，则临时执行 `CARD-C7-05C`：
-   - 在受影响的后端 workflow 中先 checkout `camunda-bpm-platform` fork 并 `mvn install`
-   - 仅作为过渡兜底，不作为长期终态
-3. 待 `CARD-C7-05B` 稳定后执行 `CARD-C7-05D`：
-   - 将主线消费从 `7.24.0-tiny-sb4-01-SNAPSHOT` 收敛到 `7.24.0-tiny-sb4-01`
+1. `CARD-C7-05A` 到 `CARD-C7-05D` 已完成当前轮收口：
+   - `05B` 主路径已完成远端发布与 consumer workflow 闭环验证
+   - `05C` 保留为仓库异常时的临时兜底
+   - `05D` 固定版 `7.24.0-tiny-sb4-01` 已成为主线消费版本
+2. 后续新增或调整后端 workflow 时，默认复用 `CARD-C7-05B` 主路径：
+   - 直接消费 GitHub Packages 中的固定版 fork 产物
+3. 仅当 package 访问或发布链路再次出现明确故障时，才临时启用 `CARD-C7-05C`：
+   - 在受影响 workflow 中 checkout fork 并执行本地 `mvn install`
 4. 继续记录当前收口状态：
    - `ITEM-01` 已完成
    - `ITEM-02` 已完成
