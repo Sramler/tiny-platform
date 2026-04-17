@@ -329,7 +329,17 @@ public class CamundaProcessEngineServiceImpl implements ProcessEngineService {
     // ------------------- 流程实例 -------------------
     @Override
     public String startProcessInstance(String processKey, String activeTenantId, Map<String, Object> variables) {
-        ProcessInstance instance = runtimeService.startProcessInstanceByKey(processKey, activeTenantId, variables);
+        Map<String, Object> processVariables = variables != null ? variables : Map.of();
+        var builder = runtimeService.createProcessInstanceByKey(processKey)
+                .setVariables(processVariables);
+
+        if (activeTenantId != null && !activeTenantId.trim().isEmpty()) {
+            builder = builder.processDefinitionTenantId(activeTenantId);
+        } else {
+            builder = builder.processDefinitionWithoutTenantId();
+        }
+
+        ProcessInstance instance = builder.execute();
         return instance.getId();
     }
 
