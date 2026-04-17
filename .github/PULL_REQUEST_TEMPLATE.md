@@ -20,6 +20,7 @@
 - 目标分支：
 - 同步 / 回补计划：
 - 建议标签：`sync-to-sb4` / `backport-to-main` / `sb4-only`
+- 建议提交前缀：业务改动用 `feat:` / `fix:`；`sb4-only` 用 `feat(sb4):` / `fix(sb4):` / `chore(sb4):` / `ci(sb4):` / `docs(sb4):`
 
 ## 影响范围
 
