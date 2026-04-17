@@ -1,6 +1,7 @@
 > 参考：
 > - docs/TINY_PLATFORM_TESTING_PLAYBOOK.md
 > - docs/TINY_PLATFORM_TESTING_PR_CHECKLIST.md
+> - docs/TINY_PLATFORM_MAIN_SB4_BRANCH_STRATEGY.md
 
 ## 变更内容
 
@@ -9,6 +10,16 @@
 ## 变更原因
 
 - 
+
+## 分支归属 / 同步要求
+
+- [ ] 业务改动，先合 `main`，再同步到 `sb4`
+- [ ] `sb4-only` 兼容改动，仅进入 `sb4`
+- [ ] 在 `sb4` 发现的共享修复，需要回补 `main`
+- 来源分支：
+- 目标分支：
+- 同步 / 回补计划：
+- 建议标签：`sync-to-sb4` / `backport-to-main` / `sb4-only`
 
 ## 影响范围
 
