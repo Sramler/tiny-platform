@@ -1,0 +1,223 @@
+name: Open main to sb4 sync PR
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      source_branch:
+        description: Source branch to sync from
+        required: false
+        default: main
+      target_branch:
+        description: Target branch to sync into
+        required: false
+        default: sb4
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  SOURCE_BRANCH: ${{ github.event.inputs.source_branch || 'main' }}
+  TARGET_BRANCH: ${{ github.event.inputs.target_branch || vars.SB4_BRANCH_NAME || 'sb4' }}
+
+concurrency:
+  group: sync-main-to-sb4-${{ github.event.inputs.target_branch || vars.SB4_BRANCH_NAME || 'sb4' }}
+  cancel-in-progress: false
+
+jobs:
+  open-sync-pr:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check target branch
+        id: branch
+        uses: actions/github-script@v8
+        env:
+          TARGET_BRANCH: ${{ env.TARGET_BRANCH }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const branch = process.env.TARGET_BRANCH;
+
+            try {
+              await github.rest.repos.getBranch({ owner, repo, branch });
+              core.setOutput("exists", "true");
+              core.info(`Target branch ${branch} exists.`);
+            } catch (error) {
+              if (error.status === 404) {
+                core.setOutput("exists", "false");
+                core.warning(`Target branch ${branch} does not exist. Skip sync PR creation.`);
+                return;
+              }
+              throw error;
+            }
+
+      - name: Summarize missing target branch
+        if: steps.branch.outputs.exists != 'true'
+        run: |
+          {
+            echo "## main -> sb4 sync PR"
+            echo
+            echo "- Source branch: \`${SOURCE_BRANCH}\`"
+            echo "- Target branch: \`${TARGET_BRANCH}\`"
+            echo "- Result: skipped because target branch does not exist"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check diff and existing PR
+        id: status
+        if: steps.branch.outputs.exists == 'true'
+        uses: actions/github-script@v8
+        env:
+          SOURCE_BRANCH: ${{ env.SOURCE_BRANCH }}
+          TARGET_BRANCH: ${{ env.TARGET_BRANCH }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const source = process.env.SOURCE_BRANCH;
+            const target = process.env.TARGET_BRANCH;
+
+            const { data: comparison } = await github.rest.repos.compareCommits({
+              owner,
+              repo,
+              base: target,
+              head: source,
+            });
+
+            core.setOutput("ahead_by", String(comparison.ahead_by));
+            core.setOutput("behind_by", String(comparison.behind_by));
+            core.setOutput("status", comparison.status);
+
+            const { data: pulls } = await github.rest.pulls.list({
+              owner,
+              repo,
+              state: "open",
+              base: target,
+              head: `${owner}:${source}`,
+              per_page: 100,
+            });
+
+            core.setOutput("has_open_pr", pulls.length > 0 ? "true" : "false");
+            core.setOutput("open_pr_url", pulls[0]?.html_url || "");
+
+            core.info(`Compare status=${comparison.status}, ahead_by=${comparison.ahead_by}, behind_by=${comparison.behind_by}`);
+            core.info(`Open sync PR exists=${pulls.length > 0}`);
+
+      - name: Summarize no-op state
+        if: steps.branch.outputs.exists == 'true' && (steps.status.outputs.has_open_pr == 'true' || steps.status.outputs.ahead_by == '0')
+        run: |
+          {
+            echo "## main -> sb4 sync PR"
+            echo
+            echo "- Source branch: \`${SOURCE_BRANCH}\`"
+            echo "- Target branch: \`${TARGET_BRANCH}\`"
+            echo "- Compare status: \`${{ steps.status.outputs.status }}\`"
+            echo "- Ahead by: \`${{ steps.status.outputs.ahead_by }}\`"
+            echo "- Behind by: \`${{ steps.status.outputs.behind_by }}\`"
+            if [ "${{ steps.status.outputs.has_open_pr }}" = "true" ]; then
+              echo "- Result: existing open sync PR reused"
+              echo "- Open PR: ${{ steps.status.outputs.open_pr_url }}"
+            else
+              echo "- Result: no new PR required"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create sync PR
+        id: create
+        if: steps.branch.outputs.exists == 'true' && steps.status.outputs.has_open_pr != 'true' && steps.status.outputs.ahead_by != '0'
+        uses: actions/github-script@v8
+        env:
+          SOURCE_BRANCH: ${{ env.SOURCE_BRANCH }}
+          TARGET_BRANCH: ${{ env.TARGET_BRANCH }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const source = process.env.SOURCE_BRANCH;
+            const target = process.env.TARGET_BRANCH;
+
+            const title = `sync: ${source} -> ${target}`;
+            const body = [
+              "> 自动创建的分支同步 PR，用于把 `main` 已合入的业务改动持续同步到 `sb4`。",
+              "> 参考：",
+              "> - docs/TINY_PLATFORM_MAIN_SB4_BRANCH_STRATEGY.md",
+              "",
+              "## 变更内容",
+              "",
+              `- 自动同步 \`${source}\` 到 \`${target}\`，承接最近已合入主线的业务改动。`,
+              "",
+              "## 变更原因",
+              "",
+              `- 保持 \`${target}\` 持续继承 \`${source}\` 的业务修复与功能迭代，避免长期分叉漂移。`,
+              "",
+              "## 分支归属 / 同步要求",
+              "",
+              "- [x] 业务改动，先合 `main`，再同步到 `sb4`",
+              "- [ ] `sb4-only` 兼容改动，仅进入 `sb4`",
+              "- [ ] 在 `sb4` 发现的共享修复，需要回补 `main`",
+              `- 来源分支：\`${source}\``,
+              `- 目标分支：\`${target}\``,
+              "- 同步 / 回补计划：本 PR 自动创建；如存在冲突，由最近一次主线改动负责人处理并合并。",
+              "- 建议标签：`sync-to-sb4`",
+              "",
+              "## 影响范围",
+              "",
+              "- [x] 发布 / 部署行为",
+              "",
+              "## 风险与回滚",
+              "",
+              "- 风险：`sb4` 可能与 `main` 已出现集成冲突，需要在目标分支重新验证。",
+              "- 回滚：关闭本同步 PR，待冲突收口后重新触发同步。",
+              "",
+              "## 测试层级",
+              "",
+              "- [x] 组件测试",
+              "",
+              "## 验证方式",
+              "",
+              "### 自动化验证",
+              "",
+              "```bash",
+              "自动创建的同步 PR；以 `main` 已通过的源 PR 校验 + `sb4` 目标分支 CI 为准。",
+              "```",
+              "",
+              "### 手动验证",
+              "",
+              "1. 确认 PR 只承担分支同步，不在此 PR 内混入新的业务提交。",
+              "2. 若存在冲突，在 `sb4` 收口后重新跑目标分支 CI。",
+              "",
+              "## 测试与审查检查清单",
+              "",
+              "- [x] PR 描述已覆盖变更、原因、影响、风险、回滚、验证",
+              "- [x] 已说明本 PR 为 `main -> sb4` 分支同步用途",
+              "- [ ] 如存在冲突，已在 `sb4` 完成收口并重新验证",
+            ].join("\n");
+
+            const { data: pr } = await github.rest.pulls.create({
+              owner,
+              repo,
+              title,
+              head: source,
+              base: target,
+              body,
+              maintainer_can_modify: true,
+            });
+
+            core.setOutput("url", pr.html_url);
+            core.setOutput("number", String(pr.number));
+            core.info(`Created PR #${pr.number}: ${pr.html_url}`);
+
+      - name: Summarize created PR
+        if: steps.create.outputs.url != ''
+        run: |
+          {
+            echo "## main -> sb4 sync PR"
+            echo
+            echo "- Source branch: \`${SOURCE_BRANCH}\`"
+            echo "- Target branch: \`${TARGET_BRANCH}\`"
+            echo "- Result: created"
+            echo "- PR: ${{ steps.create.outputs.url }}"
+          } >> "$GITHUB_STEP_SUMMARY"
