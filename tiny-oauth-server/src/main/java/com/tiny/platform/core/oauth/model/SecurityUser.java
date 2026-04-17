@@ -288,7 +288,7 @@ public class SecurityUser implements UserDetails {
      * 获取用户ID。
      * <p>
      * <b>序列化优化</b>：
-     * - 使用自定义序列化器将 Long 序列化为 String，避免 Spring Security allowlist 检查失败
+     * - 使用自定义序列化器将 Long 序列化为 String，避免前端精度丢失并统一 JSON 表达
      * - 使用自定义反序列化器支持从 String 或 Number 反序列化，兼容新旧数据格式
      * <p>
      * 这是符合官方指南的扩展方式，通过 Jackson 注解而不是修改框架内部实现。

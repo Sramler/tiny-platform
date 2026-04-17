@@ -170,23 +170,6 @@ public class MultiFactorAuthenticationToken extends AbstractAuthenticationToken 
                 authorities);
     }
 
-    public static MultiFactorAuthenticationToken partiallyAuthenticated(String username,
-                                                                        Object credentials,
-                                                                        AuthenticationProviderType provider,
-                                                                        Set<AuthenticationFactorType> completedFactors,
-                                                                        Collection<? extends GrantedAuthority> authorities) {
-        MultiFactorAuthenticationToken token = new MultiFactorAuthenticationToken(
-                username,
-                credentials,
-                provider,
-                completedFactors,
-                authorities
-        );
-        token.setAuthenticated(false);
-        return token;
-    }
-
-
     // --- getters / override ---
 
     @Override

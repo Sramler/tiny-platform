@@ -46,11 +46,6 @@ public class UserSessionActivityFilter extends OncePerRequestFilter {
             return;
         }
 
-        if (authentication instanceof MultiFactorAuthenticationToken mfaToken && !mfaToken.isAuthenticated()) {
-            filterChain.doFilter(request, response);
-            return;
-        }
-
         SecurityUser securityUser = resolveSecurityUser(authentication);
         Long activeTenantId = ActiveTenantResponseSupport.resolveActiveTenantId(authentication);
         if (securityUser == null || securityUser.getUserId() == null || activeTenantId == null) {

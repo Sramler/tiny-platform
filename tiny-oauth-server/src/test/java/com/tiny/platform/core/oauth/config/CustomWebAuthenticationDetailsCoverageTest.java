@@ -1,7 +1,5 @@
 package com.tiny.platform.core.oauth.config;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonParser;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpUpgradeHandler;
@@ -13,7 +11,6 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class CustomWebAuthenticationDetailsCoverageTest {
 
@@ -50,45 +47,6 @@ class CustomWebAuthenticationDetailsCoverageTest {
         assertThat(details.getAuthenticationProvider()).isEqualTo("LDAP");
         assertThat(details.getAuthenticationType()).isEqualTo("PASSWORD");
         assertThat(details.toString()).contains("remoteAddress='127.0.0.1'");
-    }
-
-    @Test
-    void shouldDeserializeCustomWebAuthenticationDetailsAndFallbackRemoteAddress() throws Exception {
-        CustomWebAuthenticationDetailsJacksonDeserializer deserializer =
-                new CustomWebAuthenticationDetailsJacksonDeserializer();
-
-        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-        JsonParser parser1 = new JsonFactory().createParser("""
-                {"remoteAddress":"1.2.3.4","sessionId":"sid","authenticationProvider":"LOCAL","authenticationType":"PASSWORD"}
-                """);
-        parser1.setCodec(mapper);
-        var details1 = deserializer.deserialize(parser1, mapper.getDeserializationContext());
-
-        assertThat(details1.getRemoteAddress()).isEqualTo("1.2.3.4");
-        assertThat(details1.getSessionId()).isEqualTo("sid");
-        assertThat(details1.getAuthenticationProvider()).isEqualTo("LOCAL");
-        assertThat(details1.getAuthenticationType()).isEqualTo("PASSWORD");
-
-        JsonParser parser2 = new JsonFactory().createParser("{}");
-        parser2.setCodec(mapper);
-        var details2 = deserializer.deserialize(parser2, mapper.getDeserializationContext());
-
-        assertThat(details2.getRemoteAddress()).isEqualTo("unknown");
-        assertThat(details2.getSessionId()).isNull();
-        assertThat(details2.getAuthenticationProvider()).isNull();
-        assertThat(details2.getAuthenticationType()).isNull();
-    }
-
-    @Test
-    void shouldThrowWhenDeserializerReceivesInvalidJson() throws Exception {
-        CustomWebAuthenticationDetailsJacksonDeserializer deserializer =
-                new CustomWebAuthenticationDetailsJacksonDeserializer();
-        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-        JsonParser parser = new JsonFactory().createParser("{invalid");
-        parser.setCodec(mapper);
-
-        assertThatThrownBy(() -> deserializer.deserialize(parser, mapper.getDeserializationContext()))
-                .isInstanceOf(Exception.class);
     }
 
     @Test

@@ -12,16 +12,17 @@ import static org.assertj.core.api.Assertions.assertThat;
 class DefaultSecurityConfigAccessPolicyTest {
 
     @Test
-    void challengeFlowShouldAllowPartialTokenWithCompletedFactor() {
-        MultiFactorAuthenticationToken partial = MultiFactorAuthenticationToken.partiallyAuthenticated(
+    void challengeFlowShouldRequireAuthenticatedSession() {
+        MultiFactorAuthenticationToken partial = new MultiFactorAuthenticationToken(
                 "admin",
                 null,
                 MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL,
                 Set.of(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD),
                 List.of()
         );
+        partial.setAuthenticated(false);
 
-        assertThat(DefaultSecurityConfig.hasChallengeFlowAccess(partial)).isTrue();
+        assertThat(DefaultSecurityConfig.hasChallengeFlowAccess(partial)).isFalse();
         assertThat(DefaultSecurityConfig.hasSensitiveSecurityAccess(partial)).isFalse();
         assertThat(DefaultSecurityConfig.hasTotpSensitiveAccess(partial)).isFalse();
     }
@@ -81,13 +82,14 @@ class DefaultSecurityConfigAccessPolicyTest {
                 Set.of(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD),
                 List.of(new SimpleGrantedAuthority("ROLE_USER"))
         );
-        MultiFactorAuthenticationToken partialAdmin = MultiFactorAuthenticationToken.partiallyAuthenticated(
+        MultiFactorAuthenticationToken partialAdmin = new MultiFactorAuthenticationToken(
                 "admin",
                 null,
                 MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL,
                 Set.of(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD),
                 List.of(new SimpleGrantedAuthority("scheduling:cluster:view"))
         );
+        partialAdmin.setAuthenticated(false);
 
         assertThat(DefaultSecurityConfig.hasSchedulingAdminAccess(admin)).isTrue();
         assertThat(DefaultSecurityConfig.hasSchedulingAdminAccess(user)).isFalse();

@@ -79,10 +79,10 @@ Access Token 内容：
 
 **目标**：确认 `MultiFactorAuthenticationToken` 的序列化/反序列化是否正确处理 `details` 字段。
 
-**检查位置**：`MultiFactorAuthenticationTokenJacksonDeserializer`
+**检查位置**：`MultiFactorAuthenticationTokenJackson3Deserializer`
 
 **发现**：
-- `MultiFactorAuthenticationTokenJacksonDeserializer` 反序列化时**没有处理 `details` 字段**
+- `MultiFactorAuthenticationTokenJackson3Deserializer` 反序列化时**没有处理 `details` 字段**
 - 导致反序列化后的 token 的 `details` 为 `null`
 
 ## 根本原因
@@ -100,7 +100,7 @@ Access Token 内容：
    ↓
 5. OAuth2 授权码流程中，从 session/授权表反序列化 MultiFactorAuthenticationToken
    ↓
-6. MultiFactorAuthenticationTokenJacksonDeserializer 反序列化时未处理 details 字段 ❌
+6. MultiFactorAuthenticationTokenJackson3Deserializer 反序列化时未处理 details 字段 ❌
    ↓
 7. 反序列化后的 token 的 details 为 null
    ↓
@@ -111,7 +111,7 @@ Access Token 内容：
 
 ### 核心问题
 
-**`MultiFactorAuthenticationTokenJacksonDeserializer` 反序列化时没有恢复 `details` 字段**，导致：
+**`MultiFactorAuthenticationTokenJackson3Deserializer` 反序列化时没有恢复 `details` 字段**，导致：
 - 序列化时 `details` 被正确序列化（包含 `SecurityUser`）
 - 反序列化时 `details` 没有被恢复，始终为 `null`
 - `JwtTokenCustomizer` 无法获取 `SecurityUser`，从而无法获取 `userId`
@@ -143,7 +143,7 @@ if (userDetails instanceof com.tiny.oauthserver.sys.model.SecurityUser securityU
 
 ### 方案二：修复反序列化器恢复 details 字段（关键修复）
 
-**位置**：`MultiFactorAuthenticationTokenJacksonDeserializer.java`
+**位置**：`MultiFactorAuthenticationTokenJackson3Deserializer.java`
 
 **修改内容**：在反序列化时恢复 `details` 字段：
 
@@ -160,17 +160,17 @@ if (jsonNode.has("details") && !jsonNode.get("details").isNull()) {
             // 反序列化为 SecurityUser
             SecurityUser securityUser = mapper.treeToValue(detailsNode, SecurityUser.class);
             token.setDetails(securityUser);
-            log.debug("[MultiFactorAuthenticationTokenJacksonDeserializer] 成功恢复 SecurityUser 到 details (userId: {})", 
+            log.debug("[MultiFactorAuthenticationTokenJackson3Deserializer] 成功恢复 SecurityUser 到 details (userId: {})", 
                     securityUser != null ? securityUser.getUserId() : "null");
         } else {
             // 尝试直接反序列化（可能是其他类型的 details）
             Object details = mapper.treeToValue(detailsNode, Object.class);
             token.setDetails(details);
-            log.debug("[MultiFactorAuthenticationTokenJacksonDeserializer] 恢复 details: {}", 
+            log.debug("[MultiFactorAuthenticationTokenJackson3Deserializer] 恢复 details: {}", 
                     details != null ? details.getClass().getName() : "null");
         }
     } catch (Exception e) {
-        log.warn("[MultiFactorAuthenticationTokenJacksonDeserializer] 无法反序列化 details 字段: {}", e.getMessage());
+        log.warn("[MultiFactorAuthenticationTokenJackson3Deserializer] 无法反序列化 details 字段: {}", e.getMessage());
         // 不抛出异常，允许 token 在没有 details 的情况下继续使用
     }
 }
@@ -195,7 +195,7 @@ if (jsonNode.has("details") && !jsonNode.get("details").isNull()) {
 ### 修复后的日志输出
 
 ```
-[MultiFactorAuthenticationTokenJacksonDeserializer] 成功恢复 SecurityUser 到 details (userId: 1)
+[MultiFactorAuthenticationTokenJackson3Deserializer] 成功恢复 SecurityUser 到 details (userId: 1)
 [JwtTokenCustomizer] Access Token - 开始分析 Authentication 结构
 [JwtTokenCustomizer]   - principal 类型: com.tiny.oauthserver.sys.security.MultiFactorAuthenticationToken
 [JwtTokenCustomizer]   - principal.getName(): admin
@@ -234,7 +234,7 @@ if (jsonNode.has("details") && !jsonNode.get("details").isNull()) {
    - 在所有创建 `MultiFactorAuthenticationToken` 的地方设置 `SecurityUser` 到 `details`
    - 共修改 6 处
 
-2. **`MultiFactorAuthenticationTokenJacksonDeserializer.java`**
+2. **`MultiFactorAuthenticationTokenJackson3Deserializer.java`**
    - 添加 `details` 字段的反序列化逻辑
    - 支持反序列化 `SecurityUser` 和其他类型的 `details`
 
@@ -314,4 +314,3 @@ if (jsonNode.has("details") && !jsonNode.get("details").isNull()) {
 **问题状态**：✅ 已解决  
 **验证状态**：✅ 已验证（userId 已正确返回）  
 **文档更新日期**：2025-11-30
-

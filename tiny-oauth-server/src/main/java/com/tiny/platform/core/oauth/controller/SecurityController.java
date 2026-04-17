@@ -319,7 +319,7 @@ public class SecurityController {
 
     /**
      * GET TOTP绑定页（页面渲染）
-     * 支持携带 PASSWORD 因子 authority、等待 TOTP 的部分认证 Token
+     * 支持“已完成密码、等待 TOTP challenge”的已认证会话
      *
      * 根据配置区分开发环境和生产环境：
      * - 开发环境：重定向到 Vite dev server (http://localhost:5173/self/security/totp-bind)
@@ -335,7 +335,7 @@ public class SecurityController {
      * POST TOTP绑定表单（页面表单提交），成功后重定向回原目标
      * 使用 -form 后缀以避免与 JSON 接口 /totp/bind 冲突
      * 注意：password 参数是可选的，如果用户没有本地密码（如通过 OAuth2 登录），则不需要密码
-     * 支持携带 PASSWORD 因子 authority、等待 TOTP 的部分认证 Token
+     * 支持“已完成密码、等待 TOTP challenge”的已认证会话
      */
     @PostMapping("/totp/bind-form")
     public String bindTotpForm(@RequestParam String totpCode,
@@ -371,11 +371,11 @@ public class SecurityController {
 
     /**
      * POST 跳过二次认证（页面表单），成功后重定向回原目标
-     * 支持携带 PASSWORD 因子 authority、等待 TOTP 的部分认证 Token。
+     * 支持“已完成密码、等待 TOTP challenge”的已认证会话。
      * 该入口只服务于“未绑定/未激活 TOTP 的提醒页跳过”，
      * 不是已激活 TOTP 用户的 step-up 绕过通道。
      * <p>
-     * 登录后经绑定引导进入本页时会话多为「部分 MFA」（仅完成密码）；跳过必须与 bind-form 一样调用会话升级逻辑，
+     * 登录后经绑定引导进入本页时会话通常为「仅完成密码、尚缺 TOTP factor」；跳过必须与 bind-form 一样调用会话升级逻辑，
      * 否则重定向后仍视为未完全登录而被踢回登录页。
      */
     @PostMapping("/totp/skip")
@@ -395,7 +395,7 @@ public class SecurityController {
             return "redirect:/self/security/totp-bind?redirect=" + encodedRedirect + "&error=" + encodedError;
         }
         securityService.skipMfaRemind(user, true);
-        // 与 bind-form / totp/check-form 一致：从「仅完成密码」的部分 MFA 升级会话，否则重定向后仍视为未完全登录而被踢回登录页
+        // 与 bind-form / totp/check-form 一致：从「仅完成密码、尚缺 TOTP factor」补齐会话，否则重定向后仍会被视为缺少后续校验
         if (!promoteToFullyAuthenticated(user, request, response, false)) {
             return buildSessionPromotionFailureRedirect(safeRedirect);
         }
@@ -419,7 +419,7 @@ public class SecurityController {
     /**
      * POST 二步校验表单（页面表单提交）
      * 使用 -form 后缀以避免与 JSON 接口 /totp/check 冲突
-     * 注意：step-up 认证通常要求用户已完全认证，但为了安全性和一致性，也支持部分认证 Token
+     * 注意：step-up 认证要求用户已建立登录会话；当当前会话仅完成密码时，成功后会补齐 TOTP factor
      */
     @PostMapping("/totp/check-form")
     public String checkTotpForm(@RequestParam String totpCode,
@@ -467,16 +467,12 @@ public class SecurityController {
             return null;
         }
 
-        // 支持带有 factor authority 的部分认证 Token。
-        // 即使 authenticated=false，只要已经完成至少一个因子，也允许继续 challenge 流程中的用户解析。
-        if (authentication instanceof com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken mfaToken) {
-            if (AuthenticationFactorAuthorities.hasAnyFactor(mfaToken) || mfaToken.isAuthenticated()) {
-                String username = mfaToken.getUsername();
-                return resolveUserInScope(username, activeTenantId, activeScopeType);
-            }
+        if (authentication instanceof com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken mfaToken
+                && authentication.isAuthenticated()) {
+            String username = mfaToken.getUsername();
+            return resolveUserInScope(username, activeTenantId, activeScopeType);
         }
 
-        // 完全认证的 Token
         if (authentication.isAuthenticated()) {
             String username = authentication.getName();
             return resolveUserInScope(username, activeTenantId, activeScopeType);
@@ -522,8 +518,8 @@ public class SecurityController {
     /**
      * 获取当前用户的登录方式
      * <p>
-     * 支持部分认证的 {@link MultiFactorAuthenticationToken}（即使 {@code authenticated=false}，
-     * 只要存在因子 authority，也能获取登录方式，与 {@link #getCurrentUser()} 保持一致）。
+     * 支持当前登录态中的 {@link MultiFactorAuthenticationToken}，
+     * 通过已完成的 factor authority 推导登录方式，与 {@link #getCurrentUser()} 保持一致。
      *
      * @return [authenticationProvider, authenticationType]，如果无法确定则返回 [null, null]
      */
@@ -533,7 +529,7 @@ public class SecurityController {
             return new String[]{null, null};
         }
 
-        // 优先处理 MultiFactorAuthenticationToken（允许部分认证）
+        // 优先处理 MultiFactorAuthenticationToken
         if (authentication instanceof com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken mfa) {
             String provider = mfa.getAuthenticationProvider();
             String type;

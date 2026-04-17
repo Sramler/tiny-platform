@@ -106,7 +106,7 @@ class CustomLoginSuccessHandlerTest {
                 "requireTotp", true
         ));
 
-        MultiFactorAuthenticationToken authentication = MultiFactorAuthenticationToken.partiallyAuthenticated(
+        MultiFactorAuthenticationToken authentication = new MultiFactorAuthenticationToken(
                 "admin",
                 null,
                 MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL,
@@ -239,7 +239,7 @@ class CustomLoginSuccessHandlerTest {
                 "requireTotp", true
         ));
 
-        MultiFactorAuthenticationToken authentication = MultiFactorAuthenticationToken.partiallyAuthenticated(
+        MultiFactorAuthenticationToken authentication = new MultiFactorAuthenticationToken(
                 "admin",
                 null,
                 MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL,
@@ -324,7 +324,7 @@ class CustomLoginSuccessHandlerTest {
                 "requireTotp", true
         ));
 
-        MultiFactorAuthenticationToken authentication = MultiFactorAuthenticationToken.partiallyAuthenticated(
+        MultiFactorAuthenticationToken authentication = new MultiFactorAuthenticationToken(
                 "admin",
                 null,
                 MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL,

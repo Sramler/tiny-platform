@@ -259,11 +259,11 @@ class MultiAuthenticationProviderTest {
             .hasMessageContaining("必须先完成前置认证步骤");
 
         when(securityService.getSecurityStatus(user)).thenReturn(Map.of("requireTotp", true));
-        Authentication partial = provider.authenticate(auth("alice", "raw", "LOCAL", "PASSWORD"));
-        assertThat(partial.isAuthenticated()).isFalse();
-        assertThat(((MultiFactorAuthenticationToken) partial).getCompletedFactors())
+        Authentication passwordOnlyChallenge = provider.authenticate(auth("alice", "raw", "LOCAL", "PASSWORD"));
+        assertThat(passwordOnlyChallenge.isAuthenticated()).isTrue();
+        assertThat(((MultiFactorAuthenticationToken) passwordOnlyChallenge).getCompletedFactors())
             .containsExactly(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD);
-        assertThat(partial.getAuthorities())
+        assertThat(passwordOnlyChallenge.getAuthorities())
             .extracting(authority -> authority.getAuthority())
             .contains(AuthenticationFactorAuthorities.FACTOR_AUTHORITY_PREFIX + "PASSWORD");
 

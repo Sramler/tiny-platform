@@ -40,8 +40,9 @@ import java.util.function.Supplier;
  * 设计原则：
  *  - 最少 DB 查询（复用 enabledMethods）
  *  - 不在日志中输出敏感信息（密码/secret/验证码）
- *  - 为 MFA 提供清晰的分支：一次性验证 / 分步返回带 factor authority 的 partial token / 完成所有因子返回完全认证 token
- *  - partial MFA token 保持 authenticated=false，后续是否允许继续 challenge 由 factor authority 决定
+ *  - 为 MFA 提供清晰的分支：一次性验证 / 分步返回“已认证但缺少 TOTP factor”的 challenge token /
+ *    完成所有因子返回完整 MFA token
+ *  - challenge 继续态统一保持 authenticated=true，避免运行态再依赖 authenticated=false 的 partial token 语义
  *  - TOTP 因子统一经过 TotpVerificationGuard，防止在线爆破
  */
 @Component
@@ -310,9 +311,9 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
      *
      * 设计要点：
      *  - 如果用户提交了多个凭证（Map），尝试一次性验证所有因子
-     *  - 如果只提交了第一个因子（通常是 password），验证后返回 partial token，并把已完成因子映射到 factor authority，
-     *    由 success handler 判断是否仍需 TOTP 验证并跳转到相应页面
-     *  - 未完成全部因子时返回 authenticated=false 的 token，避免把“半程 MFA”误当成完整登录
+     *  - 如果只提交了第一个因子（通常是 password），验证后返回已认证 token，并把已完成因子映射到 factor authority，
+     *    由 success handler / challenge 页面继续引导完成 TOTP
+     *  - 运行态不再依赖 authenticated=false 的 partial token 语义；“是否仍需 TOTP”由缺少 TOTP factor 决定
      */
     private Authentication handleMultiFactorAuthentication(User user,
                                                            Object credentials,
@@ -354,13 +355,13 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
             if (provided == null || provided.isBlank()) {
                 // 没有该因子的凭证：分步情形或跳过
                 logger.debug("用户 {} 未提供 {} 因子的凭证（可能分步验证）", user.getUsername(), methodType);
-                // 如果已有完成的因子，则表明这是第二步，返回 partial token 让 successHandler 处理
+                // 如果已有完成的因子，则表明这是第二步，返回 challenge token 让 success handler 继续引导
                 if (!completed.isEmpty()) {
-                    MultiFactorAuthenticationToken partial = buildPartialToken(
+                    MultiFactorAuthenticationToken challengeToken = buildAuthenticatedToken(
                         user.getUsername(), provider, completed, userDetailsSupplier.get()
                     );
-                    logger.info("用户 {} 已完成部分因子，返回 partial MFA token（需后续验证）", user.getUsername());
-                    return partial;
+                    logger.info("用户 {} 已完成部分因子，返回 challenge token（仍需后续验证）", user.getUsername());
+                    return challengeToken;
                 } else {
                     // 尚未完成任何因子，继续尝试下一个（可能用户只提交 TOTP，但没有密码）
                     remaining.remove(method);
@@ -391,22 +392,22 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
 
         // 如果未完成全部因子（仍有 remaining），需要分步处理
         if (!remaining.isEmpty()) {
-            // 如果已经完成了 PASSWORD 并还剩 TOTP，则返回 partial token。
-            // successHandler 和后续授权链通过 factor authority + authenticated=false 判断这是待补全的 MFA 会话。
+            // 如果已经完成了 PASSWORD 并还剩 TOTP，则返回 challenge token。
+            // success handler 和后续授权链通过“缺少 TOTP factor”判断这是待补全的 MFA 会话。
             if (completed.contains(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD) && 
                 remaining.stream().anyMatch(m -> FACTOR_TOTP.equalsIgnoreCase(m.authenticationType()))) {
-                MultiFactorAuthenticationToken partial = buildPartialToken(
+                MultiFactorAuthenticationToken challengeToken = buildAuthenticatedToken(
                     user.getUsername(), provider, completed, userDetailsSupplier.get()
                 );
-                logger.info("用户 {} 已完成密码验证，返回 partial MFA token（仍需 TOTP）", user.getUsername());
-                return partial;
+                logger.info("用户 {} 已完成密码验证，返回 challenge token（仍需 TOTP）", user.getUsername());
+                return challengeToken;
             } else {
-                // 其他情况也统一返回 partial token，让 successHandler 处理后续跳转。
-                MultiFactorAuthenticationToken partial = buildPartialToken(
+                // 其他情况也统一返回 challenge token，让 success handler 处理后续跳转。
+                MultiFactorAuthenticationToken challengeToken = buildAuthenticatedToken(
                     user.getUsername(), provider, completed, userDetailsSupplier.get()
                 );
-                logger.info("用户 {} 已完成部分因子，返回 partial MFA token（需后续验证）", user.getUsername());
-                return partial;
+                logger.info("用户 {} 已完成部分因子，返回 challenge token（需后续验证）", user.getUsername());
+                return challengeToken;
             }
         }
 
@@ -648,21 +649,6 @@ public class MultiAuthenticationProvider implements AuthenticationProvider {
             userDetails.getAuthorities()
         );
         token.setAuthenticated(true);
-        attachSecurityUserDetails(token, userDetails, username);
-        return token;
-    }
-
-    private MultiFactorAuthenticationToken buildPartialToken(String username,
-                                                             String provider,
-                                                             Set<MultiFactorAuthenticationToken.AuthenticationFactorType> resolvedFactors,
-                                                             UserDetails userDetails) {
-        MultiFactorAuthenticationToken token = MultiFactorAuthenticationToken.partiallyAuthenticated(
-                username,
-                null,
-                MultiFactorAuthenticationToken.AuthenticationProviderType.from(provider),
-                resolvedFactors,
-                userDetails.getAuthorities()
-        );
         attachSecurityUserDetails(token, userDetails, username);
         return token;
     }

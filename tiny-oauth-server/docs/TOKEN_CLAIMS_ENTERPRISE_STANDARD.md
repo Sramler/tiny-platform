@@ -143,7 +143,7 @@
 ## 9. 排查清单
 
 1. 先看 `CustomLoginSuccessHandler` 日志：是否进入 `disableMfa` / `requireTotp` 分支。
-2. 再看 `MfaAuthorizationEndpointFilter`：`/oauth2/authorize` 是否二次拦截。
+2. 再看授权端点 MFA gate（`AuthorizationEndpointMfaAuthorizationManager` / `AuthorizationEndpointMfaEntryPoint`）：`/oauth2/authorize` 是否二次拦截。
 3. 解码 access token，核对 `activeTenantId`、`amr`、`auth_time`。
 4. 若 `mode=NONE` 仍出现 `totp`，优先检查是否走了旧会话或旧服务进程。
 5. 若页面当前上下文异常，优先检查 `/sys/users/current` 与 `/self/security/status` 返回值是否已归一化为 `activeTenantId`。

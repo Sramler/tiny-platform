@@ -94,41 +94,29 @@ public class MultiFactorAuthenticationTokenJackson3Deserializer
         boolean authenticated = jsonNode.has("authenticated") && jsonNode.get("authenticated").asBoolean(false);
 
         try {
-            MultiFactorAuthenticationToken token;
-            if (authenticated && !authorities.isEmpty()) {
-                token = new MultiFactorAuthenticationToken(
-                        username,
-                        credentials,
-                        MultiFactorAuthenticationToken.AuthenticationProviderType.from(providerStr),
-                        completedFactors.isEmpty() ? null : completedFactors,
-                        authorities
-                );
-            } else {
-                Set<MultiFactorAuthenticationToken.AuthenticationFactorType> factorsForToken =
-                        completedFactors.isEmpty() ? new HashSet<>() : new HashSet<>(completedFactors);
-                if (completedFactors.isEmpty() && initialFactorStr != null) {
-                    MultiFactorAuthenticationToken.AuthenticationFactorType initialFactor =
-                            MultiFactorAuthenticationToken.AuthenticationFactorType.from(initialFactorStr);
-                    if (initialFactor != null
-                            && initialFactor != MultiFactorAuthenticationToken.AuthenticationFactorType.UNKNOWN) {
-                        factorsForToken.add(initialFactor);
-                    }
+            Set<MultiFactorAuthenticationToken.AuthenticationFactorType> factorsForToken =
+                    completedFactors.isEmpty() ? new HashSet<>() : new HashSet<>(completedFactors);
+            if (factorsForToken.isEmpty() && initialFactorStr != null) {
+                MultiFactorAuthenticationToken.AuthenticationFactorType initialFactor =
+                        MultiFactorAuthenticationToken.AuthenticationFactorType.from(initialFactorStr);
+                if (initialFactor != null
+                        && initialFactor != MultiFactorAuthenticationToken.AuthenticationFactorType.UNKNOWN) {
+                    factorsForToken.add(initialFactor);
                 }
-                token = MultiFactorAuthenticationToken.partiallyAuthenticated(
-                        username,
-                        credentials,
-                        MultiFactorAuthenticationToken.AuthenticationProviderType.from(providerStr),
-                        factorsForToken.isEmpty() ? null : factorsForToken,
-                        authorities
-                );
             }
 
-            if (token.isAuthenticated() != authenticated) {
-                java.lang.reflect.Method setAuthenticatedMethod =
-                        org.springframework.security.authentication.AbstractAuthenticationToken.class
-                                .getDeclaredMethod("setAuthenticated", boolean.class);
-                setAuthenticatedMethod.setAccessible(true);
-                setAuthenticatedMethod.invoke(token, authenticated);
+            boolean normalizedAuthenticated = authenticated || !factorsForToken.isEmpty();
+
+            MultiFactorAuthenticationToken token = new MultiFactorAuthenticationToken(
+                    username,
+                    credentials,
+                    MultiFactorAuthenticationToken.AuthenticationProviderType.from(providerStr),
+                    factorsForToken.isEmpty() ? null : factorsForToken,
+                    authorities
+            );
+
+            if (!normalizedAuthenticated) {
+                token.setAuthenticated(false);
             }
 
             if (jsonNode.has("details") && !jsonNode.get("details").isNull()) {

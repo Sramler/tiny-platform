@@ -4,8 +4,9 @@ import com.nimbusds.jose.jwk.JWKMatcher;
 import com.nimbusds.jose.jwk.JWKSelector;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.nimbusds.jose.jwk.source.JWKSource;
+import com.tiny.platform.core.oauth.security.AuthorizationEndpointMfaAuthorizationManager;
+import com.tiny.platform.core.oauth.security.AuthorizationEndpointMfaEntryPoint;
 import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
-import com.tiny.platform.core.oauth.security.MfaAuthorizationEndpointFilter;
 import com.tiny.platform.core.oauth.security.PermissionVersionService;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
@@ -71,13 +72,16 @@ class AuthorizationServerConfigFactoryTest {
         FrontendProperties frontendProperties = new FrontendProperties();
         frontendProperties.setTotpBindUrl("/totp-bind");
         frontendProperties.setTotpVerifyUrl("/totp-verify");
-        MfaAuthorizationEndpointFilter filter =
-                config.mfaAuthorizationEndpointFilter(
+        AuthorizationEndpointMfaAuthorizationManager manager =
+                config.authorizationEndpointMfaAuthorizationManager(
                         securityService,
-                        authUserResolutionService,
-                        frontendProperties
+                        authUserResolutionService
                 );
-        assertThat(filter).isNotNull();
+        assertThat(manager).isNotNull();
+
+        AuthorizationEndpointMfaEntryPoint entryPoint =
+                config.authorizationEndpointMfaEntryPoint(frontendProperties);
+        assertThat(entryPoint).isNotNull();
     }
 
     @Test

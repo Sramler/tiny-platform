@@ -79,7 +79,7 @@ class SecurityControllerRedirectTest {
         ));
 
         TenantContext.setActiveTenantId(1L);
-        SecurityContextHolder.getContext().setAuthentication(partialAuthentication());
+        SecurityContextHolder.getContext().setAuthentication(passwordOnlyAuthentication());
 
         MockHttpServletRequest request = request();
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -114,7 +114,7 @@ class SecurityControllerRedirectTest {
         ));
 
         TenantContext.setActiveTenantId(1L);
-        SecurityContextHolder.getContext().setAuthentication(partialAuthentication());
+        SecurityContextHolder.getContext().setAuthentication(passwordOnlyAuthentication());
 
         MockHttpServletRequest request = request();
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -156,7 +156,7 @@ class SecurityControllerRedirectTest {
         ));
 
         TenantContext.setActiveTenantId(1L);
-        SecurityContextHolder.getContext().setAuthentication(partialAuthentication());
+        SecurityContextHolder.getContext().setAuthentication(passwordOnlyAuthentication());
 
         MockHttpServletRequest request = request();
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -195,7 +195,7 @@ class SecurityControllerRedirectTest {
         )).thenReturn(true);
 
         TenantContext.setActiveTenantId(1L);
-        SecurityContextHolder.getContext().setAuthentication(partialAuthentication());
+        SecurityContextHolder.getContext().setAuthentication(passwordOnlyAuthentication());
 
         MockHttpServletRequest request = request();
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -237,7 +237,7 @@ class SecurityControllerRedirectTest {
         ));
 
         TenantContext.setActiveTenantId(1L);
-        SecurityContextHolder.getContext().setAuthentication(partialAuthentication());
+        SecurityContextHolder.getContext().setAuthentication(passwordOnlyAuthentication());
 
         ResponseEntity<Map<String, Object>> response = controller.skipMfaRemind(Map.of("skipMfaRemind", true));
 
@@ -268,7 +268,7 @@ class SecurityControllerRedirectTest {
         when(securityService.checkTotp(user, "000000")).thenReturn(Map.of("success", false, "error", "验证码错误"));
 
         TenantContext.setActiveTenantId(1L);
-        SecurityContextHolder.getContext().setAuthentication(partialAuthentication());
+        SecurityContextHolder.getContext().setAuthentication(passwordOnlyAuthentication());
 
         MockHttpServletRequest request = request();
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -306,7 +306,7 @@ class SecurityControllerRedirectTest {
         )).thenReturn(false);
 
         TenantContext.setActiveTenantId(1L);
-        SecurityContextHolder.getContext().setAuthentication(partialAuthentication());
+        SecurityContextHolder.getContext().setAuthentication(passwordOnlyAuthentication());
 
         MockHttpServletRequest request = request();
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -341,8 +341,8 @@ class SecurityControllerRedirectTest {
         return request;
     }
 
-    private static MultiFactorAuthenticationToken partialAuthentication() {
-        MultiFactorAuthenticationToken token = MultiFactorAuthenticationToken.partiallyAuthenticated(
+    private static MultiFactorAuthenticationToken passwordOnlyAuthentication() {
+        MultiFactorAuthenticationToken token = new MultiFactorAuthenticationToken(
                 "admin",
                 null,
                 MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL,

@@ -129,7 +129,7 @@ class TenantContextFilterTest {
                 true,
                 true
         );
-        MultiFactorAuthenticationToken auth = MultiFactorAuthenticationToken.partiallyAuthenticated(
+        MultiFactorAuthenticationToken auth = new MultiFactorAuthenticationToken(
                 "admin",
                 null,
                 MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL,

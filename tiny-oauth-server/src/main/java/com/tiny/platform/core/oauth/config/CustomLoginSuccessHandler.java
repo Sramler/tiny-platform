@@ -68,7 +68,7 @@ public class CustomLoginSuccessHandler implements AuthenticationSuccessHandler {
      * 3. 拉取用户当前 MFA 状态（是否已绑定、激活、本次会话是否要求 TOTP、是否允许跳过提醒）。
      * 5. 跳转策略：
      *    - 完全关闭 MFA：直接跳原意图页面。
-     *    - partial MFA token（authenticated=false）且仅具备 PASSWORD factor authority、同时 requireTotp=true：跳转到 TOTP 验证页面。
+     *    - 已建立登录会话但仅具备 PASSWORD factor authority、同时 requireTotp=true：跳转到 TOTP 验证页面。
      *    - 已绑定但未激活：统一跳转至 totp-bind 继续绑定流程。
      *    - 未绑定且当前允许提醒：跳转至 totp-bind。
      *    - 已完成所需因子或本次无需 TOTP：跳回原意图页面。

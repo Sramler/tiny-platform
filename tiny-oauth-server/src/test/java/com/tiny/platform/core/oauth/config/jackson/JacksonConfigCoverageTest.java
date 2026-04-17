@@ -4,17 +4,13 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.jsontype.TypeIdResolver;
 import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
-import com.fasterxml.jackson.databind.type.TypeFactory;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
@@ -119,6 +115,46 @@ class JacksonConfigCoverageTest {
     }
 
     @Test
+    void shouldNormalizeLegacyPendingMfaTokenWhenReadThroughAuthorizationMapper() throws Exception {
+        JacksonConfig config = new JacksonConfig();
+        JsonMapper mapper = config.authorizationMapper();
+
+        MultiFactorAuthenticationToken token = new MultiFactorAuthenticationToken(
+                "platform_admin",
+                null,
+                MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL,
+                Set.of(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD),
+                List.of(new SimpleGrantedAuthority("system:tenant:list")));
+        token.setDetails(new SecurityUser(
+                123L,
+                null,
+                "platform_admin",
+                "",
+                List.of(),
+                true,
+                true,
+                true,
+                true
+        ));
+
+        tools.jackson.databind.JsonNode root = mapper.readTree(
+                mapper.writeValueAsString(Map.of("principal", token)));
+        tools.jackson.databind.JsonNode principalNode = unwrapTypedAuthorizationNode(root.get("principal"));
+        ((tools.jackson.databind.node.ObjectNode) principalNode).put("authenticated", false);
+
+        MultiFactorAuthenticationToken restored = mapper.treeToValue(
+                principalNode,
+                MultiFactorAuthenticationToken.class);
+
+        assertThat(restored.isAuthenticated()).isTrue();
+        assertThat(restored.getCompletedFactors())
+                .containsExactly(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD);
+        assertThat(restored.getAuthorities())
+                .extracting(GrantedAuthority::getAuthority)
+                .containsExactlyInAnyOrder("system:tenant:list", "FACTOR_PASSWORD");
+    }
+
+    @Test
     void shouldRoundTripStableTokenClaimListsForSingleAndDoubleRoleCodes() throws Exception {
         JacksonConfig config = new JacksonConfig();
         JsonMapper mapper = config.authorizationMapper();
@@ -193,50 +229,10 @@ class JacksonConfigCoverageTest {
     }
 
     @Test
-    void shouldResolveTypeIdsAndSupportFallbackWhenDelegateMissing() throws Exception {
-        JavaType baseType = TypeFactory.defaultInstance().constructType(Object.class);
-        LongTypeIdResolver resolver = new LongTypeIdResolver(baseType);
-
-        resolver.init(baseType);
-        assertThat(resolver.idFromValue(1L)).isNotBlank();
-        assertThat(resolver.idFromValueAndType(null, Long.class)).contains("Long");
-        assertThat(resolver.idFromBaseType()).contains("Object");
-        assertThat(resolver.getMechanism()).isNotNull();
-        // method exists and should be callable regardless of delegate availability
-        resolver.getDescForKnownTypeIds();
-
-        JavaType longType = resolver.typeFromId(null, Long.class.getName());
-        assertThat(longType.getRawClass()).isEqualTo(Long.class);
-
-        // 强制走无 delegate 的 fallback 分支，覆盖 Class.forName 路径
-        ReflectionTestUtils.setField(resolver, "delegate", null);
-        JavaType stringType = resolver.typeFromId(null, String.class.getName());
-        assertThat(stringType.getRawClass()).isEqualTo(String.class);
-
-        assertThatThrownBy(() -> resolver.typeFromId(null, "com.example.DoesNotExist"))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("not recognized");
-    }
-
-    @Test
-    void shouldExposeMixinAnnotationAndLongAllowlistModuleName() {
+    void shouldExposeMixinAnnotation() {
         JsonTypeInfo typeInfo = ResourceResponseDtoMixin.class.getAnnotation(JsonTypeInfo.class);
         assertThat(typeInfo).isNotNull();
         assertThat(typeInfo.use()).isEqualTo(JsonTypeInfo.Id.NONE);
-
-        LongAllowlistModule module = new LongAllowlistModule();
-        assertThat(module.getModuleName()).isEqualTo("LongAllowlistModule");
-    }
-
-    @Test
-    void shouldHandleLongAllowlistModuleSetupAndBeIdempotent() {
-        LongAllowlistModule module = new LongAllowlistModule();
-        ObjectMapper mapper = new ObjectMapper();
-
-        // 第一次注册会触发 setupModule -> modifyAllowlist
-        mapper.registerModule(module);
-        // 第二次注册（新实例）应走“已修改”快速返回，不抛异常
-        mapper.registerModule(new LongAllowlistModule());
     }
 
     static class ListHolder {

@@ -794,8 +794,8 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
     }
 
     /**
-     * 授权库存储链会对 claims 中集合的具体实现类做 allowlist 校验。
-     * 这里统一将待持久化的字符串集合收敛为稳定的 ArrayList，避免 JDK 内部不可变集合类型反序列化失败。
+     * 授权库存储链对 claims 中集合的具体实现类比较敏感。
+     * 这里统一将待持久化的字符串集合收敛为稳定的 ArrayList，避免 JDK 内部不可变集合类型在序列化/反序列化时引入额外包装。
      */
     private List<String> toStableStringList(Collection<String> values) {
         if (values == null || values.isEmpty()) {

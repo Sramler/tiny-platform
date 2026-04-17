@@ -218,7 +218,7 @@ class PartialMfaFormLoginIntegrationTest {
     }
 
     @Test
-    void formLoginShouldPersistPartialMfaTokenAndAllowSecurityChallengeEndpoints_whenTenantCodeUsed() throws Exception {
+    void formLoginShouldPersistAuthenticatedPasswordOnlyTokenAndAllowSecurityChallengeEndpoints_whenTenantCodeUsed() throws Exception {
         User user = user();
         SecurityUser securityUser = securityUser(user);
 
@@ -268,7 +268,7 @@ class PartialMfaFormLoginIntegrationTest {
         assertThat(securityContext.getAuthentication()).isInstanceOf(MultiFactorAuthenticationToken.class);
 
         MultiFactorAuthenticationToken partial = (MultiFactorAuthenticationToken) securityContext.getAuthentication();
-        assertThat(partial.isAuthenticated()).isFalse();
+        assertThat(partial.isAuthenticated()).isTrue();
         assertThat(partial.getName()).isEqualTo("admin");
         assertThat(partial.getCompletedFactors()).containsExactly(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD);
 
@@ -387,9 +387,12 @@ class PartialMfaFormLoginIntegrationTest {
                         || request.getRequestURI().equals("/self/security/totp/check-form")
                         || request.getRequestURI().equals("/self/security/totp/skip")
                         || request.getRequestURI().equals("/self/security/skip-mfa-remind");
+                boolean totpSensitivePath = request.getRequestURI().equals("/self/security/totp/unbind");
                 boolean granted = challengePath
                         ? DefaultSecurityConfig.hasChallengeFlowAccess(authentication)
-                        : DefaultSecurityConfig.hasSensitiveSecurityAccess(authentication);
+                        : (totpSensitivePath
+                            ? DefaultSecurityConfig.hasTotpSensitiveAccess(authentication)
+                            : DefaultSecurityConfig.hasSensitiveSecurityAccess(authentication));
                 if (!granted) {
                     response.sendError(HttpServletResponse.SC_FORBIDDEN);
                     return;

@@ -114,7 +114,7 @@ class MultiFactorAuthenticationSessionManagerTest {
         );
         when(userDetailsService.loadUserByUsername("admin")).thenReturn(securityUser);
 
-        MultiFactorAuthenticationToken currentAuth = MultiFactorAuthenticationToken.partiallyAuthenticated(
+        MultiFactorAuthenticationToken currentAuth = new MultiFactorAuthenticationToken(
                 "admin",
                 null,
                 MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL,

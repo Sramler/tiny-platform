@@ -6,7 +6,9 @@ import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
 import com.tiny.platform.infrastructure.core.util.PemUtils;
 import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
-import com.tiny.platform.core.oauth.security.MfaAuthorizationEndpointFilter;
+import com.tiny.platform.core.oauth.security.AuthorizationEndpointMfaAuthorizationManager;
+import com.tiny.platform.core.oauth.security.AuthorizationEndpointMfaEntryPoint;
+import com.tiny.platform.core.oauth.security.AuthenticationFactorAuthorities;
 import com.tiny.platform.core.oauth.tenant.IssuerTenantSupport;
 import com.tiny.platform.core.oauth.tenant.TenantContextFilter;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -32,6 +34,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.web.cors.CorsConfigurationSource;
 
 import jakarta.servlet.http.HttpServletResponse;
@@ -66,12 +69,15 @@ public class AuthorizationServerConfig {
                                                                      @Qualifier("customOAuth2AuthorizationConsentService") OAuth2AuthorizationConsentService oauth2AuthorizationConsentService,
                                                                      AuthorizationServerSettings authorizationServerSettings,
                                                                      OAuth2TokenGenerator<? extends org.springframework.security.oauth2.core.OAuth2Token> tokenGenerator,
-                                                                     MfaAuthorizationEndpointFilter mfaAuthorizationEndpointFilter,
+                                                                     AuthorizationEndpointMfaAuthorizationManager authorizationEndpointMfaAuthorizationManager,
+                                                                     AuthorizationEndpointMfaEntryPoint authorizationEndpointMfaEntryPoint,
                                                                      TenantContextFilter tenantContextFilter,
                                                                      JwtAuthenticationConverter tinyPlatformJwtAuthenticationConverter)
             throws Exception {
         OAuth2AuthorizationServerConfigurer authorizationServerConfigurer =
                 new OAuth2AuthorizationServerConfigurer();
+        RequestMatcher authorizationEndpointMatcher =
+                request -> IssuerTenantSupport.isAuthorizationEndpointPath(request.getRequestURI());
 
         http
                 .securityMatcher(authorizationServerConfigurer.getEndpointsMatcher())
@@ -84,13 +90,12 @@ public class AuthorizationServerConfig {
                         // 开启 OpenID Connect 1.0（其中 oidc 为 OpenID Connect 的缩写）。
                         .oidc(Customizer.withDefaults()));
         http
-                // 在主要安全过滤器链中尽早增加 MFA 拦截，
-                // 通过 URL 匹配仅拦截 /oauth2/authorize，避免与其他端点冲突。
-                // 这里选择挂在 AnonymousAuthenticationFilter 之前，这是常用且稳定的锚点。
-                .addFilterBefore(mfaAuthorizationEndpointFilter,
-                        org.springframework.security.web.authentication.AnonymousAuthenticationFilter.class)
                 .addFilterBefore(tenantContextFilter,
                         org.springframework.security.web.authentication.AnonymousAuthenticationFilter.class)
+                .authorizeHttpRequests(authorize -> authorize
+                        .requestMatchers(authorizationEndpointMatcher).access(authorizationEndpointMfaAuthorizationManager)
+                        .anyRequest().permitAll()
+                )
                 //将需要认证的请求，重定向到login页面行登录认证。
                 // 注意：只对 HTML 请求重定向到登录页，API 请求（如 /oauth2/token）返回 JSON 错误
                 .exceptionHandling((exceptions) -> exceptions
@@ -126,6 +131,15 @@ public class AuthorizationServerConfig {
                                     return (acceptHeader != null && acceptHeader.contains(MediaType.APPLICATION_JSON_VALUE)) ||
                                            (contentType != null && contentType.contains(MediaType.APPLICATION_FORM_URLENCODED_VALUE));
                                 }
+                        )
+                        .defaultDeniedHandlerForMissingAuthority(
+                                (entryPoints) -> entryPoints.addEntryPointFor(
+                                        authorizationEndpointMfaEntryPoint,
+                                        authorizationEndpointMatcher
+                                ),
+                                AuthenticationFactorAuthorities.toAuthority(
+                                        com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken.AuthenticationFactorType.TOTP
+                                )
                         )
                 )
                 //.headers(headers -> headers.frameOptions(frame -> frame.sameOrigin())) // 👈 添加这行
@@ -297,26 +311,20 @@ public class AuthorizationServerConfig {
         return new NimbusJwtEncoder(jwkSource);
     }
 
-    /**
-     * MFA 授权端点过滤器 Bean。
-     * <p>
-     * 仅拦截 /oauth2/authorize：
-     * <ul>
-     *   <li>根据 security.mfa.mode 和用户 TOTP 绑定状态判断本次是否必须 TOTP</li>
-     *   <li>如果需要 TOTP 且当前认证未完成 TOTP，则重定向到 TOTP 验证页</li>
-     *   <li>确保发出的 Access/ID Token 的 amr 字段能准确反映 PASSWORD/TOTP 等因子</li>
-     * </ul>
-     */
     @Bean
-    public MfaAuthorizationEndpointFilter mfaAuthorizationEndpointFilter(
+    public AuthorizationEndpointMfaAuthorizationManager authorizationEndpointMfaAuthorizationManager(
             com.tiny.platform.core.oauth.service.SecurityService securityService,
-            com.tiny.platform.core.oauth.security.AuthUserResolutionService authUserResolutionService,
-            FrontendProperties frontendProperties) {
-        return new MfaAuthorizationEndpointFilter(
+            com.tiny.platform.core.oauth.security.AuthUserResolutionService authUserResolutionService) {
+        return new AuthorizationEndpointMfaAuthorizationManager(
                 securityService,
-                authUserResolutionService,
-                frontendProperties
+                authUserResolutionService
         );
+    }
+
+    @Bean
+    public AuthorizationEndpointMfaEntryPoint authorizationEndpointMfaEntryPoint(
+            FrontendProperties frontendProperties) {
+        return new AuthorizationEndpointMfaEntryPoint(frontendProperties);
     }
 
 }

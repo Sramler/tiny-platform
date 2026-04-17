@@ -423,7 +423,7 @@ else requireTotp=false
     note right: 跳过 TOTP 验证\n直接进入授权流程
 end
 
-== Phase 7: OIDC Authorization（MfaAuthorizationEndpointFilter 拦截）==
+== Phase 7: OIDC Authorization（授权端点 MFA gate 拦截）==
 Browser -> Filters: GET /oauth2/authorize (PKCE)
 Filters -> Session: loadContext()
 Session --> Filters: Authentication
@@ -533,9 +533,9 @@ RS --> Browser: Access Granted
      - `changeSessionId()`（会话固定保护）
      - 保存新 `SecurityContext` 到 `SessionStore`
 
-7. **发起 OIDC 授权（受 `MfaAuthorizationEndpointFilter` 保护）**
+7. **发起 OIDC 授权（受授权端点 MFA gate 保护）**
    - 浏览器访问 `/oauth2/authorize`（PKCE 参数）。
-   - `MfaAuthorizationEndpointFilter` 拦截并执行以下检查：
+   - `AuthorizationEndpointMfaAuthorizationManager` / `AuthorizationEndpointMfaEntryPoint` 拦截并执行以下检查：
      - **检查 1**：如果 `forceMfa=true` 且用户未绑定/未激活，重定向到 `/self/security/totp-bind`，**不生成授权码**
      - **检查 2**：如果 `requireTotp=false`，直接放行，生成授权码（单因子认证，`amr=["password"]`）
      - **检查 3**：如果 `requireTotp=true`，检查当前 `Authentication.completedFactors` 是否包含 `TOTP`：
@@ -628,7 +628,7 @@ Filters 调用 MultiFactorAuthenticationSessionManager.promoteToFullyAuthenticat
   • eraseCredentials / changeSessionId
   • new SecurityContext + SecurityContextRepository.saveContext(FULLY_AUTH)
 
-Phase 7  发起 OIDC 授权（MfaAuthorizationEndpointFilter 拦截）
+Phase 7  发起 OIDC 授权（授权端点 MFA gate 拦截）
 Browser GET /oauth2/authorize (PKCE)
 Filters:
   • loadContext() → 获取 Authentication
@@ -719,12 +719,12 @@ Browser 提交 Step-up TOTP → Filters 校验 → 再次 promoteToFullyAuthenti
 
    **⚠️ 重要配置说明**：
 
-   - 如果 `ObjectMapper` 配置不正确（缺少必要的 Jackson 模块），在步骤"授权信息读取"时会出现 `ClassCastException: LinkedHashMap cannot be cast to OAuth2AuthorizationRequest`
-   - 必须确保 `JacksonConfig` 中的 `ObjectMapper` 正确注册了以下模块：
-     - `OAuth2AuthorizationServerJackson2Module`：处理 OAuth2 对象序列化/反序列化
-     - `JavaTimeModule`：处理 `Instant` 等时间类型
-     - `SecurityJackson2Modules`：处理 `Authentication` 等安全对象
-   - 详见 `JacksonConfig` 类中的问题修复说明
+   - 如果授权持久化 `JsonMapper` 配置不正确，在步骤"授权信息读取"时会出现 `ClassCastException: LinkedHashMap cannot be cast to OAuth2AuthorizationRequest`
+   - 必须确保 `JacksonConfig` 中的 `authorizationMapper` 走当前 Spring Security 7 的 Jackson 3 链路：
+     - `SecurityJacksonModules`：处理 `Authentication` 等安全对象
+     - `createAuthorizationModule()`：处理 `MultiFactorAuthenticationToken`、`CustomWebAuthenticationDetails` 等自定义对象
+     - `JavaTimeModule` / 统一时间配置：处理 `Instant` 等时间类型
+   - 详见 `JacksonConfig` 与 `OAuth2DataConfig` 中的实现说明
 
    #### ⚠️ 刷新令牌（refresh_token）未返回的现象排查
 
@@ -808,7 +808,7 @@ if (mode == NONE) {
 
 ##### 3. OIDC 授权流程拦截点
 
-`MfaAuthorizationEndpointFilter` 在 `/oauth2/authorize` 端点拦截，确保思路 A 的实现：
+`AuthorizationEndpointMfaAuthorizationManager` 与 `AuthorizationEndpointMfaEntryPoint` 在 `/oauth2/authorize` 端点配合拦截，确保思路 A 的实现：
 
 1. **检查 `forceMfa` + 绑定状态**
    - 如果 `forceMfa=true` 且用户未绑定/未激活，重定向到绑定页
@@ -870,7 +870,7 @@ if (mode == NONE) {
    - changeSessionId()
    - 保存到 Session
 6. 前端触发 OIDC 授权 → GET /oauth2/authorize
-7. MfaAuthorizationEndpointFilter 检查：
+7. 授权端点 MFA gate 检查：
    - requireTotp=true ✓
    - completedFactors 包含 TOTP ✓
    - 放行，生成授权码
@@ -888,7 +888,7 @@ if (mode == NONE) {
    - requireTotp=false  ← 关键：即使已激活，NONE 模式也不要求
 3. CustomLoginSuccessHandler 判断：requireTotp=false → 直接进入业务页面
 4. 前端触发 OIDC 授权 → GET /oauth2/authorize
-5. MfaAuthorizationEndpointFilter 检查：
+5. 授权端点 MFA gate 检查：
    - requireTotp=false → 直接放行
 6. Token 生成 → amr=["password"]  ← 注意：不包含 "totp"
 ```
@@ -933,13 +933,13 @@ if (mode == NONE) {
 
 **可能原因**：
 1. 授权快照创建时，`completedFactors` 中不包含 `TOTP`
-2. `MfaAuthorizationEndpointFilter` 未正确拦截 `/oauth2/authorize`
+2. 授权端点 MFA gate 未正确拦截 `/oauth2/authorize`
 3. Jackson 反序列化问题，`completedFactors` 未正确恢复
 
 **解决方法**：
 1. 检查日志中 `[JwtTokenCustomizer]` 的输出，确认 `completedFactors` 的值
-2. 检查 `MfaAuthorizationEndpointFilter` 是否正确拦截
-3. 检查 `MultiFactorAuthenticationTokenJacksonDeserializer` 是否正确解析 `completedFactors`
+2. 检查授权端点 MFA gate 是否正确拦截
+3. 检查 `MultiFactorAuthenticationTokenJackson3Deserializer` 是否正确解析 `completedFactors`
 4. 清理旧的授权数据：`DELETE FROM oauth2_authorization;`
 
 **相关日志**：
@@ -1008,7 +1008,7 @@ if (mode == NONE) {
 **问题描述**：前端触发 OIDC 授权流程，但被重定向到 TOTP 页面。
 
 **可能原因**：
-1. `MfaAuthorizationEndpointFilter` 拦截了 `/oauth2/authorize`
+1. 授权端点 MFA gate 拦截了 `/oauth2/authorize`
 2. `requireTotp=true` 但 `completedFactors` 不包含 `TOTP`
 
 **解决方法**：
@@ -1313,7 +1313,7 @@ logging:
 **关键日志**：
 - `[MFA]` 前缀：MFA 决策相关日志
 - `[JwtTokenCustomizer]` 前缀：Token 生成相关日志
-- `[MultiFactorAuthenticationTokenJacksonDeserializer]` 前缀：反序列化相关日志
+- `[MultiFactorAuthenticationTokenJackson3Deserializer]` 前缀：反序列化相关日志
 
 #### 2. 接口验证
 
@@ -1363,7 +1363,7 @@ LIMIT 10;
 - 授权快照中的 `completedFactors` 不包含 `TOTP`
 
 **解决方法**：
-- 检查 `MfaAuthorizationEndpointFilter` 是否正确拦截
+- 检查授权端点 MFA gate 是否正确拦截
 - 检查日志中 `completedFactors` 的值
 - 确保在 TOTP 验证完成后再访问 `/oauth2/authorize`
 
@@ -1501,16 +1501,15 @@ org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest
 ```java
 @Bean
 @Primary
-public ObjectMapper webObjectMapper(Jackson2ObjectMapperBuilder builder) {
-    // 不包含 Security/OAuth2 模块，避免全局默认类型信息影响业务 DTO
-    return builder.build();
+public ObjectMapper webObjectMapper() {
+    // 仅服务 Spring MVC / Camunda REST，不承载授权持久化链
+    return com.fasterxml.jackson.databind.json.JsonMapper.builder().build();
 }
 ```
 
 **特点**：
 
-- ✅ 不注册 `SecurityJackson2Modules`，避免类型信息污染业务 DTO
-- ✅ 不注册 `OAuth2AuthorizationServerJackson2Module`，OAuth2 对象仅在授权服务中使用
+- ✅ 不注册授权持久化专用模块，避免类型信息污染业务 DTO
 - ✅ 通过 `@Primary` 标记为默认 ObjectMapper，Spring MVC 自动使用此 ObjectMapper 进行 HTTP 消息转换
 - ✅ 应用全局配置（时区、Long→String、时间格式等）
 
@@ -1520,32 +1519,30 @@ public ObjectMapper webObjectMapper(Jackson2ObjectMapperBuilder builder) {
 
 ```java
 @Bean("authorizationMapper")
-public ObjectMapper authorizationMapper(Jackson2ObjectMapperBuilder builder) {
-    ObjectMapper mapper = builder.build();
+public JsonMapper authorizationMapper() {
+    ClassLoader classLoader = getClass().getClassLoader();
+    BasicPolymorphicTypeValidator.Builder typeValidatorBuilder = BasicPolymorphicTypeValidator.builder()
+            .allowIfSubType(Long.class)
+            .allowIfSubType(SecurityUser.class)
+            .allowIfSubType(MultiFactorAuthenticationToken.class)
+            .allowIfSubType(CustomWebAuthenticationDetails.class);
 
-    // 1. 注册 Spring Security 模块
-    mapper.registerModules(SecurityJackson2Modules.getModules(getClass().getClassLoader()));
+    List<JacksonModule> modules = new ArrayList<>(
+            SecurityJacksonModules.getModules(classLoader, typeValidatorBuilder));
+    modules.add(createAuthorizationModule());
 
-    // 2. 注册 OAuth2 Authorization Server 模块
-    mapper.registerModule(new OAuth2AuthorizationServerJackson2Module());
-
-    // 3. 注册自定义认证对象序列化/反序列化
-    mapper.registerModule(createCustomModule());
-
-    // 4. 注册 Java 8 时间类型支持
-    mapper.registerModule(new JavaTimeModule());
-    mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-
-    return mapper;
+    return JsonMapper.builder()
+            .addModules(modules)
+            .build();
 }
 ```
 
-**必需模块**：
+**必需模块 / 配置**：
 
-- `SecurityJackson2Modules`：处理 `Authentication`、`GrantedAuthority` 等 Spring Security 对象
-- `OAuth2AuthorizationServerJackson2Module`：处理 `OAuth2AuthorizationRequest`、`OAuth2AuthorizationResponse` 等 OAuth2 对象
-- `JavaTimeModule`：处理 `Instant`、`LocalDateTime` 等 Java 8 时间类型
-- `createCustomModule()`：处理 `MultiFactorAuthenticationToken`、`CustomWebAuthenticationDetails` 等自定义对象
+- `SecurityJacksonModules`：处理 `Authentication`、`GrantedAuthority` 等 Spring Security 对象
+- `BasicPolymorphicTypeValidator`：显式放行 `Long`、`SecurityUser`、`MultiFactorAuthenticationToken`、`CustomWebAuthenticationDetails`
+- `createAuthorizationModule()`：处理 `MultiFactorAuthenticationToken`、`CustomWebAuthenticationDetails` 等自定义对象
+- 统一时区 / 集合兼容配置：保证授权快照 round-trip 稳定
 
 **使用方式**：
 
@@ -1583,7 +1580,7 @@ public OAuth2AuthorizationService oauth2AuthorizationService(
 
 - ✅ 已实现真正的两阶段 MFA 登录流程：密码登录 → TOTP challenge → 会话升级 → 登录成功
 - ✅ 支持多因素认证（PASSWORD + TOTP）
-- ✅ 支持 partial MFA token（`authenticated=false`）
+- ✅ 支持 challenge token（`authenticated=true`，缺少 `TOTP` factor 时继续 challenge）
 - ✅ 以 factor authority 作为主语义（`FACTOR_PASSWORD` / `FACTOR_TOTP`）
 - ✅ 支持会话升级（`promoteToFullyAuthenticated` / `tryPromoteToFullyAuthenticated`）
 - ✅ 已收敛 redirect 与 CSRF 边界
@@ -1593,9 +1590,9 @@ public OAuth2AuthorizationService oauth2AuthorizationService(
 
 1. 用户输入用户名和密码 → 验证密码
 2. `MultiAuthenticationProvider` 检测到用户配置了 PASSWORD + TOTP，且本次会话 `requireTotp=true`
-3. 密码成功后，返回 partial token：
-   - `authenticated=false`
-   - `FACTOR_PASSWORD`
+3. 密码成功后，返回 challenge token：
+   - `authenticated=true`
+   - `FACTOR_PASSWORD`（但尚未具备 `FACTOR_TOTP`）
 4. `CustomLoginSuccessHandler` 根据 factor authority + `requireTotp` 判断，跳转到 `/self/security/totp-verify`
 5. 用户输入 TOTP 码
 6. `SecurityController` 调用 `MultiFactorAuthenticationSessionManager` 升级会话
@@ -1624,18 +1621,18 @@ public OAuth2AuthorizationService oauth2AuthorizationService(
 ```java
 // MultiAuthenticationProvider.java
 private Authentication handleMultiFactorAuthentication(...) {
-    // 验证密码成功后，返回 partial token（authenticated=false）
+    // 验证密码成功后，返回 challenge token（authenticated=true，仍缺少 TOTP factor）
     if (completed.contains(MultiFactorAuthenticationToken.Factor.PASSWORD) &&
         remaining.stream().anyMatch(m -> FACTOR_TOTP.equalsIgnoreCase(m.getAuthenticationType()))) {
         UserDetails userDetails = userDetailsService.loadUserByUsername(user.getUsername());
-        MultiFactorAuthenticationToken partial = MultiFactorAuthenticationToken.partiallyAuthenticated(
+        MultiFactorAuthenticationToken challengeToken = new MultiFactorAuthenticationToken(
             user.getUsername(),
             null,
             MultiFactorAuthenticationToken.Provider.from(provider),
             completed,
             userDetails.getAuthorities()
         );
-        return partial;
+        return challengeToken;
     }
 }
 
@@ -2023,7 +2020,7 @@ Map<String, Object> claims = Map.of(
 
 | 类别 | 状态 | 说明 |
 | --- | --- | --- |
-| 登录 MFA 主链（密码→TOTP challenge→会话升级→OIDC） | ✅ 已实现 | 包含 partial token、授权端拦截、`amr` 写入。 |
+| 登录 MFA 主链（密码→TOTP challenge→会话升级→OIDC） | ✅ 已实现 | 包含 challenge token、授权端拦截、`amr` 写入。 |
 | `skipMfaRemind` 用户偏好 | ⚠️ 部分实现 | 已落库并生效（`MFA_REMIND`），但仍建议后续拆分为专用偏好模型。 |
 | 备份码 / 记住设备 / 管理员工具 / WebAuthn | ❌ 未实现 | 仍属于后续能力建设。 |
 | 认证审计（登录/TOTP） | ✅ 已实现 | 已有审计服务与查询链路。 |

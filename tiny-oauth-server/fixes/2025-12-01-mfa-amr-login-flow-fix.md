@@ -19,7 +19,7 @@
 
 - 触发点：Spring Authorization Server 将 `Authentication`（`MultiFactorAuthenticationToken`）序列化到 `oauth2_authorization` 表，再从 DB 反序列化。
 - 发现：
-  - 通过在 `MultiFactorAuthenticationTokenJacksonDeserializer` 与 `JwtTokenCustomizer` 中增加调试日志，发现 DB 中反序列化后的 `token.completedFactors` 只包含 `[PASSWORD]`。
+  - 通过在 `MultiFactorAuthenticationTokenJackson3Deserializer` 与 `JwtTokenCustomizer` 中增加调试日志，发现 DB 中反序列化后的 `token.completedFactors` 只包含 `[PASSWORD]`。
   - Jackson 对 `EnumSet` 的默认序列化结构为  
     `["java.util.Collections$UnmodifiableSet", ["PASSWORD", "TOTP"]]`，最初的自定义反序列化逻辑没有正确处理这种嵌套结构。
 - 结果：
@@ -66,7 +66,7 @@
     - `getCompletedFactors()`、`hasCompletedFactor(...)`；
     - `promoteToFullyAuthenticated(...)` 用于从 PASSWORD 升级到 PASSWORD+TOTP。
 
-- 文件：`MultiFactorAuthenticationTokenJacksonDeserializer.java`
+- 文件：`MultiFactorAuthenticationTokenJackson3Deserializer.java`
   - 增强对 `completedFactors` 字段的解析：
     - 既能处理 `["PASSWORD", "TOTP"]`；
     - 也能处理 `["java.util.Collections$UnmodifiableSet", ["PASSWORD", "TOTP"]]` 这种 Jackson + JDK 组合产生的结构。
@@ -79,8 +79,8 @@
 
 #### 步骤 2：在 `/oauth2/authorize` 之前强制执行 MFA 检查（思路 A 核心）
 
-- 新增过滤器：`MfaAuthorizationEndpointFilter`
-  - 挂载在 Authorization Server 的过滤器链中（`authorizationServerSecurityFilterChain`），位于 `AnonymousAuthenticationFilter` 之前，只拦截 `/oauth2/authorize`。
+- 新增授权端点 MFA gate：`AuthorizationEndpointMfaAuthorizationManager` + `AuthorizationEndpointMfaEntryPoint`
+  - 挂载在 Authorization Server 的授权规则与 missing-authority 入口点上，只作用于 `/oauth2/authorize`。
   - 基本流程：
     1. 获取 `SecurityContext` 当前认证对象：
        - 支持 `MultiFactorAuthenticationToken` 的“部分认证”（`isAuthenticated=false` 但 `completedFactors` 中已包含 PASSWORD）。
@@ -118,7 +118,7 @@
       `sessionManager.promoteToFullyAuthenticated(user, request, response);`
     - 然后重定向回 `redirect` 参数指向的原始 `/oauth2/authorize?...`。
 
-> 效果：当用户通过 TOTP 验证后，session 中的认证对象已经是「PASSWORD+TOTP」的完全认证，下一次访问 `/oauth2/authorize` 时，`MfaAuthorizationEndpointFilter` 会放行创建授权码/授权快照，后续 `/oauth2/token` 再生成 Token，`amr` 就会是 `["password","totp"]`。
+> 效果：当用户通过 TOTP 验证后，session 中的认证对象已经是「PASSWORD+TOTP」的完全认证，下一次访问 `/oauth2/authorize` 时，授权端点 MFA gate 会放行创建授权码/授权快照，后续 `/oauth2/token` 再生成 Token，`amr` 就会是 `["password","totp"]`。
 
 #### 步骤 4：前端路由层面避免二次触发 OIDC 授权
 
@@ -158,7 +158,7 @@
 1. 手动执行完整登录流程（`security.mfa.mode=OPTIONAL/REQUIRED`，用户已绑定并激活 TOTP）：
    - 表单登录 → TOTP 验证页 → 验证通过 → OIDC 回调 → 主页。
 2. 检查日志：
-   - `MultiFactorAuthenticationTokenJacksonDeserializer` 输出：`token.completedFactors=[PASSWORD, TOTP]`。
+   - `MultiFactorAuthenticationTokenJackson3Deserializer` 输出：`token.completedFactors=[PASSWORD, TOTP]`。
    - `JwtTokenCustomizer` 输出：`completedFactors=[PASSWORD, TOTP]`，`amr=["password","totp"]`。
 3. 解码新的 Access Token / ID Token：
    - `amr` 字段为：`["password","totp"]`，与当前会话实际完成的认证因子一致。
@@ -170,9 +170,7 @@
 - 原因本质上是**「授权快照在只完成密码时就被创建 + `completedFactors` 在 DB 往返中丢失 TOTP + 前端在 TOTP 页重复触发 OIDC 登录」**三者叠加。
 - 通过：
   1. 修复 `MultiFactorAuthenticationToken` 的序列化/反序列化；
-  2. 在 `/oauth2/authorize` 前强制执行 MFA 检查（`MfaAuthorizationEndpointFilter`）；
+  2. 在 `/oauth2/authorize` 前强制执行 MFA 检查（授权端点 MFA gate）；
   3. 在 TOTP 成功后通过 `MultiFactorAuthenticationSessionManager` 升级当前认证，并写回 session；
   4. 前端将 TOTP 绑定/验证页标记为 `requiresAuth: false`，避免重复 OIDC 授权；
 - 最终实现了思路 A 的目标：**只有在本次会话完成所有必需的 MFA 因子之后，才创建授权码和 Token，Token 中的 `amr` 与实际认证上下文完全一致。**
-
-

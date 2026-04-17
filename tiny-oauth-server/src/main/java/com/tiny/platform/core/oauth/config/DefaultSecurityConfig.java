@@ -88,7 +88,7 @@ public class DefaultSecurityConfig {
                                 "/css/**",
                                 "/js/**"
                         ).permitAll()
-                        // challenge 端点允许 partial MFA token 继续完成绑定/验证流程。
+                        // challenge 端点要求已建立登录会话；是否仍需 TOTP 由缺少 TOTP factor 决定。
                         .requestMatchers(
                                 "/self/security/status",
                                 "/self/security/totp-bind",
@@ -247,8 +247,7 @@ public class DefaultSecurityConfig {
     }
 
     public static boolean hasChallengeFlowAccess(Authentication authentication) {
-        return authentication != null
-                && (authentication.isAuthenticated() || AuthenticationFactorAuthorities.hasAnyFactor(authentication));
+        return authentication != null && authentication.isAuthenticated();
     }
 
     public static boolean hasSensitiveSecurityAccess(Authentication authentication) {

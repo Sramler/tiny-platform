@@ -35,7 +35,8 @@ import java.util.TimeZone;
  * mapper：</p>
  *
  * <ul>
- *   <li>{@code webObjectMapper}：继续服务 Spring MVC / Camunda REST 的 Jackson 2</li>
+ *   <li>{@code webObjectMapper}：继续服务 Spring MVC / Camunda REST 的 Jackson 2；
+ *       不再承载 MFA token 的自定义读写链</li>
  *   <li>{@code authorizationMapper}：专供 OAuth2 授权持久化使用的 Jackson 3 {@link JsonMapper}</li>
  * </ul>
  */
