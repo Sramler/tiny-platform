@@ -1,6 +1,6 @@
 # Tiny OAuth Server Spring Boot 4 官方升级清单
 
-最后更新：2026-04-16
+最后更新：2026-04-17
 
 状态：Working Baseline
 
@@ -24,14 +24,15 @@
 
 当前 `tiny-oauth-server` 已满足以下基线：
 
-- 父工程 Spring Boot 版本：`4.0.0`
+- 父工程 Spring Boot 版本：`4.1.0-SNAPSHOT`
 - JDK 基线：`21`
 - Servlet 基线：`6.1`
 - `tiny-oauth-server` 已完成：
   - Boot 4 启动
   - Camunda 7 fork 集成
   - Camunda 最小 smoke
-  - 全量测试通过：`Tests run: 1166, Failures: 0, Errors: 0, Skipped: 2`
+  - 多轮全量 / 定向测试收口
+  - `2026-04-17` 补充完成 `tiny-oauth-server`、`tiny-web`、`tiny-oauth-client`、`tiny-oauth-resource` 在 `4.1.0-SNAPSHOT` 下的 `compile` 验证
 
 因此，当前升级策略不应再是“大面积继续扫荡 Boot 3 组件”，而应是：
 

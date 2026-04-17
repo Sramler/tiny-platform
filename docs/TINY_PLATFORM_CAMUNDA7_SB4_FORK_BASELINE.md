@@ -1,8 +1,13 @@
 # Tiny Platform Camunda 7 / Spring Boot 4 Fork 基线冻结
 
-最后更新：2026-04-16
+最后更新：2026-04-17
 
 状态：Frozen for CARD-C7-01
+
+说明：
+
+- 本文冻结的是首轮 fork 建卡时的版本基线与任务口径
+- 当前主线运行态版本请以根 `pom.xml` 为准；截至 `2026-04-17`，主线已演进到 Spring Boot `4.1.0-SNAPSHOT`
 
 适用仓库：
 

@@ -21,8 +21,7 @@
     <maven.compiler.source>21</maven.compiler.source>
     <maven.compiler.target>21</maven.compiler.target>
     <maven.compiler.release>21</maven.compiler.release>
-    <spring-boot.version>4.0.0</spring-boot.version>
-    <spring-cloud.version>2025.0.2</spring-cloud.version>
+    <spring-boot.version>4.1.0-SNAPSHOT</spring-boot.version>
     <fesod.version>2.0.1-incubating</fesod.version>
   </properties>
   <dependencyManagement>
@@ -32,15 +31,6 @@
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-dependencies</artifactId>
         <version>${spring-boot.version}</version>
-        <type>pom</type>
-        <scope>import</scope>
-      </dependency>
-
-      <!-- Spring Cloud BOM -->
-      <dependency>
-        <groupId>org.springframework.cloud</groupId>
-        <artifactId>spring-cloud-dependencies</artifactId>
-        <version>${spring-cloud.version}</version>
         <type>pom</type>
         <scope>import</scope>
       </dependency>
@@ -131,7 +121,7 @@
 
       <!-- Mockito 测试框架 -->
       <!-- 注意：mockito-core 和 mockito-junit-jupiter 已包含在 spring-boot-starter-test 中 -->
-      <!-- 版本与 Spring Boot 4.0.0 BOM 管理的版本保持一致（5.17.0） -->
+      <!-- 版本与当前 Spring Boot BOM 管理版本保持一致 -->
       <!-- 如果子模块需要显式添加 Mockito 依赖，使用以下版本 -->
       <!-- 注意：mockito-inline 仅在需要 mock final 类或静态方法时才需要 -->
       <!-- 如果不需要这些功能，可以移除 mockito-inline 依赖 -->
