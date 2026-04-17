@@ -71,7 +71,7 @@ public class JacksonConfig {
         return mapper;
     }
 
-    @Bean("authorizationMapper")
+    @Bean(name = "authorizationMapper", defaultCandidate = false)
     public JsonMapper authorizationMapper() {
         ClassLoader classLoader = getClass().getClassLoader();
 
