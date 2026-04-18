@@ -1,0 +1,89 @@
+databaseChangeLog:
+  - changeSet:
+      id: 166-align-platform-role-options-with-approval-submit
+      author: codex
+      comment: /platform/roles/options 补齐 platform:role:approval:submit OR 组，避免审批提交页出现隐藏权限依赖
+      preConditions:
+        onFail: MARK_RAN
+        onError: HALT
+        and:
+          - tableExists:
+              tableName: api_endpoint
+          - tableExists:
+              tableName: api_endpoint_permission_requirement
+          - tableExists:
+              tableName: permission
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              DELETE requirement
+              FROM `api_endpoint_permission_requirement` requirement
+              JOIN `api_endpoint` endpoint_entity
+                ON endpoint_entity.`id` = requirement.`api_endpoint_id`
+              WHERE endpoint_entity.`tenant_id` IS NULL
+                AND endpoint_entity.`uri` = '/platform/roles/options'
+                AND endpoint_entity.`method` = 'GET';
+
+              INSERT INTO `api_endpoint_permission_requirement` (
+                `tenant_id`,
+                `api_endpoint_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `updated_at`
+              )
+              SELECT
+                endpoint_entity.`tenant_id`,
+                endpoint_entity.`id`,
+                0,
+                1,
+                endpoint_entity.`required_permission_id`,
+                0,
+                NOW(),
+                NOW()
+              FROM `api_endpoint` endpoint_entity
+              WHERE endpoint_entity.`tenant_id` IS NULL
+                AND endpoint_entity.`uri` = '/platform/roles/options'
+                AND endpoint_entity.`method` = 'GET'
+                AND endpoint_entity.`required_permission_id` IS NOT NULL;
+
+              INSERT INTO `api_endpoint_permission_requirement` (
+                `tenant_id`,
+                `api_endpoint_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `updated_at`
+              )
+              SELECT
+                endpoint_entity.`tenant_id`,
+                endpoint_entity.`id`,
+                permission_map.`requirement_group`,
+                1,
+                permission_entity.`id`,
+                0,
+                NOW(),
+                NOW()
+              FROM `api_endpoint` endpoint_entity
+              JOIN (
+                SELECT 1 AS `requirement_group`, 'platform:user:edit' AS `permission_code`
+                UNION ALL
+                SELECT 2 AS `requirement_group`, 'system:role:constraint:view' AS `permission_code`
+                UNION ALL
+                SELECT 3 AS `requirement_group`, 'system:role:constraint:edit' AS `permission_code`
+                UNION ALL
+                SELECT 4 AS `requirement_group`, 'platform:role:approval:submit' AS `permission_code`
+              ) permission_map
+              JOIN `permission` permission_entity
+                ON permission_entity.`tenant_id` IS NULL
+               AND permission_entity.`permission_code` = permission_map.`permission_code`
+              WHERE endpoint_entity.`tenant_id` IS NULL
+                AND endpoint_entity.`uri` = '/platform/roles/options'
+                AND endpoint_entity.`method` = 'GET';
