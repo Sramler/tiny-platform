@@ -21,6 +21,13 @@ public interface RoleMutexRepository extends JpaRepository<RoleMutex, Long> {
     @Query("""
         select rm
         from RoleMutex rm
+        where rm.tenantId is null
+        """)
+    List<RoleMutex> findByTenantIdIsNull();
+
+    @Query("""
+        select rm
+        from RoleMutex rm
         where rm.tenantId = :tenantId
           and (rm.leftRoleId in :roleIds or rm.rightRoleId in :roleIds)
         """)
@@ -28,6 +35,14 @@ public interface RoleMutexRepository extends JpaRepository<RoleMutex, Long> {
         @Param("tenantId") Long tenantId,
         @Param("roleIds") Collection<Long> roleIds
     );
+
+    @Query("""
+        select rm
+        from RoleMutex rm
+        where rm.tenantId is null
+          and (rm.leftRoleId in :roleIds or rm.rightRoleId in :roleIds)
+        """)
+    List<RoleMutex> findByTenantIdIsNullAndRoleIds(@Param("roleIds") Collection<Long> roleIds);
 
     @Modifying
     @Transactional
@@ -42,5 +57,17 @@ public interface RoleMutexRepository extends JpaRepository<RoleMutex, Long> {
         @Param("leftRoleId") Long leftRoleId,
         @Param("rightRoleId") Long rightRoleId
     );
-}
 
+    @Modifying
+    @Transactional
+    @Query("""
+        delete from RoleMutex rm
+        where rm.tenantId is null
+          and rm.leftRoleId = :leftRoleId
+          and rm.rightRoleId = :rightRoleId
+        """)
+    void deleteByTenantIdIsNullAndLeftRoleIdAndRightRoleId(
+        @Param("leftRoleId") Long leftRoleId,
+        @Param("rightRoleId") Long rightRoleId
+    );
+}

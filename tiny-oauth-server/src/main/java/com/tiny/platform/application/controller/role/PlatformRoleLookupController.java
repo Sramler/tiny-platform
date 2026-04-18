@@ -25,7 +25,6 @@ public class PlatformRoleLookupController {
     @PreAuthorize(
         "@platformUserManagementAccessGuard.canReadRoleCatalog(authentication)"
             + " || @roleManagementAccessGuard.canReadRoleCatalog(authentication)"
-            + " || @platformRoleApprovalAccessGuard.canReadRoleCatalog(authentication)"
     )
     public ResponseEntity<List<PlatformRoleOptionDto>> getOptions(
         @RequestParam(value = "keyword", required = false) String keyword,
