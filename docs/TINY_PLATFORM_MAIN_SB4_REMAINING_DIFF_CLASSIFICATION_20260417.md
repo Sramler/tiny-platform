@@ -210,3 +210,6 @@
   - `建议回补 main`：`1`
   - `建议继续留在 sb4`：`4`
   - `建议随 tiny-web 冻结退出`：`5`
+# 历史说明
+
+> 本文是 2026-04-17 的分支差异盘点快照。当前运行态分支治理已切换为 **`sb4` 主干 / `sb3` 维护**；若本文中的旧表述与当前口径冲突，以 [docs/TINY_PLATFORM_SB4_SB3_BRANCH_STRATEGY.md](docs/TINY_PLATFORM_SB4_SB3_BRANCH_STRATEGY.md) 为准。

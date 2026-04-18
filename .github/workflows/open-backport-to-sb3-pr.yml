@@ -1,38 +1,35 @@
-name: Open main to sb4 sync PR
+name: Open prepared backport PR to sb3
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       source_branch:
-        description: Source branch to sync from
-        required: false
-        default: main
+        description: Prepared backport branch created from sb3 and cherry-picked from sb4
+        required: true
       target_branch:
-        description: Target branch to sync into
+        description: Target maintenance branch
         required: false
-        default: sb4
+        default: sb3
 
 permissions:
   contents: read
   pull-requests: write
 
 env:
-  SOURCE_BRANCH: ${{ github.event.inputs.source_branch || 'main' }}
-  TARGET_BRANCH: ${{ github.event.inputs.target_branch || vars.SB4_BRANCH_NAME || 'sb4' }}
+  SOURCE_BRANCH: ${{ github.event.inputs.source_branch }}
+  TARGET_BRANCH: ${{ github.event.inputs.target_branch || 'sb3' }}
 
 concurrency:
-  group: sync-main-to-sb4-${{ github.event.inputs.target_branch || vars.SB4_BRANCH_NAME || 'sb4' }}
+  group: open-backport-to-sb3-${{ github.event.inputs.source_branch }}
   cancel-in-progress: false
 
 jobs:
-  open-sync-pr:
+  open-backport-pr:
     runs-on: ubuntu-latest
 
     steps:
       - name: Check target branch
-        id: branch
+        id: target
         uses: actions/github-script@v8
         env:
           TARGET_BRANCH: ${{ env.TARGET_BRANCH }}
@@ -49,26 +46,70 @@ jobs:
             } catch (error) {
               if (error.status === 404) {
                 core.setOutput("exists", "false");
-                core.warning(`Target branch ${branch} does not exist. Skip sync PR creation.`);
+                core.warning(`Target branch ${branch} does not exist. Skip PR creation.`);
                 return;
               }
               throw error;
             }
 
-      - name: Summarize missing target branch
-        if: steps.branch.outputs.exists != 'true'
+      - name: Check source branch
+        id: source
+        uses: actions/github-script@v8
+        env:
+          SOURCE_BRANCH: ${{ env.SOURCE_BRANCH }}
+          TARGET_BRANCH: ${{ env.TARGET_BRANCH }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const source = process.env.SOURCE_BRANCH;
+            const target = process.env.TARGET_BRANCH;
+            const forbidden = new Set(["sb4", "main", "master"]);
+
+            if (!source) {
+              core.setOutput("valid", "false");
+              core.warning("Source branch is empty.");
+              return;
+            }
+            if (source === target) {
+              core.setOutput("valid", "false");
+              core.warning("Source branch must differ from target branch.");
+              return;
+            }
+            if (forbidden.has(source)) {
+              core.setOutput("valid", "false");
+              core.warning(`Source branch ${source} is forbidden. Prepare a dedicated sb3 backport branch first.`);
+              return;
+            }
+
+            try {
+              await github.rest.repos.getBranch({ owner, repo, branch: source });
+              core.setOutput("valid", "true");
+              core.info(`Source branch ${source} exists.`);
+            } catch (error) {
+              if (error.status === 404) {
+                core.setOutput("valid", "false");
+                core.warning(`Source branch ${source} does not exist.`);
+                return;
+              }
+              throw error;
+            }
+
+      - name: Summarize invalid setup
+        if: steps.target.outputs.exists != 'true' || steps.source.outputs.valid != 'true'
         run: |
           {
-            echo "## main -> sb4 sync PR"
+            echo "## sb3 backport PR"
             echo
             echo "- Source branch: \`${SOURCE_BRANCH}\`"
             echo "- Target branch: \`${TARGET_BRANCH}\`"
-            echo "- Result: skipped because target branch does not exist"
+            echo "- Result: skipped because source or target branch is invalid"
+            echo "- Rule: only a prepared sb3 backport branch may be used as source; do not open whole-line \`sb4 -> sb3\` sync PRs."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check diff and existing PR
         id: status
-        if: steps.branch.outputs.exists == 'true'
+        if: steps.target.outputs.exists == 'true' && steps.source.outputs.valid == 'true'
         uses: actions/github-script@v8
         env:
           SOURCE_BRANCH: ${{ env.SOURCE_BRANCH }}
@@ -104,13 +145,13 @@ jobs:
             core.setOutput("open_pr_url", pulls[0]?.html_url || "");
 
             core.info(`Compare status=${comparison.status}, ahead_by=${comparison.ahead_by}, behind_by=${comparison.behind_by}`);
-            core.info(`Open sync PR exists=${pulls.length > 0}`);
+            core.info(`Open backport PR exists=${pulls.length > 0}`);
 
       - name: Summarize no-op state
-        if: steps.branch.outputs.exists == 'true' && (steps.status.outputs.has_open_pr == 'true' || steps.status.outputs.ahead_by == '0')
+        if: steps.target.outputs.exists == 'true' && steps.source.outputs.valid == 'true' && (steps.status.outputs.has_open_pr == 'true' || steps.status.outputs.ahead_by == '0')
         run: |
           {
-            echo "## main -> sb4 sync PR"
+            echo "## sb3 backport PR"
             echo
             echo "- Source branch: \`${SOURCE_BRANCH}\`"
             echo "- Target branch: \`${TARGET_BRANCH}\`"
@@ -118,16 +159,16 @@ jobs:
             echo "- Ahead by: \`${{ steps.status.outputs.ahead_by }}\`"
             echo "- Behind by: \`${{ steps.status.outputs.behind_by }}\`"
             if [ "${{ steps.status.outputs.has_open_pr }}" = "true" ]; then
-              echo "- Result: existing open sync PR reused"
+              echo "- Result: existing open backport PR reused"
               echo "- Open PR: ${{ steps.status.outputs.open_pr_url }}"
             else
               echo "- Result: no new PR required"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Create sync PR
+      - name: Create backport PR
         id: create
-        if: steps.branch.outputs.exists == 'true' && steps.status.outputs.has_open_pr != 'true' && steps.status.outputs.ahead_by != '0'
+        if: steps.target.outputs.exists == 'true' && steps.source.outputs.valid == 'true' && steps.status.outputs.has_open_pr != 'true' && steps.status.outputs.ahead_by != '0'
         uses: actions/github-script@v8
         env:
           SOURCE_BRANCH: ${{ env.SOURCE_BRANCH }}
@@ -139,61 +180,44 @@ jobs:
             const source = process.env.SOURCE_BRANCH;
             const target = process.env.TARGET_BRANCH;
 
-            const title = `sync: ${source} -> ${target}`;
+            const title = `backport: ${source} -> ${target}`;
             const body = [
-              "> 自动创建的分支同步 PR，用于把 `main` 已合入的业务改动持续同步到 `sb4`。",
+              "> 手工触发的维护回补 PR，用于把 **已经准备好的 sb3 backport 分支** 合入 `sb3`。",
+              "> 本 workflow 不负责从 `sb4` 自动挑提交，也不允许整线 `sb4 -> sb3` 同步。",
               "> 参考：",
-              "> - docs/TINY_PLATFORM_MAIN_SB4_BRANCH_STRATEGY.md",
+              "> - docs/TINY_PLATFORM_SB4_SB3_BRANCH_STRATEGY.md",
               "",
               "## 变更内容",
               "",
-              `- 自动同步 \`${source}\` 到 \`${target}\`，承接最近已合入主线的业务改动。`,
+              `- 将准备好的 backport 分支 \`${source}\` 合入维护线 \`${target}\`。`,
               "",
               "## 变更原因",
               "",
-              `- 保持 \`${target}\` 持续继承 \`${source}\` 的业务修复与功能迭代，避免长期分叉漂移。`,
+              "- 维护线 `sb3` 只接选择性回补的稳定修复，不做周期性整线同步。",
               "",
               "## 分支归属 / 同步要求",
               "",
-              "- [x] 业务改动，先合 `main`，再同步到 `sb4`",
+              "- [ ] `sb4` 主干业务改动",
               "- [ ] `sb4-only` 兼容改动，仅进入 `sb4`",
-              "- [ ] 在 `sb4` 发现的共享修复，需要回补 `main`",
+              "- [x] 从 `sb4` 选择性回补到 `sb3` 的维护修复",
               `- 来源分支：\`${source}\``,
               `- 目标分支：\`${target}\``,
-              "- 同步 / 回补计划：本 PR 自动创建；如存在冲突，由最近一次主线改动负责人处理并合并。",
-              "- 建议标签：`sync-to-sb4`",
-              "",
-              "## 影响范围",
-              "",
-              "- [x] 发布 / 部署行为",
-              "",
-              "## 风险与回滚",
-              "",
-              "- 风险：`sb4` 可能与 `main` 已出现集成冲突，需要在目标分支重新验证。",
-              "- 回滚：关闭本同步 PR，待冲突收口后重新触发同步。",
-              "",
-              "## 测试层级",
-              "",
-              "- [x] 组件测试",
+              "- 要求：请在 PR 中补充来源 `sb4` 提交 SHA、cherry-pick 范围和验证结果。",
+              "- 建议标签：`backport-to-sb3`",
               "",
               "## 验证方式",
               "",
               "### 自动化验证",
               "",
               "```bash",
-              "自动创建的同步 PR；以 `main` 已通过的源 PR 校验 + `sb4` 目标分支 CI 为准。",
+              "请填写在 sb3 目标语义下重新执行过的验证命令；不要直接复用 sb4 的通过结果。",
               "```",
               "",
-              "### 手动验证",
+              "### 手动检查",
               "",
-              "1. 确认 PR 只承担分支同步，不在此 PR 内混入新的业务提交。",
-              "2. 若存在冲突，在 `sb4` 收口后重新跑目标分支 CI。",
-              "",
-              "## 测试与审查检查清单",
-              "",
-              "- [x] PR 描述已覆盖变更、原因、影响、风险、回滚、验证",
-              "- [x] 已说明本 PR 为 `main -> sb4` 分支同步用途",
-              "- [ ] 如存在冲突，已在 `sb4` 完成收口并重新验证",
+              "1. 确认 source 是从 `sb3` 拉出的 backport 分支，而不是整条 `sb4`。",
+              "2. 确认 PR 已记录来源 `sb4` 提交 SHA。",
+              "3. 确认 `sb3` 目标分支验证已重新执行。",
             ].join("\n");
 
             const { data: pr } = await github.rest.pulls.create({
@@ -214,7 +238,7 @@ jobs:
         if: steps.create.outputs.url != ''
         run: |
           {
-            echo "## main -> sb4 sync PR"
+            echo "## sb3 backport PR"
             echo
             echo "- Source branch: \`${SOURCE_BRANCH}\`"
             echo "- Target branch: \`${TARGET_BRANCH}\`"
