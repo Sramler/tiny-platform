@@ -1,11 +1,23 @@
 <template>
   <div class="content-container">
     <div ref="constraintPageRef" class="content-card platform-page-shell">
-      <div v-if="!canView" class="platform-guard-card">
-        <div class="platform-guard-kicker">Permission Required</div>
-        <h3>RBAC3 约束管理需要额外授权</h3>
+      <div v-if="!isPlatformScope" class="platform-guard-card">
+        <div class="platform-guard-kicker">Platform Scope Required</div>
+        <h3>当前页面只支持 PLATFORM 作用域</h3>
         <p>
-          当前页面属于后台配置面。只有具备 <code>system:role:constraint:view</code> 或管理员权限的用户，才能查看角色约束规则。
+          <code>/platform/role-constraints</code> 承载平台 RBAC3 约束控制面。当前会话不在
+          <code>PLATFORM</code> 作用域，因此已阻止页面继续加载。
+        </p>
+      </div>
+
+      <div v-else-if="!canAccessPage" class="platform-guard-card">
+        <div class="platform-guard-kicker">Permission Required</div>
+        <h3>平台 RBAC3 需要额外授权</h3>
+        <p>
+          本页仅平台作用域可用，且至少需要
+          <code>system:role:constraint:view</code>、
+          <code>system:role:constraint:edit</code>、
+          <code>system:role:constraint:violation:view</code> 之一。
         </p>
       </div>
 
@@ -16,7 +28,7 @@
         destroy-inactive-tab-pane
         @change="handleTabChange"
       >
-        <a-tab-pane key="hierarchy" tab="角色继承">
+        <a-tab-pane v-if="canAccessConstraintTabs" key="hierarchy" tab="角色继承">
           <div class="tab-workspace">
             <div class="form-container">
               <a-form layout="inline" :model="hierarchyQuery">
@@ -57,17 +69,17 @@
                   :scroll="{ x: 'max-content', y: tableBodyHeight }"
                 >
                   <template #bodyCell="{ column, record }">
-                    <template v-if="column.dataIndex === 'parentRoleName'">
-                      {{ formatRoleName(record.parentRoleId) }}
-                    </template>
-                    <template v-else-if="column.dataIndex === 'childRoleName'">
-                      {{ formatRoleName(record.childRoleId) }}
-                    </template>
-                    <template v-else-if="column.dataIndex === 'relationDescription'">
-                      {{ formatHierarchyDescription(record) }}
-                    </template>
+                    <template v-if="column.dataIndex === 'parentRoleName'">{{ formatRoleName(record.parentRoleId) }}</template>
+                    <template v-else-if="column.dataIndex === 'childRoleName'">{{ formatRoleName(record.childRoleId) }}</template>
+                    <template v-else-if="column.dataIndex === 'relationDescription'">{{ formatHierarchyDescription(record) }}</template>
                     <template v-else-if="column.dataIndex === 'action'">
-                      <a-button v-if="canEditConstraint" type="link" size="small" danger @click="confirmDelete('hierarchy', record)">
+                      <a-button
+                        v-if="canEditConstraint"
+                        type="link"
+                        size="small"
+                        danger
+                        @click="confirmDelete('hierarchy', record)"
+                      >
                         <template #icon><DeleteOutlined /></template>
                         删除
                       </a-button>
@@ -93,12 +105,12 @@
           </div>
         </a-tab-pane>
 
-        <a-tab-pane key="mutex" tab="互斥约束">
+        <a-tab-pane v-if="canAccessConstraintTabs" key="mutex" tab="互斥约束">
           <div class="tab-workspace">
             <div class="form-container">
               <a-form layout="inline" :model="mutexQuery">
                 <a-form-item label="角色">
-                  <a-input v-model:value="mutexQuery.keyword" placeholder="角色A ID / 角色B ID" />
+                  <a-input v-model:value="mutexQuery.keyword" placeholder="角色 A / 角色 B" />
                 </a-form-item>
                 <a-form-item>
                   <a-button type="primary" @click="handleMutexSearch">搜索</a-button>
@@ -134,8 +146,16 @@
                   :scroll="{ x: 'max-content', y: tableBodyHeight }"
                 >
                   <template #bodyCell="{ column, record }">
-                    <template v-if="column.dataIndex === 'action'">
-                      <a-button v-if="canEditConstraint" type="link" size="small" danger @click="confirmDelete('mutex', record)">
+                    <template v-if="column.dataIndex === 'leftRoleId'">{{ formatRoleCell(record.leftRoleId) }}</template>
+                    <template v-else-if="column.dataIndex === 'rightRoleId'">{{ formatRoleCell(record.rightRoleId) }}</template>
+                    <template v-else-if="column.dataIndex === 'action'">
+                      <a-button
+                        v-if="canEditConstraint"
+                        type="link"
+                        size="small"
+                        danger
+                        @click="confirmDelete('mutex', record)"
+                      >
                         <template #icon><DeleteOutlined /></template>
                         删除
                       </a-button>
@@ -161,12 +181,12 @@
           </div>
         </a-tab-pane>
 
-        <a-tab-pane key="prerequisite" tab="先决条件">
+        <a-tab-pane v-if="canAccessConstraintTabs" key="prerequisite" tab="先决条件">
           <div class="tab-workspace">
             <div class="form-container">
               <a-form layout="inline" :model="prerequisiteQuery">
                 <a-form-item label="角色">
-                  <a-input v-model:value="prerequisiteQuery.keyword" placeholder="目标角色ID / 前置角色ID" />
+                  <a-input v-model:value="prerequisiteQuery.keyword" placeholder="目标角色 / 前置角色" />
                 </a-form-item>
                 <a-form-item>
                   <a-button type="primary" @click="handlePrerequisiteSearch">搜索</a-button>
@@ -202,8 +222,16 @@
                   :scroll="{ x: 'max-content', y: tableBodyHeight }"
                 >
                   <template #bodyCell="{ column, record }">
-                    <template v-if="column.dataIndex === 'action'">
-                      <a-button v-if="canEditConstraint" type="link" size="small" danger @click="confirmDelete('prerequisite', record)">
+                    <template v-if="column.dataIndex === 'roleId'">{{ formatRoleCell(record.roleId) }}</template>
+                    <template v-else-if="column.dataIndex === 'requiredRoleId'">{{ formatRoleCell(record.requiredRoleId) }}</template>
+                    <template v-else-if="column.dataIndex === 'action'">
+                      <a-button
+                        v-if="canEditConstraint"
+                        type="link"
+                        size="small"
+                        danger
+                        @click="confirmDelete('prerequisite', record)"
+                      >
                         <template #icon><DeleteOutlined /></template>
                         删除
                       </a-button>
@@ -229,12 +257,12 @@
           </div>
         </a-tab-pane>
 
-        <a-tab-pane key="cardinality" tab="基数限制">
+        <a-tab-pane v-if="canAccessConstraintTabs" key="cardinality" tab="基数限制">
           <div class="tab-workspace">
             <div class="form-container">
               <a-form layout="inline" :model="cardinalityQuery">
                 <a-form-item label="角色">
-                  <a-input v-model:value="cardinalityQuery.keyword" placeholder="角色ID / 作用域类型" />
+                  <a-input v-model:value="cardinalityQuery.keyword" placeholder="角色 / 作用域类型" />
                 </a-form-item>
                 <a-form-item label="作用域">
                   <a-select v-model:value="cardinalityQuery.scopeType" allow-clear placeholder="全部" style="width: 140px">
@@ -277,11 +305,18 @@
                   :scroll="{ x: 'max-content', y: tableBodyHeight }"
                 >
                   <template #bodyCell="{ column, record }">
-                    <template v-if="column.dataIndex === 'scopeType'">
+                    <template v-if="column.dataIndex === 'roleId'">{{ formatRoleCell(record.roleId) }}</template>
+                    <template v-else-if="column.dataIndex === 'scopeType'">
                       <a-tag color="blue">{{ record.scopeType }}</a-tag>
                     </template>
                     <template v-else-if="column.dataIndex === 'action'">
-                      <a-button v-if="canEditConstraint" type="link" size="small" danger @click="confirmDelete('cardinality', record)">
+                      <a-button
+                        v-if="canEditConstraint"
+                        type="link"
+                        size="small"
+                        danger
+                        @click="confirmDelete('cardinality', record)"
+                      >
                         <template #icon><DeleteOutlined /></template>
                         删除
                       </a-button>
@@ -374,47 +409,97 @@
       </a-tabs>
     </div>
 
-    <!-- Hierarchy Modal -->
-    <a-modal v-model:open="hierarchyModalVisible" title="新建角色继承" @ok="submitHierarchy" :confirm-loading="submitting">
+    <a-modal v-model:open="hierarchyModalVisible" title="新建角色继承（平台）" @ok="submitHierarchy" :confirm-loading="submitting">
       <a-form layout="vertical">
-        <a-form-item label="父角色ID" required>
-          <a-input-number v-model:value="hierarchyForm.parentRoleId" :min="1" style="width: 100%" placeholder="请输入父角色ID" />
+        <a-form-item label="父角色" required>
+          <a-select
+            v-model:value="hierarchyForm.parentRoleId"
+            show-search
+            :filter-option="filterRoleOption"
+            :options="roleSelectOptions"
+            placeholder="选择父角色"
+            allow-clear
+          />
         </a-form-item>
-        <a-form-item label="子角色ID" required>
-          <a-input-number v-model:value="hierarchyForm.childRoleId" :min="1" style="width: 100%" placeholder="请输入子角色ID" />
+        <a-form-item label="子角色" required>
+          <a-select
+            v-model:value="hierarchyForm.childRoleId"
+            show-search
+            :filter-option="filterRoleOption"
+            :options="roleSelectOptions"
+            placeholder="选择子角色"
+            allow-clear
+          />
         </a-form-item>
       </a-form>
     </a-modal>
 
-    <!-- Mutex Modal -->
-    <a-modal v-model:open="mutexModalVisible" title="新建互斥约束" @ok="submitMutex" :confirm-loading="submitting">
+    <a-modal v-model:open="mutexModalVisible" title="新建互斥约束（平台）" @ok="submitMutex" :confirm-loading="submitting">
       <a-form layout="vertical">
-        <a-form-item label="角色A ID" required>
-          <a-input-number v-model:value="mutexForm.roleIdA" :min="1" style="width: 100%" placeholder="请输入角色A ID" />
+        <a-form-item label="角色 A" required>
+          <a-select
+            v-model:value="mutexForm.roleIdA"
+            show-search
+            :filter-option="filterRoleOption"
+            :options="roleSelectOptions"
+            placeholder="选择角色"
+            allow-clear
+          />
         </a-form-item>
-        <a-form-item label="角色B ID" required>
-          <a-input-number v-model:value="mutexForm.roleIdB" :min="1" style="width: 100%" placeholder="请输入角色B ID" />
+        <a-form-item label="角色 B" required>
+          <a-select
+            v-model:value="mutexForm.roleIdB"
+            show-search
+            :filter-option="filterRoleOption"
+            :options="roleSelectOptions"
+            placeholder="选择角色"
+            allow-clear
+          />
         </a-form-item>
       </a-form>
     </a-modal>
 
-    <!-- Prerequisite Modal -->
-    <a-modal v-model:open="prerequisiteModalVisible" title="新建先决条件" @ok="submitPrerequisite" :confirm-loading="submitting">
+    <a-modal
+      v-model:open="prerequisiteModalVisible"
+      title="新建先决条件（平台）"
+      @ok="submitPrerequisite"
+      :confirm-loading="submitting"
+    >
       <a-form layout="vertical">
-        <a-form-item label="角色ID" required>
-          <a-input-number v-model:value="prerequisiteForm.roleId" :min="1" style="width: 100%" placeholder="请输入角色ID" />
+        <a-form-item label="目标角色" required>
+          <a-select
+            v-model:value="prerequisiteForm.roleId"
+            show-search
+            :filter-option="filterRoleOption"
+            :options="roleSelectOptions"
+            placeholder="选择角色"
+            allow-clear
+          />
         </a-form-item>
-        <a-form-item label="前置角色ID" required>
-          <a-input-number v-model:value="prerequisiteForm.requiredRoleId" :min="1" style="width: 100%" placeholder="请输入前置角色ID" />
+        <a-form-item label="前置角色" required>
+          <a-select
+            v-model:value="prerequisiteForm.requiredRoleId"
+            show-search
+            :filter-option="filterRoleOption"
+            :options="roleSelectOptions"
+            placeholder="选择前置角色"
+            allow-clear
+          />
         </a-form-item>
       </a-form>
     </a-modal>
 
-    <!-- Cardinality Modal -->
-    <a-modal v-model:open="cardinalityModalVisible" title="新建基数限制" @ok="submitCardinality" :confirm-loading="submitting">
+    <a-modal v-model:open="cardinalityModalVisible" title="新建基数限制（平台）" @ok="submitCardinality" :confirm-loading="submitting">
       <a-form layout="vertical">
-        <a-form-item label="角色ID" required>
-          <a-input-number v-model:value="cardinalityForm.roleId" :min="1" style="width: 100%" placeholder="请输入角色ID" />
+        <a-form-item label="角色" required>
+          <a-select
+            v-model:value="cardinalityForm.roleId"
+            show-search
+            :filter-option="filterRoleOption"
+            :options="roleSelectOptions"
+            placeholder="选择角色"
+            allow-clear
+          />
         </a-form-item>
         <a-form-item label="作用域类型" required>
           <a-select v-model:value="cardinalityForm.scopeType" placeholder="请选择作用域类型">
@@ -432,8 +517,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, onActivated, onBeforeUnmount, onMounted, watch } from 'vue'
+import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useAuth } from '@/auth/auth'
+import { usePlatformScope } from '@/composables/usePlatformScope'
 import { message, Modal } from 'ant-design-vue'
 import { ReloadOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons-vue'
 import type { Key } from 'ant-design-vue/es/_util/type'
@@ -443,17 +529,30 @@ import {
   ROLE_CONSTRAINT_EDIT,
   ROLE_CONSTRAINT_VIOLATION_VIEW,
 } from '@/constants/permission'
-import { getAllRoles, type Role } from '@/api/role'
+import { listPlatformRoleOptions, type PlatformRoleOption } from '@/api/platform-role'
 import {
-  listHierarchies, createHierarchy, deleteHierarchy,
-  listMutexes, createMutex, deleteMutex,
-  listPrerequisites, createPrerequisite, deletePrerequisite,
-  listCardinalities, createCardinality, deleteCardinality,
-  listViolations,
-} from '@/api/roleConstraint'
-import type { RoleHierarchy, RoleMutex, RolePrerequisite, RoleCardinality, RoleViolation } from '@/api/roleConstraint'
+  listPlatformHierarchies,
+  createPlatformHierarchy,
+  deletePlatformHierarchy,
+  listPlatformMutexes,
+  createPlatformMutex,
+  deletePlatformMutex,
+  listPlatformPrerequisites,
+  createPlatformPrerequisite,
+  deletePlatformPrerequisite,
+  listPlatformCardinalities,
+  createPlatformCardinality,
+  deletePlatformCardinality,
+  listPlatformViolations,
+  type RoleHierarchy,
+  type RoleMutex,
+  type RolePrerequisite,
+  type RoleCardinality,
+  type RoleViolation,
+} from '@/api/platformRoleConstraint'
 
 const { user } = useAuth()
+const { isPlatformScope } = usePlatformScope()
 const authorities = computed(() => new Set(extractAuthoritiesFromJwt(user.value?.access_token)))
 
 function hasAuthority(perm: string) {
@@ -463,6 +562,8 @@ function hasAuthority(perm: string) {
 const canView = computed(() => hasAuthority(ROLE_CONSTRAINT_VIEW))
 const canEditConstraint = computed(() => hasAuthority(ROLE_CONSTRAINT_EDIT))
 const canViewViolations = computed(() => hasAuthority(ROLE_CONSTRAINT_VIOLATION_VIEW))
+const canAccessConstraintTabs = computed(() => canView.value || canEditConstraint.value)
+const canAccessPage = computed(() => canAccessConstraintTabs.value || canViewViolations.value)
 
 const LOCAL_PAGE_SIZE_OPTIONS = ['10', '20', '30', '40', '50']
 const constraintPageRef = ref<HTMLElement | null>(null)
@@ -544,20 +645,30 @@ function scheduleTableBodyHeightUpdate() {
   }
 }
 
-const activeTab = ref('hierarchy')
-const submitting = ref(false)
+const roleOptions = ref<PlatformRoleOption[]>([])
+const roleOptionsReady = ref(false)
+const roleSelectOptions = computed(() =>
+  roleOptions.value.map((r) => ({
+    value: r.roleId,
+    label: `${r.code} — ${r.name} (#${r.roleId})`,
+  })),
+)
 
-const roleOptions = ref<Role[]>([])
 const roleById = computed(() => {
-  const roleMap = new Map<number, Role>()
-  for (const role of roleOptions.value) {
-    const roleId = Number(role.id)
-    if (Number.isFinite(roleId) && roleId > 0) {
-      roleMap.set(roleId, role)
-    }
+  const m = new Map<number, PlatformRoleOption>()
+  for (const r of roleOptions.value) {
+    m.set(r.roleId, r)
   }
-  return roleMap
+  return m
 })
+
+function formatRoleCell(roleId: number) {
+  const r = roleById.value.get(roleId)
+  if (!r) {
+    return String(roleId)
+  }
+  return `${r.code} (#${roleId})`
+}
 
 function formatRoleName(roleId: number) {
   const role = roleById.value.get(roleId)
@@ -573,20 +684,43 @@ function formatHierarchyDescription(record: RoleHierarchy) {
   return `当前角色 ${childRoleName} 继承父角色 ${parentRoleName} 的权限能力`
 }
 
+function filterRoleOption(input: string, option: { label?: string }) {
+  return (option.label ?? '').toLowerCase().includes(input.toLowerCase())
+}
+
 async function loadRoleOptions() {
-  if (!canView.value) {
+  if (!isPlatformScope.value || !canAccessConstraintTabs.value) {
     roleOptions.value = []
-    return
+    roleOptionsReady.value = false
+    return false
   }
   try {
-    const result = await getAllRoles()
-    roleOptions.value = Array.isArray(result) ? result : []
+    const res = await listPlatformRoleOptions({ limit: 500 })
+    roleOptions.value = Array.isArray(res) ? res : []
+    roleOptionsReady.value = true
+    return true
   } catch {
     roleOptions.value = []
+    roleOptionsReady.value = false
+    return false
   }
 }
 
-// ─── Hierarchy ───
+async function ensureRoleOptionsReady() {
+  if (roleOptionsReady.value && roleOptions.value.length > 0) {
+    return true
+  }
+  const loaded = await loadRoleOptions()
+  if (!loaded) {
+    message.warning('无法加载平台角色候选，请确认已具备平台 RBAC3 或平台用户角色目录读取权限后重试')
+    return false
+  }
+  return true
+}
+
+const activeTab = ref('hierarchy')
+const submitting = ref(false)
+
 const hierarchies = ref<RoleHierarchy[]>([])
 const hierarchyQuery = ref({ keyword: '' })
 const hierarchyPagination = ref<LocalPaginationState>(createLocalPagination())
@@ -604,12 +738,16 @@ const hierarchyColumns = [
 const hierarchyRowKey = (record: RoleHierarchy) => `${record.childRoleId}-${record.parentRoleId}`
 
 async function loadHierarchies() {
+  if (!isPlatformScope.value || !canView.value) {
+    return
+  }
   hierarchyLoading.value = true
   try {
-    const res = await listHierarchies()
+    const res = await listPlatformHierarchies()
     hierarchies.value = Array.isArray(res) ? res : []
-  } catch { hierarchies.value = [] }
-  finally {
+  } catch {
+    hierarchies.value = []
+  } finally {
     normalizeLocalPagination(hierarchyPagination.value, hierarchies.value.length)
     hierarchyLoading.value = false
   }
@@ -642,27 +780,35 @@ function handleHierarchyReset() {
   hierarchyPagination.value.current = 1
 }
 
-function openHierarchyModal() {
+async function openHierarchyModal() {
+  if (!(await ensureRoleOptionsReady())) {
+    return
+  }
   hierarchyForm.value = { parentRoleId: undefined, childRoleId: undefined }
   hierarchyModalVisible.value = true
 }
 
 async function submitHierarchy() {
   if (!hierarchyForm.value.parentRoleId || !hierarchyForm.value.childRoleId) {
-    message.warning('请填写完整信息')
+    message.warning('请选择完整信息')
     return
   }
   submitting.value = true
   try {
-    await createHierarchy({ parentRoleId: hierarchyForm.value.parentRoleId, childRoleId: hierarchyForm.value.childRoleId })
+    await createPlatformHierarchy({
+      parentRoleId: hierarchyForm.value.parentRoleId,
+      childRoleId: hierarchyForm.value.childRoleId,
+    })
     message.success('创建成功')
     hierarchyModalVisible.value = false
     loadHierarchies()
-  } catch (e: any) { message.error('创建失败: ' + (e.message || '未知错误')) }
-  finally { submitting.value = false }
+  } catch (e: any) {
+    message.error('创建失败: ' + (e.message || '未知错误'))
+  } finally {
+    submitting.value = false
+  }
 }
 
-// ─── Mutex ───
 const mutexes = ref<RoleMutex[]>([])
 const mutexQuery = ref({ keyword: '' })
 const mutexPagination = ref<LocalPaginationState>(createLocalPagination())
@@ -670,19 +816,23 @@ const mutexLoading = ref(false)
 const mutexModalVisible = ref(false)
 const mutexForm = ref({ roleIdA: undefined as number | undefined, roleIdB: undefined as number | undefined })
 const mutexColumns = [
-  { title: '角色A ID', dataIndex: 'leftRoleId', width: 120 },
-  { title: '角色B ID', dataIndex: 'rightRoleId', width: 120 },
+  { title: '角色 A', dataIndex: 'leftRoleId', width: 220 },
+  { title: '角色 B', dataIndex: 'rightRoleId', width: 220 },
   { title: '操作', dataIndex: 'action', width: 100, align: 'center' as const },
 ]
 const mutexRowKey = (record: RoleMutex) => `${record.leftRoleId}-${record.rightRoleId}`
 
 async function loadMutexes() {
+  if (!isPlatformScope.value || !canView.value) {
+    return
+  }
   mutexLoading.value = true
   try {
-    const res = await listMutexes()
+    const res = await listPlatformMutexes()
     mutexes.value = Array.isArray(res) ? res : []
-  } catch { mutexes.value = [] }
-  finally {
+  } catch {
+    mutexes.value = []
+  } finally {
     normalizeLocalPagination(mutexPagination.value, mutexes.value.length)
     mutexLoading.value = false
   }
@@ -690,7 +840,13 @@ async function loadMutexes() {
 
 const filteredMutexes = computed(() =>
   mutexes.value.filter((record) =>
-    includesKeyword(mutexQuery.value.keyword, record.leftRoleId, record.rightRoleId),
+    includesKeyword(
+      mutexQuery.value.keyword,
+      formatRoleCell(record.leftRoleId),
+      formatRoleCell(record.rightRoleId),
+      record.leftRoleId,
+      record.rightRoleId,
+    ),
   ),
 )
 const pagedMutexes = computed(() => sliceLocalPage(filteredMutexes.value, mutexPagination.value))
@@ -708,27 +864,32 @@ function handleMutexReset() {
   mutexPagination.value.current = 1
 }
 
-function openMutexModal() {
+async function openMutexModal() {
+  if (!(await ensureRoleOptionsReady())) {
+    return
+  }
   mutexForm.value = { roleIdA: undefined, roleIdB: undefined }
   mutexModalVisible.value = true
 }
 
 async function submitMutex() {
   if (!mutexForm.value.roleIdA || !mutexForm.value.roleIdB) {
-    message.warning('请填写完整信息')
+    message.warning('请选择完整信息')
     return
   }
   submitting.value = true
   try {
-    await createMutex({ roleIdA: mutexForm.value.roleIdA, roleIdB: mutexForm.value.roleIdB })
+    await createPlatformMutex({ roleIdA: mutexForm.value.roleIdA, roleIdB: mutexForm.value.roleIdB })
     message.success('创建成功')
     mutexModalVisible.value = false
     loadMutexes()
-  } catch (e: any) { message.error('创建失败: ' + (e.message || '未知错误')) }
-  finally { submitting.value = false }
+  } catch (e: any) {
+    message.error('创建失败: ' + (e.message || '未知错误'))
+  } finally {
+    submitting.value = false
+  }
 }
 
-// ─── Prerequisite ───
 const prerequisites = ref<RolePrerequisite[]>([])
 const prerequisiteQuery = ref({ keyword: '' })
 const prerequisitePagination = ref<LocalPaginationState>(createLocalPagination())
@@ -736,19 +897,23 @@ const prerequisiteLoading = ref(false)
 const prerequisiteModalVisible = ref(false)
 const prerequisiteForm = ref({ roleId: undefined as number | undefined, requiredRoleId: undefined as number | undefined })
 const prerequisiteColumns = [
-  { title: '角色ID', dataIndex: 'roleId', width: 120 },
-  { title: '前置角色ID', dataIndex: 'requiredRoleId', width: 140 },
+  { title: '目标角色', dataIndex: 'roleId', width: 220 },
+  { title: '前置角色', dataIndex: 'requiredRoleId', width: 220 },
   { title: '操作', dataIndex: 'action', width: 100, align: 'center' as const },
 ]
 const prerequisiteRowKey = (record: RolePrerequisite) => `${record.roleId}-${record.requiredRoleId}`
 
 async function loadPrerequisites() {
+  if (!isPlatformScope.value || !canView.value) {
+    return
+  }
   prerequisiteLoading.value = true
   try {
-    const res = await listPrerequisites()
+    const res = await listPlatformPrerequisites()
     prerequisites.value = Array.isArray(res) ? res : []
-  } catch { prerequisites.value = [] }
-  finally {
+  } catch {
+    prerequisites.value = []
+  } finally {
     normalizeLocalPagination(prerequisitePagination.value, prerequisites.value.length)
     prerequisiteLoading.value = false
   }
@@ -756,7 +921,13 @@ async function loadPrerequisites() {
 
 const filteredPrerequisites = computed(() =>
   prerequisites.value.filter((record) =>
-    includesKeyword(prerequisiteQuery.value.keyword, record.roleId, record.requiredRoleId),
+    includesKeyword(
+      prerequisiteQuery.value.keyword,
+      formatRoleCell(record.roleId),
+      formatRoleCell(record.requiredRoleId),
+      record.roleId,
+      record.requiredRoleId,
+    ),
   ),
 )
 const pagedPrerequisites = computed(() => sliceLocalPage(filteredPrerequisites.value, prerequisitePagination.value))
@@ -774,27 +945,35 @@ function handlePrerequisiteReset() {
   prerequisitePagination.value.current = 1
 }
 
-function openPrerequisiteModal() {
+async function openPrerequisiteModal() {
+  if (!(await ensureRoleOptionsReady())) {
+    return
+  }
   prerequisiteForm.value = { roleId: undefined, requiredRoleId: undefined }
   prerequisiteModalVisible.value = true
 }
 
 async function submitPrerequisite() {
   if (!prerequisiteForm.value.roleId || !prerequisiteForm.value.requiredRoleId) {
-    message.warning('请填写完整信息')
+    message.warning('请选择完整信息')
     return
   }
   submitting.value = true
   try {
-    await createPrerequisite({ roleId: prerequisiteForm.value.roleId, requiredRoleId: prerequisiteForm.value.requiredRoleId })
+    await createPlatformPrerequisite({
+      roleId: prerequisiteForm.value.roleId,
+      requiredRoleId: prerequisiteForm.value.requiredRoleId,
+    })
     message.success('创建成功')
     prerequisiteModalVisible.value = false
     loadPrerequisites()
-  } catch (e: any) { message.error('创建失败: ' + (e.message || '未知错误')) }
-  finally { submitting.value = false }
+  } catch (e: any) {
+    message.error('创建失败: ' + (e.message || '未知错误'))
+  } finally {
+    submitting.value = false
+  }
 }
 
-// ─── Cardinality ───
 const cardinalities = ref<RoleCardinality[]>([])
 const cardinalityQuery = ref({
   keyword: '',
@@ -803,14 +982,14 @@ const cardinalityQuery = ref({
 const cardinalityPagination = ref<LocalPaginationState>(createLocalPagination())
 const cardinalityLoading = ref(false)
 const cardinalityModalVisible = ref(false)
-const scopeTypeOptions = ['TENANT', 'ORG', 'DEPT']
+const scopeTypeOptions = ['PLATFORM', 'TENANT', 'ORG', 'DEPT']
 const cardinalityForm = ref({
   roleId: undefined as number | undefined,
-  scopeType: 'TENANT',
+  scopeType: 'PLATFORM',
   maxAssignments: undefined as number | undefined,
 })
 const cardinalityColumns = [
-  { title: '角色ID', dataIndex: 'roleId', width: 120 },
+  { title: '角色', dataIndex: 'roleId', width: 220 },
   { title: '作用域类型', dataIndex: 'scopeType', width: 140 },
   { title: '最大分配数', dataIndex: 'maxAssignments', width: 120 },
   { title: '操作', dataIndex: 'action', width: 100, align: 'center' as const },
@@ -818,12 +997,16 @@ const cardinalityColumns = [
 const cardinalityRowKey = (record: RoleCardinality) => `${record.roleId}-${record.scopeType}`
 
 async function loadCardinalities() {
+  if (!isPlatformScope.value || !canView.value) {
+    return
+  }
   cardinalityLoading.value = true
   try {
-    const res = await listCardinalities()
+    const res = await listPlatformCardinalities()
     cardinalities.value = Array.isArray(res) ? res : []
-  } catch { cardinalities.value = [] }
-  finally {
+  } catch {
+    cardinalities.value = []
+  } finally {
     normalizeLocalPagination(cardinalityPagination.value, cardinalities.value.length)
     cardinalityLoading.value = false
   }
@@ -834,7 +1017,13 @@ const filteredCardinalities = computed(() =>
     if (cardinalityQuery.value.scopeType && record.scopeType !== cardinalityQuery.value.scopeType) {
       return false
     }
-    return includesKeyword(cardinalityQuery.value.keyword, record.roleId, record.scopeType, record.maxAssignments)
+    return includesKeyword(
+      cardinalityQuery.value.keyword,
+      formatRoleCell(record.roleId),
+      record.roleId,
+      record.scopeType,
+      record.maxAssignments,
+    )
   }),
 )
 const pagedCardinalities = computed(() => sliceLocalPage(filteredCardinalities.value, cardinalityPagination.value))
@@ -853,8 +1042,11 @@ function handleCardinalityReset() {
   cardinalityPagination.value.current = 1
 }
 
-function openCardinalityModal() {
-  cardinalityForm.value = { roleId: undefined, scopeType: 'TENANT', maxAssignments: undefined }
+async function openCardinalityModal() {
+  if (!(await ensureRoleOptionsReady())) {
+    return
+  }
+  cardinalityForm.value = { roleId: undefined, scopeType: 'PLATFORM', maxAssignments: undefined }
   cardinalityModalVisible.value = true
 }
 
@@ -865,7 +1057,7 @@ async function submitCardinality() {
   }
   submitting.value = true
   try {
-    await createCardinality({
+    await createPlatformCardinality({
       roleId: cardinalityForm.value.roleId,
       scopeType: cardinalityForm.value.scopeType,
       maxAssignments: cardinalityForm.value.maxAssignments,
@@ -873,11 +1065,13 @@ async function submitCardinality() {
     message.success('创建成功')
     cardinalityModalVisible.value = false
     loadCardinalities()
-  } catch (e: any) { message.error('创建失败: ' + (e.message || '未知错误')) }
-  finally { submitting.value = false }
+  } catch (e: any) {
+    message.error('创建失败: ' + (e.message || '未知错误'))
+  } finally {
+    submitting.value = false
+  }
 }
 
-// ─── Violations ───
 const violations = ref<RoleViolation[]>([])
 const violationQuery = ref({
   keyword: '',
@@ -918,9 +1112,12 @@ const filteredViolations = computed(() =>
 )
 
 async function loadViolations() {
+  if (!isPlatformScope.value || !canViewViolations.value) {
+    return
+  }
   violationLoading.value = true
   try {
-    const res = await listViolations({
+    const res = await listPlatformViolations({
       page: violationPagination.value.current - 1,
       size: violationPagination.value.pageSize,
     })
@@ -929,8 +1126,9 @@ async function loadViolations() {
   } catch {
     violations.value = []
     violationPagination.value.total = 0
+  } finally {
+    violationLoading.value = false
   }
-  finally { violationLoading.value = false }
 }
 
 function handleViolationPageChange(page: number) {
@@ -956,25 +1154,28 @@ function handleViolationReset() {
   loadViolations()
 }
 
-// ─── Shared ───
 type ConstraintType = 'hierarchy' | 'mutex' | 'prerequisite' | 'cardinality'
 const deleteActions: Record<ConstraintType, (record: any) => Promise<any>> = {
-  hierarchy: (record: RoleHierarchy) => deleteHierarchy({
-    childRoleId: record.childRoleId,
-    parentRoleId: record.parentRoleId,
-  }),
-  mutex: (record: RoleMutex) => deleteMutex({
-    roleIdA: record.leftRoleId,
-    roleIdB: record.rightRoleId,
-  }),
-  prerequisite: (record: RolePrerequisite) => deletePrerequisite({
-    roleId: record.roleId,
-    requiredRoleId: record.requiredRoleId,
-  }),
-  cardinality: (record: RoleCardinality) => deleteCardinality({
-    roleId: record.roleId,
-    scopeType: record.scopeType,
-  }),
+  hierarchy: (record: RoleHierarchy) =>
+    deletePlatformHierarchy({
+      childRoleId: record.childRoleId,
+      parentRoleId: record.parentRoleId,
+    }),
+  mutex: (record: RoleMutex) =>
+    deletePlatformMutex({
+      roleIdA: record.leftRoleId,
+      roleIdB: record.rightRoleId,
+    }),
+  prerequisite: (record: RolePrerequisite) =>
+    deletePlatformPrerequisite({
+      roleId: record.roleId,
+      requiredRoleId: record.requiredRoleId,
+    }),
+  cardinality: (record: RoleCardinality) =>
+    deletePlatformCardinality({
+      roleId: record.roleId,
+      scopeType: record.scopeType,
+    }),
 }
 const loadActions: Record<ConstraintType, () => void> = {
   hierarchy: loadHierarchies,
@@ -990,53 +1191,96 @@ function confirmDelete(type: ConstraintType, record: any) {
     okText: '确认',
     cancelText: '取消',
     onOk: () => {
-      return deleteActions[type](record).then(() => {
-        message.success('删除成功')
-        loadActions[type]()
-      }).catch((e: any) => {
-        message.error('删除失败: ' + (e.message || '未知错误'))
-        return Promise.reject(e)
-      })
+      return deleteActions[type](record)
+        .then(() => {
+          message.success('删除成功')
+          loadActions[type]()
+        })
+        .catch((e: any) => {
+          message.error('删除失败: ' + (e.message || '未知错误'))
+          return Promise.reject(e)
+        })
     },
   })
 }
 
 function typeLabel(type: ConstraintType): string {
-  const labels: Record<ConstraintType, string> = { hierarchy: '角色继承', mutex: '互斥约束', prerequisite: '先决条件', cardinality: '基数限制' }
+  const labels: Record<ConstraintType, string> = {
+    hierarchy: '角色继承',
+    mutex: '互斥约束',
+    prerequisite: '先决条件',
+    cardinality: '基数限制',
+  }
   return labels[type]
 }
 
 function handleTabChange(key: Key) {
   if (String(key) === 'violations' && !canViewViolations.value) {
-    activeTab.value = 'hierarchy'
+    activeTab.value = canAccessConstraintTabs.value ? 'hierarchy' : 'violations'
     return
   }
   activeTab.value = String(key)
 }
 
-function formatDateTime(dateTime: string | null | undefined): string {
-  if (!dateTime) return '-'
-  try {
-    return new Date(dateTime).toLocaleString('zh-CN', {
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', second: '2-digit',
-    })
-  } catch {
-    return '-'
+function clearPageData() {
+  roleOptions.value = []
+  roleOptionsReady.value = false
+  hierarchies.value = []
+  mutexes.value = []
+  prerequisites.value = []
+  cardinalities.value = []
+  violations.value = []
+  hierarchyQuery.value.keyword = ''
+  mutexQuery.value.keyword = ''
+  prerequisiteQuery.value.keyword = ''
+  cardinalityQuery.value.keyword = ''
+  cardinalityQuery.value.scopeType = undefined
+  violationQuery.value.keyword = ''
+  violationQuery.value.violationType = ''
+  normalizeLocalPagination(hierarchyPagination.value, 0)
+  normalizeLocalPagination(mutexPagination.value, 0)
+  normalizeLocalPagination(prerequisitePagination.value, 0)
+  normalizeLocalPagination(cardinalityPagination.value, 0)
+  violationPagination.value.total = 0
+}
+
+function normalizeActiveTab() {
+  if (!canAccessConstraintTabs.value && canViewViolations.value) {
+    activeTab.value = 'violations'
+    return
+  }
+  if (activeTab.value === 'violations' && !canViewViolations.value) {
+    activeTab.value = 'hierarchy'
   }
 }
 
 function activateCurrentTab() {
-  if (!canView.value && !canViewViolations.value) {
+  if (!isPlatformScope.value || !canAccessPage.value) {
     scheduleTableBodyHeightUpdate()
     return
   }
 
   const loaders: Record<string, () => void> = {
-    hierarchy: loadHierarchies,
-    mutex: loadMutexes,
-    prerequisite: loadPrerequisites,
-    cardinality: loadCardinalities,
+    hierarchy: () => {
+      if (canView.value) {
+        loadHierarchies()
+      }
+    },
+    mutex: () => {
+      if (canView.value) {
+        loadMutexes()
+      }
+    },
+    prerequisite: () => {
+      if (canView.value) {
+        loadPrerequisites()
+      }
+    },
+    cardinality: () => {
+      if (canView.value) {
+        loadCardinalities()
+      }
+    },
     violations: () => {
       if (canViewViolations.value) {
         loadViolations()
@@ -1048,33 +1292,39 @@ function activateCurrentTab() {
   scheduleTableBodyHeightUpdate()
 }
 
+function formatDateTime(dateTime: string | null | undefined): string {
+  if (!dateTime) return '-'
+  try {
+    return new Date(dateTime).toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    })
+  } catch {
+    return '-'
+  }
+}
+
 watch(
-  () => canView.value,
-  (nextCanView) => {
-    if (nextCanView) {
-      void loadRoleOptions()
-      activateCurrentTab()
+  [isPlatformScope, canView, canEditConstraint, canViewViolations],
+  ([scope, view, edit, violation]) => {
+    if (!scope || (!view && !edit && !violation)) {
+      clearPageData()
+      activeTab.value = 'hierarchy'
       return
     }
-    roleOptions.value = []
-  },
-  { immediate: true },
-)
 
-watch(
-  () => canViewViolations.value,
-  () => {
-    if (activeTab.value === 'violations') {
-      activateCurrentTab()
+    normalizeActiveTab()
+
+    if (view || edit) {
+      void loadRoleOptions()
     }
-  },
-)
-
-watch(
-  () => activeTab.value,
-  () => {
     activateCurrentTab()
   },
+  { immediate: true },
 )
 
 onMounted(() => {
@@ -1089,6 +1339,13 @@ onActivated(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', updateTableBodyHeight)
 })
+
+watch(
+  () => activeTab.value,
+  () => {
+    activateCurrentTab()
+  },
+)
 
 watch(
   () => [
@@ -1262,7 +1519,9 @@ watch(
   color: #595959;
   border-radius: 4px;
   padding: 8px;
-  transition: color 0.2s, background 0.2s;
+  transition:
+    color 0.2s,
+    background 0.2s;
   display: flex;
   align-items: center;
   justify-content: center;
