@@ -571,3 +571,8 @@ databaseChangeLog:
   - include:
       file: 152-backfill-platform-system-root-permission.yaml
       relativeToChangelogFile: true
+
+  # 独立 backport：清理历史错误复制到平台态的 tenant-only RBAC3 菜单
+  - include:
+      file: 168-cleanup-legacy-platform-role-constraint-menu.yaml
+      relativeToChangelogFile: true
