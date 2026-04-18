@@ -15,6 +15,8 @@ alwaysApply: true
 - ❌ 推翻既有模块边界做无收益的"架构大改"。
 - ❌ 查询业务数据时缺少 `tenant_id` 过滤（导致跨租户数据泄露）。
 - ❌ 在业务表中创建不包含 `tenant_id` 的唯一性约束（应使用 `tenant_id + 业务字段` 联合唯一）。
+- ❌ 默认把 `main` 当作 tiny-platform 日常开发主线。
+- ❌ 默认把整条 `sb4` 同步到 `sb3`，或用整线 merge 代替维护回补。
 
 ## 必须（Must）
 
@@ -32,6 +34,9 @@ alwaysApply: true
 - ✅ 允许复用 service / repository / domain 逻辑，但 controller path、permission、menu、route、前端 API contract 与 scope guard 必须保持平台/租户分流；涉及平台路径时，`tenant_id IS NULL` 必须被显式建模或校验，禁止把 `NULL tenantId` 直接塞进 tenant-only 查询宣称完成。
 - ✅ 平台治理任务卡若触及 `db/changelog/**`、`db.changelog-master.yaml`、`api_endpoint` / `menu_permission_requirement` / `role_permission` 回填、权限/菜单 seed 或 DDL，完成条件必须包含一次真实 `SpringLiquibase` / 应用启动验证；只跑单测、组件测试或静态检查不得标记完成。
 - ✅ 平台治理任务卡交付必须显式说明“本卡负责什么、不负责什么”，尤其统一守卫回填、菜单回填、Liquibase include、real-controller 测试、启动验证这些责任不得默认外推到下一张卡或留给用户首次启动时发现。
+- ✅ 当前仓库分支治理默认口径是：`sb4` 为业务主干，`sb3` 为维护线，`main`/`master` 仅为历史入口；除非用户明确要求，助手不得默认把提交、PR、workflow 目标指向 `main`。
+- ✅ 需要进入 `sb3` 的修复，必须先在 `sb4` 收敛，再通过 `cherry-pick -x` 或专用 backport 分支选择性回补；不得默认创建整线 `sb4 -> sb3` 同步 PR。
+- ✅ 调整分支治理、AI 执行边界、PR 模板或自动化 workflow 时，必须在同一变更中同步更新 `AGENTS.md`、`.agent/src/rules/**`、相关文档与 workflow，防止 Cursor / Codex / CI 读取到分裂规则。
 - ✅ tiny-platform 本地 AI 验证默认应先执行 `tiny-oauth-server/scripts/verify-platform-local-dev-stack.sh`；只有在明确不需要前端联动时，才降级使用 `verify-platform-dev-bootstrap.sh`，并且不得把脚本 `exit 2` 记成代码失败。
 - ✅ 凡仓库内已有脚本、编译命令、数据库查询或自动化测试能够直接产出结论，助手必须优先**自行执行并报告结果**；不能把“请用户先手工启动数据库/前端/后端、手工查库、手工跑脚本”作为默认工作流。
 - ✅ 只有在环境前置缺失、权限不足、存在明确破坏性风险，或仓库内确实没有可自动化路径时，助手才可以请求用户介入；此时必须明确指出缺的前置条件，而不是笼统地让用户“先操作一下再说”。

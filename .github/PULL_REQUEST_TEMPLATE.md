@@ -1,7 +1,7 @@
 > 参考：
 > - docs/TINY_PLATFORM_TESTING_PLAYBOOK.md
 > - docs/TINY_PLATFORM_TESTING_PR_CHECKLIST.md
-> - docs/TINY_PLATFORM_MAIN_SB4_BRANCH_STRATEGY.md
+> - docs/TINY_PLATFORM_SB4_SB3_BRANCH_STRATEGY.md
 
 ## 变更内容
 
@@ -13,14 +13,15 @@
 
 ## 分支归属 / 同步要求
 
-- [ ] 业务改动，先合 `main`，再同步到 `sb4`
+- [ ] `sb4` 主干业务改动（默认路径）
 - [ ] `sb4-only` 兼容改动，仅进入 `sb4`
-- [ ] 在 `sb4` 发现的共享修复，需要回补 `main`
+- [ ] 从 `sb4` 选择性回补到 `sb3` 的维护修复
 - 来源分支：
 - 目标分支：
 - 同步 / 回补计划：
-- 建议标签：`sync-to-sb4` / `backport-to-main` / `sb4-only`
-- 建议提交前缀：业务改动用 `feat:` / `fix:`；`sb4-only` 用 `feat(sb4):` / `fix(sb4):` / `chore(sb4):` / `ci(sb4):` / `docs(sb4):`
+- 来源 `sb4` 提交 SHA（如适用）：
+- 建议标签：`backport-to-sb3` / `sb4-only`
+- 建议提交前缀：`sb4` 主干业务改动用 `feat:` / `fix:`；`sb4-only` 用 `feat(sb4):` / `fix(sb4):` / `chore(sb4):` / `ci(sb4):` / `docs(sb4):`；`sb3` 回补用 `fix(sb3): backport ...` / `chore(sb3): backport ...`
 
 ## 影响范围
 

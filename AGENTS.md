@@ -24,6 +24,7 @@
 - **`@DataScope` 扩面指南**：`docs/TINY_PLATFORM_DATASCOPE_EXPANSION_GUIDE.md`
 - **构建与技术债台账**：`docs/TINY_PLATFORM_BUILD_TECH_DEBT_LEDGER.md`
 - **SaaS 架构治理收口启动清单**：`docs/TINY_PLATFORM_SAAS_ARCHITECTURE_GOVERNANCE_STARTER_20260417.md`
+- **分支治理策略**：`docs/TINY_PLATFORM_SB4_SB3_BRANCH_STRATEGY.md`
 - **租户治理专题**：`docs/TINY_PLATFORM_TENANT_GOVERNANCE.md`
 - **租户治理修复 Prompt**：`docs/TINY_PLATFORM_TENANT_GOVERNANCE_CURSOR_FIX_PROMPT.md`
 - **平台域解耦 Cursor 任务卡**：`docs/TINY_PLATFORM_PLATFORM_SCOPE_CURSOR_TASK_CARDS.md`（未标「当前态」的约束多为历史/阶段性口径；运行态以 `docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md`、`docs/TINY_PLATFORM_TESTING_PLAYBOOK.md`、`docs/TINY_PLATFORM_TENANT_GOVERNANCE.md` 为准，**CARD-14E**）
@@ -67,6 +68,7 @@
 5. **产物禁止手改**：`.cursor/rules/**` 等生成物不手工编辑（只改 `.agent/src/**`）
 6. **可自动化先验证再下结论**：凡仓库内已有命令/测试能影响结论（如平台登录、租户解析、密码校验链），助手应先执行对应验证并写明结果；无法自动化部分（个人库数据、未注入密钥的 Playwright real-link）须明确标注缺口。平台登录相关快速门禁：`bash tiny-oauth-server/scripts/verify-platform-login-auth-chain.sh`（可选 `VERIFY_PLATFORM_LOGIN_E2E=1` 跑 Tier2 MockMvc 全链路；未导出 `E2E_DB_PASSWORD` 时会自动 `source` `tiny-oauth-server/src/main/webapp/.env.e2e.local`；Tier2 前在满足主身份变量齐全时自动执行 `scripts/e2e/ensure-scheduling-e2e-auth.sh` 对齐库内口令）。平台模板行数（需本机 MySQL 与 `DB_PASSWORD`）：`DB_PASSWORD='…' bash tiny-oauth-server/scripts/verify-platform-template-row-counts.sh`（可选 `VERIFY_PLATFORM_TEMPLATE_MIN_ROWS=1` 要求 `role` 与 split carrier 模板总量均 > 0）。**tiny-platform 本地 AI 验证默认入口（先跑这个）**：`bash tiny-oauth-server/scripts/verify-platform-local-dev-stack.sh`。仅在**明确不需要前端联动**时，才降级到 **后端/数据库自举入口**：`DB_PASSWORD='…' bash tiny-oauth-server/scripts/verify-platform-dev-bootstrap.sh`（**CARD-13E**：`verify-platform-dev-bootstrap.sh` 在调用 `ensure-platform-admin.sh` 前须能从 **`PLATFORM_TENANT_CODE` 或 `E2E_PLATFORM_TENANT_CODE`** 得到平台租户 code；两者皆缺则 exit 1，不再隐式 `default`）。仅在**纯 Maven 编译/定向测试门禁**时，才使用顺序门禁：`bash tiny-oauth-server/scripts/mvn-tiny-oauth-server-gate-sequential.sh`。若 `sb4` / Spring snapshot / Camunda fork 相关构建日志出现 `camunda-nexus` / `camunda-public-repository` / `JBoss public` 或 metadata `401`，默认先运行 `bash tiny-oauth-server/scripts/diagnose-sb4-maven-repository-chain.sh` 做脱敏盘点，**不要**直接把它判定成项目 POM 缺失仓库声明。`SKIP_MVN=1`、`SKIP_OAUTH_SERVER_START=1` / `FORCE_START_OAUTH_SERVER=1`、`SKIP_FRONTEND_START=1` / `FORCE_START_FRONTEND=1` 见脚本头注释。**退出码**：`0` 通过；`1` 验证失败；`2` **环境前置未满足**（无 `DB_PASSWORD`/无 `mysql`/无 `npm`/连不上库）— **非代码失败**，详见 `docs/TINY_PLATFORM_TESTING_PLAYBOOK.md` §1.2、§1.4。**本地环境读取**：只允许从 login shell 白名单环境变量读取 `DB_*` / `E2E_DB_*` / `MYSQL_*` / `FRONTEND_*`；其中 `DB_*` 为 dev/bootstrap 主变量，`E2E_DB_*` 可作为兼容别名回填，禁止打印 `~/.zprofile` / `~/.zshrc` / `~/.bashrc` 全文。**Maven**：勿对 `tiny-oauth-server` 同模块并发 `compile`/`test`；顺序门禁见 `tiny-oauth-server/scripts/mvn-tiny-oauth-server-gate-sequential.sh`。
 7. **助手默认直接执行，不默认转嫁给用户**：凡仓库内已有脚本、编译命令、数据库查询或自动化测试能直接给出结果，助手应直接执行并反馈；只有在环境前置缺失、权限不足或存在明确破坏性风险时，才允许请求用户手工介入。
+8. **分支治理不可口头漂移**：当前默认开发主干为 `sb4`，`sb3` 仅接选择性 backport；除非用户明确要求，不默认把 PR / 提交 / workflow 目标指向 `main`，也不默认做整线 `sb4 -> sb3` 同步。
 
 ---
 
