@@ -39,6 +39,9 @@ class RoleManagementAccessGuardTest {
         assertThat(guard.canManageRoleConstraints(constraintEdit)).isTrue();
         assertThat(guard.canViewRoleConstraints(constraintView)).isTrue();
         assertThat(guard.canViewRoleConstraintViolations(violationView)).isTrue();
+        assertThat(guard.canReadRoleCatalog(constraintEdit)).isTrue();
+        assertThat(guard.canReadRoleCatalog(constraintView)).isTrue();
+        assertThat(guard.canReadRoleCatalog(violationView)).isFalse();
     }
 
     private static JwtAuthenticationToken jwtAuth(String... authorities) {
