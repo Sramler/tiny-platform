@@ -97,6 +97,7 @@ function createStubs() {
     'a-modal': { template: '<div />' },
     'a-form': { template: '<form><slot /></form>' },
     'a-form-item': { template: '<div><slot /></div>' },
+    'a-input': { template: '<input />' },
     'a-select': { template: '<select />' },
     'a-select-option': { template: '<option />' },
     'a-input-number': { template: '<input />' },
