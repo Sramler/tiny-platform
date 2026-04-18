@@ -1,0 +1,70 @@
+databaseChangeLog:
+  - changeSet:
+      id: 159-platform-role-constraints-normalized-tenant-unique
+      author: codex
+      comment: 平台 RBAC3 null-tenant 约束记录补 normalized_tenant_id 唯一键，避免 MySQL NULL 唯一语义失效
+      preConditions:
+        onFail: MARK_RAN
+        onError: HALT
+        and:
+          - tableExists:
+              tableName: role_hierarchy
+          - tableExists:
+              tableName: role_mutex
+          - tableExists:
+              tableName: role_prerequisite
+          - tableExists:
+              tableName: role_cardinality
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              DELETE rh_keep
+              FROM `role_hierarchy` rh_keep
+              JOIN `role_hierarchy` rh_drop
+                ON rh_keep.`id` > rh_drop.`id`
+               AND rh_keep.`tenant_id` <=> rh_drop.`tenant_id`
+               AND rh_keep.`parent_role_id` = rh_drop.`parent_role_id`
+               AND rh_keep.`child_role_id` = rh_drop.`child_role_id`;
+
+              DELETE rm_keep
+              FROM `role_mutex` rm_keep
+              JOIN `role_mutex` rm_drop
+                ON rm_keep.`id` > rm_drop.`id`
+               AND rm_keep.`tenant_id` <=> rm_drop.`tenant_id`
+               AND rm_keep.`left_role_id` = rm_drop.`left_role_id`
+               AND rm_keep.`right_role_id` = rm_drop.`right_role_id`;
+
+              DELETE rp_keep
+              FROM `role_prerequisite` rp_keep
+              JOIN `role_prerequisite` rp_drop
+                ON rp_keep.`id` > rp_drop.`id`
+               AND rp_keep.`tenant_id` <=> rp_drop.`tenant_id`
+               AND rp_keep.`role_id` = rp_drop.`role_id`
+               AND rp_keep.`required_role_id` = rp_drop.`required_role_id`;
+
+              DELETE rc_keep
+              FROM `role_cardinality` rc_keep
+              JOIN `role_cardinality` rc_drop
+                ON rc_keep.`id` > rc_drop.`id`
+               AND rc_keep.`tenant_id` <=> rc_drop.`tenant_id`
+               AND rc_keep.`role_id` = rc_drop.`role_id`
+               AND rc_keep.`scope_type` = rc_drop.`scope_type`;
+
+              ALTER TABLE `role_hierarchy`
+                ADD COLUMN `normalized_tenant_id` BIGINT GENERATED ALWAYS AS (IFNULL(`tenant_id`, 0)) STORED COMMENT '归一化租户ID',
+                ADD UNIQUE KEY `uk_role_hierarchy_normalized_tenant` (`normalized_tenant_id`, `parent_role_id`, `child_role_id`);
+
+              ALTER TABLE `role_mutex`
+                ADD COLUMN `normalized_tenant_id` BIGINT GENERATED ALWAYS AS (IFNULL(`tenant_id`, 0)) STORED COMMENT '归一化租户ID',
+                ADD UNIQUE KEY `uk_role_mutex_normalized_tenant` (`normalized_tenant_id`, `left_role_id`, `right_role_id`);
+
+              ALTER TABLE `role_prerequisite`
+                ADD COLUMN `normalized_tenant_id` BIGINT GENERATED ALWAYS AS (IFNULL(`tenant_id`, 0)) STORED COMMENT '归一化租户ID',
+                ADD UNIQUE KEY `uk_role_prerequisite_normalized_tenant` (`normalized_tenant_id`, `role_id`, `required_role_id`);
+
+              ALTER TABLE `role_cardinality`
+                ADD COLUMN `normalized_tenant_id` BIGINT GENERATED ALWAYS AS (IFNULL(`tenant_id`, 0)) STORED COMMENT '归一化租户ID',
+                ADD UNIQUE KEY `uk_role_cardinality_normalized_tenant` (`normalized_tenant_id`, `role_id`, `scope_type`);

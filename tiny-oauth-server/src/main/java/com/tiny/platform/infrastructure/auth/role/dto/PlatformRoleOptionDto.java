@@ -6,8 +6,6 @@ public record PlatformRoleOptionDto(
     String name,
     String description,
     boolean enabled,
-    boolean builtin,
-    String riskLevel,
-    String approvalMode
+    boolean builtin
 ) {
 }
