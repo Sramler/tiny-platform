@@ -66,9 +66,7 @@ public class PlatformRoleLookupServiceImpl implements PlatformRoleLookupService 
             role.getName(),
             role.getDescription(),
             role.isEnabled(),
-            role.isBuiltin(),
-            role.getRiskLevel(),
-            role.getApprovalMode()
+            role.isBuiltin()
         );
     }
 

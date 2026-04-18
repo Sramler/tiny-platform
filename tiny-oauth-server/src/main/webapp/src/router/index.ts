@@ -192,6 +192,12 @@ const routes = [
         component: () => import('@/views/platform/users/PlatformUsers.vue'),
         meta: { requiresAuth: true, title: '平台用户治理' },
       },
+      {
+        path: 'platform/role-constraints',
+        name: 'PlatformRoleConstraints',
+        component: () => import('@/views/platform/role-constraints/PlatformRoleConstraints.vue'),
+        meta: { requiresAuth: true, title: '平台 RBAC3 约束' },
+      },
       // {
       //   path: 'about',
       //   name: 'About',

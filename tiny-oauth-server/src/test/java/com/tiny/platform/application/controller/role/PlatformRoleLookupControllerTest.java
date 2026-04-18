@@ -23,9 +23,7 @@ class PlatformRoleLookupControllerTest {
             "平台管理员",
             "平台角色候选",
             true,
-            true,
-            "NORMAL",
-            "NONE"
+            true
         );
         when(platformRoleLookupService.findOptions("admin", 20)).thenReturn(List.of(option));
         when(platformRoleLookupService.findOptions(null, 200)).thenReturn(List.of(option));

@@ -40,8 +40,6 @@ class PlatformRoleLookupServiceImplTest {
         role.setBuiltin(true);
         role.setTenantId(null);
         role.setRoleLevel("PLATFORM");
-        role.setRiskLevel("NORMAL");
-        role.setApprovalMode("NONE");
 
         TenantContext.setActiveTenantId(1L);
         TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_PLATFORM);
@@ -56,9 +54,7 @@ class PlatformRoleLookupServiceImplTest {
             "平台管理员",
             "平台角色候选",
             true,
-            true,
-            "NORMAL",
-            "NONE"
+            true
         ));
         verify(roleRepository).findAll(any(Specification.class), any(Pageable.class));
     }

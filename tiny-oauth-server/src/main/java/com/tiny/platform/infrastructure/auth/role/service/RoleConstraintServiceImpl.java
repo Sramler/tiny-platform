@@ -1,5 +1,6 @@
 package com.tiny.platform.infrastructure.auth.role.service;
 
+import com.tiny.platform.infrastructure.auth.role.domain.Role;
 import com.tiny.platform.infrastructure.auth.role.domain.RoleHierarchy;
 import com.tiny.platform.infrastructure.auth.role.domain.RoleConstraintViolationLog;
 import com.tiny.platform.infrastructure.auth.role.domain.RoleCardinality;
@@ -10,6 +11,7 @@ import com.tiny.platform.infrastructure.auth.role.repository.RoleCardinalityRepo
 import com.tiny.platform.infrastructure.auth.role.repository.RoleHierarchyRepository;
 import com.tiny.platform.infrastructure.auth.role.repository.RoleMutexRepository;
 import com.tiny.platform.infrastructure.auth.role.repository.RolePrerequisiteRepository;
+import com.tiny.platform.infrastructure.auth.role.repository.RoleRepository;
 import com.tiny.platform.infrastructure.core.exception.code.ErrorCode;
 import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
 import java.util.ArrayList;
@@ -18,6 +20,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.LinkedHashMap;
+import java.util.Objects;
 import java.util.StringJoiner;
 import java.util.Set;
 import java.time.LocalDateTime;
@@ -33,8 +36,11 @@ import org.springframework.stereotype.Service;
  *
  * <p>Phase2：实现 RBAC3 约束的 dry-run 校验与审计（写入 role_constraint_violation_log）。</p>
  *
- * <p>默认不阻断赋权（dry-run）；当 {@code tiny.platform.auth.rbac3.enforce=true} 时，
- * 发现违例将抛出业务异常以阻断写操作。</p>
+ * <p>租户域：默认不阻断赋权（dry-run）；当 {@code tiny.platform.auth.rbac3.enforce=true} 时，
+ * 发现违例将抛出业务异常以阻断写操作（可选 {@code enforce-tenant-ids} 白名单）。</p>
+ *
+ * <p>平台域（tenantId=null）：默认 {@code tiny.platform.auth.rbac3.enforce-platform-assignments=true}，
+ * 与全局 {@code rbac3.enforce} 取或：任一为 true 且违例则阻断，避免平台赋权长期停留在“可配不生效”。</p>
  */
 @Service
 public class RoleConstraintServiceImpl implements RoleConstraintService {
@@ -43,6 +49,12 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
 
     @Value("${tiny.platform.auth.rbac3.enforce:false}")
     private boolean rbac3Enforce;
+
+    /**
+     * When true (default), platform-scope assignments enforce RBAC3 violations even if {@link #rbac3Enforce} is false.
+     */
+    @Value("${tiny.platform.auth.rbac3.enforce-platform-assignments:true}")
+    private boolean enforcePlatformAssignments;
 
     /**
      * Optional allowlist for enforcement. If empty, enforcement applies to all tenants.
@@ -59,6 +71,7 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
     private final RolePrerequisiteRepository rolePrerequisiteRepository;
     private final RoleCardinalityRepository roleCardinalityRepository;
     private final RoleAssignmentRepository roleAssignmentRepository;
+    private final RoleRepository roleRepository;
 
     public RoleConstraintServiceImpl(
         RoleHierarchyRepository roleHierarchyRepository,
@@ -66,7 +79,8 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
         RoleConstraintViolationLogWriteService violationLogWriteService,
         RolePrerequisiteRepository rolePrerequisiteRepository,
         RoleCardinalityRepository roleCardinalityRepository,
-        RoleAssignmentRepository roleAssignmentRepository
+        RoleAssignmentRepository roleAssignmentRepository,
+        RoleRepository roleRepository
     ) {
         this.roleHierarchyRepository = roleHierarchyRepository;
         this.roleMutexRepository = roleMutexRepository;
@@ -74,6 +88,7 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
         this.rolePrerequisiteRepository = rolePrerequisiteRepository;
         this.roleCardinalityRepository = roleCardinalityRepository;
         this.roleAssignmentRepository = roleAssignmentRepository;
+        this.roleRepository = roleRepository;
     }
 
     @Override
@@ -85,16 +100,22 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
         Long scopeId,
         List<Long> roleIdsToGrant
     ) {
-        // Phase 2 最小落地：仅实现 role_mutex 互斥检查。
-        // 当前阶段不抛出异常（不改变现有行为）；仅输出 debug 日志，供后续 dry-run / enforce 演进。
-        if (tenantId == null || roleIdsToGrant == null || roleIdsToGrant.isEmpty()) {
+        if (roleIdsToGrant == null || roleIdsToGrant.isEmpty()) {
             return;
+        }
+        boolean platformScope = tenantId == null;
+        if (!platformScope && (tenantId == null || tenantId <= 0)) {
+            return;
+        }
+        String normalizedScopeType = scopeType == null ? "" : scopeType.trim().toUpperCase(java.util.Locale.ROOT);
+
+        Set<Long> directRoleIds = new LinkedHashSet<>(roleIdsToGrant);
+        if (platformScope) {
+            assertPlatformAssignableRoleIds(directRoleIds);
         }
 
         boolean violated = false;
         List<String> violationSummaries = new ArrayList<>();
-
-        Set<Long> directRoleIds = new LinkedHashSet<>(roleIdsToGrant);
         Set<Long> effectiveRoleIds = expandRoleHierarchy(tenantId, directRoleIds);
         if (!effectiveRoleIds.equals(directRoleIds)) {
             logger.debug(
@@ -109,7 +130,9 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
             );
         }
 
-        List<RoleMutex> rules = roleMutexRepository.findByTenantIdAndRoleIds(tenantId, effectiveRoleIds);
+        List<RoleMutex> rules = platformScope
+            ? roleMutexRepository.findByTenantIdIsNullAndRoleIds(effectiveRoleIds)
+            : roleMutexRepository.findByTenantIdAndRoleIds(tenantId, effectiveRoleIds);
         if (!rules.isEmpty()) {
             List<String> conflicts = new ArrayList<>();
             for (RoleMutex rule : rules) {
@@ -139,7 +162,7 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
                 log.setTenantId(tenantId);
                 log.setPrincipalType(principalType == null ? "" : principalType);
                 log.setPrincipalId(principalId);
-                log.setScopeType(scopeType == null ? "" : scopeType);
+                log.setScopeType(normalizedScopeType);
                 log.setScopeId(scopeId);
                 log.setViolationType("MUTEX");
                 log.setViolationCode("ROLE_CONFLICT_MUTEX");
@@ -153,8 +176,9 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
         }
 
         // role_prerequisite: check prerequisites for directly granted roles against effective roles.
-        List<RolePrerequisite> prerequisites =
-            rolePrerequisiteRepository.findByTenantIdAndRoleIdIn(tenantId, directRoleIds);
+        List<RolePrerequisite> prerequisites = platformScope
+            ? rolePrerequisiteRepository.findByTenantIdIsNullAndRoleIdIn(directRoleIds)
+            : rolePrerequisiteRepository.findByTenantIdAndRoleIdIn(tenantId, directRoleIds);
         if (!prerequisites.isEmpty()) {
             Map<Long, List<Long>> missingByRole = new LinkedHashMap<>();
             for (RolePrerequisite rp : prerequisites) {
@@ -184,7 +208,7 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
                 log.setTenantId(tenantId);
                 log.setPrincipalType(principalType == null ? "" : principalType);
                 log.setPrincipalId(principalId);
-                log.setScopeType(scopeType == null ? "" : scopeType);
+                log.setScopeType(normalizedScopeType);
                 log.setScopeId(scopeId);
                 log.setViolationType("PREREQUISITE");
                 log.setViolationCode("ROLE_CONFLICT_PREREQUISITE_MISSING");
@@ -198,15 +222,21 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
         }
 
         // role_cardinality: limit number of active assignments within scope.
-        // Supports USER principal with TENANT/ORG/DEPT scope types.
-        if ("USER".equals(principalType) && principalId != null && scopeType != null && scopeId != null) {
-            String st = scopeType;
-            List<RoleCardinality> limits =
-                roleCardinalityRepository.findByTenantIdAndScopeTypeAndRoleIdIn(tenantId, st, effectiveRoleIds);
+        // Supports USER principal with PLATFORM/TENANT/ORG/DEPT scope types.
+        if ("USER".equals(principalType)
+            && principalId != null
+            && !normalizedScopeType.isBlank()
+            && (platformScope || scopeId != null)) {
+            String st = normalizedScopeType;
+            List<RoleCardinality> limits = platformScope
+                ? roleCardinalityRepository.findByTenantIdIsNullAndScopeTypeAndRoleIdIn(st, effectiveRoleIds)
+                : roleCardinalityRepository.findByTenantIdAndScopeTypeAndRoleIdIn(tenantId, st, effectiveRoleIds);
             if (!limits.isEmpty()) {
                 LocalDateTime now = LocalDateTime.now();
                 List<Long> existingRoleIds;
-                if ("TENANT".equals(st)) {
+                if (platformScope) {
+                    existingRoleIds = roleAssignmentRepository.findActiveRoleIdsForUserInPlatform(principalId, now);
+                } else if ("TENANT".equals(st)) {
                     existingRoleIds = roleAssignmentRepository.findActiveRoleIdsForUserInTenant(principalId, tenantId, now);
                 } else {
                     existingRoleIds = roleAssignmentRepository.findActiveRoleIdsForUserInScope(principalId, tenantId, st, scopeId, now);
@@ -221,7 +251,9 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
                     }
 
                     long current;
-                    if ("TENANT".equals(st)) {
+                    if (platformScope) {
+                        current = roleAssignmentRepository.findActiveUserIdsForRoleInPlatform(roleId, now).size();
+                    } else if ("TENANT".equals(st)) {
                         current = roleAssignmentRepository
                             .findActiveUserIdsForRoleInTenant(roleId, tenantId, now)
                             .size();
@@ -250,7 +282,7 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
                     log.setTenantId(tenantId);
                     log.setPrincipalType(principalType);
                     log.setPrincipalId(principalId);
-                    log.setScopeType(scopeType);
+                    log.setScopeType(normalizedScopeType);
                     log.setScopeId(scopeId);
                     log.setViolationType("CARDINALITY");
                     log.setViolationCode("ROLE_CONFLICT_CARDINALITY_EXCEEDED");
@@ -264,14 +296,14 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
             }
         }
 
-        if (violated && shouldEnforceForTenant(tenantId)) {
-            String detail = buildEnforceMessage(scopeType, scopeId, violationSummaries);
+        if (violated && shouldEnforceForScope(tenantId, platformScope)) {
+            String detail = buildEnforceMessage(normalizedScopeType, scopeId, violationSummaries);
             logger.info(
                 "RBAC3 enforce blocked assignment: tenantId={}, principalType={}, principalId={}, scopeType={}, scopeId={}, detail={}",
                 tenantId,
                 principalType,
                 principalId,
-                scopeType,
+                normalizedScopeType,
                 scopeId,
                 detail
             );
@@ -279,11 +311,11 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
         }
     }
 
-    private boolean shouldEnforceForTenant(Long tenantId) {
-        if (!rbac3Enforce) {
-            return false;
+    private boolean shouldEnforceForScope(Long tenantId, boolean platformScope) {
+        if (platformScope) {
+            return enforcePlatformAssignments || rbac3Enforce;
         }
-        if (tenantId == null) {
+        if (!rbac3Enforce) {
             return false;
         }
         Set<Long> allow = getEnforceTenantIdSet();
@@ -291,6 +323,22 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
             return true; // backward compatible: enforce=true means global enforce by default
         }
         return allow.contains(tenantId);
+    }
+
+    /**
+     * Fail-closed：平台赋权不得引用租户角色 ID 或非 PLATFORM 模板角色，避免 tenant roleId 进入平台 RBAC3 语义。
+     */
+    private void assertPlatformAssignableRoleIds(Collection<Long> roleIds) {
+        if (roleIds == null || roleIds.isEmpty()) {
+            return;
+        }
+        List<Long> idList = roleIds.stream().filter(Objects::nonNull).distinct().toList();
+        List<Role> roles = roleRepository.findByIdInAndTenantIdIsNullOrderByIdAsc(idList);
+        if (roles.size() != idList.size()
+            || roles.stream().anyMatch(role -> role.getTenantId() != null
+                || !"PLATFORM".equalsIgnoreCase(role.getRoleLevel()))) {
+            throw new BusinessException(ErrorCode.INVALID_PARAMETER, "平台赋权仅允许 tenant_id IS NULL + role_level=PLATFORM 的平台角色");
+        }
     }
 
     private Set<Long> getEnforceTenantIdSet() {
@@ -389,6 +437,7 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
         if (directRoleIds == null || directRoleIds.isEmpty()) {
             return Set.of();
         }
+        boolean platformScope = tenantId == null;
 
         Set<Long> effective = new LinkedHashSet<>(directRoleIds);
         Set<Long> frontier = new LinkedHashSet<>(directRoleIds);
@@ -397,7 +446,9 @@ public class RoleConstraintServiceImpl implements RoleConstraintService {
         // (Phase2 enforce will reject cycles at write time; until then we fail-safe by stopping expansion.)
         int guard = 0;
         while (!frontier.isEmpty() && guard++ < 50) {
-            List<RoleHierarchy> edges = roleHierarchyRepository.findByTenantIdAndChildRoleIdIn(tenantId, frontier);
+            List<RoleHierarchy> edges = platformScope
+                ? roleHierarchyRepository.findByTenantIdIsNullAndChildRoleIdIn(frontier)
+                : roleHierarchyRepository.findByTenantIdAndChildRoleIdIn(tenantId, frontier);
             if (edges.isEmpty()) {
                 break;
             }
