@@ -77,7 +77,9 @@ public class EffectiveRoleResolutionService {
         }
         List<Long> assignmentRoleIds = roleAssignmentSyncService.findActiveRoleIdsForUserInPlatform(userId);
         if (!assignmentRoleIds.isEmpty()) {
-            return assignmentRoleIds.stream().distinct().sorted().collect(Collectors.toList());
+            return expandRoleHierarchy(null, assignmentRoleIds).stream()
+                .sorted()
+                .collect(Collectors.toList());
         }
         return List.of();
     }
@@ -110,7 +112,11 @@ public class EffectiveRoleResolutionService {
     }
 
     private Set<Long> expandRoleHierarchy(Long tenantId, Collection<Long> directRoleIds) {
-        if (tenantId == null || tenantId <= 0 || directRoleIds == null || directRoleIds.isEmpty()) {
+        if (directRoleIds == null || directRoleIds.isEmpty()) {
+            return Set.of();
+        }
+        boolean platformScope = tenantId == null;
+        if (!platformScope && (tenantId == null || tenantId.longValue() <= 0L)) {
             return Set.of();
         }
 
@@ -120,7 +126,9 @@ public class EffectiveRoleResolutionService {
         // child -> parent expansion. Keep runtime semantics aligned with RBAC3 constraint checks.
         int guard = 0;
         while (!frontier.isEmpty() && guard++ < 50) {
-            List<RoleHierarchy> edges = roleHierarchyRepository.findByTenantIdAndChildRoleIdIn(tenantId, frontier);
+            List<RoleHierarchy> edges = platformScope
+                ? roleHierarchyRepository.findByTenantIdIsNullAndChildRoleIdIn(frontier)
+                : roleHierarchyRepository.findByTenantIdAndChildRoleIdIn(tenantId, frontier);
             if (edges.isEmpty()) {
                 break;
             }

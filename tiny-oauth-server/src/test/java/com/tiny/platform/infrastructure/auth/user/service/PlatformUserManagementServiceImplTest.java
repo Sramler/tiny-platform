@@ -2,6 +2,10 @@ package com.tiny.platform.infrastructure.auth.user.service;
 
 import com.tiny.platform.infrastructure.auth.user.domain.PlatformUserProfile;
 import com.tiny.platform.infrastructure.auth.user.dto.PlatformUserManagementDtos.PlatformUserCreateDto;
+import com.tiny.platform.infrastructure.auth.role.domain.PlatformRoleGovernanceCodes;
+import com.tiny.platform.infrastructure.auth.role.domain.Role;
+import com.tiny.platform.infrastructure.auth.role.repository.RoleRepository;
+import com.tiny.platform.infrastructure.auth.role.service.RoleAssignmentSyncService;
 import com.tiny.platform.infrastructure.auth.user.repository.PlatformUserDetailProjection;
 import com.tiny.platform.infrastructure.auth.user.repository.PlatformUserListProjection;
 import com.tiny.platform.infrastructure.auth.user.repository.PlatformUserProfileRepository;
@@ -20,6 +24,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -28,13 +33,22 @@ class PlatformUserManagementServiceImplTest {
 
     private PlatformUserProfileRepository platformUserProfileRepository;
     private UserRepository userRepository;
+    private RoleRepository roleRepository;
+    private RoleAssignmentSyncService roleAssignmentSyncService;
     private PlatformUserManagementServiceImpl service;
 
     @BeforeEach
     void setUp() {
         platformUserProfileRepository = mock(PlatformUserProfileRepository.class);
         userRepository = mock(UserRepository.class);
-        service = new PlatformUserManagementServiceImpl(platformUserProfileRepository, userRepository);
+        roleRepository = mock(RoleRepository.class);
+        roleAssignmentSyncService = mock(RoleAssignmentSyncService.class);
+        service = new PlatformUserManagementServiceImpl(
+            platformUserProfileRepository,
+            userRepository,
+            roleRepository,
+            roleAssignmentSyncService
+        );
     }
 
     @Test
@@ -51,6 +65,123 @@ class PlatformUserManagementServiceImplTest {
         assertThat(page.getContent()).hasSize(1);
         assertThat(page.getContent().get(0).username()).isEqualTo("platform_admin");
         assertThat(page.getContent().get(0).hasPlatformRoleAssignment()).isTrue();
+    }
+
+    @Test
+    void getRoles_shouldReturnBoundPlatformRoles() {
+        when(platformUserProfileRepository.existsByUserId(9L)).thenReturn(true);
+        when(roleAssignmentSyncService.findActiveRoleIdsForUserInPlatform(9L)).thenReturn(List.of(2L, 1L));
+        Role admin = new Role();
+        admin.setId(1L);
+        admin.setTenantId(null);
+        admin.setRoleLevel("PLATFORM");
+        admin.setCode("ROLE_PLATFORM_ADMIN");
+        admin.setName("平台管理员");
+        admin.setEnabled(true);
+        Role auditor = new Role();
+        auditor.setId(2L);
+        auditor.setTenantId(null);
+        auditor.setRoleLevel("PLATFORM");
+        auditor.setCode("ROLE_PLATFORM_AUDITOR");
+        auditor.setName("平台审计员");
+        auditor.setEnabled(true);
+        when(roleRepository.findByIdInAndTenantIdIsNullOrderByIdAsc(List.of(2L, 1L))).thenReturn(List.of(admin, auditor));
+
+        var roles = service.getRoles(9L);
+
+        assertThat(roles).hasSize(2);
+        assertThat(roles.get(0).code()).isEqualTo("ROLE_PLATFORM_ADMIN");
+    }
+
+    @Test
+    void replaceRoles_shouldRejectTenantRoleBinding() {
+        when(platformUserProfileRepository.existsByUserId(9L)).thenReturn(true);
+        Role tenantRole = new Role();
+        tenantRole.setId(100L);
+        tenantRole.setTenantId(1L);
+        tenantRole.setRoleLevel("TENANT");
+        when(roleRepository.findByIdInAndTenantIdIsNullOrderByIdAsc(List.of(100L))).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.replaceRoles(9L, List.of(100L)))
+            .isInstanceOf(BusinessException.class)
+            .hasMessageContaining("仅允许绑定");
+    }
+
+    @Test
+    void replaceRoles_shouldRejectDirectWrite_whenGrantingOneStepApprovalRole() {
+        when(platformUserProfileRepository.existsByUserId(9L)).thenReturn(true);
+        Role sensitive = oneStepPlatformRole();
+        when(roleRepository.findByIdInAndTenantIdIsNullOrderByIdAsc(anyList())).thenAnswer(invocation -> {
+            java.util.List<Long> ids = invocation.getArgument(0);
+            if (ids.equals(List.of(5L))) {
+                return List.of(sensitive);
+            }
+            return List.of();
+        });
+        when(roleAssignmentSyncService.findActiveRoleIdsForUserInPlatform(9L)).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.replaceRoles(9L, List.of(5L)))
+            .isInstanceOf(BusinessException.class)
+            .hasMessageContaining("审批");
+    }
+
+    @Test
+    void replaceRoles_shouldRejectDirectWrite_whenRevokingOneStepApprovalRole() {
+        when(platformUserProfileRepository.existsByUserId(9L)).thenReturn(true);
+        Role sensitive = oneStepPlatformRole();
+        when(roleRepository.findByIdInAndTenantIdIsNullOrderByIdAsc(anyList())).thenAnswer(invocation -> {
+            java.util.List<Long> ids = invocation.getArgument(0);
+            if (ids.equals(List.of(5L))) {
+                return List.of(sensitive);
+            }
+            return List.of();
+        });
+        when(roleAssignmentSyncService.findActiveRoleIdsForUserInPlatform(9L)).thenReturn(List.of(5L));
+
+        assertThatThrownBy(() -> service.replaceRoles(9L, List.of()))
+            .isInstanceOf(BusinessException.class)
+            .hasMessageContaining("审批");
+    }
+
+    private static Role oneStepPlatformRole() {
+        Role sensitive = new Role();
+        sensitive.setId(5L);
+        sensitive.setTenantId(null);
+        sensitive.setRoleLevel("PLATFORM");
+        sensitive.setApprovalMode(PlatformRoleGovernanceCodes.APPROVAL_MODE_ONE_STEP);
+        sensitive.setCode("ROLE_SENSITIVE");
+        sensitive.setName("敏感");
+        sensitive.setEnabled(true);
+        return sensitive;
+    }
+
+    @Test
+    void replaceRoles_shouldWritePlatformAssignments() {
+        when(platformUserProfileRepository.existsByUserId(9L)).thenReturn(true);
+        Role admin = new Role();
+        admin.setId(1L);
+        admin.setTenantId(null);
+        admin.setRoleLevel("PLATFORM");
+        admin.setCode("ROLE_PLATFORM_ADMIN");
+        admin.setName("平台管理员");
+        admin.setEnabled(true);
+        when(roleRepository.findByIdInAndTenantIdIsNullOrderByIdAsc(List.of(1L))).thenReturn(List.of(admin));
+        when(roleAssignmentSyncService.findActiveRoleIdsForUserInPlatform(9L)).thenReturn(List.of(1L));
+
+        var roles = service.replaceRoles(9L, List.of(1L, 1L));
+
+        verify(roleAssignmentSyncService).replaceUserPlatformRoleAssignments(9L, List.of(1L));
+        assertThat(roles).hasSize(1);
+        assertThat(roles.get(0).roleId()).isEqualTo(1L);
+    }
+
+    @Test
+    void replaceRoles_shouldFailClosedWhenRoleIdsContainsInvalidValue() {
+        when(platformUserProfileRepository.existsByUserId(9L)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.replaceRoles(9L, List.of(1L, 0L, -2L)))
+            .isInstanceOf(BusinessException.class)
+            .hasMessageContaining("roleIds");
     }
 
     @Test

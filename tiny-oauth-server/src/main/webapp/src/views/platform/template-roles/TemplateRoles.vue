@@ -55,7 +55,7 @@ async function loadRoles() {
       selectedRole.value = roles.value[0] || null
     }
   } catch (error: any) {
-    message.error(error?.message || '模板角色列表加载失败')
+    message.error(error?.message || '平台角色列表加载失败')
   } finally {
     loading.value = false
   }
@@ -86,25 +86,25 @@ async function submitForm() {
   try {
     if (selectedRole.value?.id) {
       await updateRole(String(selectedRole.value.id), formModel.value as any)
-      message.success('模板角色更新成功')
+      message.success('平台角色更新成功')
     } else {
       await createRole(formModel.value as any)
-      message.success('模板角色创建成功')
+      message.success('平台角色创建成功')
     }
     formVisible.value = false
     await loadRoles()
   } catch (error: any) {
-    message.error(error?.message || '模板角色保存失败')
+    message.error(error?.message || '平台角色保存失败')
   }
 }
 
 function confirmDelete(role: TemplateRole) {
   Modal.confirm({
-    title: '确认删除模板角色',
+    title: '确认删除平台角色',
     content: `确认删除 ${role.name} (${role.code}) 吗？`,
     onOk: async () => {
       await deleteRole(String(role.id))
-      message.success('模板角色删除成功')
+      message.success('平台角色删除成功')
       await loadRoles()
     },
   })
@@ -117,15 +117,15 @@ function openPermissionBinding(role: TemplateRole) {
 
 async function onPermissionSaved(payload: { permissionIds: number[] }) {
   if (!selectedRole.value) {
-    message.warning('未选择模板角色')
+    message.warning('未选择平台角色')
     return
   }
   try {
     await updateRolePermissions(selectedRole.value.id, { permissionIds: payload.permissionIds })
     permissionVisible.value = false
-    message.success('模板角色权限绑定已更新')
+    message.success('平台角色权限绑定已更新')
   } catch (error: any) {
-    message.error(error?.message || '模板角色权限绑定失败')
+    message.error(error?.message || '平台角色权限绑定失败')
   }
 }
 
@@ -144,12 +144,13 @@ onMounted(async () => {
 <template>
   <div class="template-role-page">
     <a-card v-if="!isPlatformScope" title="平台作用域限制">
-      当前会话不是 PLATFORM 作用域，已阻止加载模板角色治理数据。请切换到平台作用域后重试。
+      当前会话不是 PLATFORM 作用域，已阻止加载平台角色治理数据。请切换到平台作用域后重试。
     </a-card>
     <template v-else>
-    <a-card title="平台模板角色治理" :loading="loading">
+    <a-card title="平台角色治理（兼容路径：/platform/template-roles）" :loading="loading">
+      <p>主入口为 /platform/roles；保留 /platform/template-roles 作为历史兼容路径。</p>
       <div class="toolbar">
-        <a-button type="primary" @click="openCreateForm">新建模板角色</a-button>
+        <a-button type="primary" @click="openCreateForm">新建平台角色</a-button>
         <a-button @click="goTenantTemplateDiff">查看 Tenant Template Diff</a-button>
       </div>
       <a-table :data-source="roles" :pagination="false" row-key="id">
@@ -175,15 +176,15 @@ onMounted(async () => {
 
     <a-card title="派生影响范围（最小可用）">
       <p v-if="selectedRole">
-        当前选中模板角色：<b>{{ selectedRole.name }}</b> ({{ selectedRole.code }})。
+        当前选中平台角色：<b>{{ selectedRole.name }}</b> ({{ selectedRole.code }})。
       </p>
       <p>
         当前已加载租户样本数（tenantList size=200 上限）：<b>{{ derivedTenantCount }}</b>。
       </p>
-      <p>模板角色不能直接分配用户；如需租户侧生效，请通过租户模板派生链路处理。</p>
+      <p>平台角色可作为租户初始化来源；平台用户角色绑定在 /platform/users 页面处理。</p>
     </a-card>
 
-    <a-modal v-model:open="formVisible" title="模板角色" @ok="submitForm" @cancel="formVisible = false">
+    <a-modal v-model:open="formVisible" title="平台角色" @ok="submitForm" @cancel="formVisible = false">
       <a-form :model="formModel" layout="vertical">
         <a-form-item label="名称" required>
           <a-input v-model:value="formModel.name" />
@@ -204,7 +205,7 @@ onMounted(async () => {
       v-if="permissionVisible && selectedRole"
       :open="permissionVisible"
       :role-id="selectedRole.id"
-      title="绑定模板角色权限"
+      title="绑定平台角色权限"
       @update:open="permissionVisible = $event"
       @submit="onPermissionSaved"
     />

@@ -25,6 +25,8 @@ globs:
 
 - ✅ OAuth2 授权流程：使用 `authorization_code`（Web 应用）和 `refresh_token`（刷新令牌）。
 - ✅ JWT Token Claims：标准字段（iss, sub, aud, exp, iat, jti）由框架自动添加；企业级字段应与当前授权主线一致，至少稳定包含 `userId`、`username`、`permissions`、`activeTenantId`、`activeScopeType`、`permissionsVersion`；`authorities` 可保留兼容语义，但不得替代 `permissions` 作为当前能力判断入口。
+- ✅ 新签发 access token 的 `authorities` / `permissions` / `roleCodes` 与 `permissionsVersion` 必须尽量同源于当前 active scope 的运行时授权快照；当 `UserDetailsService` 或等价权威链可用时，不得优先信任登录期残留的 `SecurityUser` / session snapshot，尤其 `PLATFORM` 作用域。
+- ✅ 若 `role_assignment` / `role_hierarchy` / `role_permission` 变化已能影响 `permissionsVersion`，token minting 也必须让权限 claims 同步反映当前结果；禁止出现“`permissionsVersion` 已更新但 JWT `authorities` / `roleCodes` 仍是旧快照”的不一致。
 - ✅ 认证方式选择：按客户端来源切换 JWT/Session（Web 前端用 Session，API 客户端用 JWT）。
 - ✅ 多认证方式：支持 PASSWORD（密码）和 TOTP（时间戳一次性密码），从 `user_authentication_method` 表动态查询。
 - ✅ 安全策略：JWT 使用 RS256 算法，密钥使用 JWK Set；支持 MFA（TOTP）。

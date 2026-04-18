@@ -160,6 +160,52 @@ class EffectiveRoleResolutionServiceTest {
     }
 
     @Test
+    void findEffectiveRoleIdsForUserInPlatform_should_expandHierarchyOnNullTenantEdges() {
+        RoleRepository roleRepository = mock(RoleRepository.class);
+        RoleAssignmentSyncService roleAssignmentSyncService = mock(RoleAssignmentSyncService.class);
+        RoleHierarchyRepository roleHierarchyRepository = mock(RoleHierarchyRepository.class);
+        EffectiveRoleResolutionService service = new EffectiveRoleResolutionService(
+            roleRepository,
+            roleAssignmentSyncService,
+            roleHierarchyRepository
+        );
+
+        when(roleAssignmentSyncService.findActiveRoleIdsForUserInPlatform(100L)).thenReturn(List.of(11L));
+        when(roleHierarchyRepository.findByTenantIdIsNullAndChildRoleIdIn(Set.of(11L)))
+            .thenReturn(List.of(hierarchy(null, 21L, 11L)));
+        when(roleHierarchyRepository.findByTenantIdIsNullAndChildRoleIdIn(Set.of(21L)))
+            .thenReturn(List.of());
+
+        List<Long> result = service.findEffectiveRoleIdsForUserInPlatform(100L);
+
+        assertThat(result).containsExactly(11L, 21L);
+    }
+
+    @Test
+    void findEffectiveRoleIdsForUserInPlatform_should_stopOnCyclesWithoutLoopingForever() {
+        RoleRepository roleRepository = mock(RoleRepository.class);
+        RoleAssignmentSyncService roleAssignmentSyncService = mock(RoleAssignmentSyncService.class);
+        RoleHierarchyRepository roleHierarchyRepository = mock(RoleHierarchyRepository.class);
+        EffectiveRoleResolutionService service = new EffectiveRoleResolutionService(
+            roleRepository,
+            roleAssignmentSyncService,
+            roleHierarchyRepository
+        );
+
+        when(roleAssignmentSyncService.findActiveRoleIdsForUserInPlatform(101L)).thenReturn(List.of(11L));
+        when(roleHierarchyRepository.findByTenantIdIsNullAndChildRoleIdIn(Set.of(11L)))
+            .thenReturn(List.of(hierarchy(null, 21L, 11L)));
+        when(roleHierarchyRepository.findByTenantIdIsNullAndChildRoleIdIn(Set.of(21L)))
+            .thenReturn(List.of(hierarchy(null, 11L, 21L)));
+
+        List<Long> result = service.findEffectiveRoleIdsForUserInPlatform(101L);
+
+        assertThat(result).containsExactly(11L, 21L);
+        verify(roleHierarchyRepository).findByTenantIdIsNullAndChildRoleIdIn(Set.of(11L));
+        verify(roleHierarchyRepository).findByTenantIdIsNullAndChildRoleIdIn(Set.of(21L));
+    }
+
+    @Test
     void findEffectiveUserIdsForRoleInTenant_should_return_empty_when_assignments_absent() {
         RoleRepository roleRepository = mock(RoleRepository.class);
         RoleAssignmentSyncService roleAssignmentSyncService = mock(RoleAssignmentSyncService.class);

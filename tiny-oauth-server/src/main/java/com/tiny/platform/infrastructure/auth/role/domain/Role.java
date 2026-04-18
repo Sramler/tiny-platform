@@ -39,6 +39,18 @@ public class Role implements Serializable {
     @Column(length = 100)
     private String description;
 
+    /**
+     * 风险等级：LOW/NORMAL/HIGH/CRITICAL（平台角色治理；不引入 role_usage）
+     */
+    @Column(name = "risk_level", nullable = false, length = 16)
+    private String riskLevel = "NORMAL";
+
+    /**
+     * 赋权审批模式：NONE=可直写；ONE_STEP=须走审批申请
+     */
+    @Column(name = "approval_mode", nullable = false, length = 16)
+    private String approvalMode = "NONE";
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -119,6 +131,22 @@ public class Role implements Serializable {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public String getRiskLevel() {
+        return riskLevel;
+    }
+
+    public void setRiskLevel(String riskLevel) {
+        this.riskLevel = riskLevel;
+    }
+
+    public String getApprovalMode() {
+        return approvalMode;
+    }
+
+    public void setApprovalMode(String approvalMode) {
+        this.approvalMode = approvalMode;
     }
 
     public LocalDateTime getCreatedAt() {

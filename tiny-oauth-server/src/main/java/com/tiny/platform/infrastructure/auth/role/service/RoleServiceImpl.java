@@ -147,7 +147,7 @@ public class RoleServiceImpl implements RoleService {
             if (userIds == null || userIds.isEmpty()) {
                 return;
             }
-            throw new RuntimeException("平台模板角色不支持直接分配用户");
+            throw new RuntimeException("角色页不负责平台用户绑定，请在 /platform/users 执行平台角色绑定");
         }
         Long tenantId = requireTenantId();
         // 查询角色是否存在
@@ -229,7 +229,7 @@ public class RoleServiceImpl implements RoleService {
 
     private void assertPlatformTemplateUsersSupported(List<Long> userIds) {
         if (TenantContext.isPlatformScope() && userIds != null && !userIds.isEmpty()) {
-            throw new RuntimeException("平台模板角色不支持直接分配用户");
+            throw new RuntimeException("角色页不负责平台用户绑定，请在 /platform/users 执行平台角色绑定");
         }
     }
 

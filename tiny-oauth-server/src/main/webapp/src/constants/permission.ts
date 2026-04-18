@@ -25,6 +25,13 @@ export const PLATFORM_USER_CREATE = 'platform:user:create'
 export const PLATFORM_USER_EDIT = 'platform:user:edit'
 export const PLATFORM_USER_DISABLE = 'platform:user:disable'
 
+// ─── 平台角色赋权审批（与 PlatformRoleApprovalAccessGuard 一致）───
+export const PLATFORM_ROLE_APPROVAL_LIST = 'platform:role:approval:list'
+export const PLATFORM_ROLE_APPROVAL_SUBMIT = 'platform:role:approval:submit'
+export const PLATFORM_ROLE_APPROVAL_APPROVE = 'platform:role:approval:approve'
+export const PLATFORM_ROLE_APPROVAL_REJECT = 'platform:role:approval:reject'
+export const PLATFORM_ROLE_APPROVAL_CANCEL = 'platform:role:approval:cancel'
+
 // ─── 角色管理 ───
 export const ROLE_LIST = 'system:role:list'
 export const ROLE_CREATE = 'system:role:create'
@@ -135,6 +142,15 @@ export const USER_MANAGEMENT_DISABLE_AUTHORITIES = [USER_BATCH_DISABLE, USER_DIS
 export const PLATFORM_USER_MANAGEMENT_READ_AUTHORITIES = [PLATFORM_USER_LIST, PLATFORM_USER_VIEW]
 export const PLATFORM_USER_MANAGEMENT_CREATE_AUTHORITIES = [PLATFORM_USER_CREATE]
 export const PLATFORM_USER_MANAGEMENT_UPDATE_AUTHORITIES = [PLATFORM_USER_EDIT, PLATFORM_USER_DISABLE]
+
+/** 至少持有一项即可进入平台赋权审批页（与菜单 OR 组一致） */
+export const PLATFORM_ROLE_APPROVAL_PAGE_AUTHORITIES = [
+  PLATFORM_ROLE_APPROVAL_LIST,
+  PLATFORM_ROLE_APPROVAL_SUBMIT,
+  PLATFORM_ROLE_APPROVAL_APPROVE,
+  PLATFORM_ROLE_APPROVAL_REJECT,
+  PLATFORM_ROLE_APPROVAL_CANCEL,
+]
 
 export const ROLE_MANAGEMENT_READ_AUTHORITIES = [ROLE_LIST]
 export const ROLE_MANAGEMENT_CREATE_AUTHORITIES = [ROLE_CREATE]

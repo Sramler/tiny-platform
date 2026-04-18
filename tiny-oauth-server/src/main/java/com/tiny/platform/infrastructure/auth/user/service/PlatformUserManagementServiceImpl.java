@@ -4,6 +4,10 @@ import com.tiny.platform.infrastructure.auth.user.domain.PlatformUserProfile;
 import com.tiny.platform.infrastructure.auth.user.dto.PlatformUserManagementDtos.PlatformUserCreateDto;
 import com.tiny.platform.infrastructure.auth.user.dto.PlatformUserManagementDtos.PlatformUserDetailDto;
 import com.tiny.platform.infrastructure.auth.user.dto.PlatformUserManagementDtos.PlatformUserListItemDto;
+import com.tiny.platform.infrastructure.auth.user.dto.PlatformUserManagementDtos.PlatformUserRoleDto;
+import com.tiny.platform.infrastructure.auth.role.domain.Role;
+import com.tiny.platform.infrastructure.auth.role.repository.RoleRepository;
+import com.tiny.platform.infrastructure.auth.role.service.RoleAssignmentSyncService;
 import com.tiny.platform.infrastructure.auth.user.repository.PlatformUserDetailProjection;
 import com.tiny.platform.infrastructure.auth.user.repository.PlatformUserListProjection;
 import com.tiny.platform.infrastructure.auth.user.repository.PlatformUserProfileRepository;
@@ -15,19 +19,33 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.Locale;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+import static com.tiny.platform.infrastructure.auth.role.domain.PlatformRoleGovernanceCodes.APPROVAL_MODE_NONE;
 
 @Service
 public class PlatformUserManagementServiceImpl implements PlatformUserManagementService {
 
     private final PlatformUserProfileRepository platformUserProfileRepository;
     private final UserRepository userRepository;
+    private final RoleRepository roleRepository;
+    private final RoleAssignmentSyncService roleAssignmentSyncService;
 
     public PlatformUserManagementServiceImpl(PlatformUserProfileRepository platformUserProfileRepository,
-                                             UserRepository userRepository) {
+                                             UserRepository userRepository,
+                                             RoleRepository roleRepository,
+                                             RoleAssignmentSyncService roleAssignmentSyncService) {
         this.platformUserProfileRepository = platformUserProfileRepository;
         this.userRepository = userRepository;
+        this.roleRepository = roleRepository;
+        this.roleAssignmentSyncService = roleAssignmentSyncService;
     }
 
     @Override
@@ -55,15 +73,21 @@ public class PlatformUserManagementServiceImpl implements PlatformUserManagement
         if (request == null || request.userId() == null || request.userId() <= 0) {
             throw BusinessException.validationError("请求体必须提供合法 userId");
         }
+        long requestUserId = request.userId();
         String normalizedStatus = normalizeStatus(request.status(), true);
-        if (platformUserProfileRepository.existsByUserId(request.userId())) {
+        if (platformUserProfileRepository.existsByUserId(requestUserId)) {
             throw BusinessException.alreadyExists("平台用户档案已存在");
         }
-        var user = userRepository.findById(request.userId())
+        var user = userRepository.findById(requestUserId)
             .orElseThrow(() -> BusinessException.notFound("用户不存在"));
+        Long rawUserId = user.getId();
+        if (rawUserId == null) {
+            throw new IllegalStateException("平台用户 userId 不能为空");
+        }
+        long createdUserId = rawUserId;
 
         PlatformUserProfile profile = new PlatformUserProfile();
-        profile.setUserId(user.getId());
+        profile.setUserId(createdUserId);
         profile.setStatus(normalizedStatus);
         String displayName = normalize(request.displayName());
         if (displayName == null) {
@@ -72,7 +96,7 @@ public class PlatformUserManagementServiceImpl implements PlatformUserManagement
         profile.setDisplayName(displayName);
         platformUserProfileRepository.saveAndFlush(profile);
 
-        return get(user.getId()).orElseThrow(() -> new IllegalStateException("平台用户档案创建后读取失败"));
+        return get(createdUserId).orElseThrow(() -> new IllegalStateException("平台用户档案创建后读取失败"));
     }
 
     @Override
@@ -88,6 +112,24 @@ public class PlatformUserManagementServiceImpl implements PlatformUserManagement
                 return true;
             })
             .orElse(false);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<PlatformUserRoleDto> getRoles(Long userId) {
+        ensurePlatformUserExists(userId);
+        return loadPlatformRoles(userId);
+    }
+
+    @Override
+    @Transactional
+    public List<PlatformUserRoleDto> replaceRoles(Long userId, List<Long> roleIds) {
+        ensurePlatformUserExists(userId);
+        List<Long> normalizedRoleIds = validateAndNormalizeRoleIds(roleIds);
+        assertAllPlatformRoles(normalizedRoleIds);
+        assertDirectReplaceDoesNotTouchApprovalBoundRoles(userId, normalizedRoleIds);
+        roleAssignmentSyncService.replaceUserPlatformRoleAssignments(userId, normalizedRoleIds);
+        return loadPlatformRoles(userId);
     }
 
     @Override
@@ -128,8 +170,102 @@ public class PlatformUserManagementServiceImpl implements PlatformUserManagement
             toBoolean(row.getHasPlatformRoleAssignment()),
             row.getLastLoginAt(),
             row.getCreatedAt(),
-            row.getUpdatedAt()
+            row.getUpdatedAt(),
+            loadPlatformRoles(row.getUserId())
         );
+    }
+
+    private void ensurePlatformUserExists(Long userId) {
+        if (userId == null || userId <= 0 || !platformUserProfileRepository.existsByUserId(userId)) {
+            throw BusinessException.notFound("平台用户档案不存在");
+        }
+    }
+
+    private List<Long> validateAndNormalizeRoleIds(List<Long> roleIds) {
+        if (roleIds == null || roleIds.isEmpty()) {
+            return List.of();
+        }
+        if (roleIds.stream().anyMatch(id -> id == null || id <= 0)) {
+            throw BusinessException.validationError("roleIds 仅支持正整数");
+        }
+        return roleIds.stream().distinct().toList();
+    }
+
+    private void assertAllPlatformRoles(List<Long> roleIds) {
+        if (roleIds == null || roleIds.isEmpty()) {
+            return;
+        }
+        List<Role> roles = roleRepository.findByIdInAndTenantIdIsNullOrderByIdAsc(roleIds);
+        if (roles.size() != roleIds.size()) {
+            throw BusinessException.validationError("仅允许绑定 tenant_id IS NULL + role_level=PLATFORM 的平台角色");
+        }
+        boolean allPlatform = roles.stream().allMatch(role -> isPlatformRole(role.getTenantId(), role.getRoleLevel()));
+        if (!allPlatform) {
+            throw BusinessException.validationError("仅允许绑定 tenant_id IS NULL + role_level=PLATFORM 的平台角色");
+        }
+    }
+
+    /**
+     * approval_mode != NONE 的平台角色绑定变更必须走审批申请，不得由直写接口绕过。
+     */
+    private void assertDirectReplaceDoesNotTouchApprovalBoundRoles(Long userId, List<Long> normalizedRoleIds) {
+        List<Long> currentIds = roleAssignmentSyncService.findActiveRoleIdsForUserInPlatform(userId);
+        Set<Long> current = new LinkedHashSet<>(currentIds);
+        Set<Long> requested = new LinkedHashSet<>(normalizedRoleIds);
+        Set<Long> union = new LinkedHashSet<>(current);
+        union.addAll(requested);
+        if (union.isEmpty()) {
+            return;
+        }
+        List<Role> roles = roleRepository.findByIdInAndTenantIdIsNullOrderByIdAsc(new ArrayList<>(union));
+        Map<Long, Role> byId = roles.stream().collect(Collectors.toMap(Role::getId, r -> r, (a, b) -> a));
+        for (Long roleId : union) {
+            Role role = byId.get(roleId);
+            if (role == null || !isPlatformRole(role.getTenantId(), role.getRoleLevel())) {
+                throw BusinessException.validationError("仅允许绑定 tenant_id IS NULL + role_level=PLATFORM 的平台角色");
+            }
+            boolean was = current.contains(roleId);
+            boolean will = requested.contains(roleId);
+            if (was != will && requiresApprovalBinding(role)) {
+                throw BusinessException.validationError("涉及需审批绑定的平台角色变更，请使用平台角色赋权审批接口");
+            }
+        }
+    }
+
+    private static boolean requiresApprovalBinding(Role role) {
+        String mode = role.getApprovalMode();
+        if (mode == null || mode.isBlank()) {
+            return false;
+        }
+        return !APPROVAL_MODE_NONE.equalsIgnoreCase(mode.trim());
+    }
+
+    private List<PlatformUserRoleDto> loadPlatformRoles(Long userId) {
+        List<Long> roleIds = roleAssignmentSyncService.findActiveRoleIdsForUserInPlatform(userId);
+        if (roleIds.isEmpty()) {
+            return List.of();
+        }
+        List<Role> roles = roleRepository.findByIdInAndTenantIdIsNullOrderByIdAsc(roleIds);
+        if (roles.size() != roleIds.size()
+            || roles.stream().anyMatch(role -> !isPlatformRole(role.getTenantId(), role.getRoleLevel()))) {
+            throw BusinessException.validationError("检测到非平台角色绑定，平台用户角色读取已拒绝");
+        }
+        return roles.stream().map(this::toRoleDto).toList();
+    }
+
+    private PlatformUserRoleDto toRoleDto(Role role) {
+        return new PlatformUserRoleDto(
+            role.getId(),
+            role.getCode(),
+            role.getName(),
+            role.getDescription(),
+            role.isEnabled(),
+            role.isBuiltin()
+        );
+    }
+
+    private boolean isPlatformRole(Long tenantId, String roleLevel) {
+        return tenantId == null && "PLATFORM".equalsIgnoreCase(roleLevel);
     }
 
     private boolean toBoolean(Object value) {

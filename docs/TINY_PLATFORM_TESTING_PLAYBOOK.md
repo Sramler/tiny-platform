@@ -60,6 +60,35 @@
 - **性质**：**执行方式噪声**（见 `TINY_PLATFORM_BUILD_TECH_DEBT_LEDGER.md` §0、§2.1）。
 - **要求**：同一模块 **顺序**执行；本地门禁可：`bash tiny-oauth-server/scripts/mvn-tiny-oauth-server-gate-sequential.sh`（先 `compile` 再 `test`）。若刚跑过其他 Maven 目标、JaCoCo 报 `execution data does not match`，可 **`GATE_CLEAN_FIRST=1`** 再跑该脚本，或 **`mvn clean test`**。
 
+### 1.3.1 Maven 仓库链路噪音（SB4 / Spring snapshot / Camunda fork，2026-04-17）
+
+- **问题**：在 `sb4` / Boot `4.x-SNAPSHOT` / Camunda fork 相关构建中，日志或本地 Maven 仓库状态文件可能出现：
+  - `camunda-nexus`
+  - `camunda-public-repository`
+  - `JBoss public`
+  - `https://artifacts.camunda.com/artifactory/internal`
+  - `https://artifacts.camunda.com/artifactory/public`
+  - `https://repository.jboss.org/nexus/content/groups/public`
+- **当前判定**：这类 `metadata 401` 或候选仓库痕迹，默认先按**仓库链路噪音 / 环境注入 / 历史解析痕迹**处理，**不能**直接下结论为“项目 POM 缺失仓库声明”。
+- **项目主线路径**：
+  - Spring snapshot：`spring-snapshots`
+  - Camunda SB4 fork：受控 profile `camunda-github-packages` 下的 `github-camunda-fork`
+- **排查命令**：
+  - `bash tiny-oauth-server/scripts/diagnose-sb4-maven-repository-chain.sh`
+- **结果解释**：
+  - 若 `effective settings` / `effective POM` 中没有 `camunda-nexus`，但本地仓库 `.lastUpdated` / `resolver-status.properties` 有其 `401` 痕迹：
+    - 先归类为仓库链路噪音
+  - 若 `_remote.repositories` 显示 Spring snapshot 实际成功来源仍是 `spring-snapshots`：
+    - 不应把 `camunda-nexus` 视为当前依赖阻断主因
+  - 只有当项目主线路径自身也解析失败时，才升级为真实依赖风险
+- **冷仓注意**：
+  - 本地能编译通过，不代表冷仓机器一定能直接拉 `github-camunda-fork`
+  - 冷仓验证仍需明确 GitHub Packages 读取凭证
+- **参考**：
+  - `docs/TINY_PLATFORM_CAMUNDA7_SB4_GITHUB_PACKAGES_RUNBOOK.md` §4.1
+  - `docs/TINY_PLATFORM_SB4_MAVEN_REPOSITORY_CHAIN_AUDIT_20260417.md`
+  - `docs/TINY_PLATFORM_BUILD_TECH_DEBT_LEDGER.md` §2
+
 ### 1.4 Vite `build-only`：mixed import 门禁口径（2026-03-28）
 
 - **命令**：`npm --prefix tiny-oauth-server/src/main/webapp run build-only`
@@ -95,6 +124,41 @@
   - 自动启动后必须二次健康检查，不能把“命令返回 0”当作通过
   - 若脚本自动拉起前端，仅清理自己拉起的进程，不干扰用户手工启动的现有服务
   - `verify-platform-dev-bootstrap.sh` 不再视为 tiny-platform 本地 AI 验证默认入口；它是“后端/数据库专用降级入口”
+
+### 1.5.1 平台角色治理任务卡（CARD-PR-01 ~ CARD-PR-08）Liquibase 真跑门禁（2026-04-18）
+
+适用范围：
+
+- `docs/TINY_PLATFORM_PLATFORM_ROLE_GOVERNANCE_CURSOR_TASK_CARDS.md`
+- 平台角色 / 平台用户角色绑定 / 平台 RBAC3 / 平台角色审批相关实现卡
+
+触发条件：
+
+- 改动了 `db/changelog/**`
+- 改动了 `db.changelog-master.yaml`
+- 改动了 `api_endpoint` / `api_endpoint_permission_requirement`
+- 改动了 `menu_permission_requirement`
+- 改动了 `role_permission`
+- 改动了权限 seed、菜单 seed、DDL、唯一键、索引、nullable、generated column
+
+正式要求：
+
+- 上述任一条件成立时，任务完成条件不再只是“单测/集测通过”，而是必须补至少一次**真实 `SpringLiquibase` 执行路径**验证。
+- 推荐执行顺序：
+  1. `bash tiny-oauth-server/scripts/verify-platform-local-dev-stack.sh`
+  2. 若明确不需要前端联动：`DB_PASSWORD='…' bash tiny-oauth-server/scripts/verify-platform-dev-bootstrap.sh`
+  3. 若脚本不适用，可直接启动 `OauthServerApplication` 或等价入口，让 `SpringLiquibase` 真正跑过
+- 结果必须在交付中写清：
+  - 执行命令
+  - existing DB 还是 fresh DB 路径
+  - 是“changeset 已执行并成功越过 Liquibase”还是“未执行/被环境阻塞”
+
+补充边界：
+
+- 只改源码里的 changelog，但没有确认运行时实际加载到新资源，不算“已验证”；如果启动路径使用 `target/classes` 或 jar，就必须确认对应资源也已同步。
+- 对已经进入共享库/历史库的 changeset，禁止直接改旧正文后宣称修复完成；必须追加尾部 changeset，并验证旧库路径不会再启动失败。
+- 若本地环境缺 `DB_PASSWORD`、`mysql`、JDK、可执行启动产物等前置，结论只能写“环境阻塞/未验证”，不得写成“已完成，待用户启动验证”。
+- 对唯一键、nullable、generated column、表结构兼容性这类高风险迁移，除 existing DB 启动路径外，建议再补 fresh DB / migration smoke；如果当前没有执行，必须在剩余风险中明确说明。
 
 ### 1.6 从 GitHub Actions 修复记录沉淀的约束（2026-04-09）
 

@@ -86,7 +86,7 @@ import { message } from 'ant-design-vue'
 import DictType from '@/views/dict/dictType.vue'
 import DictItem from '@/views/dict/dictItem.vue'
 import {
-  getPlatformDictTypeList,
+  getPlatformVisibleDictTypes,
   getPlatformDictOverrides,
   getPlatformDictOverrideDetails,
   type DictTypeItem,
@@ -131,8 +131,7 @@ function handleViewItems(dictTypeId: number) {
 }
 
 async function loadTypeOptions() {
-  const page = await getPlatformDictTypeList({ page: 0, size: 200 })
-  dictTypeOptions.value = page.content || []
+  dictTypeOptions.value = await getPlatformVisibleDictTypes()
 }
 
 async function loadOverrideSummary() {

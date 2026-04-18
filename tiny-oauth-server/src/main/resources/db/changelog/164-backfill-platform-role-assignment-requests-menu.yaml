@@ -1,0 +1,126 @@
+databaseChangeLog:
+  - changeSet:
+      id: 164-backfill-platform-role-assignment-requests-menu
+      author: codex
+      comment: 平台角色赋权审批页菜单 + menu_permission_requirement OR 组，与 platform:role:approval:* 对齐
+      preConditions:
+        onFail: MARK_RAN
+        onError: HALT
+        and:
+          - tableExists:
+              tableName: menu
+          - tableExists:
+              tableName: permission
+          - tableExists:
+              tableName: menu_permission_requirement
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT INTO `menu` (
+                `tenant_id`,
+                `resource_level`,
+                `name`,
+                `title`,
+                `path`,
+                `icon`,
+                `show_icon`,
+                `sort`,
+                `component`,
+                `redirect`,
+                `hidden`,
+                `keep_alive`,
+                `permission`,
+                `required_permission_id`,
+                `type`,
+                `parent_id`,
+                `enabled`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                'PLATFORM' AS `resource_level`,
+                'platformRoleAssignmentRequests' AS `name`,
+                '平台角色赋权审批' AS `title`,
+                '/platform/role-assignment-requests' AS `path`,
+                'SolutionOutlined' AS `icon`,
+                1 AS `show_icon`,
+                9 AS `sort`,
+                '/views/platform/role-assignment-requests/PlatformRoleApprovals.vue' AS `component`,
+                '' AS `redirect`,
+                0 AS `hidden`,
+                0 AS `keep_alive`,
+                'platform:role:approval:list' AS `permission`,
+                p.`id` AS `required_permission_id`,
+                1 AS `type`,
+                sys.`id` AS `parent_id`,
+                1 AS `enabled`,
+                NOW() AS `created_at`,
+                NULL AS `created_by`,
+                NOW() AS `updated_at`,
+                NULL AS `updated_by`
+              FROM `menu` sys
+              JOIN `permission` p
+                ON p.`tenant_id` IS NULL
+               AND p.`permission_code` = 'platform:role:approval:list'
+              WHERE sys.`tenant_id` IS NULL
+                AND sys.`name` = 'system'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `menu` existing
+                  WHERE existing.`tenant_id` IS NULL
+                    AND existing.`path` = '/platform/role-assignment-requests'
+                );
+
+              DELETE requirement
+              FROM `menu_permission_requirement` requirement
+              JOIN `menu` m
+                ON m.`id` = requirement.`menu_id`
+              WHERE m.`tenant_id` IS NULL
+                AND m.`path` = '/platform/role-assignment-requests';
+
+              INSERT INTO `menu_permission_requirement` (
+                `tenant_id`,
+                `menu_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                NULL,
+                menu_entity.`id`,
+                permission_map.`requirement_group`,
+                1,
+                permission_entity.`id`,
+                0,
+                NOW(),
+                NULL,
+                NOW(),
+                NULL
+              FROM `menu` menu_entity
+              JOIN (
+                SELECT 0 AS `requirement_group`, 'platform:role:approval:list' AS `permission_code`
+                UNION ALL
+                SELECT 1, 'platform:role:approval:submit'
+                UNION ALL
+                SELECT 2, 'platform:role:approval:approve'
+                UNION ALL
+                SELECT 3, 'platform:role:approval:reject'
+                UNION ALL
+                SELECT 4, 'platform:role:approval:cancel'
+              ) permission_map
+              JOIN `permission` permission_entity
+                ON permission_entity.`tenant_id` IS NULL
+               AND permission_entity.`permission_code` = permission_map.`permission_code`
+              WHERE menu_entity.`tenant_id` IS NULL
+                AND menu_entity.`path` = '/platform/role-assignment-requests';

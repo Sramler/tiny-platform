@@ -172,5 +172,35 @@ describe('dict API', () => {
       expect(requestMocks.get).toHaveBeenNthCalledWith(1, '/platform/dict/types/10/overrides')
       expect(requestMocks.get).toHaveBeenNthCalledWith(2, '/platform/dict/types/10/overrides/7')
     })
+
+    it('should page through platform visible dict types with max page size 100', async () => {
+      requestMocks.get
+        .mockResolvedValueOnce({
+          content: [{ id: 1, dictCode: 'A', dictName: 'A' }],
+          totalElements: 101,
+          totalPages: 2,
+          pageNumber: 0,
+          pageSize: 100,
+        })
+        .mockResolvedValueOnce({
+          content: [{ id: 2, dictCode: 'B', dictName: 'B' }],
+          totalElements: 101,
+          totalPages: 2,
+          pageNumber: 1,
+          pageSize: 100,
+        })
+      const { getPlatformVisibleDictTypes } = await import('@/api/dict')
+
+      const result = await getPlatformVisibleDictTypes()
+
+      expect(requestMocks.get).toHaveBeenNthCalledWith(1, '/platform/dict/types', {
+        params: { page: 0, size: 100 },
+      })
+      expect(requestMocks.get).toHaveBeenNthCalledWith(2, '/platform/dict/types', {
+        params: { page: 1, size: 100 },
+      })
+      expect(result).toHaveLength(2)
+      expect(result.map((item) => item.dictCode)).toEqual(['A', 'B'])
+    })
   })
 })

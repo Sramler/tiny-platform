@@ -41,6 +41,7 @@
 | javac | 其他 deprecation 摘要行（如 `IdempotentConsoleRepository`） | 局部 API | 未逐条打开 `-Xlint:deprecation` 全量清零 | 模块触碰时逐文件收敛 |
 | Spring Test | `@MockBean` 过时（Boot 3.4+ 倾向 `@MockitoBean` 等） | 多份 `*RbacIntegrationTest` | 批量改注解与上下文契约，易波及 CI | **专项 PR**：按模块迁移并跑全量集成测试；本轮未改半套 |
 | JaCoCo | `execution data does not match` / 报告行号漂移 | `target/jacoco.exec` 与 class 不同步时 | 多次增量 `test` 复用旧 exec、或与并发编译交错、或**先后**运行不同 surefire 子集复用同一 exec | **唯一建议动作**：需要可信报告或消除 mismatch 告警时 **`mvn clean test`**（或顺序门禁前设 **`GATE_CLEAN_FIRST=1`** 跑 `mvn-tiny-oauth-server-gate-sequential.sh`）；**不要**与同模块并发的 `compile`/`test` 交错 |
+| Maven 仓库链路 | `camunda-nexus` / `camunda-public-repository` / `JBoss public` 的 metadata `401` 或候选仓库痕迹 | `sb4` snapshot / 冷仓解析排查、`/usr/local/data/repo` 历史 `resolver-status.properties` / `.lastUpdated` | 当前 effective settings 与项目 effective POM 均未把这些来源作为 tiny-platform 主线路径；现阶段更像环境注入或历史解析候选仓库噪音，而不是项目 POM 缺失仓库声明 | **唯一建议动作**：优先运行 `bash tiny-oauth-server/scripts/diagnose-sb4-maven-repository-chain.sh` 做脱敏盘点；不要把 `camunda-nexus` 反写进项目 POM，也不要先做静默 suppress |
 | Vite | **`vendor-antd` 仍为最大传输块**（gzip **~248KB** 量级，2026-03-28 实测，随版本波动） | 业务广谱使用 `a-*` 与 `message`/`Modal` 等 API，对应 **es 子模块**仍聚合到 `vendor-antd` | 与 mixed import **不同类**；整包 `app.use(Antd)` 已移除 | **唯一主阻断点（前端）**：按业务域继续收紧 AntD 组件面、或评估 **组件级样式** 与表单密度（需产品/UI 取舍，非纯构建开关） |
 
 ---

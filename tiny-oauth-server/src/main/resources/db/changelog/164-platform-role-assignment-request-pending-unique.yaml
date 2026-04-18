@@ -1,0 +1,30 @@
+databaseChangeLog:
+  - changeSet:
+      id: 164-platform-role-assignment-request-pending-unique
+      author: codex
+      comment: 平台角色赋权审批请求补 pending 唯一约束，防止并发重复提交
+      preConditions:
+        onFail: MARK_RAN
+        onError: HALT
+        and:
+          - tableExists:
+              tableName: platform_role_assignment_request
+          - not:
+              columnExists:
+                tableName: platform_role_assignment_request
+                columnName: pending_request_key
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              ALTER TABLE `platform_role_assignment_request`
+                ADD COLUMN `pending_request_key` VARCHAR(128)
+                  GENERATED ALWAYS AS (
+                    CASE
+                      WHEN `status` = 'PENDING' THEN CONCAT(`target_user_id`, ':', `role_id`, ':', `action_type`)
+                      ELSE NULL
+                    END
+                  ) STORED COMMENT '待审批重复提交防护键' AFTER `status`,
+                ADD UNIQUE KEY `uk_prar_pending_request` (`pending_request_key`);

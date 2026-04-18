@@ -12,9 +12,12 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.oauth2.server.authorization.token.JwtGenerator;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextRepository;
 
+import java.lang.reflect.Method;
+import java.util.Date;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -141,5 +144,59 @@ class MultiFactorAuthenticationSessionManagerTest {
 
         assertThat(promoted).isFalse();
         assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+    }
+
+    @Test
+    void passwordOnlyPromotionShouldExposeAuthenticationTimeForOidcIdTokenGeneration() throws Exception {
+        UserDetailsService userDetailsService = mock(UserDetailsService.class);
+        MultiFactorAuthenticationSessionManager sessionManager = new MultiFactorAuthenticationSessionManager(
+                userDetailsService,
+                new HttpSessionSecurityContextRepository()
+        );
+
+        SecurityUser securityUser = new SecurityUser(
+                1L,
+                null,
+                "platform_admin",
+                "",
+                List.of(new SimpleGrantedAuthority("system:tenant:list")),
+                true,
+                true,
+                true,
+                true
+        );
+        when(userDetailsService.loadUserByUsername("platform_admin")).thenReturn(securityUser);
+
+        UsernamePasswordAuthenticationToken currentAuth = UsernamePasswordAuthenticationToken.authenticated(
+                "platform_admin",
+                "n/a",
+                List.of(
+                        new SimpleGrantedAuthority("system:tenant:list"),
+                        new SimpleGrantedAuthority(AuthenticationFactorAuthorities.FACTOR_AUTHORITY_PREFIX + "PASSWORD")
+                )
+        );
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setParameter("authenticationProvider", "LOCAL");
+        currentAuth.setDetails(new CustomWebAuthenticationDetailsSource().buildDetails(request));
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        User domainUser = new User();
+        domainUser.setId(1L);
+        domainUser.setUsername("platform_admin");
+
+        sessionManager.promoteToFullyAuthenticated(domainUser, currentAuth, request, response);
+
+        Authentication promoted = SecurityContextHolder.getContext().getAuthentication();
+        assertThat(promoted).isInstanceOf(MultiFactorAuthenticationToken.class);
+        assertThat(promoted.getAuthorities())
+                .extracting(authority -> authority.getClass().getName())
+                .anyMatch(className -> className.endsWith("FactorGrantedAuthority"));
+        assertThat(resolveAuthenticationTime(promoted)).isNotNull();
+    }
+
+    private Date resolveAuthenticationTime(Authentication authentication) throws Exception {
+        Method method = JwtGenerator.class.getDeclaredMethod("getAuthenticationTime", Authentication.class);
+        method.setAccessible(true);
+        return (Date) method.invoke(null, authentication);
     }
 }

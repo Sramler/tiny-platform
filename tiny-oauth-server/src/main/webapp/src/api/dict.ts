@@ -254,8 +254,30 @@ export function getPlatformDictTypeList(params?: DictTypeQuery): Promise<PageRes
 }
 
 export async function getPlatformVisibleDictTypes(): Promise<DictTypeItem[]> {
-  const page = await getPlatformDictTypeList({ page: 0, size: 200 })
-  return page.content || []
+  const pageSize = 100
+  const result: DictTypeItem[] = []
+  let pageNumber = 0
+
+  while (true) {
+    const page = await getPlatformDictTypeList({ page: pageNumber, size: pageSize })
+    const content = page.content || []
+    result.push(...content)
+
+    const totalPages = Number(page.totalPages)
+    if (content.length === 0) {
+      break
+    }
+    if (Number.isFinite(totalPages)) {
+      if (pageNumber + 1 >= totalPages) {
+        break
+      }
+    } else if (content.length < pageSize) {
+      break
+    }
+    pageNumber += 1
+  }
+
+  return result
 }
 
 export function createPlatformDictType(data: DictTypeCreateUpdateDto): Promise<DictTypeItem> {

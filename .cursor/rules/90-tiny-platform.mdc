@@ -26,11 +26,18 @@ alwaysApply: true
 - ✅ 租户级别唯一性：使用 `UNIQUE KEY uk_表名_tenant_id_业务字段 (tenant_id, 业务字段)`。
 - ✅ 涉及认证、权限、租户隔离、插件边界、数据库迁移的改动，必须提供自动化回归验证，至少覆盖允许路径、拒绝路径和跨租户误用路径。
 - ✅ 涉及 `tenant_id` 过滤、租户级唯一约束、权限判定缺陷的修复，必须补回归测试，防止再次出现越权或串租户。
+- ✅ 涉及前端主入口路由 path/name 收口时，必须同步处理兼容 alias、菜单/跳转影响与全局硬编码引用核查；不得只改页面标题或单一路由声明后宣称已完成语义收口。
+- ✅ `/platform/**` 控制面不得默认把 `/sys/**` 或 tenant-only 控制面接口当作核心读写主链；若平台侧缺最小 lookup / query / action 能力，必须优先补平台语义下的最小接口，而不是继续借道租户/系统控制面。
+- ✅ `/platform/**` 页面、接口与前端权限守卫不得把 `system:*` 权限作为本域核心能力的必备前置；若存在历史桥接，必须明确标注为临时方案，并给出退出条件与后续收口任务。
+- ✅ 允许复用 service / repository / domain 逻辑，但 controller path、permission、menu、route、前端 API contract 与 scope guard 必须保持平台/租户分流；涉及平台路径时，`tenant_id IS NULL` 必须被显式建模或校验，禁止把 `NULL tenantId` 直接塞进 tenant-only 查询宣称完成。
+- ✅ 平台治理任务卡若触及 `db/changelog/**`、`db.changelog-master.yaml`、`api_endpoint` / `menu_permission_requirement` / `role_permission` 回填、权限/菜单 seed 或 DDL，完成条件必须包含一次真实 `SpringLiquibase` / 应用启动验证；只跑单测、组件测试或静态检查不得标记完成。
+- ✅ 平台治理任务卡交付必须显式说明“本卡负责什么、不负责什么”，尤其统一守卫回填、菜单回填、Liquibase include、real-controller 测试、启动验证这些责任不得默认外推到下一张卡或留给用户首次启动时发现。
 - ✅ tiny-platform 本地 AI 验证默认应先执行 `tiny-oauth-server/scripts/verify-platform-local-dev-stack.sh`；只有在明确不需要前端联动时，才降级使用 `verify-platform-dev-bootstrap.sh`，并且不得把脚本 `exit 2` 记成代码失败。
 - ✅ 凡仓库内已有脚本、编译命令、数据库查询或自动化测试能够直接产出结论，助手必须优先**自行执行并报告结果**；不能把“请用户先手工启动数据库/前端/后端、手工查库、手工跑脚本”作为默认工作流。
 - ✅ 只有在环境前置缺失、权限不足、存在明确破坏性风险，或仓库内确实没有可自动化路径时，助手才可以请求用户介入；此时必须明确指出缺的前置条件，而不是笼统地让用户“先操作一下再说”。
 - ✅ 涉及调度、工作流、任务编排、统计 DAG 等编排型能力时，测试必须覆盖拓扑语义而不仅是接口可用性：至少包含并行分叉后归并、串行推进、失败后重试/取消/暂停恢复中的相关场景。
 - ✅ 调度/工作流前端测试必须区分 DAG 级、run 级、node 级操作语义，禁止把全局操作误测为单次运行操作，或把单次运行操作误测为全局操作。
+- ✅ 涉及平台控制面主链的测试，除正向通过外，还必须补至少一条反向断言：确认未调用 `/sys/**` 旧入口、未依赖 `system:*` 权限、tenant scope 下会明确阻断，而不是静默回落到租户/系统控制面。
 - ✅ 真实认证链路、MFA、租户上下文、run 级/节点级调度操作的 E2E 必须优先使用专用自动化身份和专用测试租户，不允许用开发者个人账号或伪造权限状态替代。
 - ✅ tiny-platform 的 E2E 必须按环境等级明确分类，至少区分：本地 mock-assisted UI、隔离环境 real-link、共享环境 smoke、Nightly/full-chain；不同等级的断言、seed/reset、允许的 mock 边界必须清楚说明。
 - ✅ 当测试目标涉及 Session/JWT 切换、OIDC、MFA、租户上下文、真实数据库约束、插件装载、调度编排等平台能力时，必须保留至少一条 real-link E2E，不得全部退化为 mock-assisted 测试。

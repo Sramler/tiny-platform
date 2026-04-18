@@ -4,12 +4,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const apiMocks = vi.hoisted(() => ({
   getPlatformDictTypeList: vi.fn(),
+  getPlatformVisibleDictTypes: vi.fn(),
   getPlatformDictOverrides: vi.fn(),
   getPlatformDictOverrideDetails: vi.fn(),
 }))
 
 vi.mock('@/api/dict', () => ({
   getPlatformDictTypeList: apiMocks.getPlatformDictTypeList,
+  getPlatformVisibleDictTypes: apiMocks.getPlatformVisibleDictTypes,
   getPlatformDictOverrides: apiMocks.getPlatformDictOverrides,
   getPlatformDictOverrideDetails: apiMocks.getPlatformDictOverrideDetails,
 }))
@@ -41,6 +43,9 @@ describe('platform/dicts/index.vue', () => {
       pageNumber: 0,
       pageSize: 10,
     })
+    apiMocks.getPlatformVisibleDictTypes.mockResolvedValue([
+      { id: 10, dictCode: 'ENABLE_STATUS', dictName: '启用状态' },
+    ])
     apiMocks.getPlatformDictOverrides.mockResolvedValue([
       {
         tenantId: 7,
@@ -89,7 +94,7 @@ describe('platform/dicts/index.vue', () => {
     })
     await flushPromises()
 
-    expect(apiMocks.getPlatformDictTypeList).toHaveBeenCalledTimes(1)
+    expect(apiMocks.getPlatformVisibleDictTypes).toHaveBeenCalledTimes(1)
 
     await (wrapper.vm as any).loadOverrideSummary()
     await flushPromises()

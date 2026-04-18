@@ -25,6 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
@@ -306,6 +307,85 @@ class RoleAssignmentSyncServiceTest {
 
         // 核心验收点：失败时不会误删原有 role_assignment，也不会新增任何 assignment。
         verify(roleAssignmentRepository, never()).deleteUserAssignmentsInScope(5L, 1L, "TENANT", 1L);
+        verify(roleAssignmentRepository, never()).saveAll(any());
+    }
+
+    @Test
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    void replaceUserPlatformRoleAssignments_should_validate_before_delete_and_save() {
+        TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
+        OrganizationUnitRepository organizationUnitRepository = mock(OrganizationUnitRepository.class);
+        UserUnitRepository userUnitRepository = mock(UserUnitRepository.class);
+        RoleAssignmentRepository roleAssignmentRepository = mock(RoleAssignmentRepository.class);
+        RoleConstraintService roleConstraintService = mock(RoleConstraintService.class);
+        AuthorizationAuditService auditService = mock(AuthorizationAuditService.class);
+        RoleAssignmentSyncService service = new RoleAssignmentSyncService(
+            tenantUserRepository,
+            organizationUnitRepository,
+            userUnitRepository,
+            roleAssignmentRepository,
+            roleConstraintService,
+            auditService
+        );
+
+        when(roleAssignmentRepository.findActiveRoleIdsForUserInPlatform(eq(5L), any())).thenReturn(List.of(8L));
+
+        service.replaceUserPlatformRoleAssignments(5L, List.of(10L, 10L, 11L));
+
+        verify(roleConstraintService).validateAssignmentsBeforeGrant(
+            eq("USER"),
+            eq(5L),
+            isNull(),
+            eq("PLATFORM"),
+            isNull(),
+            eq(List.of(10L, 10L, 11L))
+        );
+        verify(roleAssignmentRepository).deleteUserAssignmentsInPlatform(5L);
+        ArgumentCaptor<List<RoleAssignment>> captor = ArgumentCaptor.forClass((Class) List.class);
+        verify(roleAssignmentRepository).saveAll((Iterable<RoleAssignment>) captor.capture());
+        assertThat(captor.getValue()).hasSize(2);
+        assertThat(captor.getValue())
+            .allSatisfy(assignment -> {
+                assertThat(assignment.getTenantId()).isNull();
+                assertThat(assignment.getScopeType()).isEqualTo("PLATFORM");
+                assertThat(assignment.getScopeId()).isNull();
+            });
+    }
+
+    @Test
+    void replaceUserPlatformRoleAssignments_should_fail_and_not_delete_when_grant_validation_rejects() {
+        TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
+        OrganizationUnitRepository organizationUnitRepository = mock(OrganizationUnitRepository.class);
+        UserUnitRepository userUnitRepository = mock(UserUnitRepository.class);
+        RoleAssignmentRepository roleAssignmentRepository = mock(RoleAssignmentRepository.class);
+        RoleConstraintService roleConstraintService = mock(RoleConstraintService.class);
+        AuthorizationAuditService auditService = mock(AuthorizationAuditService.class);
+        RoleAssignmentSyncService service = new RoleAssignmentSyncService(
+            tenantUserRepository,
+            organizationUnitRepository,
+            userUnitRepository,
+            roleAssignmentRepository,
+            roleConstraintService,
+            auditService
+        );
+
+        doThrow(new BusinessException(
+            ErrorCode.RESOURCE_STATE_INVALID,
+            "平台角色约束校验失败"
+        )).when(roleConstraintService).validateAssignmentsBeforeGrant(
+            eq("USER"),
+            eq(5L),
+            isNull(),
+            eq("PLATFORM"),
+            isNull(),
+            any()
+        );
+
+        assertThatThrownBy(() -> service.replaceUserPlatformRoleAssignments(5L, List.of(10L, 11L)))
+            .isInstanceOf(BusinessException.class)
+            .hasMessageContaining("平台角色约束校验失败");
+
+        verify(roleAssignmentRepository, never()).deleteUserAssignmentsInPlatform(5L);
         verify(roleAssignmentRepository, never()).saveAll(any());
     }
 

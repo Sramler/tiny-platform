@@ -96,10 +96,12 @@ describe('TemplateRoles.vue', () => {
 
     expect(roleMocks.roleList).toHaveBeenCalled()
     expect(tenantMocks.tenantList).toHaveBeenCalled()
-    expect(wrapper.text()).toContain('新建模板角色')
+    expect(wrapper.text()).toContain('新建平台角色')
     expect(wrapper.text()).toContain('当前已加载租户样本数')
     expect(wrapper.text()).not.toContain('潜在派生租户')
-    expect(wrapper.text()).toContain('模板角色不能直接分配用户')
+    expect(wrapper.text()).toContain('平台角色可作为租户初始化来源')
+    expect(wrapper.text()).toContain('/platform/users')
+    expect(wrapper.text()).toContain('/platform/template-roles')
   })
 
   it('persists permission binding payload on submit', async () => {

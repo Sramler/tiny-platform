@@ -1,5 +1,6 @@
 <template>
-  <div class="content-container" style="position: relative;">
+  <PlatformDictPage v-if="isPlatformScope" />
+  <div v-else class="content-container" style="position: relative;">
     <div class="content-card">
       <!-- 阶段10: Tab 切换 -->
       <a-tabs v-model:activeKey="activeTab" @change="handleTabChange">
@@ -18,12 +19,15 @@
 import { ref, nextTick } from 'vue'
 import DictType from './dictType.vue'
 import DictItem from './dictItem.vue'
+import PlatformDictPage from '@/views/platform/dicts/index.vue'
+import { usePlatformScope } from '@/composables/usePlatformScope'
 import type { Key } from 'ant-design-vue/es/_util/type'
 
 // Tab 切换
 const activeTab = ref('type')
 const dictTypeRef = ref<InstanceType<typeof DictType> | null>(null)
 const dictItemRef = ref<InstanceType<typeof DictItem> | null>(null)
+const { isPlatformScope } = usePlatformScope()
 
 function handleTabChange(key: Key) {
   activeTab.value = String(key)

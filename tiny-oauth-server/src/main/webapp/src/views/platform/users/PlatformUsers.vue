@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { ColumnHeightOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons-vue'
@@ -8,13 +8,18 @@ import { extractAuthoritiesFromJwt } from '@/utils/jwt'
 import {
   createPlatformUser,
   getPlatformUserDetail,
+  getPlatformUserRoles,
   listPlatformUsers,
+  replacePlatformUserRoles,
   updatePlatformUserStatus,
   type PlatformUserCreatePayload,
   type PlatformUserDetail,
   type PlatformUserListItem,
+  type PlatformUserRole,
   type PlatformUserStatus,
 } from '@/api/platform-user'
+import { listPlatformRoleOptions, type PlatformRoleOption } from '@/api/platform-role'
+import { listPlatformRoleAssignmentRequests } from '@/api/platform-role-approval'
 import {
   getPlatformTenantUserDetail,
   listPlatformTenantUsers,
@@ -24,6 +29,7 @@ import {
 import { getTenantById, tenantList, type Tenant } from '@/api/tenant'
 import {
   PLATFORM_USER_MANAGEMENT_CREATE_AUTHORITIES,
+  PLATFORM_ROLE_APPROVAL_PAGE_AUTHORITIES,
   PLATFORM_USER_MANAGEMENT_READ_AUTHORITIES,
   PLATFORM_USER_MANAGEMENT_UPDATE_AUTHORITIES,
   TENANT_MANAGEMENT_READ_AUTHORITIES,
@@ -60,9 +66,16 @@ const detailVisible = ref(false)
 const createVisible = ref(false)
 const tenantUserDetailVisible = ref(false)
 const activeDetail = ref<PlatformUserDetail | null>(null)
+const platformRoleOptions = ref<PlatformRoleOption[]>([])
+const roleEditorVisible = ref(false)
+const roleEditorLoading = ref(false)
+const roleEditorSaving = ref(false)
+const roleEditorUserId = ref<number | null>(null)
+const selectedRoleIds = ref<number[]>([])
 const activeTenantUserDetail = ref<PlatformTenantUserDetail | null>(null)
 const selectedStewardshipTenant = ref<Tenant | null>(null)
 const activeTab = ref('platformUsers')
+const pendingApprovalTotal = ref(0)
 const createForm = ref<PlatformUserCreatePayload>({
   userId: 0,
   displayName: '',
@@ -166,6 +179,8 @@ function hasAnyAuthority(requiredAuthorities: string[]) {
 const canRead = computed(() => hasAnyAuthority(PLATFORM_USER_MANAGEMENT_READ_AUTHORITIES))
 const canCreate = computed(() => hasAnyAuthority(PLATFORM_USER_MANAGEMENT_CREATE_AUTHORITIES))
 const canUpdate = computed(() => hasAnyAuthority(PLATFORM_USER_MANAGEMENT_UPDATE_AUTHORITIES))
+const canEditPlatformUserRoles = computed(() => canUpdate.value)
+const canViewApprovalCenter = computed(() => hasAnyAuthority(PLATFORM_ROLE_APPROVAL_PAGE_AUTHORITIES))
 const canReadTenants = computed(() => hasAnyAuthority(TENANT_MANAGEMENT_READ_AUTHORITIES))
 const canReadTenantUsers = computed(() => hasAnyAuthority(USER_MANAGEMENT_READ_AUTHORITIES))
 const canAccessPlatformUsers = computed(() => isPlatformScope.value && canRead.value)
@@ -303,6 +318,13 @@ function platformRoleBindingColor(value?: boolean) {
   return value ? 'blue' : 'default'
 }
 
+function roleTagLabel(role: PlatformUserRole) {
+  if (role.code && role.name) {
+    return `${role.name} (${role.code})`
+  }
+  return role.name || role.code || `角色#${role.roleId}`
+}
+
 function displayValue(value?: string | number | null) {
   if (value === null || value === undefined) {
     return '-'
@@ -396,6 +418,30 @@ async function loadData() {
     message.error(error?.message || '平台用户列表加载失败')
   } finally {
     loading.value = false
+  }
+}
+
+async function loadPlatformRoleOptions() {
+  try {
+    const result = await listPlatformRoleOptions({
+      limit: 200,
+    })
+    const content = Array.isArray(result) ? result : []
+    platformRoleOptions.value = content
+      .map((item: any) => ({
+        roleId: Number(item.roleId),
+        code: typeof item.code === 'string' ? item.code : '',
+        name: typeof item.name === 'string' ? item.name : '',
+        description: typeof item.description === 'string' ? item.description : undefined,
+        enabled: typeof item.enabled === 'boolean' ? item.enabled : undefined,
+        builtin: typeof item.builtin === 'boolean' ? item.builtin : undefined,
+        riskLevel: typeof item.riskLevel === 'string' ? item.riskLevel : undefined,
+        approvalMode: typeof item.approvalMode === 'string' ? item.approvalMode : undefined,
+      }))
+      .filter((role) => Number.isInteger(role.roleId) && role.roleId > 0)
+  } catch (error: any) {
+    platformRoleOptions.value = []
+    message.warning(error?.message || '平台角色候选加载失败')
   }
 }
 
@@ -605,13 +651,120 @@ async function showDetail(record: PlatformUserListItem) {
   detailVisible.value = true
   detailLoading.value = true
   activeDetail.value = null
+  pendingApprovalTotal.value = 0
   try {
-    activeDetail.value = await getPlatformUserDetail(record.userId)
+    const [detail, roles] = await Promise.all([
+      getPlatformUserDetail(record.userId),
+      getPlatformUserRoles(record.userId),
+    ])
+    activeDetail.value = {
+      ...detail,
+      roles,
+    }
+    await loadPendingApprovalCount(record.userId)
   } catch (error: any) {
     detailVisible.value = false
     message.error(error?.message || '平台用户详情加载失败')
   } finally {
     detailLoading.value = false
+  }
+}
+
+async function loadPendingApprovalCount(userId: number) {
+  pendingApprovalTotal.value = 0
+  if (!canViewApprovalCenter.value) {
+    return
+  }
+  try {
+    const res = await listPlatformRoleAssignmentRequests({
+      targetUserId: userId,
+      status: 'PENDING',
+      current: 1,
+      pageSize: 1,
+    })
+    pendingApprovalTotal.value = res.total
+  } catch {
+    pendingApprovalTotal.value = 0
+  }
+}
+
+function goToApprovalQueue(userId: number) {
+  router.push({
+    path: '/platform/role-assignment-requests',
+    query: { targetUserId: String(userId), status: 'PENDING' },
+  })
+}
+
+function platformRoleOptionLabel(role: PlatformRoleOption) {
+  const label = roleTagLabel({
+    roleId: role.roleId,
+    code: role.code,
+    name: role.name,
+  } as PlatformUserRole)
+  const mode = (role.approvalMode || 'NONE').toUpperCase()
+  if (mode === 'ONE_STEP') {
+    return `${label} [需审批]`
+  }
+  return label
+}
+
+watch(detailVisible, (open) => {
+  if (!open) {
+    pendingApprovalTotal.value = 0
+  }
+})
+
+async function openRoleEditor(userId: number) {
+  if (!canEditPlatformUserRoles.value) {
+    message.warning('当前会话缺少平台用户更新权限，无法编辑平台角色')
+    return
+  }
+  roleEditorVisible.value = true
+  roleEditorUserId.value = userId
+  roleEditorLoading.value = true
+  try {
+    const [assignedRoles] = await Promise.all([
+      getPlatformUserRoles(userId),
+      platformRoleOptions.value.length > 0 ? Promise.resolve() : loadPlatformRoleOptions(),
+    ])
+    selectedRoleIds.value = assignedRoles.map((role) => role.roleId)
+  } catch (error: any) {
+    roleEditorVisible.value = false
+    message.error(error?.message || '平台角色编辑数据加载失败')
+  } finally {
+    roleEditorLoading.value = false
+  }
+}
+
+async function submitRoleEditor() {
+  if (!canUpdate.value) {
+    message.warning('当前会话缺少平台用户更新权限')
+    return
+  }
+  if (!roleEditorUserId.value) {
+    message.warning('缺少平台用户上下文，暂无法保存角色绑定')
+    return
+  }
+  roleEditorSaving.value = true
+  try {
+    const updatedRoles = await replacePlatformUserRoles(roleEditorUserId.value, selectedRoleIds.value)
+    if (activeDetail.value?.userId === roleEditorUserId.value) {
+      activeDetail.value = {
+        ...activeDetail.value,
+        hasPlatformRoleAssignment: updatedRoles.length > 0,
+        roles: updatedRoles,
+      }
+    }
+    const tableTarget = tableData.value.find((item) => item.userId === roleEditorUserId.value)
+    if (tableTarget) {
+      tableTarget.hasPlatformRoleAssignment = updatedRoles.length > 0
+    }
+    roleEditorVisible.value = false
+    message.success('平台角色绑定已保存')
+  } catch (error: any) {
+    message.error(error?.message || '平台角色绑定保存失败')
+  } finally {
+    roleEditorSaving.value = false
   }
 }
 
@@ -850,6 +1003,7 @@ onMounted(() => {
                         <template #default="{ record }">
                           <a-space>
                             <a-button type="link" @click="showDetail(record)">详情</a-button>
+                            <a-button v-if="canEditPlatformUserRoles" type="link" @click="openRoleEditor(record.userId)">角色绑定</a-button>
                             <a-button v-if="canUpdate" type="link" @click="toggleStatus(record)">
                               {{ record.platformStatus === 'ACTIVE' ? '禁用' : '启用' }}
                             </a-button>
@@ -1213,6 +1367,23 @@ onMounted(() => {
                   </a-tag>
                 </div>
 
+                <a-alert
+                  v-if="pendingApprovalTotal > 0"
+                  type="warning"
+                  show-icon
+                  style="margin-bottom: 16px"
+                  :message="`该平台用户有 ${pendingApprovalTotal} 条待审批的平台角色赋权申请`"
+                >
+                  <template #description>
+                    <span v-if="canViewApprovalCenter">
+                      可在
+                      <a class="approval-link" href="#" @click.prevent="goToApprovalQueue(activeDetail.userId)">平台角色赋权审批</a>
+                      中查看并处理。
+                    </span>
+                    <span v-else>处理赋权审批需要具备 <code>platform:role:approval:*</code> 相关权限。</span>
+                  </template>
+                </a-alert>
+
                 <section class="drawer-section">
                   <div class="drawer-section-header">
                     <h4>基础身份</h4>
@@ -1276,6 +1447,24 @@ onMounted(() => {
                       <span class="detail-label">平台角色绑定</span>
                       <span class="detail-value">{{ platformRoleBindingLabel(activeDetail.hasPlatformRoleAssignment) }}</span>
                     </div>
+                  </div>
+                </section>
+
+                <section class="drawer-section">
+                  <div class="drawer-section-header">
+                    <h4>平台角色绑定明细</h4>
+                    <p>平台用户角色绑定由 /platform/users 控制面承载，保持 PLATFORM 作用域语义不变。</p>
+                  </div>
+                  <div class="drawer-role-toolbar">
+                    <a-button v-if="canEditPlatformUserRoles" type="primary" @click="openRoleEditor(activeDetail.userId)">编辑平台角色</a-button>
+                  </div>
+                  <div v-if="activeDetail.roles && activeDetail.roles.length > 0" class="drawer-role-list">
+                    <a-tag v-for="role in activeDetail.roles" :key="role.roleId" color="blue">
+                      {{ roleTagLabel(role) }}
+                    </a-tag>
+                  </div>
+                  <div v-else class="table-empty-state drawer-role-empty">
+                    当前平台用户暂无角色绑定。
                   </div>
                 </section>
 
@@ -1462,6 +1651,28 @@ onMounted(() => {
             </div>
           </template>
         </a-drawer>
+
+        <a-modal
+          v-model:open="roleEditorVisible"
+          title="编辑平台角色绑定"
+          :confirm-loading="roleEditorSaving"
+          @ok="submitRoleEditor"
+          @cancel="roleEditorVisible = false"
+        >
+          <a-spin :spinning="roleEditorLoading">
+            <p class="role-editor-hint">
+              仅展示平台角色主链（/platform/roles 对应角色源），保存直连 GET/PUT /platform/users/{id}/roles。
+              标记为「需审批」的角色须通过「平台角色赋权审批」发起申请；直写将拒绝变更此类绑定。
+            </p>
+            <a-select
+              v-model:value="selectedRoleIds"
+              mode="multiple"
+              style="width: 100%"
+              placeholder="请选择平台角色"
+              :options="platformRoleOptions.map((role) => ({ value: role.roleId, label: platformRoleOptionLabel(role) }))"
+            />
+          </a-spin>
+        </a-modal>
       </template>
     </div>
   </div>
@@ -1919,6 +2130,31 @@ onMounted(() => {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.drawer-role-toolbar {
+  margin-bottom: 12px;
+}
+
+.drawer-role-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.drawer-role-empty {
+  border: 1px dashed #f0f0f0;
+  border-radius: 8px;
+}
+
+.role-editor-hint {
+  margin: 0 0 12px;
+  color: #595959;
+}
+
+.approval-link {
+  color: #1677ff;
+  cursor: pointer;
 }
 
 .tenant-stewardship-table-container {

@@ -3,6 +3,7 @@ package com.tiny.platform.application.controller.user;
 import com.tiny.platform.infrastructure.auth.user.dto.PlatformUserManagementDtos.PlatformUserCreateDto;
 import com.tiny.platform.infrastructure.auth.user.dto.PlatformUserManagementDtos.PlatformUserDetailDto;
 import com.tiny.platform.infrastructure.auth.user.dto.PlatformUserManagementDtos.PlatformUserListItemDto;
+import com.tiny.platform.infrastructure.auth.user.dto.PlatformUserManagementDtos.PlatformUserRoleDto;
 import com.tiny.platform.infrastructure.auth.user.service.PlatformUserManagementService;
 import com.tiny.platform.infrastructure.core.dto.PageResponse;
 import com.tiny.platform.infrastructure.core.exception.code.ErrorCode;
@@ -17,10 +18,13 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/platform/users")
@@ -52,6 +56,12 @@ public class PlatformUserManagementController {
             .orElse(ResponseEntity.notFound().build());
     }
 
+    @GetMapping("/{id}/roles")
+    @PreAuthorize("@platformUserManagementAccessGuard.canRead(authentication)")
+    public ResponseEntity<List<PlatformUserRoleDto>> getRoles(@PathVariable("id") Long id) {
+        return ResponseEntity.ok(platformUserManagementService.getRoles(id));
+    }
+
     @PostMapping
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     @PreAuthorize("@platformUserManagementAccessGuard.canCreate(authentication)")
@@ -79,9 +89,23 @@ public class PlatformUserManagementController {
         return ResponseEntity.ok().build();
     }
 
+    @PutMapping("/{id}/roles")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    @PreAuthorize("@platformUserManagementAccessGuard.canUpdate(authentication)")
+    public ResponseEntity<List<PlatformUserRoleDto>> replaceRoles(@PathVariable("id") Long id,
+                                                                   @RequestBody PlatformUserRolesReplaceRequest request) {
+        if (request == null || request.roleIds() == null) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "请求体必须提供 roleIds");
+        }
+        return ResponseEntity.ok(platformUserManagementService.replaceRoles(id, request.roleIds()));
+    }
+
     public record PlatformUserCreateRequest(Long userId, String displayName, String status) {
     }
 
     public record PlatformUserStatusUpdateRequest(String status) {
+    }
+
+    public record PlatformUserRolesReplaceRequest(List<Long> roleIds) {
     }
 }
