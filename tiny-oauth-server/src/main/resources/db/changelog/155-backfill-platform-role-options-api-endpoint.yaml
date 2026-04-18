@@ -1,0 +1,93 @@
+databaseChangeLog:
+  - changeSet:
+      id: 155-backfill-platform-role-options-api-endpoint
+      author: codex
+      comment: 补齐平台角色候选 lookup 接口 api_endpoint requirement，消除 /platform/users 对 /sys/roles 的跨域依赖
+      preConditions:
+        onFail: MARK_RAN
+        onError: HALT
+        and:
+          - tableExists:
+              tableName: permission
+          - tableExists:
+              tableName: api_endpoint
+          - tableExists:
+              tableName: api_endpoint_permission_requirement
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT IGNORE INTO `api_endpoint` (
+                `tenant_id`,
+                `resource_level`,
+                `name`,
+                `title`,
+                `uri`,
+                `method`,
+                `permission`,
+                `required_permission_id`,
+                `enabled`,
+                `created_at`,
+                `updated_at`
+              )
+              SELECT NULL, 'PLATFORM', 'platform-roles-options-get', '平台角色候选查询', '/platform/roles/options', 'GET', 'platform:user:disable', p.`id`, 1, NOW(), NOW()
+              FROM `permission` p
+              WHERE p.`tenant_id` IS NULL
+                AND p.`permission_code` = 'platform:user:disable'
+                AND NOT EXISTS (
+                  SELECT 1 FROM `api_endpoint` e WHERE e.`tenant_id` IS NULL AND e.`uri` = '/platform/roles/options' AND e.`method` = 'GET'
+                );
+
+              INSERT IGNORE INTO `api_endpoint_permission_requirement` (
+                `tenant_id`,
+                `api_endpoint_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `updated_at`
+              )
+              SELECT
+                e.`tenant_id`,
+                e.`id`,
+                0,
+                1,
+                e.`required_permission_id`,
+                0,
+                NOW(),
+                NOW()
+              FROM `api_endpoint` e
+              WHERE e.`tenant_id` IS NULL
+                AND e.`uri` = '/platform/roles/options'
+                AND e.`method` = 'GET'
+                AND e.`required_permission_id` IS NOT NULL;
+
+              INSERT IGNORE INTO `api_endpoint_permission_requirement` (
+                `tenant_id`,
+                `api_endpoint_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `updated_at`
+              )
+              SELECT
+                e.`tenant_id`,
+                e.`id`,
+                1,
+                1,
+                p.`id`,
+                0,
+                NOW(),
+                NOW()
+              FROM `api_endpoint` e
+              JOIN `permission` p
+                ON p.`tenant_id` IS NULL
+               AND p.`permission_code` = 'platform:user:edit'
+              WHERE e.`tenant_id` IS NULL
+                AND e.`uri` = '/platform/roles/options'
+                AND e.`method` = 'GET';
