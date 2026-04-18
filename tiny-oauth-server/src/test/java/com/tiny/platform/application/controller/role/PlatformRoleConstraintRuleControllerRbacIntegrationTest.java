@@ -12,14 +12,13 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.SpringBootConfiguration;
-import org.springframework.boot.autoconfigure.data.web.SpringDataWebAutoConfiguration;
-import org.springframework.boot.autoconfigure.http.HttpMessageConvertersAutoConfiguration;
-import org.springframework.boot.autoconfigure.web.servlet.WebMvcAutoConfiguration;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.data.autoconfigure.web.DataWebAutoConfiguration;
+import org.springframework.boot.http.converter.autoconfigure.HttpMessageConvertersAutoConfiguration;
+import org.springframework.boot.webmvc.autoconfigure.WebMvcAutoConfiguration;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Profile;
@@ -30,6 +29,7 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -51,7 +51,7 @@ class PlatformRoleConstraintRuleControllerRbacIntegrationTest {
         RbacTestConfig.class,
         PlatformRoleConstraintRuleController.class,
         OAuthServerExceptionHandler.class,
-        SpringDataWebAutoConfiguration.class,
+        DataWebAutoConfiguration.class,
         HttpMessageConvertersAutoConfiguration.class,
         WebMvcAutoConfiguration.class
     })
@@ -75,10 +75,10 @@ class PlatformRoleConstraintRuleControllerRbacIntegrationTest {
         }
     }
 
-    @MockBean
+    @MockitoBean
     private RoleConstraintRuleAdminService adminService;
 
-    @MockBean
+    @MockitoBean
     private RoleConstraintViolationLogQueryService violationLogQueryService;
 
     @jakarta.annotation.Resource
