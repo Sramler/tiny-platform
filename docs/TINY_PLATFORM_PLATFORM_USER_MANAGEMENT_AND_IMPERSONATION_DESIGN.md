@@ -9,6 +9,7 @@
 - `docs/TINY_PLATFORM_TENANT_GOVERNANCE.md`
 - `docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md`
 - `docs/TINY_PLATFORM_AUTHORIZATION_NEXT_PHASE_AND_IMPROVEMENTS.md`
+- `docs/TINY_PLATFORM_PLATFORM_RUNTIME_RBAC3_GOVERNANCE_DESIGN.md`
 
 ---
 
@@ -39,7 +40,7 @@
 - scope/tenant 解析主入口：`tiny-oauth-server/src/main/java/com/tiny/platform/core/oauth/tenant/TenantContextFilter.java`
 - token claim 写入入口：`tiny-oauth-server/src/main/java/com/tiny/platform/core/oauth/config/JwtTokenCustomizer.java`
 
-结论：现状已具备平台作用域与租户隔离基础，并已落地平台用户管理 Phase 1 skeleton；但仍缺少平台到租户用户的桥接层、平台角色绑定专门控制面，以及受控 impersonation 子系统。
+结论：现状已具备平台作用域与租户隔离基础，并已落地平台用户管理 Phase 1 skeleton；但仍缺少平台到租户用户的桥接层、平台角色绑定专门控制面、平台运行时 RBAC3 治理，以及受控 impersonation 子系统。
 
 ---
 

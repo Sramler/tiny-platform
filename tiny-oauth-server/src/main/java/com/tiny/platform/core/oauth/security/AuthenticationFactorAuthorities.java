@@ -2,8 +2,10 @@ package com.tiny.platform.core.oauth.security;
 
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.FactorGrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumSet;
@@ -31,19 +33,31 @@ public final class AuthenticationFactorAuthorities {
             Collection<? extends GrantedAuthority> authorities,
             Set<MultiFactorAuthenticationToken.AuthenticationFactorType> completedFactors) {
         Map<String, GrantedAuthority> merged = new LinkedHashMap<>();
+        Instant synthesizedFactorIssuedAt = Instant.now();
         if (authorities != null) {
             for (GrantedAuthority authority : authorities) {
-                if (authority == null || authority.getAuthority() == null || authority.getAuthority().isBlank()) {
+                GrantedAuthority normalized = normalizeAuthority(authority, synthesizedFactorIssuedAt);
+                if (normalized == null || normalized.getAuthority() == null || normalized.getAuthority().isBlank()) {
                     continue;
                 }
-                merged.putIfAbsent(authority.getAuthority(), authority);
+                merged.merge(
+                        normalized.getAuthority(),
+                        normalized,
+                        AuthenticationFactorAuthorities::preferAuthority
+                );
             }
         }
         if (completedFactors != null) {
             for (MultiFactorAuthenticationToken.AuthenticationFactorType factor : completedFactors) {
                 String factorAuthority = toAuthority(factor);
                 if (factorAuthority != null) {
-                    merged.putIfAbsent(factorAuthority, new SimpleGrantedAuthority(factorAuthority));
+                    merged.merge(
+                            factorAuthority,
+                            FactorGrantedAuthority.withAuthority(factorAuthority)
+                                    .issuedAt(synthesizedFactorIssuedAt)
+                                    .build(),
+                            AuthenticationFactorAuthorities::preferAuthority
+                    );
                 }
             }
         }
@@ -131,5 +145,38 @@ public final class AuthenticationFactorAuthorities {
             case MFA -> "mfa";
             default -> null;
         };
+    }
+
+    private static GrantedAuthority normalizeAuthority(GrantedAuthority authority, Instant synthesizedFactorIssuedAt) {
+        if (authority == null) {
+            return null;
+        }
+        String authorityValue = authority.getAuthority();
+        if (authorityValue == null || authorityValue.isBlank()) {
+            return null;
+        }
+        if (authority instanceof FactorGrantedAuthority factorGrantedAuthority) {
+            return factorGrantedAuthority;
+        }
+        if (fromAuthority(authorityValue) != MultiFactorAuthenticationToken.AuthenticationFactorType.UNKNOWN) {
+            return FactorGrantedAuthority.withAuthority(authorityValue)
+                    .issuedAt(synthesizedFactorIssuedAt)
+                    .build();
+        }
+        return authority;
+    }
+
+    private static GrantedAuthority preferAuthority(GrantedAuthority existing, GrantedAuthority candidate) {
+        if (existing instanceof FactorGrantedAuthority existingFactor) {
+            if (candidate instanceof FactorGrantedAuthority candidateFactor
+                    && candidateFactor.getIssuedAt().isAfter(existingFactor.getIssuedAt())) {
+                return candidateFactor;
+            }
+            return existing;
+        }
+        if (candidate instanceof FactorGrantedAuthority) {
+            return candidate;
+        }
+        return existing != null ? existing : candidate;
     }
 }

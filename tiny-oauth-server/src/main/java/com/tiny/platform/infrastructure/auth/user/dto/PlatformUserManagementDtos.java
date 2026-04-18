@@ -1,6 +1,7 @@
 package com.tiny.platform.infrastructure.auth.user.dto;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public final class PlatformUserManagementDtos {
 
@@ -41,7 +42,18 @@ public final class PlatformUserManagementDtos {
         boolean hasPlatformRoleAssignment,
         LocalDateTime lastLoginAt,
         LocalDateTime createdAt,
-        LocalDateTime updatedAt
+        LocalDateTime updatedAt,
+        List<PlatformUserRoleDto> roles
+    ) {
+    }
+
+    public record PlatformUserRoleDto(
+        Long roleId,
+        String code,
+        String name,
+        String description,
+        boolean enabled,
+        boolean builtin
     ) {
     }
 }

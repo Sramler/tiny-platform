@@ -27,6 +27,15 @@
 - ✅ 涉及授权模型的数据库迁移必须给出历史数据回填、唯一约束、索引和回滚/兼容说明。
 - ✅ 平台级授权与租户级授权必须显式区分，不得让普通租户入口默认继承平台管理能力。
 - ✅ `scope_type=PLATFORM` 必须是一等作用域；默认租户最多只能作为迁移期的初始化模板或兼容承载，不得继续作为平台语义本身。
+- ✅ 运行时 token 权限面必须与当前 active scope 下的权威授权结果一致；当 `role_assignment` / `role_hierarchy` / `role_permission` 变化会影响 `permissionsVersion` 时，`JwtTokenCustomizer`、`UserDetailsService` 等 token 生成链不得只刷新版本指纹而继续复用旧 `SecurityUser` snapshot。
+- ✅ 新增或改名 `/platform/**`、`/sys/**` 控制面 API 时，只要目标路径应受统一权限链路治理，就必须在同一任务中同步补齐 `api_endpoint` 登记、`api_endpoint_permission_requirement` 回填、master include 或等价初始化链路，并补 real-controller 守卫/集成测试；禁止只改 controller/service/普通 MockMvc happy path 后宣称已闭合。
+- ✅ 若同一授权任务同时触及 `db/changelog/**`、`db.changelog-master.yaml`、`api_endpoint` / `menu_permission_requirement` / `role_permission` 回填、权限 seed、菜单 seed、DDL/nullability/unique/index/generated column，则同一任务还必须补至少一次真实 `SpringLiquibase` / 应用启动验证；只凭 controller/service/unit/integration test 通过不得标记为“已完成”。
+- ✅ `/platform/**` 控制面不得把 `/sys/**` 或 tenant-only 控制面接口当作本域核心读写主链；若平台侧缺最小 lookup / query / action 能力，应补平台专用最小接口，而不是默认借道租户/系统控制面。
+- ✅ `/platform/**` 页面、接口与前端权限守卫不得把 `system:*` 权限作为平台域核心能力的必备前置；若存在历史桥接，必须显式说明临时性质、风险、退出条件和后续收口卡片，否则视为不允许。
+- ✅ 允许复用 service / repository / domain 逻辑，但 controller path、permission、menu、route、前端 API contract、AccessGuard 与 scope 判定必须平台/租户分流；涉及平台路径的 repository / query / constraint 记录时，必须显式支持 `tenant_id IS NULL`，禁止把 `NULL tenantId` 直接传进 tenant-only `= :tenantId` 查询后宣称完成。
+- ✅ `roleIds`、`permissionIds`、`resourceIds` 等批量 replace 写入请求必须遵循“先校验、后去重、再落库”：`null`、`0`、负数、越界 ID、错作用域对象都必须 fail-closed 拒绝，不得通过静默过滤非法值制造部分成功。
+- ✅ 平台授权治理任务必须显式收口隐藏跨域依赖：如果 `/platform/**` 页面或接口复用了 `/sys/**` lookup、`system:*` 权限或别的域的菜单/endpoint requirement，同卡必须把这种桥接写明为临时方案并补退出条件；若该桥接会导致“按钮可见但主链不可用”，则视为实现不合格。
+- ✅ 平台授权治理任务若涉及运行态主链、统一守卫、初始化数据、菜单或迁移，只完成其中一部分不能宣称“任务已完成”；必须在交付中明确本卡已闭合哪些责任、哪些责任明确不在本卡范围，禁止把启动验证或初始化责任留给用户首次启动时兜底发现。
 - ✅ 若平台模板与租户模板共表存储，必须使用独立的模板层级字段区分平台/租户模板，不能复用 `role_assignment.scope_type` 表达模板层级。
 - ✅ 平台模板只允许平台控制面创建、修改和删除；租户侧最多只能读取平台模板或派生租户副本，不得直接更新或删除平台模板记录。
 - ✅ 判断“当前是否已落地 / 是否已闭合 / 证据等级到哪一档”时，不得引用历史设计稿直接下结论；应按 `docs/TINY_PLATFORM_AUTHORIZATION_DOC_MAP.md` 的裁决顺序，分别回到 `AUTHORIZATION_TASK_LIST`、`AUTHORIZATION_LAYERED_MODEL`、`API_ENDPOINT_GUARD_COVERAGE` 与 `RBAC3_ORG_DATASCOPE_ALLOCATION_ER_MODEL`。
@@ -35,6 +44,7 @@
 - ✅ `POST /sys/roles/{id}/resources` 当前契约只允许 `{ permissionIds }`；前端 API、组件事件、表单 payload 与测试命名不得继续传播 `resourceIds` 作为运行态写链语义。
 - ✅ 菜单控制面主入口是 `/sys/menus`；新增或收口菜单 CRUD/tree/parent/校验接口时，不得继续恢复 `/sys/resources/menus*`，`menu.ts` 也不得再回指 `/sys/resources/check-*`。`/sys/resources` 仅保留资源聚合控制面与运行时自省端点。
 - ✅ 若继续收口 `permission` 历史写链，不得只改 `ResourceForm`/资源控制面；`MenuForm`、`MenuServiceImpl` 与菜单 DTO 也必须同步切到显式 `requiredPermissionId` 主入口，否则 `CARD-15A` 不算真正闭合。
+- ✅ 平台控制面相关测试除正向通过外，还必须补至少一条反向断言：确认未调用 `/sys/**` 旧入口、未依赖 `system:*` 权限、tenant scope 下会明确阻断；禁止把“仍然能借道旧接口完成操作”视为兼容成功。
 
 ## 应该（Should）
 

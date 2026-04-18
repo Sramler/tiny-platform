@@ -162,17 +162,26 @@
 
 ### 0.2 下一版本专题（设计已建立，尚未开卡）
 
-- 主题：平台用户管理、租户用户代管、impersonation。
-- 设计文稿：`docs/TINY_PLATFORM_PLATFORM_USER_MANAGEMENT_AND_IMPERSONATION_DESIGN.md`。
+- 主题：平台角色治理、平台用户角色绑定、租户用户代管、impersonation。
+- 设计文稿：
+  - `docs/TINY_PLATFORM_PLATFORM_RUNTIME_RBAC3_GOVERNANCE_DESIGN.md`
+  - `docs/TINY_PLATFORM_PLATFORM_USER_MANAGEMENT_AND_IMPERSONATION_DESIGN.md`
+- 执行卡：
+  - `docs/TINY_PLATFORM_PLATFORM_ROLE_GOVERNANCE_CURSOR_TASK_CARDS.md`
+- 执行纪律补充：
+  - 平台角色治理 `CARD-PR-01 ~ CARD-PR-08` 若触及 `db/changelog/**`、`db.changelog-master.yaml`、`api_endpoint` / `menu_permission_requirement` / `role_permission` 回填、权限/菜单 seed 或 DDL，完成条件必须包含一次真实 `SpringLiquibase` / 应用启动验证；只报定向测试通过不算完成。
+  - 平台角色治理卡的责任边界与偏差复盘以 `docs/TINY_PLATFORM_PLATFORM_ROLE_GOVERNANCE_CURSOR_TASK_CARDS.md` §2.3.1–§2.3.3 和 `docs/TINY_PLATFORM_TESTING_PLAYBOOK.md` §1.5.1 为准；未跑真实迁移/启动验证时，只能写“阻塞/未验证”，不得写“已完成待用户启动”。
 - 当前实现边界：
   - `/sys/users` 继续是租户侧唯一主入口，`PLATFORM` scope 不得复用。
   - `/platform/users` Phase 1 skeleton 已落地，但当前创建仍是“给已存在 root user 补建 `platform_user_profile`”，不等同于完整平台身份建模，也未提供平台角色绑定 UI。
+  - 当前平台登录已依赖 `role_assignment(scope_type=PLATFORM, tenant_id IS NULL)`，但控制面仍主要把这批角色呈现成“平台模板角色”；`/sys/role-constraints/*` 仍是 tenant-only，不构成平台 RBAC3 治理闭环。
   - 当前仓库尚无 platform -> tenant user 的 bridge layer 主链。
   - 当前仓库尚无 impersonation token / filter / audit 闭环。
 - 建议执行顺序：
-  1. 先补平台用户控制面的剩余体验缺口（平台角色绑定、候选用户 lookup、是否自动补 profile 的策略收口）。
-  2. 再做平台代管租户用户 bridge（显式 `tenantId`，禁止隐式切换）。
-  3. 最后做 impersonation（短时、显式、可审计、不可嵌套）。
+  1. 先统一平台角色语义，承认 `tenant_id IS NULL + role_level=PLATFORM` 就是一套平台角色，并补平台用户角色绑定、platform effective role hierarchy 展开与平台 RBAC3 控制面。
+  2. 再补平台角色审批闭环（高风险角色不允许直写赋权）。**当前态（CARD-PR-07/08）**：后端 `/platform/role-assignment-requests` 与 `role.approval_mode` 分流已落地；前端 `/platform/role-assignment-requests` 审批页、`/platform/users` 详情内待审批摘要与菜单 OR 组、GET 列表 `api_endpoint` OR 组（`165-align-platform-role-assignment-requests-get-or-requirements.yaml`）已对齐，避免「菜单可见但列表 403」。
+  3. 再做平台代管租户用户 bridge（显式 `tenantId`，禁止隐式切换）。
+  4. 最后做 impersonation（短时、显式、可审计、不可嵌套）。
 
 ---
 

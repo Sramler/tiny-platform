@@ -5,8 +5,18 @@ import { defineComponent, h, nextTick, reactive } from 'vue'
 const platformUserMocks = vi.hoisted(() => ({
   listPlatformUsers: vi.fn(),
   getPlatformUserDetail: vi.fn(),
+  getPlatformUserRoles: vi.fn(),
+  replacePlatformUserRoles: vi.fn(),
   createPlatformUser: vi.fn(),
   updatePlatformUserStatus: vi.fn(),
+}))
+
+const platformRoleMocks = vi.hoisted(() => ({
+  listPlatformRoleOptions: vi.fn(),
+}))
+
+const platformRoleApprovalMocks = vi.hoisted(() => ({
+  listPlatformRoleAssignmentRequests: vi.fn(),
 }))
 
 const platformTenantUserMocks = vi.hoisted(() => ({
@@ -43,8 +53,18 @@ const routeState = reactive({
 vi.mock('@/api/platform-user', () => ({
   listPlatformUsers: platformUserMocks.listPlatformUsers,
   getPlatformUserDetail: platformUserMocks.getPlatformUserDetail,
+  getPlatformUserRoles: platformUserMocks.getPlatformUserRoles,
+  replacePlatformUserRoles: platformUserMocks.replacePlatformUserRoles,
   createPlatformUser: platformUserMocks.createPlatformUser,
   updatePlatformUserStatus: platformUserMocks.updatePlatformUserStatus,
+}))
+
+vi.mock('@/api/platform-role', () => ({
+  listPlatformRoleOptions: platformRoleMocks.listPlatformRoleOptions,
+}))
+
+vi.mock('@/api/platform-role-approval', () => ({
+  listPlatformRoleAssignmentRequests: platformRoleApprovalMocks.listPlatformRoleAssignmentRequests,
 }))
 
 vi.mock('@/api/platform-tenant-user', () => ({
@@ -79,14 +99,27 @@ vi.mock('vue-router', () => ({
 
 vi.mock('@/utils/jwt', () => ({
   decodeJwtPayload: (token?: string) => {
-    if (token === 'platform-token' || token === 'platform-tenant-token' || token === 'platform-no-perm') {
+    if (
+      token === 'platform-token'
+      || token === 'platform-tenant-token'
+      || token === 'platform-no-perm'
+      || token === 'platform-readonly-token'
+    ) {
       return { activeScopeType: 'PLATFORM' }
     }
     return { activeScopeType: 'TENANT' }
   },
   extractAuthoritiesFromJwt: (token?: string) => {
     if (token === 'platform-token') {
-      return ['platform:user:list', 'platform:user:create', 'platform:user:disable']
+      return [
+        'platform:user:list',
+        'platform:user:create',
+        'platform:user:disable',
+        'platform:role:approval:list',
+      ]
+    }
+    if (token === 'platform-readonly-token') {
+      return ['platform:user:list']
     }
     if (token === 'platform-tenant-token') {
       return [
@@ -259,8 +292,20 @@ describe('PlatformUsers.vue', () => {
       displayName: 'Platform Admin',
       platformStatus: 'ACTIVE',
     })
+    platformUserMocks.getPlatformUserRoles.mockResolvedValue([
+      { roleId: 11, code: 'PLATFORM_ADMIN', name: '平台管理员', enabled: true, builtin: true },
+    ])
+    platformUserMocks.replacePlatformUserRoles.mockResolvedValue([
+      { roleId: 11, code: 'PLATFORM_ADMIN', name: '平台管理员', enabled: true, builtin: true },
+      { roleId: 12, code: 'PLATFORM_AUDITOR', name: '平台审计员', enabled: true, builtin: false },
+    ])
     platformUserMocks.createPlatformUser.mockResolvedValue(undefined)
     platformUserMocks.updatePlatformUserStatus.mockResolvedValue(undefined)
+    platformRoleMocks.listPlatformRoleOptions.mockResolvedValue([
+      { roleId: 11, code: 'PLATFORM_ADMIN', name: '平台管理员', enabled: true, builtin: true, approvalMode: 'NONE' },
+      { roleId: 12, code: 'PLATFORM_AUDITOR', name: '平台审计员', enabled: true, builtin: false, approvalMode: 'ONE_STEP' },
+    ])
+    platformRoleApprovalMocks.listPlatformRoleAssignmentRequests.mockResolvedValue({ records: [], total: 0 })
     platformTenantUserMocks.listPlatformTenantUsers.mockResolvedValue({
       records: [{ id: 3001, username: 'tenant.alice', nickname: 'Alice', enabled: true }],
       total: 1,
@@ -298,6 +343,7 @@ describe('PlatformUsers.vue', () => {
       enabled: undefined,
       status: undefined,
     })
+    expect(platformRoleMocks.listPlatformRoleOptions).not.toHaveBeenCalled()
     expect(tenantMocks.tenantList).not.toHaveBeenCalled()
     expect(wrapper.find('.content-container').exists()).toBe(true)
     expect(wrapper.find('.content-card').exists()).toBe(true)
@@ -340,6 +386,76 @@ describe('PlatformUsers.vue', () => {
 
     expect(wrapper.text()).toContain('关联基础用户')
     expect(wrapper.text()).toContain('平台档案设置')
+  })
+
+  it('loads bound role details when opening platform user detail drawer', async () => {
+    const wrapper = mountPlatformUsers()
+    await flushPromises()
+
+    await (wrapper.vm as any).showDetail({
+      userId: 1001,
+      username: 'platform_admin',
+      platformStatus: 'ACTIVE',
+    })
+    await flushPromises()
+
+    expect(platformUserMocks.getPlatformUserDetail).toHaveBeenCalledWith(1001)
+    expect(platformUserMocks.getPlatformUserRoles).toHaveBeenCalledWith(1001)
+    expect(platformRoleApprovalMocks.listPlatformRoleAssignmentRequests).toHaveBeenCalledWith({
+      targetUserId: 1001,
+      status: 'PENDING',
+      current: 1,
+      pageSize: 1,
+    })
+    expect(wrapper.text()).toContain('平台角色绑定明细')
+  })
+
+  it('does not load approval summary without approval permissions', async () => {
+    authMocks.token = 'platform-readonly-token'
+    platformRoleApprovalMocks.listPlatformRoleAssignmentRequests.mockClear()
+    const wrapper = mountPlatformUsers()
+    await flushPromises()
+
+    await (wrapper.vm as any).showDetail({
+      userId: 1001,
+      username: 'platform_admin',
+      platformStatus: 'ACTIVE',
+    })
+    await flushPromises()
+
+    expect(platformRoleApprovalMocks.listPlatformRoleAssignmentRequests).not.toHaveBeenCalled()
+  })
+
+  it('submits role binding updates through platform user role API', async () => {
+    const wrapper = mountPlatformUsers()
+    await flushPromises()
+
+    await (wrapper.vm as any).openRoleEditor(1001)
+    await flushPromises()
+
+    expect((wrapper.vm as any).platformRoleOptions[1].approvalMode).toBe('ONE_STEP')
+
+    await (wrapper.vm as any).submitRoleEditor()
+    await flushPromises()
+
+    expect(platformUserMocks.getPlatformUserRoles).toHaveBeenCalledWith(1001)
+    expect(platformUserMocks.replacePlatformUserRoles).toHaveBeenCalledWith(1001, [11])
+    expect(platformRoleMocks.listPlatformRoleOptions).toHaveBeenCalledWith({
+      limit: 200,
+    })
+  })
+
+  it('does not open role editor when platform user update authority is missing', async () => {
+    authMocks.token = 'platform-readonly-token'
+    const wrapper = mountPlatformUsers()
+    await flushPromises()
+
+    await (wrapper.vm as any).openRoleEditor(1001)
+    await flushPromises()
+
+    expect(platformRoleMocks.listPlatformRoleOptions).not.toHaveBeenCalled()
+    expect(platformUserMocks.replacePlatformUserRoles).not.toHaveBeenCalled()
+    expect(uiMocks.messageWarning).toHaveBeenCalledWith('当前会话缺少平台用户更新权限，无法编辑平台角色')
   })
 
   it('does not load platform users under tenant scope', async () => {

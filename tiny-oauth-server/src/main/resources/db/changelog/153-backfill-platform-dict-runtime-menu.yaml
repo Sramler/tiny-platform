@@ -1,0 +1,301 @@
+databaseChangeLog:
+  - changeSet:
+      id: 153-backfill-platform-dict-runtime-menu
+      author: codex
+      comment: 补齐平台字典运行态菜单与权限链路，避免平台态继续落到 tenant-only 的 /system/dict
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: menu
+            - tableExists:
+                tableName: permission
+            - tableExists:
+                tableName: role
+            - tableExists:
+                tableName: role_permission
+            - tableExists:
+                tableName: menu_permission_requirement
+            - tableExists:
+                tableName: api_endpoint
+            - tableExists:
+                tableName: api_endpoint_permission_requirement
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT IGNORE INTO `permission` (
+                `permission_code`,
+                `permission_name`,
+                `module_code`,
+                `action_code`,
+                `permission_type`,
+                `description`,
+                `enabled`,
+                `built_in_flag`,
+                `tenant_id`,
+                `created_by`,
+                `created_at`,
+                `updated_by`,
+                `updated_at`
+              ) VALUES (
+                'dict:platform:manage',
+                '平台字典管理',
+                'dict',
+                'manage',
+                'BUTTON',
+                '平台字典管理控制面',
+                1,
+                1,
+                NULL,
+                NULL,
+                NOW(),
+                NULL,
+                NOW()
+              );
+
+              INSERT IGNORE INTO `role_permission` (
+                `tenant_id`,
+                `role_id`,
+                `permission_id`,
+                `created_by`,
+                `created_at`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                platform_admin.`id` AS `role_id`,
+                platform_permission.`id` AS `permission_id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`
+              FROM `role` platform_admin
+              JOIN `permission` platform_permission
+                ON platform_permission.`tenant_id` IS NULL
+               AND platform_permission.`permission_code` = 'dict:platform:manage'
+              WHERE platform_admin.`tenant_id` IS NULL
+                AND platform_admin.`code` = 'ROLE_PLATFORM_ADMIN';
+
+              UPDATE `menu` platform_dict_menu
+              JOIN `menu` platform_system
+                ON platform_system.`tenant_id` IS NULL
+               AND platform_system.`name` = 'system'
+              JOIN `permission` platform_permission
+                ON platform_permission.`tenant_id` IS NULL
+               AND platform_permission.`permission_code` = 'dict:platform:manage'
+              SET
+                platform_dict_menu.`resource_level` = 'PLATFORM',
+                platform_dict_menu.`name` = 'platformDicts',
+                platform_dict_menu.`title` = '平台字典管理',
+                platform_dict_menu.`path` = '/platform/dicts',
+                platform_dict_menu.`component` = '/views/platform/dicts/index.vue',
+                platform_dict_menu.`permission` = 'dict:platform:manage',
+                platform_dict_menu.`required_permission_id` = platform_permission.`id`,
+                platform_dict_menu.`type` = 1,
+                platform_dict_menu.`parent_id` = platform_system.`id`,
+                platform_dict_menu.`enabled` = 1,
+                platform_dict_menu.`updated_at` = NOW(),
+                platform_dict_menu.`updated_by` = NULL
+              WHERE platform_dict_menu.`tenant_id` IS NULL
+                AND (
+                  platform_dict_menu.`path` IN ('/system/dict', '/platform/dicts')
+                  OR platform_dict_menu.`name` IN ('dict', 'platformDicts')
+                );
+
+              INSERT INTO `menu` (
+                `tenant_id`,
+                `resource_level`,
+                `name`,
+                `title`,
+                `path`,
+                `icon`,
+                `show_icon`,
+                `sort`,
+                `component`,
+                `redirect`,
+                `hidden`,
+                `keep_alive`,
+                `permission`,
+                `required_permission_id`,
+                `type`,
+                `parent_id`,
+                `enabled`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                'PLATFORM' AS `resource_level`,
+                'platformDicts' AS `name`,
+                '平台字典管理' AS `title`,
+                '/platform/dicts' AS `path`,
+                COALESCE(tenant_dict.`icon`, 'ReadOutlined') AS `icon`,
+                COALESCE(tenant_dict.`show_icon`, 0) AS `show_icon`,
+                COALESCE(tenant_dict.`sort`, 12) AS `sort`,
+                '/views/platform/dicts/index.vue' AS `component`,
+                '' AS `redirect`,
+                0 AS `hidden`,
+                0 AS `keep_alive`,
+                'dict:platform:manage' AS `permission`,
+                platform_permission.`id` AS `required_permission_id`,
+                1 AS `type`,
+                platform_system.`id` AS `parent_id`,
+                1 AS `enabled`,
+                NOW() AS `created_at`,
+                NULL AS `created_by`,
+                NOW() AS `updated_at`,
+                NULL AS `updated_by`
+              FROM `menu` platform_system
+              JOIN `permission` platform_permission
+                ON platform_permission.`tenant_id` IS NULL
+               AND platform_permission.`permission_code` = 'dict:platform:manage'
+              LEFT JOIN `menu` tenant_dict
+                ON tenant_dict.`tenant_id` = 1
+               AND tenant_dict.`name` = 'dict'
+              WHERE platform_system.`tenant_id` IS NULL
+                AND platform_system.`name` = 'system'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `menu` existing
+                  WHERE existing.`tenant_id` IS NULL
+                    AND existing.`path` = '/platform/dicts'
+                );
+
+              DELETE requirement
+              FROM `menu_permission_requirement` requirement
+              JOIN `menu` platform_dict_menu
+                ON platform_dict_menu.`id` = requirement.`menu_id`
+              WHERE platform_dict_menu.`tenant_id` IS NULL
+                AND platform_dict_menu.`path` = '/platform/dicts';
+
+              INSERT INTO `menu_permission_requirement` (
+                `tenant_id`,
+                `menu_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                platform_dict_menu.`id` AS `menu_id`,
+                0 AS `requirement_group`,
+                1 AS `sort_order`,
+                platform_dict_menu.`required_permission_id` AS `permission_id`,
+                0 AS `negated`,
+                NOW() AS `created_at`,
+                NULL AS `created_by`,
+                NOW() AS `updated_at`,
+                NULL AS `updated_by`
+              FROM `menu` platform_dict_menu
+              WHERE platform_dict_menu.`tenant_id` IS NULL
+                AND platform_dict_menu.`path` = '/platform/dicts'
+                AND platform_dict_menu.`required_permission_id` IS NOT NULL;
+
+              -- 153 在 142 之后执行；若 fresh DB 在 142 执行时尚无平台 permission，
+              -- 这里需要补跑一次 platform dict api_endpoint 回填，避免统一守卫链路缺口。
+              INSERT INTO `api_endpoint` (
+                `tenant_id`,
+                `resource_level`,
+                `name`,
+                `title`,
+                `uri`,
+                `method`,
+                `permission`,
+                `required_permission_id`,
+                `enabled`,
+                `created_at`,
+                `updated_at`
+              )
+              SELECT
+                NULL,
+                'PLATFORM',
+                entry.`name`,
+                entry.`title`,
+                entry.`uri`,
+                entry.`method`,
+                'dict:platform:manage',
+                platform_permission.`id`,
+                1,
+                NOW(),
+                NOW()
+              FROM `permission` platform_permission
+              JOIN (
+                SELECT 'platform-dict-types-get' AS `name`, '平台字典类型列表' AS `title`, '/platform/dict/types' AS `uri`, 'GET' AS `method`
+                UNION ALL SELECT 'platform-dict-types-post', '平台字典类型创建', '/platform/dict/types', 'POST'
+                UNION ALL SELECT 'platform-dict-type-id-get', '平台字典类型详情', '/platform/dict/types/{id}', 'GET'
+                UNION ALL SELECT 'platform-dict-type-id-put', '平台字典类型更新', '/platform/dict/types/{id}', 'PUT'
+                UNION ALL SELECT 'platform-dict-type-id-delete', '平台字典类型删除', '/platform/dict/types/{id}', 'DELETE'
+                UNION ALL SELECT 'platform-dict-type-code-get', '平台字典类型按编码读取', '/platform/dict/types/code/{dictCode}', 'GET'
+                UNION ALL SELECT 'platform-dict-types-batch-delete', '平台字典类型批量删除', '/platform/dict/types/batch/delete', 'POST'
+                UNION ALL SELECT 'platform-dict-overrides-get', '平台字典租户覆盖摘要读取', '/platform/dict/types/{dictTypeId}/overrides', 'GET'
+                UNION ALL SELECT 'platform-dict-overrides-tenant-get', '平台字典租户覆盖明细读取', '/platform/dict/types/{dictTypeId}/overrides/{tenantId}', 'GET'
+                UNION ALL SELECT 'platform-dict-items-get', '平台字典项列表', '/platform/dict/items', 'GET'
+                UNION ALL SELECT 'platform-dict-items-post', '平台字典项创建', '/platform/dict/items', 'POST'
+                UNION ALL SELECT 'platform-dict-item-id-get', '平台字典项详情', '/platform/dict/items/{id}', 'GET'
+                UNION ALL SELECT 'platform-dict-item-id-put', '平台字典项更新', '/platform/dict/items/{id}', 'PUT'
+                UNION ALL SELECT 'platform-dict-item-id-delete', '平台字典项删除', '/platform/dict/items/{id}', 'DELETE'
+                UNION ALL SELECT 'platform-dict-items-type-get', '平台字典项按类型读取', '/platform/dict/items/type/{dictTypeId}', 'GET'
+                UNION ALL SELECT 'platform-dict-items-code-get', '平台字典项按编码读取', '/platform/dict/items/code/{dictCode}', 'GET'
+                UNION ALL SELECT 'platform-dict-items-map-get', '平台字典映射读取', '/platform/dict/items/map/{dictCode}', 'GET'
+                UNION ALL SELECT 'platform-dict-items-label-get', '平台字典标签读取', '/platform/dict/items/label/{dictCode}/{value}', 'GET'
+                UNION ALL SELECT 'platform-dict-items-batch-delete', '平台字典项批量删除', '/platform/dict/items/batch/delete', 'POST'
+              ) entry
+              WHERE platform_permission.`tenant_id` IS NULL
+                AND platform_permission.`permission_code` = 'dict:platform:manage'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `api_endpoint` existing
+                  WHERE existing.`tenant_id` IS NULL
+                    AND existing.`uri` = entry.`uri`
+                    AND existing.`method` = entry.`method`
+                );
+
+              INSERT IGNORE INTO `api_endpoint_permission_requirement` (
+                `tenant_id`,
+                `api_endpoint_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `updated_at`
+              )
+              SELECT
+                e.`tenant_id`,
+                e.`id`,
+                0,
+                1,
+                e.`required_permission_id`,
+                0,
+                NOW(),
+                NOW()
+              FROM `api_endpoint` e
+              WHERE e.`tenant_id` IS NULL
+                AND e.`permission` = 'dict:platform:manage'
+                AND e.`required_permission_id` IS NOT NULL
+                AND e.`uri` IN (
+                  '/platform/dict/types',
+                  '/platform/dict/types/{id}',
+                  '/platform/dict/types/code/{dictCode}',
+                  '/platform/dict/types/batch/delete',
+                  '/platform/dict/types/{dictTypeId}/overrides',
+                  '/platform/dict/types/{dictTypeId}/overrides/{tenantId}',
+                  '/platform/dict/items',
+                  '/platform/dict/items/{id}',
+                  '/platform/dict/items/type/{dictTypeId}',
+                  '/platform/dict/items/code/{dictCode}',
+                  '/platform/dict/items/map/{dictCode}',
+                  '/platform/dict/items/label/{dictCode}/{value}',
+                  '/platform/dict/items/batch/delete'
+                )
+                AND e.`method` IN ('GET', 'POST', 'PUT', 'DELETE');

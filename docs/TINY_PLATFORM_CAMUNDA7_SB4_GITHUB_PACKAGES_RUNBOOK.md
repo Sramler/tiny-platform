@@ -87,6 +87,38 @@
 - 当前仓库权限配置已足以支撑 `tiny-platform` 解析私有 fork 制品
 - 如果未来改为新的 consumer 仓库、跨组织访问，或 package 权限模型发生调整，仍需重新核对 `read:packages` 与 package 访问授权
 
+## 4.1 仓库链路约束
+
+当前 tiny-platform 的 Camunda SB4 / Spring snapshot 主线路径约束如下：
+
+- Spring snapshot：
+  - 只认项目 POM 中的 `spring-snapshots`
+- Camunda SB4 fork：
+  - 只认受控 profile `camunda-github-packages` 下的 `github-camunda-fork`
+- 当前项目主链不把以下来源视为默认仓库：
+  - `camunda-nexus`
+  - `camunda-public-repository`
+  - `JBoss public`
+
+治理口径：
+
+- 如果构建日志或本地仓库状态文件中出现：
+  - `https://artifacts.camunda.com/artifactory/internal`
+  - `https://artifacts.camunda.com/artifactory/public`
+  - `https://repository.jboss.org/nexus/content/groups/public`
+  不应直接判定为“项目 POM 缺失仓库声明”
+- 这些来源当前应先按“环境注入 / 历史解析候选仓库痕迹”处理，而不是反向写入项目 POM
+- `camunda-nexus` 相关 `401 metadata` 当前归类为：
+  - 可接受噪音
+  - 但属于应治理的仓库链路风险
+
+排查入口：
+
+- 优先使用脱敏诊断脚本：
+  - `bash tiny-oauth-server/scripts/diagnose-sb4-maven-repository-chain.sh`
+- 参考审计记录：
+  - [TINY_PLATFORM_SB4_MAVEN_REPOSITORY_CHAIN_AUDIT_20260417.md](/Users/bliu/code/tiny-platform/docs/TINY_PLATFORM_SB4_MAVEN_REPOSITORY_CHAIN_AUDIT_20260417.md:1)
+
 ## 5. 已接入的后端 workflow
 
 以下 workflow 已切到 `setup-camunda-fork-java`：

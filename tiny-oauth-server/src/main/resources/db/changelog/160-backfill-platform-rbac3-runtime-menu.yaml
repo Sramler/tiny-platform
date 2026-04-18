@@ -1,0 +1,113 @@
+databaseChangeLog:
+  - changeSet:
+      id: 160-backfill-platform-rbac3-runtime-menu
+      author: codex
+      comment: 补齐平台 RBAC3 运行态菜单，指向 /platform/role-constraints，避免平台态继续落到 /system/role/constraint
+      preConditions:
+        onFail: MARK_RAN
+        onError: HALT
+        and:
+          - tableExists:
+              tableName: menu
+          - tableExists:
+              tableName: permission
+          - tableExists:
+              tableName: menu_permission_requirement
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT INTO `menu` (
+                `tenant_id`,
+                `resource_level`,
+                `name`,
+                `title`,
+                `path`,
+                `icon`,
+                `show_icon`,
+                `sort`,
+                `component`,
+                `redirect`,
+                `hidden`,
+                `keep_alive`,
+                `permission`,
+                `required_permission_id`,
+                `type`,
+                `parent_id`,
+                `enabled`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                'PLATFORM' AS `resource_level`,
+                'platformRoleConstraints' AS `name`,
+                '平台 RBAC3 约束' AS `title`,
+                '/platform/role-constraints' AS `path`,
+                'TeamOutlined' AS `icon`,
+                1 AS `show_icon`,
+                13 AS `sort`,
+                '/views/platform/role-constraints/PlatformRoleConstraints.vue' AS `component`,
+                '' AS `redirect`,
+                0 AS `hidden`,
+                0 AS `keep_alive`,
+                'system:role:constraint:view' AS `permission`,
+                p.`id` AS `required_permission_id`,
+                1 AS `type`,
+                sys.`id` AS `parent_id`,
+                1 AS `enabled`,
+                NOW() AS `created_at`,
+                NULL AS `created_by`,
+                NOW() AS `updated_at`,
+                NULL AS `updated_by`
+              FROM `menu` sys
+              JOIN `permission` p
+                ON p.`tenant_id` IS NULL
+               AND p.`permission_code` = 'system:role:constraint:view'
+              WHERE sys.`tenant_id` IS NULL
+                AND sys.`name` = 'system'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `menu` existing
+                  WHERE existing.`tenant_id` IS NULL
+                    AND existing.`path` = '/platform/role-constraints'
+                );
+
+              DELETE requirement
+              FROM `menu_permission_requirement` requirement
+              JOIN `menu` m
+                ON m.`id` = requirement.`menu_id`
+              WHERE m.`tenant_id` IS NULL
+                AND m.`path` = '/platform/role-constraints';
+
+              INSERT INTO `menu_permission_requirement` (
+                `tenant_id`,
+                `menu_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                m.`id` AS `menu_id`,
+                0 AS `requirement_group`,
+                1 AS `sort_order`,
+                m.`required_permission_id` AS `permission_id`,
+                0 AS `negated`,
+                NOW() AS `created_at`,
+                NULL AS `created_by`,
+                NOW() AS `updated_at`,
+                NULL AS `updated_by`
+              FROM `menu` m
+              WHERE m.`tenant_id` IS NULL
+                AND m.`path` = '/platform/role-constraints'
+                AND m.`required_permission_id` IS NOT NULL;

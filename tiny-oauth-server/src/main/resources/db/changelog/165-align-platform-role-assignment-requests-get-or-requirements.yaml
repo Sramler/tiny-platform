@@ -1,0 +1,62 @@
+databaseChangeLog:
+  - changeSet:
+      id: 165-platform-role-assignment-requests-get-or-requirements
+      author: codex
+      comment: GET /platform/role-assignment-requests 与菜单一致：任一 platform:role:approval:* 即可通过统一守卫
+      preConditions:
+        onFail: MARK_RAN
+        onError: HALT
+        and:
+          - tableExists:
+              tableName: api_endpoint
+          - tableExists:
+              tableName: api_endpoint_permission_requirement
+          - tableExists:
+              tableName: permission
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              DELETE requirement
+              FROM `api_endpoint_permission_requirement` requirement
+              JOIN `api_endpoint` endpoint_entity
+                ON endpoint_entity.`id` = requirement.`api_endpoint_id`
+              WHERE endpoint_entity.`tenant_id` IS NULL
+                AND endpoint_entity.`uri` = '/platform/role-assignment-requests'
+                AND endpoint_entity.`method` = 'GET';
+
+              INSERT INTO `api_endpoint_permission_requirement` (
+                `tenant_id`,
+                `api_endpoint_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `updated_at`
+              )
+              SELECT
+                endpoint_entity.`tenant_id`,
+                endpoint_entity.`id`,
+                permission_map.`requirement_group`,
+                1,
+                permission_entity.`id`,
+                0,
+                NOW(),
+                NOW()
+              FROM `api_endpoint` endpoint_entity
+              JOIN (
+                SELECT 0 AS `requirement_group`, 'platform:role:approval:list' AS `permission_code`
+                UNION ALL SELECT 1, 'platform:role:approval:submit'
+                UNION ALL SELECT 2, 'platform:role:approval:approve'
+                UNION ALL SELECT 3, 'platform:role:approval:reject'
+                UNION ALL SELECT 4, 'platform:role:approval:cancel'
+              ) permission_map
+              JOIN `permission` permission_entity
+                ON permission_entity.`tenant_id` IS NULL
+               AND permission_entity.`permission_code` = permission_map.`permission_code`
+              WHERE endpoint_entity.`tenant_id` IS NULL
+                AND endpoint_entity.`uri` = '/platform/role-assignment-requests'
+                AND endpoint_entity.`method` = 'GET';

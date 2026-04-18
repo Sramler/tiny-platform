@@ -89,10 +89,12 @@ globs:
 
 - ✅ 修复 bug / 新增逻辑必须提供自动化测试；仅文档、纯文案、纯样式微调等低风险改动才可只写明确验证步骤。
 - ✅ 涉及数据库查询、事务、MySQL 方言、Liquibase/Flyway 迁移、索引/约束行为的改动，必须提供真实数据库验证方案。
+- ✅ 凡任务触及 `db/changelog/**`、`db.changelog-master.yaml`、`api_endpoint` / `menu_permission_requirement` / `role_permission` 回填、权限 seed、菜单 seed、DDL、唯一键、索引、nullable、generated column，完成条件必须至少包含一次真实 `SpringLiquibase` 执行路径验证（例如 `verify-platform-local-dev-stack.sh`、`verify-platform-dev-bootstrap.sh` 或直接启动应用让 Liquibase 跑过）；只跑单测/集测/静态检查不算完成。
 - ✅ 涉及认证、权限、租户隔离、幂等性、插件边界的改动，必须至少覆盖“允许路径 + 拒绝路径 + 回归场景”。
 - ✅ 测试类型必须与风险匹配：纯逻辑问题补单元测试，跨边界问题补集成测试，关键用户路径补冒烟/E2E。
 - ✅ 每个缺陷关闭前都必须有可重复执行的回归验证，优先自动化而不是依赖口头确认。
 - ✅ 一旦修改后端 DTO、兼容字段语义、写链主入口或接口请求契约，必须在同一变更中同步更新受影响的测试替身、现有定向测试、前端请求类型/适配层与最小组件测试；不得留下“主链已改、老测试仍红”或“运行时偷偷透传未声明字段”的状态。
+- ✅ 同一修复若从 `sb4` 回补到 `sb3`，必须在 `sb3` 目标分支重新执行与改动范围匹配的最小验证；不能把 `sb4` 的通过结果直接当成 `sb3` 维护回补已验证。
 
 ### 3) 测试用例设计
 
@@ -127,6 +129,7 @@ globs:
   - `1`：前置满足，但验证失败
   - `2`：环境前置未满足（非代码失败）
   - 未执行：脚本未运行，不得写成“已验证”
+- ✅ 若通过直接启动 `target/classes` / jar / IDE run configuration 验证 Liquibase，必须确认运行产物实际包含最新 changelog 资源；只改 `src/main/resources` 但未同步到启动产物，不得写成“已验证启动通过”。
 - ✅ 对 `tiny-oauth-server` 同模块的 Maven 本地门禁，必须顺序执行；优先使用 `tiny-oauth-server/scripts/mvn-tiny-oauth-server-gate-sequential.sh`，需要可信 JaCoCo 报告时再加 `GATE_CLEAN_FIRST=1` 或直接 `mvn clean test`。
 
 ### 5) 测试身份与账号
@@ -175,6 +178,7 @@ globs:
 - ✅ 新增测试是否验证了业务约束、权限、租户、状态机、拓扑语义或兼容性契约，而不是只验证访问器。
 - ✅ 新增测试失败时是否能清楚说明哪条业务语义被破坏。
 - ✅ coverage 提升是否来自高价值路径，而不是低价值机械覆盖。
+- ✅ 若本次改动触及 Liquibase / seed / `api_endpoint` / `menu_permission_requirement` / `role_permission` / DDL，是否已经跑过至少一条真实 `SpringLiquibase` 执行路径，而不是只停留在定向测试。
 - ✅ E2E 是否写清了环境类别、seed/reset、身份来源和允许的 mock 边界。
 - ✅ 真实链路 E2E 是否避免把 first-party API mock 掉之后仍宣称“端到端验证通过”。
 - ✅ 测试写入过的共享数据、真实库数据、派生租户、临时账号、临时角色或 auth-state 副产物，是否已经在测试实现、suite teardown 或受控 cleanup 脚本中被自动回收，而不是依赖人工事后处理。

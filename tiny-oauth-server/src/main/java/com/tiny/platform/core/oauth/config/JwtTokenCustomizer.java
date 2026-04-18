@@ -225,11 +225,12 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
 
             // OAuth2 token 端点传入的 Authentication 往往不把 GrantedAuthority 填在外层 token 上（details 里才有 SecurityUser）。
             // 若仅用 principal.getAuthorities()，access_token 会丢失 scheduling:* 等规范码，资源服务器 Bearer 鉴权全灭。
-            Set<String> authorities = resolveAccessTokenAuthorityStrings(principal, securityUser);
+            AccessTokenClaimSource claimSource = resolveAccessTokenClaimSource(principal, securityUser);
+            Set<String> authorities = claimSource.authorities();
             Set<String> nonRoleAuthorities = stripRoleAuthorities(authorities);
             claims.claim("authorities", toStableStringList(nonRoleAuthorities));
             claims.claim("permissions", toStableStringList(extractPermissionAuthorities(nonRoleAuthorities)));
-            claims.claim("roleCodes", toStableStringList(resolveRoleCodes(securityUser, authorities)));
+            claims.claim("roleCodes", toStableStringList(claimSource.roleCodes()));
             addPermissionsVersionClaim(
                 claims,
                 userId,
@@ -648,20 +649,19 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
      * <p>若租户态重载已执行却得到空集合，则不再用「仅含部分 domain:resource:action 的 SecurityUser 快照」提前定稿，
      * 以便继续采用外层 Authentication 上的规范权限码，并与快照做并集（避免只带 scheduling 却丢 system:* 等）。</p>
      */
-    private Set<String> resolveAccessTokenAuthorityStrings(Authentication principal, SecurityUser securityUser) {
-        // 租户态换票：优先 DB 完整权限，避免 SecurityUser 快照里仅有平台类 a:b 码却缺 scheduling:* 时提前返回。
-        boolean tenantScopedReloadReturnedEmpty = false;
+    private AccessTokenClaimSource resolveAccessTokenClaimSource(Authentication principal, SecurityUser securityUser) {
+        boolean scopedReloadReturnedEmpty = false;
         if (userDetailsService != null && principal != null && principal.getName() != null
-            && !principal.getName().isBlank() && securityUser != null
-            && securityUser.getActiveTenantId() != null && securityUser.getActiveTenantId() > 0) {
-            Set<String> tenantReload = reloadAuthoritiesWithTenantContextForTokenEndpoint(principal, securityUser);
-            if (!tenantReload.isEmpty()) {
-                return tenantReload;
+            && !principal.getName().isBlank() && securityUser != null) {
+            AccessTokenClaimSource reloaded = reloadAccessTokenClaimSourceWithTenantContextForTokenEndpoint(principal, securityUser);
+            if (!reloaded.authorities().isEmpty()) {
+                return reloaded;
             }
-            tenantScopedReloadReturnedEmpty = true;
+            scopedReloadReturnedEmpty = true;
         }
 
         Set<String> fromUser = Set.of();
+        Set<String> fallbackRoleCodes = resolveSecurityUserRoleCodes(securityUser);
         if (securityUser != null && securityUser.getAuthorities() != null) {
             fromUser = securityUser.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
@@ -670,43 +670,37 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
                 .collect(Collectors.toCollection(LinkedHashSet::new));
             // 授权码换票等场景：序列化/快照里的 SecurityUser 可能只有 ROLE_*，不含 domain:resource:action；
             // 若直接返回会导致 JWT 缺权限码，TenantContextFilter 判 stale_permissions 401，@PreAuthorize 403。
-            // 若已尝试租户态 UserDetails 重载却得到空集合，则不得再轻信「部分带冒号快照」提前返回——否则仍会把缺 scheduling:* 的 JWT 发出；
-            // 此时继续尝试外层 Authentication 上的权限，并在有规范码时与快照合并。
-            if (!fromUser.isEmpty() && containsPermissionStyleAuthority(fromUser) && !tenantScopedReloadReturnedEmpty) {
-                return fromUser;
+            // 若已尝试当前 scope 的 UserDetails 重载却得到空集合，则不得再轻信「部分带冒号快照」提前返回，
+            // 否则会出现“permissionsVersion 已更新，但 authorities/roleCodes 仍是旧快照”的不一致。
+            if (!fromUser.isEmpty() && containsPermissionStyleAuthority(fromUser) && !scopedReloadReturnedEmpty) {
+                return new AccessTokenClaimSource(fromUser, fallbackRoleCodes);
             }
         }
         Set<String> fromAuthentication = collectAuthorities(principal);
         if (!fromAuthentication.isEmpty() && containsPermissionStyleAuthority(fromAuthentication)) {
-            if (tenantScopedReloadReturnedEmpty) {
+            if (scopedReloadReturnedEmpty) {
                 LinkedHashSet<String> merged = new LinkedHashSet<>(fromUser);
                 merged.addAll(fromAuthentication);
-                return merged;
+                return new AccessTokenClaimSource(merged, fallbackRoleCodes);
             }
-            return fromAuthentication;
-        }
-        // 平台态等：租户优先重载未覆盖的场景再走重载（避免与上文租户分支重复调用）。
-        if (userDetailsService != null && principal != null && principal.getName() != null
-            && !principal.getName().isBlank() && securityUser != null
-            && (securityUser.getActiveTenantId() == null || securityUser.getActiveTenantId() <= 0)) {
-            Set<String> fromReload = reloadAuthoritiesWithTenantContextForTokenEndpoint(principal, securityUser);
-            if (!fromReload.isEmpty()) {
-                return fromReload;
-            }
+            return new AccessTokenClaimSource(fromAuthentication, fallbackRoleCodes);
         }
         if (!fromUser.isEmpty()) {
-            return fromUser;
+            return new AccessTokenClaimSource(fromUser, fallbackRoleCodes);
         }
         if (!fromAuthentication.isEmpty()) {
-            return fromAuthentication;
+            return new AccessTokenClaimSource(fromAuthentication, fallbackRoleCodes);
         }
-        if (tenantScopedReloadReturnedEmpty) {
+        if (scopedReloadReturnedEmpty) {
             log.warn(
-                "[JwtTokenCustomizer] tenant-scoped access token: UserDetails reload returned no authorities for user={}, activeTenantId={}; JWT authorities claim may be empty",
+                "[JwtTokenCustomizer] scope-aware access token: UserDetails reload returned no authorities for user={}, activeTenantId={}; JWT authorities claim may be empty",
                 principal != null ? principal.getName() : "null",
                 securityUser != null ? securityUser.getActiveTenantId() : null);
         }
-        return Set.of();
+        if (!fallbackRoleCodes.isEmpty()) {
+            return new AccessTokenClaimSource(Set.of(), fallbackRoleCodes);
+        }
+        return AccessTokenClaimSource.empty();
     }
 
     /** 与 {@link #extractPermissionAuthorities(Set)} 一致：规范权限码含 {@code :}。 */
@@ -722,8 +716,8 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
      * {@link UserDetailsService#loadUserByUsername} 会报「缺少租户信息」。此处用 {@link SecurityUser} 上的活动租户
      *（或平台作用域）临时填充 ThreadLocal，再加载完整权限。
      */
-    private Set<String> reloadAuthoritiesWithTenantContextForTokenEndpoint(Authentication principal,
-                                                                           SecurityUser securityUser) {
+    private AccessTokenClaimSource reloadAccessTokenClaimSourceWithTenantContextForTokenEndpoint(Authentication principal,
+                                                                                                SecurityUser securityUser) {
         Long prevTenantId = TenantContext.getActiveTenantId();
         String prevScopeType = TenantContext.getActiveScopeType();
         Long prevScopeId = TenantContext.getActiveScopeId();
@@ -742,11 +736,15 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
             }
             UserDetails reloaded = userDetailsService.loadUserByUsername(principal.getName());
             if (reloaded != null && reloaded.getAuthorities() != null) {
-                return reloaded.getAuthorities().stream()
+                Set<String> authorities = reloaded.getAuthorities().stream()
                     .map(GrantedAuthority::getAuthority)
                     .filter(authority -> authority != null && !authority.isBlank())
                     .map(String::trim)
                     .collect(Collectors.toCollection(LinkedHashSet::new));
+                Set<String> roleCodes = reloaded instanceof SecurityUser reloadedSecurityUser
+                    ? reloadedSecurityUser.getRoleCodes()
+                    : Set.of();
+                return new AccessTokenClaimSource(authorities, roleCodes);
             }
         } catch (UsernameNotFoundException ex) {
             log.debug("JwtTokenCustomizer: skip UserDetails reload for access token: {}", ex.getMessage());
@@ -765,7 +763,7 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
                 TenantContext.setTenantSource(prevTenantSource);
             }
         }
-        return Set.of();
+        return AccessTokenClaimSource.empty();
     }
 
     private Set<String> extractPermissionAuthorities(Set<String> authorities) {
@@ -786,11 +784,11 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
                 .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 
-    private Set<String> resolveRoleCodes(SecurityUser securityUser, Set<String> authorities) {
-        if (securityUser != null && securityUser.getRoleCodes() != null && !securityUser.getRoleCodes().isEmpty()) {
-            return securityUser.getRoleCodes();
+    private Set<String> resolveSecurityUserRoleCodes(SecurityUser securityUser) {
+        if (securityUser == null || securityUser.getRoleCodes() == null || securityUser.getRoleCodes().isEmpty()) {
+            return Set.of();
         }
-        return Set.of();
+        return securityUser.getRoleCodes();
     }
 
     /**
@@ -812,6 +810,12 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
             }
         }
         return normalized;
+    }
+
+    private record AccessTokenClaimSource(Set<String> authorities, Set<String> roleCodes) {
+        private static AccessTokenClaimSource empty() {
+            return new AccessTokenClaimSource(Set.of(), Set.of());
+        }
     }
     
     /**

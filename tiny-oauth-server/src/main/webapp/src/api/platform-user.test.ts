@@ -4,6 +4,7 @@ const requestMocks = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
   patch: vi.fn(),
+  put: vi.fn(),
 }))
 
 vi.mock('@/utils/request', () => ({
@@ -11,6 +12,7 @@ vi.mock('@/utils/request', () => ({
     get: requestMocks.get,
     post: requestMocks.post,
     patch: requestMocks.patch,
+    put: requestMocks.put,
   },
 }))
 
@@ -80,5 +82,31 @@ describe('platform-user API', () => {
         payload: { status: 'DISABLED' },
       },
     })
+  })
+
+  it('should request and replace platform user roles through dedicated endpoints', async () => {
+    requestMocks.get.mockResolvedValueOnce([
+      { roleId: 11, code: 'PLATFORM_ADMIN', name: '平台管理员', enabled: true, builtin: true },
+    ])
+    requestMocks.put.mockResolvedValueOnce([
+      { roleId: 11, code: 'PLATFORM_ADMIN', name: '平台管理员', enabled: true, builtin: true },
+      { roleId: 12, code: 'PLATFORM_AUDITOR', name: '平台审计员', enabled: true, builtin: false },
+    ])
+    const { getPlatformUserRoles, replacePlatformUserRoles } = await import('@/api/platform-user')
+
+    const roles = await getPlatformUserRoles(1001)
+    const replaced = await replacePlatformUserRoles(1001, [11, 12])
+
+    expect(requestMocks.get).toHaveBeenCalledWith('/platform/users/1001/roles')
+    expect(roles).toHaveLength(1)
+    expect(requestMocks.put).toHaveBeenCalledWith('/platform/users/1001/roles', {
+      roleIds: [11, 12],
+    }, {
+      idempotency: {
+        scope: 'platform-users:roles:replace:1001',
+        payload: { roleIds: [11, 12] },
+      },
+    })
+    expect(replaced).toHaveLength(2)
   })
 })

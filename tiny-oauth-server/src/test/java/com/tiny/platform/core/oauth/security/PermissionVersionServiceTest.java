@@ -626,6 +626,42 @@ class PermissionVersionServiceTest {
         assertThat(updated).isNotEqualTo(baseline);
     }
 
+    @Test
+    void should_change_platform_version_when_hierarchy_snapshot_changes() {
+        TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
+        UserUnitRepository userUnitRepository = mock(UserUnitRepository.class);
+        RoleAssignmentRepository roleAssignmentRepository = mock(RoleAssignmentRepository.class);
+        EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
+        PermissionVersionReadRepository permissionVersionReadRepository = mock(PermissionVersionReadRepository.class);
+        Clock fixedClock = Clock.fixed(Instant.parse("2026-03-12T00:00:00Z"), ZoneOffset.UTC);
+        PermissionVersionService service = new PermissionVersionService(
+            tenantUserRepository, userUnitRepository, roleAssignmentRepository, effectiveRoleResolutionService, mock(PermissionAuthorityReadRepository.class), permissionVersionReadRepository, new PermissionRefactorObservabilityProperties(), fixedClock
+        );
+
+        when(roleAssignmentRepository.findLatestUpdatedAtForActiveUserInPlatform(7L, LocalDateTime.ofInstant(fixedClock.instant(), ZoneOffset.UTC)))
+            .thenReturn(LocalDateTime.of(2026, 3, 11, 8, 0));
+        when(roleAssignmentRepository.findActiveRoleIdsForUserInPlatform(7L, LocalDateTime.ofInstant(fixedClock.instant(), ZoneOffset.UTC)))
+            .thenReturn(java.util.List.of(11L));
+        when(effectiveRoleResolutionService.findEffectiveRoleIdsForUserInPlatform(7L))
+            .thenReturn(java.util.List.of(11L, 12L));
+        when(permissionVersionReadRepository.findPermissionSnapshotsByRoleIds(Set.of(11L, 12L), null))
+            .thenReturn(java.util.List.of());
+        when(permissionVersionReadRepository.findRoleHierarchySnapshotsByRoleIds(java.util.List.of(11L, 12L), null))
+            .thenReturn(java.util.List.of(
+                new PermissionVersionReadRepository.RoleHierarchySnapshot(12L, 11L, null, LocalDateTime.of(2026, 3, 10, 8, 0))
+            ));
+
+        String baseline = service.resolvePermissionsVersion(7L, null, "PLATFORM", null);
+
+        when(permissionVersionReadRepository.findRoleHierarchySnapshotsByRoleIds(java.util.List.of(11L, 12L), null))
+            .thenReturn(java.util.List.of(
+                new PermissionVersionReadRepository.RoleHierarchySnapshot(12L, 11L, null, LocalDateTime.of(2026, 3, 11, 8, 0))
+            ));
+
+        String updated = service.resolvePermissionsVersion(7L, null, "PLATFORM", null);
+        assertThat(updated).isNotEqualTo(baseline);
+    }
+
     private Role roleWithCode(String roleCode) {
         Role role = new Role();
         role.setCode(roleCode);

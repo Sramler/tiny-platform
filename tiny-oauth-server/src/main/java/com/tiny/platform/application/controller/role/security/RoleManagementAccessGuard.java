@@ -29,6 +29,10 @@ public class RoleManagementAccessGuard {
     private static final Set<String> ROLE_CONSTRAINT_VIEW_AUTHORITIES = Set.of("system:role:constraint:view");
     private static final Set<String> ROLE_CONSTRAINT_MANAGE_AUTHORITIES = Set.of("system:role:constraint:edit");
     private static final Set<String> ROLE_CONSTRAINT_VIOLATION_VIEW_AUTHORITIES = Set.of("system:role:constraint:violation:view");
+    private static final Set<String> ROLE_CONSTRAINT_ROLE_CATALOG_AUTHORITIES = Set.of(
+        "system:role:constraint:view",
+        "system:role:constraint:edit"
+    );
 
     public boolean canRead(Authentication authentication) {
         return hasAnyAuthority(authentication, READ_AUTHORITIES);
@@ -64,6 +68,10 @@ public class RoleManagementAccessGuard {
 
     public boolean canViewRoleConstraintViolations(Authentication authentication) {
         return hasAnyAuthority(authentication, ROLE_CONSTRAINT_VIOLATION_VIEW_AUTHORITIES);
+    }
+
+    public boolean canReadRoleCatalog(Authentication authentication) {
+        return hasAnyAuthority(authentication, ROLE_CONSTRAINT_ROLE_CATALOG_AUTHORITIES);
     }
 
     private boolean hasAnyAuthority(Authentication authentication, Set<String> requiredAuthorities) {

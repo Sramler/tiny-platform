@@ -3,6 +3,7 @@ package com.tiny.platform.application.controller.user;
 import com.tiny.platform.infrastructure.auth.user.dto.PlatformUserManagementDtos.PlatformUserCreateDto;
 import com.tiny.platform.infrastructure.auth.user.dto.PlatformUserManagementDtos.PlatformUserDetailDto;
 import com.tiny.platform.infrastructure.auth.user.dto.PlatformUserManagementDtos.PlatformUserListItemDto;
+import com.tiny.platform.infrastructure.auth.user.dto.PlatformUserManagementDtos.PlatformUserRoleDto;
 import com.tiny.platform.infrastructure.auth.user.service.PlatformUserManagementService;
 import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
 import org.junit.jupiter.api.BeforeEach;
@@ -86,7 +87,8 @@ class PlatformUserManagementControllerTest {
             true,
             LocalDateTime.now(),
             LocalDateTime.now(),
-            LocalDateTime.now()
+            LocalDateTime.now(),
+            List.of()
         );
         when(platformUserManagementService.create(any(PlatformUserCreateDto.class))).thenReturn(detail);
 
@@ -117,5 +119,43 @@ class PlatformUserManagementControllerTest {
         );
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void getRoles_shouldDelegateToService() {
+        when(platformUserManagementService.getRoles(9L)).thenReturn(List.of(
+            new PlatformUserRoleDto(1L, "ROLE_PLATFORM_ADMIN", "平台管理员", "desc", true, false)
+        ));
+
+        ResponseEntity<List<PlatformUserRoleDto>> response = controller.getRoles(9L);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).hasSize(1);
+        verify(platformUserManagementService).getRoles(9L);
+    }
+
+    @Test
+    void replaceRoles_shouldRejectMissingRoleIds() {
+        assertThatThrownBy(() -> controller.replaceRoles(9L, new PlatformUserManagementController.PlatformUserRolesReplaceRequest(null)))
+            .isInstanceOf(BusinessException.class)
+            .hasMessageContaining("roleIds");
+        verifyNoInteractions(platformUserManagementService);
+    }
+
+    @Test
+    void replaceRoles_shouldDelegateToService() {
+        when(platformUserManagementService.replaceRoles(9L, List.of(1L, 2L))).thenReturn(List.of(
+            new PlatformUserRoleDto(1L, "ROLE_PLATFORM_ADMIN", "平台管理员", "desc", true, false),
+            new PlatformUserRoleDto(2L, "ROLE_PLATFORM_AUDITOR", "平台审计员", "desc2", true, false)
+        ));
+
+        ResponseEntity<List<PlatformUserRoleDto>> response = controller.replaceRoles(
+            9L,
+            new PlatformUserManagementController.PlatformUserRolesReplaceRequest(List.of(1L, 2L))
+        );
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).hasSize(2);
+        verify(platformUserManagementService).replaceRoles(9L, List.of(1L, 2L));
     }
 }

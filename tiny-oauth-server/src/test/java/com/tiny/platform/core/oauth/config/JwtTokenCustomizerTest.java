@@ -41,8 +41,6 @@ import static org.assertj.core.api.InstanceOfAssertFactories.collection;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -275,26 +273,22 @@ class JwtTokenCustomizerTest {
     }
 
     /**
-     * 平台态（无 activeTenantId）：不得走「租户优先重载」首段；快照已含规范权限码时不必触碰 UserDetailsService。
-     * Cross-tenant / Nightly 全链路仍建议由 Playwright real-link 覆盖。
+     * 平台态 access token 必须优先重载当前运行时快照，避免 hierarchy / assignment 变化后继续沿用旧 SecurityUser 快照。
      */
     @Test
-    void accessToken_platform_scoped_complete_snapshot_does_not_invoke_user_details_service() {
-        User user = new User();
-        user.setId(7L);
-        user.setUsername("platform_alice");
-        user.setEnabled(true);
-        user.setAccountNonExpired(true);
-        user.setAccountNonLocked(true);
-        user.setCredentialsNonExpired(true);
-
+    void accessToken_platform_scoped_should_prefer_user_details_reload_over_security_user_snapshot() {
         SecurityUser securityUser = new SecurityUser(
-            user,
-            "",
+            7L,
             null,
+            "platform_alice",
+            "",
             List.of(
-                new SimpleGrantedAuthority("ROLE_PLATFORM_ADMIN"),
                 new SimpleGrantedAuthority("system:tenant:list")),
+            Set.of("ROLE_PLATFORM_ADMIN"),
+            true,
+            true,
+            true,
+            true,
             "perm-plat");
 
         UsernamePasswordAuthenticationToken principal = UsernamePasswordAuthenticationToken.authenticated(
@@ -304,6 +298,22 @@ class JwtTokenCustomizerTest {
         principal.setDetails(securityUser);
 
         UserDetailsService userDetailsService = mock(UserDetailsService.class);
+        when(userDetailsService.loadUserByUsername("platform_alice")).thenReturn(
+            new SecurityUser(
+                7L,
+                null,
+                "platform_alice",
+                "",
+                List.of(
+                    new SimpleGrantedAuthority("system:tenant:list"),
+                    new SimpleGrantedAuthority("dashboard:entry:view")),
+                Set.of("ROLE_PLATFORM_ADMIN", "ROLE_PLATFORM_AUDITOR"),
+                true,
+                true,
+                true,
+                true,
+                "perm-plat-v1")
+        );
 
         RegisteredClient client = RegisteredClient.withId("rc-id")
             .clientId("vue-client")
@@ -347,10 +357,12 @@ class JwtTokenCustomizerTest {
 
         Map<String, Object> claims = context.getClaims().build().getClaims();
         assertThat(claims.get("authorities")).asInstanceOf(collection(String.class))
-            .containsExactlyInAnyOrder("system:tenant:list");
+            .containsExactlyInAnyOrder("system:tenant:list", "dashboard:entry:view");
         assertThat(claims.get("roleCodes")).asInstanceOf(collection(String.class))
-            .isEmpty();
-        verify(userDetailsService, never()).loadUserByUsername(anyString());
+            .containsExactlyInAnyOrder("ROLE_PLATFORM_ADMIN", "ROLE_PLATFORM_AUDITOR");
+        assertThat(claims.get("permissions")).asInstanceOf(collection(String.class))
+            .containsExactlyInAnyOrder("system:tenant:list", "dashboard:entry:view");
+        verify(userDetailsService).loadUserByUsername("platform_alice");
     }
 
     @Test

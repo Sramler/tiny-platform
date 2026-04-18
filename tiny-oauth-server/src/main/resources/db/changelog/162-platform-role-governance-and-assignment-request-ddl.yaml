@@ -1,0 +1,65 @@
+databaseChangeLog:
+  - changeSet:
+      id: 162-platform-role-governance-columns
+      author: codex
+      comment: 平台角色治理 risk_level / approval_mode（不引入 role_usage）
+      preConditions:
+        onFail: MARK_RAN
+        onError: HALT
+        and:
+          - tableExists:
+              tableName: role
+          - not:
+              columnExists:
+                tableName: role
+                columnName: risk_level
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              ALTER TABLE `role`
+                ADD COLUMN `risk_level` VARCHAR(16) NOT NULL DEFAULT 'NORMAL' COMMENT 'LOW/NORMAL/HIGH/CRITICAL' AFTER `description`,
+                ADD COLUMN `approval_mode` VARCHAR(16) NOT NULL DEFAULT 'NONE' COMMENT 'NONE/ONE_STEP' AFTER `risk_level`;
+
+  - changeSet:
+      id: 162-platform-role-assignment-request-table
+      author: codex
+      comment: 平台角色赋权审批请求表（一请求一角色一动作）
+      preConditions:
+        onFail: MARK_RAN
+        onError: HALT
+        and:
+          - tableExists:
+              tableName: role
+          - not:
+              tableExists:
+                tableName: platform_role_assignment_request
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              CREATE TABLE `platform_role_assignment_request` (
+                `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+                `target_user_id` BIGINT NOT NULL COMMENT '目标平台用户',
+                `role_id` BIGINT NOT NULL COMMENT '平台角色 id',
+                `action_type` VARCHAR(16) NOT NULL COMMENT 'GRANT/REVOKE',
+                `status` VARCHAR(16) NOT NULL COMMENT 'PENDING/REJECTED/CANCELED/APPLIED/FAILED',
+                `requested_by` BIGINT NOT NULL COMMENT '申请人用户 id',
+                `requested_at` DATETIME NOT NULL COMMENT '申请时间',
+                `reviewed_by` BIGINT DEFAULT NULL COMMENT '审批人用户 id',
+                `reviewed_at` DATETIME DEFAULT NULL COMMENT '审批时间',
+                `reason` VARCHAR(256) DEFAULT NULL COMMENT '申请说明',
+                `review_comment` VARCHAR(256) DEFAULT NULL COMMENT '审批意见',
+                `applied_at` DATETIME DEFAULT NULL COMMENT '成功写入 role_assignment 时间',
+                `apply_error` TEXT DEFAULT NULL COMMENT '写入失败原因（FAILED）',
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (`id`),
+                KEY `idx_prar_target_status` (`target_user_id`, `status`),
+                KEY `idx_prar_role` (`role_id`),
+                KEY `idx_prar_status_requested` (`status`, `requested_at`)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='平台角色赋权审批请求';
