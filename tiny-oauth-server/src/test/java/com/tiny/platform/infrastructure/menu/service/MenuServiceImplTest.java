@@ -524,6 +524,97 @@ class MenuServiceImplTest {
     }
 
     @Test
+    void menuTreeShouldHideLegacyTenantOnlyRoleConstraintMenuInPlatformScope() {
+        TenantContext.setActiveTenantId(null);
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_PLATFORM);
+        authenticate(
+            1L,
+            null,
+            "platform-admin",
+            "system:role:constraint:view",
+            "system:role:constraint:edit",
+            "system:role:constraint:violation:view"
+        );
+
+        MenuEntry system = menuEntry(1L, null, "system", null, "/system", "", ResourceType.DIRECTORY.getCode());
+        MenuEntry legacyConstraint = menuEntry(
+            2L,
+            null,
+            "roleConstraint",
+            1L,
+            "/system/role/constraint",
+            "system:role:constraint:view",
+            ResourceType.MENU.getCode()
+        );
+        legacyConstraint.setComponent("/views/constraint/RoleConstraint.vue");
+        MenuEntry platformConstraint = menuEntry(
+            3L,
+            null,
+            "platformRoleConstraints",
+            1L,
+            "/platform/role-constraints",
+            "system:role:constraint:view",
+            ResourceType.MENU.getCode()
+        );
+        platformConstraint.setComponent("/views/platform/role-constraints/PlatformRoleConstraints.vue");
+
+        when(menuEntryRepository.findByTenantIdIsNullAndTypeInOrderBySortAsc(
+            List.of(ResourceType.DIRECTORY.getCode(), ResourceType.MENU.getCode())
+        )).thenReturn(List.of(system, legacyConstraint, platformConstraint));
+        when(menuPermissionRequirementRepository.findRowsByMenuIdIn(anyCollection())).thenReturn(List.of(
+            row(1L, 1, 1, "system:role:constraint:view", false),
+            row(2L, 0, 1, "system:role:constraint:view", false),
+            row(3L, 0, 1, "system:role:constraint:view", false)
+        ));
+
+        List<ResourceResponseDto> tree = service.menuTree();
+
+        assertThat(tree).singleElement().extracting(ResourceResponseDto::getName).isEqualTo("system");
+        assertThat(tree.get(0).getChildren()).extracting(ResourceResponseDto::getUrl)
+            .containsExactly("/platform/role-constraints");
+    }
+
+    @Test
+    void menuTreeAllShouldHideLegacyTenantOnlyRoleConstraintMenuInPlatformScope() {
+        TenantContext.setActiveTenantId(null);
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_PLATFORM);
+        authenticate(1L, null, "platform-admin", "system:menu:list", "system:role:constraint:view");
+
+        MenuEntry system = menuEntry(1L, null, "system", null, "/system", "", ResourceType.DIRECTORY.getCode());
+        MenuEntry legacyConstraint = menuEntry(
+            2L,
+            null,
+            "roleConstraint",
+            1L,
+            "/system/role/constraint",
+            "system:role:constraint:view",
+            ResourceType.MENU.getCode()
+        );
+        MenuEntry platformConstraint = menuEntry(
+            3L,
+            null,
+            "platformRoleConstraints",
+            1L,
+            "/platform/role-constraints",
+            "system:role:constraint:view",
+            ResourceType.MENU.getCode()
+        );
+
+        when(menuEntryRepository.findByTenantIdIsNullAndTypeInOrderBySortAsc(
+            List.of(ResourceType.DIRECTORY.getCode(), ResourceType.MENU.getCode())
+        )).thenReturn(List.of(system, legacyConstraint, platformConstraint));
+        when(menuEntryRepository.existsByParentIdAndTenantIdIsNull(1L)).thenReturn(true);
+        when(menuEntryRepository.existsByParentIdAndTenantIdIsNull(2L)).thenReturn(false);
+        when(menuEntryRepository.existsByParentIdAndTenantIdIsNull(3L)).thenReturn(false);
+
+        List<ResourceResponseDto> tree = service.menuTreeAll();
+
+        assertThat(tree).singleElement().extracting(ResourceResponseDto::getName).isEqualTo("system");
+        assertThat(tree.get(0).getChildren()).extracting(ResourceResponseDto::getUrl)
+            .containsExactly("/platform/role-constraints");
+    }
+
+    @Test
     void menuTreeShouldSupportAndOrAndNegatedRequirements() {
         TenantContext.setActiveTenantId(2L);
         TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_TENANT);
