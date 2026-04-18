@@ -1,0 +1,40 @@
+databaseChangeLog:
+  - changeSet:
+      id: 168-cleanup-legacy-platform-role-constraint-menu
+      author: codex
+      comment: 清理平台态历史 tenant-only RBAC3 菜单 /system/role/constraint，避免平台误入 /sys/role-constraints/*
+      preConditions:
+        onFail: MARK_RAN
+        onError: HALT
+        and:
+          - tableExists:
+              tableName: menu
+          - tableExists:
+              tableName: ui_action
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              UPDATE `ui_action` action_entry
+              JOIN `menu` legacy_menu
+                ON legacy_menu.`id` = action_entry.`parent_menu_id`
+               AND legacy_menu.`tenant_id` IS NULL
+               AND legacy_menu.`path` = '/system/role/constraint'
+              SET action_entry.`parent_menu_id` = NULL,
+                  action_entry.`updated_at` = NOW(),
+                  action_entry.`updated_by` = NULL;
+
+              UPDATE `menu` child_menu
+              JOIN `menu` legacy_menu
+                ON legacy_menu.`id` = child_menu.`parent_id`
+               AND legacy_menu.`tenant_id` IS NULL
+               AND legacy_menu.`path` = '/system/role/constraint'
+              SET child_menu.`parent_id` = NULL,
+                  child_menu.`updated_at` = NOW(),
+                  child_menu.`updated_by` = NULL;
+
+              DELETE FROM `menu`
+              WHERE `tenant_id` IS NULL
+                AND `path` = '/system/role/constraint';

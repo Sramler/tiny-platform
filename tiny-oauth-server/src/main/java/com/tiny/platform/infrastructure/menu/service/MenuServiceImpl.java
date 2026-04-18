@@ -65,6 +65,7 @@ import java.util.ArrayList;
 @Service
 public class MenuServiceImpl implements MenuService {
     private static final String ACTIVE = "ACTIVE";
+    private static final String LEGACY_PLATFORM_ROLE_CONSTRAINT_PATH = "/system/role/constraint";
     private static final Logger logger = LoggerFactory.getLogger(MenuServiceImpl.class);
     private final MenuEntryRepository menuEntryRepository;
     private final UiActionEntryRepository uiActionEntryRepository;
@@ -1011,6 +1012,9 @@ public class MenuServiceImpl implements MenuService {
         if (menu == null) {
             return false;
         }
+        if (isLegacyPlatformRoleConstraintPath(menu.getPath())) {
+            return false;
+        }
         Resource marker = new Resource();
         marker.setName(menu.getName());
         marker.setPermission(menu.getPermission());
@@ -1029,6 +1033,9 @@ public class MenuServiceImpl implements MenuService {
         if (resource == null) {
             return false;
         }
+        if (isLegacyPlatformRoleConstraintPath(resource.getUrl())) {
+            return false;
+        }
         if (PlatformControlPlaneResourcePolicy.isTenantManagementResource(resource)) {
             return hasPlatformAdminAccess();
         }
@@ -1042,6 +1049,9 @@ public class MenuServiceImpl implements MenuService {
         if (resource == null) {
             return false;
         }
+        if (isLegacyPlatformRoleConstraintPath(resource.getUrl())) {
+            return false;
+        }
         if (PlatformControlPlaneResourcePolicy.isTenantManagementResource(resource)) {
             return hasPlatformAdminAccess();
         }
@@ -1049,6 +1059,14 @@ public class MenuServiceImpl implements MenuService {
             return hasPlatformAdminAccess() && hasAuthority("idempotent:ops:view");
         }
         return true;
+    }
+
+    /**
+     * 平台 RBAC3 已收口到 /platform/role-constraints；历史错误平台菜单
+     * /system/role/constraint 指向 tenant-only 页面，平台态必须显式挡掉。
+     */
+    private boolean isLegacyPlatformRoleConstraintPath(String path) {
+        return TenantContext.isPlatformScope() && LEGACY_PLATFORM_ROLE_CONSTRAINT_PATH.equals(path);
     }
 
     private boolean canAccessTreeMenu(Resource resource) {
