@@ -1,177 +1,374 @@
 <template>
   <div class="content-container">
-    <div v-if="!canView" class="content-card">
-      <div class="platform-guard-card">
+    <div ref="constraintPageRef" class="content-card platform-page-shell">
+      <div v-if="!canView" class="platform-guard-card">
         <div class="platform-guard-kicker">Permission Required</div>
         <h3>RBAC3 约束管理需要额外授权</h3>
         <p>
           当前页面属于后台配置面。只有具备 <code>system:role:constraint:view</code> 或管理员权限的用户，才能查看角色约束规则。
         </p>
       </div>
-    </div>
-    <div v-else class="content-card">
-      <a-tabs v-model:activeKey="activeTab" @change="handleTabChange">
+
+      <a-tabs
+        v-else
+        v-model:activeKey="activeTab"
+        class="boundary-tabs"
+        destroy-inactive-tab-pane
+        @change="handleTabChange"
+      >
         <a-tab-pane key="hierarchy" tab="角色继承">
-          <div class="tab-toolbar">
-            <a-button v-if="canEditConstraint" type="link" @click="openHierarchyModal">
-              <template #icon><PlusOutlined /></template>
-              新建
-            </a-button>
-            <a-tooltip title="刷新">
-              <span class="action-icon" @click="loadHierarchies">
-                <ReloadOutlined :spin="hierarchyLoading" />
-              </span>
-            </a-tooltip>
-          </div>
-          <a-table
-            :columns="hierarchyColumns"
-            :data-source="hierarchies"
-            :pagination="false"
-            :row-key="hierarchyRowKey"
-            bordered
-            :loading="hierarchyLoading"
-          >
-            <template #bodyCell="{ column, record }">
-              <template v-if="column.dataIndex === 'action'">
-                <a-button v-if="canEditConstraint" type="link" size="small" danger @click="confirmDelete('hierarchy', record)">
-                  <template #icon><DeleteOutlined /></template>
-                  删除
+          <div class="tab-workspace">
+            <div class="form-container">
+              <a-form layout="inline" :model="hierarchyQuery">
+                <a-form-item label="角色">
+                  <a-input v-model:value="hierarchyQuery.keyword" placeholder="父角色ID / 当前角色ID / 角色名称" />
+                </a-form-item>
+                <a-form-item>
+                  <a-button type="primary" @click="handleHierarchySearch">搜索</a-button>
+                  <a-button class="ml-2" @click="handleHierarchyReset">重置</a-button>
+                </a-form-item>
+              </a-form>
+            </div>
+
+            <div class="toolbar-container">
+              <div class="table-title">角色继承</div>
+              <div class="table-actions">
+                <a-button v-if="canEditConstraint" type="link" @click="openHierarchyModal">
+                  <template #icon><PlusOutlined /></template>
+                  新建
                 </a-button>
-              </template>
-            </template>
-          </a-table>
+                <a-tooltip title="刷新">
+                  <span class="action-icon" @click="loadHierarchies">
+                    <ReloadOutlined :spin="hierarchyLoading" />
+                  </span>
+                </a-tooltip>
+              </div>
+            </div>
+
+            <div class="table-container">
+              <div class="table-scroll-container">
+                <a-table
+                  :columns="hierarchyColumns"
+                  :data-source="pagedHierarchies"
+                  :pagination="false"
+                  :row-key="hierarchyRowKey"
+                  bordered
+                  :loading="hierarchyLoading"
+                  :scroll="{ x: 'max-content', y: tableBodyHeight }"
+                >
+                  <template #bodyCell="{ column, record }">
+                    <template v-if="column.dataIndex === 'parentRoleName'">
+                      {{ formatRoleName(record.parentRoleId) }}
+                    </template>
+                    <template v-else-if="column.dataIndex === 'childRoleName'">
+                      {{ formatRoleName(record.childRoleId) }}
+                    </template>
+                    <template v-else-if="column.dataIndex === 'relationDescription'">
+                      {{ formatHierarchyDescription(record) }}
+                    </template>
+                    <template v-else-if="column.dataIndex === 'action'">
+                      <a-button v-if="canEditConstraint" type="link" size="small" danger @click="confirmDelete('hierarchy', record)">
+                        <template #icon><DeleteOutlined /></template>
+                        删除
+                      </a-button>
+                    </template>
+                  </template>
+                </a-table>
+              </div>
+
+              <div class="pagination-container">
+                <div class="pagination-spacer"></div>
+                <a-pagination
+                  v-model:current="hierarchyPagination.current"
+                  :page-size="hierarchyPagination.pageSize"
+                  :total="hierarchyPagination.total"
+                  show-size-changer
+                  :page-size-options="LOCAL_PAGE_SIZE_OPTIONS"
+                  :show-total="(total: number) => `共 ${total} 条`"
+                  @change="handleHierarchyPageChange"
+                  @showSizeChange="handleHierarchyPageChange"
+                />
+              </div>
+            </div>
+          </div>
         </a-tab-pane>
 
         <a-tab-pane key="mutex" tab="互斥约束">
-          <div class="tab-toolbar">
-            <a-button v-if="canEditConstraint" type="link" @click="openMutexModal">
-              <template #icon><PlusOutlined /></template>
-              新建
-            </a-button>
-            <a-tooltip title="刷新">
-              <span class="action-icon" @click="loadMutexes">
-                <ReloadOutlined :spin="mutexLoading" />
-              </span>
-            </a-tooltip>
-          </div>
-          <a-table
-            :columns="mutexColumns"
-            :data-source="mutexes"
-            :pagination="false"
-            :row-key="mutexRowKey"
-            bordered
-            :loading="mutexLoading"
-          >
-            <template #bodyCell="{ column, record }">
-              <template v-if="column.dataIndex === 'action'">
-                <a-button v-if="canEditConstraint" type="link" size="small" danger @click="confirmDelete('mutex', record)">
-                  <template #icon><DeleteOutlined /></template>
-                  删除
+          <div class="tab-workspace">
+            <div class="form-container">
+              <a-form layout="inline" :model="mutexQuery">
+                <a-form-item label="角色">
+                  <a-input v-model:value="mutexQuery.keyword" placeholder="角色A ID / 角色B ID" />
+                </a-form-item>
+                <a-form-item>
+                  <a-button type="primary" @click="handleMutexSearch">搜索</a-button>
+                  <a-button class="ml-2" @click="handleMutexReset">重置</a-button>
+                </a-form-item>
+              </a-form>
+            </div>
+
+            <div class="toolbar-container">
+              <div class="table-title">互斥约束</div>
+              <div class="table-actions">
+                <a-button v-if="canEditConstraint" type="link" @click="openMutexModal">
+                  <template #icon><PlusOutlined /></template>
+                  新建
                 </a-button>
-              </template>
-            </template>
-          </a-table>
+                <a-tooltip title="刷新">
+                  <span class="action-icon" @click="loadMutexes">
+                    <ReloadOutlined :spin="mutexLoading" />
+                  </span>
+                </a-tooltip>
+              </div>
+            </div>
+
+            <div class="table-container">
+              <div class="table-scroll-container">
+                <a-table
+                  :columns="mutexColumns"
+                  :data-source="pagedMutexes"
+                  :pagination="false"
+                  :row-key="mutexRowKey"
+                  bordered
+                  :loading="mutexLoading"
+                  :scroll="{ x: 'max-content', y: tableBodyHeight }"
+                >
+                  <template #bodyCell="{ column, record }">
+                    <template v-if="column.dataIndex === 'action'">
+                      <a-button v-if="canEditConstraint" type="link" size="small" danger @click="confirmDelete('mutex', record)">
+                        <template #icon><DeleteOutlined /></template>
+                        删除
+                      </a-button>
+                    </template>
+                  </template>
+                </a-table>
+              </div>
+
+              <div class="pagination-container">
+                <div class="pagination-spacer"></div>
+                <a-pagination
+                  v-model:current="mutexPagination.current"
+                  :page-size="mutexPagination.pageSize"
+                  :total="mutexPagination.total"
+                  show-size-changer
+                  :page-size-options="LOCAL_PAGE_SIZE_OPTIONS"
+                  :show-total="(total: number) => `共 ${total} 条`"
+                  @change="handleMutexPageChange"
+                  @showSizeChange="handleMutexPageChange"
+                />
+              </div>
+            </div>
+          </div>
         </a-tab-pane>
 
         <a-tab-pane key="prerequisite" tab="先决条件">
-          <div class="tab-toolbar">
-            <a-button v-if="canEditConstraint" type="link" @click="openPrerequisiteModal">
-              <template #icon><PlusOutlined /></template>
-              新建
-            </a-button>
-            <a-tooltip title="刷新">
-              <span class="action-icon" @click="loadPrerequisites">
-                <ReloadOutlined :spin="prerequisiteLoading" />
-              </span>
-            </a-tooltip>
-          </div>
-          <a-table
-            :columns="prerequisiteColumns"
-            :data-source="prerequisites"
-            :pagination="false"
-            :row-key="prerequisiteRowKey"
-            bordered
-            :loading="prerequisiteLoading"
-          >
-            <template #bodyCell="{ column, record }">
-              <template v-if="column.dataIndex === 'action'">
-                <a-button v-if="canEditConstraint" type="link" size="small" danger @click="confirmDelete('prerequisite', record)">
-                  <template #icon><DeleteOutlined /></template>
-                  删除
+          <div class="tab-workspace">
+            <div class="form-container">
+              <a-form layout="inline" :model="prerequisiteQuery">
+                <a-form-item label="角色">
+                  <a-input v-model:value="prerequisiteQuery.keyword" placeholder="目标角色ID / 前置角色ID" />
+                </a-form-item>
+                <a-form-item>
+                  <a-button type="primary" @click="handlePrerequisiteSearch">搜索</a-button>
+                  <a-button class="ml-2" @click="handlePrerequisiteReset">重置</a-button>
+                </a-form-item>
+              </a-form>
+            </div>
+
+            <div class="toolbar-container">
+              <div class="table-title">先决条件</div>
+              <div class="table-actions">
+                <a-button v-if="canEditConstraint" type="link" @click="openPrerequisiteModal">
+                  <template #icon><PlusOutlined /></template>
+                  新建
                 </a-button>
-              </template>
-            </template>
-          </a-table>
+                <a-tooltip title="刷新">
+                  <span class="action-icon" @click="loadPrerequisites">
+                    <ReloadOutlined :spin="prerequisiteLoading" />
+                  </span>
+                </a-tooltip>
+              </div>
+            </div>
+
+            <div class="table-container">
+              <div class="table-scroll-container">
+                <a-table
+                  :columns="prerequisiteColumns"
+                  :data-source="pagedPrerequisites"
+                  :pagination="false"
+                  :row-key="prerequisiteRowKey"
+                  bordered
+                  :loading="prerequisiteLoading"
+                  :scroll="{ x: 'max-content', y: tableBodyHeight }"
+                >
+                  <template #bodyCell="{ column, record }">
+                    <template v-if="column.dataIndex === 'action'">
+                      <a-button v-if="canEditConstraint" type="link" size="small" danger @click="confirmDelete('prerequisite', record)">
+                        <template #icon><DeleteOutlined /></template>
+                        删除
+                      </a-button>
+                    </template>
+                  </template>
+                </a-table>
+              </div>
+
+              <div class="pagination-container">
+                <div class="pagination-spacer"></div>
+                <a-pagination
+                  v-model:current="prerequisitePagination.current"
+                  :page-size="prerequisitePagination.pageSize"
+                  :total="prerequisitePagination.total"
+                  show-size-changer
+                  :page-size-options="LOCAL_PAGE_SIZE_OPTIONS"
+                  :show-total="(total: number) => `共 ${total} 条`"
+                  @change="handlePrerequisitePageChange"
+                  @showSizeChange="handlePrerequisitePageChange"
+                />
+              </div>
+            </div>
+          </div>
         </a-tab-pane>
 
         <a-tab-pane key="cardinality" tab="基数限制">
-          <div class="tab-toolbar">
-            <a-button v-if="canEditConstraint" type="link" @click="openCardinalityModal">
-              <template #icon><PlusOutlined /></template>
-              新建
-            </a-button>
-            <a-tooltip title="刷新">
-              <span class="action-icon" @click="loadCardinalities">
-                <ReloadOutlined :spin="cardinalityLoading" />
-              </span>
-            </a-tooltip>
-          </div>
-          <a-table
-            :columns="cardinalityColumns"
-            :data-source="cardinalities"
-            :pagination="false"
-            :row-key="cardinalityRowKey"
-            bordered
-            :loading="cardinalityLoading"
-          >
-            <template #bodyCell="{ column, record }">
-              <template v-if="column.dataIndex === 'scopeType'">
-                <a-tag color="blue">{{ record.scopeType }}</a-tag>
-              </template>
-              <template v-else-if="column.dataIndex === 'action'">
-                <a-button v-if="canEditConstraint" type="link" size="small" danger @click="confirmDelete('cardinality', record)">
-                  <template #icon><DeleteOutlined /></template>
-                  删除
+          <div class="tab-workspace">
+            <div class="form-container">
+              <a-form layout="inline" :model="cardinalityQuery">
+                <a-form-item label="角色">
+                  <a-input v-model:value="cardinalityQuery.keyword" placeholder="角色ID / 作用域类型" />
+                </a-form-item>
+                <a-form-item label="作用域">
+                  <a-select v-model:value="cardinalityQuery.scopeType" allow-clear placeholder="全部" style="width: 140px">
+                    <a-select-option v-for="scopeType in scopeTypeOptions" :key="scopeType" :value="scopeType">
+                      {{ scopeType }}
+                    </a-select-option>
+                  </a-select>
+                </a-form-item>
+                <a-form-item>
+                  <a-button type="primary" @click="handleCardinalitySearch">搜索</a-button>
+                  <a-button class="ml-2" @click="handleCardinalityReset">重置</a-button>
+                </a-form-item>
+              </a-form>
+            </div>
+
+            <div class="toolbar-container">
+              <div class="table-title">基数限制</div>
+              <div class="table-actions">
+                <a-button v-if="canEditConstraint" type="link" @click="openCardinalityModal">
+                  <template #icon><PlusOutlined /></template>
+                  新建
                 </a-button>
-              </template>
-            </template>
-          </a-table>
+                <a-tooltip title="刷新">
+                  <span class="action-icon" @click="loadCardinalities">
+                    <ReloadOutlined :spin="cardinalityLoading" />
+                  </span>
+                </a-tooltip>
+              </div>
+            </div>
+
+            <div class="table-container">
+              <div class="table-scroll-container">
+                <a-table
+                  :columns="cardinalityColumns"
+                  :data-source="pagedCardinalities"
+                  :pagination="false"
+                  :row-key="cardinalityRowKey"
+                  bordered
+                  :loading="cardinalityLoading"
+                  :scroll="{ x: 'max-content', y: tableBodyHeight }"
+                >
+                  <template #bodyCell="{ column, record }">
+                    <template v-if="column.dataIndex === 'scopeType'">
+                      <a-tag color="blue">{{ record.scopeType }}</a-tag>
+                    </template>
+                    <template v-else-if="column.dataIndex === 'action'">
+                      <a-button v-if="canEditConstraint" type="link" size="small" danger @click="confirmDelete('cardinality', record)">
+                        <template #icon><DeleteOutlined /></template>
+                        删除
+                      </a-button>
+                    </template>
+                  </template>
+                </a-table>
+              </div>
+
+              <div class="pagination-container">
+                <div class="pagination-spacer"></div>
+                <a-pagination
+                  v-model:current="cardinalityPagination.current"
+                  :page-size="cardinalityPagination.pageSize"
+                  :total="cardinalityPagination.total"
+                  show-size-changer
+                  :page-size-options="LOCAL_PAGE_SIZE_OPTIONS"
+                  :show-total="(total: number) => `共 ${total} 条`"
+                  @change="handleCardinalityPageChange"
+                  @showSizeChange="handleCardinalityPageChange"
+                />
+              </div>
+            </div>
+          </div>
         </a-tab-pane>
 
         <a-tab-pane v-if="canViewViolations" key="violations" tab="违规记录">
-          <div class="tab-toolbar">
-            <a-tooltip title="刷新">
-              <span class="action-icon" @click="loadViolations">
-                <ReloadOutlined :spin="violationLoading" />
-              </span>
-            </a-tooltip>
-          </div>
-          <a-table
-            :columns="violationColumns"
-            :data-source="violations"
-            :pagination="false"
-            :row-key="(r: any) => String(r.id)"
-            bordered
-            :loading="violationLoading"
-          >
-            <template #bodyCell="{ column, record }">
-              <template v-if="column.dataIndex === 'violationType'">
-                <a-tag>{{ record.violationType }}</a-tag>
-              </template>
-              <template v-else-if="column.dataIndex === 'createdAt'">{{ formatDateTime(record.createdAt) }}</template>
-            </template>
-          </a-table>
-          <div class="pagination-container">
-            <a-pagination
-              v-model:current="violationPagination.current"
-              :page-size="violationPagination.pageSize"
-              :total="violationPagination.total"
-              show-size-changer
-              :page-size-options="['10', '20', '50']"
-              :show-total="(total: number) => `共 ${total} 条`"
-              @change="handleViolationPageChange"
-              @showSizeChange="handleViolationPageSizeChange"
-            />
+          <div class="tab-workspace">
+            <div class="form-container">
+              <a-form layout="inline" :model="violationQuery">
+                <a-form-item label="关键词">
+                  <a-input v-model:value="violationQuery.keyword" placeholder="违规编码 / 主体 / 详情" />
+                </a-form-item>
+                <a-form-item label="违规类型">
+                  <a-input v-model:value="violationQuery.violationType" placeholder="违规类型" />
+                </a-form-item>
+                <a-form-item>
+                  <a-button type="primary" @click="handleViolationSearch">搜索</a-button>
+                  <a-button class="ml-2" @click="handleViolationReset">重置</a-button>
+                </a-form-item>
+              </a-form>
+            </div>
+
+            <div class="toolbar-container">
+              <div class="table-title">违规记录</div>
+              <div class="table-actions">
+                <a-tooltip title="刷新">
+                  <span class="action-icon" @click="loadViolations">
+                    <ReloadOutlined :spin="violationLoading" />
+                  </span>
+                </a-tooltip>
+              </div>
+            </div>
+
+            <div class="table-container">
+              <div class="table-scroll-container">
+                <a-table
+                  :columns="violationColumns"
+                  :data-source="filteredViolations"
+                  :pagination="false"
+                  :row-key="(r: any) => String(r.id)"
+                  bordered
+                  :loading="violationLoading"
+                  :scroll="{ x: 'max-content', y: tableBodyHeight }"
+                >
+                  <template #bodyCell="{ column, record }">
+                    <template v-if="column.dataIndex === 'violationType'">
+                      <a-tag>{{ record.violationType }}</a-tag>
+                    </template>
+                    <template v-else-if="column.dataIndex === 'createdAt'">{{ formatDateTime(record.createdAt) }}</template>
+                  </template>
+                </a-table>
+              </div>
+
+              <div class="pagination-container">
+                <div class="pagination-spacer"></div>
+                <a-pagination
+                  v-model:current="violationPagination.current"
+                  :page-size="violationPagination.pageSize"
+                  :total="violationPagination.total"
+                  show-size-changer
+                  :page-size-options="['10', '20', '50']"
+                  :show-total="(total: number) => `共 ${total} 条`"
+                  @change="handleViolationPageChange"
+                  @showSizeChange="handleViolationPageSizeChange"
+                />
+              </div>
+            </div>
           </div>
         </a-tab-pane>
       </a-tabs>
@@ -235,7 +432,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, nextTick, onActivated, onBeforeUnmount, onMounted, watch } from 'vue'
 import { useAuth } from '@/auth/auth'
 import { message, Modal } from 'ant-design-vue'
 import { ReloadOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons-vue'
@@ -246,6 +443,7 @@ import {
   ROLE_CONSTRAINT_EDIT,
   ROLE_CONSTRAINT_VIOLATION_VIEW,
 } from '@/constants/permission'
+import { getAllRoles, type Role } from '@/api/role'
 import {
   listHierarchies, createHierarchy, deleteHierarchy,
   listMutexes, createMutex, deleteMutex,
@@ -266,17 +464,141 @@ const canView = computed(() => hasAuthority(ROLE_CONSTRAINT_VIEW))
 const canEditConstraint = computed(() => hasAuthority(ROLE_CONSTRAINT_EDIT))
 const canViewViolations = computed(() => hasAuthority(ROLE_CONSTRAINT_VIOLATION_VIEW))
 
+const LOCAL_PAGE_SIZE_OPTIONS = ['10', '20', '30', '40', '50']
+const constraintPageRef = ref<HTMLElement | null>(null)
+const tableBodyHeight = ref(360)
+
+function normalizeText(value: unknown) {
+  return String(value ?? '').trim().toLowerCase()
+}
+
+function includesKeyword(keyword: string, ...candidates: unknown[]) {
+  const normalizedKeyword = normalizeText(keyword)
+  if (!normalizedKeyword) {
+    return true
+  }
+  return candidates.some((candidate) => normalizeText(candidate).includes(normalizedKeyword))
+}
+
+type LocalPaginationState = {
+  current: number
+  pageSize: number
+  total: number
+}
+
+function createLocalPagination(): LocalPaginationState {
+  return {
+    current: 1,
+    pageSize: 10,
+    total: 0,
+  }
+}
+
+function normalizeLocalPagination(pagination: LocalPaginationState, total: number) {
+  pagination.total = total
+  const maxPage = Math.max(1, Math.ceil(total / pagination.pageSize))
+  if (pagination.current > maxPage) {
+    pagination.current = maxPage
+  }
+}
+
+function sliceLocalPage<T>(items: T[], pagination: LocalPaginationState) {
+  const start = (pagination.current - 1) * pagination.pageSize
+  return items.slice(start, start + pagination.pageSize)
+}
+
+function updateLocalPage(pagination: LocalPaginationState, page: number, pageSize: number) {
+  pagination.current = page
+  pagination.pageSize = pageSize
+}
+
+function updateTableBodyHeight() {
+  nextTick(() => {
+    const root = constraintPageRef.value
+    const activePane = root?.querySelector('.ant-tabs-tabpane-active') as HTMLElement | null
+    const tableContainer = activePane?.querySelector('.table-container') as HTMLElement | null
+    const tableScroll = activePane?.querySelector('.table-scroll-container') as HTMLElement | null
+    const pagination = activePane?.querySelector('.pagination-container') as HTMLElement | null
+    const tableHeader =
+      (tableScroll?.querySelector('.ant-table-header') as HTMLElement | null)
+      || (tableScroll?.querySelector('.ant-table-thead') as HTMLElement | null)
+
+    if (!tableContainer) {
+      return
+    }
+
+    const containerHeight = tableContainer.clientHeight
+    const paginationHeight = pagination?.clientHeight ?? 56
+    const tableHeaderHeight = tableHeader?.clientHeight ?? 55
+    const nextHeight = Math.max(containerHeight - paginationHeight - tableHeaderHeight - 24, 220)
+    tableBodyHeight.value = nextHeight
+  })
+}
+
+function scheduleTableBodyHeightUpdate() {
+  updateTableBodyHeight()
+  if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
+    window.requestAnimationFrame(() => {
+      updateTableBodyHeight()
+    })
+  }
+}
+
 const activeTab = ref('hierarchy')
 const submitting = ref(false)
 
+const roleOptions = ref<Role[]>([])
+const roleById = computed(() => {
+  const roleMap = new Map<number, Role>()
+  for (const role of roleOptions.value) {
+    const roleId = Number(role.id)
+    if (Number.isFinite(roleId) && roleId > 0) {
+      roleMap.set(roleId, role)
+    }
+  }
+  return roleMap
+})
+
+function formatRoleName(roleId: number) {
+  const role = roleById.value.get(roleId)
+  if (!role) {
+    return '-'
+  }
+  return role.name || role.code || '-'
+}
+
+function formatHierarchyDescription(record: RoleHierarchy) {
+  const parentRoleName = formatRoleName(record.parentRoleId)
+  const childRoleName = formatRoleName(record.childRoleId)
+  return `当前角色 ${childRoleName} 继承父角色 ${parentRoleName} 的权限能力`
+}
+
+async function loadRoleOptions() {
+  if (!canView.value) {
+    roleOptions.value = []
+    return
+  }
+  try {
+    const result = await getAllRoles()
+    roleOptions.value = Array.isArray(result) ? result : []
+  } catch {
+    roleOptions.value = []
+  }
+}
+
 // ─── Hierarchy ───
 const hierarchies = ref<RoleHierarchy[]>([])
+const hierarchyQuery = ref({ keyword: '' })
+const hierarchyPagination = ref<LocalPaginationState>(createLocalPagination())
 const hierarchyLoading = ref(false)
 const hierarchyModalVisible = ref(false)
 const hierarchyForm = ref({ parentRoleId: undefined as number | undefined, childRoleId: undefined as number | undefined })
 const hierarchyColumns = [
   { title: '父角色ID', dataIndex: 'parentRoleId', width: 120 },
-  { title: '子角色ID', dataIndex: 'childRoleId', width: 120 },
+  { title: '父角色名称', dataIndex: 'parentRoleName', width: 180 },
+  { title: '当前角色ID', dataIndex: 'childRoleId', width: 120 },
+  { title: '角色名称', dataIndex: 'childRoleName', width: 180 },
+  { title: '相关描述', dataIndex: 'relationDescription', width: 360 },
   { title: '操作', dataIndex: 'action', width: 100, align: 'center' as const },
 ]
 const hierarchyRowKey = (record: RoleHierarchy) => `${record.childRoleId}-${record.parentRoleId}`
@@ -287,7 +609,37 @@ async function loadHierarchies() {
     const res = await listHierarchies()
     hierarchies.value = Array.isArray(res) ? res : []
   } catch { hierarchies.value = [] }
-  finally { hierarchyLoading.value = false }
+  finally {
+    normalizeLocalPagination(hierarchyPagination.value, hierarchies.value.length)
+    hierarchyLoading.value = false
+  }
+}
+
+const filteredHierarchies = computed(() =>
+  hierarchies.value.filter((record) =>
+    includesKeyword(
+      hierarchyQuery.value.keyword,
+      record.parentRoleId,
+      formatRoleName(record.parentRoleId),
+      record.childRoleId,
+      formatRoleName(record.childRoleId),
+      formatHierarchyDescription(record),
+    ),
+  ),
+)
+const pagedHierarchies = computed(() => sliceLocalPage(filteredHierarchies.value, hierarchyPagination.value))
+
+function handleHierarchyPageChange(page: number, pageSize: number) {
+  updateLocalPage(hierarchyPagination.value, page, pageSize)
+}
+
+function handleHierarchySearch() {
+  hierarchyPagination.value.current = 1
+}
+
+function handleHierarchyReset() {
+  hierarchyQuery.value.keyword = ''
+  hierarchyPagination.value.current = 1
 }
 
 function openHierarchyModal() {
@@ -312,6 +664,8 @@ async function submitHierarchy() {
 
 // ─── Mutex ───
 const mutexes = ref<RoleMutex[]>([])
+const mutexQuery = ref({ keyword: '' })
+const mutexPagination = ref<LocalPaginationState>(createLocalPagination())
 const mutexLoading = ref(false)
 const mutexModalVisible = ref(false)
 const mutexForm = ref({ roleIdA: undefined as number | undefined, roleIdB: undefined as number | undefined })
@@ -328,7 +682,30 @@ async function loadMutexes() {
     const res = await listMutexes()
     mutexes.value = Array.isArray(res) ? res : []
   } catch { mutexes.value = [] }
-  finally { mutexLoading.value = false }
+  finally {
+    normalizeLocalPagination(mutexPagination.value, mutexes.value.length)
+    mutexLoading.value = false
+  }
+}
+
+const filteredMutexes = computed(() =>
+  mutexes.value.filter((record) =>
+    includesKeyword(mutexQuery.value.keyword, record.leftRoleId, record.rightRoleId),
+  ),
+)
+const pagedMutexes = computed(() => sliceLocalPage(filteredMutexes.value, mutexPagination.value))
+
+function handleMutexPageChange(page: number, pageSize: number) {
+  updateLocalPage(mutexPagination.value, page, pageSize)
+}
+
+function handleMutexSearch() {
+  mutexPagination.value.current = 1
+}
+
+function handleMutexReset() {
+  mutexQuery.value.keyword = ''
+  mutexPagination.value.current = 1
 }
 
 function openMutexModal() {
@@ -353,6 +730,8 @@ async function submitMutex() {
 
 // ─── Prerequisite ───
 const prerequisites = ref<RolePrerequisite[]>([])
+const prerequisiteQuery = ref({ keyword: '' })
+const prerequisitePagination = ref<LocalPaginationState>(createLocalPagination())
 const prerequisiteLoading = ref(false)
 const prerequisiteModalVisible = ref(false)
 const prerequisiteForm = ref({ roleId: undefined as number | undefined, requiredRoleId: undefined as number | undefined })
@@ -369,7 +748,30 @@ async function loadPrerequisites() {
     const res = await listPrerequisites()
     prerequisites.value = Array.isArray(res) ? res : []
   } catch { prerequisites.value = [] }
-  finally { prerequisiteLoading.value = false }
+  finally {
+    normalizeLocalPagination(prerequisitePagination.value, prerequisites.value.length)
+    prerequisiteLoading.value = false
+  }
+}
+
+const filteredPrerequisites = computed(() =>
+  prerequisites.value.filter((record) =>
+    includesKeyword(prerequisiteQuery.value.keyword, record.roleId, record.requiredRoleId),
+  ),
+)
+const pagedPrerequisites = computed(() => sliceLocalPage(filteredPrerequisites.value, prerequisitePagination.value))
+
+function handlePrerequisitePageChange(page: number, pageSize: number) {
+  updateLocalPage(prerequisitePagination.value, page, pageSize)
+}
+
+function handlePrerequisiteSearch() {
+  prerequisitePagination.value.current = 1
+}
+
+function handlePrerequisiteReset() {
+  prerequisiteQuery.value.keyword = ''
+  prerequisitePagination.value.current = 1
 }
 
 function openPrerequisiteModal() {
@@ -394,6 +796,11 @@ async function submitPrerequisite() {
 
 // ─── Cardinality ───
 const cardinalities = ref<RoleCardinality[]>([])
+const cardinalityQuery = ref({
+  keyword: '',
+  scopeType: undefined as string | undefined,
+})
+const cardinalityPagination = ref<LocalPaginationState>(createLocalPagination())
 const cardinalityLoading = ref(false)
 const cardinalityModalVisible = ref(false)
 const scopeTypeOptions = ['TENANT', 'ORG', 'DEPT']
@@ -416,7 +823,34 @@ async function loadCardinalities() {
     const res = await listCardinalities()
     cardinalities.value = Array.isArray(res) ? res : []
   } catch { cardinalities.value = [] }
-  finally { cardinalityLoading.value = false }
+  finally {
+    normalizeLocalPagination(cardinalityPagination.value, cardinalities.value.length)
+    cardinalityLoading.value = false
+  }
+}
+
+const filteredCardinalities = computed(() =>
+  cardinalities.value.filter((record) => {
+    if (cardinalityQuery.value.scopeType && record.scopeType !== cardinalityQuery.value.scopeType) {
+      return false
+    }
+    return includesKeyword(cardinalityQuery.value.keyword, record.roleId, record.scopeType, record.maxAssignments)
+  }),
+)
+const pagedCardinalities = computed(() => sliceLocalPage(filteredCardinalities.value, cardinalityPagination.value))
+
+function handleCardinalityPageChange(page: number, pageSize: number) {
+  updateLocalPage(cardinalityPagination.value, page, pageSize)
+}
+
+function handleCardinalitySearch() {
+  cardinalityPagination.value.current = 1
+}
+
+function handleCardinalityReset() {
+  cardinalityQuery.value.keyword = ''
+  cardinalityQuery.value.scopeType = undefined
+  cardinalityPagination.value.current = 1
 }
 
 function openCardinalityModal() {
@@ -445,6 +879,10 @@ async function submitCardinality() {
 
 // ─── Violations ───
 const violations = ref<RoleViolation[]>([])
+const violationQuery = ref({
+  keyword: '',
+  violationType: '',
+})
 const violationLoading = ref(false)
 const violationPagination = ref({ current: 1, pageSize: 10, total: 0 })
 const violationColumns = [
@@ -458,6 +896,26 @@ const violationColumns = [
   { title: '详情', dataIndex: 'details', width: 280 },
   { title: '时间', dataIndex: 'createdAt', width: 180 },
 ]
+const filteredViolations = computed(() =>
+  violations.value.filter((record) => {
+    const matchesType = includesKeyword(violationQuery.value.violationType, record.violationType)
+    if (!matchesType) {
+      return false
+    }
+    return includesKeyword(
+      violationQuery.value.keyword,
+      record.violationCode,
+      record.violationType,
+      record.principalType,
+      record.principalId,
+      record.scopeType,
+      record.scopeId,
+      record.details,
+      record.directRoleIds,
+      record.effectiveRoleIds,
+    )
+  }),
+)
 
 async function loadViolations() {
   violationLoading.value = true
@@ -468,7 +926,10 @@ async function loadViolations() {
     })
     violations.value = Array.isArray(res.content) ? res.content : []
     violationPagination.value.total = Number(res.totalElements) || 0
-  } catch { violations.value = [] }
+  } catch {
+    violations.value = []
+    violationPagination.value.total = 0
+  }
   finally { violationLoading.value = false }
 }
 
@@ -479,6 +940,18 @@ function handleViolationPageChange(page: number) {
 
 function handleViolationPageSizeChange(_current: number, size: number) {
   violationPagination.value.pageSize = size
+  violationPagination.value.current = 1
+  loadViolations()
+}
+
+function handleViolationSearch() {
+  violationPagination.value.current = 1
+  loadViolations()
+}
+
+function handleViolationReset() {
+  violationQuery.value.keyword = ''
+  violationQuery.value.violationType = ''
   violationPagination.value.current = 1
   loadViolations()
 }
@@ -538,18 +1011,7 @@ function handleTabChange(key: Key) {
     activeTab.value = 'hierarchy'
     return
   }
-  const loaders: Record<string, () => void> = {
-    hierarchy: loadHierarchies,
-    mutex: loadMutexes,
-    prerequisite: loadPrerequisites,
-    cardinality: loadCardinalities,
-    violations: () => {
-      if (canViewViolations.value) {
-        loadViolations()
-      }
-    },
-  }
-  loaders[String(key)]?.()
+  activeTab.value = String(key)
 }
 
 function formatDateTime(dateTime: string | null | undefined): string {
@@ -564,9 +1026,91 @@ function formatDateTime(dateTime: string | null | undefined): string {
   }
 }
 
+function activateCurrentTab() {
+  if (!canView.value && !canViewViolations.value) {
+    scheduleTableBodyHeightUpdate()
+    return
+  }
+
+  const loaders: Record<string, () => void> = {
+    hierarchy: loadHierarchies,
+    mutex: loadMutexes,
+    prerequisite: loadPrerequisites,
+    cardinality: loadCardinalities,
+    violations: () => {
+      if (canViewViolations.value) {
+        loadViolations()
+      }
+    },
+  }
+
+  loaders[activeTab.value]?.()
+  scheduleTableBodyHeightUpdate()
+}
+
+watch(
+  () => canView.value,
+  (nextCanView) => {
+    if (nextCanView) {
+      void loadRoleOptions()
+      activateCurrentTab()
+      return
+    }
+    roleOptions.value = []
+  },
+  { immediate: true },
+)
+
+watch(
+  () => canViewViolations.value,
+  () => {
+    if (activeTab.value === 'violations') {
+      activateCurrentTab()
+    }
+  },
+)
+
+watch(
+  () => activeTab.value,
+  () => {
+    activateCurrentTab()
+  },
+)
+
 onMounted(() => {
-  if (canView.value) loadHierarchies()
+  scheduleTableBodyHeightUpdate()
+  window.addEventListener('resize', updateTableBodyHeight)
 })
+
+onActivated(() => {
+  activateCurrentTab()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', updateTableBodyHeight)
+})
+
+watch(
+  () => [
+    activeTab.value,
+    filteredHierarchies.value.length,
+    filteredMutexes.value.length,
+    filteredPrerequisites.value.length,
+    filteredCardinalities.value.length,
+    hierarchyPagination.value.pageSize,
+    mutexPagination.value.pageSize,
+    prerequisitePagination.value.pageSize,
+    cardinalityPagination.value.pageSize,
+    violationPagination.value.pageSize,
+  ],
+  () => {
+    normalizeLocalPagination(hierarchyPagination.value, filteredHierarchies.value.length)
+    normalizeLocalPagination(mutexPagination.value, filteredMutexes.value.length)
+    normalizeLocalPagination(prerequisitePagination.value, filteredPrerequisites.value.length)
+    normalizeLocalPagination(cardinalityPagination.value, filteredCardinalities.value.length)
+    scheduleTableBodyHeightUpdate()
+  },
+)
 </script>
 
 <style scoped>
@@ -576,20 +1120,142 @@ onMounted(() => {
   flex-direction: column;
   background: #fff;
 }
+
 .content-card {
-  flex: 1;
   display: flex;
+  flex: 1;
   flex-direction: column;
   min-height: 0;
+  background: #fff;
+}
+
+.platform-page-shell {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.platform-guard-card {
+  margin: 24px;
+  min-height: 420px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+  padding: 40px 32px;
+  border: 1px dashed #d0d7e2;
+  border-radius: 18px;
+  background:
+    radial-gradient(circle at top left, rgba(22, 119, 255, 0.08), transparent 45%),
+    linear-gradient(180deg, #fafcff 0%, #f5f7fb 100%);
+}
+
+.platform-guard-kicker {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #1677ff;
+}
+
+.platform-guard-card h3 {
+  margin: 0;
+  font-size: 24px;
+  color: #1f2937;
+}
+
+.platform-guard-card p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.75;
+  color: #4b5563;
+}
+
+.boundary-tabs {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+:deep(.boundary-tabs > .ant-tabs-nav) {
+  margin-bottom: 0;
   padding: 0 24px;
 }
-.tab-toolbar {
+
+:deep(.boundary-tabs > .ant-tabs-nav::before) {
+  border-bottom-color: #e5e7eb;
+}
+
+:deep(.boundary-tabs > .ant-tabs-nav .ant-tabs-tab) {
+  padding: 10px 4px 14px;
+  font-weight: 600;
+}
+
+:deep(.boundary-tabs > .ant-tabs-content-holder) {
+  flex: 1;
+  min-height: 0;
+}
+
+:deep(.boundary-tabs .ant-tabs-content) {
+  height: 100%;
+  min-height: 0;
+}
+
+:deep(.boundary-tabs .ant-tabs-tabpane) {
+  height: 100%;
+  min-height: 0;
+}
+
+:deep(.boundary-tabs .ant-tabs-tabpane-active) {
+  display: flex;
+  flex-direction: column;
+}
+
+:deep(.boundary-tabs .ant-tabs-tabpane-hidden) {
+  display: none !important;
+}
+
+.tab-workspace {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.form-container {
+  padding: 24px;
+  border-bottom: 1px solid #f0f0f0;
+  background: transparent;
+}
+
+.toolbar-container {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  padding: 8px 24px;
+  border-bottom: 1px solid #f0f0f0;
+  background: transparent;
 }
+
+.table-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f1f1f;
+}
+
+.table-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ml-2 {
+  margin-left: 8px;
+}
+
 .action-icon {
   font-size: 18px;
   cursor: pointer;
@@ -605,10 +1271,63 @@ onMounted(() => {
   color: #1890ff;
   background: #f5f5f5;
 }
+
+.table-container {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.table-scroll-container {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 24px;
+}
+
 .pagination-container {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  padding: 12px 0;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 24px;
+  min-height: 56px;
+  border-top: 1px solid #f0f0f0;
+  background: #fff;
+}
+
+.pagination-spacer {
+  min-height: 32px;
+}
+
+@media (max-width: 960px) {
+  :deep(.boundary-tabs > .ant-tabs-nav) {
+    padding: 0 16px;
+  }
+
+  .platform-guard-card {
+    margin: 16px;
+    min-height: 320px;
+    padding: 28px 20px;
+  }
+
+  .toolbar-container,
+  .form-container,
+  .table-scroll-container,
+  .pagination-container {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .toolbar-container,
+  .pagination-container {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 </style>

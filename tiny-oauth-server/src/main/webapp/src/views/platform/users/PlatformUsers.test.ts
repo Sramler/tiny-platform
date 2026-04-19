@@ -1,6 +1,9 @@
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, nextTick, reactive } from 'vue'
+import PlatformUserGovernanceTab from '@/views/platform/users/components/PlatformUserGovernanceTab.vue'
+import PlatformTenantStewardshipTab from '@/views/platform/users/components/PlatformTenantStewardshipTab.vue'
+import PlatformUsers from '@/views/platform/users/PlatformUsers.vue'
 
 const platformUserMocks = vi.hoisted(() => ({
   listPlatformUsers: vi.fn(),
@@ -37,7 +40,6 @@ const uiMocks = vi.hoisted(() => ({
 
 const authMocks = vi.hoisted(() => ({
   token: 'platform-token',
-  refreshTokenAfterActiveScopeSwitch: vi.fn(),
   fetchWithAuth: vi.fn(),
 }))
 
@@ -145,11 +147,18 @@ const CardStub = defineComponent({
 })
 
 const TabsStub = defineComponent({
-  template: '<div><slot /></div>',
+  props: {
+    activeKey: { type: String, default: '' },
+  },
+  emits: ['change'],
+  template: '<div class="tabs-stub"><slot /></div>',
 })
 
 const TabPaneStub = defineComponent({
-  props: { tab: { type: String, default: '' } },
+  props: {
+    tab: { type: String, default: '' },
+    disabled: { type: Boolean, default: false },
+  },
   template: '<div><div class="tab-label">{{ tab }}</div><slot /></div>',
 })
 
@@ -253,12 +262,11 @@ function mountPlatformUsers() {
         'a-descriptions-item': PassThrough,
         'a-spin': PassThrough,
         'a-empty': PassThrough,
+        VueDraggable: PassThrough,
       },
     },
   })
 }
-
-import PlatformUsers from '@/views/platform/users/PlatformUsers.vue'
 
 async function flushPromises() {
   await Promise.resolve()
@@ -273,11 +281,18 @@ function createFetchResponse(ok: boolean, status: number, payload: Record<string
   }
 }
 
+function getPlatformGovernanceTab(wrapper: ReturnType<typeof mountPlatformUsers>) {
+  return wrapper.findComponent(PlatformUserGovernanceTab)
+}
+
+function getTenantStewardshipTab(wrapper: ReturnType<typeof mountPlatformUsers>) {
+  return wrapper.findComponent(PlatformTenantStewardshipTab)
+}
+
 describe('PlatformUsers.vue', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     authMocks.token = 'platform-token'
-    authMocks.refreshTokenAfterActiveScopeSwitch.mockResolvedValue({ ok: true })
     authMocks.fetchWithAuth.mockResolvedValue(createFetchResponse(true, 200, {}))
     routerMocks.push.mockReset()
     routerMocks.replace.mockReset()
@@ -332,10 +347,12 @@ describe('PlatformUsers.vue', () => {
     })
   })
 
-  it('loads platform users under platform scope with read authority', async () => {
+  it('loads platform user governance tab by default under platform scope with read authority', async () => {
     const wrapper = mountPlatformUsers()
     await flushPromises()
 
+    expect(getPlatformGovernanceTab(wrapper).exists()).toBe(true)
+    expect(getTenantStewardshipTab(wrapper).exists()).toBe(false)
     expect(platformUserMocks.listPlatformUsers).toHaveBeenCalledWith({
       current: 1,
       pageSize: 10,
@@ -343,42 +360,42 @@ describe('PlatformUsers.vue', () => {
       enabled: undefined,
       status: undefined,
     })
-    expect(platformRoleMocks.listPlatformRoleOptions).not.toHaveBeenCalled()
     expect(tenantMocks.tenantList).not.toHaveBeenCalled()
     expect(wrapper.find('.content-container').exists()).toBe(true)
     expect(wrapper.find('.content-card').exists()).toBe(true)
-    expect(wrapper.find('.form-container').exists()).toBe(true)
-    expect(wrapper.find('.toolbar-container').exists()).toBe(true)
-    expect(wrapper.find('.table-container').exists()).toBe(true)
-    expect(wrapper.find('.pagination-container').exists()).toBe(true)
-    expect(wrapper.findAll('.action-icon').length).toBeGreaterThan(0)
-    expect(wrapper.text()).toContain('platform_user_profile')
-    expect(wrapper.text()).toContain('创建平台用户档案')
+    expect(wrapper.text()).toContain('平台用户治理')
     expect(wrapper.text()).toContain('租户用户代管')
+    expect(wrapper.text()).toContain('用户列表')
+    expect(wrapper.text()).toContain('新建')
   })
 
-  it('loads tenant stewardship entry points when tenant read authority is present', async () => {
+  it('loads tenant stewardship tab when route requests it and tenant authorities are present', async () => {
     authMocks.token = 'platform-tenant-token'
+    routeState.query = {
+      tab: 'tenantStewardship',
+    }
 
     const wrapper = mountPlatformUsers()
     await flushPromises()
 
-    expect(platformUserMocks.listPlatformUsers).toHaveBeenCalled()
+    expect(getPlatformGovernanceTab(wrapper).exists()).toBe(false)
+    expect(getTenantStewardshipTab(wrapper).exists()).toBe(true)
+    expect(platformUserMocks.listPlatformUsers).not.toHaveBeenCalled()
     expect(tenantMocks.tenantList).toHaveBeenCalledWith({
-      code: undefined,
-      name: undefined,
       page: 0,
-      size: 5,
+      size: 200,
     })
-    expect(wrapper.text()).toContain('进入租户用户管理')
-    expect(wrapper.text()).toContain('前往平台租户治理')
+    expect((getTenantStewardshipTab(wrapper).vm as any).tenantSelectOptions).toEqual(
+      expect.arrayContaining([{ value: 9, label: 'Tenant 9 (tenant-9)' }]),
+    )
+    expect(wrapper.text()).toContain('租户侧用户列表')
   })
 
   it('opens create drawer with grouped platform profile form sections', async () => {
     const wrapper = mountPlatformUsers()
     await flushPromises()
 
-    const createButton = wrapper.findAll('button').find((button) => button.text().includes('创建平台用户档案'))
+    const createButton = wrapper.findAll('button').find((button) => button.text().includes('新建'))
     expect(createButton).toBeDefined()
 
     await createButton!.trigger('click')
@@ -392,7 +409,7 @@ describe('PlatformUsers.vue', () => {
     const wrapper = mountPlatformUsers()
     await flushPromises()
 
-    await (wrapper.vm as any).showDetail({
+    await (getPlatformGovernanceTab(wrapper).vm as any).showDetail({
       userId: 1001,
       username: 'platform_admin',
       platformStatus: 'ACTIVE',
@@ -412,11 +429,11 @@ describe('PlatformUsers.vue', () => {
 
   it('does not load approval summary without approval permissions', async () => {
     authMocks.token = 'platform-readonly-token'
-    platformRoleApprovalMocks.listPlatformRoleAssignmentRequests.mockClear()
+
     const wrapper = mountPlatformUsers()
     await flushPromises()
 
-    await (wrapper.vm as any).showDetail({
+    await (getPlatformGovernanceTab(wrapper).vm as any).showDetail({
       userId: 1001,
       username: 'platform_admin',
       platformStatus: 'ACTIVE',
@@ -430,27 +447,25 @@ describe('PlatformUsers.vue', () => {
     const wrapper = mountPlatformUsers()
     await flushPromises()
 
-    await (wrapper.vm as any).openRoleEditor(1001)
+    await (getPlatformGovernanceTab(wrapper).vm as any).openRoleEditor(1001)
+    await flushPromises()
+    await (getPlatformGovernanceTab(wrapper).vm as any).submitRoleEditor()
     await flushPromises()
 
-    expect((wrapper.vm as any).platformRoleOptions[1].approvalMode).toBe('ONE_STEP')
-
-    await (wrapper.vm as any).submitRoleEditor()
-    await flushPromises()
-
-    expect(platformUserMocks.getPlatformUserRoles).toHaveBeenCalledWith(1001)
-    expect(platformUserMocks.replacePlatformUserRoles).toHaveBeenCalledWith(1001, [11])
     expect(platformRoleMocks.listPlatformRoleOptions).toHaveBeenCalledWith({
       limit: 200,
     })
+    expect(platformUserMocks.getPlatformUserRoles).toHaveBeenCalledWith(1001)
+    expect(platformUserMocks.replacePlatformUserRoles).toHaveBeenCalledWith(1001, [11])
   })
 
   it('does not open role editor when platform user update authority is missing', async () => {
     authMocks.token = 'platform-readonly-token'
+
     const wrapper = mountPlatformUsers()
     await flushPromises()
 
-    await (wrapper.vm as any).openRoleEditor(1001)
+    await (getPlatformGovernanceTab(wrapper).vm as any).openRoleEditor(1001)
     await flushPromises()
 
     expect(platformRoleMocks.listPlatformRoleOptions).not.toHaveBeenCalled()
@@ -458,54 +473,48 @@ describe('PlatformUsers.vue', () => {
     expect(uiMocks.messageWarning).toHaveBeenCalledWith('当前会话缺少平台用户更新权限，无法编辑平台角色')
   })
 
-  it('does not load platform users under tenant scope', async () => {
+  it('does not load platform tabs under tenant scope', async () => {
     authMocks.token = 'tenant-token'
 
     const wrapper = mountPlatformUsers()
     await flushPromises()
 
+    expect(getPlatformGovernanceTab(wrapper).exists()).toBe(false)
+    expect(getTenantStewardshipTab(wrapper).exists()).toBe(false)
     expect(platformUserMocks.listPlatformUsers).not.toHaveBeenCalled()
     expect(tenantMocks.tenantList).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('当前页面只支持 PLATFORM 作用域')
   })
 
-  it('does not load platform users without read authority', async () => {
+  it('does not load platform tabs without required read authorities', async () => {
     authMocks.token = 'platform-no-perm'
 
     const wrapper = mountPlatformUsers()
     await flushPromises()
 
+    expect(getPlatformGovernanceTab(wrapper).exists()).toBe(false)
+    expect(getTenantStewardshipTab(wrapper).exists()).toBe(false)
     expect(platformUserMocks.listPlatformUsers).not.toHaveBeenCalled()
     expect(tenantMocks.tenantList).not.toHaveBeenCalled()
-    expect(wrapper.text()).toContain('缺少')
-    expect(wrapper.text()).toContain('/platform/users')
-  })
-
-  it('navigates to platform tenant governance from the stewardship entry area', async () => {
-    authMocks.token = 'platform-tenant-token'
-
-    const wrapper = mountPlatformUsers()
-    await flushPromises()
-
-    const tenantButton = wrapper.findAll('button').find((button) => button.text().includes('前往平台租户治理'))
-    expect(tenantButton).toBeDefined()
-
-    await tenantButton!.trigger('click')
-
-    expect(routerMocks.push).toHaveBeenCalledWith('/platform/tenants')
+    expect(wrapper.text()).toContain('当前会话缺少平台用户治理所需权限')
+    expect(wrapper.text()).toContain('platform:user:list / platform:user:view')
   })
 
   it('checks tenant detail readability before navigating to tenant detail', async () => {
     authMocks.token = 'platform-tenant-token'
+    routeState.query = {
+      tab: 'tenantStewardship',
+    }
     authMocks.fetchWithAuth.mockResolvedValue(createFetchResponse(true, 200, {}))
 
     const wrapper = mountPlatformUsers()
     await flushPromises()
 
-    const detailButton = wrapper.findAll('button').find((button) => button.text().includes('平台详情'))
-    expect(detailButton).toBeDefined()
-
-    await detailButton!.trigger('click')
+    await (getTenantStewardshipTab(wrapper).vm as any).handleStewardshipTenantChange(9)
+    await flushPromises()
+    await (getTenantStewardshipTab(wrapper).vm as any).openTenantDetail(
+      (getTenantStewardshipTab(wrapper).vm as any).selectedStewardshipTenant,
+    )
     await flushPromises()
 
     expect(authMocks.fetchWithAuth).toHaveBeenCalledWith(
@@ -522,16 +531,16 @@ describe('PlatformUsers.vue', () => {
     })
   })
 
-  it('locks stewardship tenant and loads platform bridge user list instead of switching scope', async () => {
+  it('loads platform bridge user list in-page after selecting a stewardship tenant', async () => {
     authMocks.token = 'platform-tenant-token'
+    routeState.query = {
+      tab: 'tenantStewardship',
+    }
 
     const wrapper = mountPlatformUsers()
     await flushPromises()
 
-    const manageButton = wrapper.findAll('button').find((button) => button.text().includes('进入租户用户管理'))
-    expect(manageButton).toBeDefined()
-
-    await manageButton!.trigger('click')
+    await (getTenantStewardshipTab(wrapper).vm as any).handleStewardshipTenantChange(9)
     await flushPromises()
 
     expect(platformTenantUserMocks.listPlatformTenantUsers).toHaveBeenCalledWith({
@@ -541,9 +550,9 @@ describe('PlatformUsers.vue', () => {
       username: undefined,
       nickname: undefined,
     })
-    expect(wrapper.text()).toContain('已锁定代管租户')
-    expect(wrapper.text()).toContain('当前代管目标')
-    expect(wrapper.find('.tenant-entry-row--active').exists()).toBe(true)
+    expect(wrapper.text()).toContain('清空租户')
+    expect(wrapper.text()).toContain('平台详情')
+    expect(wrapper.text()).toContain('租户侧用户列表')
     expect(routerMocks.replace).toHaveBeenCalledWith({
       path: '/platform/users',
       query: {
@@ -554,6 +563,37 @@ describe('PlatformUsers.vue', () => {
     expect(authMocks.fetchWithAuth).not.toHaveBeenCalledWith(
       expect.stringContaining('/sys/users/current/active-scope'),
       expect.anything(),
+    )
+  })
+
+  it('aligns tenant stewardship columns with tenant-side user management structure', async () => {
+    authMocks.token = 'platform-tenant-token'
+    routeState.query = {
+      tab: 'tenantStewardship',
+    }
+
+    const wrapper = mountPlatformUsers()
+    await flushPromises()
+
+    await (getTenantStewardshipTab(wrapper).vm as any).handleStewardshipTenantChange(9)
+    await flushPromises()
+
+    const tenantColumnLabels = (getTenantStewardshipTab(wrapper).vm as any).columnOptions.map(
+      (column: { label: string }) => column.label,
+    )
+    expect(wrapper.text()).toContain('租户侧用户列表')
+    expect(tenantColumnLabels).toEqual(
+      expect.arrayContaining([
+        '是否启用',
+        '账号未过期',
+        '账号未锁定',
+        '锁定状态',
+        '剩余锁定时间',
+        '失败登录次数',
+        '最后失败时间',
+        '密码未过期',
+        '最后登录时间',
+      ]),
     )
   })
 
@@ -575,30 +615,29 @@ describe('PlatformUsers.vue', () => {
       username: undefined,
       nickname: undefined,
     })
-    expect(wrapper.text()).toContain('已锁定代管租户')
-    expect(wrapper.find('.tenant-entry-row--active').exists()).toBe(true)
+    expect(wrapper.text()).toContain('清空租户')
+    expect((getTenantStewardshipTab(wrapper).vm as any).selectedStewardshipTenant?.id).toBe(9)
   })
 
-  it('closes tenant stewardship drawer through common drawer close interaction', async () => {
+  it('clears stewardship tenant through toolbar action', async () => {
     authMocks.token = 'platform-tenant-token'
+    routeState.query = {
+      tab: 'tenantStewardship',
+    }
 
     const wrapper = mountPlatformUsers()
     await flushPromises()
 
-    const manageButton = wrapper.findAll('button').find((button) => button.text().includes('进入租户用户管理'))
-    expect(manageButton).toBeDefined()
-
-    await manageButton!.trigger('click')
+    await (getTenantStewardshipTab(wrapper).vm as any).handleStewardshipTenantChange(9)
     await flushPromises()
 
-    const closeButton = wrapper.find('.drawer-close')
-    expect(closeButton.exists()).toBe(true)
+    const closeButton = wrapper.findAll('button').find((button) => button.text().includes('清空租户'))
+    expect(closeButton).toBeDefined()
 
-    await closeButton.trigger('click')
+    await closeButton!.trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).not.toContain('已锁定代管租户')
-    expect(wrapper.find('.tenant-entry-row--active').exists()).toBe(false)
+    expect((getTenantStewardshipTab(wrapper).vm as any).selectedStewardshipTenant).toBeNull()
     expect(routerMocks.replace).toHaveBeenLastCalledWith({
       path: '/platform/users',
       query: {
