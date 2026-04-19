@@ -37,6 +37,16 @@ export type PlatformUserDetail = {
   lastLoginAt?: string
   createdAt?: string
   updatedAt?: string
+  roles?: PlatformUserRole[]
+}
+
+export type PlatformUserRole = {
+  roleId: number
+  code: string
+  name: string
+  description?: string
+  enabled?: boolean
+  builtin?: boolean
 }
 
 export type PlatformUserCreatePayload = {
@@ -83,6 +93,20 @@ export function updatePlatformUserStatus(userId: number | string, status: Platfo
     idempotency: {
       scope: `platform-users:status:update:${userId}`,
       payload: { status },
+    },
+  })
+}
+
+export function getPlatformUserRoles(userId: number | string) {
+  return request.get<PlatformUserRole[]>(`/platform/users/${userId}/roles`)
+}
+
+export function replacePlatformUserRoles(userId: number | string, roleIds: number[]) {
+  const payload = { roleIds }
+  return request.put<PlatformUserRole[]>(`/platform/users/${userId}/roles`, payload, {
+    idempotency: {
+      scope: `platform-users:roles:replace:${userId}`,
+      payload,
     },
   })
 }
