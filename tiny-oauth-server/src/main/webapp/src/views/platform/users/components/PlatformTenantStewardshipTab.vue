@@ -303,7 +303,7 @@ function enabledColor(value?: boolean) {
   return value ? 'green' : 'red'
 }
 
-function lockStatusLabel(detail?: PlatformTenantUserDetail | null) {
+function lockStatusLabel(detail?: PlatformTenantUserDetail | PlatformTenantUserListItem | Record<string, any> | null) {
   if (detail?.temporarilyLocked) {
     return '临时锁定'
   }
@@ -313,7 +313,7 @@ function lockStatusLabel(detail?: PlatformTenantUserDetail | null) {
   return '正常'
 }
 
-function lockStatusColor(detail?: PlatformTenantUserDetail | null) {
+function lockStatusColor(detail?: PlatformTenantUserDetail | PlatformTenantUserListItem | Record<string, any> | null) {
   if (detail?.temporarilyLocked) {
     return 'orange'
   }
@@ -353,7 +353,10 @@ function handleCheckAllChange(event: any) {
     visibleColumns.value = draggableColumns.value.map((column) => column.dataIndex)
     return
   }
-  visibleColumns.value = [TENANT_USER_INITIAL_COLUMNS[0].dataIndex]
+  const firstColumn = TENANT_USER_INITIAL_COLUMNS[0]
+  if (firstColumn) {
+    visibleColumns.value = [firstColumn.dataIndex]
+  }
 }
 
 function resetColumnOrder() {
@@ -365,14 +368,14 @@ function onDragEnd() {
   // v-model on VueDraggable keeps order in sync.
 }
 
-function handleResizeColumn(width: number, column: { dataIndex?: TenantUserColumnKey }) {
-  const dataIndex = column?.dataIndex
-  if (!dataIndex) {
+function handleResizeColumn(width: number, column: { dataIndex?: unknown }) {
+  const dataIndex = typeof column?.dataIndex === 'string' ? column.dataIndex : undefined
+  if (!dataIndex || !visibleColumns.value.includes(dataIndex as TenantUserColumnKey)) {
     return
   }
   const normalizedWidth = Math.max(100, Math.min(Number(width) || 160, 800))
   draggableColumns.value = draggableColumns.value.map((item) =>
-    item.dataIndex === dataIndex ? { ...item, width: normalizedWidth } : item,
+    item.dataIndex === (dataIndex as TenantUserColumnKey) ? { ...item, width: normalizedWidth } : item,
   )
 }
 
@@ -589,6 +592,10 @@ function handleTenantUserReset() {
   clearStewardshipTenant({ resetFilters: true })
 }
 
+function clearStewardshipTenantClick() {
+  clearStewardshipTenant()
+}
+
 function handleTenantUserPageChange(page: number, pageSize: number) {
   tenantUserPagination.value.current = page
   tenantUserPagination.value.pageSize = pageSize
@@ -637,9 +644,10 @@ async function openTenantDetail(tenantRecord: Tenant | Record<string, any>) {
   }
 }
 
-async function showTenantUserDetail(record: PlatformTenantUserListItem) {
+async function showTenantUserDetail(record: PlatformTenantUserListItem | Record<string, any>) {
   const tenantId = selectedStewardshipTenant.value?.id
-  if (!tenantId || !record?.id) {
+  const userId = Number(record?.id)
+  if (!tenantId || !Number.isInteger(userId) || userId <= 0) {
     message.warning('缺少租户或用户上下文，暂无法查看详情')
     return
   }
@@ -647,7 +655,7 @@ async function showTenantUserDetail(record: PlatformTenantUserListItem) {
   tenantUserDetailLoading.value = true
   activeTenantUserDetail.value = null
   try {
-    activeTenantUserDetail.value = await getPlatformTenantUserDetail(tenantId, record.id)
+    activeTenantUserDetail.value = await getPlatformTenantUserDetail(tenantId, userId)
   } catch (error: any) {
     tenantUserDetailVisible.value = false
     message.error(error?.message || '租户用户详情加载失败')
@@ -727,7 +735,7 @@ defineExpose({
         <a-button v-if="selectedStewardshipTenant" @click="openTenantDetail(selectedStewardshipTenant)">
           平台详情
         </a-button>
-        <a-button v-if="selectedStewardshipTenant" @click="clearStewardshipTenant">清空租户</a-button>
+        <a-button v-if="selectedStewardshipTenant" @click="clearStewardshipTenantClick">清空租户</a-button>
         <a-tooltip title="刷新">
           <span class="action-icon" @click="refreshTenantStewardshipView">
             <ReloadOutlined :spin="tenantLoading || tenantUserLoading" />

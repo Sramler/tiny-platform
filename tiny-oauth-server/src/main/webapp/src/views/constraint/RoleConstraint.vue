@@ -567,9 +567,9 @@ function formatRoleName(roleId: number) {
   return role.name || role.code || '-'
 }
 
-function formatHierarchyDescription(record: RoleHierarchy) {
-  const parentRoleName = formatRoleName(record.parentRoleId)
-  const childRoleName = formatRoleName(record.childRoleId)
+function formatHierarchyDescription(record: RoleHierarchy | Record<string, any>) {
+  const parentRoleName = formatRoleName(Number(record?.parentRoleId))
+  const childRoleName = formatRoleName(Number(record?.childRoleId))
   return `当前角色 ${childRoleName} 继承父角色 ${parentRoleName} 的权限能力`
 }
 
