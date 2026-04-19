@@ -282,7 +282,10 @@ function handleCheckAllChange(event: any) {
     visibleColumns.value = draggableColumns.value.map((column) => column.dataIndex)
     return
   }
-  visibleColumns.value = [PLATFORM_USER_INITIAL_COLUMNS[0].dataIndex]
+  const firstColumn = PLATFORM_USER_INITIAL_COLUMNS[0]
+  if (firstColumn) {
+    visibleColumns.value = [firstColumn.dataIndex]
+  }
 }
 
 function resetColumnOrder() {
@@ -294,14 +297,14 @@ function onDragEnd() {
   // v-model on VueDraggable keeps order in sync.
 }
 
-function handleResizeColumn(width: number, column: { dataIndex?: PlatformUserColumnKey }) {
-  const dataIndex = column?.dataIndex
-  if (!dataIndex) {
+function handleResizeColumn(width: number, column: { dataIndex?: unknown }) {
+  const dataIndex = typeof column?.dataIndex === 'string' ? column.dataIndex : undefined
+  if (!dataIndex || !visibleColumns.value.includes(dataIndex as PlatformUserColumnKey)) {
     return
   }
   const normalizedWidth = Math.max(100, Math.min(Number(width) || 160, 800))
   draggableColumns.value = draggableColumns.value.map((item) =>
-    item.dataIndex === dataIndex ? { ...item, width: normalizedWidth } : item,
+    item.dataIndex === (dataIndex as PlatformUserColumnKey) ? { ...item, width: normalizedWidth } : item,
   )
 }
 
@@ -517,21 +520,26 @@ async function loadPendingApprovalCount(userId: number) {
   }
 }
 
-async function showDetail(record: PlatformUserListItem) {
+async function showDetail(record: PlatformUserListItem | Record<string, any>) {
+  const userId = Number(record?.userId)
+  if (!Number.isInteger(userId) || userId <= 0) {
+    message.warning('缺少有效平台用户上下文，暂无法查看详情')
+    return
+  }
   detailVisible.value = true
   detailLoading.value = true
   activeDetail.value = null
   pendingApprovalTotal.value = 0
   try {
     const [detail, roles] = await Promise.all([
-      getPlatformUserDetail(record.userId),
-      getPlatformUserRoles(record.userId),
+      getPlatformUserDetail(userId),
+      getPlatformUserRoles(userId),
     ])
     activeDetail.value = {
       ...detail,
       roles,
     }
-    await loadPendingApprovalCount(record.userId)
+    await loadPendingApprovalCount(userId)
   } catch (error: any) {
     detailVisible.value = false
     message.error(error?.message || '平台用户详情加载失败')
@@ -656,16 +664,21 @@ async function submitCreate() {
   }
 }
 
-async function toggleStatus(record: PlatformUserListItem) {
+async function toggleStatus(record: PlatformUserListItem | Record<string, any>) {
   if (!canUpdate.value) {
     message.warning('当前会话缺少平台用户更新权限')
     return
   }
+  const userId = Number(record?.userId)
+  if (!Number.isInteger(userId) || userId <= 0) {
+    message.warning('缺少有效平台用户上下文，暂无法更新状态')
+    return
+  }
   const nextStatus: PlatformUserStatus = record.platformStatus === 'ACTIVE' ? 'DISABLED' : 'ACTIVE'
   try {
-    await updatePlatformUserStatus(record.userId, nextStatus)
+    await updatePlatformUserStatus(userId, nextStatus)
     record.platformStatus = nextStatus
-    if (activeDetail.value?.userId === record.userId) {
+    if (activeDetail.value?.userId === userId) {
       activeDetail.value = {
         ...activeDetail.value,
         platformStatus: nextStatus,
