@@ -213,6 +213,119 @@
 - 租户控制面已支持只读详情抽屉，复用 `GET /sys/tenants/{id}` 展示生命周期、套餐、到期时间、配额、联系人和审计辅助字段。
 - 若后续需要更强治理体验，可再升级为独立详情页或带时间轴的治理详情页。
 
+### 4.6 新建租户初始化向导（当前设计口径）
+
+当前 `POST /sys/tenants` 已承担“创建租户 + 从平台模板派生副本 + 创建初始管理员 + 赋 `ROLE_TENANT_ADMIN`”的一次性编排职责；而 `POST /sys/tenants/platform-template/initialize` 只负责 **`tenant_id IS NULL` 平台模板缺失时** 的全局回填。两者职责不同，不得混用。
+
+实现拆卡与执行边界见：`docs/TINY_PLATFORM_TENANT_INITIALIZATION_WIZARD_CURSOR_TASK_CARDS.md`。
+
+#### 4.6.0 当前实现快照（2026-04-20）
+
+- create 入口已切换为 `TenantCreateWizard`；`TenantForm` 仅保留 edit/基础信息子块语义。
+- edit 入口继续使用 `TenantForm`，不与 create 向导共用状态机。
+- 确认步骤已接入 `POST /sys/tenants/precheck` dry-run（`ok` / `blockingIssues` / `warnings` / `initializationSummary`）。
+- 最终创建由 wizard 内部一次性调用 `POST /sys/tenants`，父层只负责抽屉开关与完成后列表刷新。
+- 创建成功/失败结果页已在 wizard 内落地；成功后不自动关闭，失败后停留错误态并可重试/返回编辑。
+- create drawer 默认关闭手势已禁用（close icon / mask / Esc）。
+- 结果页跳转 `/platform/tenants/:id` 时携带 `query.from` 返回上下文。
+- 结果页 3 个治理入口已细化为 `section=overview|permission-summary|template-diff`，并在 `TenantDetail` 同页内做分区聚焦。
+
+#### 4.6.1 边界裁决
+
+- **`/platform-template/initialize` 不是新建租户步骤**：它是平台模板自愈/补齐入口，不是“单租户初始化”或“租户创建向导”的某一步。
+- **新建租户不应继续停留在单表单弹窗**：当创建链路同时包含租户、模板派生、初始管理员与默认角色/菜单注入时，前端应升级为受控 `Steps` 向导。
+- **前置步骤只做校验与预检查，最终一次性提交**：向导前几步不应反复落正式业务数据；真正写库应由最终提交触发同一条后端编排链完成。
+- **向导不承载完整 RBAC 控制台**：初始角色/菜单/权限应来自模板或初始化策略，不能在“新建租户”里直接暴露全量角色树、菜单树做手工授权。
+- **若未来引入异步初始化**：必须显式建模 `PENDING_CREATE / INIT_RUNNING / INIT_FAILED` 一类状态，并提供审计与重试；在此之前，优先保持同步编排 + 最终一次提交。
+
+#### 4.6.2 推荐步骤拆分
+
+| 步骤 | 目标 | 建议字段 / 信息 | 本步完成条件 |
+| --- | --- | --- | --- |
+| 1. 基础信息 | 定义租户主体 | `code`、`name`、`domain`、`planCode`、`expiresAt`、`maxUsers`、`maxStorageGb`、联系人、备注 | 前端格式校验通过；后端可选校验编码/域名唯一性与配额合法性 |
+| 2. 初始化策略 | 明确“如何初始化” | 模板来源（当前默认平台模板）、初始化模式（标准/精简/自定义策略标识）、是否启用租户、初始化说明 | 平台模板存在且可派生；策略选择合法；不进入角色树/菜单树逐项编辑 |
+| 3. 初始管理员 | 明确首个治理账号 | `initialAdminUsername`、`initialAdminNickname`、`initialAdminEmail`、`initialAdminPhone`、`initialAdminPassword`、`initialAdminConfirmPassword` | 用户名/密码/联系方式格式通过；确认密码一致；若有唯一性预检查则通过 |
+| 4. 预检查与确认 | 把编排结果可视化 | 将创建的租户信息、初始管理员、默认角色包、默认菜单/权限模板摘要、风险提示 | 后端 dry-run / precheck 通过；用户明确确认 |
+| 5. 初始化结果 | 输出最终结果 | 成功时返回租户 ID、管理员账号、初始化摘要；失败时返回阶段、原因、是否可重试 | 明确成功/失败，不留“半成品但用户无感知”的状态 |
+
+#### 4.6.3 接口边界建议
+
+第一阶段建议尽量复用现有 `TenantCreateUpdateDto` 与 `POST /sys/tenants` 最终提交入口，只额外补一个 dry-run / precheck 契约：
+
+- `POST /sys/tenants/precheck`
+  - 作用：对步骤 1~3 的聚合结果做统一预检查，返回可读摘要与阻断原因。
+  - 应覆盖：
+    - `code` / `domain` 唯一性
+    - `maxUsers` / `maxStorageGb` 基本合法性
+    - 平台模板是否已就绪
+    - 初始管理员用户名/邮箱/手机号冲突检查（若当前运行时已具备这类约束）
+    - 默认角色/菜单/权限模板摘要
+  - 返回结果应区分：
+    - `ok`
+    - `blockingIssues`
+    - `warnings`
+    - `initializationSummary`
+
+- `POST /sys/tenants`
+  - 保持“最终提交”语义，不改成分步落库接口。
+  - 接收步骤 1~3 汇总后的最终 payload，一次性完成：
+    - 创建租户
+    - 派生平台模板副本
+    - 创建初始管理员
+    - 绑定 membership
+    - 赋初始管理员角色
+    - 写治理审计
+
+- `POST /sys/tenants/platform-template/initialize`
+  - 继续保持“平台模板补齐”能力，不进入新建租户步骤条。
+  - 它解决的是“模板不存在”，不是“租户初始化向导中的某一步执行”。
+
+除非后端初始化链已明显长事务化或需要异步重试，否则不建议第一阶段就新增 `bootstrap-status`、任务表或复杂编排任务中心，先以“同步预检查 + 最终一次提交”收口。
+
+#### 4.6.4 状态机建议
+
+前端向导状态：
+
+- `DRAFT`：用户正在填写步骤数据。
+- `STEP_VALID`：当前步骤本地校验通过，可进入下一步。
+- `PRECHECK_RUNNING`：提交预检查中。
+- `PRECHECK_PASSED`：允许最终确认。
+- `SUBMITTING`：最终初始化提交中。
+- `SUCCEEDED` / `FAILED`：明确输出结果，不静默关闭弹窗。
+
+后端编排状态（第一阶段同步口径）：
+
+- 不额外落持久化中间态；
+- 最终提交要么成功返回已创建租户，要么失败并整体回滚；
+- 若未来演进为异步编排，再显式引入 `PENDING_CREATE / INIT_RUNNING / INIT_FAILED / ACTIVE` 等生命周期子状态。
+
+#### 4.6.5 页面与组件建议
+
+- 页面形态优先级：`/system/tenant` 列表页“新建租户”按钮 -> 打开独立向导弹窗 / 抽屉；若步骤内容明显变大，再升级为独立路由页。
+- 建议拆出 `TenantCreateWizard` 作为专用容器组件，而不是继续把所有字段堆在当前 `TenantForm.vue` 单表单里。
+- `TenantForm.vue` 可保留为基础信息子块或兼容编辑表单；但“租户初始化向导”应有自己的步骤状态、预检查摘要和结果页。
+- 结果页应提供：
+  - 查看租户详情
+  - 进入租户权限摘要 / 平台模板 diff
+  - 复制初始管理员账号信息（不回显明文密码）
+
+#### 4.6.6 非目标（避免后续实现漂移）
+
+- 不把“平台模板初始化”按钮混入新建租户向导。
+- 不在向导里直接做全量角色菜单树授权编辑。
+- 不在步骤切换时偷偷创建租户、偷偷创建管理员、偷偷写副本。
+- 不把“创建租户”和“平台模板回填”做成一个共享提交按钮。
+
+#### 4.6.7 最小 smoke（当前态）
+
+- 进入 `/system/tenant` 后，“新建租户”应打开 `TenantCreateWizard`（而非 `TenantForm`）。
+- wizard 至少展示 4 个显式步骤：基础信息、初始化策略、初始管理员、确认。
+- 首次进入确认步骤会自动触发 precheck；预检查失败或有阻断项时不能最终提交。
+- precheck 通过后，最终创建仅允许一次性调用 `POST /sys/tenants`。
+- 创建成功后停留在结果页，不自动关闭抽屉。
+- 只有点击“完成并关闭”才关闭 wizard 并触发租户列表刷新。
+- 从结果页进入租户详情时，跳转 `/platform/tenants/:id` 且携带 `query.from` 与目标 `section`，详情页应聚焦到对应治理分区。
+
 ---
 
 ## 5. 后续实施建议（专题剩余项）

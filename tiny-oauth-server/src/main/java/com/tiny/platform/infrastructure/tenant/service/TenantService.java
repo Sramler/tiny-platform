@@ -2,6 +2,7 @@ package com.tiny.platform.infrastructure.tenant.service;
 
 import com.tiny.platform.infrastructure.tenant.domain.Tenant;
 import com.tiny.platform.infrastructure.tenant.dto.TenantCreateUpdateDto;
+import com.tiny.platform.infrastructure.tenant.dto.TenantPrecheckResponseDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantPermissionSummaryDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantRequestDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantResponseDto;
@@ -12,6 +13,7 @@ import org.springframework.data.domain.Pageable;
 public interface TenantService {
     Page<TenantResponseDto> list(TenantRequestDto query, Pageable pageable);
     Optional<Tenant> findById(Long id);
+    TenantPrecheckResponseDto precheckCreate(TenantCreateUpdateDto dto);
     TenantResponseDto create(TenantCreateUpdateDto dto);
     TenantResponseDto update(Long id, TenantCreateUpdateDto dto);
     TenantResponseDto freeze(Long id);

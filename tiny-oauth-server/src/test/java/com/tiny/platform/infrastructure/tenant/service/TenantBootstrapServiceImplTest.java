@@ -413,6 +413,93 @@ class TenantBootstrapServiceImplTest {
     }
 
     @Test
+    void previewBootstrapForCreate_shouldCountOnlyEffectiveCloneResources() {
+        Resource sourceSystem = resource(1L, null, "system", null, "/system", "", "system:entry:view", ResourceType.DIRECTORY);
+        sourceSystem.setResourceLevel("PLATFORM");
+        Resource sourceUser = resource(2L, null, "user", 1L, "/system/user", "/sys/users", "system:user:list", ResourceType.MENU);
+        sourceUser.setResourceLevel("PLATFORM");
+        Resource sourceCreate = resource(3L, null, "userCreate", 2L, "/system/user", "", "system:user:create", ResourceType.BUTTON);
+        sourceCreate.setResourceLevel("PLATFORM");
+        Resource sourceApi = resource(4L, null, "userListApi", null, "", "/sys/users", "system:user:list", ResourceType.API);
+        sourceApi.setResourceLevel("PLATFORM");
+        Resource sourceTenantMenu = resource(5L, null, "tenant", 1L, "/system/tenant", "/sys/tenants", "system:tenant:list", ResourceType.MENU);
+        sourceTenantMenu.setResourceLevel("PLATFORM");
+        Resource sourceIdempotentMenu = resource(6L, null, "idempotentOps", 1L, "/ops/idempotent", "/metrics/idempotent", "idempotent:ops:view", ResourceType.MENU);
+        sourceIdempotentMenu.setResourceLevel("PLATFORM");
+        Role sourceAdmin = role(20L, null, "ROLE_ADMIN", "管理员");
+        sourceAdmin.setRoleLevel("PLATFORM");
+
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(null, "PLATFORM"))
+            .thenReturn(List.of(
+                snapshot(sourceSystem),
+                snapshot(sourceUser),
+                snapshot(sourceCreate),
+                snapshot(sourceApi),
+                snapshot(sourceTenantMenu),
+                snapshot(sourceIdempotentMenu)
+            ));
+        when(roleRepository.findByTenantIdIsNullOrderByIdAsc()).thenReturn(List.of(sourceAdmin));
+
+        TenantBootstrapPreview preview = service.previewBootstrapForCreate();
+
+        assertThat(preview.ready()).isTrue();
+        assertThat(preview.currentPlatformTemplatePresent()).isTrue();
+        assertThat(preview.requiresHistoricalBackfill()).isFalse();
+        assertThat(preview.roleCount()).isEqualTo(1L);
+        assertThat(preview.permissionCount()).isEqualTo(3L);
+        assertThat(preview.menuCount()).isEqualTo(2L);
+        assertThat(preview.uiActionCount()).isEqualTo(1L);
+        assertThat(preview.apiEndpointCount()).isEqualTo(1L);
+        verify(tenantRepository, never()).findByCode(any());
+        verify(resourcePermissionBindingService, never()).backfillPermissionCatalogFromResources(any());
+        verify(resourcePermissionBindingService, never()).bindRequiredPermissionIdsForResources(any());
+    }
+
+    @Test
+    void previewBootstrapForCreate_shouldAllowHistoricalBackfillPreviewWhenConfiguredSourceIsReady() {
+        platformTenantProperties.setPlatformTenantCode("default");
+        Tenant defaultTenant = tenant(1L, "default");
+        Resource sourceSystem = resource(10L, 1L, "system", null, "/system", "", "system:entry:view", ResourceType.DIRECTORY);
+        Resource sourceUser = resource(11L, 1L, "user", 10L, "/system/user", "/sys/users", "system:user:list", ResourceType.MENU);
+        Resource sourceTenantMenu = resource(12L, 1L, "tenant", 10L, "/system/tenant", "/sys/tenants", "system:tenant:list", ResourceType.MENU);
+        Role sourceAdmin = role(20L, 1L, "ROLE_ADMIN", "管理员");
+
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(null, "PLATFORM"))
+            .thenReturn(List.of());
+        when(roleRepository.findByTenantIdIsNullOrderByIdAsc()).thenReturn(List.of());
+        when(tenantRepository.findByCode("default")).thenReturn(Optional.of(defaultTenant));
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(1L, "TENANT"))
+            .thenReturn(List.of(snapshot(sourceSystem), snapshot(sourceUser), snapshot(sourceTenantMenu)));
+        when(roleRepository.findByTenantIdOrderByIdAsc(1L)).thenReturn(List.of(sourceAdmin));
+
+        TenantBootstrapPreview preview = service.previewBootstrapForCreate();
+
+        assertThat(preview.ready()).isTrue();
+        assertThat(preview.currentPlatformTemplatePresent()).isFalse();
+        assertThat(preview.requiresHistoricalBackfill()).isTrue();
+        assertThat(preview.message()).contains("历史回填");
+        assertThat(preview.roleCount()).isEqualTo(1L);
+        assertThat(preview.menuCount()).isEqualTo(2L);
+        assertThat(preview.permissionCount()).isEqualTo(2L);
+        verify(tenantRepository).findByCode("default");
+        verify(resourcePermissionBindingService, never()).backfillPermissionCatalogFromResources(any());
+        verify(resourcePermissionBindingService, never()).bindRequiredPermissionIdsForResources(any());
+    }
+
+    @Test
+    void previewBootstrapForCreate_shouldBlockWhenTemplateMissingAndHistoricalSourceNotConfigured() {
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(null, "PLATFORM"))
+            .thenReturn(List.of());
+        when(roleRepository.findByTenantIdIsNullOrderByIdAsc()).thenReturn(List.of());
+
+        TenantBootstrapPreview preview = service.previewBootstrapForCreate();
+
+        assertThat(preview.ready()).isFalse();
+        assertThat(preview.message()).contains("未显式配置 tiny.platform.tenant.platform-tenant-code");
+        verify(tenantRepository, never()).findByCode(any());
+    }
+
+    @Test
     void ensurePlatformTemplatesInitialized_whenTemplatesMissing_shouldBackfillFromConfiguredTenant() {
         platformTenantProperties.setPlatformTenantCode("default");
         Tenant defaultTenant = tenant(1L, "default");
@@ -701,6 +788,114 @@ class TenantBootstrapServiceImplTest {
 
         verify(roleRepository).addRolePermissionRelationByPermissionId(9L, 200L, 7001L);
         verify(roleRepository, times(1)).addRolePermissionRelationByPermissionId(any(), any(), any());
+    }
+
+    @Test
+    void bootstrapFromPlatformTemplate_shouldKeepSharedSystemRootWhenPermissionMatchesTenantManagementFamily() {
+        Tenant targetTenant = tenant(9L, "tenant-9");
+
+        Resource sourceSystem = resource(1L, null, "system", null, "/system", "", "system:tenant:list", ResourceType.DIRECTORY);
+        sourceSystem.setResourceLevel("PLATFORM");
+        Resource sourceUser = resource(2L, null, "user", 1L, "/system/user", "/sys/users", "system:user:list", ResourceType.MENU);
+        sourceUser.setResourceLevel("PLATFORM");
+        Resource sourceTenantMenu = resource(3L, null, "tenant", 1L, "/system/tenant", "/sys/tenants", "system:tenant:list", ResourceType.MENU);
+        sourceTenantMenu.setResourceLevel("PLATFORM");
+        Resource sourceTenantListAction = resource(4L, null, "system:tenant:list", null, "", "", "system:tenant:list", ResourceType.BUTTON);
+        sourceTenantListAction.setResourceLevel("PLATFORM");
+        Role sourceAdmin = role(20L, null, "ROLE_ADMIN", "管理员");
+        sourceAdmin.setRoleLevel("PLATFORM");
+
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(null, "PLATFORM"))
+            .thenReturn(List.of(
+                snapshot(sourceSystem),
+                snapshot(sourceUser),
+                snapshot(sourceTenantMenu),
+                snapshot(sourceTenantListAction)
+            ));
+        when(roleRepository.findByTenantIdIsNullOrderByIdAsc()).thenReturn(List.of(sourceAdmin));
+        when(roleRepository.findGrantedRoleCarrierPairsForPlatformTemplate())
+            .thenReturn(List.of(relation(20L, 2L), relation(20L, 3L), relation(20L, 4L)));
+
+        AtomicLong nextRoleId = new AtomicLong(200L);
+        when(roleRepository.saveAll(any())).thenAnswer(invocation -> {
+            List<Role> roles = invocation.getArgument(0);
+            for (Role role : roles) {
+                if (role.getId() == null) {
+                    role.setId(nextRoleId.getAndIncrement());
+                }
+            }
+            return roles;
+        });
+        when(carrierProjectionRepository.findPermissionBindingViewsByIdsAndScope(List.of(100L, 101L), 9L, "TENANT"))
+            .thenReturn(List.of(
+                binding(100L, "system:tenant:list", 7000L),
+                binding(101L, "system:user:list", 7001L)
+            ));
+
+        service.bootstrapFromPlatformTemplate(targetTenant);
+
+        ArgumentCaptor<List<MenuEntry>> menuCaptor = ArgumentCaptor.forClass(List.class);
+        verify(menuEntryRepository, times(2)).saveAll(menuCaptor.capture());
+        assertThat(menuCaptor.getAllValues().getFirst())
+            .extracting(MenuEntry::getName)
+            .containsExactlyInAnyOrder("system", "user");
+        verify(uiActionEntryRepository, never()).saveAll(any());
+        verify(roleRepository).addRolePermissionRelationByPermissionId(9L, 200L, 7001L);
+        verify(roleRepository, times(1)).addRolePermissionRelationByPermissionId(any(), any(), any());
+    }
+
+    @Test
+    void diffPlatformTemplateForTenant_shouldIgnorePlatformOnlyResourcesAndDescendants() {
+        Long tenantId = 9L;
+
+        Resource platformSystem = resource(1L, null, "system", null, "/system", "", "system:tenant:list", ResourceType.DIRECTORY);
+        platformSystem.setResourceLevel("PLATFORM");
+        platformSystem.setTitle("系统管理");
+        platformSystem.setRequiredPermissionId(1000L);
+        Resource platformUser = resource(2L, null, "user", 1L, "/system/user", "/sys/users", "system:user:list", ResourceType.MENU);
+        platformUser.setResourceLevel("PLATFORM");
+        platformUser.setTitle("用户管理");
+        platformUser.setRequiredPermissionId(1001L);
+        Resource platformTenantMenu = resource(3L, null, "tenant", 1L, "/system/tenant", "/sys/tenants", "system:tenant:list", ResourceType.MENU);
+        platformTenantMenu.setResourceLevel("PLATFORM");
+        platformTenantMenu.setTitle("租户管理");
+        platformTenantMenu.setRequiredPermissionId(1002L);
+        Resource platformTenantDescendant = resource(4L, null, "tenantSubPage", 3L, "/system/tenant/sub", "", "system:tenant:sub:view", ResourceType.MENU);
+        platformTenantDescendant.setResourceLevel("PLATFORM");
+        platformTenantDescendant.setTitle("租户子页");
+        platformTenantDescendant.setRequiredPermissionId(1003L);
+        Role platformRole = role(20L, null, "ROLE_ADMIN", "管理员");
+        platformRole.setRoleLevel("PLATFORM");
+
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(null, "PLATFORM"))
+            .thenReturn(List.of(
+                snapshot(platformSystem),
+                snapshot(platformUser),
+                snapshot(platformTenantMenu),
+                snapshot(platformTenantDescendant)
+            ));
+        when(roleRepository.findByTenantIdIsNullOrderByIdAsc()).thenReturn(List.of(platformRole));
+
+        Resource tenantSystem = resource(100L, tenantId, "system", null, "/system", "", "system:tenant:list", ResourceType.DIRECTORY);
+        tenantSystem.setResourceLevel("TENANT");
+        tenantSystem.setTitle("系统管理");
+        tenantSystem.setRequiredPermissionId(2000L);
+        Resource tenantUser = resource(101L, tenantId, "user", 100L, "/system/user", "/sys/users", "system:user:list", ResourceType.MENU);
+        tenantUser.setResourceLevel("TENANT");
+        tenantUser.setTitle("用户管理");
+        tenantUser.setRequiredPermissionId(2001L);
+
+        when(carrierProjectionRepository.findTemplateSnapshotViewsByScope(tenantId, "TENANT"))
+            .thenReturn(List.of(snapshot(tenantSystem), snapshot(tenantUser)));
+
+        PlatformTemplateDiffResult diff = service.diffPlatformTemplateForTenant(tenantId);
+
+        assertThat(diff.summary().totalPlatformEntries()).isEqualTo(2);
+        assertThat(diff.summary().totalTenantEntries()).isEqualTo(2);
+        assertThat(diff.summary().missingInTenant()).isZero();
+        assertThat(diff.summary().extraInTenant()).isZero();
+        assertThat(diff.summary().changed()).isZero();
+        assertThat(diff.diffs()).isEmpty();
     }
 
     @Test

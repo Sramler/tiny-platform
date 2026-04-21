@@ -14,7 +14,11 @@
       <div class="form-container">
         <a-form layout="inline" :model="query">
           <a-form-item label="租户编码">
-            <a-input v-model:value="query.code" placeholder="请输入租户编码" />
+            <a-input
+              v-model:value="query.code"
+              placeholder="请输入租户编码"
+              data-test="tenant-search-code"
+            />
           </a-form-item>
           <a-form-item label="租户名称">
             <a-input v-model:value="query.name" placeholder="请输入租户名称" />
@@ -39,7 +43,13 @@
             <a-switch v-model:checked="query.includeDeleted" />
           </a-form-item>
           <a-form-item>
-            <a-button type="primary" @click="throttledSearch">搜索</a-button>
+            <a-button
+              type="primary"
+              @click="throttledSearch"
+              data-test="tenant-search-submit"
+            >
+              搜索
+            </a-button>
             <a-button class="ml-2" @click="throttledReset">重置</a-button>
           </a-form-item>
         </a-form>
@@ -65,7 +75,13 @@
           >
             初始化平台模板
           </a-button>
-          <a-button v-if="canCreate" type="link" @click="throttledCreate" class="toolbar-btn">
+          <a-button
+            v-if="canCreate"
+            type="link"
+            @click="throttledCreate"
+            class="toolbar-btn"
+            data-test="tenant-create-button"
+          >
             <template #icon>
               <PlusOutlined />
             </template>
@@ -200,18 +216,39 @@
 
     <a-drawer
       v-if="canRead"
-      v-model:open="drawerVisible"
-      :title="drawerMode === 'create' ? '新建租户' : '编辑租户'"
+      v-model:open="createWizardVisible"
+      title="新建租户"
+      width="720"
+      :closable="false"
+      :mask-closable="false"
+      :keyboard="false"
+      :get-container="false"
+      :style="{ position: 'absolute' }"
+      @close="handleCreateWizardClose"
+    >
+      <div data-test="tenant-create-drawer">
+        <TenantCreateWizard
+          v-if="createWizardVisible"
+          :key="createWizardSessionKey"
+          @cancel="handleCreateWizardClose"
+          @completed="handleCreateWizardCompleted"
+        />
+      </div>
+    </a-drawer>
+
+    <a-drawer
+      v-if="canRead"
+      v-model:open="editDrawerVisible"
+      title="编辑租户"
       width="520"
       :get-container="false"
       :style="{ position: 'absolute' }"
-      @close="handleDrawerClose"
+      @close="handleEditDrawerClose"
     >
       <TenantForm
-        :mode="drawerMode"
         :tenantData="currentTenant"
-        @submit="handleFormSubmit"
-        @cancel="handleDrawerClose"
+        @submit="handleEditSubmit"
+        @cancel="handleEditDrawerClose"
       />
     </a-drawer>
 
@@ -260,7 +297,6 @@ import { useAuth } from '@/auth/auth'
 import {
   tenantList,
   getTenantById,
-  createTenant,
   updateTenant,
   deleteTenant,
   initializePlatformTemplate,
@@ -274,6 +310,7 @@ import {
   TENANT_MANAGEMENT_READ_AUTHORITIES,
 } from '@/constants/permission'
 import TenantForm from './TenantForm.vue'
+import TenantCreateWizard from './TenantCreateWizard.vue'
 
 const query = ref({
   code: '',
@@ -646,8 +683,9 @@ function handleDecommission(record: any) {
 }
 const throttledDecommission = handleDecommission
 
-const drawerVisible = ref(false)
-const drawerMode = ref<'create' | 'edit'>('create')
+const createWizardVisible = ref(false)
+const createWizardSessionKey = ref(0)
+const editDrawerVisible = ref(false)
 const currentTenant = ref<any | null>(null)
 const detailVisible = ref(false)
 const detailLoading = ref(false)
@@ -658,9 +696,8 @@ function handleCreate() {
     message.warning('缺少租户创建权限')
     return
   }
-  drawerMode.value = 'create'
-  currentTenant.value = { id: '', enabled: true, initialAdminNickname: '租户管理员' }
-  drawerVisible.value = true
+  createWizardSessionKey.value += 1
+  createWizardVisible.value = true
 }
 const throttledCreate = handleCreate
 
@@ -669,14 +706,23 @@ function handleEdit(record: any) {
     message.warning('缺少租户编辑权限')
     return
   }
-  drawerMode.value = 'edit'
   currentTenant.value = { ...record }
-  drawerVisible.value = true
+  editDrawerVisible.value = true
 }
 const throttledEdit = handleEdit
 
-function handleDrawerClose() {
-  drawerVisible.value = false
+function handleCreateWizardClose() {
+  createWizardVisible.value = false
+  createWizardSessionKey.value += 1
+}
+
+async function handleCreateWizardCompleted() {
+  handleCreateWizardClose()
+  await loadData()
+}
+
+function handleEditDrawerClose() {
+  editDrawerVisible.value = false
   currentTenant.value = null
 }
 
@@ -703,20 +749,17 @@ function handleDetailClose() {
   detailTenant.value = null
 }
 
-async function handleFormSubmit(formData: any) {
-  if (drawerMode.value === 'edit' ? !canEdit.value : !canCreate.value) {
-    message.warning(drawerMode.value === 'edit' ? '缺少租户编辑权限' : '缺少租户创建权限')
+async function handleEditSubmit(formData: any) {
+  if (!canEdit.value) {
+    message.warning('缺少租户编辑权限')
     return
   }
   try {
-    if (drawerMode.value === 'edit' && formData.id) {
+    if (formData.id) {
       await updateTenant(formData.id, formData)
       message.success('更新成功')
-    } else {
-      await createTenant(formData)
-      message.success(`创建成功，初始管理员：${formData.initialAdminUsername}`)
     }
-    handleDrawerClose()
+    handleEditDrawerClose()
     loadData()
   } catch (error: any) {
     message.error('保存失败: ' + (error?.message || '未知错误'))
@@ -807,7 +850,9 @@ watch(canRead, (enabled) => {
     tableData.value = []
     selectedRowKeys.value = []
     pagination.value.total = 0
-    drawerVisible.value = false
+    createWizardVisible.value = false
+    createWizardSessionKey.value += 1
+    editDrawerVisible.value = false
     currentTenant.value = null
     detailVisible.value = false
     detailTenant.value = null

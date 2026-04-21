@@ -15,6 +15,8 @@ import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.core.oauth.tenant.TenantContextContract;
 import com.tiny.platform.core.oauth.tenant.TenantLifecycleAccessGuard;
 import com.tiny.platform.infrastructure.tenant.dto.TenantCreateUpdateDto;
+import com.tiny.platform.infrastructure.tenant.dto.TenantInitializationSummaryDto;
+import com.tiny.platform.infrastructure.tenant.dto.TenantPrecheckResponseDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantPermissionSummaryDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantResponseDto;
 import com.tiny.platform.infrastructure.tenant.service.PlatformTemplateDiffResult;
@@ -117,6 +119,22 @@ class TenantControllerRbacIntegrationTest {
         }
 
         @Test
+        void precheck_allowsPlatformAdmin() throws Exception {
+            TenantPrecheckResponseDto precheck = new TenantPrecheckResponseDto();
+            TenantInitializationSummaryDto summary = new TenantInitializationSummaryDto();
+            summary.setTenantCode("tenant-z");
+            precheck.setOk(true);
+            precheck.setInitializationSummary(summary);
+            when(tenantService.precheckCreate(any(TenantCreateUpdateDto.class))).thenReturn(precheck);
+
+            mockMvc.perform(post("/sys/tenants/precheck")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(new TenantCreateUpdateDto()))
+                    .with(user("platform-admin").authorities(new SimpleGrantedAuthority("system:tenant:create"))))
+                .andExpect(status().isOk());
+        }
+
+        @Test
         void freeze_allowsPlatformAdminWithLifecycleAuthority() throws Exception {
             TenantResponseDto response = new TenantResponseDto();
             response.setId(9L);
@@ -196,6 +214,18 @@ class TenantControllerRbacIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(dto))
                 .with(user("viewer").authorities(new SimpleGrantedAuthority("ROLE_USER"))))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void precheck_deniesWithoutCreateAuthority() throws Exception {
+        TenantContext.setActiveTenantId(1L);
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_PLATFORM);
+
+        mockMvc.perform(post("/sys/tenants/precheck")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(new TenantCreateUpdateDto()))
+                .with(user("viewer").authorities(new SimpleGrantedAuthority("system:tenant:view"))))
             .andExpect(status().isForbidden());
     }
 
