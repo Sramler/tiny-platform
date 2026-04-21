@@ -92,6 +92,37 @@ describe('tenant API', () => {
     })
   })
 
+  it('should precheck tenant create payload', async () => {
+    requestMocks.post.mockResolvedValue({
+      ok: true,
+      blockingIssues: [],
+      warnings: [],
+      initializationSummary: {
+        tenantCode: 't3',
+        tenantName: 'Tenant 3',
+        initialAdminUsername: 'tenant3_admin',
+        platformTemplateReady: true,
+        defaultRoleCount: 1,
+        defaultMenuCount: 2,
+        defaultPermissionCount: 3,
+        defaultUiActionCount: 4,
+        defaultApiEndpointCount: 5,
+      },
+    })
+    const { precheckTenantCreate } = await import('@/api/tenant')
+    const data = {
+      code: 't3',
+      name: 'Tenant 3',
+      initialAdminUsername: 'tenant3_admin',
+      initialAdminPassword: 'Secret123',
+      initialAdminConfirmPassword: 'Secret123',
+    }
+
+    await precheckTenantCreate(data)
+
+    expect(requestMocks.post).toHaveBeenCalledWith('/sys/tenants/precheck', data)
+  })
+
   it('should update tenant with idempotency', async () => {
     requestMocks.put.mockResolvedValue({ id: 4, name: 'Tenant 4 Updated' })
     const { updateTenant } = await import('@/api/tenant')

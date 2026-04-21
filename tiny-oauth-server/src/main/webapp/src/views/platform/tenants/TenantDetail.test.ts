@@ -127,4 +127,108 @@ describe('TenantDetail.vue', () => {
 
     expect(routerMocks.push).toHaveBeenCalledWith('/platform/users?tab=tenantStewardship&tenantId=9')
   })
+
+  it('should focus permission summary section when section query is permission-summary', async () => {
+    routeState.query = { section: 'permission-summary' }
+    const wrapper = mount(TenantDetail, {
+      global: {
+        stubs: {
+          'a-button': ButtonStub,
+          'a-spin': PassThrough,
+          'a-tag': PassThrough,
+          'a-table': PassThrough,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="section-permission-summary"]').classes()).toContain('section-focused')
+    expect(wrapper.find('[data-test="section-overview"]').classes()).not.toContain('section-focused')
+  })
+
+  it('should focus template diff section when section query changes', async () => {
+    routeState.query = { section: 'overview' }
+    const wrapper = mount(TenantDetail, {
+      global: {
+        stubs: {
+          'a-button': ButtonStub,
+          'a-spin': PassThrough,
+          'a-tag': PassThrough,
+          'a-table': PassThrough,
+        },
+      },
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-test="section-overview"]').classes()).toContain('section-focused')
+
+    routeState.query = { section: 'template-diff' }
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="section-template-diff"]').classes()).toContain('section-focused')
+  })
+
+  it('should fallback to overview when section query is invalid', async () => {
+    routeState.query = { section: 'unknown-section' }
+    const wrapper = mount(TenantDetail, {
+      global: {
+        stubs: {
+          'a-button': ButtonStub,
+          'a-spin': PassThrough,
+          'a-tag': PassThrough,
+          'a-table': PassThrough,
+        },
+      },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="section-overview"]').classes()).toContain('section-focused')
+    expect(wrapper.find('[data-test="section-permission-summary"]').classes()).not.toContain('section-focused')
+    expect(wrapper.find('[data-test="section-template-diff"]').classes()).not.toContain('section-focused')
+  })
+
+  it('should reset focused section to normalized query when tenant changes', async () => {
+    routeState.query = {}
+    const wrapper = mount(TenantDetail, {
+      global: {
+        stubs: {
+          'a-button': ButtonStub,
+          'a-spin': PassThrough,
+          'a-tag': PassThrough,
+          'a-table': PassThrough,
+        },
+      },
+    })
+    await flushPromises()
+
+    const permissionSummaryButton = wrapper.findAll('button').find((button) => button.text().includes('权限摘要'))
+    expect(permissionSummaryButton).toBeDefined()
+    await permissionSummaryButton!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="section-permission-summary"]').classes()).toContain('section-focused')
+
+    routeState.params.id = '2'
+    tenantApiMocks.getTenantById.mockResolvedValueOnce({ id: 2, code: 't2', name: 'Tenant 2', lifecycleStatus: 'ACTIVE', enabled: true })
+    tenantApiMocks.getTenantPermissionSummary.mockResolvedValueOnce({
+      tenantId: 2,
+      totalRoles: 2,
+      enabledRoles: 2,
+      totalPermissions: 3,
+      assignedPermissions: 3,
+      totalCarriers: 4,
+      boundCarriers: 4,
+      menuCarriers: 2,
+      uiActionCarriers: 1,
+      apiEndpointCarriers: 1,
+    })
+    tenantApiMocks.diffTenantPlatformTemplate.mockResolvedValueOnce({
+      tenantId: 2,
+      summary: { totalPlatformEntries: 3, totalTenantEntries: 3, missingInTenant: 0, extraInTenant: 0, changed: 0 },
+      diffs: [],
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="section-overview"]').classes()).toContain('section-focused')
+    expect(wrapper.find('[data-test="section-permission-summary"]').classes()).not.toContain('section-focused')
+  })
 })

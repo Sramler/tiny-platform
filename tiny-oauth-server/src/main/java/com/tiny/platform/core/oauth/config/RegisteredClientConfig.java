@@ -13,7 +13,12 @@ import org.springframework.security.oauth2.server.authorization.settings.ClientS
 import org.springframework.security.oauth2.server.authorization.settings.OAuth2TokenFormat;
 import org.springframework.security.oauth2.server.authorization.settings.TokenSettings;
 
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.time.Instant;
+import java.util.LinkedHashSet;
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -46,7 +51,8 @@ public class RegisteredClientConfig {
     @Bean
     public CommandLineRunner registerClients(
             ClientProperties properties,
-            @Qualifier("defaultRegisteredClientRepository") RegisteredClientRepository repository
+            @Qualifier("defaultRegisteredClientRepository") RegisteredClientRepository repository,
+            FrontendProperties frontendProperties
     ) {
         return args -> {
             for (ClientProperties.Client config : properties.getClients()) {
@@ -104,19 +110,76 @@ public class RegisteredClientConfig {
                     config.getScopes().forEach(builder::scope);
                 }
 
-                // === 配置重定向 URI（授权成功跳转地址）===
+                Set<String> redirectUris = new LinkedHashSet<>();
                 if (config.getRedirectUris() != null) {
-                    config.getRedirectUris().forEach(builder::redirectUri);
+                    redirectUris.addAll(config.getRedirectUris());
                 }
 
-                // === 配置注销后的跳转 URI（可选）===
+                Set<String> postLogoutRedirectUris = new LinkedHashSet<>();
                 if (config.getPostLogoutRedirectUris() != null) {
-                    config.getPostLogoutRedirectUris().forEach(builder::postLogoutRedirectUri);
+                    postLogoutRedirectUris.addAll(config.getPostLogoutRedirectUris());
                 }
+
+                appendRuntimeFrontendRedirects(config, frontendProperties, redirectUris, postLogoutRedirectUris);
+
+                // === 配置重定向 URI（授权成功跳转地址）===
+                redirectUris.forEach(builder::redirectUri);
+
+                // === 配置注销后的跳转 URI（可选）===
+                postLogoutRedirectUris.forEach(builder::postLogoutRedirectUri);
 
                 // === 最终保存注册的客户端信息到存储库 ===
                 repository.save(builder.build());
             }
         };
+    }
+
+    void appendRuntimeFrontendRedirects(
+            ClientProperties.Client config,
+            FrontendProperties frontendProperties,
+            Set<String> redirectUris,
+            Set<String> postLogoutRedirectUris
+    ) {
+        if (config == null || frontendProperties == null) {
+            return;
+        }
+        if (!"vue-client".equals(config.getClientId())) {
+            return;
+        }
+        String frontendBaseUrl = resolveFrontendBaseUrl(frontendProperties.getLoginUrl());
+        if (frontendBaseUrl == null) {
+            return;
+        }
+        redirectUris.add(frontendBaseUrl + "/callback");
+        redirectUris.add(frontendBaseUrl + "/silent-renew.html");
+        postLogoutRedirectUris.add(frontendBaseUrl + "/");
+    }
+
+    String resolveFrontendBaseUrl(String loginUrl) {
+        if (loginUrl == null || loginUrl.isBlank()) {
+            return null;
+        }
+        String normalized = loginUrl.trim();
+        if (!normalized.regionMatches(true, 0, "redirect:", 0, "redirect:".length())) {
+            return null;
+        }
+        String target = normalized.substring("redirect:".length()).trim();
+        if (target.isBlank()) {
+            return null;
+        }
+        try {
+            URL url = new URL(target);
+            String path = url.getPath();
+            if (path == null || !path.toLowerCase(Locale.ROOT).endsWith("/login")) {
+                return null;
+            }
+            String basePath = path.substring(0, path.length() - "/login".length());
+            String base = url.getProtocol() + "://" + url.getAuthority() + basePath;
+            return base.endsWith("/") && base.length() > url.getProtocol().length() + 3
+                    ? base.substring(0, base.length() - 1)
+                    : base;
+        } catch (MalformedURLException ignored) {
+            return null;
+        }
     }
 }

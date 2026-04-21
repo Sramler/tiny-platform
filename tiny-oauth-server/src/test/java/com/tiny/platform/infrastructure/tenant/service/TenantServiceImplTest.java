@@ -24,6 +24,7 @@ import com.tiny.platform.infrastructure.core.exception.code.ErrorCode;
 import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
 import com.tiny.platform.infrastructure.tenant.domain.Tenant;
 import com.tiny.platform.infrastructure.tenant.dto.TenantCreateUpdateDto;
+import com.tiny.platform.infrastructure.tenant.dto.TenantPrecheckResponseDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantPermissionSummaryDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantResponseDto;
 import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
@@ -99,6 +100,124 @@ class TenantServiceImplTest {
         assertThat(summary.assignedPermissions()).isEqualTo(28L);
         assertThat(summary.totalCarriers()).isEqualTo(20L);
         assertThat(summary.boundCarriers()).isEqualTo(19L);
+    }
+
+    @Test
+    void precheckCreate_shouldReturnBlockingIssuesWithoutPersisting() {
+        TenantCreateUpdateDto dto = createDto();
+        dto.setCode("tenant-exists");
+        dto.setDomain("conflict.example.com");
+        dto.setInitialAdminUsername("bad!");
+        dto.setInitialAdminEmail("invalid-email");
+        dto.setInitialAdminPhone("123");
+        dto.setInitialAdminConfirmPassword("Mismatch");
+        dto.setMaxUsers(0);
+
+        when(tenantRepository.existsByCode("tenant-exists")).thenReturn(true);
+        when(tenantRepository.existsByDomain("conflict.example.com")).thenReturn(true);
+        doThrow(new BusinessException(ErrorCode.INVALID_PARAMETER, "配额配置非法"))
+            .when(tenantQuotaService)
+            .validateQuotaSettingsForCreate(0, null);
+        when(tenantBootstrapService.previewBootstrapForCreate())
+            .thenReturn(TenantBootstrapPreview.blocked("平台模板尚未就绪"));
+
+        TenantPrecheckResponseDto response = service.precheckCreate(dto);
+
+        assertThat(response.isOk()).isFalse();
+        assertThat(response.getBlockingIssues())
+            .extracting(issue -> issue.getCode())
+            .contains(
+                "TENANT_CODE_CONFLICT",
+                "TENANT_DOMAIN_CONFLICT",
+                "TENANT_QUOTA_INVALID",
+                "INITIAL_ADMIN_USERNAME_INVALID",
+                "INITIAL_ADMIN_EMAIL_INVALID",
+                "INITIAL_ADMIN_PHONE_INVALID",
+                "INITIAL_ADMIN_PASSWORD_CONFIRM_MISMATCH",
+                "PLATFORM_TEMPLATE_NOT_READY"
+            );
+        verify(tenantRepository, never()).save(any(Tenant.class));
+        verify(userRepository, never()).save(any(User.class));
+        verify(tenantBootstrapService, never()).bootstrapFromPlatformTemplate(any(Tenant.class));
+        verify(authenticationBridgeWriter, never()).upsert(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void precheckCreate_shouldReturnInitializationSummaryWhenReady() {
+        TenantCreateUpdateDto dto = createDto();
+        when(tenantRepository.existsByCode("acme-01")).thenReturn(false);
+        when(tenantRepository.existsByDomain("acme.example.com")).thenReturn(false);
+        when(userRepository.findUserIdByUsername("acme_admin")).thenReturn(Optional.empty());
+        when(userRepository.findUserIdByEmail("admin@acme.example.com")).thenReturn(Optional.empty());
+        when(userRepository.findUserIdByPhone("13800138000")).thenReturn(Optional.empty());
+        when(tenantBootstrapService.previewBootstrapForCreate())
+            .thenReturn(new TenantBootstrapPreview(true, true, false, null, 3L, 12L, 8L, 6L, 4L));
+
+        TenantPrecheckResponseDto response = service.precheckCreate(dto);
+
+        assertThat(response.isOk()).isTrue();
+        assertThat(response.getBlockingIssues()).isEmpty();
+        assertThat(response.getInitializationSummary().getTenantCode()).isEqualTo("acme-01");
+        assertThat(response.getInitializationSummary().getTenantName()).isEqualTo("Acme");
+        assertThat(response.getInitializationSummary().getInitialAdminUsername()).isEqualTo("acme_admin");
+        assertThat(response.getInitializationSummary().isPlatformTemplateReady()).isTrue();
+        assertThat(response.getInitializationSummary().getDefaultRoleCount()).isEqualTo(3L);
+        assertThat(response.getInitializationSummary().getDefaultMenuCount()).isEqualTo(8L);
+        assertThat(response.getInitializationSummary().getDefaultPermissionCount()).isEqualTo(12L);
+        verify(tenantRepository, never()).save(any(Tenant.class));
+        verify(userRepository, never()).save(any(User.class));
+    }
+
+    @Test
+    void precheckCreate_shouldTreatReusableEmailAndPhoneAsWarningsInsteadOfBlocking() {
+        TenantCreateUpdateDto dto = createDto();
+        when(tenantRepository.existsByCode("acme-01")).thenReturn(false);
+        when(tenantRepository.existsByDomain("acme.example.com")).thenReturn(false);
+        when(userRepository.findUserIdByUsername("acme_admin")).thenReturn(Optional.empty());
+        when(userRepository.findUserIdByEmail("admin@acme.example.com")).thenReturn(Optional.of(11L));
+        when(userRepository.findUserIdByPhone("13800138000")).thenReturn(Optional.of(12L));
+        when(tenantBootstrapService.previewBootstrapForCreate())
+            .thenReturn(new TenantBootstrapPreview(true, true, false, null, 2L, 5L, 3L, 1L, 1L));
+
+        TenantPrecheckResponseDto response = service.precheckCreate(dto);
+
+        assertThat(response.isOk()).isTrue();
+        assertThat(response.getBlockingIssues()).isEmpty();
+        assertThat(response.getWarnings())
+            .extracting(issue -> issue.getCode())
+            .contains("INITIAL_ADMIN_EMAIL_REUSED", "INITIAL_ADMIN_PHONE_REUSED");
+    }
+
+    @Test
+    void precheckCreate_shouldAllowHistoricalTemplateBackfillWhenPreviewIsReady() {
+        TenantCreateUpdateDto dto = createDto();
+        when(tenantRepository.existsByCode("acme-01")).thenReturn(false);
+        when(tenantRepository.existsByDomain("acme.example.com")).thenReturn(false);
+        when(userRepository.findUserIdByUsername("acme_admin")).thenReturn(Optional.empty());
+        when(userRepository.findUserIdByEmail("admin@acme.example.com")).thenReturn(Optional.empty());
+        when(userRepository.findUserIdByPhone("13800138000")).thenReturn(Optional.empty());
+        when(tenantBootstrapService.previewBootstrapForCreate())
+            .thenReturn(new TenantBootstrapPreview(
+                true,
+                false,
+                true,
+                "当前 tenant_id IS NULL 平台模板缺失；正式创建时会基于已配置的 platform-tenant-code 做一次性历史回填。",
+                4L,
+                9L,
+                5L,
+                2L,
+                2L
+            ));
+
+        TenantPrecheckResponseDto response = service.precheckCreate(dto);
+
+        assertThat(response.isOk()).isTrue();
+        assertThat(response.getBlockingIssues()).isEmpty();
+        assertThat(response.getWarnings())
+            .extracting(issue -> issue.getCode())
+            .contains("PLATFORM_TEMPLATE_WILL_BACKFILL");
+        assertThat(response.getInitializationSummary().isPlatformTemplateReady()).isTrue();
+        assertThat(response.getInitializationSummary().getDefaultMenuCount()).isEqualTo(5L);
     }
 
     @Test

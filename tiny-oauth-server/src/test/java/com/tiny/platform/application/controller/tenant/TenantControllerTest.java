@@ -4,6 +4,8 @@ import com.tiny.platform.core.oauth.tenant.TenantLifecycleAccessGuard;
 import com.tiny.platform.infrastructure.core.dto.PageResponse;
 import com.tiny.platform.infrastructure.tenant.domain.Tenant;
 import com.tiny.platform.infrastructure.tenant.dto.TenantCreateUpdateDto;
+import com.tiny.platform.infrastructure.tenant.dto.TenantInitializationSummaryDto;
+import com.tiny.platform.infrastructure.tenant.dto.TenantPrecheckResponseDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantPermissionSummaryDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantRequestDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantResponseDto;
@@ -115,6 +117,25 @@ class TenantControllerTest {
         assertEquals(HttpStatus.OK, resp.getStatusCode());
         assertEquals(1L, resp.getBody().getId());
         verify(tenantService).create(dto);
+    }
+
+    @Test
+    void precheck_shouldDelegate() {
+        TenantCreateUpdateDto dto = new TenantCreateUpdateDto();
+        TenantInitializationSummaryDto summary = new TenantInitializationSummaryDto();
+        summary.setTenantCode("acme");
+        TenantPrecheckResponseDto precheck = new TenantPrecheckResponseDto();
+        precheck.setOk(true);
+        precheck.setInitializationSummary(summary);
+        when(tenantService.precheckCreate(dto)).thenReturn(precheck);
+
+        ResponseEntity<TenantPrecheckResponseDto> resp = controller.precheck(dto);
+
+        assertEquals(HttpStatus.OK, resp.getStatusCode());
+        assertNotNull(resp.getBody());
+        assertTrue(resp.getBody().isOk());
+        assertEquals("acme", resp.getBody().getInitializationSummary().getTenantCode());
+        verify(tenantService).precheckCreate(dto);
     }
 
     @Test

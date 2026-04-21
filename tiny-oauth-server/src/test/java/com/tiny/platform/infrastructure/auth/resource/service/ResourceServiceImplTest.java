@@ -1320,6 +1320,95 @@ class ResourceServiceImplTest {
     }
 
     @Test
+    void findAllowedUiActionDtos_should_support_platform_tenant_page_path() {
+        RoleRepository roleRepository = mock(RoleRepository.class);
+        EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);
+        TenantUserRepository tenantUserRepository = mock(TenantUserRepository.class);
+        UserUnitRepository userUnitRepository = mock(UserUnitRepository.class);
+        MenuEntryRepository menuEntryRepository = mock(MenuEntryRepository.class);
+        UiActionEntryRepository uiActionEntryRepository = mock(UiActionEntryRepository.class);
+        ApiEndpointEntryRepository apiEndpointEntryRepository = mock(ApiEndpointEntryRepository.class);
+        ResourcePermissionBindingService resourcePermissionBindingService = mock(ResourcePermissionBindingService.class);
+        CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService = mock(CarrierPermissionReferenceSafetyService.class);
+        MenuPermissionRequirementRepository menuPermissionRequirementRepository = mock(MenuPermissionRequirementRepository.class);
+        UiActionPermissionRequirementRepository uiActionPermissionRequirementRepository = mock(UiActionPermissionRequirementRepository.class);
+        ApiEndpointPermissionRequirementRepository apiEndpointPermissionRequirementRepository = mock(ApiEndpointPermissionRequirementRepository.class);
+        CarrierPermissionRequirementEvaluator evaluator = new CarrierPermissionRequirementEvaluator(
+            menuPermissionRequirementRepository,
+            uiActionPermissionRequirementRepository,
+            apiEndpointPermissionRequirementRepository
+        );
+        authorizationAuditService = mock(AuthorizationAuditService.class);
+        ResourceServiceImpl service = new ResourceServiceImpl(
+            roleRepository,
+            effectiveRoleResolutionService,
+            tenantUserRepository,
+            userUnitRepository,
+            menuEntryRepository,
+            uiActionEntryRepository,
+            apiEndpointEntryRepository,
+            resourcePermissionBindingService,
+            carrierPermissionReferenceSafetyService,
+            evaluator,
+            authorizationAuditService
+        );
+
+        TenantContext.setActiveTenantId(1L);
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_PLATFORM);
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+            new SecurityUser(21L, 1L, "platform-admin", "", List.of(() -> "system:tenant:create"), true, true, true, true),
+            null,
+            List.of(() -> "system:tenant:create")
+        ));
+
+        com.tiny.platform.infrastructure.menu.domain.MenuEntry menu = new com.tiny.platform.infrastructure.menu.domain.MenuEntry();
+        menu.setId(30L);
+        menu.setTenantId(null);
+        menu.setPath("/system/tenant");
+        menu.setType(ResourceType.MENU.getCode());
+        menu.setResourceLevel("PLATFORM");
+        menu.setEnabled(true);
+
+        UiActionEntry create = new UiActionEntry();
+        create.setId(301L);
+        create.setTenantId(null);
+        create.setName("tenant:create");
+        create.setTitle("租户新增");
+        create.setPermission("system:tenant:create");
+        create.setPagePath("/system/tenant");
+        create.setParentMenuId(30L);
+        create.setSort(1);
+        create.setEnabled(true);
+        create.setResourceLevel("PLATFORM");
+
+        UiActionEntry edit = new UiActionEntry();
+        edit.setId(302L);
+        edit.setTenantId(null);
+        edit.setName("tenant:edit");
+        edit.setTitle("租户编辑");
+        edit.setPermission("system:tenant:edit");
+        edit.setPagePath("/system/tenant");
+        edit.setParentMenuId(30L);
+        edit.setSort(2);
+        edit.setEnabled(true);
+        edit.setResourceLevel("PLATFORM");
+
+        when(menuEntryRepository.findAll(any(Specification.class), any(org.springframework.data.domain.Sort.class)))
+            .thenReturn(List.of(menu));
+        when(uiActionEntryRepository.findAll(any(Specification.class), any(org.springframework.data.domain.Sort.class)))
+            .thenReturn(List.of(create, edit));
+        when(uiActionPermissionRequirementRepository.findRowsByUiActionIdIn(anyCollection())).thenReturn(List.of(
+            requirementRow(301L, 1, 1, "system:tenant:create", false, true),
+            requirementRow(302L, 1, 1, "system:tenant:edit", false, true)
+        ));
+
+        List<ResourceResponseDto> result = service.findAllowedUiActionDtos("/system/tenant?tab=current");
+
+        assertThat(result).extracting(ResourceResponseDto::getPermission).containsExactly("system:tenant:create");
+        assertThat(result).extracting(ResourceResponseDto::getCarrierKind).containsExactly("ui_action");
+    }
+
+    @Test
     void create_should_set_created_by_from_authenticated_user() {
         RoleRepository roleRepository = mock(RoleRepository.class);
         EffectiveRoleResolutionService effectiveRoleResolutionService = mock(EffectiveRoleResolutionService.class);

@@ -572,7 +572,87 @@ databaseChangeLog:
       file: 152-backfill-platform-system-root-permission.yaml
       relativeToChangelogFile: true
 
-  # 独立 backport：清理历史错误复制到平台态的 tenant-only RBAC3 菜单
+  # 补齐平台字典运行态菜单与权限链路，避免平台态继续落到 tenant-only 的 /system/dict
+  - include:
+      file: 153-backfill-platform-dict-runtime-menu.yaml
+      relativeToChangelogFile: true
+
+  # 补齐平台用户角色绑定接口 api_endpoint requirement，避免统一守卫 fail-closed
+  - include:
+      file: 154-backfill-platform-user-role-binding-api-endpoints.yaml
+      relativeToChangelogFile: true
+
+  # 补齐平台角色候选 lookup 接口 api_endpoint requirement，避免 /platform/users 继续依赖 /sys/roles
+  - include:
+      file: 155-backfill-platform-role-options-api-endpoint.yaml
+      relativeToChangelogFile: true
+
+  # 补齐平台 RBAC3 控制面 API 的 api_endpoint requirement，避免统一守卫 fail-closed
+  - include:
+      file: 156-backfill-platform-role-constraints-api-endpoints.yaml
+      relativeToChangelogFile: true
+
+  # 平台 RBAC3 约束与违例日志按 tenant_id IS NULL 入库
+  - include:
+      file: 157-platform-role-constraints-tenant-nullable.yaml
+      relativeToChangelogFile: true
+
+  # 补齐平台 RBAC3 DELETE 控制面 endpoint requirement，避免统一守卫继续 fail-closed
+  - include:
+      file: 158-backfill-platform-role-constraints-delete-api-endpoints.yaml
+      relativeToChangelogFile: true
+
+  # 平台 RBAC3 null-tenant 约束记录补 normalized_tenant_id 唯一键，避免 MySQL NULL 唯一语义失效
+  - include:
+      file: 159-platform-role-constraints-normalized-tenant-unique.yaml
+      relativeToChangelogFile: true
+
+  # 补齐平台 RBAC3 运行态菜单（/platform/role-constraints）
+  - include:
+      file: 160-backfill-platform-rbac3-runtime-menu.yaml
+      relativeToChangelogFile: true
+
+  # 对齐平台角色候选 lookup 与平台 RBAC3 菜单 permission requirement
+  - include:
+      file: 161-align-platform-role-lookup-and-rbac3-menu-requirements.yaml
+      relativeToChangelogFile: true
+
+  # 平台角色治理列 + 平台角色赋权审批表
+  - include:
+      file: 162-platform-role-governance-and-assignment-request-ddl.yaml
+      relativeToChangelogFile: true
+
+  # 平台角色审批权限、ROLE_PLATFORM_ADMIN 绑定、api_endpoint requirement
+  - include:
+      file: 163-platform-role-approval-permissions-and-api-endpoints.yaml
+      relativeToChangelogFile: true
+
+  # 平台角色赋权审批页菜单与 menu requirement OR 组
+  - include:
+      file: 164-backfill-platform-role-assignment-requests-menu.yaml
+      relativeToChangelogFile: true
+
+  # GET /platform/role-assignment-requests 与菜单 OR 组对齐，避免仅有 submit/approve 等权限时统一守卫 403
+  - include:
+      file: 165-align-platform-role-assignment-requests-get-or-requirements.yaml
+      relativeToChangelogFile: true
+
+  # /platform/roles/options 补齐审批提交权限，避免 submit-only 用户无法读取角色候选
+  - include:
+      file: 166-align-platform-role-options-with-approval-submit.yaml
+      relativeToChangelogFile: true
+
+  # 平台角色赋权审批请求补 pending 唯一约束，避免并发重复提交
+  - include:
+      file: 164-platform-role-assignment-request-pending-unique.yaml
+      relativeToChangelogFile: true
+
+  # CARD-PR-09：ROLE_PLATFORM_ADMIN 绑定平台 RBAC3 控制面权限（菜单 /platform/role-constraints 可见）
+  - include:
+      file: 167-backfill-role-platform-admin-rbac3-permissions.yaml
+      relativeToChangelogFile: true
+
+  # 清理平台态历史 tenant-only RBAC3 菜单，避免平台误入 /system/role/constraint
   - include:
       file: 168-cleanup-legacy-platform-role-constraint-menu.yaml
       relativeToChangelogFile: true
@@ -585,44 +665,4 @@ databaseChangeLog:
   # 补齐 POST /sys/tenants/precheck 的 api_endpoint requirement，避免统一守卫 fail-closed 误拦截
   - include:
       file: 170-backfill-tenant-precheck-api-endpoint.yaml
-      relativeToChangelogFile: true
-
-  # 清理租户侧误复制的 /platform/** carrier，避免平台控制面污染租户副本与权限目录
-  - include:
-      file: 171-cleanup-tenant-copied-platform-carriers.yaml
-      relativeToChangelogFile: true
-
-  # 回填租户侧仍合法存在的控制面 endpoint requirement，清完 /platform/** 后补闭合统一守卫链路
-  - include:
-      file: 172-backfill-tenant-legit-api-endpoint-requirements.yaml
-      relativeToChangelogFile: true
-
-  # 修复租户审计 orphan ui_action 并补齐 tenant ui_action requirement，恢复运行时按钮载体一致性
-  - include:
-      file: 173-rebind-tenant-audit-ui-actions-and-backfill-requirements.yaml
-      relativeToChangelogFile: true
-
-  # 规范化 scheduling 运行态菜单与 legacy 调度旧码，恢复平台/租户侧调度菜单一致性
-  - include:
-      file: 174-normalize-scheduling-runtime-menus.yaml
-      relativeToChangelogFile: true
-
-  # 规范化 workflow 菜单 / role binding / /process api carrier，收口 legacy workflow 页面旧码
-  - include:
-      file: 175-normalize-workflow-runtime-menus-and-api-endpoints.yaml
-      relativeToChangelogFile: true
-
-  # 修复 system 根菜单误绑 system:tenant:list，统一回到 system:entry:view
-  - include:
-      file: 176-normalize-system-root-entry-permission.yaml
-      relativeToChangelogFile: true
-
-  # 恢复高级工具 monitor 根目录权限，避免 workflow / scheduling 子树因父目录权限 disabled 被整体隐藏
-  - include:
-      file: 177-enable-monitor-root-entry-permission.yaml
-      relativeToChangelogFile: true
-
-  # 将平台模板中的调度 / 工作流菜单收口到 /platform 控制台，避免平台入口继续直落 tenant runtime
-  - include:
-      file: 178-backfill-platform-runtime-console-menus.yaml
       relativeToChangelogFile: true

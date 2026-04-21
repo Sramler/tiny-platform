@@ -120,6 +120,7 @@
 | `real/cross-tenant-a-to-b.spec.ts`          | isolated real-link | 以 tenant A 身份登录，由 tenant B 先创建真实调度资源，再验证 tenant A 直接读取其他租户资源会得到 404，伪造 tenant B 头会得到 403 `tenant_mismatch` | 使用两套真实 storageState 与真实 `/scheduling/**` API，不再停留在单身份 forged header；要求第二租户身份已 bootstrap |
 | `real/cross-tenant-b-to-a.spec.ts`          | isolated real-link | 以 tenant B 身份登录，由 tenant A 先创建真实调度资源，再验证 tenant B 直接读取其他租户资源会得到 404，伪造 tenant A 头会得到 403 `tenant_mismatch` | 使用两套真实 storageState 与真实 `/scheduling/**` API，覆盖反向跨租户拒绝路径；要求第二租户身份已 bootstrap |
 | `real/security-mfa-flow.spec.ts`           | isolated real-link | 在已有 storageState 登录态基础上，通过 `/self/security` 与 `/self/security/totp/*` 真实接口获取安全状态和 TOTP 预绑定信息；当前未覆盖从 `/login` 开始的完整 MFA 链路，断言相对宽松 | 仅读取安全状态与预绑定信息，不做绑定/解绑动作；依赖由 `real.global.setup.ts` 生成的主自动化身份 storageState |
+| `real/tenant-create-wizard.spec.ts`        | isolated real-link | 平台管理员从 `/system/tenant` 走租户初始化向导真实链路：成功创建、precheck 阻断、结果页治理入口 section 聚焦 | 使用 `chromium-platform-admin`（`e2e/.auth/platform-admin-user.json`）；不 mock `/sys/tenants*` / `/platform/tenants/:id` 链路 |
 
 > 以上 real-link spec 均只在真实后端 + 真实 OIDC + 真实多租户过滤器基础上运行，不使用 `page.route()` 拦截 first-party 业务 API。
 

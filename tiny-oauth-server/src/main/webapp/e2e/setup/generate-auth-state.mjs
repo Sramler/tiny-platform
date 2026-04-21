@@ -238,6 +238,77 @@ async function waitForOidcIdentity(page) {
   }, { timeout: 90_000 })
 }
 
+function tryGetOrigin(url) {
+  try {
+    return new URL(url).origin
+  } catch {
+    return null
+  }
+}
+
+async function readPageDiagnostics(page) {
+  try {
+    return await page.evaluate(() => {
+      const localStorageKeys = []
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const key = localStorage.key(index)
+        if (key) {
+          localStorageKeys.push(key)
+        }
+      }
+      const sessionStorageKeys = []
+      for (let index = 0; index < sessionStorage.length; index += 1) {
+        const key = sessionStorage.key(index)
+        if (key) {
+          sessionStorageKeys.push(key)
+        }
+      }
+      return {
+        href: window.location.href,
+        title: document.title,
+        bodyText: document.body?.innerText?.slice(0, 400) ?? '',
+        localStorageKeys,
+        sessionStorageKeys,
+        persistentLogs: localStorage.getItem('app_debug_logs'),
+      }
+    })
+  } catch (error) {
+    return {
+      href: page.url(),
+      title: '',
+      bodyText: '',
+      localStorageKeys: [],
+      sessionStorageKeys: [],
+      persistentLogs: null,
+      evaluationError: error instanceof Error ? error.message : String(error),
+    }
+  }
+}
+
+async function assertExpectedFrontendOrigin(page, phase) {
+  const currentUrl = page.url()
+  const currentOrigin = tryGetOrigin(currentUrl)
+  const expectedOrigin = tryGetOrigin(frontendBaseURL)
+  if (!currentOrigin || !expectedOrigin || currentOrigin === expectedOrigin) {
+    return
+  }
+
+  const diagnostics = await readPageDiagnostics(page)
+  throw new Error(
+    [
+      `generate-auth-state (${phase}): 浏览器当前已落在 ${currentOrigin}，但 E2E_FRONTEND_BASE_URL 期望 ${expectedOrigin}。`,
+      '这通常表示当前复用的 oauth-server 仍按旧的 E2E_FRONTEND_BASE_URL / dev 默认值（常见是 http://localhost:5173）做前端重定向，导致登录后 storageState 被写到错误 origin，后续 real-link 用例无法复用。',
+      `currentUrl=${currentUrl}`,
+      `title=${diagnostics.title}`,
+      `body=${diagnostics.bodyText}`,
+      `localStorageKeys=${diagnostics.localStorageKeys.join(',')}`,
+      `sessionStorageKeys=${diagnostics.sessionStorageKeys.join(',')}`,
+      `app_debug_logs=${diagnostics.persistentLogs ?? 'null'}`,
+      '处理建议：停止已运行的 oauth-server 后让 Playwright webServer 用当前 E2E_FRONTEND_BASE_URL 重启后端，或保证实际前端就运行在后端当前回跳的 origin 上。',
+    ].join('\n'),
+  )
+}
+
 async function main() {
   const browser = await chromium.launch({ headless: true })
   const context = await browser.newContext()
@@ -245,18 +316,28 @@ async function main() {
 
   try {
     await page.addInitScript(
-      ({ seedTenantCode }) => {
-        window.localStorage.setItem('app_tenant_code', seedTenantCode)
+      ({ seedTenantCode, seedLoginMode }) => {
+        window.localStorage.setItem('app_login_mode', seedLoginMode)
+        if (seedLoginMode === 'TENANT') {
+          window.localStorage.setItem('app_tenant_code', seedTenantCode)
+        } else {
+          window.localStorage.removeItem('app_tenant_code')
+        }
         window.localStorage.removeItem('app_active_tenant_id')
         window.localStorage.setItem('sider-collapsed', 'false')
       },
-      { seedTenantCode: tenantCode }
+      { seedTenantCode: tenantCode, seedLoginMode: loginMode }
     )
 
     await page.goto(`${frontendBaseURL}/login?redirect=${encodeURIComponent(landingPath)}`)
     await page.getByRole('heading', { name: '欢迎登录' }).waitFor({ timeout: 90_000 })
 
     if (loginMode === 'PLATFORM') {
+      await page.evaluate(() => {
+        window.localStorage.setItem('app_login_mode', 'PLATFORM')
+        window.localStorage.removeItem('app_tenant_code')
+        window.localStorage.removeItem('app_active_tenant_id')
+      })
       await page.getByRole('button', { name: '平台登录' }).click()
       await page.getByLabel('租户编码').waitFor({ state: 'detached', timeout: 10_000 }).catch(() => {})
     } else {
@@ -267,6 +348,13 @@ async function main() {
 
     await page.getByLabel('用户名').fill(username)
     await page.getByLabel('密码').fill(password)
+    if (loginMode === 'PLATFORM') {
+      await page.evaluate(() => {
+        window.localStorage.setItem('app_login_mode', 'PLATFORM')
+        window.localStorage.removeItem('app_tenant_code')
+        window.localStorage.removeItem('app_active_tenant_id')
+      })
+    }
     await page.getByRole('button', { name: loginMode === 'PLATFORM' ? '登录平台' : '登录租户' }).click()
 
     await page.waitForURL(/\/(callback|self\/security\/totp-(bind|verify)|OIDCDebug)/, {
@@ -290,7 +378,26 @@ async function main() {
       timeout: 90_000,
     })
 
-    await waitForOidcIdentity(page)
+    await assertExpectedFrontendOrigin(page, 'post-login-redirect')
+
+    try {
+      await waitForOidcIdentity(page)
+    } catch (error) {
+      const diagnostics = await readPageDiagnostics(page)
+      throw new Error(
+        [
+          error instanceof Error ? error.message : String(error),
+          `generate-auth-state: 等待 oidc.user:* 超时。`,
+          `currentUrl=${page.url()}`,
+          `expectedFrontendBaseURL=${frontendBaseURL}`,
+          `title=${diagnostics.title}`,
+          `body=${diagnostics.bodyText}`,
+          `localStorageKeys=${diagnostics.localStorageKeys.join(',')}`,
+          `sessionStorageKeys=${diagnostics.sessionStorageKeys.join(',')}`,
+          `app_debug_logs=${diagnostics.persistentLogs ?? 'null'}`,
+        ].join('\n'),
+      )
+    }
     await syncActiveTenantIdBeforeSave(page, backendBaseURL)
 
     if (!page.url().includes(landingPath)) {
@@ -301,6 +408,7 @@ async function main() {
         // 某些租户未初始化菜单资源时，/OIDCDebug 会退化到“菜单为空”的壳页；此时只要浏览器中已有真实 OIDC 登录态即可持久化 storageState。
         await waitForOidcIdentity(page)
       }
+      await assertExpectedFrontendOrigin(page, 'landing-page-recovery')
       await syncActiveTenantIdBeforeSave(page, backendBaseURL)
     }
 

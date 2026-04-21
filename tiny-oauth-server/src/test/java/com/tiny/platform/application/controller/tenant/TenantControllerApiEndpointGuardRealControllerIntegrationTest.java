@@ -22,6 +22,7 @@ import com.tiny.platform.infrastructure.auth.user.repository.TenantUserRepositor
 import com.tiny.platform.infrastructure.menu.repository.MenuEntryRepository;
 import com.tiny.platform.infrastructure.menu.repository.MenuPermissionRequirementRepository;
 import com.tiny.platform.infrastructure.tenant.dto.TenantResponseDto;
+import com.tiny.platform.infrastructure.tenant.dto.TenantPrecheckResponseDto;
 import com.tiny.platform.infrastructure.tenant.service.PlatformTemplateDiffResult;
 import com.tiny.platform.infrastructure.tenant.service.TenantService;
 import com.tiny.platform.core.oauth.tenant.TenantLifecycleAccessGuard;
@@ -205,14 +206,86 @@ class TenantControllerApiEndpointGuardRealControllerIntegrationTest {
     }
 
     private static CarrierPermissionRequirementRow requirementRow(boolean permissionEnabled) {
+        return requirementRow(API_ENDPOINT_ID, permissionEnabled, REQUIRED_AUTH);
+    }
+
+    private static CarrierPermissionRequirementRow requirementRow(long carrierId, boolean permissionEnabled) {
+        return requirementRow(carrierId, permissionEnabled, REQUIRED_AUTH);
+    }
+
+    private static CarrierPermissionRequirementRow requirementRow(long carrierId, boolean permissionEnabled, String permissionCode) {
         CarrierPermissionRequirementRow row = Mockito.mock(CarrierPermissionRequirementRow.class);
-        Mockito.when(row.getCarrierId()).thenReturn(API_ENDPOINT_ID);
+        Mockito.when(row.getCarrierId()).thenReturn(carrierId);
         Mockito.when(row.getRequirementGroup()).thenReturn(0);
         Mockito.when(row.getSortOrder()).thenReturn(1);
-        Mockito.when(row.getPermissionCode()).thenReturn(REQUIRED_AUTH);
+        Mockito.when(row.getPermissionCode()).thenReturn(permissionCode);
         Mockito.when(row.getNegated()).thenReturn(false);
         Mockito.when(row.getPermissionEnabled()).thenReturn(permissionEnabled);
         return row;
+    }
+
+    @Test
+    void tenant_realTenantController_precheck_allow_shouldReturn200_whenRequirementSatisfied_staticUri() throws Exception {
+        TenantPrecheckResponseDto precheck = new TenantPrecheckResponseDto();
+        precheck.setOk(true);
+        when(tenantService.precheckCreate(any())).thenReturn(precheck);
+
+        ApiEndpointEntry precheckEntry = new ApiEndpointEntry();
+        precheckEntry.setId(81104L);
+        precheckEntry.setTenantId(null);
+        precheckEntry.setResourceLevel("PLATFORM");
+        precheckEntry.setName("tenant-precheck-post");
+        precheckEntry.setTitle("tenant precheck");
+        precheckEntry.setUri("/sys/tenants/precheck");
+        precheckEntry.setMethod("POST");
+        precheckEntry.setPermission(REQUIRED_AUTH);
+        precheckEntry.setRequiredPermissionId(REQUIRED_PERMISSION_ID);
+        precheckEntry.setEnabled(true);
+        when(apiEndpointEntryRepository.findAll(
+            Mockito.<Specification<ApiEndpointEntry>>any(),
+            Mockito.<Sort>any()
+        )).thenReturn(List.of(precheckEntry));
+        CarrierPermissionRequirementRow precheckAllowRow = requirementRow(81104L, true, "system:tenant:create");
+        when(apiEndpointPermissionRequirementRepository.findRowsByApiEndpointIdIn(anyCollection()))
+            .thenReturn(List.of(precheckAllowRow));
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/sys/tenants/precheck")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}")
+                .with(user("platform-admin").authorities(new SimpleGrantedAuthority("system:tenant:create"))))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void tenant_realTenantController_precheck_deny_shouldReturn403_whenPermissionDisabled_staticUri() throws Exception {
+        TenantPrecheckResponseDto precheck = new TenantPrecheckResponseDto();
+        precheck.setOk(true);
+        when(tenantService.precheckCreate(any())).thenReturn(precheck);
+
+        ApiEndpointEntry precheckEntry = new ApiEndpointEntry();
+        precheckEntry.setId(81105L);
+        precheckEntry.setTenantId(null);
+        precheckEntry.setResourceLevel("PLATFORM");
+        precheckEntry.setName("tenant-precheck-post");
+        precheckEntry.setTitle("tenant precheck");
+        precheckEntry.setUri("/sys/tenants/precheck");
+        precheckEntry.setMethod("POST");
+        precheckEntry.setPermission(REQUIRED_AUTH);
+        precheckEntry.setRequiredPermissionId(REQUIRED_PERMISSION_ID);
+        precheckEntry.setEnabled(true);
+        when(apiEndpointEntryRepository.findAll(
+            Mockito.<Specification<ApiEndpointEntry>>any(),
+            Mockito.<Sort>any()
+        )).thenReturn(List.of(precheckEntry));
+        CarrierPermissionRequirementRow precheckDenyRow = requirementRow(81105L, false, "system:tenant:create");
+        when(apiEndpointPermissionRequirementRepository.findRowsByApiEndpointIdIn(anyCollection()))
+            .thenReturn(List.of(precheckDenyRow));
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/sys/tenants/precheck")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}")
+                .with(user("platform-admin").authorities(new SimpleGrantedAuthority("system:tenant:create"))))
+            .andExpect(status().isForbidden());
     }
 
     @SpringBootConfiguration

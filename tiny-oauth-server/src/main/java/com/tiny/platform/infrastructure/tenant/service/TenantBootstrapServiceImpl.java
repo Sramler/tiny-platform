@@ -22,10 +22,12 @@ import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -105,9 +107,9 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
             throw new IllegalArgumentException("tenantId is required");
         }
         PlatformTemplateSnapshot platformTemplateSnapshot = assertPlatformTemplatesReadyForRead();
-        List<Resource> platformResources = platformTemplateSnapshot.resources();
+        List<Resource> platformResources = filterEffectiveResources(platformTemplateSnapshot.resources());
 
-        List<Resource> tenantResources = loadCarrierTemplateSnapshot(tenantId, "TENANT");
+        List<Resource> tenantResources = filterEffectiveResources(loadCarrierTemplateSnapshot(tenantId, "TENANT"));
         Map<String, Resource> platformByKey = platformResources.stream()
             .collect(Collectors.toMap(
                 this::stableCarrierKey,
@@ -202,6 +204,25 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
         return ensurePlatformTemplatesInitialized(null);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public TenantBootstrapPreview previewBootstrapForCreate() {
+        List<Resource> platformResources = loadCarrierTemplateSnapshot(null, RESOURCE_LEVEL_PLATFORM);
+        List<Role> platformRoles = roleRepository.findByTenantIdIsNullOrderByIdAsc();
+        try {
+            assertPlatformTemplateSnapshot(platformResources, platformRoles);
+        } catch (IllegalStateException ex) {
+            return TenantBootstrapPreview.blocked(ex.getMessage());
+        }
+        if (!platformResources.isEmpty() && !platformRoles.isEmpty()) {
+            return buildBootstrapPreview(platformResources, platformRoles, true, false, null);
+        }
+        if (!platformResources.isEmpty() || !platformRoles.isEmpty()) {
+            return TenantBootstrapPreview.blocked("平台模板数据不完整，请先修复 tenant_id IS NULL 的角色/资源模板后再创建新租户");
+        }
+        return previewHistoricalBackfillSource();
+    }
+
     private PlatformTemplateSnapshot assertPlatformTemplatesReadyForRead() {
         List<Resource> platformResources = loadCarrierTemplateSnapshot(null, RESOURCE_LEVEL_PLATFORM);
         List<Role> platformRoles = roleRepository.findByTenantIdIsNullOrderByIdAsc();
@@ -233,6 +254,34 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
             platformRoles,
             roleRepository.findGrantedRoleCarrierPairsForPlatformTemplate()
         );
+    }
+
+    private TenantBootstrapPreview previewHistoricalBackfillSource() {
+        String sourceCode = platformTenantProperties.getPlatformTenantCode();
+        if (!StringUtils.hasText(sourceCode)) {
+            return TenantBootstrapPreview.blocked(
+                BOOTSTRAP_HISTORICAL_BACKFILL_PREFIX
+                    + " 平台模板（tenant_id IS NULL 角色与载体）缺失，且未显式配置 tiny.platform.tenant.platform-tenant-code，"
+                    + "无法从历史租户回填。请配置后重试，或由平台身份执行 POST /sys/tenants/platform-template/initialize。"
+            );
+        }
+        Optional<Tenant> sourceTenant = tenantRepository.findByCode(sourceCode);
+        if (sourceTenant.isEmpty()) {
+            return TenantBootstrapPreview.blocked(
+                BOOTSTRAP_HISTORICAL_BACKFILL_PREFIX
+                    + " 平台模板缺失，且 platform-tenant-code 指向的租户不存在（code=" + sourceCode + "）。"
+            );
+        }
+
+        List<Resource> sourceResources = loadCarrierTemplateSnapshot(sourceTenant.get().getId(), "TENANT");
+        List<Role> sourceRoles = roleRepository.findByTenantIdOrderByIdAsc(sourceTenant.get().getId());
+        if (sourceResources.isEmpty() || sourceRoles.isEmpty()) {
+            return TenantBootstrapPreview.blocked(
+                BOOTSTRAP_HISTORICAL_BACKFILL_PREFIX + " platform-tenant-code 来源租户未提供可复制的角色与载体。"
+            );
+        }
+        return buildBootstrapPreview(sourceResources, sourceRoles, false, true,
+            "当前 tenant_id IS NULL 平台模板缺失；正式创建时会基于已配置的 platform-tenant-code 做一次性历史回填。");
     }
 
     /**
@@ -331,13 +380,9 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
     }
 
     private ResourceCloneResult cloneResourcesFromSourceList(List<Resource> allSourceResources, Long targetTenantId, String targetResourceLevel) {
-        Set<Long> skippedSourceResourceIds = allSourceResources.stream()
-            .filter(PlatformControlPlaneResourcePolicy::isPlatformOnlyResource)
-            .map(Resource::getId)
-            .filter(Objects::nonNull)
-            .collect(Collectors.toSet());
+        Set<Long> skippedSourceResourceIds = collectSkippedSourceResourceIds(allSourceResources);
         List<Resource> sourceResources = allSourceResources.stream()
-            .filter(resource -> !PlatformControlPlaneResourcePolicy.isPlatformOnlyResource(resource))
+            .filter(resource -> resource != null && !skippedSourceResourceIds.contains(resource.getId()))
             .toList();
         if (sourceResources.isEmpty()) {
             return new ResourceCloneResult(Map.of(), skippedSourceResourceIds);
@@ -429,6 +474,7 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
         if (!clonedApiEndpoints.isEmpty()) {
             apiEndpointEntryRepository.saveAll(clonedApiEndpoints);
         }
+        flushClonedResources();
 
         boolean hasParentReference = false;
         for (Resource source : sourceResources) {
@@ -465,6 +511,7 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
             if (!clonedUiActions.isEmpty()) {
                 uiActionEntryRepository.saveAll(clonedUiActions);
             }
+            flushClonedResources();
         }
 
         Map<Long, Long> resourceIdMapping = new LinkedHashMap<>();
@@ -489,6 +536,14 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
             resourceIdMapping.put(source.getId(), clonedId);
         }
         return new ResourceCloneResult(resourceIdMapping, skippedSourceResourceIds);
+    }
+
+    // ResourcePermissionBindingService uses JdbcTemplate, so newly cloned carriers must be flushed
+    // out of the JPA persistence context before the native backfill/update SQL can see them.
+    private void flushClonedResources() {
+        menuEntryRepository.flush();
+        uiActionEntryRepository.flush();
+        apiEndpointEntryRepository.flush();
     }
 
     private void cloneRolesAndRelationsFromLists(List<Role> sourceRoles, List<RoleResourceRelationProjection> relations,
@@ -647,6 +702,80 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
         }
     }
 
+    private TenantBootstrapPreview buildBootstrapPreview(List<Resource> resources,
+                                                         List<Role> roles,
+                                                         boolean currentPlatformTemplatePresent,
+                                                         boolean requiresHistoricalBackfill,
+                                                         String message) {
+        List<Resource> effectiveResources = filterEffectiveResources(resources);
+        long menuCount = effectiveResources.stream()
+            .filter(resource -> resource.getType() == ResourceType.MENU || resource.getType() == ResourceType.DIRECTORY)
+            .count();
+        long uiActionCount = effectiveResources.stream()
+            .filter(resource -> resource.getType() == ResourceType.BUTTON)
+            .count();
+        long apiEndpointCount = effectiveResources.stream()
+            .filter(resource -> resource.getType() == ResourceType.API)
+            .count();
+        long permissionCount = effectiveResources.stream()
+            .map(Resource::getPermission)
+            .filter(StringUtils::hasText)
+            .map(String::trim)
+            .distinct()
+            .count();
+        return new TenantBootstrapPreview(
+            true,
+            currentPlatformTemplatePresent,
+            requiresHistoricalBackfill,
+            message,
+            roles == null ? 0L : roles.size(),
+            permissionCount,
+            menuCount,
+            uiActionCount,
+            apiEndpointCount
+        );
+    }
+
+    private List<Resource> filterEffectiveResources(List<Resource> resources) {
+        if (resources == null || resources.isEmpty()) {
+            return List.of();
+        }
+        Set<Long> skippedSourceResourceIds = collectSkippedSourceResourceIds(resources);
+        return resources.stream()
+            .filter(Objects::nonNull)
+            .filter(resource -> !skippedSourceResourceIds.contains(resource.getId()))
+            .toList();
+    }
+
+    private Set<Long> collectSkippedSourceResourceIds(List<Resource> resources) {
+        if (resources == null || resources.isEmpty()) {
+            return Set.of();
+        }
+        Set<Long> skippedSourceResourceIds = resources.stream()
+            .filter(Objects::nonNull)
+            .filter(PlatformControlPlaneResourcePolicy::isPlatformOnlyResource)
+            .map(Resource::getId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (skippedSourceResourceIds.isEmpty()) {
+            return skippedSourceResourceIds;
+        }
+        boolean changed = true;
+        while (changed) {
+            changed = false;
+            for (Resource resource : resources) {
+                if (resource == null || resource.getId() == null || resource.getParentId() == null) {
+                    continue;
+                }
+                if (!skippedSourceResourceIds.contains(resource.getId())
+                    && skippedSourceResourceIds.contains(resource.getParentId())) {
+                    changed = skippedSourceResourceIds.add(resource.getId()) || changed;
+                }
+            }
+        }
+        return skippedSourceResourceIds;
+    }
+
     private List<Resource> loadCarrierTemplateSnapshot(Long tenantId, String resourceLevel) {
         List<CarrierTemplateResourceSnapshotView> snapshotViews =
             carrierProjectionRepository.findTemplateSnapshotViewsByScope(tenantId, resourceLevel);
@@ -692,10 +821,10 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
 
     private Map<String, PlatformTemplateDiffResult.FieldDiff> diffFields(Resource platform, Resource tenant) {
         Map<String, PlatformTemplateDiffResult.FieldDiff> diffs = new LinkedHashMap<>();
-        if (!Objects.equals(platform.getRequiredPermissionId(), tenant.getRequiredPermissionId())) {
+        if ((platform.getRequiredPermissionId() == null) != (tenant.getRequiredPermissionId() == null)) {
             diffs.put("requiredPermissionId", new PlatformTemplateDiffResult.FieldDiff(
-                String.valueOf(platform.getRequiredPermissionId()),
-                String.valueOf(tenant.getRequiredPermissionId())
+                String.valueOf(platform.getRequiredPermissionId() != null),
+                String.valueOf(tenant.getRequiredPermissionId() != null)
             ));
         }
         // common fields

@@ -37,26 +37,6 @@
     <a-form-item label="联系电话" name="contactPhone">
       <a-input v-model:value="form.contactPhone" />
     </a-form-item>
-    <template v-if="isCreateMode">
-      <a-form-item label="管理员用户名" name="initialAdminUsername" required>
-        <a-input v-model:value="form.initialAdminUsername" placeholder="请输入初始管理员用户名" />
-      </a-form-item>
-      <a-form-item label="管理员昵称" name="initialAdminNickname">
-        <a-input v-model:value="form.initialAdminNickname" placeholder="默认：租户管理员" />
-      </a-form-item>
-      <a-form-item label="管理员邮箱" name="initialAdminEmail">
-        <a-input v-model:value="form.initialAdminEmail" placeholder="请输入管理员邮箱" />
-      </a-form-item>
-      <a-form-item label="管理员手机" name="initialAdminPhone">
-        <a-input v-model:value="form.initialAdminPhone" placeholder="请输入管理员手机号" />
-      </a-form-item>
-      <a-form-item label="初始密码" name="initialAdminPassword" required>
-        <a-input-password v-model:value="form.initialAdminPassword" placeholder="请输入初始密码" />
-      </a-form-item>
-      <a-form-item label="确认密码" name="initialAdminConfirmPassword" required>
-        <a-input-password v-model:value="form.initialAdminConfirmPassword" placeholder="请再次输入密码" />
-      </a-form-item>
-    </template>
     <a-form-item label="启用" name="enabled">
       <a-switch v-model:checked="form.enabled" />
     </a-form-item>
@@ -72,7 +52,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { ref, watch } from 'vue'
 import { message } from 'ant-design-vue'
 import type { FormInstance } from 'ant-design-vue'
 import type { Rule } from 'ant-design-vue/es/form'
@@ -89,23 +69,15 @@ interface TenantFormModel {
   contactName: string
   contactEmail: string
   contactPhone: string
-  initialAdminUsername: string
-  initialAdminNickname: string
-  initialAdminEmail: string
-  initialAdminPhone: string
-  initialAdminPassword: string
-  initialAdminConfirmPassword: string
   enabled: boolean
   remark: string
 }
 
 const props = defineProps<{
-  mode: 'create' | 'edit'
   tenantData?: Partial<TenantFormModel> | null
 }>()
 
 const emit = defineEmits(['submit', 'cancel'])
-const isCreateMode = computed(() => props.mode === 'create')
 
 const form = ref<TenantFormModel>({
   id: '',
@@ -119,12 +91,6 @@ const form = ref<TenantFormModel>({
   contactName: '',
   contactEmail: '',
   contactPhone: '',
-  initialAdminUsername: '',
-  initialAdminNickname: '租户管理员',
-  initialAdminEmail: '',
-  initialAdminPhone: '',
-  initialAdminPassword: '',
-  initialAdminConfirmPassword: '',
   enabled: true,
   remark: ''
 })
@@ -147,36 +113,6 @@ const rules: Record<string, Rule[]> = {
   contactEmail: [
     { type: 'email', message: '邮箱格式不正确', trigger: 'blur' }
   ],
-  initialAdminUsername: [
-    { required: true, message: '管理员用户名不能为空', trigger: 'blur' },
-    { min: 3, max: 20, message: '用户名长度3-20字符', trigger: 'blur' },
-    { pattern: /^[a-zA-Z0-9_]+$/, message: '用户名只能包含字母、数字和下划线', trigger: 'blur' }
-  ],
-  initialAdminNickname: [
-    { max: 50, message: '昵称长度最多50字符', trigger: 'blur' }
-  ],
-  initialAdminEmail: [
-    { type: 'email', message: '管理员邮箱格式不正确', trigger: 'blur' }
-  ],
-  initialAdminPhone: [
-    { pattern: /^(1[3-9]\d{9})?$/, message: '管理员手机号格式不正确', trigger: 'blur' }
-  ],
-  initialAdminPassword: [
-    { required: true, message: '初始密码不能为空', trigger: 'blur' },
-    { min: 6, max: 20, message: '密码长度6-20字符', trigger: 'blur' }
-  ],
-  initialAdminConfirmPassword: [
-    { required: true, message: '确认密码不能为空', trigger: 'blur' },
-    {
-      validator: async (_rule: unknown, value: string) => {
-        if (value !== form.value.initialAdminPassword) {
-          return Promise.reject(new Error('两次输入的密码不一致'))
-        }
-        return Promise.resolve()
-      },
-      trigger: 'blur'
-    }
-  ]
 }
 
 const formRef = ref<FormInstance>()
@@ -195,12 +131,6 @@ watch(() => props.tenantData, (val) => {
       contactName: val.contactName || '',
       contactEmail: val.contactEmail || '',
       contactPhone: val.contactPhone || '',
-      initialAdminUsername: '',
-      initialAdminNickname: '租户管理员',
-      initialAdminEmail: '',
-      initialAdminPhone: '',
-      initialAdminPassword: '',
-      initialAdminConfirmPassword: '',
       enabled: val.enabled !== false,
       remark: val.remark || ''
     }
@@ -217,12 +147,6 @@ watch(() => props.tenantData, (val) => {
       contactName: '',
       contactEmail: '',
       contactPhone: '',
-      initialAdminUsername: '',
-      initialAdminNickname: '租户管理员',
-      initialAdminEmail: '',
-      initialAdminPhone: '',
-      initialAdminPassword: '',
-      initialAdminConfirmPassword: '',
       enabled: true,
       remark: ''
     }

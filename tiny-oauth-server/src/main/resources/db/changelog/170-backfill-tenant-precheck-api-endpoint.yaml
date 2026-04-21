@@ -1,0 +1,57 @@
+databaseChangeLog:
+  - changeSet:
+      id: 170-backfill-tenant-precheck-api-endpoint
+      author: codex
+      comment: 补齐 POST /sys/tenants/precheck 的 PLATFORM api_endpoint requirement，避免统一守卫 fail-closed 误拦
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: api_endpoint
+            - tableExists:
+                tableName: api_endpoint_permission_requirement
+            - tableExists:
+                tableName: permission
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT INTO api_endpoint (
+                tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at
+              )
+              SELECT
+                NULL, 'PLATFORM', 'tenant-precheck-post', '租户初始化预检查',
+                '/sys/tenants/precheck', 'POST', 'system:tenant:create', p.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NULL
+                AND p.permission_code = 'system:tenant:create'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM api_endpoint e
+                  WHERE e.tenant_id IS NULL
+                    AND e.uri = '/sys/tenants/precheck'
+                    AND e.method = 'POST'
+                );
+
+              INSERT IGNORE INTO api_endpoint_permission_requirement (
+                tenant_id, api_endpoint_id, requirement_group, sort_order, permission_id, negated, created_at, updated_at
+              )
+              SELECT
+                e.tenant_id,
+                e.id,
+                0,
+                1,
+                e.required_permission_id,
+                0,
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP
+              FROM api_endpoint e
+              WHERE e.tenant_id IS NULL
+                AND e.uri = '/sys/tenants/precheck'
+                AND e.method = 'POST'
+                AND e.required_permission_id IS NOT NULL;

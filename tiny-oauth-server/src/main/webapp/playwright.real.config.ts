@@ -35,6 +35,45 @@ function readEnvOptional(names: string[]): string | undefined {
   return undefined
 }
 
+function hasCliFlag(flagName: string) {
+  return process.argv.includes(flagName) || process.argv.some((arg) => arg.startsWith(`${flagName}=`))
+}
+
+function readCliFlagValues(flagName: string) {
+  const values: string[] = []
+  for (let index = 0; index < process.argv.length; index += 1) {
+    const current = process.argv[index]
+    if (current === flagName) {
+      const next = process.argv[index + 1]
+      if (next && !next.startsWith('-')) {
+        values.push(next)
+      }
+      continue
+    }
+    if (current.startsWith(`${flagName}=`)) {
+      values.push(current.slice(flagName.length + 1))
+    }
+  }
+  return values
+}
+
+function shouldRequirePlatformAdminIdentity() {
+  const requestedPaths = process.argv.filter((arg) => arg.endsWith('.ts') || arg.includes('tenant-create-wizard'))
+  if (requestedPaths.some((arg) => arg.includes('tenant-create-wizard'))) {
+    return true
+  }
+
+  const requestedProjects = readCliFlagValues('--project')
+    .flatMap((value) => value.split(','))
+    .map((value) => value.trim())
+    .filter(Boolean)
+  if (requestedProjects.length > 0) {
+    return requestedProjects.includes('chromium-platform-admin')
+  }
+
+  return requestedPaths.length === 0
+}
+
 /**
  * Playwright 会用 E2E_FRONTEND_PORT 启动 Vite；若 .env.e2e.local 里仍写着 E2E_FRONTEND_BASE_URL=http://localhost:5173，
  * 会与动态端口冲突并误复用本机 5173（API 仍指向 9000，后端未就绪时出现 CSRF connection refused）。
@@ -67,6 +106,7 @@ const backendBaseURL = readEnv(['E2E_BACKEND_BASE_URL'], `http://localhost:${bac
 const authStatePath = path.resolve(webappRoot, 'e2e/.auth/scheduling-user.json')
 const secondaryAuthStatePath = path.resolve(webappRoot, 'e2e/.auth/tenant-b-user.json')
 const readonlyAuthStatePath = path.resolve(webappRoot, 'e2e/.auth/scheduling-readonly-user.json')
+const platformAdminAuthStatePath = path.resolve(webappRoot, 'e2e/.auth/platform-admin-user.json')
 const backendProfile = readEnv(['E2E_BACKEND_PROFILE'], 'dev')
 const dbHost = readEnv(['E2E_DB_HOST', 'E2E_MYSQL_HOST'], '127.0.0.1')
 const dbPort = readEnv(['E2E_DB_PORT', 'E2E_MYSQL_PORT'], '3306')
@@ -81,6 +121,24 @@ if (!skipRealSetup && !readEnvOptional(['E2E_PLATFORM_TENANT_CODE'])) {
   throw new Error(
     'playwright.real.config: real-link 需要显式 E2E_PLATFORM_TENANT_CODE（禁止静默 default）。请在 .env.e2e.local 或 CI secrets 中配置；仅跑 mock/跳过 globalSetup 时设 E2E_SKIP_REAL_SETUP=true。',
   )
+}
+
+if (!skipRealSetup && shouldRequirePlatformAdminIdentity()) {
+  const missing: string[] = []
+  if (!readEnvOptional(['E2E_PLATFORM_USERNAME'])) {
+    missing.push('E2E_PLATFORM_USERNAME')
+  }
+  if (!readEnvOptional(['E2E_PLATFORM_PASSWORD'])) {
+    missing.push('E2E_PLATFORM_PASSWORD')
+  }
+  if (!readEnvOptional(['E2E_PLATFORM_TOTP_SECRET']) && !readEnvOptional(['E2E_PLATFORM_TOTP_CODE'])) {
+    missing.push('E2E_PLATFORM_TOTP_SECRET or E2E_PLATFORM_TOTP_CODE')
+  }
+  if (missing.length > 0) {
+    throw new Error(
+      `playwright.real.config: chromium-platform-admin / tenant-create-wizard real-link 需要完整的平台自动化身份配置，缺少: ${missing.join(', ')}。否则 globalSetup 可能只留下空的 e2e/.auth/platform-admin-user.json，导致后续用例以未登录态失败。`,
+    )
+  }
 }
 
 export default defineConfig({
@@ -147,7 +205,7 @@ export default defineConfig({
       name: 'chromium',
       // 依赖主自动化身份 storageState 的 real-link 用例（调度、HeaderBar active-scope + silent renew 等）
       testMatch:
-        /real\/(?!mfa-login-flow|mfa-bind-flow|platform-vue-login|cross-tenant-a-to-b|cross-tenant-b-to-a|scheduling-rbac-readonly).*\.spec\.ts/,
+        /real\/(?!mfa-login-flow|mfa-bind-flow|platform-vue-login|cross-tenant-a-to-b|cross-tenant-b-to-a|scheduling-rbac-readonly|tenant-create-wizard).*\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
         storageState: authStatePath,
@@ -196,6 +254,15 @@ export default defineConfig({
       use: {
         ...devices['Desktop Chrome'],
         storageState: readonlyAuthStatePath,
+      },
+    },
+    {
+      name: 'chromium-platform-admin',
+      // 平台管理员租户治理 real-link（租户初始化向导等）。
+      testMatch: /real\/tenant-create-wizard\.spec\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        storageState: platformAdminAuthStatePath,
       },
     },
   ],

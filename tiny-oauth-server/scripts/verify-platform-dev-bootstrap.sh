@@ -47,6 +47,7 @@ cd "${ROOT_DIR}"
 
 LOCAL_ENV_SHELL="${LOCAL_ENV_SHELL:-${SHELL:-/bin/zsh}}"
 LOAD_LOGIN_SHELL_ENV="${LOAD_LOGIN_SHELL_ENV:-1}"
+WEBAPP_E2E_LOCAL="${ROOT_DIR}/tiny-oauth-server/src/main/webapp/.env.e2e.local"
 DB_HOST="${DB_HOST:-${E2E_DB_HOST:-127.0.0.1}}"
 DB_PORT="${DB_PORT:-${E2E_DB_PORT:-3306}}"
 DB_NAME="${DB_NAME:-${E2E_DB_NAME:-tiny_web}}"
@@ -62,6 +63,35 @@ TEMPLATE_WAIT_SEC="${TEMPLATE_WAIT_SEC:-120}"
 
 is_whitelisted_env_name() {
   [[ "$1" =~ ^[A-Z0-9_]+$ ]]
+}
+
+strip_wrapping_quotes() {
+  local value="$1"
+  if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+    value="${value:1:${#value}-2}"
+  elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
+    value="${value:1:${#value}-2}"
+  fi
+  printf '%s' "$value"
+}
+
+read_webapp_local_env() {
+  local name="$1"
+  local line raw
+  if [[ ! -f "${WEBAPP_E2E_LOCAL}" ]]; then
+    return 1
+  fi
+  line="$(grep -E "^${name}=" "${WEBAPP_E2E_LOCAL}" | tail -n 1 || true)"
+  if [[ -z "${line}" ]]; then
+    return 1
+  fi
+  raw="${line#*=}"
+  raw="${raw%$'\r'}"
+  raw="$(strip_wrapping_quotes "${raw}")"
+  if [[ -z "${raw//[[:space:]]/}" ]]; then
+    return 1
+  fi
+  printf '%s' "${raw}"
 }
 
 read_login_shell_env() {
@@ -132,6 +162,28 @@ hydrate_env_from_login_shell() {
 }
 
 hydrate_env_from_login_shell
+
+hydrate_env_from_webapp_local() {
+  local name value
+  local -a whitelist=(
+    E2E_FRONTEND_BASE_URL
+    E2E_FRONTEND_PORT
+    E2E_PLATFORM_TENANT_CODE
+    E2E_PLATFORM_USERNAME
+    E2E_PLATFORM_PASSWORD
+    E2E_PLATFORM_TOTP_SECRET
+  )
+  for name in "${whitelist[@]}"; do
+    if [[ -z "${!name:-}" ]]; then
+      value="$(read_webapp_local_env "${name}" || true)"
+      if [[ -n "${value}" ]]; then
+        export "${name}=${value}"
+      fi
+    fi
+  done
+}
+
+hydrate_env_from_webapp_local
 
 mysql_ping() {
   env MYSQL_PWD="${DB_PASSWORD}" "${MYSQL_BIN}" \
