@@ -656,3 +656,13 @@ databaseChangeLog:
   - include:
       file: 168-cleanup-legacy-platform-role-constraint-menu.yaml
       relativeToChangelogFile: true
+
+  # 补齐 PLATFORM 作用域租户管理页 ui_action carrier，恢复 platform_admin 的新建等运行时按钮
+  - include:
+      file: 169-backfill-platform-tenant-runtime-ui-actions.yaml
+      relativeToChangelogFile: true
+
+  # 补齐 POST /sys/tenants/precheck 的 api_endpoint requirement，避免统一守卫 fail-closed 误拦截
+  - include:
+      file: 170-backfill-tenant-precheck-api-endpoint.yaml
+      relativeToChangelogFile: true

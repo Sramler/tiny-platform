@@ -81,6 +81,37 @@ export type PlatformTemplateDiffResult = {
   diffs: PlatformTemplateEntryDiff[]
 }
 
+export type TenantPrecheckIssue = {
+  code: string
+  field: string
+  message: string
+}
+
+export type TenantInitializationSummary = {
+  tenantCode?: string
+  tenantName?: string
+  initialAdminUsername?: string
+  platformTemplateReady: boolean
+  defaultRoleCount: number
+  defaultMenuCount: number
+  defaultPermissionCount: number
+  defaultUiActionCount: number
+  defaultApiEndpointCount: number
+}
+
+export type TenantPrecheckResponse = {
+  ok: boolean
+  blockingIssues: TenantPrecheckIssue[]
+  warnings: TenantPrecheckIssue[]
+  initializationSummary?: TenantInitializationSummary
+}
+
+export type TenantCreateResponse = {
+  id?: number
+  code?: string
+  name?: string
+}
+
 export function tenantList(params: TenantListParams) {
   return request.get<PageResponse<Tenant>>('/sys/tenants', { params })
 }
@@ -98,12 +129,16 @@ export function diffTenantPlatformTemplate(id: string | number) {
 }
 
 export function createTenant(data: Partial<Tenant> & Record<string, unknown>) {
-  return request.post('/sys/tenants', data, {
+  return request.post<TenantCreateResponse>('/sys/tenants', data, {
     idempotency: {
       scope: 'sys-tenants:create',
       payload: data,
     },
   })
+}
+
+export function precheckTenantCreate(data: Partial<Tenant> & Record<string, unknown>) {
+  return request.post<TenantPrecheckResponse>('/sys/tenants/precheck', data)
 }
 
 export function updateTenant(id: string | number, data: Partial<Tenant> & Record<string, unknown>) {

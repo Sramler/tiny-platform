@@ -175,7 +175,7 @@
 - **real-link auth-state**
   - auth-state 生成器必须显式区分 platform login 与 tenant login，并用单测锁住 tenant code、TOTP secret/code、输出路径不串用。
   - 当 primary tenant 与 platform tenant 同值时，必须显式派生租户态 code，不能让 tenant real-link 误落入 platform scope。
-  - **CARD-13E**：real-link 工具链须显式 **`E2E_PLATFORM_TENANT_CODE`**（`playwright.real.config.ts` 在未 `E2E_SKIP_REAL_SETUP` 时加载即校验；`real.global.setup.ts` 主链 `requireRealLinkPlatformTenantCode`）；`verify-platform-dev-bootstrap.sh` → `ensure-platform-admin.sh` 须能从 **`PLATFORM_TENANT_CODE` 或 `E2E_PLATFORM_TENANT_CODE`** 得到平台租户 code，禁止隐式 `default`。
+  - **CARD-13E**：real-link 工具链须显式 **`E2E_PLATFORM_TENANT_CODE`**（`playwright.real.config.ts` 在未 `E2E_SKIP_REAL_SETUP` 时加载即校验；`real.global.setup.ts` 主链 `requireRealLinkPlatformTenantCode`）；`verify-platform-dev-bootstrap.sh` → `ensure-platform-admin.sh` 须能从 **`PLATFORM_TENANT_CODE` 或 `E2E_PLATFORM_TENANT_CODE`** 得到平台租户 code，禁止隐式 `default`。当前态补充：`verify-platform-dev-bootstrap.sh` 会在缺省时读取 `src/main/webapp/.env.e2e.local` 的 `E2E_PLATFORM_*` / `E2E_FRONTEND_BASE_URL`；`ensure-platform-admin.sh` 若未显式传 `PLATFORM_ADMIN_*`，会优先对齐 `E2E_PLATFORM_USERNAME` / `E2E_PLATFORM_PASSWORD`，避免平台自动化身份与本地 real-link 配置漂移。
 
 - **E2E 断言稳定性**
   - 对 active-scope refresh、OIDC silent renew、菜单懒加载、壳页跳转等链路，优先断言 durable evidence：真实网络、稳定页面态、后续 API 200、modal 关闭、trace/storageState 收敛。
@@ -219,6 +219,7 @@
   - 当前已固定的最小真实链路证据：
     - `tiny-oauth-server/src/main/webapp/e2e/real/platform-vue-login.spec.ts`
     - `tiny-oauth-server/src/main/webapp/e2e/real/mfa-login-flow.spec.ts`
+  - `tiny-oauth-server/src/main/webapp/e2e/real/tenant-create-wizard.spec.ts`（平台管理员向导创建租户主链）
 
 ## 2. tiny-platform 测试分层
 

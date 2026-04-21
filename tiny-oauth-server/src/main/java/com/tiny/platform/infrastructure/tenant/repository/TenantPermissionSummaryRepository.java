@@ -74,4 +74,5 @@ public interface TenantPermissionSummaryRepository extends Repository<com.tiny.p
         nativeQuery = true
     )
     TenantPermissionSummaryProjection summarizeByTenantId(@Param("tenantId") Long tenantId);
+
 }

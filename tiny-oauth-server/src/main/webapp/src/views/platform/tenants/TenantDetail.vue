@@ -2,13 +2,44 @@
   <div class="content-container">
     <div class="content-card">
       <div class="toolbar">
-        <a-button type="link" @click="goBack">{{ backButtonLabel }}</a-button>
+        <a-button type="link" data-test="tenant-detail-go-back" @click="goBack">{{ backButtonLabel }}</a-button>
         <a-button type="primary" ghost @click="reload">刷新</a-button>
       </div>
 
       <a-spin :spinning="loading">
         <template v-if="tenant">
-          <div class="section">
+          <div class="section-nav">
+            <a-button
+              data-test="tenant-detail-nav-overview"
+              :type="activeSection === 'overview' ? 'primary' : 'default'"
+              @click="focusSection('overview')"
+            >
+              租户详情
+            </a-button>
+            <a-button
+              class="ml-2"
+              data-test="tenant-detail-nav-permission-summary"
+              :type="activeSection === 'permission-summary' ? 'primary' : 'default'"
+              @click="focusSection('permission-summary')"
+            >
+              权限摘要
+            </a-button>
+            <a-button
+              class="ml-2"
+              data-test="tenant-detail-nav-template-diff"
+              :type="activeSection === 'template-diff' ? 'primary' : 'default'"
+              @click="focusSection('template-diff')"
+            >
+              模板差异
+            </a-button>
+          </div>
+
+          <div
+            ref="overviewSectionRef"
+            class="section"
+            :class="{ 'section-focused': activeSection === 'overview' }"
+            data-test="section-overview"
+          >
             <h3>基础信息</h3>
             <div class="grid">
               <div><span class="label">租户编码</span><span>{{ tenant.code || '-' }}</span></div>
@@ -32,7 +63,12 @@
             </div>
           </div>
 
-          <div class="section">
+          <div
+            ref="permissionSummarySectionRef"
+            class="section"
+            :class="{ 'section-focused': activeSection === 'permission-summary' }"
+            data-test="section-permission-summary"
+          >
             <h3>权限摘要</h3>
             <div v-if="permissionSummary" class="grid">
               <div><span class="label">角色总数</span><span>{{ permissionSummary.totalRoles }}</span></div>
@@ -47,7 +83,12 @@
             </div>
           </div>
 
-          <div class="section">
+          <div
+            ref="templateDiffSectionRef"
+            class="section"
+            :class="{ 'section-focused': activeSection === 'template-diff' }"
+            data-test="section-template-diff"
+          >
             <h3>模板差异</h3>
             <div v-if="diffResult" class="diff-summary">
               <a-tag color="gold">MISSING_IN_TENANT {{ diffResult.summary.missingInTenant }}</a-tag>
@@ -69,7 +110,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { message } from 'ant-design-vue'
 import type { ColumnsType } from 'ant-design-vue/es/table'
@@ -90,6 +131,8 @@ type DisplayDiffRow = {
   fieldDiffText: string
 }
 
+type TenantDetailSection = 'overview' | 'permission-summary' | 'template-diff'
+
 const FIELD_ORDER = ['enabled', 'title', 'path', 'uri', 'method', 'requiredPermissionId', 'sort']
 const route = useRoute()
 const router = useRouter()
@@ -97,6 +140,10 @@ const loading = ref(false)
 const tenant = ref<Tenant | null>(null)
 const permissionSummary = ref<TenantPermissionSummary | null>(null)
 const diffResult = ref<{ summary: { missingInTenant: number; extraInTenant: number; changed: number }; diffs: PlatformTemplateEntryDiff[] } | null>(null)
+const overviewSectionRef = ref<HTMLElement | null>(null)
+const permissionSummarySectionRef = ref<HTMLElement | null>(null)
+const templateDiffSectionRef = ref<HTMLElement | null>(null)
+const activeSection = ref<TenantDetailSection>('overview')
 
 const diffColumns: ColumnsType<DisplayDiffRow> = [
   { title: '差异类型', dataIndex: 'diffType', key: 'diffType', width: 180 },
@@ -106,6 +153,13 @@ const diffColumns: ColumnsType<DisplayDiffRow> = [
 ]
 
 const tenantId = computed(() => route.params.id as string)
+const normalizedSection = computed<TenantDetailSection>(() => {
+  const section = typeof route.query.section === 'string' ? route.query.section : ''
+  if (section === 'permission-summary' || section === 'template-diff' || section === 'overview') {
+    return section
+  }
+  return 'overview'
+})
 const backTarget = computed(() =>
   sanitizeInternalRedirect(typeof route.query.from === 'string' ? route.query.from : null, '/platform/tenants'),
 )
@@ -147,6 +201,24 @@ function statusColor(status?: string) {
   return 'green'
 }
 
+function getSectionElement(section: TenantDetailSection) {
+  if (section === 'permission-summary') {
+    return permissionSummarySectionRef.value
+  }
+  if (section === 'template-diff') {
+    return templateDiffSectionRef.value
+  }
+  return overviewSectionRef.value
+}
+
+function focusSection(section: TenantDetailSection) {
+  activeSection.value = section
+  const element = getSectionElement(section)
+  if (element && typeof element.scrollIntoView === 'function') {
+    element.scrollIntoView({ behavior: 'auto', block: 'start' })
+  }
+}
+
 async function loadTenantControlPlaneData() {
   if (!tenantId.value) return
   loading.value = true
@@ -159,6 +231,8 @@ async function loadTenantControlPlaneData() {
     tenant.value = tenantResp
     permissionSummary.value = permissionResp
     diffResult.value = diffResp
+    await nextTick()
+    focusSection(normalizedSection.value)
   } catch (error: any) {
     message.error(`加载租户控制面失败: ${error?.message || '未知错误'}`)
   } finally {
@@ -179,6 +253,11 @@ watch(tenantId, () => {
   permissionSummary.value = null
   diffResult.value = null
   void loadTenantControlPlaneData()
+}, { immediate: true })
+
+watch(normalizedSection, async (section) => {
+  await nextTick()
+  focusSection(section)
 }, { immediate: true })
 </script>
 
@@ -203,6 +282,15 @@ watch(tenantId, () => {
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 12px;
+}
+
+.section-nav {
+  margin-bottom: 12px;
+}
+
+.section-focused {
+  border-color: #1677ff;
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.1);
 }
 
 .grid {

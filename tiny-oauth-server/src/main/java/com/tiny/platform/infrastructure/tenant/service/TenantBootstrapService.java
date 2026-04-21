@@ -15,5 +15,6 @@ import com.tiny.platform.infrastructure.tenant.domain.Tenant;
 public interface TenantBootstrapService {
     void bootstrapFromPlatformTemplate(Tenant targetTenant);
     boolean ensurePlatformTemplatesInitialized();
+    TenantBootstrapPreview previewBootstrapForCreate();
     PlatformTemplateDiffResult diffPlatformTemplateForTenant(Long tenantId);
 }

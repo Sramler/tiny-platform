@@ -218,7 +218,7 @@ export E2E_BACKEND_PROFILE=e2e
 2. bind 用户是否仍然被错误地保留了旧 TOTP 绑定
 3. tenant B 是否错误继承了 tenant A 的 `E2E_TOTP_CODE`
 4. MySQL service 是否健康
-5. OIDC redirect URI / client 配置是否仍与 `5173` 对齐
+5. OIDC redirect URI / client 配置是否仍与当前前端 base URL 对齐（当前态：`vue-client` 会在应用启动时额外吸收 `frontend.login-url` 对应的 `callback` / `silent-renew.html` / post-logout 地址；若后端是旧进程，仍需重启后才能把 DB 中的客户端白名单刷新到新端口）
 
 其中第 3 项已由：
 
@@ -232,7 +232,7 @@ export E2E_BACKEND_PROFILE=e2e
 
 - `application-e2e.yaml` 中不允许写入真实密码、真实 client secret、真实 TOTP secret。
 - `.env.e2e.local` 必须保持未提交状态；当前 `*.local` 已被前端 `.gitignore` 忽略。
-- 若修改 `E2E_FRONTEND_PORT` 或 `E2E_FRONTEND_BASE_URL`，应同步确认 OIDC redirect URI 与后端客户端注册一致；默认推荐继续使用 `5173`。
+- 若修改 `E2E_FRONTEND_PORT` 或 `E2E_FRONTEND_BASE_URL`，应重启后端，让 `vue-client` 在启动时把当前 `frontend.login-url` 对应端口同步到 `oauth2_registered_client`；未重启的旧进程仍可能保留旧端口白名单。
 - CI 中必须通过 secret 注入真实值，不能回退到仓库中的默认账号。
 
 ---
