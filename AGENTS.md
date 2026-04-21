@@ -27,6 +27,7 @@
 - **分支治理策略**：`docs/TINY_PLATFORM_SB4_SB3_BRANCH_STRATEGY.md`
 - **租户治理专题**：`docs/TINY_PLATFORM_TENANT_GOVERNANCE.md`
 - **租户治理修复 Prompt**：`docs/TINY_PLATFORM_TENANT_GOVERNANCE_CURSOR_FIX_PROMPT.md`
+- **租户初始化向导 Cursor 任务卡**：`docs/TINY_PLATFORM_TENANT_INITIALIZATION_WIZARD_CURSOR_TASK_CARDS.md`
 - **平台域解耦 Cursor 任务卡**：`docs/TINY_PLATFORM_PLATFORM_SCOPE_CURSOR_TASK_CARDS.md`（未标「当前态」的约束多为历史/阶段性口径；运行态以 `docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md`、`docs/TINY_PLATFORM_TESTING_PLAYBOOK.md`、`docs/TINY_PLATFORM_TENANT_GOVERNANCE.md` 为准，**CARD-14E**）
 - **租户命名拆分规范**：`docs/TINY_PLATFORM_TENANT_NAMING_GUIDELINES.md`
 - **RBAC3 enforce 灰度 SOP**：`docs/TINY_PLATFORM_RBAC3_ENFORCE_ROLLOUT_SOP.md`
@@ -133,4 +134,5 @@
 - `POST /sys/roles/{id}/resources` 当前控制面契约只接受 `permissionIds`；前端组件 emit、TS payload、测试命名不得继续传播 `resourceIds` 运行态语义
 - 菜单控制面主入口是 `/sys/menus`；不要新增/恢复 `/sys/resources/menus*`，也不要让菜单前端 API 再借用 `/sys/resources/check-*`
 - 收口 `permission` 历史写链时，不能只改 `ResourceForm`；`MenuForm`、`MenuServiceImpl` 与菜单 DTO 也必须同步切到 `requiredPermissionId` 主入口
+- 租户初始化向导当前态（CARD-TW-01~TW-04）必须保持：create 走 `TenantCreateWizard`、edit 走 `TenantForm`、确认步骤走 `POST /sys/tenants/precheck` dry-run、最终由 wizard 一次性 `POST /sys/tenants`、结果页成功后不自动关闭且详情跳转携带 `query.from`
 - 规则扩展记录：2026-02-05 增补 logging/performance/dependency/config/docs/code-review 规则并加强构建清理策略

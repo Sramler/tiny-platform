@@ -21,16 +21,20 @@ import com.tiny.platform.infrastructure.core.exception.exception.BusinessExcepti
 import com.tiny.platform.infrastructure.core.exception.exception.NotFoundException;
 import com.tiny.platform.infrastructure.tenant.domain.Tenant;
 import com.tiny.platform.infrastructure.tenant.dto.TenantCreateUpdateDto;
+import com.tiny.platform.infrastructure.tenant.dto.TenantInitializationSummaryDto;
+import com.tiny.platform.infrastructure.tenant.dto.TenantPrecheckIssueDto;
+import com.tiny.platform.infrastructure.tenant.dto.TenantPrecheckResponseDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantPermissionSummaryDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantRequestDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantResponseDto;
-import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import com.tiny.platform.infrastructure.tenant.repository.TenantPermissionSummaryProjection;
+import com.tiny.platform.infrastructure.tenant.repository.TenantRepository;
 import com.tiny.platform.infrastructure.tenant.repository.TenantPermissionSummaryRepository;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -138,6 +142,48 @@ public class TenantServiceImpl implements TenantService {
     @Override
     public Optional<Tenant> findById(Long id) {
         return tenantRepository.findById(id).filter(t -> t.getDeletedAt() == null);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public TenantPrecheckResponseDto precheckCreate(TenantCreateUpdateDto dto) {
+        List<TenantPrecheckIssueDto> blockingIssues = new ArrayList<>();
+        List<TenantPrecheckIssueDto> warnings = new ArrayList<>();
+
+        String normalizedCode = validateTenantCodeForPrecheck(dto, blockingIssues);
+        String tenantName = validateTenantNameForPrecheck(dto, blockingIssues);
+        validateDomainForPrecheck(dto, blockingIssues);
+        validateQuotaForPrecheck(dto, blockingIssues, warnings);
+        validateInitialAdminForPrecheck(dto, blockingIssues, warnings);
+
+        TenantBootstrapPreview bootstrapPreview = tenantBootstrapService.previewBootstrapForCreate();
+        if (!bootstrapPreview.ready()) {
+            blockingIssues.add(issue(
+                "PLATFORM_TEMPLATE_NOT_READY",
+                "platformTemplate",
+                bootstrapPreview.message()
+            ));
+        } else if (bootstrapPreview.requiresHistoricalBackfill()) {
+            warnings.add(issue(
+                "PLATFORM_TEMPLATE_WILL_BACKFILL",
+                "platformTemplate",
+                bootstrapPreview.message()
+            ));
+        }
+
+        TenantInitializationSummaryDto initializationSummary = buildInitializationSummary(
+            normalizedCode,
+            tenantName,
+            normalizeNullable(dto.getInitialAdminUsername()),
+            bootstrapPreview
+        );
+
+        TenantPrecheckResponseDto response = new TenantPrecheckResponseDto();
+        response.setBlockingIssues(blockingIssues);
+        response.setWarnings(warnings);
+        response.setInitializationSummary(initializationSummary);
+        response.setOk(blockingIssues.isEmpty());
+        return response;
     }
 
     @Override
@@ -412,6 +458,114 @@ public class TenantServiceImpl implements TenantService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String validateTenantCodeForPrecheck(TenantCreateUpdateDto dto, List<TenantPrecheckIssueDto> blockingIssues) {
+        try {
+            String normalizedCode = normalizeTenantCode(dto.getCode());
+            if (tenantRepository.existsByCode(normalizedCode)) {
+                blockingIssues.add(issue("TENANT_CODE_CONFLICT", "code", "租户编码已存在"));
+            }
+            return normalizedCode;
+        } catch (BusinessException ex) {
+            blockingIssues.add(issue("TENANT_CODE_INVALID", "code", ex.getMessage()));
+            return null;
+        }
+    }
+
+    private String validateTenantNameForPrecheck(TenantCreateUpdateDto dto, List<TenantPrecheckIssueDto> blockingIssues) {
+        String tenantName = normalizeNullable(dto.getName());
+        if (tenantName == null) {
+            blockingIssues.add(issue("TENANT_NAME_REQUIRED", "name", "租户名称不能为空"));
+        }
+        return tenantName;
+    }
+
+    private void validateDomainForPrecheck(TenantCreateUpdateDto dto, List<TenantPrecheckIssueDto> blockingIssues) {
+        String domain = normalizeNullable(dto.getDomain());
+        if (domain != null && tenantRepository.existsByDomain(domain)) {
+            blockingIssues.add(issue("TENANT_DOMAIN_CONFLICT", "domain", "租户域名已存在"));
+        }
+    }
+
+    private void validateQuotaForPrecheck(TenantCreateUpdateDto dto,
+                                          List<TenantPrecheckIssueDto> blockingIssues,
+                                          List<TenantPrecheckIssueDto> warnings) {
+        try {
+            tenantQuotaService.validateQuotaSettingsForCreate(dto.getMaxUsers(), dto.getMaxStorageGb());
+        } catch (BusinessException ex) {
+            blockingIssues.add(issue("TENANT_QUOTA_INVALID", "quota", ex.getMessage()));
+        }
+        if (dto.getMaxUsers() == null) {
+            warnings.add(issue("MAX_USERS_UNLIMITED", "maxUsers", "maxUsers 未设置，将按无限制处理。"));
+        }
+        if (dto.getMaxStorageGb() == null) {
+            warnings.add(issue("MAX_STORAGE_UNLIMITED", "maxStorageGb", "maxStorageGb 未设置，将按无限制处理。"));
+        }
+    }
+
+    private void validateInitialAdminForPrecheck(TenantCreateUpdateDto dto,
+                                                 List<TenantPrecheckIssueDto> blockingIssues,
+                                                 List<TenantPrecheckIssueDto> warnings) {
+        String username = normalizeNullable(dto.getInitialAdminUsername());
+        if (username == null) {
+            blockingIssues.add(issue("INITIAL_ADMIN_USERNAME_REQUIRED", "initialAdminUsername", "初始管理员用户名不能为空"));
+        } else {
+            if (username.length() < 3 || username.length() > 20 || !USERNAME_PATTERN.matcher(username).matches()) {
+                blockingIssues.add(issue("INITIAL_ADMIN_USERNAME_INVALID", "initialAdminUsername", "初始管理员用户名格式不正确，需为 3-20 位字母、数字或下划线"));
+            } else if (userRepository.findUserIdByUsername(username).isPresent()) {
+                blockingIssues.add(issue("INITIAL_ADMIN_USERNAME_CONFLICT", "initialAdminUsername", "初始管理员用户名已存在"));
+            }
+        }
+
+        String password = dto.getInitialAdminPassword();
+        if (password == null || password.isBlank()) {
+            blockingIssues.add(issue("INITIAL_ADMIN_PASSWORD_REQUIRED", "initialAdminPassword", "初始管理员密码不能为空"));
+        } else if (password.length() < 6 || password.length() > 20) {
+            blockingIssues.add(issue("INITIAL_ADMIN_PASSWORD_INVALID", "initialAdminPassword", "初始管理员密码长度需为 6-20 位"));
+        }
+        if (password != null && !password.isBlank() && !password.equals(dto.getInitialAdminConfirmPassword())) {
+            blockingIssues.add(issue("INITIAL_ADMIN_PASSWORD_CONFIRM_MISMATCH", "initialAdminConfirmPassword", "初始管理员两次输入的密码不一致"));
+        }
+
+        String email = normalizeNullable(dto.getInitialAdminEmail());
+        if (email != null) {
+            if (!EMAIL_PATTERN.matcher(email).matches()) {
+                blockingIssues.add(issue("INITIAL_ADMIN_EMAIL_INVALID", "initialAdminEmail", "初始管理员邮箱格式不正确"));
+            } else if (userRepository.findUserIdByEmail(email).isPresent()) {
+                warnings.add(issue("INITIAL_ADMIN_EMAIL_REUSED", "initialAdminEmail", "初始管理员邮箱已被其他用户使用；当前创建链路不会因此阻断。"));
+            }
+        }
+
+        String phone = normalizeNullable(dto.getInitialAdminPhone());
+        if (phone != null) {
+            if (!PHONE_PATTERN.matcher(phone).matches()) {
+                blockingIssues.add(issue("INITIAL_ADMIN_PHONE_INVALID", "initialAdminPhone", "初始管理员手机号格式不正确"));
+            } else if (userRepository.findUserIdByPhone(phone).isPresent()) {
+                warnings.add(issue("INITIAL_ADMIN_PHONE_REUSED", "initialAdminPhone", "初始管理员手机号已被其他用户使用；当前创建链路不会因此阻断。"));
+            }
+        }
+    }
+
+    private TenantInitializationSummaryDto buildInitializationSummary(String tenantCode,
+                                                                     String tenantName,
+                                                                     String initialAdminUsername,
+                                                                     TenantBootstrapPreview bootstrapPreview) {
+        TenantInitializationSummaryDto initializationSummary = new TenantInitializationSummaryDto();
+        initializationSummary.setTenantCode(tenantCode);
+        initializationSummary.setTenantName(tenantName);
+        initializationSummary.setInitialAdminUsername(initialAdminUsername);
+        initializationSummary.setPlatformTemplateReady(bootstrapPreview.ready());
+        initializationSummary.setDefaultRoleCount(bootstrapPreview.roleCount());
+        initializationSummary.setDefaultPermissionCount(bootstrapPreview.permissionCount());
+        initializationSummary.setDefaultMenuCount(bootstrapPreview.menuCount());
+        initializationSummary.setDefaultUiActionCount(bootstrapPreview.uiActionCount());
+        initializationSummary.setDefaultApiEndpointCount(bootstrapPreview.apiEndpointCount());
+        return initializationSummary;
+    }
+
+    private TenantPrecheckIssueDto issue(String code, String field, String message) {
+        return new TenantPrecheckIssueDto(code, field, message);
     }
 
     private InitialAdminDraft validateInitialAdmin(TenantCreateUpdateDto dto) {

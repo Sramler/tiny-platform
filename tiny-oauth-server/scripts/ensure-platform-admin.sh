@@ -4,6 +4,39 @@ set -euo pipefail
 # Ensure a dedicated platform admin account bound to platform tenant.
 # Idempotent by design: can run repeatedly without duplicating records.
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+E2E_LOCAL_ENV_FILE="${E2E_LOCAL_ENV_FILE:-${PROJECT_ROOT}/src/main/webapp/.env.e2e.local}"
+
+strip_wrapping_quotes() {
+  local value="$1"
+  if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+    value="${value:1:${#value}-2}"
+  elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
+    value="${value:1:${#value}-2}"
+  fi
+  printf '%s' "$value"
+}
+
+read_local_env_value() {
+  local name="$1"
+  local line raw
+  if [[ ! -f "${E2E_LOCAL_ENV_FILE}" ]]; then
+    return 1
+  fi
+  line="$(grep -E "^${name}=" "${E2E_LOCAL_ENV_FILE}" | tail -n 1 || true)"
+  if [[ -z "${line}" ]]; then
+    return 1
+  fi
+  raw="${line#*=}"
+  raw="${raw%$'\r'}"
+  raw="$(strip_wrapping_quotes "${raw}")"
+  if [[ -z "${raw//[[:space:]]/}" ]]; then
+    return 1
+  fi
+  printf '%s' "${raw}"
+}
+
 DB_HOST="${DB_HOST:-127.0.0.1}"
 DB_PORT="${DB_PORT:-3306}"
 DB_NAME="${DB_NAME:-tiny_web}"
@@ -16,13 +49,23 @@ if [[ -z "${PLATFORM_TENANT_CODE:-}" ]]; then
   echo "Example: PLATFORM_TENANT_CODE=default bash scripts/ensure-platform-admin.sh  # only if your seed truly uses code=default" >&2
   exit 1
 fi
-PLATFORM_ADMIN_USERNAME="${PLATFORM_ADMIN_USERNAME:-platform_admin}"
+E2E_PLATFORM_USERNAME_VALUE="${E2E_PLATFORM_USERNAME:-$(read_local_env_value E2E_PLATFORM_USERNAME || true)}"
+E2E_PLATFORM_PASSWORD_VALUE="${E2E_PLATFORM_PASSWORD:-$(read_local_env_value E2E_PLATFORM_PASSWORD || true)}"
+
+PLATFORM_ADMIN_USERNAME="${PLATFORM_ADMIN_USERNAME:-${E2E_PLATFORM_USERNAME_VALUE:-platform_admin}}"
 PLATFORM_ADMIN_NICKNAME="${PLATFORM_ADMIN_NICKNAME:-平台管理员}"
 PLATFORM_ADMIN_ROLE_CODE="${PLATFORM_ADMIN_ROLE_CODE:-ROLE_PLATFORM_ADMIN}"
-# DelegatingPasswordEncoder string: default {noop}admin (plaintext "admin"). Dev convenience only; override with PLATFORM_ADMIN_PASSWORD_BCRYPT for bcrypt or other {prefix} forms.
+# DelegatingPasswordEncoder string:
+# - prefer explicit PLATFORM_ADMIN_PASSWORD_BCRYPT
+# - else prefer plaintext E2E_PLATFORM_PASSWORD from env / .env.e2e.local
+# - else fallback to dev convenience {noop}admin
 PLATFORM_ADMIN_PASSWORD_BCRYPT="${PLATFORM_ADMIN_PASSWORD_BCRYPT:-}"
 if [[ -z "${PLATFORM_ADMIN_PASSWORD_BCRYPT}" ]]; then
-  PLATFORM_ADMIN_PASSWORD_BCRYPT='{noop}admin'
+  if [[ -n "${E2E_PLATFORM_PASSWORD_VALUE}" ]]; then
+    PLATFORM_ADMIN_PASSWORD_BCRYPT="{noop}${E2E_PLATFORM_PASSWORD_VALUE}"
+  else
+    PLATFORM_ADMIN_PASSWORD_BCRYPT='{noop}admin'
+  fi
 fi
 # Metadata only; set to bcrypt when PLATFORM_ADMIN_PASSWORD_BCRYPT is a {bcrypt}... string.
 PLATFORM_ADMIN_HASH_ALGORITHM="${PLATFORM_ADMIN_HASH_ALGORITHM:-noop}"

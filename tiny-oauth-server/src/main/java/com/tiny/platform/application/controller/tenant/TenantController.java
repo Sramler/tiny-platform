@@ -4,6 +4,7 @@ import com.tiny.platform.core.oauth.tenant.TenantLifecycleAccessGuard;
 import com.tiny.platform.infrastructure.core.dto.PageResponse;
 import com.tiny.platform.infrastructure.idempotent.sdk.annotation.Idempotent;
 import com.tiny.platform.infrastructure.tenant.dto.TenantCreateUpdateDto;
+import com.tiny.platform.infrastructure.tenant.dto.TenantPrecheckResponseDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantPermissionSummaryDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantRequestDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantResponseDto;
@@ -66,6 +67,12 @@ public class TenantController {
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<TenantResponseDto> create(@RequestBody TenantCreateUpdateDto dto) {
         return ResponseEntity.ok(tenantService.create(dto));
+    }
+
+    @PostMapping("/precheck")
+    @PreAuthorize("@tenantManagementAccessGuard.canCreate(authentication)")
+    public ResponseEntity<TenantPrecheckResponseDto> precheck(@RequestBody TenantCreateUpdateDto dto) {
+        return ResponseEntity.ok(tenantService.precheckCreate(dto));
     }
 
     @PutMapping("/{id}")

@@ -26,6 +26,7 @@ class RegisteredClientConfigTest {
         RegisteredClientConfig config = new RegisteredClientConfig();
         RegisteredClientRepository repository = mock(RegisteredClientRepository.class);
         ClientProperties properties = new ClientProperties();
+        FrontendProperties frontendProperties = new FrontendProperties();
 
         ClientProperties.Client existingClientCfg = new ClientProperties.Client();
         existingClientCfg.setClientId("existing-client");
@@ -67,7 +68,7 @@ class RegisteredClientConfigTest {
         when(repository.findByClientId("existing-client")).thenReturn(existing);
         when(repository.findByClientId("new-client")).thenReturn(null);
 
-        CommandLineRunner runner = config.registerClients(properties, repository);
+        CommandLineRunner runner = config.registerClients(properties, repository, frontendProperties);
         runner.run();
 
         ArgumentCaptor<RegisteredClient> captor = ArgumentCaptor.forClass(RegisteredClient.class);
@@ -105,5 +106,47 @@ class RegisteredClientConfigTest {
                 .extracting(AuthorizationGrantType::getValue)
                 .containsExactly("client_credentials");
         assertThat(savedNew.getTokenSettings().getAccessTokenFormat()).isEqualTo(OAuth2TokenFormat.SELF_CONTAINED);
+    }
+
+    @Test
+    void shouldAugmentVueClientWithRuntimeFrontendRedirectUris() throws Exception {
+        RegisteredClientConfig config = new RegisteredClientConfig();
+        RegisteredClientRepository repository = mock(RegisteredClientRepository.class);
+        ClientProperties properties = new ClientProperties();
+        FrontendProperties frontendProperties = new FrontendProperties();
+        frontendProperties.setLoginUrl("redirect:http://localhost:5174/login");
+
+        ClientProperties.Client vueClientCfg = new ClientProperties.Client();
+        vueClientCfg.setClientId("vue-client");
+        vueClientCfg.setAuthenticationMethods(List.of(ClientAuthenticationMethod.NONE.getValue()));
+        vueClientCfg.setGrantTypes(List.of(
+                AuthorizationGrantType.AUTHORIZATION_CODE.getValue(),
+                AuthorizationGrantType.REFRESH_TOKEN.getValue()));
+        vueClientCfg.setScopes(List.of("openid", "profile", "offline_access"));
+        vueClientCfg.setRedirectUris(List.of(
+                "http://localhost:5173/callback",
+                "http://localhost:5173/silent-renew.html"));
+        vueClientCfg.setPostLogoutRedirectUris(List.of("http://localhost:5173/"));
+        vueClientCfg.getClientSetting().setRequireAuthorizationConsent(false);
+        vueClientCfg.getClientSetting().setRequireProofKey(true);
+        properties.setClients(List.of(vueClientCfg));
+
+        when(repository.findByClientId("vue-client")).thenReturn(null);
+
+        CommandLineRunner runner = config.registerClients(properties, repository, frontendProperties);
+        runner.run();
+
+        ArgumentCaptor<RegisteredClient> captor = ArgumentCaptor.forClass(RegisteredClient.class);
+        verify(repository).save(captor.capture());
+        RegisteredClient saved = captor.getValue();
+
+        assertThat(saved.getRedirectUris()).containsExactlyInAnyOrder(
+                "http://localhost:5173/callback",
+                "http://localhost:5173/silent-renew.html",
+                "http://localhost:5174/callback",
+                "http://localhost:5174/silent-renew.html");
+        assertThat(saved.getPostLogoutRedirectUris()).containsExactlyInAnyOrder(
+                "http://localhost:5173/",
+                "http://localhost:5174/");
     }
 }

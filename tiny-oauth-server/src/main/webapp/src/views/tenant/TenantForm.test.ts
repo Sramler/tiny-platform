@@ -24,7 +24,6 @@ describe('TenantForm.vue', () => {
   it('should emit submit after validation passes', async () => {
     const wrapper = mount(TenantForm, {
       props: {
-        mode: 'edit',
         tenantData: { id: '1', code: 't1', name: 'Tenant 1' },
       },
       global: {
@@ -52,11 +51,9 @@ describe('TenantForm.vue', () => {
     expect(emitted?.[0]?.[0]).toEqual(expect.objectContaining({ code: 't1', name: 'Tenant 1' }))
   })
 
-  it('should include initial admin defaults in create mode payload', async () => {
+  it('should only emit base tenant fields', async () => {
     const wrapper = mount(TenantForm, {
-      props: {
-        mode: 'create',
-      },
+      props: {},
       global: {
         stubs: {
           'a-form': FormStub,
@@ -79,8 +76,11 @@ describe('TenantForm.vue', () => {
     const emitted = wrapper.emitted('submit')
     expect(emitted).toBeTruthy()
     expect(emitted?.[0]?.[0]).toEqual(expect.objectContaining({
-      initialAdminNickname: '租户管理员',
-      initialAdminUsername: '',
+      code: '',
+      name: '',
+      enabled: true,
     }))
+    expect(emitted?.[0]?.[0]).not.toHaveProperty('initialAdminUsername')
+    expect(emitted?.[0]?.[0]).not.toHaveProperty('initialAdminPassword')
   })
 })
