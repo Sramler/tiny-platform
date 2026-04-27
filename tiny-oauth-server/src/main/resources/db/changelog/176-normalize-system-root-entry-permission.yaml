@@ -1,0 +1,134 @@
+databaseChangeLog:
+  - changeSet:
+      id: 176-normalize-system-root-entry-permission
+      author: codex
+      comment: 修复 system 根菜单误绑 system:tenant:list，恢复 system:entry:view 作为系统管理入口权限
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: menu
+            - tableExists:
+                tableName: permission
+            - tableExists:
+                tableName: role
+            - tableExists:
+                tableName: role_permission
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT INTO `permission` (
+                `permission_code`,
+                `permission_name`,
+                `module_code`,
+                `action_code`,
+                `permission_type`,
+                `description`,
+                `enabled`,
+                `built_in_flag`,
+                `tenant_id`,
+                `created_by`,
+                `created_at`,
+                `updated_by`,
+                `updated_at`
+              )
+              SELECT
+                'system:entry:view' AS `permission_code`,
+                COALESCE(NULLIF(entry_template.`permission_name`, ''), 'system:entry:view') AS `permission_name`,
+                'system' AS `module_code`,
+                'view' AS `action_code`,
+                COALESCE(NULLIF(entry_template.`permission_type`, ''), 'MENU') AS `permission_type`,
+                COALESCE(NULLIF(entry_template.`description`, ''), '系统管理入口查看权限') AS `description`,
+                1 AS `enabled`,
+                COALESCE(entry_template.`built_in_flag`, 0) AS `built_in_flag`,
+                target_tenant.`tenant_id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`,
+                NULL AS `updated_by`,
+                NOW() AS `updated_at`
+              FROM (
+                SELECT DISTINCT `tenant_id`
+                FROM `menu`
+                WHERE `name` = 'system'
+                  AND `path` = '/system'
+              ) target_tenant
+              LEFT JOIN `permission` entry_template
+                ON entry_template.`tenant_id` IS NULL
+               AND entry_template.`permission_code` = 'system:entry:view'
+              WHERE NOT EXISTS (
+                SELECT 1
+                FROM `permission` existing
+                WHERE existing.`normalized_tenant_id` = IFNULL(target_tenant.`tenant_id`, 0)
+                  AND existing.`permission_code` = 'system:entry:view'
+              );
+
+              INSERT IGNORE INTO `role_permission` (
+                `tenant_id`,
+                `role_id`,
+                `permission_id`,
+                `created_by`,
+                `created_at`
+              )
+              SELECT
+                old_binding.`tenant_id`,
+                old_binding.`role_id`,
+                entry_permission.`id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`
+              FROM `role_permission` old_binding
+              JOIN `permission` old_permission
+                ON old_permission.`id` = old_binding.`permission_id`
+               AND old_permission.`tenant_id` <=> old_binding.`tenant_id`
+               AND old_permission.`permission_code` = 'system:tenant:list'
+              JOIN `permission` entry_permission
+                ON entry_permission.`normalized_tenant_id` = old_binding.`normalized_tenant_id`
+               AND entry_permission.`permission_code` = 'system:entry:view';
+
+              INSERT IGNORE INTO `role_permission` (
+                `tenant_id`,
+                `role_id`,
+                `permission_id`,
+                `created_by`,
+                `created_at`
+              )
+              SELECT
+                role_entity.`tenant_id`,
+                role_entity.`id`,
+                entry_permission.`id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`
+              FROM `role` role_entity
+              JOIN `permission` entry_permission
+                ON entry_permission.`normalized_tenant_id` = IFNULL(role_entity.`tenant_id`, 0)
+               AND entry_permission.`permission_code` = 'system:entry:view'
+              WHERE role_entity.`code` IN (
+                'ROLE_SYSTEM_ADMIN',
+                'ROLE_TENANT_ADMIN',
+                'ROLE_PLATFORM_ADMIN',
+                'ROLE_SUPER_ADMIN'
+              )
+                AND EXISTS (
+                  SELECT 1
+                  FROM `menu` system_root
+                  WHERE system_root.`tenant_id` <=> role_entity.`tenant_id`
+                    AND system_root.`name` = 'system'
+                    AND system_root.`path` = '/system'
+                );
+
+              UPDATE `menu` system_root
+              JOIN `permission` entry_permission
+                ON entry_permission.`normalized_tenant_id` = IFNULL(system_root.`tenant_id`, 0)
+               AND entry_permission.`permission_code` = 'system:entry:view'
+              SET
+                system_root.`permission` = 'system:entry:view',
+                system_root.`required_permission_id` = entry_permission.`id`,
+                system_root.`updated_at` = NOW(),
+                system_root.`updated_by` = NULL
+              WHERE system_root.`name` = 'system'
+                AND system_root.`path` = '/system';

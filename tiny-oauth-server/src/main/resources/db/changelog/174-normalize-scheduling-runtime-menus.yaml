@@ -1,0 +1,419 @@
+databaseChangeLog:
+  - changeSet:
+      id: 174-normalize-scheduling-runtime-menus
+      author: codex
+      comment: 规范化 scheduling 运行态菜单与 legacy 旧码，恢复平台/租户侧调度菜单可见性一致
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: menu
+            - tableExists:
+                tableName: permission
+            - tableExists:
+                tableName: role
+            - tableExists:
+                tableName: role_permission
+            - tableExists:
+                tableName: menu_permission_requirement
+            - tableExists:
+                tableName: ui_action
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              -- 1) scheduling 根目录统一收敛到 scheduling:entry:view，避免继续使用旧 root 权限码 scheduling:view。
+              INSERT INTO `permission` (
+                `permission_code`,
+                `permission_name`,
+                `module_code`,
+                `action_code`,
+                `permission_type`,
+                `description`,
+                `enabled`,
+                `built_in_flag`,
+                `tenant_id`,
+                `created_by`,
+                `created_at`,
+                `updated_by`,
+                `updated_at`
+              )
+              SELECT
+                'scheduling:entry:view' AS `permission_code`,
+                COALESCE(NULLIF(old_permission.`permission_name`, ''), 'scheduling:entry:view') AS `permission_name`,
+                'scheduling' AS `module_code`,
+                'view' AS `action_code`,
+                COALESCE(NULLIF(old_permission.`permission_type`, ''), 'OTHER') AS `permission_type`,
+                COALESCE(NULLIF(old_permission.`description`, ''), '调度入口查看权限') AS `description`,
+                1 AS `enabled`,
+                COALESCE(old_permission.`built_in_flag`, 0) AS `built_in_flag`,
+                target_tenant.`tenant_id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`,
+                NULL AS `updated_by`,
+                NOW() AS `updated_at`
+              FROM (
+                SELECT DISTINCT `tenant_id`
+                FROM `menu`
+                WHERE `name` = 'scheduling'
+                  AND `path` = '/scheduling'
+              ) target_tenant
+              LEFT JOIN `permission` old_permission
+                ON old_permission.`normalized_tenant_id` = IFNULL(target_tenant.`tenant_id`, 0)
+               AND old_permission.`permission_code` = 'scheduling:view'
+              WHERE NOT EXISTS (
+                SELECT 1
+                FROM `permission` existing
+                WHERE existing.`normalized_tenant_id` = IFNULL(target_tenant.`tenant_id`, 0)
+                  AND existing.`permission_code` = 'scheduling:entry:view'
+              );
+
+              INSERT IGNORE INTO `role_permission` (
+                `tenant_id`,
+                `role_id`,
+                `permission_id`,
+                `created_by`,
+                `created_at`
+              )
+              SELECT
+                old_binding.`tenant_id`,
+                old_binding.`role_id`,
+                entry_permission.`id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`
+              FROM `role_permission` old_binding
+              JOIN `permission` old_permission
+                ON old_permission.`id` = old_binding.`permission_id`
+               AND old_permission.`tenant_id` <=> old_binding.`tenant_id`
+               AND old_permission.`permission_code` = 'scheduling:view'
+              JOIN `permission` entry_permission
+                ON entry_permission.`normalized_tenant_id` = old_binding.`normalized_tenant_id`
+               AND entry_permission.`permission_code` = 'scheduling:entry:view';
+
+              INSERT IGNORE INTO `role_permission` (
+                `tenant_id`,
+                `role_id`,
+                `permission_id`,
+                `created_by`,
+                `created_at`
+              )
+              SELECT
+                role_entity.`tenant_id`,
+                role_entity.`id`,
+                entry_permission.`id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`
+              FROM `role` role_entity
+              JOIN `permission` entry_permission
+                ON entry_permission.`normalized_tenant_id` = IFNULL(role_entity.`tenant_id`, 0)
+               AND entry_permission.`permission_code` = 'scheduling:entry:view'
+              WHERE role_entity.`code` IN (
+                'ROLE_SYSTEM_ADMIN',
+                'ROLE_TENANT_ADMIN',
+                'ROLE_PLATFORM_ADMIN',
+                'ROLE_SUPER_ADMIN'
+              )
+                AND EXISTS (
+                  SELECT 1
+                  FROM `menu` root_menu
+                  WHERE root_menu.`tenant_id` <=> role_entity.`tenant_id`
+                    AND root_menu.`name` = 'scheduling'
+                    AND root_menu.`path` = '/scheduling'
+                );
+
+              -- 2) 启用 canonical scheduling 菜单，并把 redirect / path / permission 对齐到现行前后端实现。
+              UPDATE `menu` root_menu
+              JOIN `permission` entry_permission
+                ON entry_permission.`normalized_tenant_id` = IFNULL(root_menu.`tenant_id`, 0)
+               AND entry_permission.`permission_code` = 'scheduling:entry:view'
+              SET
+                root_menu.`permission` = 'scheduling:entry:view',
+                root_menu.`required_permission_id` = entry_permission.`id`,
+                root_menu.`redirect` = '/scheduling/dag',
+                root_menu.`enabled` = 1,
+                root_menu.`updated_at` = NOW(),
+                root_menu.`updated_by` = NULL
+              WHERE root_menu.`name` = 'scheduling'
+                AND root_menu.`path` = '/scheduling';
+
+              UPDATE `menu` menu_entry
+              JOIN `permission` canonical_permission
+                ON canonical_permission.`normalized_tenant_id` = IFNULL(menu_entry.`tenant_id`, 0)
+               AND canonical_permission.`permission_code` = CASE
+                 WHEN menu_entry.`name` = 'schedulingAudit' THEN 'scheduling:audit:view'
+                 ELSE 'scheduling:console:view'
+               END
+              SET
+                menu_entry.`path` = CASE
+                  WHEN menu_entry.`name` = 'schedulingDag' THEN '/scheduling/dag'
+                  WHEN menu_entry.`name` = 'schedulingTask' THEN '/scheduling/task'
+                  WHEN menu_entry.`name` = 'schedulingTaskType' THEN '/scheduling/task-type'
+                  WHEN menu_entry.`name` = 'schedulingDagHistory' THEN '/scheduling/dag/history'
+                  WHEN menu_entry.`name` = 'schedulingAudit' THEN '/scheduling/audit'
+                  ELSE menu_entry.`path`
+                END,
+                menu_entry.`component` = CASE
+                  WHEN menu_entry.`name` = 'schedulingDag' THEN '/views/scheduling/Dag.vue'
+                  WHEN menu_entry.`name` = 'schedulingTask' THEN '/views/scheduling/Task.vue'
+                  WHEN menu_entry.`name` = 'schedulingTaskType' THEN '/views/scheduling/TaskType.vue'
+                  WHEN menu_entry.`name` = 'schedulingDagHistory' THEN '/views/scheduling/DagHistory.vue'
+                  WHEN menu_entry.`name` = 'schedulingAudit' THEN '/views/scheduling/Audit.vue'
+                  ELSE menu_entry.`component`
+                END,
+                menu_entry.`permission` = canonical_permission.`permission_code`,
+                menu_entry.`required_permission_id` = canonical_permission.`id`,
+                menu_entry.`sort` = CASE
+                  WHEN menu_entry.`name` = 'schedulingDag' THEN 11
+                  WHEN menu_entry.`name` = 'schedulingTask' THEN 12
+                  WHEN menu_entry.`name` = 'schedulingTaskType' THEN 13
+                  WHEN menu_entry.`name` = 'schedulingDagHistory' THEN 14
+                  WHEN menu_entry.`name` = 'schedulingAudit' THEN 15
+                  ELSE menu_entry.`sort`
+                END,
+                menu_entry.`enabled` = 1,
+                menu_entry.`updated_at` = NOW(),
+                menu_entry.`updated_by` = NULL
+              WHERE menu_entry.`name` IN (
+                'schedulingDag',
+                'schedulingTask',
+                'schedulingTaskType',
+                'schedulingDagHistory',
+                'schedulingAudit'
+              );
+
+              -- 3) 若历史按钮或子菜单仍挂在 legacy scheduling 菜单下，先搬到 canonical 菜单，再删除旧行。
+              UPDATE `ui_action` action_entry
+              JOIN `menu` legacy_menu
+                ON legacy_menu.`id` = action_entry.`parent_menu_id`
+               AND legacy_menu.`tenant_id` <=> action_entry.`tenant_id`
+              JOIN (
+                SELECT 'dag' AS `legacy_name`, 'schedulingDag' AS `canonical_name`
+                UNION ALL SELECT 'plan', 'schedulingTask'
+                UNION ALL SELECT 'tasktType', 'schedulingTaskType'
+                UNION ALL SELECT 'dagHistory', 'schedulingDagHistory'
+              ) mapping
+                ON mapping.`legacy_name` = legacy_menu.`name`
+              JOIN `menu` canonical_menu
+                ON canonical_menu.`tenant_id` <=> legacy_menu.`tenant_id`
+               AND canonical_menu.`name` = mapping.`canonical_name`
+              SET
+                action_entry.`parent_menu_id` = canonical_menu.`id`,
+                action_entry.`page_path` = canonical_menu.`path`,
+                action_entry.`updated_at` = NOW(),
+                action_entry.`updated_by` = NULL
+              WHERE legacy_menu.`name` IN ('dag', 'plan', 'tasktType', 'dagHistory');
+
+              UPDATE `menu` child_menu
+              JOIN `menu` legacy_menu
+                ON legacy_menu.`id` = child_menu.`parent_id`
+               AND legacy_menu.`tenant_id` <=> child_menu.`tenant_id`
+              JOIN (
+                SELECT 'dag' AS `legacy_name`, 'schedulingDag' AS `canonical_name`
+                UNION ALL SELECT 'plan', 'schedulingTask'
+                UNION ALL SELECT 'tasktType', 'schedulingTaskType'
+                UNION ALL SELECT 'dagHistory', 'schedulingDagHistory'
+              ) mapping
+                ON mapping.`legacy_name` = legacy_menu.`name`
+              JOIN `menu` canonical_menu
+                ON canonical_menu.`tenant_id` <=> legacy_menu.`tenant_id`
+               AND canonical_menu.`name` = mapping.`canonical_name`
+              SET
+                child_menu.`parent_id` = canonical_menu.`id`,
+                child_menu.`updated_at` = NOW(),
+                child_menu.`updated_by` = NULL
+              WHERE legacy_menu.`name` IN ('dag', 'plan', 'tasktType', 'dagHistory');
+
+              -- 4) 新码先补齐 role_permission，再清理旧 requirement / 菜单行。
+              INSERT IGNORE INTO `role_permission` (
+                `tenant_id`,
+                `role_id`,
+                `permission_id`,
+                `created_by`,
+                `created_at`
+              )
+              SELECT
+                old_binding.`tenant_id`,
+                old_binding.`role_id`,
+                console_permission.`id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`
+              FROM `role_permission` old_binding
+              JOIN `permission` old_permission
+                ON old_permission.`id` = old_binding.`permission_id`
+               AND old_permission.`tenant_id` <=> old_binding.`tenant_id`
+               AND old_permission.`permission_code` IN (
+                 'dag:view',
+                 'tasktType:view',
+                 'plan:view',
+                 'dagHistory:view'
+               )
+              JOIN `permission` console_permission
+                ON console_permission.`normalized_tenant_id` = old_binding.`normalized_tenant_id`
+               AND console_permission.`permission_code` = 'scheduling:console:view';
+
+              INSERT IGNORE INTO `role_permission` (
+                `tenant_id`,
+                `role_id`,
+                `permission_id`,
+                `created_by`,
+                `created_at`
+              )
+              SELECT
+                role_entity.`tenant_id`,
+                role_entity.`id`,
+                console_permission.`id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`
+              FROM `role` role_entity
+              JOIN `permission` console_permission
+                ON console_permission.`normalized_tenant_id` = IFNULL(role_entity.`tenant_id`, 0)
+               AND console_permission.`permission_code` = 'scheduling:console:view'
+              WHERE role_entity.`code` IN (
+                'ROLE_SYSTEM_ADMIN',
+                'ROLE_TENANT_ADMIN',
+                'ROLE_PLATFORM_ADMIN',
+                'ROLE_SUPER_ADMIN'
+              )
+                AND EXISTS (
+                  SELECT 1
+                  FROM `menu` root_menu
+                  WHERE root_menu.`tenant_id` <=> role_entity.`tenant_id`
+                    AND root_menu.`name` = 'scheduling'
+                    AND root_menu.`path` = '/scheduling'
+                );
+
+              INSERT IGNORE INTO `role_permission` (
+                `tenant_id`,
+                `role_id`,
+                `permission_id`,
+                `created_by`,
+                `created_at`
+              )
+              SELECT
+                role_entity.`tenant_id`,
+                role_entity.`id`,
+                audit_permission.`id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`
+              FROM `role` role_entity
+              JOIN `permission` audit_permission
+                ON audit_permission.`normalized_tenant_id` = IFNULL(role_entity.`tenant_id`, 0)
+               AND audit_permission.`permission_code` = 'scheduling:audit:view'
+              WHERE role_entity.`code` = 'ROLE_TENANT_ADMIN'
+                AND EXISTS (
+                  SELECT 1
+                  FROM `menu` root_menu
+                  WHERE root_menu.`tenant_id` <=> role_entity.`tenant_id`
+                    AND root_menu.`name` = 'scheduling'
+                    AND root_menu.`path` = '/scheduling'
+                );
+
+              DELETE requirement
+              FROM `menu_permission_requirement` requirement
+              JOIN `menu` menu_entry
+                ON menu_entry.`id` = requirement.`menu_id`
+               AND menu_entry.`tenant_id` <=> requirement.`tenant_id`
+              WHERE menu_entry.`name` IN (
+                'scheduling',
+                'schedulingDag',
+                'schedulingTask',
+                'schedulingTaskType',
+                'schedulingDagHistory',
+                'schedulingAudit',
+                'dag',
+                'plan',
+                'tasktType',
+                'dagHistory'
+              );
+
+              DELETE legacy_menu
+              FROM `menu` legacy_menu
+              WHERE legacy_menu.`name` IN ('dag', 'plan', 'tasktType', 'dagHistory')
+                AND legacy_menu.`parent_id` IS NOT NULL;
+
+              INSERT INTO `menu_permission_requirement` (
+                `tenant_id`,
+                `menu_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                menu_entry.`tenant_id`,
+                menu_entry.`id`,
+                0 AS `requirement_group`,
+                1 AS `sort_order`,
+                menu_entry.`required_permission_id`,
+                0 AS `negated`,
+                COALESCE(menu_entry.`created_at`, NOW()) AS `created_at`,
+                menu_entry.`created_by`,
+                COALESCE(menu_entry.`updated_at`, NOW()) AS `updated_at`,
+                menu_entry.`updated_by`
+              FROM `menu` menu_entry
+              WHERE menu_entry.`name` IN (
+                'scheduling',
+                'schedulingDag',
+                'schedulingTask',
+                'schedulingTaskType',
+                'schedulingDagHistory',
+                'schedulingAudit'
+              )
+                AND menu_entry.`required_permission_id` IS NOT NULL;
+
+              -- 5) legacy scheduling 旧码只保留历史 changelog 痕迹，不再保留运行态绑定。
+              DELETE old_binding
+              FROM `role_permission` old_binding
+              JOIN `permission` old_permission
+                ON old_permission.`id` = old_binding.`permission_id`
+               AND old_permission.`tenant_id` <=> old_binding.`tenant_id`
+              WHERE old_permission.`permission_code` IN (
+                'scheduling:view',
+                'dag:view',
+                'tasktType:view',
+                'plan:view',
+                'dagHistory:view'
+              );
+
+              DELETE old_permission
+              FROM `permission` old_permission
+              WHERE old_permission.`permission_code` IN (
+                'scheduling:view',
+                'dag:view',
+                'tasktType:view',
+                'plan:view',
+                'dagHistory:view'
+              )
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `role_permission` role_permission_entry
+                  WHERE role_permission_entry.`tenant_id` <=> old_permission.`tenant_id`
+                    AND role_permission_entry.`permission_id` = old_permission.`id`
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `menu` menu_entry
+                  WHERE menu_entry.`tenant_id` <=> old_permission.`tenant_id`
+                    AND menu_entry.`required_permission_id` = old_permission.`id`
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `ui_action` action_entry
+                  WHERE action_entry.`tenant_id` <=> old_permission.`tenant_id`
+                    AND action_entry.`required_permission_id` = old_permission.`id`
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `menu_permission_requirement` requirement
+                  WHERE requirement.`tenant_id` <=> old_permission.`tenant_id`
+                    AND requirement.`permission_id` = old_permission.`id`
+                );

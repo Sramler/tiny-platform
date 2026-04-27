@@ -1,0 +1,48 @@
+databaseChangeLog:
+  - changeSet:
+      id: 172-backfill-tenant-legit-api-endpoint-requirements
+      author: codex
+      comment: 清理租户侧 /platform/** 污染后，补齐仍合法存在的 tenant api_endpoint requirement 缺口
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: api_endpoint
+            - tableExists:
+                tableName: api_endpoint_permission_requirement
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT IGNORE INTO `api_endpoint_permission_requirement` (
+                `tenant_id`,
+                `api_endpoint_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `updated_at`
+              )
+              SELECT
+                endpoint_entry.`tenant_id`,
+                endpoint_entry.`id`,
+                0 AS `requirement_group`,
+                1 AS `sort_order`,
+                endpoint_entry.`required_permission_id`,
+                0 AS `negated`,
+                COALESCE(endpoint_entry.`created_at`, NOW()) AS `created_at`,
+                COALESCE(endpoint_entry.`updated_at`, NOW()) AS `updated_at`
+              FROM `api_endpoint` endpoint_entry
+              WHERE endpoint_entry.`tenant_id` IS NOT NULL
+                AND endpoint_entry.`required_permission_id` IS NOT NULL
+                AND (
+                  (endpoint_entry.`uri` = '/sys/permissions' AND endpoint_entry.`method` = 'GET')
+                  OR (endpoint_entry.`uri` = '/sys/permissions/{id}' AND endpoint_entry.`method` = 'GET')
+                  OR (endpoint_entry.`uri` = '/sys/role-constraints/violations' AND endpoint_entry.`method` = 'GET')
+                );

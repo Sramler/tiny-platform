@@ -9,9 +9,14 @@ import org.springframework.util.StringUtils;
  * 平台级控制面资源策略。
  *
  * <p>这类资源只应存在于默认平台租户，并且只对平台管理员开放。当前先收口
- * “租户管理” 与 “幂等治理” 两类平台入口，避免它们在普通租户模板中被复制或在菜单树里暴露。
+ * “租户管理”/“幂等治理” 历史入口，以及显式 {@code /platform/**} 控制面，
+ * 避免它们在普通租户模板中被复制或在菜单树里暴露。
  */
 public final class PlatformControlPlaneResourcePolicy {
+    private static final String PLATFORM_ROUTE_PREFIX = "/platform";
+    private static final String PLATFORM_PERMISSION_PREFIX = "platform:";
+    private static final String DICT_PLATFORM_PERMISSION_PREFIX = "dict:platform:";
+
     private static final String TENANT_MENU_NAME = "tenant";
     private static final String TENANT_MENU_URL = "/system/tenant";
     private static final String TENANT_MENU_URI = "/sys/tenants";
@@ -96,6 +101,12 @@ public final class PlatformControlPlaneResourcePolicy {
     }
 
     private static boolean isPlatformOnlyResource(ResourceType type, String name, String permission, String url, String uri) {
+        if (matchesPathPrefix(url, PLATFORM_ROUTE_PREFIX) || matchesPathPrefix(uri, PLATFORM_ROUTE_PREFIX)) {
+            return true;
+        }
+        if (matchesPlatformPermissionFamily(permission)) {
+            return true;
+        }
         return isTenantManagementResource(type, name, permission, url, uri)
             || isIdempotentOpsResource(type, name, permission, url, uri);
     }
@@ -141,5 +152,14 @@ public final class PlatformControlPlaneResourcePolicy {
             return false;
         }
         return !StringUtils.hasText(url) && !StringUtils.hasText(uri);
+    }
+
+    private static boolean matchesPlatformPermissionFamily(String permission) {
+        if (!StringUtils.hasText(permission)) {
+            return false;
+        }
+        String normalized = permission.trim();
+        return normalized.startsWith(PLATFORM_PERMISSION_PREFIX)
+            || normalized.startsWith(DICT_PLATFORM_PERMISSION_PREFIX);
     }
 }
