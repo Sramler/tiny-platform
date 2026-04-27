@@ -192,19 +192,6 @@ const routes = [
         component: () => import('@/views/platform/users/PlatformUsers.vue'),
         meta: { requiresAuth: true, title: '平台用户治理' },
       },
-      {
-        path: 'platform/role-assignment-requests',
-        name: 'PlatformRoleAssignmentRequests',
-        component: () =>
-          import('@/views/platform/role-assignment-requests/PlatformRoleApprovals.vue'),
-        meta: { requiresAuth: true, title: '平台角色赋权审批' },
-      },
-      {
-        path: 'platform/role-constraints',
-        name: 'PlatformRoleConstraints',
-        component: () => import('@/views/platform/role-constraints/PlatformRoleConstraints.vue'),
-        meta: { requiresAuth: true, title: '平台 RBAC3 约束' },
-      },
       // {
       //   path: 'about',
       //   name: 'About',
