@@ -9,7 +9,7 @@ import { menuTree, type MenuItem } from '@/api/menu' // 引入菜单 API
 import logger from '@/utils/logger' // 引入日志工具
 import { getCurrentTraceId } from '@/utils/traceId'
 import { useMenuRouteState, updateMenuRouteState } from './menuState'
-import { getTenantCode } from '@/utils/tenant'
+import { getLoginMode, getTenantCode, syncTenantContextFromAccessToken } from '@/utils/tenant'
 
 const MENU_LOAD_MESSAGE_KEY = 'menu-load-error'
 const menuRouteState = useMenuRouteState()
@@ -192,6 +192,19 @@ const routes = [
         component: () => import('@/views/platform/users/PlatformUsers.vue'),
         meta: { requiresAuth: true, title: '平台用户治理' },
       },
+      {
+        path: 'platform/role-assignment-requests',
+        name: 'PlatformRoleAssignmentRequests',
+        component: () =>
+          import('@/views/platform/role-assignment-requests/PlatformRoleApprovals.vue'),
+        meta: { requiresAuth: true, title: '平台角色赋权审批' },
+      },
+      {
+        path: 'platform/role-constraints',
+        name: 'PlatformRoleConstraints',
+        component: () => import('@/views/platform/role-constraints/PlatformRoleConstraints.vue'),
+        meta: { requiresAuth: true, title: '平台 RBAC3 约束' },
+      },
       // {
       //   path: 'about',
       //   name: 'About',
@@ -234,6 +247,18 @@ const routes = [
         name: 'PlatformDicts',
         component: () => import('@/views/platform/dicts/index.vue'),
         meta: { requiresAuth: true, title: '平台字典管理' },
+      },
+      {
+        path: 'platform/scheduling',
+        name: 'PlatformSchedulingConsole',
+        component: () => import('@/views/platform/runtime/ModuleTenantBridge.vue'),
+        meta: { requiresAuth: true, title: '平台调度控制台' },
+      },
+      {
+        path: 'platform/process',
+        name: 'PlatformProcessConsole',
+        component: () => import('@/views/platform/runtime/ModuleTenantBridge.vue'),
+        meta: { requiresAuth: true, title: '平台工作流控制台' },
       },
       // 调度 DAG 详情/历史（子页无菜单项，需静态注册避免 404）
       {
@@ -354,6 +379,19 @@ async function ensureMenuRoutesLoaded(): Promise<boolean> {
 
 const authContext = useAuth()
 
+function resolvePlatformRuntimeBridgePath(path: string): string | null {
+  if (path.startsWith('/platform/scheduling') || path.startsWith('/platform/process')) {
+    return null
+  }
+  if (path.startsWith('/scheduling')) {
+    return '/platform/scheduling'
+  }
+  if (path.startsWith('/process')) {
+    return '/platform/process'
+  }
+  return null
+}
+
 export const authGuard: NavigationGuard = async (to) => {
   // 错误页面直接放行，不需要认证检查
   if (to.path.startsWith('/exception/')) {
@@ -415,12 +453,38 @@ export const authGuard: NavigationGuard = async (to) => {
   }
 }
 
+export const platformRuntimeBridgeGuard: NavigationGuard = async (to) => {
+  if (to.path.startsWith('/exception/')) {
+    return true
+  }
+  if (!authContext.isAuthenticated.value || to.meta.requiresAuth === false) {
+    return true
+  }
+  syncTenantContextFromAccessToken(authContext.user.value?.access_token)
+  if (getLoginMode() !== 'PLATFORM') {
+    return true
+  }
+
+  const bridgePath = resolvePlatformRuntimeBridgePath(to.path)
+  if (!bridgePath) {
+    return true
+  }
+
+  return {
+    path: bridgePath,
+    query: {
+      target: to.fullPath || to.path,
+    },
+    replace: true,
+  } satisfies RouteLocationRaw
+}
+
 export const dynamicRoutesGuard: NavigationGuard = async (to, from) => {
   // 错误页面不需要动态路由检查
   if (to.path.startsWith('/exception/')) {
     return true
   }
-  
+
   if (!authContext.isAuthenticated.value || to.meta.requiresAuth === false) {
     return true
   }
@@ -445,7 +509,7 @@ export const dynamicRoutesGuard: NavigationGuard = async (to, from) => {
         replace: true,
       } satisfies RouteLocationRaw
     }
-    
+
     // 如果最终还是没有匹配到路由，跳转到 404 页面并传递错误信息
     if (to.path !== '/exception/404') {
       logger.warn('[Router] 路由未找到，跳转到 404 页面:', to.fullPath)
@@ -467,6 +531,7 @@ export const dynamicRoutesGuard: NavigationGuard = async (to, from) => {
 }
 
 router.beforeEach(authGuard)
+router.beforeEach(platformRuntimeBridgeGuard)
 router.beforeEach(dynamicRoutesGuard)
 
 /**

@@ -1,0 +1,491 @@
+databaseChangeLog:
+  - changeSet:
+      id: 175-normalize-workflow-runtime-menus-and-api-endpoints
+      author: codex
+      comment: 规范化 workflow 菜单、role binding 与 /process api_endpoint carrier，收口 legacy workflow 页面旧码
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: menu
+            - tableExists:
+                tableName: permission
+            - tableExists:
+                tableName: role
+            - tableExists:
+                tableName: role_permission
+            - tableExists:
+                tableName: menu_permission_requirement
+            - tableExists:
+                tableName: api_endpoint
+            - tableExists:
+                tableName: api_endpoint_permission_requirement
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              -- 1) 以现行 WorkflowAccessGuard 为准，给当前存在 workflow 菜单的 tenant/template 补齐新权限目录。
+              INSERT INTO `permission` (
+                `permission_code`,
+                `permission_name`,
+                `module_code`,
+                `action_code`,
+                `permission_type`,
+                `description`,
+                `enabled`,
+                `built_in_flag`,
+                `tenant_id`,
+                `created_by`,
+                `created_at`,
+                `updated_by`,
+                `updated_at`
+              )
+              SELECT
+                permission_mapping.`permission_code`,
+                permission_mapping.`permission_name`,
+                permission_mapping.`module_code`,
+                permission_mapping.`action_code`,
+                permission_mapping.`permission_type`,
+                permission_mapping.`description`,
+                1 AS `enabled`,
+                0 AS `built_in_flag`,
+                target_tenant.`tenant_id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`,
+                NULL AS `updated_by`,
+                NOW() AS `updated_at`
+              FROM (
+                SELECT DISTINCT `tenant_id`
+                FROM `menu`
+                WHERE `name` = 'process'
+                   OR `path` LIKE '/process/%'
+              ) target_tenant
+              JOIN (
+                SELECT
+                  'workflow:console:view' AS `permission_code`,
+                  '工作流控制面查看权限' AS `permission_name`,
+                  'workflow' AS `module_code`,
+                  'view' AS `action_code`,
+                  'BUTTON' AS `permission_type`,
+                  '查看工作流部署、定义、实例、任务与引擎信息' AS `description`
+                UNION ALL
+                SELECT
+                  'workflow:console:config',
+                  '工作流控制面配置权限',
+                  'workflow',
+                  'config',
+                  'BUTTON',
+                  '部署、删除流程及 BPMN 校验/修复'
+                UNION ALL
+                SELECT
+                  'workflow:instance:control',
+                  '工作流实例控制权限',
+                  'workflow',
+                  'control',
+                  'BUTTON',
+                  '启动、挂起、激活、删除流程实例与领取/完成任务'
+                UNION ALL
+                SELECT
+                  'workflow:tenant:manage',
+                  '工作流引擎租户管理权限',
+                  'workflow',
+                  'manage',
+                  'BUTTON',
+                  '管理流程引擎租户目录'
+              ) permission_mapping
+              WHERE NOT EXISTS (
+                SELECT 1
+                FROM `permission` existing
+                WHERE existing.`normalized_tenant_id` = IFNULL(target_tenant.`tenant_id`, 0)
+                  AND existing.`permission_code` = permission_mapping.`permission_code`
+              );
+
+              -- 2) 先把 legacy workflow 角色授权映射到新权限，避免切菜单后管理员直接失去访问。
+              INSERT IGNORE INTO `role_permission` (
+                `tenant_id`,
+                `role_id`,
+                `permission_id`,
+                `created_by`,
+                `created_at`
+              )
+              SELECT
+                old_binding.`tenant_id`,
+                old_binding.`role_id`,
+                new_permission.`id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`
+              FROM `role_permission` old_binding
+              JOIN `permission` old_permission
+                ON old_permission.`id` = old_binding.`permission_id`
+               AND old_permission.`tenant_id` <=> old_binding.`tenant_id`
+              JOIN (
+                SELECT 'process:view' AS `legacy_code`, 'workflow:console:view' AS `target_code`
+                UNION ALL SELECT 'workflowDesign:view', 'workflow:console:view'
+                UNION ALL SELECT 'deployment:view', 'workflow:console:view'
+                UNION ALL SELECT 'definition:view', 'workflow:console:view'
+                UNION ALL SELECT 'instance:view', 'workflow:console:view'
+                UNION ALL SELECT 'task:view', 'workflow:console:view'
+                UNION ALL SELECT 'workflowDesign:view', 'workflow:console:config'
+                UNION ALL SELECT 'deployment:view', 'workflow:console:config'
+                UNION ALL SELECT 'definition:view', 'workflow:console:config'
+                UNION ALL SELECT 'instance:view', 'workflow:instance:control'
+                UNION ALL SELECT 'task:view', 'workflow:instance:control'
+              ) permission_mapping
+                ON permission_mapping.`legacy_code` = old_permission.`permission_code`
+              JOIN `permission` new_permission
+                ON new_permission.`normalized_tenant_id` = old_binding.`normalized_tenant_id`
+               AND new_permission.`permission_code` = permission_mapping.`target_code`;
+
+              INSERT IGNORE INTO `role_permission` (
+                `tenant_id`,
+                `role_id`,
+                `permission_id`,
+                `created_by`,
+                `created_at`
+              )
+              SELECT
+                role_entity.`tenant_id`,
+                role_entity.`id`,
+                new_permission.`id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`
+              FROM `role` role_entity
+              JOIN `permission` new_permission
+                ON new_permission.`normalized_tenant_id` = IFNULL(role_entity.`tenant_id`, 0)
+               AND new_permission.`permission_code` IN (
+                 'workflow:console:view',
+                 'workflow:console:config',
+                 'workflow:instance:control'
+               )
+              WHERE role_entity.`code` = 'ROLE_TENANT_ADMIN'
+                AND EXISTS (
+                  SELECT 1
+                  FROM `menu` process_root
+                  WHERE process_root.`tenant_id` <=> role_entity.`tenant_id`
+                    AND process_root.`name` = 'process'
+                );
+
+              INSERT IGNORE INTO `role_permission` (
+                `tenant_id`,
+                `role_id`,
+                `permission_id`,
+                `created_by`,
+                `created_at`
+              )
+              SELECT
+                role_entity.`tenant_id`,
+                role_entity.`id`,
+                manage_permission.`id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`
+              FROM `role` role_entity
+              JOIN `permission` manage_permission
+                ON manage_permission.`normalized_tenant_id` = IFNULL(role_entity.`tenant_id`, 0)
+               AND manage_permission.`permission_code` = 'workflow:tenant:manage'
+              WHERE role_entity.`code` IN (
+                'ROLE_PLATFORM_ADMIN',
+                'ROLE_SUPER_ADMIN',
+                'ROLE_SYSTEM_ADMIN',
+                'ROLE_TENANT_ADMIN'
+              )
+                AND EXISTS (
+                  SELECT 1
+                  FROM `menu` process_root
+                  WHERE process_root.`tenant_id` <=> role_entity.`tenant_id`
+                    AND process_root.`name` = 'process'
+                );
+
+              -- 3) 工作流菜单改绑 workflow:*，并修正 component 大小写，避免大小写敏感环境的动态路由失败。
+              UPDATE `menu` menu_entry
+              JOIN `permission` workflow_permission
+                ON workflow_permission.`normalized_tenant_id` = IFNULL(menu_entry.`tenant_id`, 0)
+               AND workflow_permission.`permission_code` = CASE
+                 WHEN menu_entry.`name` = 'modeling' THEN 'workflow:console:config'
+                 ELSE 'workflow:console:view'
+               END
+              SET
+                menu_entry.`permission` = workflow_permission.`permission_code`,
+                menu_entry.`required_permission_id` = workflow_permission.`id`,
+                menu_entry.`component` = CASE
+                  WHEN menu_entry.`name` = 'modeling' THEN '/views/process/Modeling.vue'
+                  WHEN menu_entry.`name` = 'deployment' THEN '/views/process/Deployment.vue'
+                  WHEN menu_entry.`name` = 'definition' THEN '/views/process/Definition.vue'
+                  WHEN menu_entry.`name` = 'instance' THEN '/views/process/Instance.vue'
+                  WHEN menu_entry.`name` = 'task' THEN '/views/process/task.vue'
+                  ELSE menu_entry.`component`
+                END,
+                menu_entry.`enabled` = 1,
+                menu_entry.`updated_at` = NOW(),
+                menu_entry.`updated_by` = NULL
+              WHERE menu_entry.`name` IN (
+                'process',
+                'modeling',
+                'deployment',
+                'definition',
+                'instance',
+                'task'
+              );
+
+              DELETE requirement
+              FROM `menu_permission_requirement` requirement
+              JOIN `menu` menu_entry
+                ON menu_entry.`id` = requirement.`menu_id`
+               AND menu_entry.`tenant_id` <=> requirement.`tenant_id`
+              WHERE menu_entry.`name` IN (
+                'process',
+                'modeling',
+                'deployment',
+                'definition',
+                'instance',
+                'task'
+              );
+
+              INSERT INTO `menu_permission_requirement` (
+                `tenant_id`,
+                `menu_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                menu_entry.`tenant_id`,
+                menu_entry.`id`,
+                requirement_mapping.`requirement_group`,
+                requirement_mapping.`sort_order`,
+                workflow_permission.`id`,
+                0 AS `negated`,
+                COALESCE(menu_entry.`created_at`, NOW()) AS `created_at`,
+                menu_entry.`created_by`,
+                COALESCE(menu_entry.`updated_at`, NOW()) AS `updated_at`,
+                menu_entry.`updated_by`
+              FROM `menu` menu_entry
+              JOIN (
+                SELECT 'process' AS `menu_name`, 0 AS `requirement_group`, 1 AS `sort_order`, 'workflow:console:view' AS `permission_code`
+                UNION ALL SELECT 'process', 1, 1, 'workflow:console:config'
+                UNION ALL SELECT 'process', 2, 1, 'workflow:instance:control'
+                UNION ALL SELECT 'modeling', 0, 1, 'workflow:console:config'
+                UNION ALL SELECT 'deployment', 0, 1, 'workflow:console:view'
+                UNION ALL SELECT 'deployment', 1, 1, 'workflow:console:config'
+                UNION ALL SELECT 'definition', 0, 1, 'workflow:console:view'
+                UNION ALL SELECT 'definition', 1, 1, 'workflow:console:config'
+                UNION ALL SELECT 'instance', 0, 1, 'workflow:console:view'
+                UNION ALL SELECT 'instance', 1, 1, 'workflow:instance:control'
+                UNION ALL SELECT 'task', 0, 1, 'workflow:console:view'
+                UNION ALL SELECT 'task', 1, 1, 'workflow:instance:control'
+              ) requirement_mapping
+                ON requirement_mapping.`menu_name` = menu_entry.`name`
+              JOIN `permission` workflow_permission
+                ON workflow_permission.`normalized_tenant_id` = IFNULL(menu_entry.`tenant_id`, 0)
+               AND workflow_permission.`permission_code` = requirement_mapping.`permission_code`;
+
+              -- 4) 当前数据库 /process/** 完全没有 carrier；这里同时补齐 template + 当前租户 endpoint。
+              INSERT INTO `api_endpoint` (
+                `tenant_id`,
+                `resource_level`,
+                `name`,
+                `title`,
+                `uri`,
+                `method`,
+                `permission`,
+                `required_permission_id`,
+                `enabled`,
+                `created_at`,
+                `updated_at`
+              )
+              SELECT
+                target_tenant.`tenant_id`,
+                CASE
+                  WHEN target_tenant.`tenant_id` IS NULL THEN 'PLATFORM'
+                  ELSE 'TENANT'
+                END AS `resource_level`,
+                endpoint_mapping.`name`,
+                endpoint_mapping.`title`,
+                endpoint_mapping.`uri`,
+                endpoint_mapping.`method`,
+                endpoint_mapping.`permission_code`,
+                workflow_permission.`id`,
+                1 AS `enabled`,
+                NOW() AS `created_at`,
+                NOW() AS `updated_at`
+              FROM (
+                SELECT DISTINCT `tenant_id`
+                FROM `menu`
+                WHERE `name` = 'process'
+                   OR `path` LIKE '/process/%'
+              ) target_tenant
+              JOIN (
+                SELECT 'process-deploy-post' AS `name`, '流程部署' AS `title`, '/process/deploy' AS `uri`, 'POST' AS `method`, 'workflow:console:config' AS `permission_code`
+                UNION ALL SELECT 'process-deploy-with-info-post', '流程部署（含元信息）', '/process/deploy-with-info', 'POST', 'workflow:console:config'
+                UNION ALL SELECT 'process-deployments-get', '流程部署列表', '/process/deployments', 'GET', 'workflow:console:view'
+                UNION ALL SELECT 'process-deployment-delete', '流程部署删除', '/process/deployment/{deploymentId}', 'DELETE', 'workflow:console:config'
+                UNION ALL SELECT 'process-start-post', '流程实例启动', '/process/start', 'POST', 'workflow:instance:control'
+                UNION ALL SELECT 'process-instances-get', '流程实例列表', '/process/instances', 'GET', 'workflow:console:view'
+                UNION ALL SELECT 'process-instance-suspend-post', '流程实例挂起', '/process/instance/{instanceId}/suspend', 'POST', 'workflow:instance:control'
+                UNION ALL SELECT 'process-instance-activate-post', '流程实例激活', '/process/instance/{instanceId}/activate', 'POST', 'workflow:instance:control'
+                UNION ALL SELECT 'process-instance-delete', '流程实例删除', '/process/instance/{instanceId}', 'DELETE', 'workflow:instance:control'
+                UNION ALL SELECT 'process-instance-tasks-get', '流程实例任务列表', '/process/instance/{instanceId}/tasks', 'GET', 'workflow:console:view'
+                UNION ALL SELECT 'process-tasks-get', '流程任务列表', '/process/tasks', 'GET', 'workflow:console:view'
+                UNION ALL SELECT 'process-task-claim-post', '流程任务领取', '/process/task/{taskId}/claim', 'POST', 'workflow:instance:control'
+                UNION ALL SELECT 'process-task-complete-post', '流程任务完成', '/process/task/{taskId}/complete', 'POST', 'workflow:instance:control'
+                UNION ALL SELECT 'process-history-instances-get', '流程历史实例列表', '/process/history/instances', 'GET', 'workflow:console:view'
+                UNION ALL SELECT 'process-history-tasks-get', '流程历史任务列表', '/process/history/tasks', 'GET', 'workflow:console:view'
+                UNION ALL SELECT 'process-tenant-post', '流程引擎租户创建', '/process/tenant', 'POST', 'workflow:tenant:manage'
+                UNION ALL SELECT 'process-tenants-get', '流程引擎租户列表', '/process/tenants', 'GET', 'workflow:tenant:manage'
+                UNION ALL SELECT 'process-engine-info-get', '流程引擎信息', '/process/engine/info', 'GET', 'workflow:console:view'
+                UNION ALL SELECT 'process-definitions-get', '流程定义列表', '/process/definitions', 'GET', 'workflow:console:view'
+                UNION ALL SELECT 'process-definition-xml-get', '流程定义 BPMN XML', '/process/definition/{processDefinitionId}/xml', 'GET', 'workflow:console:view'
+                UNION ALL SELECT 'process-definition-delete', '流程定义删除', '/process/definition/{processDefinitionId}', 'DELETE', 'workflow:console:config'
+                UNION ALL SELECT 'process-validate-post', 'BPMN XML 校验', '/process/validate', 'POST', 'workflow:console:config'
+                UNION ALL SELECT 'process-fix-validation-errors-post', 'BPMN XML 修复', '/process/fix-validation-errors', 'POST', 'workflow:console:config'
+              ) endpoint_mapping
+              JOIN `permission` workflow_permission
+                ON workflow_permission.`normalized_tenant_id` = IFNULL(target_tenant.`tenant_id`, 0)
+               AND workflow_permission.`permission_code` = endpoint_mapping.`permission_code`
+              WHERE NOT EXISTS (
+                SELECT 1
+                FROM `api_endpoint` existing
+                WHERE existing.`tenant_id` <=> target_tenant.`tenant_id`
+                  AND existing.`uri` = endpoint_mapping.`uri`
+                  AND existing.`method` = endpoint_mapping.`method`
+              );
+
+              UPDATE `api_endpoint` endpoint_entry
+              JOIN (
+                SELECT 'process-deploy-post' AS `name`, '流程部署' AS `title`, '/process/deploy' AS `uri`, 'POST' AS `method`, 'workflow:console:config' AS `permission_code`
+                UNION ALL SELECT 'process-deploy-with-info-post', '流程部署（含元信息）', '/process/deploy-with-info', 'POST', 'workflow:console:config'
+                UNION ALL SELECT 'process-deployments-get', '流程部署列表', '/process/deployments', 'GET', 'workflow:console:view'
+                UNION ALL SELECT 'process-deployment-delete', '流程部署删除', '/process/deployment/{deploymentId}', 'DELETE', 'workflow:console:config'
+                UNION ALL SELECT 'process-start-post', '流程实例启动', '/process/start', 'POST', 'workflow:instance:control'
+                UNION ALL SELECT 'process-instances-get', '流程实例列表', '/process/instances', 'GET', 'workflow:console:view'
+                UNION ALL SELECT 'process-instance-suspend-post', '流程实例挂起', '/process/instance/{instanceId}/suspend', 'POST', 'workflow:instance:control'
+                UNION ALL SELECT 'process-instance-activate-post', '流程实例激活', '/process/instance/{instanceId}/activate', 'POST', 'workflow:instance:control'
+                UNION ALL SELECT 'process-instance-delete', '流程实例删除', '/process/instance/{instanceId}', 'DELETE', 'workflow:instance:control'
+                UNION ALL SELECT 'process-instance-tasks-get', '流程实例任务列表', '/process/instance/{instanceId}/tasks', 'GET', 'workflow:console:view'
+                UNION ALL SELECT 'process-tasks-get', '流程任务列表', '/process/tasks', 'GET', 'workflow:console:view'
+                UNION ALL SELECT 'process-task-claim-post', '流程任务领取', '/process/task/{taskId}/claim', 'POST', 'workflow:instance:control'
+                UNION ALL SELECT 'process-task-complete-post', '流程任务完成', '/process/task/{taskId}/complete', 'POST', 'workflow:instance:control'
+                UNION ALL SELECT 'process-history-instances-get', '流程历史实例列表', '/process/history/instances', 'GET', 'workflow:console:view'
+                UNION ALL SELECT 'process-history-tasks-get', '流程历史任务列表', '/process/history/tasks', 'GET', 'workflow:console:view'
+                UNION ALL SELECT 'process-tenant-post', '流程引擎租户创建', '/process/tenant', 'POST', 'workflow:tenant:manage'
+                UNION ALL SELECT 'process-tenants-get', '流程引擎租户列表', '/process/tenants', 'GET', 'workflow:tenant:manage'
+                UNION ALL SELECT 'process-engine-info-get', '流程引擎信息', '/process/engine/info', 'GET', 'workflow:console:view'
+                UNION ALL SELECT 'process-definitions-get', '流程定义列表', '/process/definitions', 'GET', 'workflow:console:view'
+                UNION ALL SELECT 'process-definition-xml-get', '流程定义 BPMN XML', '/process/definition/{processDefinitionId}/xml', 'GET', 'workflow:console:view'
+                UNION ALL SELECT 'process-definition-delete', '流程定义删除', '/process/definition/{processDefinitionId}', 'DELETE', 'workflow:console:config'
+                UNION ALL SELECT 'process-validate-post', 'BPMN XML 校验', '/process/validate', 'POST', 'workflow:console:config'
+                UNION ALL SELECT 'process-fix-validation-errors-post', 'BPMN XML 修复', '/process/fix-validation-errors', 'POST', 'workflow:console:config'
+              ) endpoint_mapping
+                ON endpoint_mapping.`uri` = endpoint_entry.`uri`
+               AND endpoint_mapping.`method` = endpoint_entry.`method`
+              JOIN `permission` workflow_permission
+                ON workflow_permission.`normalized_tenant_id` = IFNULL(endpoint_entry.`tenant_id`, 0)
+               AND workflow_permission.`permission_code` = endpoint_mapping.`permission_code`
+              SET
+                endpoint_entry.`resource_level` = CASE
+                  WHEN endpoint_entry.`tenant_id` IS NULL THEN 'PLATFORM'
+                  ELSE 'TENANT'
+                END,
+                endpoint_entry.`name` = endpoint_mapping.`name`,
+                endpoint_entry.`title` = endpoint_mapping.`title`,
+                endpoint_entry.`permission` = endpoint_mapping.`permission_code`,
+                endpoint_entry.`required_permission_id` = workflow_permission.`id`,
+                endpoint_entry.`enabled` = 1,
+                endpoint_entry.`updated_at` = NOW()
+              WHERE endpoint_entry.`uri` LIKE '/process/%';
+
+              DELETE requirement
+              FROM `api_endpoint_permission_requirement` requirement
+              JOIN `api_endpoint` endpoint_entry
+                ON endpoint_entry.`id` = requirement.`api_endpoint_id`
+               AND endpoint_entry.`tenant_id` <=> requirement.`tenant_id`
+              WHERE endpoint_entry.`uri` LIKE '/process/%';
+
+              INSERT INTO `api_endpoint_permission_requirement` (
+                `tenant_id`,
+                `api_endpoint_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `updated_at`
+              )
+              SELECT
+                endpoint_entry.`tenant_id`,
+                endpoint_entry.`id`,
+                0 AS `requirement_group`,
+                1 AS `sort_order`,
+                endpoint_entry.`required_permission_id`,
+                0 AS `negated`,
+                COALESCE(endpoint_entry.`created_at`, NOW()) AS `created_at`,
+                COALESCE(endpoint_entry.`updated_at`, NOW()) AS `updated_at`
+              FROM `api_endpoint` endpoint_entry
+              WHERE endpoint_entry.`uri` LIKE '/process/%'
+                AND endpoint_entry.`uri` <> '/process/health'
+                AND endpoint_entry.`required_permission_id` IS NOT NULL;
+
+              -- 5) workflow legacy 页面旧码不再作为运行态真相源。
+              DELETE old_binding
+              FROM `role_permission` old_binding
+              JOIN `permission` old_permission
+                ON old_permission.`id` = old_binding.`permission_id`
+               AND old_permission.`tenant_id` <=> old_binding.`tenant_id`
+              WHERE old_permission.`permission_code` IN (
+                'process:view',
+                'workflowDesign:view',
+                'deployment:view',
+                'definition:view',
+                'instance:view',
+                'task:view'
+              );
+
+              DELETE old_permission
+              FROM `permission` old_permission
+              WHERE old_permission.`permission_code` IN (
+                'process:view',
+                'workflowDesign:view',
+                'deployment:view',
+                'definition:view',
+                'instance:view',
+                'task:view'
+              )
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `role_permission` role_permission_entry
+                  WHERE role_permission_entry.`tenant_id` <=> old_permission.`tenant_id`
+                    AND role_permission_entry.`permission_id` = old_permission.`id`
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `menu` menu_entry
+                  WHERE menu_entry.`tenant_id` <=> old_permission.`tenant_id`
+                    AND menu_entry.`required_permission_id` = old_permission.`id`
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `api_endpoint` endpoint_entry
+                  WHERE endpoint_entry.`tenant_id` <=> old_permission.`tenant_id`
+                    AND endpoint_entry.`required_permission_id` = old_permission.`id`
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `menu_permission_requirement` requirement
+                  WHERE requirement.`tenant_id` <=> old_permission.`tenant_id`
+                    AND requirement.`permission_id` = old_permission.`id`
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `api_endpoint_permission_requirement` requirement
+                  WHERE requirement.`tenant_id` <=> old_permission.`tenant_id`
+                    AND requirement.`permission_id` = old_permission.`id`
+                );

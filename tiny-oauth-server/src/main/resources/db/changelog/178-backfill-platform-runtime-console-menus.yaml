@@ -1,0 +1,296 @@
+databaseChangeLog:
+  - changeSet:
+      id: 178-backfill-platform-runtime-console-menus
+      author: codex
+      comment: 将 PLATFORM 作用域下调度/工作流入口收口到 /platform 控制台，避免平台菜单继续直落 tenant runtime
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: menu
+            - tableExists:
+                tableName: permission
+            - tableExists:
+                tableName: menu_permission_requirement
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              UPDATE `menu` platform_process_menu
+              JOIN `menu` platform_monitor
+                ON platform_monitor.`tenant_id` IS NULL
+               AND platform_monitor.`name` = 'monitor'
+              JOIN `permission` workflow_view_permission
+                ON workflow_view_permission.`tenant_id` IS NULL
+               AND workflow_view_permission.`permission_code` = 'workflow:console:view'
+              SET
+                platform_process_menu.`resource_level` = 'PLATFORM',
+                platform_process_menu.`title` = '平台工作流控制台',
+                platform_process_menu.`path` = '/platform/process',
+                platform_process_menu.`component` = '/views/platform/runtime/ModuleTenantBridge.vue',
+                platform_process_menu.`redirect` = '',
+                platform_process_menu.`hidden` = 0,
+                platform_process_menu.`keep_alive` = 0,
+                platform_process_menu.`permission` = 'workflow:console:view',
+                platform_process_menu.`required_permission_id` = workflow_view_permission.`id`,
+                platform_process_menu.`type` = 1,
+                platform_process_menu.`parent_id` = platform_monitor.`id`,
+                platform_process_menu.`enabled` = 1,
+                platform_process_menu.`updated_at` = NOW(),
+                platform_process_menu.`updated_by` = NULL
+              WHERE platform_process_menu.`tenant_id` IS NULL
+                AND platform_process_menu.`name` = 'process';
+
+              INSERT INTO `menu` (
+                `tenant_id`,
+                `resource_level`,
+                `name`,
+                `title`,
+                `path`,
+                `icon`,
+                `show_icon`,
+                `sort`,
+                `component`,
+                `redirect`,
+                `hidden`,
+                `keep_alive`,
+                `permission`,
+                `required_permission_id`,
+                `type`,
+                `parent_id`,
+                `enabled`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                'PLATFORM' AS `resource_level`,
+                'process' AS `name`,
+                '平台工作流控制台' AS `title`,
+                '/platform/process' AS `path`,
+                COALESCE(seed_process.`icon`, 'DeploymentUnitOutlined') AS `icon`,
+                COALESCE(seed_process.`show_icon`, 0) AS `show_icon`,
+                COALESCE(seed_process.`sort`, 0) AS `sort`,
+                '/views/platform/runtime/ModuleTenantBridge.vue' AS `component`,
+                '' AS `redirect`,
+                0 AS `hidden`,
+                0 AS `keep_alive`,
+                'workflow:console:view' AS `permission`,
+                workflow_view_permission.`id` AS `required_permission_id`,
+                1 AS `type`,
+                platform_monitor.`id` AS `parent_id`,
+                1 AS `enabled`,
+                NOW() AS `created_at`,
+                NULL AS `created_by`,
+                NOW() AS `updated_at`,
+                NULL AS `updated_by`
+              FROM `menu` platform_monitor
+              JOIN `permission` workflow_view_permission
+                ON workflow_view_permission.`tenant_id` IS NULL
+               AND workflow_view_permission.`permission_code` = 'workflow:console:view'
+              LEFT JOIN `menu` seed_process
+                ON seed_process.`tenant_id` = 1
+               AND seed_process.`name` = 'process'
+              WHERE platform_monitor.`tenant_id` IS NULL
+                AND platform_monitor.`name` = 'monitor'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `menu` existing
+                  WHERE existing.`tenant_id` IS NULL
+                    AND existing.`path` = '/platform/process'
+                );
+
+              UPDATE `menu` platform_scheduling_menu
+              JOIN `menu` platform_monitor
+                ON platform_monitor.`tenant_id` IS NULL
+               AND platform_monitor.`name` = 'monitor'
+              JOIN `permission` scheduling_entry_permission
+                ON scheduling_entry_permission.`tenant_id` IS NULL
+               AND scheduling_entry_permission.`permission_code` = 'scheduling:entry:view'
+              SET
+                platform_scheduling_menu.`resource_level` = 'PLATFORM',
+                platform_scheduling_menu.`title` = '平台调度控制台',
+                platform_scheduling_menu.`path` = '/platform/scheduling',
+                platform_scheduling_menu.`component` = '/views/platform/runtime/ModuleTenantBridge.vue',
+                platform_scheduling_menu.`redirect` = '',
+                platform_scheduling_menu.`hidden` = 0,
+                platform_scheduling_menu.`keep_alive` = 0,
+                platform_scheduling_menu.`permission` = 'scheduling:entry:view',
+                platform_scheduling_menu.`required_permission_id` = scheduling_entry_permission.`id`,
+                platform_scheduling_menu.`type` = 1,
+                platform_scheduling_menu.`parent_id` = platform_monitor.`id`,
+                platform_scheduling_menu.`enabled` = 1,
+                platform_scheduling_menu.`updated_at` = NOW(),
+                platform_scheduling_menu.`updated_by` = NULL
+              WHERE platform_scheduling_menu.`tenant_id` IS NULL
+                AND platform_scheduling_menu.`name` = 'scheduling';
+
+              INSERT INTO `menu` (
+                `tenant_id`,
+                `resource_level`,
+                `name`,
+                `title`,
+                `path`,
+                `icon`,
+                `show_icon`,
+                `sort`,
+                `component`,
+                `redirect`,
+                `hidden`,
+                `keep_alive`,
+                `permission`,
+                `required_permission_id`,
+                `type`,
+                `parent_id`,
+                `enabled`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                'PLATFORM' AS `resource_level`,
+                'scheduling' AS `name`,
+                '平台调度控制台' AS `title`,
+                '/platform/scheduling' AS `path`,
+                COALESCE(seed_scheduling.`icon`, 'ScheduleOutlined') AS `icon`,
+                COALESCE(seed_scheduling.`show_icon`, 0) AS `show_icon`,
+                COALESCE(seed_scheduling.`sort`, 3) AS `sort`,
+                '/views/platform/runtime/ModuleTenantBridge.vue' AS `component`,
+                '' AS `redirect`,
+                0 AS `hidden`,
+                0 AS `keep_alive`,
+                'scheduling:entry:view' AS `permission`,
+                scheduling_entry_permission.`id` AS `required_permission_id`,
+                1 AS `type`,
+                platform_monitor.`id` AS `parent_id`,
+                1 AS `enabled`,
+                NOW() AS `created_at`,
+                NULL AS `created_by`,
+                NOW() AS `updated_at`,
+                NULL AS `updated_by`
+              FROM `menu` platform_monitor
+              JOIN `permission` scheduling_entry_permission
+                ON scheduling_entry_permission.`tenant_id` IS NULL
+               AND scheduling_entry_permission.`permission_code` = 'scheduling:entry:view'
+              LEFT JOIN `menu` seed_scheduling
+                ON seed_scheduling.`tenant_id` = 1
+               AND seed_scheduling.`name` = 'scheduling'
+              WHERE platform_monitor.`tenant_id` IS NULL
+                AND platform_monitor.`name` = 'monitor'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `menu` existing
+                  WHERE existing.`tenant_id` IS NULL
+                    AND existing.`path` = '/platform/scheduling'
+                );
+
+              UPDATE `menu` platform_runtime_child
+              SET
+                platform_runtime_child.`hidden` = 1,
+                platform_runtime_child.`enabled` = 0,
+                platform_runtime_child.`updated_at` = NOW(),
+                platform_runtime_child.`updated_by` = NULL
+              WHERE platform_runtime_child.`tenant_id` IS NULL
+                AND platform_runtime_child.`name` IN (
+                  'modeling',
+                  'deployment',
+                  'definition',
+                  'instance',
+                  'task',
+                  'schedulingDag',
+                  'schedulingTask',
+                  'schedulingTaskType',
+                  'schedulingDagHistory',
+                  'schedulingAudit'
+                );
+
+              DELETE requirement
+              FROM `menu_permission_requirement` requirement
+              JOIN `menu` platform_console_menu
+                ON platform_console_menu.`id` = requirement.`menu_id`
+               AND platform_console_menu.`tenant_id` <=> requirement.`tenant_id`
+              WHERE platform_console_menu.`tenant_id` IS NULL
+                AND platform_console_menu.`path` IN ('/platform/process', '/platform/scheduling');
+
+              INSERT INTO `menu_permission_requirement` (
+                `tenant_id`,
+                `menu_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                platform_process_menu.`id` AS `menu_id`,
+                requirement_mapping.`requirement_group`,
+                requirement_mapping.`sort_order`,
+                workflow_permission.`id`,
+                0 AS `negated`,
+                NOW() AS `created_at`,
+                NULL AS `created_by`,
+                NOW() AS `updated_at`,
+                NULL AS `updated_by`
+              FROM `menu` platform_process_menu
+              JOIN (
+                SELECT 0 AS `requirement_group`, 1 AS `sort_order`, 'workflow:console:view' AS `permission_code`
+                UNION ALL SELECT 1, 1, 'workflow:console:config'
+                UNION ALL SELECT 2, 1, 'workflow:instance:control'
+                UNION ALL SELECT 3, 1, 'workflow:tenant:manage'
+              ) requirement_mapping
+              JOIN `permission` workflow_permission
+                ON workflow_permission.`tenant_id` IS NULL
+               AND workflow_permission.`permission_code` = requirement_mapping.`permission_code`
+              WHERE platform_process_menu.`tenant_id` IS NULL
+                AND platform_process_menu.`path` = '/platform/process';
+
+              INSERT INTO `menu_permission_requirement` (
+                `tenant_id`,
+                `menu_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                platform_scheduling_menu.`id` AS `menu_id`,
+                requirement_mapping.`requirement_group`,
+                requirement_mapping.`sort_order`,
+                scheduling_permission.`id`,
+                0 AS `negated`,
+                NOW() AS `created_at`,
+                NULL AS `created_by`,
+                NOW() AS `updated_at`,
+                NULL AS `updated_by`
+              FROM `menu` platform_scheduling_menu
+              JOIN (
+                SELECT 0 AS `requirement_group`, 1 AS `sort_order`, 'scheduling:entry:view' AS `permission_code`
+                UNION ALL SELECT 1, 1, 'scheduling:console:view'
+                UNION ALL SELECT 2, 1, 'scheduling:console:config'
+                UNION ALL SELECT 3, 1, 'scheduling:run:control'
+                UNION ALL SELECT 4, 1, 'scheduling:audit:view'
+                UNION ALL SELECT 5, 1, 'scheduling:cluster:view'
+              ) requirement_mapping
+              JOIN `permission` scheduling_permission
+                ON scheduling_permission.`tenant_id` IS NULL
+               AND scheduling_permission.`permission_code` = requirement_mapping.`permission_code`
+              WHERE platform_scheduling_menu.`tenant_id` IS NULL
+                AND platform_scheduling_menu.`path` = '/platform/scheduling';

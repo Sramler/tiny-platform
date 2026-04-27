@@ -1,0 +1,92 @@
+databaseChangeLog:
+  - changeSet:
+      id: 173-rebind-tenant-audit-ui-actions-and-backfill-requirements
+      author: codex
+      comment: 修复租户审计 ui_action orphan 载体，并补齐 tenant ui_action requirement 缺口
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: ui_action
+            - tableExists:
+                tableName: menu
+            - tableExists:
+                tableName: ui_action_permission_requirement
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              UPDATE `ui_action` action_entry
+              JOIN (
+                SELECT 'system:audit:authentication:view' AS `permission_code`, '/system/audit/authentication' AS `menu_path`
+                UNION ALL SELECT 'system:audit:authentication:export', '/system/audit/authentication'
+                UNION ALL SELECT 'system:audit:auth:view', '/system/audit/authorization'
+                UNION ALL SELECT 'system:audit:auth:export', '/system/audit/authorization'
+              ) mapping
+                ON mapping.`permission_code` = action_entry.`permission`
+              JOIN `menu` audit_menu
+                ON audit_menu.`tenant_id` = action_entry.`tenant_id`
+               AND audit_menu.`path` = mapping.`menu_path`
+              SET
+                action_entry.`parent_menu_id` = audit_menu.`id`,
+                action_entry.`page_path` = audit_menu.`path`,
+                action_entry.`updated_at` = NOW(),
+                action_entry.`updated_by` = NULL
+              WHERE action_entry.`tenant_id` IS NOT NULL
+                AND action_entry.`required_permission_id` IS NOT NULL
+                AND (
+                  action_entry.`parent_menu_id` IS NULL
+                  OR action_entry.`parent_menu_id` <> audit_menu.`id`
+                  OR action_entry.`page_path` IS NULL
+                  OR TRIM(action_entry.`page_path`) = ''
+                  OR CONVERT(action_entry.`page_path` USING utf8mb4) COLLATE utf8mb4_0900_ai_ci
+                     <> CONVERT(audit_menu.`path` USING utf8mb4) COLLATE utf8mb4_0900_ai_ci
+                );
+
+              UPDATE `ui_action` action_entry
+              JOIN `menu` parent_menu
+                ON parent_menu.`id` = action_entry.`parent_menu_id`
+               AND parent_menu.`tenant_id` <=> action_entry.`tenant_id`
+              SET
+                action_entry.`page_path` = parent_menu.`path`,
+                action_entry.`updated_at` = NOW(),
+                action_entry.`updated_by` = NULL
+              WHERE action_entry.`tenant_id` IS NOT NULL
+                AND (
+                  action_entry.`page_path` IS NULL
+                  OR TRIM(action_entry.`page_path`) = ''
+                  OR CONVERT(action_entry.`page_path` USING utf8mb4) COLLATE utf8mb4_0900_ai_ci
+                     <> CONVERT(parent_menu.`path` USING utf8mb4) COLLATE utf8mb4_0900_ai_ci
+                );
+
+              INSERT IGNORE INTO `ui_action_permission_requirement` (
+                `tenant_id`,
+                `ui_action_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                action_entry.`tenant_id`,
+                action_entry.`id`,
+                0 AS `requirement_group`,
+                1 AS `sort_order`,
+                action_entry.`required_permission_id`,
+                0 AS `negated`,
+                COALESCE(action_entry.`created_at`, NOW()) AS `created_at`,
+                action_entry.`created_by`,
+                COALESCE(action_entry.`updated_at`, NOW()) AS `updated_at`,
+                action_entry.`updated_by`
+              FROM `ui_action` action_entry
+              WHERE action_entry.`tenant_id` IS NOT NULL
+                AND action_entry.`required_permission_id` IS NOT NULL;
