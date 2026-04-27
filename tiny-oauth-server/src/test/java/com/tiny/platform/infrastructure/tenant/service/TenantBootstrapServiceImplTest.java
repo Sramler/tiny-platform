@@ -746,6 +746,10 @@ class TenantBootstrapServiceImplTest {
         sourceTenantMenu.setResourceLevel("PLATFORM");
         Resource sourceIdempotentMenu = resource(4L, null, "idempotentOps", 1L, "/ops/idempotent", "/metrics/idempotent", "idempotent:ops:view", ResourceType.MENU);
         sourceIdempotentMenu.setResourceLevel("PLATFORM");
+        Resource sourcePlatformUsers = resource(5L, null, "platformUsers", 1L, "/platform/users", "/platform/users", "platform:user:list", ResourceType.MENU);
+        sourcePlatformUsers.setResourceLevel("PLATFORM");
+        Resource sourcePlatformUsersApi = resource(6L, null, "platform-users-get", null, "", "/platform/users", "platform:user:list", ResourceType.API);
+        sourcePlatformUsersApi.setResourceLevel("PLATFORM");
         Role sourceAdmin = role(20L, null, "ROLE_ADMIN", "管理员");
         sourceAdmin.setRoleLevel("PLATFORM");
 
@@ -754,11 +758,13 @@ class TenantBootstrapServiceImplTest {
                 snapshot(sourceSystem),
                 snapshot(sourceUser),
                 snapshot(sourceTenantMenu),
-                snapshot(sourceIdempotentMenu)
+                snapshot(sourceIdempotentMenu),
+                snapshot(sourcePlatformUsers),
+                snapshot(sourcePlatformUsersApi)
             ));
         when(roleRepository.findByTenantIdIsNullOrderByIdAsc()).thenReturn(List.of(sourceAdmin));
         when(roleRepository.findGrantedRoleCarrierPairsForPlatformTemplate())
-            .thenReturn(List.of(relation(20L, 2L), relation(20L, 3L), relation(20L, 4L)));
+            .thenReturn(List.of(relation(20L, 2L), relation(20L, 3L), relation(20L, 4L), relation(20L, 5L), relation(20L, 6L)));
 
 
         AtomicLong nextRoleId = new AtomicLong(200L);
@@ -785,6 +791,7 @@ class TenantBootstrapServiceImplTest {
         assertThat(clonedMenus)
             .extracting(MenuEntry::getTenantId)
             .containsOnly(9L);
+        verify(apiEndpointEntryRepository, never()).saveAll(any());
 
         verify(roleRepository).addRolePermissionRelationByPermissionId(9L, 200L, 7001L);
         verify(roleRepository, times(1)).addRolePermissionRelationByPermissionId(any(), any(), any());
@@ -864,6 +871,14 @@ class TenantBootstrapServiceImplTest {
         platformTenantDescendant.setResourceLevel("PLATFORM");
         platformTenantDescendant.setTitle("租户子页");
         platformTenantDescendant.setRequiredPermissionId(1003L);
+        Resource platformUsers = resource(5L, null, "platformUsers", 1L, "/platform/users", "/platform/users", "platform:user:list", ResourceType.MENU);
+        platformUsers.setResourceLevel("PLATFORM");
+        platformUsers.setTitle("平台用户治理");
+        platformUsers.setRequiredPermissionId(1004L);
+        Resource platformUsersApi = resource(6L, null, "platform-users-get", null, "", "/platform/users", "platform:user:view", ResourceType.API);
+        platformUsersApi.setResourceLevel("PLATFORM");
+        platformUsersApi.setTitle("平台用户详情");
+        platformUsersApi.setRequiredPermissionId(1005L);
         Role platformRole = role(20L, null, "ROLE_ADMIN", "管理员");
         platformRole.setRoleLevel("PLATFORM");
 
@@ -872,7 +887,9 @@ class TenantBootstrapServiceImplTest {
                 snapshot(platformSystem),
                 snapshot(platformUser),
                 snapshot(platformTenantMenu),
-                snapshot(platformTenantDescendant)
+                snapshot(platformTenantDescendant),
+                snapshot(platformUsers),
+                snapshot(platformUsersApi)
             ));
         when(roleRepository.findByTenantIdIsNullOrderByIdAsc()).thenReturn(List.of(platformRole));
 

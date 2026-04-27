@@ -88,6 +88,7 @@ export const EXPORT_MANAGE = 'system:export:manage'
 export const IDEMPOTENT_OPS_VIEW = 'idempotent:ops:view'
 
 // ─── 调度中心 ───
+export const SCHEDULING_ENTRY_VIEW = 'scheduling:entry:view'
 export const SCHEDULING_CONSOLE_VIEW = 'scheduling:console:view'
 export const SCHEDULING_CONSOLE_CONFIG = 'scheduling:console:config'
 export const SCHEDULING_RUN_CONTROL = 'scheduling:run:control'
@@ -141,7 +142,10 @@ export const USER_MANAGEMENT_DISABLE_AUTHORITIES = [USER_BATCH_DISABLE, USER_DIS
 
 export const PLATFORM_USER_MANAGEMENT_READ_AUTHORITIES = [PLATFORM_USER_LIST, PLATFORM_USER_VIEW]
 export const PLATFORM_USER_MANAGEMENT_CREATE_AUTHORITIES = [PLATFORM_USER_CREATE]
-export const PLATFORM_USER_MANAGEMENT_UPDATE_AUTHORITIES = [PLATFORM_USER_EDIT, PLATFORM_USER_DISABLE]
+export const PLATFORM_USER_MANAGEMENT_UPDATE_AUTHORITIES = [
+  PLATFORM_USER_EDIT,
+  PLATFORM_USER_DISABLE,
+]
 
 /** 至少持有一项即可进入平台赋权审批页（与菜单 OR 组一致） */
 export const PLATFORM_ROLE_APPROVAL_PAGE_AUTHORITIES = [

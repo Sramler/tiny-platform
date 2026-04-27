@@ -1,0 +1,50 @@
+databaseChangeLog:
+  - changeSet:
+      id: 177-enable-monitor-root-entry-permission
+      author: codex
+      comment: 恢复高级工具 monitor 根目录权限 monitor:view，避免 workflow/scheduling 子树因父目录 fail-closed 被整体隐藏
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: menu
+            - tableExists:
+                tableName: permission
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              UPDATE `permission` monitor_permission
+              SET
+                monitor_permission.`enabled` = 1,
+                monitor_permission.`updated_at` = NOW(),
+                monitor_permission.`updated_by` = NULL
+              WHERE monitor_permission.`permission_code` = 'monitor:view'
+                AND monitor_permission.`enabled` = 0
+                AND EXISTS (
+                  SELECT 1
+                  FROM `menu` monitor_menu
+                  WHERE monitor_menu.`tenant_id` <=> monitor_permission.`tenant_id`
+                    AND monitor_menu.`name` = 'monitor'
+                    AND monitor_menu.`path` = '/monitor'
+                    AND monitor_menu.`required_permission_id` = monitor_permission.`id`
+                );
+
+              UPDATE `menu` monitor_menu
+              JOIN `permission` monitor_permission
+                ON monitor_permission.`id` = monitor_menu.`required_permission_id`
+               AND monitor_permission.`tenant_id` <=> monitor_menu.`tenant_id`
+              SET
+                monitor_menu.`permission` = 'monitor:view',
+                monitor_menu.`enabled` = 1,
+                monitor_menu.`updated_at` = NOW(),
+                monitor_menu.`updated_by` = NULL
+              WHERE monitor_menu.`name` = 'monitor'
+                AND monitor_menu.`path` = '/monitor'
+                AND monitor_permission.`permission_code` = 'monitor:view'
+                AND monitor_permission.`enabled` = 1;

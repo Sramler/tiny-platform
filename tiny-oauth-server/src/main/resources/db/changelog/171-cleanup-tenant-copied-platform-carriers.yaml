@@ -1,0 +1,144 @@
+databaseChangeLog:
+  - changeSet:
+      id: 171-cleanup-tenant-copied-platform-carriers
+      author: codex
+      comment: 清理租户侧误复制的 /platform/** carrier 与孤立 platform permission 绑定，避免平台控制面污染租户副本
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: ui_action
+            - tableExists:
+                tableName: ui_action_permission_requirement
+            - tableExists:
+                tableName: menu
+            - tableExists:
+                tableName: menu_permission_requirement
+            - tableExists:
+                tableName: api_endpoint
+            - tableExists:
+                tableName: api_endpoint_permission_requirement
+            - tableExists:
+                tableName: permission
+            - tableExists:
+                tableName: role_permission
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              DELETE requirement
+              FROM `ui_action_permission_requirement` requirement
+              JOIN `ui_action` action_entry
+                ON action_entry.`id` = requirement.`ui_action_id`
+              LEFT JOIN `menu` parent_menu
+                ON parent_menu.`id` = action_entry.`parent_menu_id`
+               AND parent_menu.`tenant_id` <=> action_entry.`tenant_id`
+              WHERE action_entry.`tenant_id` IS NOT NULL
+                AND (
+                  action_entry.`page_path` LIKE '/platform/%'
+                  OR parent_menu.`path` LIKE '/platform/%'
+                  OR action_entry.`permission` = 'dict:platform:manage'
+                  OR action_entry.`permission` LIKE 'platform:%'
+                );
+
+              DELETE action_entry
+              FROM `ui_action` action_entry
+              LEFT JOIN `menu` parent_menu
+                ON parent_menu.`id` = action_entry.`parent_menu_id`
+               AND parent_menu.`tenant_id` <=> action_entry.`tenant_id`
+              WHERE action_entry.`tenant_id` IS NOT NULL
+                AND (
+                  action_entry.`page_path` LIKE '/platform/%'
+                  OR parent_menu.`path` LIKE '/platform/%'
+                  OR action_entry.`permission` = 'dict:platform:manage'
+                  OR action_entry.`permission` LIKE 'platform:%'
+                );
+
+              DELETE requirement
+              FROM `menu_permission_requirement` requirement
+              JOIN `menu` menu_entry
+                ON menu_entry.`id` = requirement.`menu_id`
+              WHERE menu_entry.`tenant_id` IS NOT NULL
+                AND menu_entry.`path` LIKE '/platform/%';
+
+              DELETE menu_entry
+              FROM `menu` menu_entry
+              WHERE menu_entry.`tenant_id` IS NOT NULL
+                AND menu_entry.`path` LIKE '/platform/%';
+
+              DELETE requirement
+              FROM `api_endpoint_permission_requirement` requirement
+              JOIN `api_endpoint` endpoint_entry
+                ON endpoint_entry.`id` = requirement.`api_endpoint_id`
+              WHERE endpoint_entry.`tenant_id` IS NOT NULL
+                AND endpoint_entry.`uri` LIKE '/platform/%';
+
+              DELETE endpoint_entry
+              FROM `api_endpoint` endpoint_entry
+              WHERE endpoint_entry.`tenant_id` IS NOT NULL
+                AND endpoint_entry.`uri` LIKE '/platform/%';
+
+              DELETE role_permission_entry
+              FROM `role_permission` role_permission_entry
+              JOIN `permission` permission_entry
+                ON permission_entry.`id` = role_permission_entry.`permission_id`
+               AND permission_entry.`tenant_id` <=> role_permission_entry.`tenant_id`
+              WHERE role_permission_entry.`tenant_id` IS NOT NULL
+                AND (
+                  permission_entry.`permission_code` LIKE 'platform:%'
+                  OR permission_entry.`permission_code` = 'dict:platform:manage'
+                );
+
+              DELETE FROM `permission` permission_entry
+              WHERE permission_entry.`tenant_id` IS NOT NULL
+                AND (
+                  permission_entry.`permission_code` LIKE 'platform:%'
+                  OR permission_entry.`permission_code` = 'dict:platform:manage'
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `role_permission` role_permission_entry
+                  WHERE role_permission_entry.`tenant_id` <=> permission_entry.`tenant_id`
+                    AND role_permission_entry.`permission_id` = permission_entry.`id`
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `menu` menu_entry
+                  WHERE menu_entry.`tenant_id` <=> permission_entry.`tenant_id`
+                    AND menu_entry.`required_permission_id` = permission_entry.`id`
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `ui_action` action_entry
+                  WHERE action_entry.`tenant_id` <=> permission_entry.`tenant_id`
+                    AND action_entry.`required_permission_id` = permission_entry.`id`
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `api_endpoint` endpoint_entry
+                  WHERE endpoint_entry.`tenant_id` <=> permission_entry.`tenant_id`
+                    AND endpoint_entry.`required_permission_id` = permission_entry.`id`
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `menu_permission_requirement` requirement
+                  WHERE requirement.`tenant_id` <=> permission_entry.`tenant_id`
+                    AND requirement.`permission_id` = permission_entry.`id`
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `ui_action_permission_requirement` requirement
+                  WHERE requirement.`tenant_id` <=> permission_entry.`tenant_id`
+                    AND requirement.`permission_id` = permission_entry.`id`
+                )
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `api_endpoint_permission_requirement` requirement
+                  WHERE requirement.`tenant_id` <=> permission_entry.`tenant_id`
+                    AND requirement.`permission_id` = permission_entry.`id`
+                );

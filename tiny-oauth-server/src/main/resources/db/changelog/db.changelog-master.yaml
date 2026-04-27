@@ -666,3 +666,43 @@ databaseChangeLog:
   - include:
       file: 170-backfill-tenant-precheck-api-endpoint.yaml
       relativeToChangelogFile: true
+
+  # 清理租户侧误复制的 /platform/** carrier，避免平台控制面污染租户副本与权限目录
+  - include:
+      file: 171-cleanup-tenant-copied-platform-carriers.yaml
+      relativeToChangelogFile: true
+
+  # 回填租户侧仍合法存在的控制面 endpoint requirement，清完 /platform/** 后补闭合统一守卫链路
+  - include:
+      file: 172-backfill-tenant-legit-api-endpoint-requirements.yaml
+      relativeToChangelogFile: true
+
+  # 修复租户审计 orphan ui_action 并补齐 tenant ui_action requirement，恢复运行时按钮载体一致性
+  - include:
+      file: 173-rebind-tenant-audit-ui-actions-and-backfill-requirements.yaml
+      relativeToChangelogFile: true
+
+  # 规范化 scheduling 运行态菜单与 legacy 调度旧码，恢复平台/租户侧调度菜单一致性
+  - include:
+      file: 174-normalize-scheduling-runtime-menus.yaml
+      relativeToChangelogFile: true
+
+  # 规范化 workflow 菜单 / role binding / /process api carrier，收口 legacy workflow 页面旧码
+  - include:
+      file: 175-normalize-workflow-runtime-menus-and-api-endpoints.yaml
+      relativeToChangelogFile: true
+
+  # 修复 system 根菜单误绑 system:tenant:list，统一回到 system:entry:view
+  - include:
+      file: 176-normalize-system-root-entry-permission.yaml
+      relativeToChangelogFile: true
+
+  # 恢复高级工具 monitor 根目录权限，避免 workflow / scheduling 子树因父目录权限 disabled 被整体隐藏
+  - include:
+      file: 177-enable-monitor-root-entry-permission.yaml
+      relativeToChangelogFile: true
+
+  # 将平台模板中的调度 / 工作流菜单收口到 /platform 控制台，避免平台入口继续直落 tenant runtime
+  - include:
+      file: 178-backfill-platform-runtime-console-menus.yaml
+      relativeToChangelogFile: true

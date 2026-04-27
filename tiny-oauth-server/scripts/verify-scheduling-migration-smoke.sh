@@ -173,13 +173,28 @@ echo "  [OK] 037: 默认租户 ROLE_TENANT_ADMIN 已绑定 scheduling:*"
 non_default_platform_menu_count=$(query_value "
   SELECT COUNT(*)
   FROM (
-    SELECT tenant_id, name, permission, path AS route_value, '' AS uri_value
+    SELECT
+      tenant_id,
+      CONVERT(name USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS name,
+      CONVERT(permission USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS permission,
+      CONVERT(path USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS route_value,
+      CONVERT('' USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS uri_value
     FROM menu
     UNION ALL
-    SELECT tenant_id, name, permission, page_path AS route_value, '' AS uri_value
+    SELECT
+      tenant_id,
+      CONVERT(name USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS name,
+      CONVERT(permission USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS permission,
+      CONVERT(page_path USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS route_value,
+      CONVERT('' USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS uri_value
     FROM ui_action
     UNION ALL
-    SELECT tenant_id, name, permission, '' AS route_value, uri AS uri_value
+    SELECT
+      tenant_id,
+      CONVERT(name USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS name,
+      CONVERT(permission USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS permission,
+      CONVERT('' USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS route_value,
+      CONVERT(uri USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS uri_value
     FROM api_endpoint
   ) carrier
   JOIN tenant tenant_entity
@@ -235,6 +250,20 @@ for resource_name in schedulingDag schedulingTask schedulingTaskType schedulingD
 done
 check_permission_by_name "schedulingAudit" "scheduling:audit:view"
 echo "  [OK] 039: 默认租户调度菜单载体已使用规范权限码"
+
+disabled_monitor_root_permission_count=$(query_value "
+  SELECT COUNT(*)
+  FROM menu monitor_menu
+  JOIN permission monitor_permission
+    ON monitor_permission.id = monitor_menu.required_permission_id
+   AND monitor_permission.tenant_id <=> monitor_menu.tenant_id
+  WHERE monitor_menu.name = 'monitor'
+    AND monitor_menu.path = '/monitor'
+    AND monitor_permission.permission_code = 'monitor:view'
+    AND monitor_permission.enabled = 0;
+")
+[[ "${disabled_monitor_root_permission_count:-0}" -eq 0 ]] || fail "monitor 根目录仍绑定 disabled 的 monitor:view，workflow/scheduling 子树会被运行态菜单树整体裁掉: ${disabled_monitor_root_permission_count}"
+echo "  [OK] monitor: 高级工具根目录 monitor:view 处于启用态"
 
 legacy_control_plane_uri_count=$(query_value "
   SELECT COUNT(*)

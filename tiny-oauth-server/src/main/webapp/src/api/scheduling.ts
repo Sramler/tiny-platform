@@ -73,6 +73,18 @@ export interface SchedulingAuditRecord {
   createdAt?: string
 }
 
+export interface QuartzClusterStatus {
+  schedulerName?: string
+  schedulerInstanceId?: string
+  isClustered?: boolean
+  isStarted?: boolean
+  isInStandbyMode?: boolean
+  numberOfJobsExecuted?: number
+  schedulerStarted?: string
+  clusterMode?: string
+  status?: string
+}
+
 function withIdempotency(
   scope: string,
   payload?: unknown,
@@ -132,7 +144,11 @@ export function taskTypeList(params: SchedulingTaskTypeListParams) {
 
 // 创建任务类型
 export function createTaskType(data: SchedulingTaskTypePayload) {
-  return request.post('/scheduling/task-type', data, withIdempotency('scheduling-task-type:create', data))
+  return request.post(
+    '/scheduling/task-type',
+    data,
+    withIdempotency('scheduling-task-type:create', data),
+  )
 }
 
 // 更新任务类型
@@ -162,6 +178,10 @@ export function getExecutors() {
   return request.get<string[]>('/scheduling/executors')
 }
 
+export function getQuartzClusterStatus() {
+  return request.get<QuartzClusterStatus>('/scheduling/quartz/cluster-status')
+}
+
 // ==================== Task - 任务实例定义 ====================
 
 // 分页查询任务列表
@@ -188,12 +208,19 @@ export function createTask(data: SchedulingTaskPayload) {
 
 // 更新任务
 export function updateTask(id: number, data: SchedulingTaskPayload) {
-  return request.put(`/scheduling/task/${id}`, data, withIdempotency(`scheduling-task:update:${id}`, data))
+  return request.put(
+    `/scheduling/task/${id}`,
+    data,
+    withIdempotency(`scheduling-task:update:${id}`, data),
+  )
 }
 
 // 删除任务
 export function deleteTask(id: number) {
-  return request.delete(`/scheduling/task/${id}`, withIdempotency(`scheduling-task:delete:${id}`, { id }))
+  return request.delete(
+    `/scheduling/task/${id}`,
+    withIdempotency(`scheduling-task:delete:${id}`, { id }),
+  )
 }
 
 // 查看任务详情
@@ -231,12 +258,19 @@ export function createDag(data: SchedulingDagPayload) {
 
 // 更新 DAG
 export function updateDag(id: number, data: SchedulingDagPayload) {
-  return request.put(`/scheduling/dag/${id}`, data, withIdempotency(`scheduling-dag:update:${id}`, data))
+  return request.put(
+    `/scheduling/dag/${id}`,
+    data,
+    withIdempotency(`scheduling-dag:update:${id}`, data),
+  )
 }
 
 // 删除 DAG
 export function deleteDag(id: number) {
-  return request.delete(`/scheduling/dag/${id}`, withIdempotency(`scheduling-dag:delete:${id}`, { id }))
+  return request.delete(
+    `/scheduling/dag/${id}`,
+    withIdempotency(`scheduling-dag:delete:${id}`, { id }),
+  )
 }
 
 // 查看 DAG 详情
@@ -260,7 +294,11 @@ export function updateDagVersion(dagId: number, versionId: number, data: any) {
   return request.put(
     `/scheduling/dag/${dagId}/version/${versionId}`,
     data,
-    withIdempotency(`scheduling-dag-version:update:${dagId}:${versionId}`, { dagId, versionId, data }),
+    withIdempotency(`scheduling-dag-version:update:${dagId}:${versionId}`, {
+      dagId,
+      versionId,
+      data,
+    }),
   )
 }
 
@@ -290,10 +328,12 @@ export function updateDagNode(dagId: number, versionId: number, nodeId: number, 
   return request.put(
     `/scheduling/dag/${dagId}/version/${versionId}/node/${nodeId}`,
     data,
-    withIdempotency(
-      `scheduling-dag-node:update:${dagId}:${versionId}:${nodeId}`,
-      { dagId, versionId, nodeId, data },
-    ),
+    withIdempotency(`scheduling-dag-node:update:${dagId}:${versionId}:${nodeId}`, {
+      dagId,
+      versionId,
+      nodeId,
+      data,
+    }),
   )
 }
 
@@ -301,7 +341,11 @@ export function updateDagNode(dagId: number, versionId: number, nodeId: number, 
 export function deleteDagNode(dagId: number, versionId: number, nodeId: number) {
   return request.delete(
     `/scheduling/dag/${dagId}/version/${versionId}/node/${nodeId}`,
-    withIdempotency(`scheduling-dag-node:delete:${dagId}:${versionId}:${nodeId}`, { dagId, versionId, nodeId }),
+    withIdempotency(`scheduling-dag-node:delete:${dagId}:${versionId}:${nodeId}`, {
+      dagId,
+      versionId,
+      nodeId,
+    }),
   )
 }
 
@@ -345,7 +389,11 @@ export function createDagEdge(dagId: number, versionId: number, data: any) {
 export function deleteDagEdge(dagId: number, versionId: number, edgeId: number) {
   return request.delete(
     `/scheduling/dag/${dagId}/version/${versionId}/edge/${edgeId}`,
-    withIdempotency(`scheduling-dag-edge:delete:${dagId}:${versionId}:${edgeId}`, { dagId, versionId, edgeId }),
+    withIdempotency(`scheduling-dag-edge:delete:${dagId}:${versionId}:${edgeId}`, {
+      dagId,
+      versionId,
+      edgeId,
+    }),
   )
 }
 
@@ -428,7 +476,11 @@ export function triggerDagRunNode(dagId: number, runId: number, nodeId: number) 
   return request.post(
     `/scheduling/dag/${dagId}/run/${runId}/node/${nodeId}/trigger`,
     null,
-    withSubmitIdempotency(`scheduling-dag-run-node:trigger:${dagId}:${runId}:${nodeId}`, { dagId, runId, nodeId }),
+    withSubmitIdempotency(`scheduling-dag-run-node:trigger:${dagId}:${runId}:${nodeId}`, {
+      dagId,
+      runId,
+      nodeId,
+    }),
   )
 }
 
@@ -445,7 +497,11 @@ export function retryDagRunNode(dagId: number, runId: number, nodeId: number) {
   return request.post(
     `/scheduling/dag/${dagId}/run/${runId}/node/${nodeId}/retry`,
     null,
-    withSubmitIdempotency(`scheduling-dag-run-node:retry:${dagId}:${runId}:${nodeId}`, { dagId, runId, nodeId }),
+    withSubmitIdempotency(`scheduling-dag-run-node:retry:${dagId}:${runId}:${nodeId}`, {
+      dagId,
+      runId,
+      nodeId,
+    }),
   )
 }
 
@@ -462,7 +518,11 @@ export function pauseDagRunNode(dagId: number, runId: number, nodeId: number) {
   return request.post(
     `/scheduling/dag/${dagId}/run/${runId}/node/${nodeId}/pause`,
     null,
-    withSubmitIdempotency(`scheduling-dag-run-node:pause:${dagId}:${runId}:${nodeId}`, { dagId, runId, nodeId }),
+    withSubmitIdempotency(`scheduling-dag-run-node:pause:${dagId}:${runId}:${nodeId}`, {
+      dagId,
+      runId,
+      nodeId,
+    }),
   )
 }
 
@@ -479,7 +539,11 @@ export function resumeDagRunNode(dagId: number, runId: number, nodeId: number) {
   return request.post(
     `/scheduling/dag/${dagId}/run/${runId}/node/${nodeId}/resume`,
     null,
-    withSubmitIdempotency(`scheduling-dag-run-node:resume:${dagId}:${runId}:${nodeId}`, { dagId, runId, nodeId }),
+    withSubmitIdempotency(`scheduling-dag-run-node:resume:${dagId}:${runId}:${nodeId}`, {
+      dagId,
+      runId,
+      nodeId,
+    }),
   )
 }
 
@@ -492,10 +556,13 @@ export function getDagRuns(dagId: number, params: any) {
     size: params.pageSize || 10,
   }
   if (params.status != null && params.status !== '') apiParams.status = params.status
-  if (params.triggerType != null && params.triggerType !== '') apiParams.triggerType = params.triggerType
+  if (params.triggerType != null && params.triggerType !== '')
+    apiParams.triggerType = params.triggerType
   if (params.runNo != null && params.runNo !== '') apiParams.runNo = params.runNo
-  if (params.startTimeFrom != null && params.startTimeFrom !== '') apiParams.startTimeFrom = params.startTimeFrom
-  if (params.startTimeTo != null && params.startTimeTo !== '') apiParams.startTimeTo = params.startTimeTo
+  if (params.startTimeFrom != null && params.startTimeFrom !== '')
+    apiParams.startTimeFrom = params.startTimeFrom
+  if (params.startTimeTo != null && params.startTimeTo !== '')
+    apiParams.startTimeTo = params.startTimeTo
   return request.get(`/scheduling/dag/${dagId}/runs`, { params: apiParams }).then((res: any) => {
     return {
       records: res.content || [],

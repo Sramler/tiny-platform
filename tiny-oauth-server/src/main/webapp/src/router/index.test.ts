@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const routerMocks = vi.hoisted(() => ({
   isAuthenticated: false,
   tenantCode: 'default' as string | null,
+  loginMode: 'TENANT' as 'TENANT' | 'PLATFORM',
+  activeTenantId: null as string | null,
+  syncTenantContextFromAccessToken: vi.fn(),
   login: vi.fn<(...args: unknown[]) => Promise<void>>(),
   trySilentLoginFromPlatformSession: vi.fn<() => Promise<boolean>>(),
   menuTree: vi.fn<() => Promise<unknown[]>>(),
@@ -22,7 +25,7 @@ const routerMocks = vi.hoisted(() => ({
 
 vi.mock('@/auth/auth', () => ({
   useAuth: () => ({
-    user: { value: null },
+    user: { value: { access_token: 'test-token' } },
     isAuthenticated: {
       get value() {
         return routerMocks.isAuthenticated
@@ -55,6 +58,9 @@ vi.mock('@/utils/traceId', () => ({
 
 vi.mock('@/utils/tenant', () => ({
   getTenantCode: () => routerMocks.tenantCode,
+  getLoginMode: () => routerMocks.loginMode,
+  getActiveTenantId: () => routerMocks.activeTenantId,
+  syncTenantContextFromAccessToken: routerMocks.syncTenantContextFromAccessToken,
 }))
 
 async function loadRouterModule() {
@@ -66,6 +72,9 @@ describe('router guards', () => {
   beforeEach(() => {
     routerMocks.isAuthenticated = false
     routerMocks.tenantCode = 'default'
+    routerMocks.loginMode = 'TENANT'
+    routerMocks.activeTenantId = null
+    routerMocks.syncTenantContextFromAccessToken.mockReset()
     routerMocks.login.mockReset().mockResolvedValue(undefined)
     routerMocks.trySilentLoginFromPlatformSession.mockReset().mockResolvedValue(false)
     routerMocks.menuTree.mockReset().mockResolvedValue([])
@@ -106,6 +115,31 @@ describe('router guards', () => {
 
     expect(routerMocks.login).toHaveBeenCalledWith('/system/menu')
     expect(result).toBe(false)
+  })
+
+  it('redirects platform runtime module entry to platform console in platform mode', async () => {
+    const { platformRuntimeBridgeGuard } = await loadRouterModule()
+
+    routerMocks.isAuthenticated = true
+    routerMocks.loginMode = 'PLATFORM'
+    routerMocks.activeTenantId = '31'
+
+    const result = await platformRuntimeBridgeGuard(
+      {
+        path: '/scheduling/dag',
+        fullPath: '/scheduling/dag?tab=all',
+        meta: {},
+      } as any,
+      {} as any,
+      undefined as any,
+    )
+
+    expect(result).toMatchObject({
+      path: '/platform/scheduling',
+      replace: true,
+    })
+    expect(routerMocks.syncTenantContextFromAccessToken).toHaveBeenCalledWith('test-token')
+    expect((result as any).query.target).toBe('/scheduling/dag?tab=all')
   })
 
   it('retries a direct dynamic route refresh after menu routes are loaded', async () => {
