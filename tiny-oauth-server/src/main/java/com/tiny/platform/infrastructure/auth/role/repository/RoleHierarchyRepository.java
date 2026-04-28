@@ -21,6 +21,13 @@ public interface RoleHierarchyRepository extends JpaRepository<RoleHierarchy, Lo
     @Query("""
         select rh
         from RoleHierarchy rh
+        where rh.tenantId is null
+        """)
+    List<RoleHierarchy> findByTenantIdIsNull();
+
+    @Query("""
+        select rh
+        from RoleHierarchy rh
         where rh.tenantId = :tenantId
           and rh.childRoleId in :childRoleIds
         """)
@@ -40,6 +47,26 @@ public interface RoleHierarchyRepository extends JpaRepository<RoleHierarchy, Lo
         @Param("parentRoleIds") Collection<Long> parentRoleIds
     );
 
+    @Query("""
+        select rh
+        from RoleHierarchy rh
+        where rh.tenantId is null
+          and rh.childRoleId in :childRoleIds
+        """)
+    List<RoleHierarchy> findByTenantIdIsNullAndChildRoleIdIn(
+        @Param("childRoleIds") Collection<Long> childRoleIds
+    );
+
+    @Query("""
+        select rh
+        from RoleHierarchy rh
+        where rh.tenantId is null
+          and rh.parentRoleId in :parentRoleIds
+        """)
+    List<RoleHierarchy> findByTenantIdIsNullAndParentRoleIdIn(
+        @Param("parentRoleIds") Collection<Long> parentRoleIds
+    );
+
     @Modifying
     @Transactional
     @Query("""
@@ -50,6 +77,19 @@ public interface RoleHierarchyRepository extends JpaRepository<RoleHierarchy, Lo
         """)
     void deleteByTenantIdAndChildRoleIdAndParentRoleId(
         @Param("tenantId") Long tenantId,
+        @Param("childRoleId") Long childRoleId,
+        @Param("parentRoleId") Long parentRoleId
+    );
+
+    @Modifying
+    @Transactional
+    @Query("""
+        delete from RoleHierarchy rh
+        where rh.tenantId is null
+          and rh.childRoleId = :childRoleId
+          and rh.parentRoleId = :parentRoleId
+        """)
+    void deleteByTenantIdIsNullAndChildRoleIdAndParentRoleId(
         @Param("childRoleId") Long childRoleId,
         @Param("parentRoleId") Long parentRoleId
     );

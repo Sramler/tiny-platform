@@ -35,6 +35,10 @@ public class PlatformUserManagementAccessGuard {
         return isPlatformScope(authentication) && hasAnyAuthority(authentication, UPDATE_AUTHORITIES);
     }
 
+    public boolean canReadRoleCatalog(Authentication authentication) {
+        return canUpdate(authentication);
+    }
+
     private boolean isPlatformScope(Authentication authentication) {
         return authentication != null
             && authentication.isAuthenticated()

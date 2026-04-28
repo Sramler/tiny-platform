@@ -1,0 +1,71 @@
+databaseChangeLog:
+  - changeSet:
+      id: 156-backfill-platform-role-constraints-api-endpoints
+      author: codex
+      comment: 补齐 /platform/role-constraints/* 的 api_endpoint 与 requirement，避免统一守卫 fail-closed
+      preConditions:
+        onFail: MARK_RAN
+        onError: HALT
+        and:
+          - tableExists:
+              tableName: permission
+          - tableExists:
+              tableName: api_endpoint
+          - tableExists:
+              tableName: api_endpoint_permission_requirement
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT IGNORE INTO `api_endpoint` (
+                `tenant_id`, `resource_level`, `name`, `title`, `uri`, `method`,
+                `permission`, `required_permission_id`, `enabled`, `created_at`, `updated_at`
+              )
+              SELECT NULL, 'PLATFORM', x.name, x.title, x.uri, x.method, x.permission_code, p.id, 1, NOW(), NOW()
+              FROM (
+                SELECT 'platform-role-constraint-hierarchy-post' AS name, '平台 RBAC3 层级约束写入' AS title, '/platform/role-constraints/hierarchy' AS uri, 'POST' AS method, 'system:role:constraint:edit' AS permission_code
+                UNION ALL SELECT 'platform-role-constraint-mutex-post', '平台 RBAC3 互斥约束写入', '/platform/role-constraints/mutex', 'POST', 'system:role:constraint:edit'
+                UNION ALL SELECT 'platform-role-constraint-prerequisite-post', '平台 RBAC3 先决条件约束写入', '/platform/role-constraints/prerequisite', 'POST', 'system:role:constraint:edit'
+                UNION ALL SELECT 'platform-role-constraint-cardinality-post', '平台 RBAC3 基数约束写入', '/platform/role-constraints/cardinality', 'POST', 'system:role:constraint:edit'
+                UNION ALL SELECT 'platform-role-constraint-hierarchy-get', '平台 RBAC3 层级约束查询', '/platform/role-constraints/hierarchy', 'GET', 'system:role:constraint:view'
+                UNION ALL SELECT 'platform-role-constraint-mutex-get', '平台 RBAC3 互斥约束查询', '/platform/role-constraints/mutex', 'GET', 'system:role:constraint:view'
+                UNION ALL SELECT 'platform-role-constraint-prerequisite-get', '平台 RBAC3 先决条件约束查询', '/platform/role-constraints/prerequisite', 'GET', 'system:role:constraint:view'
+                UNION ALL SELECT 'platform-role-constraint-cardinality-get', '平台 RBAC3 基数约束查询', '/platform/role-constraints/cardinality', 'GET', 'system:role:constraint:view'
+                UNION ALL SELECT 'platform-role-constraint-violations-get', '平台 RBAC3 违例日志查询', '/platform/role-constraints/violations', 'GET', 'system:role:constraint:violation:view'
+              ) x
+              JOIN `permission` p
+                ON p.`tenant_id` IS NULL
+               AND p.`permission_code` = x.permission_code
+              WHERE NOT EXISTS (
+                SELECT 1
+                FROM `api_endpoint` e
+                WHERE e.`tenant_id` IS NULL
+                  AND e.`uri` = x.uri
+                  AND e.`method` = x.method
+              );
+
+              INSERT IGNORE INTO `api_endpoint_permission_requirement` (
+                `tenant_id`, `api_endpoint_id`, `requirement_group`, `sort_order`,
+                `permission_id`, `negated`, `created_at`, `updated_at`
+              )
+              SELECT
+                e.`tenant_id`,
+                e.`id`,
+                0,
+                1,
+                e.`required_permission_id`,
+                0,
+                NOW(),
+                NOW()
+              FROM `api_endpoint` e
+              WHERE e.`tenant_id` IS NULL
+                AND e.`uri` IN (
+                  '/platform/role-constraints/hierarchy',
+                  '/platform/role-constraints/mutex',
+                  '/platform/role-constraints/prerequisite',
+                  '/platform/role-constraints/cardinality',
+                  '/platform/role-constraints/violations'
+                )
+                AND e.`required_permission_id` IS NOT NULL;

@@ -21,12 +21,31 @@ public interface RoleCardinalityRepository extends JpaRepository<RoleCardinality
     @Query("""
         select rc
         from RoleCardinality rc
+        where rc.tenantId is null
+        """)
+    List<RoleCardinality> findByTenantIdIsNull();
+
+    @Query("""
+        select rc
+        from RoleCardinality rc
         where rc.tenantId = :tenantId
           and rc.scopeType = :scopeType
           and rc.roleId in :roleIds
         """)
     List<RoleCardinality> findByTenantIdAndScopeTypeAndRoleIdIn(
         @Param("tenantId") Long tenantId,
+        @Param("scopeType") String scopeType,
+        @Param("roleIds") Collection<Long> roleIds
+    );
+
+    @Query("""
+        select rc
+        from RoleCardinality rc
+        where rc.tenantId is null
+          and rc.scopeType = :scopeType
+          and rc.roleId in :roleIds
+        """)
+    List<RoleCardinality> findByTenantIdIsNullAndScopeTypeAndRoleIdIn(
         @Param("scopeType") String scopeType,
         @Param("roleIds") Collection<Long> roleIds
     );
@@ -44,5 +63,17 @@ public interface RoleCardinalityRepository extends JpaRepository<RoleCardinality
         @Param("roleId") Long roleId,
         @Param("scopeType") String scopeType
     );
-}
 
+    @Modifying
+    @Transactional
+    @Query("""
+        delete from RoleCardinality rc
+        where rc.tenantId is null
+          and rc.roleId = :roleId
+          and rc.scopeType = :scopeType
+        """)
+    void deleteByTenantIdIsNullAndRoleIdAndScopeType(
+        @Param("roleId") Long roleId,
+        @Param("scopeType") String scopeType
+    );
+}

@@ -7,6 +7,7 @@ import static org.mockito.Mockito.argThat;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.tiny.platform.infrastructure.auth.role.domain.Role;
 import com.tiny.platform.infrastructure.auth.role.domain.RoleHierarchy;
 import com.tiny.platform.infrastructure.auth.role.domain.RoleMutex;
 import com.tiny.platform.infrastructure.auth.role.domain.RolePrerequisite;
@@ -17,6 +18,7 @@ import com.tiny.platform.infrastructure.auth.role.repository.RoleCardinalityRepo
 import com.tiny.platform.infrastructure.auth.role.repository.RoleHierarchyRepository;
 import com.tiny.platform.infrastructure.auth.role.repository.RoleMutexRepository;
 import com.tiny.platform.infrastructure.auth.role.repository.RolePrerequisiteRepository;
+import com.tiny.platform.infrastructure.auth.role.repository.RoleRepository;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -49,8 +51,19 @@ class RoleConstraintServiceImplTest {
     @Mock
     private RoleAssignmentRepository roleAssignmentRepository;
 
+    @Mock
+    private RoleRepository roleRepository;
+
     @InjectMocks
     private RoleConstraintServiceImpl service;
+
+    private static Role platformRole(long id) {
+        Role r = new Role();
+        r.setId(id);
+        r.setTenantId(null);
+        r.setRoleLevel("PLATFORM");
+        return r;
+    }
 
     @Test
     void validateAssignmentsBeforeGrant_shouldSkipWhenNoRoles() {
@@ -211,5 +224,100 @@ class RoleConstraintServiceImplTest {
         );
 
         verify(violationLogWriteService, never()).write(any());
+    }
+
+    @Test
+    void validateAssignmentsBeforeGrant_shouldQueryPlatformRepositories() {
+        when(roleRepository.findByIdInAndTenantIdIsNullOrderByIdAsc(any()))
+            .thenReturn(List.of(platformRole(10L), platformRole(20L)));
+        when(roleHierarchyRepository.findByTenantIdIsNullAndChildRoleIdIn(any())).thenReturn(List.of());
+        when(roleMutexRepository.findByTenantIdIsNullAndRoleIds(any())).thenReturn(List.of());
+        when(rolePrerequisiteRepository.findByTenantIdIsNullAndRoleIdIn(any())).thenReturn(List.of());
+        when(roleCardinalityRepository.findByTenantIdIsNullAndScopeTypeAndRoleIdIn(any(), any())).thenReturn(List.of());
+
+        service.validateAssignmentsBeforeGrant("USER", 1L, null, "PLATFORM", null, List.of(10L, 20L));
+
+        verify(roleHierarchyRepository).findByTenantIdIsNullAndChildRoleIdIn(any());
+        verify(roleMutexRepository).findByTenantIdIsNullAndRoleIds(any());
+        verify(rolePrerequisiteRepository).findByTenantIdIsNullAndRoleIdIn(any());
+        verify(roleCardinalityRepository).findByTenantIdIsNullAndScopeTypeAndRoleIdIn(any(), any());
+    }
+
+    @Test
+    void validateAssignmentsBeforeGrant_shouldCheckPlatformCardinalityForUserPlatform() {
+        when(roleRepository.findByIdInAndTenantIdIsNullOrderByIdAsc(any())).thenReturn(List.of(platformRole(10L)));
+        when(roleHierarchyRepository.findByTenantIdIsNullAndChildRoleIdIn(any())).thenReturn(List.of());
+        when(roleMutexRepository.findByTenantIdIsNullAndRoleIds(any())).thenReturn(List.of());
+        when(rolePrerequisiteRepository.findByTenantIdIsNullAndRoleIdIn(any())).thenReturn(List.of());
+
+        RoleCardinality limit = new RoleCardinality();
+        limit.setTenantId(null);
+        limit.setScopeType("PLATFORM");
+        limit.setRoleId(10L);
+        limit.setMaxAssignments(1);
+        when(roleCardinalityRepository.findByTenantIdIsNullAndScopeTypeAndRoleIdIn(any(), any())).thenReturn(List.of(limit));
+
+        when(roleAssignmentRepository.findActiveRoleIdsForUserInPlatform(any(), any())).thenReturn(List.of());
+        when(roleAssignmentRepository.findActiveUserIdsForRoleInPlatform(any(), any())).thenReturn(List.of(1L));
+
+        service.validateAssignmentsBeforeGrant("USER", 2L, null, "PLATFORM", null, List.of(10L));
+
+        verify(roleAssignmentRepository).findActiveRoleIdsForUserInPlatform(any(), any(LocalDateTime.class));
+        verify(roleAssignmentRepository).findActiveUserIdsForRoleInPlatform(any(), any(LocalDateTime.class));
+    }
+
+    @Test
+    void validateAssignmentsBeforeGrant_shouldThrowDetailedMessage_whenEnforceEnabledForPlatform() {
+        RoleMutex mutex = new RoleMutex();
+        mutex.setTenantId(null);
+        mutex.setLeftRoleId(10L);
+        mutex.setRightRoleId(20L);
+        when(roleRepository.findByIdInAndTenantIdIsNullOrderByIdAsc(any()))
+            .thenReturn(List.of(platformRole(10L), platformRole(20L)));
+        when(roleHierarchyRepository.findByTenantIdIsNullAndChildRoleIdIn(any())).thenReturn(List.of());
+        when(roleMutexRepository.findByTenantIdIsNullAndRoleIds(any())).thenReturn(List.of(mutex));
+        when(rolePrerequisiteRepository.findByTenantIdIsNullAndRoleIdIn(any())).thenReturn(List.of());
+        when(roleCardinalityRepository.findByTenantIdIsNullAndScopeTypeAndRoleIdIn(any(), any())).thenReturn(List.of());
+        ReflectionTestUtils.setField(service, "rbac3Enforce", true);
+        ReflectionTestUtils.setField(service, "enforcePlatformAssignments", false);
+        ReflectionTestUtils.setField(service, "rbac3EnforceTenantIds", "999");
+        ReflectionTestUtils.setField(service, "rbac3EnforceTenantIdSet", null);
+
+        assertThatThrownBy(() ->
+            service.validateAssignmentsBeforeGrant("USER", 1L, null, "PLATFORM", null, List.of(10L, 20L))
+        ).isInstanceOf(BusinessException.class)
+            .hasMessageContaining("RBAC3 enforce 已阻断本次赋权")
+            .hasMessageContaining("互斥角色冲突");
+    }
+
+    @Test
+    void validateAssignmentsBeforeGrant_shouldThrow_whenOnlyEnforcePlatformAssignments_withoutGlobalEnforce() {
+        RoleMutex mutex = new RoleMutex();
+        mutex.setTenantId(null);
+        mutex.setLeftRoleId(10L);
+        mutex.setRightRoleId(20L);
+        when(roleRepository.findByIdInAndTenantIdIsNullOrderByIdAsc(any()))
+            .thenReturn(List.of(platformRole(10L), platformRole(20L)));
+        when(roleHierarchyRepository.findByTenantIdIsNullAndChildRoleIdIn(any())).thenReturn(List.of());
+        when(roleMutexRepository.findByTenantIdIsNullAndRoleIds(any())).thenReturn(List.of(mutex));
+        when(rolePrerequisiteRepository.findByTenantIdIsNullAndRoleIdIn(any())).thenReturn(List.of());
+        when(roleCardinalityRepository.findByTenantIdIsNullAndScopeTypeAndRoleIdIn(any(), any())).thenReturn(List.of());
+        ReflectionTestUtils.setField(service, "rbac3Enforce", false);
+        ReflectionTestUtils.setField(service, "enforcePlatformAssignments", true);
+
+        assertThatThrownBy(() ->
+            service.validateAssignmentsBeforeGrant("USER", 1L, null, "PLATFORM", null, List.of(10L, 20L))
+        ).isInstanceOf(BusinessException.class)
+            .hasMessageContaining("RBAC3 enforce 已阻断本次赋权");
+    }
+
+    @Test
+    void validateAssignmentsBeforeGrant_shouldRejectTenantRoleIds_whenPlatformScope() {
+        when(roleRepository.findByIdInAndTenantIdIsNullOrderByIdAsc(any())).thenReturn(List.of());
+
+        assertThatThrownBy(() ->
+            service.validateAssignmentsBeforeGrant("USER", 1L, null, "PLATFORM", null, List.of(10L))
+        ).isInstanceOf(BusinessException.class)
+            .hasMessageContaining("平台赋权仅允许");
     }
 }

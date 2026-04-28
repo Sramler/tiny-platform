@@ -1,0 +1,66 @@
+databaseChangeLog:
+  - changeSet:
+      id: 158-backfill-platform-role-constraints-delete-api-endpoints
+      author: codex
+      comment: 补齐 /platform/role-constraints/* DELETE api_endpoint 与 requirement，避免统一守卫 fail-closed
+      preConditions:
+        onFail: MARK_RAN
+        onError: HALT
+        and:
+          - tableExists:
+              tableName: permission
+          - tableExists:
+              tableName: api_endpoint
+          - tableExists:
+              tableName: api_endpoint_permission_requirement
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT IGNORE INTO `api_endpoint` (
+                `tenant_id`, `resource_level`, `name`, `title`, `uri`, `method`,
+                `permission`, `required_permission_id`, `enabled`, `created_at`, `updated_at`
+              )
+              SELECT NULL, 'PLATFORM', x.name, x.title, x.uri, x.method, x.permission_code, p.id, 1, NOW(), NOW()
+              FROM (
+                SELECT 'platform-role-constraint-hierarchy-delete' AS name, '平台 RBAC3 层级约束删除' AS title, '/platform/role-constraints/hierarchy' AS uri, 'DELETE' AS method, 'system:role:constraint:edit' AS permission_code
+                UNION ALL SELECT 'platform-role-constraint-mutex-delete', '平台 RBAC3 互斥约束删除', '/platform/role-constraints/mutex', 'DELETE', 'system:role:constraint:edit'
+                UNION ALL SELECT 'platform-role-constraint-prerequisite-delete', '平台 RBAC3 先决条件约束删除', '/platform/role-constraints/prerequisite', 'DELETE', 'system:role:constraint:edit'
+                UNION ALL SELECT 'platform-role-constraint-cardinality-delete', '平台 RBAC3 基数约束删除', '/platform/role-constraints/cardinality', 'DELETE', 'system:role:constraint:edit'
+              ) x
+              JOIN `permission` p
+                ON p.`tenant_id` IS NULL
+               AND p.`permission_code` = x.permission_code
+              WHERE NOT EXISTS (
+                SELECT 1
+                FROM `api_endpoint` e
+                WHERE e.`tenant_id` IS NULL
+                  AND e.`uri` = x.uri
+                  AND e.`method` = x.method
+              );
+
+              INSERT IGNORE INTO `api_endpoint_permission_requirement` (
+                `tenant_id`, `api_endpoint_id`, `requirement_group`, `sort_order`,
+                `permission_id`, `negated`, `created_at`, `updated_at`
+              )
+              SELECT
+                e.`tenant_id`,
+                e.`id`,
+                0,
+                1,
+                e.`required_permission_id`,
+                0,
+                NOW(),
+                NOW()
+              FROM `api_endpoint` e
+              WHERE e.`tenant_id` IS NULL
+                AND e.`method` = 'DELETE'
+                AND e.`uri` IN (
+                  '/platform/role-constraints/hierarchy',
+                  '/platform/role-constraints/mutex',
+                  '/platform/role-constraints/prerequisite',
+                  '/platform/role-constraints/cardinality'
+                )
+                AND e.`required_permission_id` IS NOT NULL;

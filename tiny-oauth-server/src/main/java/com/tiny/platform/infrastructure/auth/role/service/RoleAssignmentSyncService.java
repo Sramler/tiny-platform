@@ -31,6 +31,7 @@ public class RoleAssignmentSyncService {
 
     private static final String ACTIVE = "ACTIVE";
     private static final String PRINCIPAL_TYPE_USER = "USER";
+    private static final String SCOPE_TYPE_PLATFORM = "PLATFORM";
     private static final String SCOPE_TYPE_TENANT = "TENANT";
     private static final String SCOPE_TYPE_ORG = "ORG";
     private static final String SCOPE_TYPE_DEPT = "DEPT";
@@ -77,6 +78,28 @@ public class RoleAssignmentSyncService {
     @Transactional
     public void replaceUserTenantRoleAssignments(Long userId, Long tenantId, List<Long> roleIds) {
         replaceUserScopedRoleAssignments(userId, tenantId, SCOPE_TYPE_TENANT, tenantId, roleIds);
+    }
+
+    @Transactional
+    public void replaceUserPlatformRoleAssignments(Long userId, List<Long> roleIds) {
+        if (userId == null || userId <= 0) {
+            return;
+        }
+        List<Long> normalizedRoleIds = roleIds == null ? List.of() : roleIds;
+        roleConstraintService.validateAssignmentsBeforeGrant(
+            PRINCIPAL_TYPE_USER,
+            userId,
+            null,
+            SCOPE_TYPE_PLATFORM,
+            null,
+            normalizedRoleIds
+        );
+        List<Long> previousRoleIds = roleAssignmentRepository.findActiveRoleIdsForUserInPlatform(userId, LocalDateTime.now());
+        roleAssignmentRepository.deleteUserAssignmentsInPlatform(userId);
+        savePlatformAssignments(userId, normalizedRoleIds);
+        auditService.logSuccess(AuthorizationAuditEventType.ROLE_ASSIGNMENT_REPLACE,
+            null, userId, null, SCOPE_TYPE_PLATFORM, null,
+            buildReplaceDetail("previousRoleIds", previousRoleIds, "newRoleIds", normalizedRoleIds, null));
     }
 
     @Transactional
@@ -248,6 +271,32 @@ public class RoleAssignmentSyncService {
         roleAssignmentRepository.saveAll(assignments);
     }
 
+    private void savePlatformAssignments(Long userId, List<Long> roleIds) {
+        if (roleIds == null || roleIds.isEmpty()) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        Long grantedBy = resolveCurrentActorUserId();
+        Set<Long> distinctRoleIds = new LinkedHashSet<>(roleIds);
+        List<RoleAssignment> assignments = new ArrayList<>();
+        for (Long roleId : distinctRoleIds) {
+            RoleAssignment assignment = new RoleAssignment();
+            assignment.setPrincipalType(PRINCIPAL_TYPE_USER);
+            assignment.setPrincipalId(userId);
+            assignment.setRoleId(roleId);
+            assignment.setTenantId(null);
+            assignment.setScopeType(SCOPE_TYPE_PLATFORM);
+            assignment.setScopeId(null);
+            assignment.setStatus(ACTIVE);
+            assignment.setStartTime(now);
+            assignment.setEndTime(null);
+            assignment.setGrantedBy(grantedBy);
+            assignment.setGrantedAt(now);
+            assignments.add(assignment);
+        }
+        roleAssignmentRepository.saveAll(assignments);
+    }
+
     private RoleAssignment buildScopedAssignment(Long userId, Long roleId,
                                                  Long tenantId, AssignmentScope scope,
                                                  LocalDateTime now, Long grantedBy) {
@@ -393,6 +442,14 @@ public class RoleAssignmentSyncService {
     private String buildReplaceDetail(String previousKey, List<Long> previousIds,
                                       String nextKey, List<Long> nextIds,
                                       AssignmentScope scope) {
+        if (scope == null) {
+            return "{"
+                + "\"scopeType\":\"" + SCOPE_TYPE_PLATFORM + "\","
+                + "\"scopeId\":null,"
+                + "\"" + previousKey + "\":" + (previousIds != null ? previousIds : List.of()) + ","
+                + "\"" + nextKey + "\":" + (nextIds != null ? nextIds : List.of())
+                + "}";
+        }
         return "{"
             + "\"scopeType\":\"" + scope.scopeType() + "\","
             + "\"scopeId\":" + scope.scopeId() + ","
