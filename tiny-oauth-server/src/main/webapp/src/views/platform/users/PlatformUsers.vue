@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import type { Key } from 'ant-design-vue/es/_util/type'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/auth/auth'
 import { extractAuthoritiesFromJwt } from '@/utils/jwt'
@@ -115,8 +116,8 @@ function syncRouteForTab(nextTab: TabKey) {
   })
 }
 
-function handleTabChange(key: string) {
-  const requestedTab: TabKey = key === 'tenantStewardship' ? 'tenantStewardship' : 'platformUsers'
+function handleTabChange(key: Key) {
+  const requestedTab: TabKey = String(key) === 'tenantStewardship' ? 'tenantStewardship' : 'platformUsers'
   activeTab.value = resolveAccessibleTab(requestedTab)
 }
 
