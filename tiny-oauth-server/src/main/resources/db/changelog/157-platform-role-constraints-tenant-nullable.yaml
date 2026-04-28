@@ -1,0 +1,39 @@
+databaseChangeLog:
+  - changeSet:
+      id: 157-platform-role-constraints-tenant-nullable
+      author: codex
+      comment: 平台 RBAC3 约束记录使用 tenant_id IS NULL，收口约束表与违例日志 tenant_id 可空语义
+      preConditions:
+        onFail: MARK_RAN
+        onError: HALT
+        and:
+          - tableExists:
+              tableName: role_hierarchy
+          - tableExists:
+              tableName: role_mutex
+          - tableExists:
+              tableName: role_prerequisite
+          - tableExists:
+              tableName: role_cardinality
+          - tableExists:
+              tableName: role_constraint_violation_log
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              ALTER TABLE `role_hierarchy`
+                MODIFY COLUMN `tenant_id` BIGINT NULL COMMENT '租户ID；平台约束记录为 tenant_id IS NULL';
+
+              ALTER TABLE `role_mutex`
+                MODIFY COLUMN `tenant_id` BIGINT NULL COMMENT '租户ID；平台约束记录为 tenant_id IS NULL';
+
+              ALTER TABLE `role_prerequisite`
+                MODIFY COLUMN `tenant_id` BIGINT NULL COMMENT '租户ID；平台约束记录为 tenant_id IS NULL';
+
+              ALTER TABLE `role_cardinality`
+                MODIFY COLUMN `tenant_id` BIGINT NULL COMMENT '租户ID；平台约束记录为 tenant_id IS NULL';
+
+              ALTER TABLE `role_constraint_violation_log`
+                MODIFY COLUMN `tenant_id` BIGINT NULL COMMENT '租户ID；平台违例日志为 tenant_id IS NULL';

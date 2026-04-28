@@ -1,0 +1,44 @@
+databaseChangeLog:
+  - changeSet:
+      id: 167-backfill-role-platform-admin-rbac3-permissions
+      author: codex
+      comment: CARD-PR-09：为 ROLE_PLATFORM_ADMIN 回填平台 RBAC3 菜单与 API 所需的 system:role:constraint 权限绑定
+      preConditions:
+        onFail: MARK_RAN
+        onError: HALT
+        and:
+          - tableExists:
+              tableName: permission
+          - tableExists:
+              tableName: role
+          - tableExists:
+              tableName: role_permission
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT IGNORE INTO `role_permission` (
+                `tenant_id`,
+                `role_id`,
+                `permission_id`,
+                `created_by`,
+                `created_at`
+              )
+              SELECT
+                NULL,
+                r.`id`,
+                p.`id`,
+                NULL,
+                NOW()
+              FROM `role` r
+              JOIN `permission` p
+                ON p.`tenant_id` IS NULL
+               AND p.`permission_code` IN (
+                 'system:role:constraint:view',
+                 'system:role:constraint:edit',
+                 'system:role:constraint:violation:view'
+               )
+              WHERE r.`tenant_id` IS NULL
+                AND r.`code` = 'ROLE_PLATFORM_ADMIN';

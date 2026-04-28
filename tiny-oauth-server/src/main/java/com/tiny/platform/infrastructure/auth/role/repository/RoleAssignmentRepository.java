@@ -73,6 +73,24 @@ public interface RoleAssignmentRepository extends JpaRepository<RoleAssignment, 
         select distinct ra.principalId
         from RoleAssignment ra
         where ra.principalType = 'USER'
+          and ra.roleId = :roleId
+          and ra.scopeType = 'PLATFORM'
+          and ra.tenantId is null
+          and ra.scopeId is null
+          and ra.status = 'ACTIVE'
+          and ra.startTime <= :now
+          and (ra.endTime is null or ra.endTime > :now)
+        order by ra.principalId asc
+        """)
+    List<Long> findActiveUserIdsForRoleInPlatform(
+        @Param("roleId") Long roleId,
+        @Param("now") LocalDateTime now
+    );
+
+    @Query("""
+        select distinct ra.principalId
+        from RoleAssignment ra
+        where ra.principalType = 'USER'
           and ra.roleId in :roleIds
           and ra.scopeType = 'TENANT'
           and ra.tenantId = :tenantId
@@ -155,6 +173,18 @@ public interface RoleAssignmentRepository extends JpaRepository<RoleAssignment, 
         @Param("userId") Long userId,
         @Param("tenantId") Long tenantId
     );
+
+    @Modifying
+    @Transactional
+    @Query("""
+        delete from RoleAssignment ra
+        where ra.principalType = 'USER'
+          and ra.principalId = :userId
+          and ra.scopeType = 'PLATFORM'
+          and ra.tenantId is null
+          and ra.scopeId is null
+        """)
+    void deleteUserAssignmentsInPlatform(@Param("userId") Long userId);
 
     @Modifying
     @Transactional

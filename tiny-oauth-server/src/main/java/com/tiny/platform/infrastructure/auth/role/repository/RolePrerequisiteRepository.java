@@ -21,6 +21,13 @@ public interface RolePrerequisiteRepository extends JpaRepository<RolePrerequisi
     @Query("""
         select rp
         from RolePrerequisite rp
+        where rp.tenantId is null
+        """)
+    List<RolePrerequisite> findByTenantIdIsNull();
+
+    @Query("""
+        select rp
+        from RolePrerequisite rp
         where rp.tenantId = :tenantId
           and rp.roleId in :roleIds
         """)
@@ -28,6 +35,14 @@ public interface RolePrerequisiteRepository extends JpaRepository<RolePrerequisi
         @Param("tenantId") Long tenantId,
         @Param("roleIds") Collection<Long> roleIds
     );
+
+    @Query("""
+        select rp
+        from RolePrerequisite rp
+        where rp.tenantId is null
+          and rp.roleId in :roleIds
+        """)
+    List<RolePrerequisite> findByTenantIdIsNullAndRoleIdIn(@Param("roleIds") Collection<Long> roleIds);
 
     @Modifying
     @Transactional
@@ -42,5 +57,17 @@ public interface RolePrerequisiteRepository extends JpaRepository<RolePrerequisi
         @Param("roleId") Long roleId,
         @Param("requiredRoleId") Long requiredRoleId
     );
-}
 
+    @Modifying
+    @Transactional
+    @Query("""
+        delete from RolePrerequisite rp
+        where rp.tenantId is null
+          and rp.roleId = :roleId
+          and rp.requiredRoleId = :requiredRoleId
+        """)
+    void deleteByTenantIdIsNullAndRoleIdAndRequiredRoleId(
+        @Param("roleId") Long roleId,
+        @Param("requiredRoleId") Long requiredRoleId
+    );
+}
