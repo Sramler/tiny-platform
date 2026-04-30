@@ -53,6 +53,13 @@ const propertiesPanelTranslations: TranslationMap = {
   'Camunda Forms': 'Camunda 表单',
   'Embedded or External Task Forms': '嵌入式或外部任务表单',
   'Generated Task Forms': '生成的任务表单',
+  'Custom type': '自定义类型',
+  '<custom type>': '自定义类型',
+  boolean: '布尔',
+  date: '日期',
+  enum: '枚举',
+  long: '长整数',
+  string: '字符串',
 
   // 参数相关
   'Input parameters': '输入参数',
@@ -87,6 +94,7 @@ const propertiesPanelTranslations: TranslationMap = {
   Process: '流程',
   PROCESS: '流程',
   process: '流程',
+  'Start Event': '开始事件',
   'Process ID': '流程 ID',
   'Process name': '流程名称',
   'Process variables': '流程变量',

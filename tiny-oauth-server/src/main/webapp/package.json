@@ -39,7 +39,7 @@
     "axios": "^1.15.2",
     "bpmn-js": "^18.15.0",
     "bpmn-js-i18n": "^2.3.0",
-    "bpmn-js-properties-panel": "github:Sramler/bpmn-js-properties-panel#d4f33214",
+    "bpmn-js-properties-panel": "github:Sramler/bpmn-js-properties-panel#92d1e94b",
     "camunda-bpmn-moddle": "^7.0.1",
     "diagram-js-minimap": "^5.3.0",
     "jose": "^6.2.3",

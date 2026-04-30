@@ -182,15 +182,19 @@ export class TranslateUtils {
         return String(template || '')
       }
 
-      // 翻译优先级：官方翻译(中文基础) > 模块翻译(完善) > 临时翻译(补充) > BPMN.js默认英文(兜底)
+      // 翻译优先级：
+      // 1. 临时/业务自定义翻译：用于项目侧紧急补齐或覆盖第三方词条
+      // 2. 本地模块翻译：项目维护的稳定中文词典
+      // 3. 官方翻译兜底：只在项目词典没有覆盖时使用
+      // 4. BPMN.js 默认英文：最后兜底
       let translation = template
       let isTranslated = false
 
-      if (this.enableOfficialFallback && this.officialTranslations[template]) {
-        translation = this.officialTranslations[template]
+      if (this.customTranslations[template]) {
+        translation = this.customTranslations[template]
         isTranslated = true
-        performanceStats.officialFallbacks += 1
-        this.debugLog(`🌍 [官方] ${template} -> ${translation}`)
+        performanceStats.temporaryTranslations += 1
+        this.debugLog(`🎨 [临时] ${template} -> ${translation}`)
         notifyStatsUpdate()
         return this.replacePlaceholders(translation, replacements)
       }
@@ -217,11 +221,11 @@ export class TranslateUtils {
         return this.replacePlaceholders(translation, replacements)
       }
 
-      if (!isTranslated && this.customTranslations[template]) {
-        translation = this.customTranslations[template]
+      if (!isTranslated && this.enableOfficialFallback && this.officialTranslations[template]) {
+        translation = this.officialTranslations[template]
         isTranslated = true
-        performanceStats.temporaryTranslations += 1
-        this.debugLog(`🎨 [临时] ${template} -> ${translation}`)
+        performanceStats.officialFallbacks += 1
+        this.debugLog(`🌍 [官方] ${template} -> ${translation}`)
         notifyStatsUpdate()
         return this.replacePlaceholders(translation, replacements)
       }
@@ -403,10 +407,10 @@ export class TranslateUtils {
    * @returns 翻译来源
    */
   public getTranslationSource(key: string): 'custom' | 'local' | 'official' | 'none' {
-    // 按照优先级顺序检查：官方 > 本地 > 自定义
-    if (this.enableOfficialFallback && key in this.officialTranslations) return 'official'
-    if (key in allTranslations) return 'local'
+    // 按照 translate() 的实际优先级检查：自定义 > 本地 > 官方
     if (key in this.customTranslations) return 'custom'
+    if (key in allTranslations) return 'local'
+    if (this.enableOfficialFallback && key in this.officialTranslations) return 'official'
     return 'none'
   }
 
@@ -416,30 +420,31 @@ export class TranslateUtils {
    * @returns 找到的翻译或 null
    */
   public findTranslationCaseInsensitive(key: string): string | null {
-    // 按优先级查找：官方翻译 > 模块翻译 > 临时翻译
+    // 按 translate() 的实际优先级查找：自定义 > 本地 > 官方
+    const normalizedKey = key.toLowerCase()
 
-    // 1. 优先查找官方翻译
-    const officialKeys = Object.keys(this.officialTranslations)
-    const officialMatch = officialKeys.find((k) => k === key)
-    if (officialMatch) {
-      return this.officialTranslations[officialMatch] ?? null
-    }
-
-    // 2. 查找模块翻译
-    const localKeys = Object.keys(allTranslations)
-    const localMatch = localKeys.find((k) => k === key)
-    if (localMatch) {
-      return allTranslations[localMatch] ?? null
-    }
-
-    // 3. 查找临时翻译
     const customKeys = Object.keys(this.customTranslations)
-    const customMatch = customKeys.find((k) => k === key)
+    const customMatch = customKeys.find((k) => k.toLowerCase() === normalizedKey)
     if (customMatch) {
       return this.customTranslations[customMatch] ?? null
     }
 
-    // 4. 所有翻译源都没找到，返回 null
+    const localKeys = Object.keys(allTranslations)
+    const localMatch = localKeys.find((k) => k.toLowerCase() === normalizedKey)
+    if (localMatch) {
+      return allTranslations[localMatch] ?? null
+    }
+
+    if (!this.enableOfficialFallback) {
+      return null
+    }
+
+    const officialKeys = Object.keys(this.officialTranslations)
+    const officialMatch = officialKeys.find((k) => k.toLowerCase() === normalizedKey)
+    if (officialMatch) {
+      return this.officialTranslations[officialMatch] ?? null
+    }
+
     return null
   }
 
@@ -448,8 +453,9 @@ export class TranslateUtils {
    */
   public getMergedTranslations(): TranslationMap {
     return {
-      ...this.officialTranslations, // 官方翻译作为基础
-      ...this.customTranslations, // 自定义翻译覆盖官方翻译
+      ...this.officialTranslations, // 官方翻译作为兜底基础
+      ...allTranslations, // 项目本地翻译覆盖官方兜底
+      ...this.customTranslations, // 自定义翻译最高优先级
     }
   }
 

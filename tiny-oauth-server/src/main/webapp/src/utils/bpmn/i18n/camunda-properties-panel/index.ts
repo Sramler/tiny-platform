@@ -14,6 +14,13 @@ const camundaPropertiesPanelTranslations: TranslationMap = {
   'Camunda Forms': 'Camunda 表单',
   'Embedded or External Task Forms': '嵌入或者外部任务表单',
   'Generated Task Forms': '生成任务表单',
+  'Custom type': '自定义类型',
+  '<custom type>': '自定义类型',
+  boolean: '布尔',
+  date: '日期',
+  enum: '枚举',
+  long: '长整数',
+  string: '字符串',
 
   // 外部任务
   'External task': '外部任务',

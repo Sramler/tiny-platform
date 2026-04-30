@@ -71,6 +71,7 @@ export const elementTranslations: TranslationMap = {
   'Manual task': '手动任务',
 
   'Sequence flow': '顺序流',
+  'Sequence Flow': '顺序流',
   'Default flow': '默认流',
   'Conditional flow': '条件流',
 
@@ -109,6 +110,7 @@ export const elementTranslations: TranslationMap = {
   'Cancel end event': '取消结束事件',
 
   'Start event': '开始事件',
+  'Start Event': '开始事件',
   'Signal start event': '信号开始事件',
   'Signal start event (non-interrupting)': '信号开始事件 (非中断)',
   'Message start event': '消息开始事件',
