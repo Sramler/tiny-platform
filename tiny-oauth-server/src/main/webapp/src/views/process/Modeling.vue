@@ -157,7 +157,6 @@ const emit = defineEmits<{
 const bpmnContainer = ref<HTMLDivElement | null>(null)
 const propertiesPanel = ref<HTMLDivElement | null>(null)
 const modeler = ref<BpmnModeler | null>(null)
-let propertiesPanelLocalizationObserver: MutationObserver | null = null
 
 // 初始化路由
 const route = useRoute()
@@ -292,123 +291,6 @@ const saveFormRules: Record<string, Rule[]> = {
 // 翻译模块将在 onMounted 中异步加载
 
 let customTranslateModule: unknown = null
-
-function translateKnownPropertiesPanelText(text: string) {
-  const value = text.trim()
-  if (!value) return value
-
-  if (translateUtils.hasTranslation(value)) {
-    return translateUtils.translate(value)
-  }
-
-  const lowerValue = value.toLowerCase()
-  if (lowerValue !== value && translateUtils.hasTranslation(lowerValue)) {
-    return translateUtils.translate(lowerValue)
-  }
-
-  return value
-}
-
-function translatePropertiesPanelListTitle(text: string) {
-  const value = text.trim()
-  if (!value) return value
-
-  const directTranslation = translateKnownPropertiesPanelText(value)
-  if (directTranslation !== value) {
-    return directTranslation
-  }
-
-  // The BPMN properties panel builds some list titles from untranslated fragments
-  // (for example "Start: Java class"), so translate each fragment after render.
-  const compositeTitleMatch = /^([^:]+):\s*(.+)$/.exec(value)
-  if (!compositeTitleMatch) {
-    return value
-  }
-
-  const eventType = translateKnownPropertiesPanelText(compositeTitleMatch[1])
-  const listenerType = translateKnownPropertiesPanelText(compositeTitleMatch[2])
-  return `${eventType}: ${listenerType}`
-}
-
-function localizePropertiesPanelTextElements(selector: string) {
-  const panel = propertiesPanel.value
-  if (!panel) return
-
-  panel.querySelectorAll<HTMLElement>(selector).forEach((element) => {
-    const text = element.textContent?.trim()
-    if (!text) return
-
-    const translated = translatePropertiesPanelListTitle(text)
-    if (translated !== text) {
-      element.textContent = translated
-    }
-  })
-}
-
-function localizePropertiesPanelStaticText() {
-  const panel = propertiesPanel.value
-  if (!panel) return
-
-  panel.querySelectorAll<HTMLElement>('.bio-properties-panel-add-entry').forEach((button) => {
-    if (button.getAttribute('title') === 'Create new list item') {
-      button.setAttribute('title', translateUtils.translate('Create new list item'))
-    }
-  })
-
-  panel
-    .querySelectorAll<HTMLElement>('.bio-properties-panel-add-entry-label')
-    .forEach((label) => {
-      if (label.textContent?.trim() === 'Create') {
-        label.textContent = translateUtils.translate('Create')
-      }
-    })
-
-  panel.querySelectorAll<HTMLElement>('.bio-properties-panel-list-badge').forEach((badge) => {
-    const title = badge.getAttribute('title') || ''
-    const match = /^List contains (\d+) items?$/.exec(title)
-    if (!match) return
-
-    const count = match[1]
-    const key =
-      count === '1' ? 'List contains {numOfItems} item' : 'List contains {numOfItems} items'
-    badge.setAttribute('title', translateUtils.translate(key, { numOfItems: count }))
-  })
-
-  panel.querySelectorAll<HTMLElement>('.bio-properties-panel-arrow').forEach((button) => {
-    const title = button.getAttribute('title')
-    if (title === 'Toggle list item' || title === 'Toggle section') {
-      button.setAttribute('title', translateUtils.translate(title))
-    }
-  })
-
-  panel.querySelectorAll<HTMLElement>('[title="Delete item"]').forEach((button) => {
-    button.setAttribute('title', translateUtils.translate('Delete item'))
-  })
-
-  localizePropertiesPanelTextElements('.bio-properties-panel-list-entry-header-title')
-  localizePropertiesPanelTextElements('.bio-properties-panel-collapsible-entry-header-title')
-}
-
-function startPropertiesPanelStaticTextLocalization() {
-  propertiesPanelLocalizationObserver?.disconnect()
-
-  const panel = propertiesPanel.value
-  if (!panel) return
-
-  localizePropertiesPanelStaticText()
-  propertiesPanelLocalizationObserver = new MutationObserver(localizePropertiesPanelStaticText)
-  propertiesPanelLocalizationObserver.observe(panel, {
-    attributes: true,
-    attributeFilter: ['title'],
-    childList: true,
-    subtree: true,
-  })
-}
-
-function stopPropertiesPanelStaticTextLocalization() {
-  propertiesPanelLocalizationObserver?.disconnect()
-  propertiesPanelLocalizationObserver = null
-}
 
 // 处理保存 XML 的通用函数
 
@@ -912,7 +794,6 @@ onMounted(async () => {
         width: 280,
       },
     })
-    startPropertiesPanelStaticTextLocalization()
 
     console.log('✅ BPMN Modeler 初始化成功')
     console.log('🔍 创建后的 modeler 对象:', modeler.value)
@@ -1045,7 +926,6 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
-  stopPropertiesPanelStaticTextLocalization()
   if (modeler.value) {
     modeler.value.destroy()
     modeler.value = null
