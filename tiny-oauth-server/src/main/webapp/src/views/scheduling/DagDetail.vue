@@ -19,7 +19,10 @@
                 :disabled="!canTriggerDag || !canOperateSchedulingRun"
                 @confirm="handleTrigger"
               >
-                <a-button :loading="triggering" :disabled="!canTriggerDag || !canOperateSchedulingRun">
+                <a-button
+                  :loading="triggering"
+                  :disabled="!canTriggerDag || !canOperateSchedulingRun"
+                >
                   触发执行
                 </a-button>
               </a-popconfirm>
@@ -80,7 +83,7 @@
       </template>
     </a-page-header>
 
-    <a-tabs v-model:activeKey="activeTab">
+    <a-tabs v-model:activeKey="activeTab" destroy-inactive-tab-pane>
       <!-- 基本信息 -->
       <a-tab-pane key="info" tab="基本信息">
         <a-card class="info-card">
@@ -93,9 +96,15 @@
                 {{ dagInfo.enabled ? '启用' : '禁用' }}
               </a-tag>
             </a-descriptions-item>
-            <a-descriptions-item label="描述" :span="2">{{ dagInfo.description || '-' }}</a-descriptions-item>
-            <a-descriptions-item label="Cron 表达式">{{ dagInfo.cronExpression || '-' }}</a-descriptions-item>
-            <a-descriptions-item label="Cron 时区">{{ dagInfo.cronTimezone || '系统默认' }}</a-descriptions-item>
+            <a-descriptions-item label="描述" :span="2">{{
+              dagInfo.description || '-'
+            }}</a-descriptions-item>
+            <a-descriptions-item label="Cron 表达式">{{
+              dagInfo.cronExpression || '-'
+            }}</a-descriptions-item>
+            <a-descriptions-item label="Cron 时区">{{
+              dagInfo.cronTimezone || '系统默认'
+            }}</a-descriptions-item>
             <a-descriptions-item label="Cron 调度">
               <a-tag :color="dagInfo.cronEnabled ? 'green' : 'red'">
                 {{ dagInfo.cronEnabled ? '启用' : '禁用' }}
@@ -103,13 +112,18 @@
             </a-descriptions-item>
             <a-descriptions-item label="Cron 生效">
               <a-tooltip :title="getCronEffectiveReason(dagInfo)">
-                <a-tag v-if="isCronConfigured(dagInfo)" :color="isCronEffective(dagInfo) ? 'green' : 'red'">
+                <a-tag
+                  v-if="isCronConfigured(dagInfo)"
+                  :color="isCronEffective(dagInfo) ? 'green' : 'red'"
+                >
                   {{ isCronEffective(dagInfo) ? '生效' : '未生效' }}
                 </a-tag>
-                <span v-else style="color: #999;">-</span>
+                <span v-else style="color: #999">-</span>
               </a-tooltip>
             </a-descriptions-item>
-            <a-descriptions-item label="当前版本ID">{{ dagInfo.currentVersionId || '-' }}</a-descriptions-item>
+            <a-descriptions-item label="当前版本ID">{{
+              dagInfo.currentVersionId || '-'
+            }}</a-descriptions-item>
             <a-descriptions-item label="创建时间">{{ dagInfo.createdAt }}</a-descriptions-item>
           </a-descriptions>
         </a-card>
@@ -141,8 +155,12 @@
               </template>
               <template v-if="column.key === 'action'">
                 <a-space>
-                  <a-button type="link" size="small" @click="handleViewVersion(record)">查看</a-button>
-                  <a-button type="link" size="small" @click="handleEditVersion(record)">编辑</a-button>
+                  <a-button type="link" size="small" @click="handleViewVersion(record)"
+                    >查看</a-button
+                  >
+                  <a-button type="link" size="small" @click="handleEditVersion(record)"
+                    >编辑</a-button
+                  >
                   <a-button
                     type="link"
                     size="small"
@@ -151,7 +169,9 @@
                   >
                     激活
                   </a-button>
-                  <a-button type="link" size="small" @click="handleSwitchVersion(record)">切换到此版本</a-button>
+                  <a-button type="link" size="small" @click="handleSwitchVersion(record)"
+                    >切换到此版本</a-button
+                  >
                 </a-space>
               </template>
             </template>
@@ -193,8 +213,12 @@
               <template v-if="column.key === 'action'">
                 <a-space>
                   <a-button type="link" size="small" @click="handleEditNode(record)">编辑</a-button>
-                  <a-button type="link" size="small" @click="handleViewUpstream(record)">上游</a-button>
-                  <a-button type="link" size="small" @click="handleViewDownstream(record)">下游</a-button>
+                  <a-button type="link" size="small" @click="handleViewUpstream(record)"
+                    >上游</a-button
+                  >
+                  <a-button type="link" size="small" @click="handleViewDownstream(record)"
+                    >下游</a-button
+                  >
                   <a-popconfirm title="确定要删除吗？" @confirm="handleDeleteNode(record.id)">
                     <a-button type="link" danger size="small">删除</a-button>
                   </a-popconfirm>
@@ -286,7 +310,9 @@
           >
             <a-select-option value="Asia/Shanghai">Asia/Shanghai (中国标准时间)</a-select-option>
             <a-select-option value="UTC">UTC (协调世界时)</a-select-option>
-            <a-select-option value="America/New_York">America/New_York (美国东部时间)</a-select-option>
+            <a-select-option value="America/New_York"
+              >America/New_York (美国东部时间)</a-select-option
+            >
             <a-select-option value="Europe/London">Europe/London (英国时间)</a-select-option>
             <a-select-option value="Asia/Tokyo">Asia/Tokyo (日本标准时间)</a-select-option>
           </a-select>
@@ -318,7 +344,11 @@
           </a-select>
         </a-form-item>
         <a-form-item label="定义(JSON)">
-          <a-textarea v-model:value="versionFormData.definition" :rows="8" placeholder="请输入JSON格式的定义" />
+          <a-textarea
+            v-model:value="versionFormData.definition"
+            :rows="8"
+            placeholder="请输入JSON格式的定义"
+          />
         </a-form-item>
       </a-form>
     </a-modal>
@@ -351,7 +381,11 @@
           <a-input v-model:value="nodeFormData.name" placeholder="请输入节点名称" />
         </a-form-item>
         <a-form-item label="覆盖参数">
-          <a-textarea v-model:value="nodeFormData.overrideParams" :rows="4" placeholder="请输入JSON格式的覆盖参数" />
+          <a-textarea
+            v-model:value="nodeFormData.overrideParams"
+            :rows="4"
+            placeholder="请输入JSON格式的覆盖参数"
+          />
         </a-form-item>
         <a-form-item label="超时(秒)">
           <a-input-number v-model:value="nodeFormData.timeoutSec" :min="0" style="width: 100%" />
@@ -363,7 +397,11 @@
           <a-input v-model:value="nodeFormData.parallelGroup" placeholder="请输入并行组标识" />
         </a-form-item>
         <a-form-item label="元数据">
-          <a-textarea v-model:value="nodeFormData.meta" :rows="3" placeholder="请输入JSON格式的元数据" />
+          <a-textarea
+            v-model:value="nodeFormData.meta"
+            :rows="3"
+            placeholder="请输入JSON格式的元数据"
+          />
         </a-form-item>
       </a-form>
     </a-modal>
@@ -392,7 +430,11 @@
           </a-select>
         </a-form-item>
         <a-form-item label="条件">
-          <a-textarea v-model:value="edgeFormData.condition" :rows="3" placeholder="请输入JSON格式的条件" />
+          <a-textarea
+            v-model:value="edgeFormData.condition"
+            :rows="3"
+            placeholder="请输入JSON格式的条件"
+          />
         </a-form-item>
       </a-form>
     </a-modal>
@@ -419,8 +461,22 @@ import { PlusOutlined } from '@ant-design/icons-vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuth } from '@/auth/auth'
 import { extractAuthoritiesFromJwt } from '@/utils/jwt'
-import { SCHEDULING_CONSOLE_VIEW, SCHEDULING_CONSOLE_CONFIG, SCHEDULING_RUN_CONTROL, SCHEDULING_WILDCARD } from '@/constants/permission'
-import { getActiveTenantId, resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
+import {
+  SCHEDULING_CONSOLE_VIEW,
+  SCHEDULING_CONSOLE_CONFIG,
+  SCHEDULING_RUN_CONTROL,
+  SCHEDULING_WILDCARD,
+} from '@/constants/permission'
+import {
+  getActiveTenantId,
+  resolveActiveTenantQueryValue,
+  withActiveTenantQuery,
+} from '@/utils/tenant'
+import {
+  buildPlatformSchedulingQuery,
+  buildPlatformSchedulingPath,
+  isPlatformRuntimePath,
+} from '@/utils/platformRuntime'
 import {
   getDag,
   updateDag,
@@ -451,16 +507,20 @@ const { user } = useAuth()
 const schedulingAuthorities = computed(() =>
   extractAuthoritiesFromJwt(user.value?.access_token).filter((a) => a.startsWith('scheduling:')),
 )
-const canReadScheduling = computed(() =>
-  schedulingAuthorities.value.includes(SCHEDULING_CONSOLE_VIEW) || schedulingAuthorities.value.includes(SCHEDULING_WILDCARD),
+const canReadScheduling = computed(
+  () =>
+    schedulingAuthorities.value.includes(SCHEDULING_CONSOLE_VIEW) ||
+    schedulingAuthorities.value.includes(SCHEDULING_WILDCARD),
 )
-const canManageSchedulingConfig = computed(() =>
-  schedulingAuthorities.value.includes(SCHEDULING_CONSOLE_CONFIG) ||
-  schedulingAuthorities.value.includes(SCHEDULING_WILDCARD),
+const canManageSchedulingConfig = computed(
+  () =>
+    schedulingAuthorities.value.includes(SCHEDULING_CONSOLE_CONFIG) ||
+    schedulingAuthorities.value.includes(SCHEDULING_WILDCARD),
 )
-const canOperateSchedulingRun = computed(() =>
-  schedulingAuthorities.value.includes(SCHEDULING_RUN_CONTROL) ||
-  schedulingAuthorities.value.includes(SCHEDULING_WILDCARD),
+const canOperateSchedulingRun = computed(
+  () =>
+    schedulingAuthorities.value.includes(SCHEDULING_RUN_CONTROL) ||
+    schedulingAuthorities.value.includes(SCHEDULING_WILDCARD),
 )
 
 // 支持 query.id 或 query.dagId（与 DAG 列表跳转及菜单链接保持一致）
@@ -586,7 +646,9 @@ const edgeColumns: ColumnsType<any> = [
   { title: '操作', key: 'action', width: 100, fixed: 'right' as const },
 ]
 
-const canTriggerDag = computed(() => Boolean(dagInfo.value.enabled && dagInfo.value.currentVersionId))
+const canTriggerDag = computed(() =>
+  Boolean(dagInfo.value.enabled && dagInfo.value.currentVersionId),
+)
 const canStopDag = computed(() => Boolean(dagInfo.value.enabled && dagInfo.value.hasRunningRun))
 const canRetryDag = computed(() => Boolean(dagInfo.value.enabled && dagInfo.value.hasRetryableRun))
 
@@ -704,11 +766,13 @@ const handleBack = () => {
 
 const handleHistory = () => {
   router.push({
-    path: '/scheduling/dag/history',
-    query: withActiveTenantQuery(
-      { dagId: String(dagId.value) },
-      resolveActiveTenantQueryValue(route.query) ?? getActiveTenantId(),
-    ),
+    path: buildPlatformSchedulingPath(route.path, '/scheduling/dag/history'),
+    query: isPlatformRuntimePath(route.path, 'scheduling')
+      ? buildPlatformSchedulingQuery({ dagId: String(dagId.value) })
+      : withActiveTenantQuery(
+          { dagId: String(dagId.value) },
+          resolveActiveTenantQueryValue(route.query) ?? getActiveTenantId(),
+        ),
   })
 }
 
@@ -1042,14 +1106,20 @@ const handleDeleteEdge = async (edgeId: number) => {
   }
 }
 
-const DAG_LIST_PATH = '/scheduling/dag'
+const DAG_LIST_PATH = isPlatformRuntimePath(route.path, 'scheduling')
+  ? '/platform/scheduling/dag'
+  : '/scheduling/dag'
 const buildDagListQuery = () =>
-  withActiveTenantQuery({}, resolveActiveTenantQueryValue(route.query) ?? getActiveTenantId())
+  isPlatformRuntimePath(route.path, 'scheduling')
+    ? buildPlatformSchedulingQuery({})
+    : withActiveTenantQuery({}, resolveActiveTenantQueryValue(route.query) ?? getActiveTenantId())
 
 onMounted(() => {
   const id = dagId.value
   if (!id || Number.isNaN(id)) {
-    message.warning('请先选择 DAG：从 DAG 列表中点击「详情」进入，或使用链接带参数 ?id=xxx 或 ?dagId=xxx')
+    message.warning(
+      '请先选择 DAG：从 DAG 列表中点击「详情」进入，或使用链接带参数 ?id=xxx 或 ?dagId=xxx',
+    )
     router.replace({
       path: DAG_LIST_PATH,
       query: buildDagListQuery(),
@@ -1069,5 +1139,10 @@ onMounted(() => {
 
 .info-card {
   margin-bottom: 16px;
+}
+
+:deep(.ant-table-thead > tr > th),
+:deep(.ant-table-tbody > tr > td) {
+  white-space: nowrap;
 }
 </style>

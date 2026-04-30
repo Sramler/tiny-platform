@@ -1,16 +1,16 @@
 <template>
   <a-form
     ref="formRef"
-    :model="formData"
+    :model="formState"
     :rules="rules"
     :label-col="{ span: 6 }"
     :wrapper-col="{ span: 18 }"
   >
     <a-form-item label="字典编码" name="dictCode">
       <a-input
-        v-model:value="formData.dictCode"
+        v-model:value="formState.dictCode"
         placeholder="请输入字典编码，如：GENDER, ORDER_STATUS"
-        :disabled="!!formData.id"
+        :disabled="!!formState.id"
         :maxlength="64"
         show-count
       />
@@ -18,7 +18,7 @@
 
     <a-form-item label="字典名称" name="dictName">
       <a-input
-        v-model:value="formData.dictName"
+        v-model:value="formState.dictName"
         placeholder="请输入字典名称，如：性别, 订单状态"
         :maxlength="128"
         show-count
@@ -27,7 +27,7 @@
 
     <a-form-item label="字典描述" name="description">
       <a-textarea
-        v-model:value="formData.description"
+        v-model:value="formState.description"
         placeholder="请输入字典描述"
         :rows="3"
         :maxlength="255"
@@ -37,7 +37,7 @@
 
     <a-form-item label="分类ID" name="categoryId">
       <a-input-number
-        v-model:value="formData.categoryId"
+        v-model:value="formState.categoryId"
         :min="0"
         placeholder="用于字典分组（可选）"
         style="width: 100%"
@@ -46,7 +46,7 @@
 
     <a-form-item label="排序顺序" name="sortOrder">
       <a-input-number
-        v-model:value="formData.sortOrder"
+        v-model:value="formState.sortOrder"
         :min="0"
         :max="9999"
         placeholder="数字越小越靠前"
@@ -55,7 +55,7 @@
     </a-form-item>
 
     <a-form-item label="是否启用" name="enabled">
-      <a-switch v-model:checked="formData.enabled" />
+      <a-switch v-model:checked="formState.enabled" />
     </a-form-item>
   </a-form>
 </template>
@@ -72,7 +72,7 @@ const props = defineProps<{
 
 const formRef = ref<FormInstance>()
 
-const formData = reactive<DictTypeCreateUpdateDto>({
+const formState = reactive<DictTypeCreateUpdateDto>({
   dictCode: '',
   dictName: '',
   description: '',
@@ -99,7 +99,7 @@ watch(
   () => props.formData,
   (newVal) => {
     if (newVal) {
-      Object.assign(formData, {
+      Object.assign(formState, {
         id: newVal.id,
         dictCode: newVal.dictCode || '',
         dictName: newVal.dictName || '',
@@ -109,7 +109,7 @@ watch(
         enabled: newVal.enabled ?? true,
       })
     } else {
-      Object.assign(formData, {
+      Object.assign(formState, {
         id: undefined,
         dictCode: '',
         dictName: '',
@@ -130,7 +130,7 @@ async function validate() {
 
 // 获取表单数据
 function getFormData(): DictTypeCreateUpdateDto {
-  return { ...formData }
+  return { ...formState }
 }
 
 defineExpose({

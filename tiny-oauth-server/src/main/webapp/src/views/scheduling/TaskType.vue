@@ -33,31 +33,49 @@
         </div>
       </div>
 
-      <a-table
-        :columns="columns"
-        :data-source="dataSource"
-        :loading="loading"
-        :pagination="pagination"
-        :row-selection="{ selectedRowKeys, onChange: onSelectChange }"
-        @change="handleTableChange"
-        row-key="id"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'enabled'">
-            <a-tag :color="record.enabled ? 'green' : 'red'">
-              {{ record.enabled ? '启用' : '禁用' }}
-            </a-tag>
-          </template>
-          <template v-if="column.key === 'action'">
-            <a-space>
-              <a-button type="link" size="small" @click="handleEdit(record)">编辑</a-button>
-              <a-popconfirm title="确定要删除吗？" @confirm="handleDelete(record.id)">
-                <a-button type="link" danger size="small">删除</a-button>
-              </a-popconfirm>
-            </a-space>
-          </template>
-        </template>
-      </a-table>
+      <div class="table-container">
+        <div class="table-scroll-container">
+          <a-table
+            class="bottom-pagination-table"
+            :columns="columns"
+            :data-source="dataSource"
+            :loading="loading"
+            :pagination="false"
+            :row-selection="{ selectedRowKeys, onChange: onSelectChange }"
+            :scroll="{ x: 'max-content' }"
+            row-key="id"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'enabled'">
+                <a-tag :color="record.enabled ? 'green' : 'red'">
+                  {{ record.enabled ? '启用' : '禁用' }}
+                </a-tag>
+              </template>
+              <template v-if="column.key === 'action'">
+                <a-space>
+                  <a-button type="link" size="small" @click="handleEdit(record)">编辑</a-button>
+                  <a-popconfirm title="确定要删除吗？" @confirm="handleDelete(record.id)">
+                    <a-button type="link" danger size="small">删除</a-button>
+                  </a-popconfirm>
+                </a-space>
+              </template>
+            </template>
+          </a-table>
+        </div>
+        <div class="pagination-container">
+          <a-pagination
+            v-model:current="pagination.current"
+            :page-size="pagination.pageSize"
+            :total="pagination.total"
+            :show-size-changer="pagination.showSizeChanger"
+            :page-size-options="pagination.pageSizeOptions"
+            :show-total="pagination.showTotal"
+            :locale="{ items_per_page: '条/页' }"
+            @change="handlePageChange"
+            @showSizeChange="handlePageSizeChange"
+          />
+        </div>
+      </div>
     </div>
 
     <!-- 任务类型表单弹窗 -->
@@ -156,6 +174,7 @@ const pagination = reactive({
   pageSize: 10,
   total: 0,
   showSizeChanger: true,
+  pageSizeOptions: ['10', '20', '50', '100'],
   showTotal: (total: number) => `共 ${total} 条`,
 })
 
@@ -218,9 +237,14 @@ const handleRefresh = throttle(() => {
   })
 }, 500)
 
-const handleTableChange = (pag: any) => {
-  pagination.current = pag.current
-  pagination.pageSize = pag.pageSize
+const handlePageChange = (page: number) => {
+  pagination.current = page || 1
+  loadData()
+}
+
+const handlePageSizeChange = (_current: number, size: number) => {
+  pagination.pageSize = size || 10
+  pagination.current = 1
   loadData()
 }
 
@@ -347,24 +371,69 @@ onMounted(async () => {
 
 <style scoped>
 .content-container {
-  padding: 16px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
 }
 
 .content-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   background: #fff;
-  border-radius: 4px;
-  padding: 16px;
 }
 
 .form-container {
-  margin-bottom: 16px;
+  padding: 24px;
+  border-bottom: 1px solid #f0f0f0;
 }
 
 .toolbar-container {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  padding: 8px 24px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.table-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.table-scroll-container {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 12px;
+}
+
+:deep(.bottom-pagination-table) {
+  min-width: 0;
+  width: 100%;
+}
+
+:deep(.bottom-pagination-table .ant-table-thead > tr > th),
+:deep(.bottom-pagination-table .ant-table-tbody > tr > td) {
+  white-space: nowrap;
+}
+
+.pagination-container {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 56px;
+  padding: 12px 24px;
+  border-top: 1px solid #f0f0f0;
+  background: #fff;
 }
 
 .table-title {

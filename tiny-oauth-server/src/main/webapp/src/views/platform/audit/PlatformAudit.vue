@@ -4,30 +4,55 @@
       当前会话不是 PLATFORM 作用域，已阻止加载平台审计控制面。请切换到平台作用域后重试。
     </a-card>
     <template v-else>
-    <div class="platform-audit-header">
-      <h2>平台审计治理</h2>
-      <p>统一查看登录审计与授权审计，筛选字段与查询契约复用现有控制面实现。</p>
-    </div>
-    <a-tabs v-model:activeKey="activeKey">
-      <a-tab-pane key="authentication" tab="登录审计">
-        <AuthenticationAudit />
-      </a-tab-pane>
-      <a-tab-pane key="authorization" tab="授权审计">
-        <AuthorizationAudit />
-      </a-tab-pane>
-    </a-tabs>
+      <div class="platform-audit-header">
+        <h2>平台审计治理</h2>
+        <p>统一查看登录审计与授权审计，筛选字段与查询契约复用现有控制面实现。</p>
+      </div>
+      <a-tabs :active-key="activeKey" destroy-inactive-tab-pane @change="handleTabChange">
+        <a-tab-pane key="authentication" tab="登录审计">
+          <AuthenticationAudit v-if="activeKey === 'authentication'" />
+        </a-tab-pane>
+        <a-tab-pane key="authorization" tab="授权审计">
+          <AuthorizationAudit v-if="activeKey === 'authorization'" />
+        </a-tab-pane>
+      </a-tabs>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import type { Key } from 'ant-design-vue/es/_util/type'
 import AuthenticationAudit from '@/views/audit/AuthenticationAudit.vue'
 import AuthorizationAudit from '@/views/audit/AuthorizationAudit.vue'
 import { usePlatformScope } from '@/composables/usePlatformScope'
+import {
+  buildPlatformAuditRouteQuery,
+  buildPlatformAuditTabPath,
+  isPlatformAuditTab,
+  resolvePlatformAuditTabFromPath,
+  type PlatformAuditTab,
+} from '@/utils/platformRuntime'
 
-const activeKey = ref('authentication')
 const { isPlatformScope } = usePlatformScope()
+const route = useRoute()
+const router = useRouter()
+
+const activeKey = computed<PlatformAuditTab>(
+  () => resolvePlatformAuditTabFromPath(route.path) ?? 'authentication',
+)
+
+function handleTabChange(key: Key) {
+  const nextTab = String(key)
+  if (!isPlatformAuditTab(nextTab)) {
+    return
+  }
+  void router.replace({
+    path: buildPlatformAuditTabPath(nextTab),
+    query: buildPlatformAuditRouteQuery(route.query),
+  })
+}
 </script>
 
 <style scoped>
@@ -55,4 +80,3 @@ const { isPlatformScope } = usePlatformScope()
   color: #595959;
 }
 </style>
-

@@ -27,6 +27,15 @@ const antDesignMocks = vi.hoisted(() => ({
   Modal: { confirm: vi.fn() },
 }))
 
+const routerMocks = vi.hoisted(() => ({
+  replace: vi.fn(),
+}))
+
+const routeState = vi.hoisted(() => ({
+  path: '/platform/role-constraints/hierarchy',
+  query: {} as Record<string, unknown>,
+}))
+
 vi.mock('@/api/platformRoleConstraint', () => ({
   listPlatformHierarchies: platformConstraintMocks.listPlatformHierarchies,
   listPlatformMutexes: platformConstraintMocks.listPlatformMutexes,
@@ -74,6 +83,11 @@ vi.mock('@/utils/jwt', () => ({
   },
 }))
 
+vi.mock('vue-router', () => ({
+  useRoute: () => routeState,
+  useRouter: () => routerMocks,
+}))
+
 vi.mock('ant-design-vue', () => ({
   message: antDesignMocks.message,
   Modal: antDesignMocks.Modal,
@@ -89,7 +103,12 @@ async function flushPromises() {
 function createStubs() {
   return {
     'a-card': { template: '<div><slot /></div>' },
-    'a-tabs': { template: '<div><slot /></div>' },
+    'a-tabs': {
+      props: ['activeKey'],
+      emits: ['change'],
+      template:
+        '<div class="tabs-stub" :data-active-key="activeKey"><button class="tab-change" @click="$emit(\'change\', \'mutex\')">切换互斥约束</button><slot /></div>',
+    },
     'a-tab-pane': { template: '<div><slot /></div>' },
     'a-table': { template: '<div />' },
     'a-button': { template: '<button @click="$emit(\'click\')"><slot /></button>' },
@@ -111,6 +130,9 @@ describe('PlatformRoleConstraints.vue', () => {
     vi.clearAllMocks()
     scopeMocks.isPlatformScope.value = false
     authMocks.token = 't-tenant'
+    routerMocks.replace.mockReset()
+    routeState.path = '/platform/role-constraints/hierarchy'
+    routeState.query = {}
     platformConstraintMocks.listPlatformHierarchies.mockResolvedValue([])
     platformConstraintMocks.listPlatformViolations.mockResolvedValue({ content: [], totalElements: 0 })
     platformRoleMocks.listPlatformRoleOptions.mockResolvedValue([])
@@ -146,6 +168,33 @@ describe('PlatformRoleConstraints.vue', () => {
     expect(platformConstraintMocks.listPlatformHierarchies).toHaveBeenCalled()
   })
 
+  it('resolves active tab from child route and writes tab changes to path route', async () => {
+    scopeMocks.isPlatformScope.value = true
+    authMocks.token = 't-platform-view'
+    routeState.path = '/platform/role-constraints/cardinality'
+    routeState.query = {
+      activeTenantId: '9',
+      keyword: 'rbac',
+    }
+
+    const wrapper = mount(PlatformRoleConstraints, {
+      global: {
+        stubs: createStubs(),
+      },
+    })
+    await flushPromises()
+    await wrapper.find('.tab-change').trigger('click')
+
+    expect(wrapper.find('.tabs-stub').attributes('data-active-key')).toBe('cardinality')
+    expect(platformConstraintMocks.listPlatformCardinalities).toHaveBeenCalled()
+    expect(routerMocks.replace).toHaveBeenCalledWith({
+      path: '/platform/role-constraints/mutex',
+      query: {
+        keyword: 'rbac',
+      },
+    })
+  })
+
   it('allows edit-only users to load role catalog without forcing read gate', async () => {
     scopeMocks.isPlatformScope.value = true
     authMocks.token = 't-platform-edit'
@@ -179,5 +228,9 @@ describe('PlatformRoleConstraints.vue', () => {
     expect(platformConstraintMocks.listPlatformViolations).toHaveBeenCalled()
     expect(platformConstraintMocks.listPlatformHierarchies).not.toHaveBeenCalled()
     expect(platformRoleMocks.listPlatformRoleOptions).not.toHaveBeenCalled()
+    expect(routerMocks.replace).toHaveBeenCalledWith({
+      path: '/platform/role-constraints/violations',
+      query: {},
+    })
   })
 })

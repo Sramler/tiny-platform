@@ -23,7 +23,7 @@
 
       <a-tabs
         v-else
-        v-model:activeKey="activeTab"
+        :active-key="activeTab"
         class="boundary-tabs"
         destroy-inactive-tab-pane
         @change="handleTabChange"
@@ -518,6 +518,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/auth/auth'
 import { usePlatformScope } from '@/composables/usePlatformScope'
 import { message, Modal } from 'ant-design-vue'
@@ -550,9 +551,18 @@ import {
   type RoleCardinality,
   type RoleViolation,
 } from '@/api/platformRoleConstraint'
+import {
+  buildPlatformRoleConstraintRouteQuery,
+  buildPlatformRoleConstraintTabPath,
+  isPlatformRoleConstraintTab,
+  resolvePlatformRoleConstraintTabFromPath,
+  type PlatformRoleConstraintTab,
+} from '@/utils/platformRuntime'
 
 const { user } = useAuth()
 const { isPlatformScope } = usePlatformScope()
+const route = useRoute()
+const router = useRouter()
 const authorities = computed(() => new Set(extractAuthoritiesFromJwt(user.value?.access_token)))
 
 function hasAuthority(perm: string) {
@@ -564,6 +574,48 @@ const canEditConstraint = computed(() => hasAuthority(ROLE_CONSTRAINT_EDIT))
 const canViewViolations = computed(() => hasAuthority(ROLE_CONSTRAINT_VIOLATION_VIEW))
 const canAccessConstraintTabs = computed(() => canView.value || canEditConstraint.value)
 const canAccessPage = computed(() => canAccessConstraintTabs.value || canViewViolations.value)
+
+function resolveRequestedTab(): PlatformRoleConstraintTab {
+  return resolvePlatformRoleConstraintTabFromPath(route.path) ?? 'hierarchy'
+}
+
+function resolveAccessibleTab(requestedTab: PlatformRoleConstraintTab): PlatformRoleConstraintTab {
+  if (requestedTab === 'violations') {
+    return canViewViolations.value
+      ? 'violations'
+      : canAccessConstraintTabs.value
+        ? 'hierarchy'
+        : 'violations'
+  }
+  if (canAccessConstraintTabs.value) {
+    return requestedTab
+  }
+  return canViewViolations.value ? 'violations' : 'hierarchy'
+}
+
+const activeTab = computed<PlatformRoleConstraintTab>(() => {
+  if (!isPlatformScope.value || !canAccessPage.value) {
+    return 'hierarchy'
+  }
+  return resolveAccessibleTab(resolveRequestedTab())
+})
+
+function replaceRoleConstraintTabRoute(tab: PlatformRoleConstraintTab) {
+  return router.replace({
+    path: buildPlatformRoleConstraintTabPath(tab),
+    query: buildPlatformRoleConstraintRouteQuery(route.query),
+  })
+}
+
+function syncActiveTabRoute() {
+  if (!isPlatformScope.value || !canAccessPage.value) {
+    return
+  }
+  const requestedTab = resolvePlatformRoleConstraintTabFromPath(route.path)
+  if (requestedTab !== activeTab.value) {
+    void replaceRoleConstraintTabRoute(activeTab.value)
+  }
+}
 
 const LOCAL_PAGE_SIZE_OPTIONS = ['10', '20', '30', '40', '50']
 const constraintPageRef = ref<HTMLElement | null>(null)
@@ -718,7 +770,6 @@ async function ensureRoleOptionsReady() {
   return true
 }
 
-const activeTab = ref('hierarchy')
 const submitting = ref(false)
 
 const hierarchies = ref<RoleHierarchy[]>([])
@@ -1215,11 +1266,12 @@ function typeLabel(type: ConstraintType): string {
 }
 
 function handleTabChange(key: Key) {
-  if (String(key) === 'violations' && !canViewViolations.value) {
-    activeTab.value = canAccessConstraintTabs.value ? 'hierarchy' : 'violations'
+  const requestedTab = String(key)
+  if (!isPlatformRoleConstraintTab(requestedTab)) {
     return
   }
-  activeTab.value = String(key)
+  const nextTab = resolveAccessibleTab(requestedTab)
+  void replaceRoleConstraintTabRoute(nextTab)
 }
 
 function clearPageData() {
@@ -1245,13 +1297,7 @@ function clearPageData() {
 }
 
 function normalizeActiveTab() {
-  if (!canAccessConstraintTabs.value && canViewViolations.value) {
-    activeTab.value = 'violations'
-    return
-  }
-  if (activeTab.value === 'violations' && !canViewViolations.value) {
-    activeTab.value = 'hierarchy'
-  }
+  syncActiveTabRoute()
 }
 
 function activateCurrentTab() {
@@ -1313,7 +1359,6 @@ watch(
   ([scope, view, edit, violation]) => {
     if (!scope || (!view && !edit && !violation)) {
       clearPageData()
-      activeTab.value = 'hierarchy'
       return
     }
 

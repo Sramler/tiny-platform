@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { computed, nextTick, reactive } from 'vue'
+import { computed, defineComponent, nextTick, reactive } from 'vue'
+import PlatformRoleApprovals from './PlatformRoleApprovals.vue'
 
 const approvalMocks = vi.hoisted(() => ({
   list: vi.fn(),
@@ -53,9 +54,46 @@ vi.mock('ant-design-vue', () => {
   return { message }
 })
 
+const PassThrough = defineComponent({
+  template: '<div><slot /><slot name="icon" /><slot name="content" /><slot name="overlay" /></div>',
+})
+
+const TableStub = defineComponent({
+  props: ['columns', 'dataSource', 'loading', 'pagination', 'rowKey'],
+  template: '<div class="table-stub"></div>',
+})
+
+const ModalStub = defineComponent({
+  props: ['open', 'title', 'confirmLoading'],
+  emits: ['ok', 'cancel', 'update:open'],
+  template: '<div v-if="open" class="modal-stub"><slot /></div>',
+})
+
+function mountApprovals(component: any) {
+  return mount(component, {
+    global: {
+      stubs: {
+        'a-card': PassThrough,
+        'a-form': PassThrough,
+        'a-form-item': PassThrough,
+        'a-input-number': PassThrough,
+        'a-select': PassThrough,
+        'a-select-option': PassThrough,
+        'a-textarea': PassThrough,
+        'a-button': PassThrough,
+        'a-tooltip': PassThrough,
+        'a-space': PassThrough,
+        'a-table': TableStub,
+        'a-modal': ModalStub,
+        PlusOutlined: PassThrough,
+        ReloadOutlined: PassThrough,
+      },
+    },
+  })
+}
+
 describe('PlatformRoleApprovals.vue', () => {
   beforeEach(() => {
-    vi.resetModules()
     vi.clearAllMocks()
     authMocks.token = 't1'
     approvalMocks.list.mockResolvedValue({ records: [], total: 0 })
@@ -64,8 +102,7 @@ describe('PlatformRoleApprovals.vue', () => {
 
   it('shows permission guard without approval authorities', async () => {
     authMocks.token = 'no-approval'
-    const comp = (await import('./PlatformRoleApprovals.vue')).default
-    const wrapper = mount(comp)
+    const wrapper = mountApprovals(PlatformRoleApprovals)
     await nextTick()
     expect(wrapper.text()).toContain('缺少平台赋权审批权限')
     expect(approvalMocks.list).not.toHaveBeenCalled()
@@ -73,8 +110,7 @@ describe('PlatformRoleApprovals.vue', () => {
   })
 
   it('loads table when approval list permission present', async () => {
-    const comp = (await import('./PlatformRoleApprovals.vue')).default
-    mount(comp)
+    mountApprovals(PlatformRoleApprovals)
     await nextTick()
     await nextTick()
     expect(approvalMocks.list).toHaveBeenCalled()
@@ -83,8 +119,7 @@ describe('PlatformRoleApprovals.vue', () => {
 
   it('loads role options lazily when submit-only user opens submit modal', async () => {
     authMocks.token = 'submit-only'
-    const comp = (await import('./PlatformRoleApprovals.vue')).default
-    const wrapper = mount(comp)
+    const wrapper = mountApprovals(PlatformRoleApprovals)
     await nextTick()
     await nextTick()
 

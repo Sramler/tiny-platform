@@ -105,7 +105,7 @@ describe('TenantDetail.vue', () => {
 
   it('should go back to platform users stewardship when source query is present', async () => {
     routeState.query = {
-      from: '/platform/users?tab=tenantStewardship&tenantId=9',
+      from: '/platform/users/tenant-stewardship?tenantId=9',
     }
 
     const wrapper = mount(TenantDetail, {
@@ -125,7 +125,7 @@ describe('TenantDetail.vue', () => {
 
     await backButton!.trigger('click')
 
-    expect(routerMocks.push).toHaveBeenCalledWith('/platform/users?tab=tenantStewardship&tenantId=9')
+    expect(routerMocks.push).toHaveBeenCalledWith('/platform/users/tenant-stewardship?tenantId=9')
   })
 
   it('should focus permission summary section when section query is permission-summary', async () => {

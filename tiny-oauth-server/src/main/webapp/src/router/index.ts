@@ -4,16 +4,40 @@ import type { NavigationGuard, RouteLocationRaw } from 'vue-router'
 import { watch } from 'vue'
 import { message } from 'ant-design-vue'
 import { authRuntimeConfig } from '@/auth/config'
-import { useAuth, initPromise, trySilentLoginFromPlatformSession } from '@/auth/auth'
+import {
+  useAuth,
+  initPromise,
+  trySilentLoginFromPlatformSession,
+  consumePostLogoutRedirectMarker,
+  completePostLogoutRedirect,
+} from '@/auth/auth'
 import { menuTree, type MenuItem } from '@/api/menu' // 引入菜单 API
 import logger from '@/utils/logger' // 引入日志工具
 import { getCurrentTraceId } from '@/utils/traceId'
 import { useMenuRouteState, updateMenuRouteState } from './menuState'
 import { getLoginMode, getTenantCode, syncTenantContextFromAccessToken } from '@/utils/tenant'
+import {
+  buildPlatformAuditTabPath,
+  buildPlatformDictTabPath,
+  buildPlatformProcessTabPath,
+  buildPlatformRoleConstraintTabPath,
+  buildPlatformUserTabPath,
+  buildPlatformSchedulingQuery,
+  buildPlatformSchedulingTabPath,
+  inferPlatformSchedulingTabFromPath,
+  inferPlatformProcessTabFromPath,
+} from '@/utils/platformRuntime'
 
 const MENU_LOAD_MESSAGE_KEY = 'menu-load-error'
 const menuRouteState = useMenuRouteState()
 let menuRoutesLoading: Promise<boolean> | null = null
+const platformAuditComponent = () => import('@/views/platform/audit/PlatformAudit.vue')
+const platformDictModuleComponent = () => import('@/views/platform/dicts/index.vue')
+const platformProcessModuleComponent = () =>
+  import('@/views/platform/runtime/PlatformProcessModule.vue')
+const platformSchedulingModuleComponent = () =>
+  import('@/views/platform/runtime/PlatformSchedulingModule.vue')
+const platformUsersComponent = () => import('@/views/platform/users/PlatformUsers.vue')
 
 /**
  * 递归生成菜单对应的路由配置，支持动态组件导入。
@@ -153,8 +177,23 @@ const routes = [
       {
         path: 'platform/audit',
         name: 'PlatformAudit',
-        component: () => import('@/views/platform/audit/PlatformAudit.vue'),
+        redirect: () => ({
+          path: buildPlatformAuditTabPath('authentication'),
+          query: {},
+        }),
         meta: { requiresAuth: true, title: '平台审计治理' },
+      },
+      {
+        path: 'platform/audit/authentication',
+        name: 'PlatformAuthenticationAudit',
+        component: platformAuditComponent,
+        meta: { requiresAuth: true, title: '平台登录审计' },
+      },
+      {
+        path: 'platform/audit/authorization',
+        name: 'PlatformAuthorizationAudit',
+        component: platformAuditComponent,
+        meta: { requiresAuth: true, title: '平台授权审计' },
       },
       {
         path: 'platform/token-debug',
@@ -190,8 +229,23 @@ const routes = [
       {
         path: 'platform/users',
         name: 'PlatformUsers',
-        component: () => import('@/views/platform/users/PlatformUsers.vue'),
+        redirect: () => ({
+          path: buildPlatformUserTabPath('platformUsers'),
+          query: {},
+        }),
         meta: { requiresAuth: true, title: '平台用户治理' },
+      },
+      {
+        path: 'platform/users/governance',
+        name: 'PlatformUserGovernance',
+        component: platformUsersComponent,
+        meta: { requiresAuth: true, title: '平台用户治理' },
+      },
+      {
+        path: 'platform/users/tenant-stewardship',
+        name: 'PlatformTenantStewardship',
+        component: platformUsersComponent,
+        meta: { requiresAuth: true, title: '租户用户代管' },
       },
       {
         path: 'platform/role-assignment-requests',
@@ -203,8 +257,41 @@ const routes = [
       {
         path: 'platform/role-constraints',
         name: 'PlatformRoleConstraints',
-        component: () => import('@/views/platform/role-constraints/PlatformRoleConstraints.vue'),
+        redirect: () => ({
+          path: buildPlatformRoleConstraintTabPath('hierarchy'),
+          query: {},
+        }),
         meta: { requiresAuth: true, title: '平台 RBAC3 约束' },
+      },
+      {
+        path: 'platform/role-constraints/hierarchy',
+        name: 'PlatformRoleConstraintHierarchy',
+        component: () => import('@/views/platform/role-constraints/PlatformRoleConstraints.vue'),
+        meta: { requiresAuth: true, title: '平台角色继承' },
+      },
+      {
+        path: 'platform/role-constraints/mutex',
+        name: 'PlatformRoleConstraintMutex',
+        component: () => import('@/views/platform/role-constraints/PlatformRoleConstraints.vue'),
+        meta: { requiresAuth: true, title: '平台互斥约束' },
+      },
+      {
+        path: 'platform/role-constraints/prerequisite',
+        name: 'PlatformRoleConstraintPrerequisite',
+        component: () => import('@/views/platform/role-constraints/PlatformRoleConstraints.vue'),
+        meta: { requiresAuth: true, title: '平台先决条件' },
+      },
+      {
+        path: 'platform/role-constraints/cardinality',
+        name: 'PlatformRoleConstraintCardinality',
+        component: () => import('@/views/platform/role-constraints/PlatformRoleConstraints.vue'),
+        meta: { requiresAuth: true, title: '平台基数限制' },
+      },
+      {
+        path: 'platform/role-constraints/violations',
+        name: 'PlatformRoleConstraintViolations',
+        component: () => import('@/views/platform/role-constraints/PlatformRoleConstraints.vue'),
+        meta: { requiresAuth: true, title: '平台违规记录' },
       },
       // {
       //   path: 'about',
@@ -246,20 +333,119 @@ const routes = [
       {
         path: 'platform/dicts',
         name: 'PlatformDicts',
-        component: () => import('@/views/platform/dicts/index.vue'),
+        redirect: () => ({
+          path: buildPlatformDictTabPath('type'),
+          query: {},
+        }),
         meta: { requiresAuth: true, title: '平台字典管理' },
       },
       {
+        path: 'platform/dicts/type',
+        name: 'PlatformDictTypes',
+        component: platformDictModuleComponent,
+        meta: { requiresAuth: true, title: '平台字典类型' },
+      },
+      {
+        path: 'platform/dicts/item',
+        name: 'PlatformDictItems',
+        component: platformDictModuleComponent,
+        meta: { requiresAuth: true, title: '平台字典项' },
+      },
+      {
+        path: 'platform/dicts/overrides',
+        name: 'PlatformDictOverrides',
+        component: platformDictModuleComponent,
+        meta: { requiresAuth: true, title: '平台字典覆盖关系' },
+      },
+      {
         path: 'platform/scheduling',
-        name: 'PlatformSchedulingConsole',
-        component: () => import('@/views/platform/runtime/ModuleTenantBridge.vue'),
-        meta: { requiresAuth: true, title: '平台调度控制台' },
+        name: 'PlatformSchedulingModule',
+        redirect: () => ({
+          path: buildPlatformSchedulingTabPath('dag'),
+          query: {},
+        }),
+        meta: { requiresAuth: true, title: '平台调度管理' },
+      },
+      {
+        path: 'platform/scheduling/dag',
+        name: 'PlatformSchedulingDag',
+        component: platformSchedulingModuleComponent,
+        meta: { requiresAuth: true, title: '平台 DAG 管理' },
+      },
+      {
+        path: 'platform/scheduling/task',
+        name: 'PlatformSchedulingTask',
+        component: platformSchedulingModuleComponent,
+        meta: { requiresAuth: true, title: '平台任务管理' },
+      },
+      {
+        path: 'platform/scheduling/task-type',
+        name: 'PlatformSchedulingTaskType',
+        component: platformSchedulingModuleComponent,
+        meta: { requiresAuth: true, title: '平台任务类型' },
+      },
+      {
+        path: 'platform/scheduling/history',
+        name: 'PlatformSchedulingHistory',
+        component: platformSchedulingModuleComponent,
+        meta: { requiresAuth: true, title: '平台运行历史' },
+      },
+      {
+        path: 'platform/scheduling/audit',
+        name: 'PlatformSchedulingAudit',
+        component: platformSchedulingModuleComponent,
+        meta: { requiresAuth: true, title: '平台审计日志' },
       },
       {
         path: 'platform/process',
-        name: 'PlatformProcessConsole',
-        component: () => import('@/views/platform/runtime/ModuleTenantBridge.vue'),
-        meta: { requiresAuth: true, title: '平台工作流控制台' },
+        name: 'PlatformProcessModule',
+        redirect: () => ({
+          path: buildPlatformProcessTabPath('definition'),
+          query: {},
+        }),
+        meta: { requiresAuth: true, title: '平台流程管理' },
+      },
+      {
+        path: 'platform/process/modeling',
+        name: 'PlatformProcessModeling',
+        component: platformProcessModuleComponent,
+        meta: { requiresAuth: true, title: '平台流程建模' },
+      },
+      {
+        path: 'platform/process/deployment',
+        name: 'PlatformProcessDeployment',
+        component: platformProcessModuleComponent,
+        meta: { requiresAuth: true, title: '平台流程部署' },
+      },
+      {
+        path: 'platform/process/definition',
+        name: 'PlatformProcessDefinition',
+        component: platformProcessModuleComponent,
+        meta: { requiresAuth: true, title: '平台流程定义' },
+      },
+      {
+        path: 'platform/process/instance',
+        name: 'PlatformProcessInstance',
+        component: platformProcessModuleComponent,
+        meta: { requiresAuth: true, title: '平台流程实例' },
+      },
+      {
+        path: 'platform/process/task',
+        name: 'PlatformProcessTask',
+        component: platformProcessModuleComponent,
+        meta: { requiresAuth: true, title: '平台流程任务管理' },
+      },
+      {
+        path: 'platform/scheduling/dag/detail',
+        name: 'PlatformDagDetail',
+        component: () => import('@/views/scheduling/DagDetail.vue'),
+        meta: { requiresAuth: true, title: '平台 DAG 详情' },
+      },
+      {
+        path: 'platform/scheduling/dag/history',
+        name: 'PlatformDagHistory',
+        component: () => import('@/views/scheduling/DagHistory.vue'),
+        meta: { requiresAuth: true, title: '平台 DAG 运行历史' },
       },
       // 调度 DAG 详情/历史（子页无菜单项，需静态注册避免 404）
       {
@@ -385,10 +571,13 @@ function resolvePlatformRuntimeBridgePath(path: string): string | null {
     return null
   }
   if (path.startsWith('/scheduling')) {
-    return '/platform/scheduling'
+    if (path.startsWith('/scheduling/dag/detail') || path.startsWith('/scheduling/dag/history')) {
+      return `/platform${path}`
+    }
+    return buildPlatformSchedulingTabPath(inferPlatformSchedulingTabFromPath(path))
   }
   if (path.startsWith('/process')) {
-    return '/platform/process'
+    return buildPlatformProcessTabPath(inferPlatformProcessTabFromPath(path))
   }
   return null
 }
@@ -414,11 +603,25 @@ export const authGuard: NavigationGuard = async (to) => {
   }
 
   if (!requiresAuth) {
+    if (to.path === '/login') {
+      const completedPostLogout = await completePostLogoutRedirect(window.location.href)
+      if (!completedPostLogout) {
+        consumePostLogoutRedirectMarker()
+      }
+    }
     return true
   }
 
   if (authContext.isAuthenticated.value) {
     return true
+  }
+
+  const completedPostLogout = await completePostLogoutRedirect(window.location.href)
+  if (completedPostLogout || consumePostLogoutRedirectMarker()) {
+    return {
+      path: '/login',
+      replace: true,
+    }
   }
 
   const urlParams = new URLSearchParams(window.location.search)
@@ -473,9 +676,9 @@ export const platformRuntimeBridgeGuard: NavigationGuard = async (to) => {
 
   return {
     path: bridgePath,
-    query: {
-      target: to.fullPath || to.path,
-    },
+    query: bridgePath.startsWith('/platform/scheduling')
+      ? buildPlatformSchedulingQuery(to.query)
+      : {},
     replace: true,
   } satisfies RouteLocationRaw
 }

@@ -698,6 +698,53 @@ class TenantContextFilterTest {
     }
 
     @Test
+    void shouldAllowLoginPostWhenPreviousSessionPermissionsVersionIsStale() throws Exception {
+        PermissionVersionService permissionVersionService = Mockito.mock(PermissionVersionService.class);
+        TenantContextFilter permissionsFilter = new TenantContextFilter(tenantRepository, permissionVersionService);
+
+        Tenant tenant = new Tenant();
+        tenant.setId(2L);
+        tenant.setCode("default");
+        tenant.setEnabled(true);
+        when(tenantRepository.findByCode("default")).thenReturn(Optional.of(tenant));
+
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/login");
+        request.setParameter("tenantCode", "default");
+        request.getSession(true);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AtomicReference<Long> tenantInChain = new AtomicReference<>();
+        AtomicReference<String> sourceInChain = new AtomicReference<>();
+
+        SecurityUser previousPrincipal = new SecurityUser(
+                1L,
+                1L,
+                "admin",
+                "",
+                List.of(),
+                true,
+                true,
+                true,
+                true,
+                "stale-v1"
+        );
+        var auth = UsernamePasswordAuthenticationToken.authenticated(previousPrincipal, null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(auth);
+
+        when(permissionVersionService.resolvePermissionsVersion(eq(1L), eq(1L), eq("TENANT"), eq(1L))).thenReturn("fresh-v2");
+
+        permissionsFilter.doFilter(request, response, (req, resp) -> {
+            tenantInChain.set(TenantContext.getActiveTenantId());
+            sourceInChain.set(TenantContext.getTenantSource());
+        });
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(tenantInChain.get()).isEqualTo(2L);
+        assertThat(sourceInChain.get()).isEqualTo(TenantContext.SOURCE_LOGIN_PARAM);
+        assertThat(request.getSession(false)).isNotNull();
+        verify(permissionVersionService, never()).resolvePermissionsVersion(eq(1L), eq(1L), eq("TENANT"), eq(1L));
+    }
+
+    @Test
     void shouldAcceptSessionSecurityUserWhenPermissionsVersionMatches() throws Exception {
         PermissionVersionService permissionVersionService = Mockito.mock(PermissionVersionService.class);
         TenantContextFilter permissionsFilter = new TenantContextFilter(tenantRepository, permissionVersionService);

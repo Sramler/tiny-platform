@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   getUser: vi.fn(),
   removeUser: vi.fn(),
   signoutRedirect: vi.fn(),
+  signoutRedirectCallback: vi.fn(),
   signinSilent: vi.fn(),
   addUserLoaded: vi.fn(),
   addUserUnloaded: vi.fn(),
@@ -25,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   },
   createNewTraceId: vi.fn(),
   clearTraceId: vi.fn(),
+  addTraceIdToFetchOptions: vi.fn((options) => options),
   getTenantCode: vi.fn(),
   getActiveTenantId: vi.fn(),
   getTenantId: vi.fn(),
@@ -49,6 +51,7 @@ vi.mock('@/auth/oidc', () => ({
     getUser: mocks.getUser,
     removeUser: mocks.removeUser,
     signoutRedirect: mocks.signoutRedirect,
+    signoutRedirectCallback: mocks.signoutRedirectCallback,
     signinSilent: mocks.signinSilent,
     events: {
       addUserLoaded: mocks.addUserLoaded,
@@ -76,6 +79,7 @@ vi.mock('@/utils/logger', () => ({
 vi.mock('@/utils/traceId', () => ({
   createNewTraceId: mocks.createNewTraceId,
   clearTraceId: mocks.clearTraceId,
+  addTraceIdToFetchOptions: mocks.addTraceIdToFetchOptions,
 }))
 
 vi.mock('@/utils/tenant', () => ({
@@ -96,9 +100,11 @@ describe('auth login flow', () => {
   beforeEach(() => {
     vi.resetModules()
     vi.clearAllMocks()
+    window.sessionStorage.clear()
     window.history.replaceState({}, '', '/')
     mocks.getUser.mockResolvedValue(null)
     mocks.signoutRedirect.mockResolvedValue(undefined)
+    mocks.signoutRedirectCallback.mockResolvedValue({ userState: null })
     mocks.getTenantCode.mockReturnValue('tiny-prod')
     mocks.getActiveTenantId.mockReturnValue(null)
     mocks.getTenantId.mockReturnValue(null)
@@ -106,9 +112,11 @@ describe('auth login flow', () => {
     mocks.createSigninRequest.mockResolvedValue({
       url: 'http://issuer.example/authorize?client_id=vue-client',
     })
+    mocks.addTraceIdToFetchOptions.mockImplementation((options) => options)
   })
 
   afterEach(() => {
+    window.sessionStorage.clear()
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
   })
@@ -181,12 +189,19 @@ describe('auth login flow', () => {
     expect(mocks.signoutRedirect).toHaveBeenCalledWith({
       id_token_hint: 'id-token',
       post_logout_redirect_uri: 'http://localhost:5173/',
+      state: {
+        postLogoutNonce: expect.any(String),
+        trace_id: 'trace-123',
+      },
       extraQueryParams: {
         trace_id: 'trace-123',
       },
     })
+    expect(mocks.removeUser).toHaveBeenCalledTimes(1)
+    expect(mocks.clearActiveTenantId).toHaveBeenCalledTimes(1)
     expect(mocks.clearTraceId).toHaveBeenCalled()
-    expect(mocks.removeUser).not.toHaveBeenCalled()
+    expect(authModule.consumePostLogoutRedirectMarker()).toBe(true)
+    expect(authModule.consumePostLogoutRedirectMarker()).toBe(false)
   })
 
   it('should fallback to local logout when oidc signout redirect fails', async () => {
@@ -195,6 +210,8 @@ describe('auth login flow', () => {
       id_token: 'id-token',
     })
     mocks.signoutRedirect.mockRejectedValue(new Error('redirect failed'))
+    const fetchSpy = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchSpy)
     vi.stubGlobal('location', {
       ...window.location,
       href: locationHref,
@@ -211,7 +228,54 @@ describe('auth login flow', () => {
     expect(mocks.removeUser).toHaveBeenCalledTimes(1)
     expect(mocks.clearActiveTenantId).toHaveBeenCalledTimes(1)
     expect(mocks.clearTraceId).toHaveBeenCalled()
+    expect(fetchSpy).toHaveBeenCalledWith(
+      `${(import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000').replace(/\/$/, '')}/logout`,
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'include',
+        redirect: 'manual',
+      }),
+    )
     expect(window.location.href).toBe('http://localhost:5173/')
+  })
+
+  it('should ignore expired post logout marker', async () => {
+    window.sessionStorage.setItem(
+      'tiny-platform:oidc:post-logout-redirect',
+      String(Date.now() - 31_000),
+    )
+    const authModule = await import('@/auth/auth')
+    await authModule.initPromise
+
+    expect(authModule.consumePostLogoutRedirectMarker()).toBe(false)
+    expect(window.sessionStorage.getItem('tiny-platform:oidc:post-logout-redirect')).toBeNull()
+  })
+
+  it('should validate post logout redirect state before consuming marker', async () => {
+    window.sessionStorage.setItem(
+      'tiny-platform:oidc:post-logout-redirect',
+      JSON.stringify({
+        nonce: 'logout-nonce',
+        createdAt: Date.now(),
+      }),
+    )
+    mocks.signoutRedirectCallback.mockResolvedValue({
+      userState: {
+        postLogoutNonce: 'logout-nonce',
+      },
+    })
+    const authModule = await import('@/auth/auth')
+    await authModule.initPromise
+
+    const completed = await authModule.completePostLogoutRedirect(
+      'http://localhost:5173/?state=stored-signout-state',
+    )
+
+    expect(completed).toBe(true)
+    expect(mocks.signoutRedirectCallback).toHaveBeenCalledWith(
+      'http://localhost:5173/?state=stored-signout-state',
+    )
+    expect(window.sessionStorage.getItem('tiny-platform:oidc:post-logout-redirect')).toBeNull()
   })
 })
 

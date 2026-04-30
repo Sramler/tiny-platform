@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+type RedirectFn = (route: unknown) => unknown
+
 const routerMocks = vi.hoisted(() => ({
   isAuthenticated: false,
   tenantCode: 'default' as string | null,
@@ -8,6 +10,8 @@ const routerMocks = vi.hoisted(() => ({
   syncTenantContextFromAccessToken: vi.fn(),
   login: vi.fn<(...args: unknown[]) => Promise<void>>(),
   trySilentLoginFromPlatformSession: vi.fn<() => Promise<boolean>>(),
+  consumePostLogoutRedirectMarker: vi.fn<() => boolean>(),
+  completePostLogoutRedirect: vi.fn<() => Promise<boolean>>(),
   menuTree: vi.fn<() => Promise<unknown[]>>(),
   logger: {
     log: vi.fn(),
@@ -38,6 +42,8 @@ vi.mock('@/auth/auth', () => ({
   }),
   initPromise: Promise.resolve(),
   trySilentLoginFromPlatformSession: routerMocks.trySilentLoginFromPlatformSession,
+  consumePostLogoutRedirectMarker: routerMocks.consumePostLogoutRedirectMarker,
+  completePostLogoutRedirect: routerMocks.completePostLogoutRedirect,
 }))
 
 vi.mock('@/api/menu', () => ({
@@ -77,6 +83,8 @@ describe('router guards', () => {
     routerMocks.syncTenantContextFromAccessToken.mockReset()
     routerMocks.login.mockReset().mockResolvedValue(undefined)
     routerMocks.trySilentLoginFromPlatformSession.mockReset().mockResolvedValue(false)
+    routerMocks.consumePostLogoutRedirectMarker.mockReset().mockReturnValue(false)
+    routerMocks.completePostLogoutRedirect.mockReset().mockResolvedValue(false)
     routerMocks.menuTree.mockReset().mockResolvedValue([])
     routerMocks.logger.log.mockReset()
     routerMocks.logger.debug.mockReset()
@@ -117,6 +125,30 @@ describe('router guards', () => {
     expect(result).toBe(false)
   })
 
+  it('redirects to login without auto-authorize after post logout landing', async () => {
+    const { authGuard } = await loadRouterModule()
+    routerMocks.completePostLogoutRedirect.mockResolvedValue(true)
+
+    const result = await authGuard(
+      {
+        path: '/',
+        fullPath: '/',
+        meta: {},
+        query: {},
+      } as any,
+      {} as any,
+      undefined as any,
+    )
+
+    expect(result).toEqual({
+      path: '/login',
+      replace: true,
+    })
+    expect(routerMocks.completePostLogoutRedirect).toHaveBeenCalledTimes(1)
+    expect(routerMocks.login).not.toHaveBeenCalled()
+    expect(routerMocks.trySilentLoginFromPlatformSession).not.toHaveBeenCalled()
+  })
+
   it('redirects platform runtime module entry to platform console in platform mode', async () => {
     const { platformRuntimeBridgeGuard } = await loadRouterModule()
 
@@ -127,19 +159,115 @@ describe('router guards', () => {
     const result = await platformRuntimeBridgeGuard(
       {
         path: '/scheduling/dag',
-        fullPath: '/scheduling/dag?tab=all',
+        fullPath: '/scheduling/dag?view=all',
         meta: {},
+        query: {
+          view: 'all',
+        },
       } as any,
       {} as any,
       undefined as any,
     )
 
     expect(result).toMatchObject({
-      path: '/platform/scheduling',
+      path: '/platform/scheduling/dag',
       replace: true,
+      query: {
+        view: 'all',
+      },
     })
     expect(routerMocks.syncTenantContextFromAccessToken).toHaveBeenCalledWith('test-token')
-    expect((result as any).query.target).toBe('/scheduling/dag?tab=all')
+  })
+
+  it('resolves platform process tab child routes and redirects base path to the default child route', async () => {
+    const { default: router } = await loadRouterModule()
+
+    const childRoute = router.resolve('/platform/process/modeling')
+    expect(childRoute.name).toBe('PlatformProcessModeling')
+
+    const baseRoute = router.resolve('/platform/process?activeTenantId=9')
+    expect(baseRoute.redirectedFrom).toBeUndefined()
+    const redirect = baseRoute.matched[baseRoute.matched.length - 1]?.redirect
+    expect(typeof redirect).toBe('function')
+    expect((redirect as RedirectFn)(baseRoute)).toEqual({
+      path: '/platform/process/definition',
+      query: {},
+    })
+  })
+
+  it('resolves platform dict tab child routes and redirects base path to the default child route', async () => {
+    const { default: router } = await loadRouterModule()
+
+    const childRoute = router.resolve('/platform/dicts/overrides')
+    expect(childRoute.name).toBe('PlatformDictOverrides')
+
+    const baseRoute = router.resolve('/platform/dicts?activeTenantId=9')
+    const redirect = baseRoute.matched[baseRoute.matched.length - 1]?.redirect
+    expect(typeof redirect).toBe('function')
+    expect((redirect as RedirectFn)(baseRoute)).toEqual({
+      path: '/platform/dicts/type',
+      query: {},
+    })
+  })
+
+  it('resolves platform scheduling tab child routes and redirects base path to the default child route', async () => {
+    const { default: router } = await loadRouterModule()
+
+    const childRoute = router.resolve('/platform/scheduling/task-type')
+    expect(childRoute.name).toBe('PlatformSchedulingTaskType')
+
+    const baseRoute = router.resolve('/platform/scheduling?activeTenantId=9')
+    const redirect = baseRoute.matched[baseRoute.matched.length - 1]?.redirect
+    expect(typeof redirect).toBe('function')
+    expect((redirect as RedirectFn)(baseRoute)).toEqual({
+      path: '/platform/scheduling/dag',
+      query: {},
+    })
+  })
+
+  it('resolves platform user governance child routes and redirects base path to the default child route', async () => {
+    const { default: router } = await loadRouterModule()
+
+    const childRoute = router.resolve('/platform/users/tenant-stewardship')
+    expect(childRoute.name).toBe('PlatformTenantStewardship')
+
+    const baseRoute = router.resolve('/platform/users?tenantId=9')
+    const redirect = baseRoute.matched[baseRoute.matched.length - 1]?.redirect
+    expect(typeof redirect).toBe('function')
+    expect((redirect as RedirectFn)(baseRoute)).toEqual({
+      path: '/platform/users/governance',
+      query: {},
+    })
+  })
+
+  it('resolves platform audit child routes and redirects base path to the default child route', async () => {
+    const { default: router } = await loadRouterModule()
+
+    const childRoute = router.resolve('/platform/audit/authorization')
+    expect(childRoute.name).toBe('PlatformAuthorizationAudit')
+
+    const baseRoute = router.resolve('/platform/audit?activeTenantId=9')
+    const redirect = baseRoute.matched[baseRoute.matched.length - 1]?.redirect
+    expect(typeof redirect).toBe('function')
+    expect((redirect as RedirectFn)(baseRoute)).toEqual({
+      path: '/platform/audit/authentication',
+      query: {},
+    })
+  })
+
+  it('resolves platform role constraint child routes and redirects base path to the default child route', async () => {
+    const { default: router } = await loadRouterModule()
+
+    const childRoute = router.resolve('/platform/role-constraints/violations')
+    expect(childRoute.name).toBe('PlatformRoleConstraintViolations')
+
+    const baseRoute = router.resolve('/platform/role-constraints?activeTenantId=9')
+    const redirect = baseRoute.matched[baseRoute.matched.length - 1]?.redirect
+    expect(typeof redirect).toBe('function')
+    expect((redirect as RedirectFn)(baseRoute)).toEqual({
+      path: '/platform/role-constraints/hierarchy',
+      query: {},
+    })
   })
 
   it('retries a direct dynamic route refresh after menu routes are loaded', async () => {

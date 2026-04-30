@@ -154,12 +154,15 @@ public class TenantContextFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
-        ResolvedTenant authenticatedTenant = resolveTenantFromAuthentication();
+        boolean loginPostRequest = isLoginPostRequest(request);
+        ResolvedTenant authenticatedTenant = loginPostRequest
+            ? new ResolvedTenant(null, null)
+            : resolveTenantFromAuthentication();
         Long authenticatedActiveTenantId = authenticatedTenant.activeTenantId();
         Long issuerActiveTenantId = resolveActiveTenantIdFromIssuerPath(request);
-        Long sessionActiveTenantId = resolveActiveTenantIdFromSession(request);
+        Long sessionActiveTenantId = loginPostRequest ? null : resolveActiveTenantIdFromSession(request);
         Long headerActiveTenantId = parseActiveTenantId(request.getHeader(TENANT_ID_HEADER));
-        Long bearerTokenActiveTenantId = resolveActiveTenantIdFromAuthorizationHeader(request);
+        Long bearerTokenActiveTenantId = loginPostRequest ? null : resolveActiveTenantIdFromAuthorizationHeader(request);
         Long activeTenantId;
         String tenantSource;
 
@@ -228,7 +231,7 @@ public class TenantContextFilter extends OncePerRequestFilter {
         Long scopeId = scopedAuth.scopeId();
         // 单入口登录：未解析出活动租户且未提交有效 tenantCode 参数时，按 PLATFORM 进入认证链，
         // 由后端判定用户是否具备 PLATFORM 赋权；若提交了非空 tenantCode 但无法解析，则 missing_tenant。
-        if (isLoginPostRequest(request) && (activeTenantId == null || activeTenantId <= 0)) {
+        if (loginPostRequest && (activeTenantId == null || activeTenantId <= 0)) {
             String rawTenantCode = request.getParameter(TENANT_CODE_PARAM);
             if (rawTenantCode != null && !rawTenantCode.isBlank()) {
                 rejectMissingTenant(request, response);
@@ -270,7 +273,7 @@ public class TenantContextFilter extends OncePerRequestFilter {
         }
         if (blockedLifecycleStatus.isPresent()) {
             String lifecycleStatus = blockedLifecycleStatus.get();
-            if ("FROZEN".equalsIgnoreCase(lifecycleStatus) && isLoginPostRequest(request)) {
+            if ("FROZEN".equalsIgnoreCase(lifecycleStatus) && loginPostRequest) {
                 // keep authentication-chain behavior for a clearer business error
             } else {
                 Optional<TenantLifecycleReadPolicy.AllowedReadAccess> allowlistedAccess =
@@ -301,11 +304,13 @@ public class TenantContextFilter extends OncePerRequestFilter {
             }
         }
 
-        if (!validateSessionPermissionsVersion(request, response, activeTenantId, scopeType, scopeId)) {
+        // POST /login is the boundary that replaces an old identity snapshot. A stale previous
+        // session must not block the new credential submission before Spring Security can re-auth.
+        if (!loginPostRequest && !validateSessionPermissionsVersion(request, response, activeTenantId, scopeType, scopeId)) {
             return;
         }
 
-        if (!validateBearerPermissionsVersion(request, response, activeTenantId, scopeType, scopeId)) {
+        if (!loginPostRequest && !validateBearerPermissionsVersion(request, response, activeTenantId, scopeType, scopeId)) {
             return;
         }
 

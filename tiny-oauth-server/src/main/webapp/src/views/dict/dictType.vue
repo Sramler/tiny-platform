@@ -234,6 +234,7 @@ const emit = defineEmits<{
 // 阶段1: 基础响应式数据
 const tableContentRef = ref<HTMLElement | null>(null)
 const paginationRef = ref<HTMLElement | null>(null)
+let tableResizeObserver: ResizeObserver | null = null
 
 // 阶段2: 查询表单数据
 const query = ref({
@@ -265,6 +266,8 @@ async function loadData() {
     message.error('加载字典类型数据失败: ' + (error?.message || '未知错误'))
   } finally {
     loading.value = false
+    updateTableBodyHeight()
+    window.setTimeout(updateTableBodyHeight, 80)
   }
 }
 
@@ -399,20 +402,46 @@ function getRowClassName(_record: any, index: number) {
 // 阶段4: 更新表格高度
 function updateTableBodyHeight() {
   nextTick(() => {
-    if (!tableContentRef.value || !paginationRef.value) {
-      return
+    const update = () => {
+      if (!tableContentRef.value || !paginationRef.value) {
+        return
+      }
+      try {
+        const tableHeader = tableContentRef.value.querySelector('.ant-table-header') as HTMLElement
+        const toolbar = tableContentRef.value.querySelector('.toolbar-container') as HTMLElement
+        const rect = tableContentRef.value.getBoundingClientRect()
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0
+        const viewportAvailableHeight = viewportHeight > 0 ? viewportHeight - rect.top - 16 : 0
+        const containerHeight = Math.max(tableContentRef.value.clientHeight, viewportAvailableHeight)
+        const paginationHeight = paginationRef.value.clientHeight
+        const tableHeaderHeight = tableHeader ? tableHeader.clientHeight : 55
+        const toolbarHeight = toolbar ? toolbar.clientHeight : 0
+        const bodyHeight = containerHeight - toolbarHeight - paginationHeight - tableHeaderHeight
+        tableBodyHeight.value = Math.max(bodyHeight, 200)
+      } catch (error) {
+        console.warn('updateTableBodyHeight error:', error)
+      }
     }
-    try {
-      const tableHeader = tableContentRef.value.querySelector('.ant-table-header') as HTMLElement
-      const containerHeight = tableContentRef.value.clientHeight
-      const paginationHeight = paginationRef.value.clientHeight
-      const tableHeaderHeight = tableHeader ? tableHeader.clientHeight : 55
-      const bodyHeight = containerHeight - paginationHeight - tableHeaderHeight
-      tableBodyHeight.value = Math.max(bodyHeight, 200)
-    } catch (error) {
-      console.warn('updateTableBodyHeight error:', error)
+
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(update)
+    } else {
+      update()
     }
   })
+}
+
+function observeTableResize() {
+  if (typeof ResizeObserver === 'undefined' || !tableContentRef.value) {
+    return
+  }
+  tableResizeObserver = new ResizeObserver(() => {
+    updateTableBodyHeight()
+  })
+  tableResizeObserver.observe(tableContentRef.value)
+  if (paginationRef.value) {
+    tableResizeObserver.observe(paginationRef.value)
+  }
 }
 
 // 阶段5: Drawer 相关状态
@@ -625,6 +654,7 @@ function handleActiveScopeChanged() {
 
 onMounted(() => {
   updateTableBodyHeight()
+  observeTableResize()
   window.addEventListener('resize', updateTableBodyHeight)
   window.addEventListener(ACTIVE_SCOPE_CHANGED_EVENT, handleActiveScopeChanged)
   loadData()
@@ -637,6 +667,8 @@ defineExpose({
 })
 
 onBeforeUnmount(() => {
+  tableResizeObserver?.disconnect()
+  tableResizeObserver = null
   window.removeEventListener('resize', updateTableBodyHeight)
   window.removeEventListener(ACTIVE_SCOPE_CHANGED_EVENT, handleActiveScopeChanged)
 })
@@ -895,7 +927,7 @@ watch(
   color: #40a9ff;
   text-decoration: underline;
 }
-::deep(.ant-table-tbody > tr > td) {
+:deep(.ant-table-tbody > tr > td) {
   white-space: nowrap;
 }
 </style>

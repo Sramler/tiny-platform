@@ -702,7 +702,12 @@ databaseChangeLog:
       file: 177-enable-monitor-root-entry-permission.yaml
       relativeToChangelogFile: true
 
-  # 将平台模板中的调度 / 工作流菜单收口到 /platform 控制台，避免平台入口继续直落 tenant runtime
+  # 将平台模板中的调度 / 工作流菜单收口到 /platform 模块页，平台侧使用原生 PLATFORM 运行态
   - include:
       file: 178-backfill-platform-runtime-console-menus.yaml
+      relativeToChangelogFile: true
+
+  # 平台调度运行记录使用 tenant_id IS NULL，与租户侧数据隔离
+  - include:
+      file: 179-enable-platform-native-runtime-tenant-null.yaml
       relativeToChangelogFile: true

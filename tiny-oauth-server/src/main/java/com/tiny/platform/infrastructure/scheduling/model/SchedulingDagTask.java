@@ -19,7 +19,7 @@ public class SchedulingDagTask implements Serializable {
     @Column(name = "dag_version_id", nullable = false)
     private Long dagVersionId;
 
-    @Column(name = "tenant_id", nullable = false)
+    @Column(name = "tenant_id")
     private Long tenantId;
 
     @Column(name = "node_code", nullable = false, length = 128)
@@ -152,4 +152,3 @@ public class SchedulingDagTask implements Serializable {
         this.createdAt = createdAt;
     }
 }
-

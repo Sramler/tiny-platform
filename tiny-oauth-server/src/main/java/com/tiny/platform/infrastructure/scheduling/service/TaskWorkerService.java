@@ -282,10 +282,8 @@ public class TaskWorkerService {
             return instance.getConcurrencyKey();
         }
         if (instance.getNodeCode() != null && instance.getDagVersionId() != null) {
-            Optional<SchedulingDagTask> dagTask = instance.getTenantId() != null
-                    ? dagTaskRepository.findByDagVersionIdAndNodeCodeAndTenantId(
-                            instance.getDagVersionId(), instance.getNodeCode(), instance.getTenantId())
-                    : dagTaskRepository.findByDagVersionIdAndNodeCode(instance.getDagVersionId(), instance.getNodeCode());
+            Optional<SchedulingDagTask> dagTask = findDagTaskInRuntimeTenant(
+                    instance.getDagVersionId(), instance.getNodeCode(), instance.getTenantId());
             return dagTask
                     .map(task -> {
                         if (task.getParallelGroup() != null && !task.getParallelGroup().isBlank()) {
@@ -413,7 +411,9 @@ public class TaskWorkerService {
         if (instance.getTenantId() != null) {
             return taskRepository.findByIdAndTenantId(instance.getTaskId(), instance.getTenantId()).orElse(null);
         }
-        return taskRepository.findById(instance.getTaskId()).orElse(null);
+        return taskRepository.findById(instance.getTaskId())
+                .filter(task -> task.getTenantId() == null)
+                .orElse(null);
     }
 
     private SchedulingTaskType findTaskType(Long taskTypeId, Long tenantId) {
@@ -423,7 +423,34 @@ public class TaskWorkerService {
         if (tenantId != null) {
             return taskTypeRepository.findByIdAndTenantId(taskTypeId, tenantId).orElse(null);
         }
-        return taskTypeRepository.findById(taskTypeId).orElse(null);
+        return taskTypeRepository.findById(taskTypeId)
+                .filter(taskType -> taskType.getTenantId() == null)
+                .orElse(null);
+    }
+
+    private Optional<SchedulingDagTask> findDagTaskInRuntimeTenant(Long dagVersionId, String nodeCode, Long tenantId) {
+        if (tenantId != null) {
+            return dagTaskRepository.findByDagVersionIdAndNodeCodeAndTenantId(dagVersionId, nodeCode, tenantId);
+        }
+        return dagTaskRepository.findByDagVersionIdAndNodeCode(dagVersionId, nodeCode)
+                .filter(dagTask -> dagTask.getTenantId() == null);
+    }
+
+    private List<SchedulingDagTask> findDagTasksInRuntimeTenant(Long dagVersionId, Long tenantId) {
+        if (tenantId != null) {
+            return dagTaskRepository.findByDagVersionIdAndTenantId(dagVersionId, tenantId);
+        }
+        return dagTaskRepository.findByDagVersionId(dagVersionId).stream()
+                .filter(dagTask -> dagTask.getTenantId() == null)
+                .toList();
+    }
+
+    private Optional<SchedulingTaskHistory> findTaskHistoryInRuntimeTenant(Long historyId, Long tenantId) {
+        if (tenantId != null) {
+            return taskHistoryRepository.findByIdAndTenantId(historyId, tenantId);
+        }
+        return taskHistoryRepository.findById(historyId)
+                .filter(history -> history.getTenantId() == null);
     }
 
     private SchedulingTaskExecutionSnapshot readExecutionSnapshot(SchedulingTaskInstance instance) {
@@ -485,7 +512,8 @@ public class TaskWorkerService {
         if (tenantId != null) {
             return taskInstanceRepository.findByIdAndTenantId(instanceId, tenantId);
         }
-        return taskInstanceRepository.findById(instanceId);
+        return taskInstanceRepository.findById(instanceId)
+                .filter(instance -> instance.getTenantId() == null);
     }
 
     private Optional<SchedulingDagRun> findDagRun(Long dagRunId, Long tenantId) {
@@ -495,7 +523,8 @@ public class TaskWorkerService {
         if (tenantId != null) {
             return dagRunRepository.findByIdAndTenantId(dagRunId, tenantId);
         }
-        return dagRunRepository.findById(dagRunId);
+        return dagRunRepository.findById(dagRunId)
+                .filter(run -> run.getTenantId() == null);
     }
 
     private <T> Future<T> submitWithExecutionContext(
@@ -616,9 +645,9 @@ public class TaskWorkerService {
             Long historyId,
             TaskExecutorService.TaskExecutionResult result,
             LocalDateTime endTime,
-            long durationMs) {
+        long durationMs) {
         SchedulingTaskInstance latest = findTaskInstance(instance.getId(), instance.getTenantId()).orElse(null);
-        SchedulingTaskHistory history = taskHistoryRepository.findByIdAndTenantId(historyId, instance.getTenantId()).orElse(null);
+        SchedulingTaskHistory history = findTaskHistoryInRuntimeTenant(historyId, instance.getTenantId()).orElse(null);
         if (latest == null) {
             return;
         }
@@ -685,10 +714,10 @@ public class TaskWorkerService {
             SchedulingTaskInstance instance,
             Long historyId,
             TaskExecutorService.TaskExecutionResult result,
-            LocalDateTime endTime,
-            long durationMs) {
+        LocalDateTime endTime,
+        long durationMs) {
         SchedulingTaskInstance latest = findTaskInstance(instance.getId(), instance.getTenantId()).orElse(null);
-        SchedulingTaskHistory history = taskHistoryRepository.findByIdAndTenantId(historyId, instance.getTenantId()).orElse(null);
+        SchedulingTaskHistory history = findTaskHistoryInRuntimeTenant(historyId, instance.getTenantId()).orElse(null);
         if (latest == null) {
             return null;
         }
@@ -717,11 +746,11 @@ public class TaskWorkerService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void markTaskCancelled(
             SchedulingTaskInstance instance,
-            Long historyId,
-            LocalDateTime endTime,
-            long durationMs) {
+        Long historyId,
+        LocalDateTime endTime,
+        long durationMs) {
         SchedulingTaskInstance latest = findTaskInstance(instance.getId(), instance.getTenantId()).orElse(null);
-        SchedulingTaskHistory history = taskHistoryRepository.findByIdAndTenantId(historyId, instance.getTenantId()).orElse(null);
+        SchedulingTaskHistory history = findTaskHistoryInRuntimeTenant(historyId, instance.getTenantId()).orElse(null);
         finalizeCancelled(latest, history, endTime, durationMs);
     }
 
@@ -782,7 +811,8 @@ public class TaskWorkerService {
             ExecutionTaskConfig taskConfig = resolveTaskConfig(instance);
             // 1. 尝试从节点定义中获取
             if (instance.getDagVersionId() != null && instance.getNodeCode() != null) {
-                List<SchedulingDagTask> dagTasks = dagTaskRepository.findByDagVersionId(instance.getDagVersionId());
+                List<SchedulingDagTask> dagTasks = findDagTasksInRuntimeTenant(
+                        instance.getDagVersionId(), instance.getTenantId());
                 for (SchedulingDagTask dagTask : dagTasks) {
                     if (dagTask.getNodeCode().equals(instance.getNodeCode())) {
                         if (dagTask.getTimeoutSec() != null && dagTask.getTimeoutSec() > 0) {
@@ -835,7 +865,8 @@ public class TaskWorkerService {
             ExecutionTaskConfig taskConfig = resolveTaskConfig(instance);
             // 1. 尝试从节点定义中获取
             if (instance.getDagVersionId() != null && instance.getNodeCode() != null) {
-                List<SchedulingDagTask> dagTasks = dagTaskRepository.findByDagVersionId(instance.getDagVersionId());
+                List<SchedulingDagTask> dagTasks = findDagTasksInRuntimeTenant(
+                        instance.getDagVersionId(), instance.getTenantId());
                 for (SchedulingDagTask dagTask : dagTasks) {
                     if (dagTask.getNodeCode().equals(instance.getNodeCode())) {
                         if (dagTask.getMaxRetry() != null && dagTask.getMaxRetry() > 0) {

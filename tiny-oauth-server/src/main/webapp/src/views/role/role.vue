@@ -1328,7 +1328,7 @@ async function handleResourceAssign(payload: { permissionIds: number[] }) {
   cursor: not-allowed !important;
   outline: none !important;
 }
-::deep(.ant-table-tbody > tr > td) {
+:deep(.ant-table-tbody > tr > td) {
   white-space: nowrap;
 }
 </style>

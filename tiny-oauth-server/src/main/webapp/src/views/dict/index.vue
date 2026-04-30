@@ -3,7 +3,7 @@
   <div v-else class="content-container" style="position: relative;">
     <div class="content-card">
       <!-- 阶段10: Tab 切换 -->
-      <a-tabs v-model:activeKey="activeTab" @change="handleTabChange">
+      <a-tabs v-model:activeKey="activeTab" destroy-inactive-tab-pane @change="handleTabChange">
         <a-tab-pane key="type" tab="字典类型">
           <DictType ref="dictTypeRef" @view-items="handleViewItems" />
         </a-tab-pane>

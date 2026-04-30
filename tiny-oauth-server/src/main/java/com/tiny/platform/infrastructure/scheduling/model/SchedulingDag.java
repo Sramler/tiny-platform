@@ -16,7 +16,7 @@ public class SchedulingDag implements Serializable {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "tenant_id", nullable = false)
+    @Column(name = "tenant_id")
     private Long tenantId;
 
     @Column(length = 128)

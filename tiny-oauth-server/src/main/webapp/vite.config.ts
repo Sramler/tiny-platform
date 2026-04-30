@@ -67,6 +67,10 @@ export default defineConfig({
     /** 管理端主入口 chunk 目标随拆包策略变化；消除默认 500kB 噪声，不等于已完成业务分包（见 docs 构建卫生台账）。 */
     chunkSizeWarningLimit: 3072,
     rollupOptions: {
+      input: {
+        index: fileURLToPath(new URL('./index.html', import.meta.url)),
+        silentRenew: fileURLToPath(new URL('./silent-renew.html', import.meta.url)),
+      },
       output: {
         manualChunks,
       },
@@ -82,12 +86,44 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  optimizeDeps: {
+    /**
+     * Vite 8 的 dev optimizer 会在冷启动后继续发现依赖并重写 node_modules/.vite/deps。
+     * bpmn-js / diagram-js 依赖树较深且会生成多个共享 chunk，HMR 重优化时容易让浏览器请求到已被替换的旧 chunk。
+     * 这里让 BPMN 建模相关包保持源码 ESM 加载，避免 dev 环境出现 “deps/*.js does not exist” 的预构建缓存错位。
+     */
+    exclude: [
+      '@bpmn-io/properties-panel',
+      'bpmn-js',
+      'bpmn-js/lib/Modeler',
+      'bpmn-js/lib/Viewer',
+      'bpmn-js-i18n',
+      'bpmn-js-i18n/translations/en.js',
+      'bpmn-js-properties-panel',
+      'camunda-bpmn-moddle',
+      'camunda-bpmn-moddle/resources/camunda.json',
+      'diagram-js',
+      'diagram-js-minimap',
+    ],
+    /**
+     * Ant Design Vue 的按需组件会在启动后补充发现入口；提前 include 可减少二次优化和整页 reload。
+     */
+    include: [
+      'ant-design-vue/es',
+      'ant-design-vue/es/date-picker/dayjs',
+      'ant-design-vue/es/time-picker/dayjs',
+      'classnames',
+      'dayjs',
+    ],
+  },
   test: {
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup-vitest.ts'],
     css: false,
     include: ['src/**/*.test.ts'],
+    /** Vitest 4 + Vue SFC cold transforms can exceed the 5s default when several heavy AntDV pages run together. */
+    testTimeout: 10_000,
     restoreMocks: true,
     clearMocks: true,
     ...(schedulingCoverageOnly

@@ -279,7 +279,7 @@ describe('Tenant.vue', () => {
 
     await openCreateWizard(wrapper)
 
-    const createDrawer = wrapper.findAllComponents(DrawerStub).at(0)
+    const createDrawer = wrapper.findAllComponents(DrawerStub)[0]
     expect(createDrawer?.props('closable')).toBe(false)
     expect(createDrawer?.props('maskClosable')).toBe(false)
     expect(createDrawer?.props('keyboard')).toBe(false)

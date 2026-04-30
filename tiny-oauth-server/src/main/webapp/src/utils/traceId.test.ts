@@ -44,7 +44,6 @@ describe('traceId.ts', () => {
     vi.clearAllMocks()
     sessionStorage.clear()
     vi.useFakeTimers()
-    vi.unmock('@/utils/traceId')
     mocks.ensureCsrfToken.mockResolvedValue({
       token: 'csrf-token',
       parameterName: '_csrf',

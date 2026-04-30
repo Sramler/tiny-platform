@@ -25,7 +25,7 @@ public class SchedulingDagRun implements Serializable {
     @Column(name = "run_no", length = 128)
     private String runNo;
 
-    @Column(name = "tenant_id", nullable = false)
+    @Column(name = "tenant_id")
     private Long tenantId;
 
     @Column(name = "trigger_type", length = 32)

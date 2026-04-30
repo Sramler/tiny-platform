@@ -152,6 +152,8 @@ const columnSettingOpen = computed(() => {
 
 function setColumnSettingOpen(v: boolean) {
   if (props.toolbar.columnSettingVisible) {
+    // toolbar.columnSettingVisible 是 useToolbars 暴露的外部 ref，这里按组件契约回写下拉状态。
+    // eslint-disable-next-line vue/no-mutating-props
     props.toolbar.columnSettingVisible.value = v
   }
 }

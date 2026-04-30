@@ -950,7 +950,7 @@ watch(canRead, (enabled) => {
   background: #fff;
 }
 
-::deep(.ant-table-tbody > tr > td) {
+:deep(.ant-table-tbody > tr > td) {
   white-space: nowrap;
 }
 

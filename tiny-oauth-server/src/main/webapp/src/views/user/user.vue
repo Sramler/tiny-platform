@@ -1743,7 +1743,7 @@ async function handleBatchRoleAssign(newRoleIds: string[]) {
   margin: 0;
 }
 
-::deep(.ant-table-tbody > tr > td:hover .cell-copy-icon) {
+:deep(.ant-table-tbody > tr > td:hover .cell-copy-icon) {
   opacity: 1;
   color: #1890ff;
   transform: scale(1.1);
@@ -1757,23 +1757,23 @@ async function handleBatchRoleAssign(newRoleIds: string[]) {
   box-shadow: 0 2px 6px rgba(24, 144, 255, 0.3);
 }
 
-::deep(.ant-table-tbody > tr > td) {
+:deep(.ant-table-tbody > tr > td) {
   position: relative;
   overflow: visible;
 }
 
-::deep(.ant-table-tbody > tr > td .cell-text) {
+:deep(.ant-table-tbody > tr > td .cell-text) {
   width: 100%;
   box-sizing: border-box;
   min-width: 0;
   max-width: 100%;
 }
 
-::deep(.ant-table-tbody > tr > td) {
+:deep(.ant-table-tbody > tr > td) {
   white-space: nowrap;
 }
 
-::deep(.ant-table-cell-resize-handle) {
+:deep(.ant-table-cell-resize-handle) {
   cursor: col-resize;
 }
 </style>

@@ -1,0 +1,197 @@
+databaseChangeLog:
+  - changeSet:
+      id: 179-enable-platform-native-runtime-tenant-null
+      author: codex
+      comment: 平台流程/调度运行态使用 PLATFORM scope 原生数据边界，调度运行表允许 tenant_id IS NULL 表示平台记录
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              ALTER TABLE `scheduling_task_type`
+                MODIFY COLUMN `tenant_id` BIGINT NULL COMMENT '租户ID；平台调度记录为 NULL';
+
+              ALTER TABLE `scheduling_task`
+                MODIFY COLUMN `tenant_id` BIGINT NULL COMMENT '租户ID；平台调度记录为 NULL';
+
+              ALTER TABLE `scheduling_dag`
+                MODIFY COLUMN `tenant_id` BIGINT NULL COMMENT '租户ID；平台调度记录为 NULL';
+
+              ALTER TABLE `scheduling_dag_version`
+                MODIFY COLUMN `tenant_id` BIGINT NULL COMMENT '租户ID；平台调度记录为 NULL';
+
+              ALTER TABLE `scheduling_dag_task`
+                MODIFY COLUMN `tenant_id` BIGINT NULL COMMENT '租户ID；平台调度记录为 NULL';
+
+              ALTER TABLE `scheduling_dag_edge`
+                MODIFY COLUMN `tenant_id` BIGINT NULL COMMENT '租户ID；平台调度记录为 NULL';
+
+              ALTER TABLE `scheduling_dag_run`
+                MODIFY COLUMN `tenant_id` BIGINT NULL COMMENT '租户ID；平台调度记录为 NULL';
+
+              ALTER TABLE `scheduling_task_instance`
+                MODIFY COLUMN `tenant_id` BIGINT NULL COMMENT '租户ID；平台调度记录为 NULL';
+
+              ALTER TABLE `scheduling_task_history`
+                MODIFY COLUMN `tenant_id` BIGINT NULL COMMENT '租户ID；平台调度记录为 NULL';
+
+              ALTER TABLE `scheduling_audit`
+                MODIFY COLUMN `tenant_id` BIGINT NULL COMMENT '租户ID；平台调度记录为 NULL';
+
+              SET @duplicate_task_type_code_count := (
+                SELECT COUNT(*)
+                FROM (
+                  SELECT COALESCE(`tenant_id`, 0) AS runtime_tenant_key, `code`
+                  FROM `scheduling_task_type`
+                  GROUP BY COALESCE(`tenant_id`, 0), `code`
+                  HAVING COUNT(*) > 1
+                ) dup
+              );
+              SET @sql := IF(
+                @duplicate_task_type_code_count > 0,
+                'SIGNAL SQLSTATE ''45000'' SET MESSAGE_TEXT = ''scheduling_task_type 存在运行边界内重复 code，请先清理后再升级''',
+                'SELECT 1'
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @duplicate_task_code_count := (
+                SELECT COUNT(*)
+                FROM (
+                  SELECT COALESCE(`tenant_id`, 0) AS runtime_tenant_key, `code`
+                  FROM `scheduling_task`
+                  WHERE `code` IS NOT NULL
+                  GROUP BY COALESCE(`tenant_id`, 0), `code`
+                  HAVING COUNT(*) > 1
+                ) dup
+              );
+              SET @sql := IF(
+                @duplicate_task_code_count > 0,
+                'SIGNAL SQLSTATE ''45000'' SET MESSAGE_TEXT = ''scheduling_task 存在运行边界内重复 code，请先清理后再升级''',
+                'SELECT 1'
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @duplicate_dag_code_count := (
+                SELECT COUNT(*)
+                FROM (
+                  SELECT COALESCE(`tenant_id`, 0) AS runtime_tenant_key, `code`
+                  FROM `scheduling_dag`
+                  WHERE `code` IS NOT NULL
+                  GROUP BY COALESCE(`tenant_id`, 0), `code`
+                  HAVING COUNT(*) > 1
+                ) dup
+              );
+              SET @sql := IF(
+                @duplicate_dag_code_count > 0,
+                'SIGNAL SQLSTATE ''45000'' SET MESSAGE_TEXT = ''scheduling_dag 存在运行边界内重复 code，请先清理后再升级''',
+                'SELECT 1'
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'scheduling_task_type'
+                      AND COLUMN_NAME = 'runtime_tenant_key'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `scheduling_task_type` ADD COLUMN `runtime_tenant_key` BIGINT GENERATED ALWAYS AS (COALESCE(`tenant_id`, 0)) STORED COMMENT ''运行边界键：平台=0，租户=tenant_id'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'scheduling_task'
+                      AND COLUMN_NAME = 'runtime_tenant_key'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `scheduling_task` ADD COLUMN `runtime_tenant_key` BIGINT GENERATED ALWAYS AS (COALESCE(`tenant_id`, 0)) STORED COMMENT ''运行边界键：平台=0，租户=tenant_id'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'scheduling_dag'
+                      AND COLUMN_NAME = 'runtime_tenant_key'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `scheduling_dag` ADD COLUMN `runtime_tenant_key` BIGINT GENERATED ALWAYS AS (COALESCE(`tenant_id`, 0)) STORED COMMENT ''运行边界键：平台=0，租户=tenant_id'''
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'scheduling_task_type'
+                      AND INDEX_NAME = 'uk_scheduling_task_type_runtime_code'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `scheduling_task_type` ADD UNIQUE KEY `uk_scheduling_task_type_runtime_code` (`runtime_tenant_key`, `code`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'scheduling_task'
+                      AND INDEX_NAME = 'uk_scheduling_task_runtime_code'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `scheduling_task` ADD UNIQUE KEY `uk_scheduling_task_runtime_code` (`runtime_tenant_key`, `code`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;
+
+              SET @sql := (
+                SELECT IF(
+                  EXISTS(
+                    SELECT 1 FROM INFORMATION_SCHEMA.STATISTICS
+                    WHERE TABLE_SCHEMA = DATABASE()
+                      AND TABLE_NAME = 'scheduling_dag'
+                      AND INDEX_NAME = 'uk_scheduling_dag_runtime_code'
+                  ),
+                  'SELECT 1',
+                  'ALTER TABLE `scheduling_dag` ADD UNIQUE KEY `uk_scheduling_dag_runtime_code` (`runtime_tenant_key`, `code`)'
+                )
+              );
+              PREPARE stmt FROM @sql;
+              EXECUTE stmt;
+              DEALLOCATE PREPARE stmt;

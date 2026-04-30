@@ -1,5 +1,5 @@
 <template>
-  <div class="content-container" style="position: relative;">
+  <div class="content-container" style="position: relative">
     <div class="content-card">
       <div class="form-container">
         <a-form layout="inline" :model="query">
@@ -42,7 +42,12 @@
             </a-select>
           </a-form-item>
           <a-form-item label="运行编号">
-            <a-input v-model:value="query.runNo" placeholder="运行编号" allow-clear style="width: 160px" />
+            <a-input
+              v-model:value="query.runNo"
+              placeholder="运行编号"
+              allow-clear
+              style="width: 160px"
+            />
           </a-form-item>
           <a-form-item label="开始时间">
             <a-range-picker
@@ -91,100 +96,113 @@
             <a-statistic title="失败" :value="dagStats.failed" />
           </a-col>
           <a-col :span="4">
-            <a-statistic
-              title="平均耗时"
-              :value="formatDurationMs(dagStats.avgDurationMs)"
-            />
+            <a-statistic title="平均耗时" :value="formatDurationMs(dagStats.avgDurationMs)" />
           </a-col>
           <a-col :span="4">
-            <a-statistic
-              title="P95 耗时"
-              :value="formatDurationMs(dagStats.p95DurationMs)"
-            />
+            <a-statistic title="P95 耗时" :value="formatDurationMs(dagStats.p95DurationMs)" />
           </a-col>
           <a-col :span="4">
-            <a-statistic
-              title="P99 耗时"
-              :value="formatDurationMs(dagStats.p99DurationMs)"
-            />
+            <a-statistic title="P99 耗时" :value="formatDurationMs(dagStats.p99DurationMs)" />
           </a-col>
         </a-row>
       </a-card>
 
-      <a-table
-        :columns="columns"
-        :data-source="effectiveDagId ? dataSource : []"
-        :loading="loading"
-        :pagination="pagination"
-        @change="handleTableChange"
-        row-key="id"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'status'">
-            <a-tag :color="getStatusColor(record.status)">
-              {{ record.status }}
-            </a-tag>
-          </template>
-          <template v-if="column.key === 'triggerType'">
-            <a-tag>{{ record.triggerType }}</a-tag>
-          </template>
-          <template v-if="column.key === 'operability'">
-            <a-space size="small">
-              <a-tag v-if="canStopRun(record)" color="processing">可停止</a-tag>
-              <a-tag v-if="canRetryRun(record)" color="orange">可重试</a-tag>
-              <a-tag v-if="supportsNodeOperations(record)" color="blue">可看节点控制</a-tag>
-              <span v-if="!canStopRun(record) && !canRetryRun(record) && !supportsNodeOperations(record)" style="color: #999;">
-                -
-              </span>
-            </a-space>
-          </template>
-          <template v-if="column.key === 'action'">
-            <a-space>
-              <a-button type="link" size="small" @click="handleView(record)">查看详情</a-button>
-              <a-button type="link" size="small" @click="handleViewNodes(record)">节点记录</a-button>
-              <a-tooltip :title="getStopRunDisabledReason(record)">
-                <span>
-                  <a-popconfirm
-                    title="确认停止当前这条运行吗？仅会取消本次 Run 及其未终态节点。"
-                    ok-text="确认停止"
-                    cancel-text="取消"
-                    :disabled="!canStopRun(record)"
-                    @confirm="handleStopRun(record)"
+      <div class="table-container">
+        <div class="table-scroll-container">
+          <a-table
+            class="bottom-pagination-table"
+            :columns="columns"
+            :data-source="effectiveDagId ? dataSource : []"
+            :loading="loading"
+            :pagination="false"
+            :scroll="{ x: 'max-content' }"
+            row-key="id"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'status'">
+                <a-tag :color="getStatusColor(record.status)">
+                  {{ record.status }}
+                </a-tag>
+              </template>
+              <template v-if="column.key === 'triggerType'">
+                <a-tag>{{ record.triggerType }}</a-tag>
+              </template>
+              <template v-if="column.key === 'operability'">
+                <a-space size="small">
+                  <a-tag v-if="canStopRun(record)" color="processing">可停止</a-tag>
+                  <a-tag v-if="canRetryRun(record)" color="orange">可重试</a-tag>
+                  <a-tag v-if="supportsNodeOperations(record)" color="blue">可看节点控制</a-tag>
+                  <span
+                    v-if="
+                      !canStopRun(record) &&
+                      !canRetryRun(record) &&
+                      !supportsNodeOperations(record)
+                    "
+                    style="color: #999"
                   >
-                    <a-button type="link" size="small" :disabled="!canStopRun(record)">
-                      停止本次
-                    </a-button>
-                  </a-popconfirm>
-                </span>
-              </a-tooltip>
-              <a-tooltip :title="getRetryRunDisabledReason(record)">
-                <span>
-                  <a-popconfirm
-                    title="确认重试当前这条失败运行吗？系统会创建新的 Run。"
-                    ok-text="确认重试"
-                    cancel-text="取消"
-                    :disabled="!canRetryRun(record)"
-                    @confirm="handleRetryRun(record)"
+                    -
+                  </span>
+                </a-space>
+              </template>
+              <template v-if="column.key === 'action'">
+                <a-space>
+                  <a-button type="link" size="small" @click="handleView(record)">查看详情</a-button>
+                  <a-button type="link" size="small" @click="handleViewNodes(record)"
+                    >节点记录</a-button
                   >
-                    <a-button type="link" size="small" :disabled="!canRetryRun(record)">
-                      重试本次
-                    </a-button>
-                  </a-popconfirm>
-                </span>
-              </a-tooltip>
-            </a-space>
-          </template>
-        </template>
-      </a-table>
+                  <a-tooltip :title="getStopRunDisabledReason(record)">
+                    <span>
+                      <a-popconfirm
+                        title="确认停止当前这条运行吗？仅会取消本次 Run 及其未终态节点。"
+                        ok-text="确认停止"
+                        cancel-text="取消"
+                        :disabled="!canStopRun(record)"
+                        @confirm="handleStopRun(record)"
+                      >
+                        <a-button type="link" size="small" :disabled="!canStopRun(record)">
+                          停止本次
+                        </a-button>
+                      </a-popconfirm>
+                    </span>
+                  </a-tooltip>
+                  <a-tooltip :title="getRetryRunDisabledReason(record)">
+                    <span>
+                      <a-popconfirm
+                        title="确认重试当前这条失败运行吗？系统会创建新的 Run。"
+                        ok-text="确认重试"
+                        cancel-text="取消"
+                        :disabled="!canRetryRun(record)"
+                        @confirm="handleRetryRun(record)"
+                      >
+                        <a-button type="link" size="small" :disabled="!canRetryRun(record)">
+                          重试本次
+                        </a-button>
+                      </a-popconfirm>
+                    </span>
+                  </a-tooltip>
+                </a-space>
+              </template>
+            </template>
+          </a-table>
+        </div>
+        <div class="pagination-container">
+          <a-pagination
+            v-model:current="pagination.current"
+            :page-size="pagination.pageSize"
+            :total="pagination.total"
+            :show-size-changer="pagination.showSizeChanger"
+            :page-size-options="pagination.pageSizeOptions"
+            :show-total="pagination.showTotal"
+            :locale="{ items_per_page: '条/页' }"
+            @change="handlePageChange"
+            @showSizeChange="handlePageSizeChange"
+          />
+        </div>
+      </div>
     </div>
 
     <!-- 运行详情弹窗 -->
-    <a-modal
-      v-model:open="detailVisible"
-      title="运行详情"
-      :width="900"
-      :footer="null"
-    >
+    <a-modal v-model:open="detailVisible" title="运行详情" :width="900" :footer="null">
       <a-descriptions :column="2" bordered v-if="currentRecord">
         <a-descriptions-item label="运行ID">{{ currentRecord.id }}</a-descriptions-item>
         <a-descriptions-item label="运行编号">{{ currentRecord.runNo }}</a-descriptions-item>
@@ -196,22 +214,25 @@
           </a-tag>
         </a-descriptions-item>
         <a-descriptions-item label="触发类型">{{ currentRecord.triggerType }}</a-descriptions-item>
-        <a-descriptions-item label="触发人">{{ currentRecord.triggeredBy || '-' }}</a-descriptions-item>
-        <a-descriptions-item label="开始时间">{{ currentRecord.startTime || '-' }}</a-descriptions-item>
-        <a-descriptions-item label="结束时间">{{ currentRecord.endTime || '-' }}</a-descriptions-item>
+        <a-descriptions-item label="触发人">{{
+          currentRecord.triggeredBy || '-'
+        }}</a-descriptions-item>
+        <a-descriptions-item label="开始时间">{{
+          currentRecord.startTime || '-'
+        }}</a-descriptions-item>
+        <a-descriptions-item label="结束时间">{{
+          currentRecord.endTime || '-'
+        }}</a-descriptions-item>
         <a-descriptions-item label="指标" :span="2">
-          <pre style="max-height: 200px; overflow: auto;">{{ formatJson(currentRecord.metrics) }}</pre>
+          <pre style="max-height: 200px; overflow: auto">{{
+            formatJson(currentRecord.metrics)
+          }}</pre>
         </a-descriptions-item>
       </a-descriptions>
     </a-modal>
 
     <!-- 节点执行记录弹窗 -->
-    <a-modal
-      v-model:open="nodesVisible"
-      title="节点执行记录"
-      :width="1200"
-      :footer="null"
-    >
+    <a-modal v-model:open="nodesVisible" title="节点执行记录" :width="1200" :footer="null">
       <a-table
         :columns="nodeColumns"
         :data-source="nodeRecords"
@@ -232,8 +253,13 @@
               <a-tag v-if="canResumeNode(record)" color="purple">可恢复</a-tag>
               <a-tag v-if="canRetryNode(record)" color="orange">可重试</a-tag>
               <span
-                v-if="!canTriggerNode(record) && !canPauseNode(record) && !canResumeNode(record) && !canRetryNode(record)"
-                style="color: #999;"
+                v-if="
+                  !canTriggerNode(record) &&
+                  !canPauseNode(record) &&
+                  !canResumeNode(record) &&
+                  !canRetryNode(record)
+                "
+                style="color: #999"
               >
                 -
               </span>
@@ -241,7 +267,9 @@
           </template>
           <template v-if="column.key === 'action'">
             <a-space>
-              <a-button type="link" size="small" @click="handleViewNodeDetail(record)">查看详情</a-button>
+              <a-button type="link" size="small" @click="handleViewNodeDetail(record)"
+                >查看详情</a-button
+              >
               <a-button type="link" size="small" @click="handleViewLog(record)">查看日志</a-button>
               <a-tooltip :title="getTriggerNodeDisabledReason(record)">
                 <span>
@@ -252,7 +280,9 @@
                     :disabled="!canTriggerNode(record)"
                     @confirm="handleTriggerNode(record)"
                   >
-                    <a-button type="link" size="small" :disabled="!canTriggerNode(record)">触发本节点</a-button>
+                    <a-button type="link" size="small" :disabled="!canTriggerNode(record)"
+                      >触发本节点</a-button
+                    >
                   </a-popconfirm>
                 </span>
               </a-tooltip>
@@ -265,7 +295,9 @@
                     :disabled="!canPauseNode(record)"
                     @confirm="handlePauseNode(record)"
                   >
-                    <a-button type="link" size="small" :disabled="!canPauseNode(record)">暂停本节点</a-button>
+                    <a-button type="link" size="small" :disabled="!canPauseNode(record)"
+                      >暂停本节点</a-button
+                    >
                   </a-popconfirm>
                 </span>
               </a-tooltip>
@@ -278,7 +310,9 @@
                     :disabled="!canResumeNode(record)"
                     @confirm="handleResumeNode(record)"
                   >
-                    <a-button type="link" size="small" :disabled="!canResumeNode(record)">恢复本节点</a-button>
+                    <a-button type="link" size="small" :disabled="!canResumeNode(record)"
+                      >恢复本节点</a-button
+                    >
                   </a-popconfirm>
                 </span>
               </a-tooltip>
@@ -291,7 +325,9 @@
                     :disabled="!canRetryNode(record)"
                     @confirm="handleRetryNode(record)"
                   >
-                    <a-button type="link" size="small" :disabled="!canRetryNode(record)">重试本节点</a-button>
+                    <a-button type="link" size="small" :disabled="!canRetryNode(record)"
+                      >重试本节点</a-button
+                    >
                   </a-popconfirm>
                 </span>
               </a-tooltip>
@@ -302,46 +338,52 @@
     </a-modal>
 
     <!-- 节点详情弹窗 -->
-    <a-modal
-      v-model:open="nodeDetailVisible"
-      title="节点执行详情"
-      :width="900"
-      :footer="null"
-    >
+    <a-modal v-model:open="nodeDetailVisible" title="节点执行详情" :width="900" :footer="null">
       <a-descriptions :column="2" bordered v-if="currentNodeRecord">
         <a-descriptions-item label="实例ID">{{ currentNodeRecord.id }}</a-descriptions-item>
         <a-descriptions-item label="节点编码">{{ currentNodeRecord.nodeCode }}</a-descriptions-item>
         <a-descriptions-item label="任务ID">{{ currentNodeRecord.taskId }}</a-descriptions-item>
-        <a-descriptions-item label="尝试次数">{{ currentNodeRecord.attemptNo }}</a-descriptions-item>
+        <a-descriptions-item label="尝试次数">{{
+          currentNodeRecord.attemptNo
+        }}</a-descriptions-item>
         <a-descriptions-item label="状态">
           <a-tag :color="getStatusColor(currentNodeRecord.status)">
             {{ currentNodeRecord.status }}
           </a-tag>
         </a-descriptions-item>
-        <a-descriptions-item label="调度时间">{{ currentNodeRecord.scheduledAt || '-' }}</a-descriptions-item>
-        <a-descriptions-item label="下一次重试时间">{{ currentNodeRecord.nextRetryAt || '-' }}</a-descriptions-item>
-        <a-descriptions-item label="锁定者">{{ currentNodeRecord.lockedBy || '-' }}</a-descriptions-item>
-        <a-descriptions-item label="锁定时间">{{ currentNodeRecord.lockTime || '-' }}</a-descriptions-item>
+        <a-descriptions-item label="调度时间">{{
+          currentNodeRecord.scheduledAt || '-'
+        }}</a-descriptions-item>
+        <a-descriptions-item label="下一次重试时间">{{
+          currentNodeRecord.nextRetryAt || '-'
+        }}</a-descriptions-item>
+        <a-descriptions-item label="锁定者">{{
+          currentNodeRecord.lockedBy || '-'
+        }}</a-descriptions-item>
+        <a-descriptions-item label="锁定时间">{{
+          currentNodeRecord.lockTime || '-'
+        }}</a-descriptions-item>
         <a-descriptions-item label="参数" :span="2">
-          <pre style="max-height: 200px; overflow: auto;">{{ formatJson(currentNodeRecord.params) }}</pre>
+          <pre style="max-height: 200px; overflow: auto">{{
+            formatJson(currentNodeRecord.params)
+          }}</pre>
         </a-descriptions-item>
         <a-descriptions-item label="结果" :span="2">
-          <pre style="max-height: 200px; overflow: auto;">{{ formatJson(currentNodeRecord.result) }}</pre>
+          <pre style="max-height: 200px; overflow: auto">{{
+            formatJson(currentNodeRecord.result)
+          }}</pre>
         </a-descriptions-item>
         <a-descriptions-item label="错误原因" :span="2">
-          <pre style="max-height: 200px; overflow: auto;">{{ currentNodeRecord.errorMessage || '-' }}</pre>
+          <pre style="max-height: 200px; overflow: auto">{{
+            currentNodeRecord.errorMessage || '-'
+          }}</pre>
         </a-descriptions-item>
       </a-descriptions>
     </a-modal>
 
     <!-- 日志弹窗 -->
-    <a-modal
-      v-model:open="logVisible"
-      title="执行日志"
-      :width="900"
-      :footer="null"
-    >
-      <pre style="max-height: 500px; overflow: auto; white-space: pre-wrap;">{{ logContent }}</pre>
+    <a-modal v-model:open="logVisible" title="执行日志" :width="900" :footer="null">
+      <pre style="max-height: 500px; overflow: auto; white-space: pre-wrap">{{ logContent }}</pre>
     </a-modal>
   </div>
 </template>
@@ -350,10 +392,14 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { message } from 'ant-design-vue'
 import type { ColumnsType } from 'ant-design-vue/es/table'
-import { useRouter, useRoute } from 'vue-router'
+import { useRouter, useRoute, type LocationQueryRaw } from 'vue-router'
 import { ReloadOutlined } from '@ant-design/icons-vue'
 import { throttle } from '@/utils/debounce'
-import { getActiveTenantId, resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
+import {
+  getActiveTenantId,
+  resolveActiveTenantQueryValue,
+  withActiveTenantQuery,
+} from '@/utils/tenant'
 import {
   dagList,
   getDagRuns,
@@ -373,6 +419,10 @@ import {
 import { useAuth } from '@/auth/auth'
 import { extractAuthoritiesFromJwt } from '@/utils/jwt'
 import { SCHEDULING_RUN_CONTROL, SCHEDULING_WILDCARD } from '@/constants/permission'
+import {
+  buildPlatformSchedulingQuery,
+  isPlatformRuntimePath,
+} from '@/utils/platformRuntime'
 
 const router = useRouter()
 const route = useRoute()
@@ -381,13 +431,21 @@ const { user } = useAuth()
 const schedulingAuthorities = computed(() =>
   extractAuthoritiesFromJwt(user.value?.access_token).filter((a) => a.startsWith('scheduling:')),
 )
-const canOperateSchedulingRun = computed(() =>
-  schedulingAuthorities.value.includes(SCHEDULING_RUN_CONTROL) ||
-  schedulingAuthorities.value.includes(SCHEDULING_WILDCARD),
+const canOperateSchedulingRun = computed(
+  () =>
+    schedulingAuthorities.value.includes(SCHEDULING_RUN_CONTROL) ||
+    schedulingAuthorities.value.includes(SCHEDULING_WILDCARD),
 )
 
 function resolveNavigationTenantId() {
   return resolveActiveTenantQueryValue(route.query) ?? getActiveTenantId()
+}
+
+function buildNavigationQuery(query: Record<string, unknown>): LocationQueryRaw {
+  if (isPlatformRuntimePath(route.path, 'scheduling')) {
+    return buildPlatformSchedulingQuery(query) as LocationQueryRaw
+  }
+  return withActiveTenantQuery(query, resolveNavigationTenantId()) as LocationQueryRaw
 }
 
 const query = reactive<{
@@ -460,6 +518,7 @@ const pagination = reactive({
   pageSize: 10,
   total: 0,
   showSizeChanger: true,
+  pageSizeOptions: ['10', '20', '50', '100'],
   showTotal: (total: number) => `共 ${total} 条`,
 })
 
@@ -567,9 +626,11 @@ const resolveDagNodeId = (record: { dagVersionId?: number; nodeCode?: string }) 
 }
 
 const canTriggerNode = (record: { status?: string; dagVersionId?: number; nodeCode?: string }) => {
-  return currentRunStatusForNodes.value === 'RUNNING'
-    && ['PENDING', 'FAILED'].includes(record.status || '')
-    && resolveDagNodeId(record) != null
+  return (
+    currentRunStatusForNodes.value === 'RUNNING' &&
+    ['PENDING', 'FAILED'].includes(record.status || '') &&
+    resolveDagNodeId(record) != null
+  )
 }
 
 const canPauseNode = (record: { status?: string; dagVersionId?: number; nodeCode?: string }) => {
@@ -584,7 +645,11 @@ const canRetryNode = (record: { status?: string; dagVersionId?: number; nodeCode
   return record.status === 'FAILED' && resolveDagNodeId(record) != null
 }
 
-const getTriggerNodeDisabledReason = (record: { status?: string; dagVersionId?: number; nodeCode?: string }) => {
+const getTriggerNodeDisabledReason = (record: {
+  status?: string
+  dagVersionId?: number
+  nodeCode?: string
+}) => {
   if (resolveDagNodeId(record) == null) {
     return '未找到对应 DAG 节点定义，请刷新后重试'
   }
@@ -597,7 +662,11 @@ const getTriggerNodeDisabledReason = (record: { status?: string; dagVersionId?: 
   return '仅 PENDING 或 FAILED 的节点实例支持手动触发'
 }
 
-const getPauseNodeDisabledReason = (record: { status?: string; dagVersionId?: number; nodeCode?: string }) => {
+const getPauseNodeDisabledReason = (record: {
+  status?: string
+  dagVersionId?: number
+  nodeCode?: string
+}) => {
   if (resolveDagNodeId(record) == null) {
     return '未找到对应 DAG 节点定义，请刷新后重试'
   }
@@ -607,7 +676,11 @@ const getPauseNodeDisabledReason = (record: { status?: string; dagVersionId?: nu
   return '仅 PENDING 或 RESERVED 的节点实例支持暂停'
 }
 
-const getResumeNodeDisabledReason = (record: { status?: string; dagVersionId?: number; nodeCode?: string }) => {
+const getResumeNodeDisabledReason = (record: {
+  status?: string
+  dagVersionId?: number
+  nodeCode?: string
+}) => {
   if (resolveDagNodeId(record) == null) {
     return '未找到对应 DAG 节点定义，请刷新后重试'
   }
@@ -617,7 +690,11 @@ const getResumeNodeDisabledReason = (record: { status?: string; dagVersionId?: n
   return '仅 PAUSED 的节点实例支持恢复'
 }
 
-const getRetryNodeDisabledReason = (record: { status?: string; dagVersionId?: number; nodeCode?: string }) => {
+const getRetryNodeDisabledReason = (record: {
+  status?: string
+  dagVersionId?: number
+  nodeCode?: string
+}) => {
   if (resolveDagNodeId(record) == null) {
     return '未找到对应 DAG 节点定义，请刷新后重试'
   }
@@ -627,24 +704,29 @@ const getRetryNodeDisabledReason = (record: { status?: string; dagVersionId?: nu
   return '仅 FAILED 的节点实例支持重试'
 }
 
-const ensureDagNodeMappings = async (records: Array<{ dagVersionId?: number; nodeCode?: string }>) => {
+const ensureDagNodeMappings = async (
+  records: Array<{ dagVersionId?: number; nodeCode?: string }>,
+) => {
   if (!effectiveDagId.value) return
-  const missingVersionIds = Array.from(new Set(
-    records
-      .map(record => record.dagVersionId)
-      .filter((versionId): versionId is number => Boolean(versionId))
-      .filter(versionId =>
-        records.some(record =>
-          record.dagVersionId === versionId
-          && record.nodeCode
-          && dagNodeIdMap.value[dagNodeCacheKey(versionId, record.nodeCode)] == null,
+  const missingVersionIds = Array.from(
+    new Set(
+      records
+        .map((record) => record.dagVersionId)
+        .filter((versionId): versionId is number => Boolean(versionId))
+        .filter((versionId) =>
+          records.some(
+            (record) =>
+              record.dagVersionId === versionId &&
+              record.nodeCode &&
+              dagNodeIdMap.value[dagNodeCacheKey(versionId, record.nodeCode)] == null,
+          ),
         ),
-      ),
-  ))
+    ),
+  )
   if (!missingVersionIds.length) return
 
   const nodeGroups = await Promise.all(
-    missingVersionIds.map(versionId => getDagNodes(effectiveDagId.value!, versionId)),
+    missingVersionIds.map((versionId) => getDagNodes(effectiveDagId.value!, versionId)),
   )
   const nextMap = { ...dagNodeIdMap.value }
   missingVersionIds.forEach((versionId, index) => {
@@ -677,7 +759,8 @@ const loadData = async () => {
     ])
     dataSource.value = res.records
     if (currentRunIdForNodes.value != null) {
-      currentRunStatusForNodes.value = res.records.find((record: any) => record.id === currentRunIdForNodes.value)?.status ?? null
+      currentRunStatusForNodes.value =
+        res.records.find((record: any) => record.id === currentRunIdForNodes.value)?.status ?? null
     }
     pagination.total = res.total
     dagStats.value = stats
@@ -697,7 +780,7 @@ const handleSearch = throttle(() => {
   selectedDagId.value = id
   router.replace({
     path: route.path,
-    query: withActiveTenantQuery({ ...route.query, dagId: String(id) }, resolveNavigationTenantId()),
+    query: buildNavigationQuery({ ...route.query, dagId: String(id) }),
   })
   pagination.current = 1
   loadData()
@@ -713,7 +796,7 @@ const handleReset = throttle(() => {
   dagStats.value = null
   router.replace({
     path: route.path,
-    query: withActiveTenantQuery({}, resolveNavigationTenantId()),
+    query: buildNavigationQuery({}),
   })
   dataSource.value = []
   pagination.current = 1
@@ -728,13 +811,20 @@ const handleRefresh = throttle(() => {
   })
 }, 500)
 
-const handleTableChange = (pag: any) => {
-  pagination.current = pag.current
-  pagination.pageSize = pag.pageSize
+const handlePageChange = (page: number) => {
+  pagination.current = page || 1
   loadData()
 }
 
-const handleStopRun = async (record: { id: number; runNo?: string; status?: string } | Record<string, any>) => {
+const handlePageSizeChange = (_current: number, size: number) => {
+  pagination.pageSize = size || 10
+  pagination.current = 1
+  loadData()
+}
+
+const handleStopRun = async (
+  record: { id: number; runNo?: string; status?: string } | Record<string, any>,
+) => {
   if (!effectiveDagId.value) return
   if (!canStopRun(record)) {
     message.warning(getStopRunDisabledReason(record) || '当前运行不可停止')
@@ -753,7 +843,9 @@ const handleStopRun = async (record: { id: number; runNo?: string; status?: stri
   }
 }
 
-const handleRetryRun = async (record: { id: number; runNo?: string; status?: string } | Record<string, any>) => {
+const handleRetryRun = async (
+  record: { id: number; runNo?: string; status?: string } | Record<string, any>,
+) => {
   if (!effectiveDagId.value) return
   if (!canRetryRun(record)) {
     message.warning(getRetryRunDisabledReason(record) || '当前运行不可重试')
@@ -812,7 +904,7 @@ const handleViewNodeDetail = async (record: any) => {
     currentNodeRecord.value = await getDagRunNode(
       effectiveDagId.value,
       currentRunIdForNodes.value,
-      record.id
+      record.id,
     )
     nodeDetailVisible.value = true
   } catch (error: any) {
@@ -844,7 +936,11 @@ const handleTriggerNode = async (record: { dagVersionId?: number; nodeCode?: str
     return
   }
   try {
-    await triggerDagRunNode(effectiveDagId.value, currentRunIdForNodes.value, requireDagNodeId(record))
+    await triggerDagRunNode(
+      effectiveDagId.value,
+      currentRunIdForNodes.value,
+      requireDagNodeId(record),
+    )
     message.success(`已触发节点${record.nodeCode ? `: ${record.nodeCode}` : ''}`)
     await Promise.all([refreshCurrentRunNodes(), loadData()])
   } catch (error: any) {
@@ -859,7 +955,11 @@ const handlePauseNode = async (record: { dagVersionId?: number; nodeCode?: strin
     return
   }
   try {
-    await pauseDagRunNode(effectiveDagId.value, currentRunIdForNodes.value, requireDagNodeId(record))
+    await pauseDagRunNode(
+      effectiveDagId.value,
+      currentRunIdForNodes.value,
+      requireDagNodeId(record),
+    )
     message.success(`已暂停节点${record.nodeCode ? `: ${record.nodeCode}` : ''}`)
     await Promise.all([refreshCurrentRunNodes(), loadData()])
   } catch (error: any) {
@@ -874,7 +974,11 @@ const handleResumeNode = async (record: { dagVersionId?: number; nodeCode?: stri
     return
   }
   try {
-    await resumeDagRunNode(effectiveDagId.value, currentRunIdForNodes.value, requireDagNodeId(record))
+    await resumeDagRunNode(
+      effectiveDagId.value,
+      currentRunIdForNodes.value,
+      requireDagNodeId(record),
+    )
     message.success(`已恢复节点${record.nodeCode ? `: ${record.nodeCode}` : ''}`)
     await Promise.all([refreshCurrentRunNodes(), loadData()])
   } catch (error: any) {
@@ -889,7 +993,11 @@ const handleRetryNode = async (record: { dagVersionId?: number; nodeCode?: strin
     return
   }
   try {
-    await retryDagRunNode(effectiveDagId.value, currentRunIdForNodes.value, requireDagNodeId(record))
+    await retryDagRunNode(
+      effectiveDagId.value,
+      currentRunIdForNodes.value,
+      requireDagNodeId(record),
+    )
     message.success(`已提交节点重试${record.nodeCode ? `: ${record.nodeCode}` : ''}`)
     await Promise.all([refreshCurrentRunNodes(), loadData()])
   } catch (error: any) {
@@ -910,28 +1018,73 @@ onMounted(() => {
 
 <style scoped>
 .content-container {
-  padding: 16px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
 }
 
 .content-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   background: #fff;
-  border-radius: 4px;
-  padding: 16px;
 }
 
 .form-container {
-  margin-bottom: 16px;
+  padding: 24px;
+  border-bottom: 1px solid #f0f0f0;
 }
 
 .toolbar-container {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  padding: 8px 24px;
+  border-bottom: 1px solid #f0f0f0;
 }
 
 .stats-card {
-  margin-bottom: 16px;
+  margin: 16px 24px 0;
+}
+
+.table-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.table-scroll-container {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 12px;
+}
+
+:deep(.bottom-pagination-table) {
+  min-width: 0;
+  width: 100%;
+}
+
+:deep(.bottom-pagination-table .ant-table-thead > tr > th),
+:deep(.bottom-pagination-table .ant-table-tbody > tr > td) {
+  white-space: nowrap;
+}
+
+.pagination-container {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 56px;
+  padding: 12px 24px;
+  border-top: 1px solid #f0f0f0;
+  background: #fff;
 }
 
 .table-title {

@@ -44,10 +44,14 @@ public class CamundaIdentityBridgeFilter extends OncePerRequestFilter {
                         .map(a -> a.replaceFirst("^ROLE_", ""))
                         .collect(Collectors.toList());
                 List<String> tenants = tenantResolver.resolveTenantIds(request, auth);
+                if (!tenants.isEmpty()) {
+                    TenantContext.setCurrentTenant(tenants.get(0));
+                }
                 identityService.setAuthentication(userId, groups, tenants);
             }
             filterChain.doFilter(request, response);
         } finally {
+            TenantContext.clear();
             identityService.clearAuthentication();
         }
     }
@@ -82,4 +86,3 @@ public class CamundaIdentityBridgeFilter extends OncePerRequestFilter {
     }
 
 }
-

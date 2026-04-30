@@ -13,6 +13,8 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -41,6 +43,7 @@ class ProcessControllerTest {
     @AfterEach
     void tearDown() {
         TenantContext.clear();
+        com.tiny.platform.core.oauth.tenant.TenantContext.clear();
     }
 
     @Nested
@@ -70,6 +73,20 @@ class ProcessControllerTest {
             assertThat(response.getBody()).containsEntry("success", false);
             assertThat(response.getBody()).containsEntry("error", "invalid BPMN");
         }
+
+        @Test
+        void deploy_whenPlatformScope_usesNoTenantRuntime() throws Exception {
+            com.tiny.platform.core.oauth.tenant.TenantContext.setActiveScopeType(
+                com.tiny.platform.core.oauth.tenant.TenantContextContract.SCOPE_TYPE_PLATFORM
+            );
+            when(processEngineService.deployProcess(eq("<bpmn/>"), isNull())).thenReturn("dep-platform");
+
+            ResponseEntity<Map<String, Object>> response = controller.deploy("<bpmn/>");
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            assertThat(response.getBody()).containsEntry("deploymentId", "dep-platform");
+            verify(processEngineService).deployProcess("<bpmn/>", null);
+        }
     }
 
     @Nested
@@ -89,10 +106,39 @@ class ProcessControllerTest {
             ResponseEntity<Map<String, Object>> response = controller.deployWithInfo(request, principal);
 
             assertThat(response.getStatusCode().value()).isEqualTo(200);
+            assertThat(response.getBody()).containsEntry("success", true);
             assertThat(response.getBody()).containsEntry("deploymentId", "dep-456");
             assertThat(response.getBody()).containsEntry("processName", "My Process");
             assertThat(response.getBody()).containsEntry("source", "modeler");
             verify(processEngineService).deployProcess("<bpmn/>", "tenant-1", "My Process", "alice", "modeler");
+        }
+
+        @Test
+        void deployWithInfo_whenPlatformScope_usesNoTenantRuntime() throws Exception {
+            com.tiny.platform.core.oauth.tenant.TenantContext.setActiveScopeType(
+                com.tiny.platform.core.oauth.tenant.TenantContextContract.SCOPE_TYPE_PLATFORM
+            );
+            Map<String, Object> request = Map.of(
+                "bpmnXml", "<bpmn/>",
+                "deploymentName", "Platform Process",
+                "source", "platform-modeler"
+            );
+            Principal principal = () -> "platform-admin";
+            when(processEngineService.deployProcess(anyString(), any(), anyString(), anyString(), anyString()))
+                .thenReturn("dep-platform-info");
+
+            ResponseEntity<Map<String, Object>> response = controller.deployWithInfo(request, principal);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            assertThat(response.getBody()).containsEntry("success", true);
+            assertThat(response.getBody()).containsEntry("deploymentId", "dep-platform-info");
+            verify(processEngineService).deployProcess(
+                "<bpmn/>",
+                null,
+                "Platform Process",
+                "platform-admin",
+                "platform-modeler"
+            );
         }
 
         @Test
@@ -126,7 +172,7 @@ class ProcessControllerTest {
 
         @Test
         void listDeployments_whenServiceThrows_returns400() {
-            when(processEngineService.listDeployments(null)).thenThrow(new RuntimeException("db error"));
+            when(processEngineService.listDeployments("tenant-1")).thenThrow(new RuntimeException("db error"));
 
             ResponseEntity<Object> response = controller.listDeployments(null);
 
@@ -135,6 +181,36 @@ class ProcessControllerTest {
             Map<String, Object> body = (Map<String, Object>) response.getBody();
             assertThat(body).containsEntry("success", false);
             assertThat(body).containsEntry("error", "db error");
+        }
+
+        @Test
+        void listDeployments_whenPlatformScope_usesNoTenantRuntime() {
+            com.tiny.platform.core.oauth.tenant.TenantContext.setActiveScopeType(
+                com.tiny.platform.core.oauth.tenant.TenantContextContract.SCOPE_TYPE_PLATFORM
+            );
+            Object result = Map.of("deployments", java.util.List.of());
+            when(processEngineService.listDeployments(null)).thenReturn(result);
+
+            ResponseEntity<Object> response = controller.listDeployments(null);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            assertThat(response.getBody()).isEqualTo(result);
+            verify(processEngineService).listDeployments(null);
+        }
+
+        @Test
+        void listDeployments_whenPlatformScopeRejectsTenantFilter() {
+            com.tiny.platform.core.oauth.tenant.TenantContext.setActiveScopeType(
+                com.tiny.platform.core.oauth.tenant.TenantContextContract.SCOPE_TYPE_PLATFORM
+            );
+
+            ResponseEntity<Object> response = controller.listDeployments("9");
+
+            assertThat(response.getStatusCode().value()).isEqualTo(400);
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = (Map<String, Object>) response.getBody();
+            assertThat(body).containsEntry("success", false);
+            assertThat(body).containsEntry("error", "平台流程管理不支持按租户过滤");
         }
     }
 
@@ -191,6 +267,22 @@ class ProcessControllerTest {
             assertThat(response.getStatusCode().value()).isEqualTo(400);
             assertThat(response.getBody()).containsEntry("success", false);
             assertThat(response.getBody()).containsEntry("error", "process key not found");
+        }
+
+        @Test
+        void start_whenPlatformScope_usesNoTenantRuntime() {
+            com.tiny.platform.core.oauth.tenant.TenantContext.setActiveScopeType(
+                com.tiny.platform.core.oauth.tenant.TenantContextContract.SCOPE_TYPE_PLATFORM
+            );
+            when(processEngineService.startProcessInstance(eq("processKey"), isNull(), any()))
+                .thenReturn("inst-platform");
+
+            ResponseEntity<Map<String, Object>> response =
+                controller.start("processKey", Map.of("var", "value"));
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            assertThat(response.getBody()).containsEntry("instanceId", "inst-platform");
+            verify(processEngineService).startProcessInstance("processKey", null, Map.of("var", "value"));
         }
     }
 

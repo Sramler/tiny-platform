@@ -34,7 +34,7 @@ public class SchedulingTaskInstance implements Serializable {
     @Column(name = "task_id", nullable = false)
     private Long taskId;
 
-    @Column(name = "tenant_id", nullable = false)
+    @Column(name = "tenant_id")
     private Long tenantId;
 
     @Column(name = "attempt_no")

@@ -19,7 +19,7 @@ public class SchedulingDagVersion implements Serializable {
     @Column(name = "dag_id", nullable = false)
     private Long dagId;
 
-    @Column(name = "tenant_id", nullable = false)
+    @Column(name = "tenant_id")
     private Long tenantId;
 
     @Column(name = "version_no", nullable = false)
@@ -119,4 +119,3 @@ public class SchedulingDagVersion implements Serializable {
         this.activatedAt = activatedAt;
     }
 }
-

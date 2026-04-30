@@ -104,6 +104,16 @@ const TableStub = defineComponent({
   },
 })
 
+const PaginationStub = defineComponent({
+  props: {
+    current: Number,
+    pageSize: Number,
+    total: Number,
+  },
+  emits: ['change', 'showSizeChange', 'update:current'],
+  template: '<div class="pagination-stub"><slot /></div>',
+})
+
 const FormStub = defineComponent({
   setup(_, { slots, expose }) {
     expose({
@@ -140,6 +150,7 @@ function mountView() {
           template: '<div @click="$emit(\'confirm\')"><slot /></div>',
         }),
         'a-table': TableStub,
+        'a-pagination': PaginationStub,
         'a-modal': defineComponent({
           props: ['open', 'title', 'footer'],
           emits: ['ok', 'cancel', 'update:open'],
@@ -318,10 +329,15 @@ describe('Task.vue', () => {
     expect(apiMocks.taskList).toHaveBeenCalled()
 
     apiMocks.taskList.mockClear()
-    const table = wrapper.findComponent(TableStub)
-    table.vm.$emit('change', { current: 2, pageSize: 20 })
+    const pagination = wrapper.findComponent(PaginationStub)
+    pagination.vm.$emit('change', 2, 10)
     await flushPromises()
-    expect(apiMocks.taskList).toHaveBeenCalledWith(expect.objectContaining({ current: 2, pageSize: 20 }))
+    expect(apiMocks.taskList).toHaveBeenCalledWith(expect.objectContaining({ current: 2, pageSize: 10 }))
+
+    apiMocks.taskList.mockClear()
+    pagination.vm.$emit('showSizeChange', 2, 20)
+    await flushPromises()
+    expect(apiMocks.taskList).toHaveBeenCalledWith(expect.objectContaining({ current: 1, pageSize: 20 }))
   })
 
   it('should report view and delete errors from row actions', async () => {

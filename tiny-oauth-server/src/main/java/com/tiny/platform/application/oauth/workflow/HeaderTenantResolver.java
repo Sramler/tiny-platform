@@ -13,10 +13,19 @@ public class HeaderTenantResolver implements TenantResolver {
 
     @Override
     public List<String> resolveTenantIds(HttpServletRequest request, Authentication authentication) {
-        String activeTenantId = request.getHeader(TenantContextContract.ACTIVE_TENANT_ID_HEADER);
-        if (activeTenantId == null || activeTenantId.isBlank()) {
-            return Collections.emptyList();
+        String activeTenantId = normalizeHeader(request.getHeader(TenantContextContract.ACTIVE_TENANT_ID_HEADER));
+        if (activeTenantId != null) {
+            return Collections.singletonList(activeTenantId);
         }
-        return Collections.singletonList(activeTenantId.trim());
+
+        return Collections.emptyList();
     }
+
+    private String normalizeHeader(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        return value.trim();
+    }
+
 }

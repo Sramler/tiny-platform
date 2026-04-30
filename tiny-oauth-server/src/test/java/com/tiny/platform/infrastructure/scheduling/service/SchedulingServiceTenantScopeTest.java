@@ -63,6 +63,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -188,6 +189,193 @@ class SchedulingServiceTenantScopeTest {
         assertThat(found).contains(taskType);
         verify(taskTypeRepository).findByIdAndTenantId(1L, 88L);
         verify(taskTypeRepository, never()).findById(1L);
+    }
+
+    @Test
+    void createTaskTypeShouldUsePlatformNullTenantInPlatformScope() {
+        authenticatePlatform("platform-admin");
+        when(taskTypeRepository.findOne(org.mockito.ArgumentMatchers.<Specification<SchedulingTaskType>>any()))
+                .thenReturn(Optional.empty());
+        when(taskExecutorRegistry.find("loggingTaskExecutor")).thenReturn(Optional.of(mock(TaskExecutorService.TaskExecutor.class)));
+        when(taskTypeRepository.save(any(SchedulingTaskType.class))).thenAnswer(invocation -> {
+            SchedulingTaskType entity = invocation.getArgument(0);
+            entity.setId(12L);
+            return entity;
+        });
+
+        SchedulingTaskTypeCreateUpdateDto dto = new SchedulingTaskTypeCreateUpdateDto();
+        dto.setCode("platform-billing");
+        dto.setName("Platform Billing");
+        dto.setExecutor("loggingTaskExecutor");
+
+        SchedulingTaskType saved = schedulingService.createTaskType(dto);
+
+        assertThat(saved.getTenantId()).isNull();
+        assertThat(saved.getCreatedBy()).isEqualTo("platform-admin");
+        verify(taskTypeRepository, never()).findByTenantIdAndCode(any(), any());
+
+        ArgumentCaptor<SchedulingAudit> auditCaptor = ArgumentCaptor.forClass(SchedulingAudit.class);
+        verify(auditRepository).save(auditCaptor.capture());
+        assertThat(auditCaptor.getValue().getTenantId()).isNull();
+        assertThat(auditCaptor.getValue().getPerformedBy()).isEqualTo("platform-admin");
+    }
+
+    @Test
+    void getTaskTypeShouldUsePlatformNullTenantLookupInPlatformScope() {
+        authenticatePlatform("platform-admin");
+        SchedulingTaskType platformTaskType = new SchedulingTaskType();
+        platformTaskType.setId(1L);
+        platformTaskType.setTenantId(null);
+        platformTaskType.setCode("platform-demo");
+        when(taskTypeRepository.findById(1L)).thenReturn(Optional.of(platformTaskType));
+
+        Optional<SchedulingTaskType> found = schedulingService.getTaskType(1L);
+
+        assertThat(found).contains(platformTaskType);
+        verify(taskTypeRepository).findById(1L);
+        verify(taskTypeRepository, never()).findByIdAndTenantId(eq(1L), any());
+    }
+
+    @Test
+    void getTaskTypeShouldRejectTenantRecordInPlatformScope() {
+        authenticatePlatform("platform-admin");
+        SchedulingTaskType tenantTaskType = new SchedulingTaskType();
+        tenantTaskType.setId(1L);
+        tenantTaskType.setTenantId(88L);
+        tenantTaskType.setCode("tenant-demo");
+        when(taskTypeRepository.findById(1L)).thenReturn(Optional.of(tenantTaskType));
+
+        Optional<SchedulingTaskType> found = schedulingService.getTaskType(1L);
+
+        assertThat(found).isEmpty();
+        verify(taskTypeRepository, never()).findByIdAndTenantId(eq(1L), any());
+    }
+
+    @Test
+    void platformSchedulingBusinessFlowShouldKeepNullTenantFromConfigToManualRun() throws Exception {
+        authenticatePlatform("platform-admin");
+        AtomicReference<SchedulingTaskType> savedTaskType = new AtomicReference<>();
+        AtomicReference<SchedulingTask> savedTask = new AtomicReference<>();
+        AtomicReference<SchedulingDag> savedDag = new AtomicReference<>();
+        AtomicReference<SchedulingDagVersion> savedVersion = new AtomicReference<>();
+
+        when(taskExecutorRegistry.find("loggingTaskExecutor"))
+                .thenReturn(Optional.of(mock(TaskExecutorService.TaskExecutor.class)));
+        when(taskTypeRepository.findOne(org.mockito.ArgumentMatchers.<Specification<SchedulingTaskType>>any()))
+                .thenReturn(Optional.empty());
+        when(taskRepository.findOne(org.mockito.ArgumentMatchers.<Specification<SchedulingTask>>any()))
+                .thenReturn(Optional.empty());
+        when(dagRepository.findOne(org.mockito.ArgumentMatchers.<Specification<SchedulingDag>>any()))
+                .thenReturn(Optional.empty());
+        when(taskTypeRepository.save(any(SchedulingTaskType.class))).thenAnswer(invocation -> {
+            SchedulingTaskType entity = invocation.getArgument(0);
+            entity.setId(12L);
+            savedTaskType.set(entity);
+            return entity;
+        });
+        when(taskTypeRepository.findById(12L)).thenAnswer(invocation -> Optional.ofNullable(savedTaskType.get()));
+        when(taskRepository.save(any(SchedulingTask.class))).thenAnswer(invocation -> {
+            SchedulingTask entity = invocation.getArgument(0);
+            entity.setId(22L);
+            savedTask.set(entity);
+            return entity;
+        });
+        when(taskRepository.findById(22L)).thenAnswer(invocation -> Optional.ofNullable(savedTask.get()));
+        when(dagRepository.save(any(SchedulingDag.class))).thenAnswer(invocation -> {
+            SchedulingDag entity = invocation.getArgument(0);
+            entity.setId(32L);
+            savedDag.set(entity);
+            return entity;
+        });
+        when(dagRepository.findById(32L)).thenAnswer(invocation -> Optional.ofNullable(savedDag.get()));
+        when(dagVersionRepository.findMaxVersionNoByDagId(32L)).thenReturn(null);
+        when(dagVersionRepository.findByDagId(32L)).thenAnswer(invocation -> {
+            SchedulingDagVersion version = savedVersion.get();
+            return version == null ? List.of() : List.of(version);
+        });
+        when(dagVersionRepository.save(any(SchedulingDagVersion.class))).thenAnswer(invocation -> {
+            SchedulingDagVersion entity = invocation.getArgument(0);
+            if (entity.getId() == null) {
+                entity.setId(42L);
+            }
+            savedVersion.set(entity);
+            return entity;
+        });
+        when(dagVersionRepository.findById(42L)).thenAnswer(invocation -> Optional.ofNullable(savedVersion.get()));
+        when(dagVersionRepository.findByDagIdAndStatus(32L, "ACTIVE")).thenAnswer(invocation -> {
+            SchedulingDagVersion version = savedVersion.get();
+            return version != null && "ACTIVE".equals(version.getStatus())
+                    ? Optional.of(version)
+                    : Optional.empty();
+        });
+        when(dagTaskRepository.findByDagVersionIdAndNodeCode(42L, "node-a")).thenReturn(Optional.empty());
+        when(dagTaskRepository.save(any(SchedulingDagTask.class))).thenAnswer(invocation -> {
+            SchedulingDagTask entity = invocation.getArgument(0);
+            entity.setId(52L);
+            return entity;
+        });
+        when(dagRunRepository.save(any(SchedulingDagRun.class))).thenAnswer(invocation -> {
+            SchedulingDagRun entity = invocation.getArgument(0);
+            entity.setId(62L);
+            return entity;
+        });
+
+        SchedulingTaskTypeCreateUpdateDto taskTypeDto = new SchedulingTaskTypeCreateUpdateDto();
+        taskTypeDto.setCode("platform-type");
+        taskTypeDto.setName("Platform Type");
+        taskTypeDto.setExecutor("loggingTaskExecutor");
+        SchedulingTaskType taskType = schedulingService.createTaskType(taskTypeDto);
+
+        SchedulingTaskCreateUpdateDto taskDto = new SchedulingTaskCreateUpdateDto();
+        taskDto.setTypeId(taskType.getId());
+        taskDto.setCode("platform-task");
+        taskDto.setName("Platform Task");
+        SchedulingTask task = schedulingService.createTask(taskDto);
+
+        SchedulingDagCreateUpdateDto dagDto = new SchedulingDagCreateUpdateDto();
+        dagDto.setCode("platform-dag");
+        dagDto.setName("Platform DAG");
+        dagDto.setEnabled(true);
+        dagDto.setCronEnabled(false);
+        SchedulingDag dag = schedulingService.createDag(dagDto);
+
+        SchedulingDagVersionCreateUpdateDto versionDto = new SchedulingDagVersionCreateUpdateDto();
+        versionDto.setStatus("DRAFT");
+        versionDto.setDefinition("{}");
+        SchedulingDagVersion version = schedulingService.createDagVersion(dag.getId(), versionDto);
+
+        SchedulingDagTaskCreateUpdateDto nodeDto = new SchedulingDagTaskCreateUpdateDto();
+        nodeDto.setTaskId(task.getId());
+        nodeDto.setNodeCode("node-a");
+        nodeDto.setName("Node A");
+        SchedulingDagTask node = schedulingService.createDagNode(dag.getId(), version.getId(), nodeDto);
+
+        SchedulingDagVersionCreateUpdateDto activateVersionDto = new SchedulingDagVersionCreateUpdateDto();
+        activateVersionDto.setStatus("ACTIVE");
+        SchedulingDagVersion activeVersion =
+                schedulingService.updateDagVersion(dag.getId(), version.getId(), activateVersionDto);
+
+        SchedulingDagRun run = schedulingService.triggerDag(dag.getId());
+
+        assertThat(taskType.getTenantId()).isNull();
+        assertThat(task.getTenantId()).isNull();
+        assertThat(dag.getTenantId()).isNull();
+        assertThat(version.getTenantId()).isNull();
+        assertThat(node.getTenantId()).isNull();
+        assertThat(activeVersion.getTenantId()).isNull();
+        assertThat(run.getTenantId()).isNull();
+        assertThat(run.getDagVersionId()).isEqualTo(activeVersion.getId());
+        assertThat(run.getTriggeredBy()).isEqualTo("platform-admin");
+        verify(taskTypeRepository, never()).findByTenantIdAndCode(any(), any());
+        verify(taskRepository, never()).findByTenantIdAndCode(any(), any());
+        verify(dagRepository, never()).findByTenantIdAndCode(any(), any());
+
+        ArgumentCaptor<SchedulingExecutionContext> executionContextCaptor =
+                ArgumentCaptor.forClass(SchedulingExecutionContext.class);
+        verify(quartzSchedulerService).triggerDagNow(eq(dag), executionContextCaptor.capture());
+        assertThat(executionContextCaptor.getValue().getExecutionTenantId()).isNull();
+        assertThat(executionContextCaptor.getValue().getDagRunId()).isEqualTo(run.getId());
+        assertThat(executionContextCaptor.getValue().getUsername()).isEqualTo("platform-admin");
     }
 
     @Test
@@ -1956,6 +2144,14 @@ class SchedulingServiceTenantScopeTest {
     private void authenticate(Long userId, Long tenantId, String username) {
         TenantContext.setActiveTenantId(tenantId);
         SecurityUser securityUser = new SecurityUser(userId, tenantId, username, "", List.of(), true, true, true, true);
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken(securityUser, "N/A", List.of()));
+    }
+
+    private void authenticatePlatform(String username) {
+        TenantContext.setActiveScopeType(
+                com.tiny.platform.core.oauth.tenant.TenantContextContract.SCOPE_TYPE_PLATFORM);
+        SecurityUser securityUser = new SecurityUser(8L, null, username, "", List.of(), true, true, true, true);
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(securityUser, "N/A", List.of()));
     }

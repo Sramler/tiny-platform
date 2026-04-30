@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 import type { Key } from 'ant-design-vue/es/_util/type'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/auth/auth'
@@ -12,10 +12,12 @@ import {
 import { usePlatformScope } from '@/composables/usePlatformScope'
 import PlatformTenantStewardshipTab from './components/PlatformTenantStewardshipTab.vue'
 import PlatformUserGovernanceTab from './components/PlatformUserGovernanceTab.vue'
-
-type TabKey = 'platformUsers' | 'tenantStewardship'
-
-const PLATFORM_USERS_PATH = '/platform/users'
+import {
+  buildPlatformUserRouteQuery,
+  buildPlatformUserTabPath,
+  resolvePlatformUserTabFromPath,
+  type PlatformUserTab,
+} from '@/utils/platformRuntime'
 
 const { user } = useAuth()
 const { isPlatformScope } = usePlatformScope()
@@ -38,13 +40,11 @@ const canAccessTenantStewardship = computed(
 )
 const hasAnyAccessibleTab = computed(() => canAccessPlatformUsers.value || canAccessTenantStewardship.value)
 
-const activeTab = ref<TabKey>('platformUsers')
-
-function resolveRequestedTab(): TabKey {
-  return route.query.tab === 'tenantStewardship' ? 'tenantStewardship' : 'platformUsers'
+function resolveRequestedTab(): PlatformUserTab {
+  return resolvePlatformUserTabFromPath(route.path) ?? 'platformUsers'
 }
 
-function resolveAccessibleTab(requestedTab: TabKey): TabKey {
+function resolveAccessibleTab(requestedTab: PlatformUserTab): PlatformUserTab {
   if (requestedTab === 'tenantStewardship' && canAccessTenantStewardship.value) {
     return 'tenantStewardship'
   }
@@ -57,68 +57,23 @@ function resolveAccessibleTab(requestedTab: TabKey): TabKey {
   return 'tenantStewardship'
 }
 
-function syncActiveTabFromRoute() {
+const activeTab = computed<PlatformUserTab>(() => {
   if (!isPlatformScope.value || !hasAnyAccessibleTab.value) {
-    activeTab.value = 'platformUsers'
-    return
+    return 'platformUsers'
   }
-  activeTab.value = resolveAccessibleTab(resolveRequestedTab())
-}
-
-watch(
-  () => [
-    route.query.tab,
-    isPlatformScope.value,
-    canAccessPlatformUsers.value,
-    canAccessTenantStewardship.value,
-  ],
-  () => {
-    syncActiveTabFromRoute()
-  },
-  { immediate: true },
-)
-
-watch(activeTab, (nextTab) => {
-  if (!isPlatformScope.value || !hasAnyAccessibleTab.value) {
-    return
-  }
-  syncRouteForTab(nextTab)
+  return resolveAccessibleTab(resolveRequestedTab())
 })
 
-function syncRouteForTab(nextTab: TabKey) {
-  const currentTab = typeof route.query.tab === 'string' ? route.query.tab : undefined
-  const currentTenantId = typeof route.query.tenantId === 'string' ? route.query.tenantId : undefined
-
-  if (nextTab === 'platformUsers') {
-    if (currentTab !== undefined || currentTenantId !== undefined) {
-      void router.replace({
-        path: PLATFORM_USERS_PATH,
-        query: {},
-      })
-    }
-    return
-  }
-
-  if (currentTab === 'tenantStewardship') {
-    return
-  }
-
-  void router.replace({
-    path: PLATFORM_USERS_PATH,
-    query: currentTenantId
-      ? {
-          tab: 'tenantStewardship',
-          tenantId: currentTenantId,
-        }
-      : {
-          tab: 'tenantStewardship',
-        },
-  })
-}
-
 function handleTabChange(key: Key) {
-  const requestedTab: TabKey = String(key) === 'tenantStewardship' ? 'tenantStewardship' : 'platformUsers'
-  activeTab.value = resolveAccessibleTab(requestedTab)
+  if (!isPlatformScope.value || !hasAnyAccessibleTab.value) {
+    return
+  }
+  const requestedTab: PlatformUserTab = String(key) === 'tenantStewardship' ? 'tenantStewardship' : 'platformUsers'
+  const nextTab = resolveAccessibleTab(requestedTab)
+  void router.replace({
+    path: buildPlatformUserTabPath(nextTab),
+    query: buildPlatformUserRouteQuery(route.query, nextTab),
+  })
 }
 
 const missingCapabilityLabels = computed(() => {
@@ -157,7 +112,13 @@ const missingCapabilityLabels = computed(() => {
         </p>
       </div>
 
-      <a-tabs v-else :active-key="activeTab" class="boundary-tabs" @change="handleTabChange">
+      <a-tabs
+        v-else
+        :active-key="activeTab"
+        class="boundary-tabs"
+        destroy-inactive-tab-pane
+        @change="handleTabChange"
+      >
         <a-tab-pane key="platformUsers" tab="平台用户治理" :disabled="!canAccessPlatformUsers">
           <PlatformUserGovernanceTab v-if="activeTab === 'platformUsers' && canAccessPlatformUsers" />
         </a-tab-pane>

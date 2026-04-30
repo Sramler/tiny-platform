@@ -88,3 +88,29 @@ function ensureLegacyMatchMediaShim() {
 }
 
 ensureLegacyMatchMediaShim()
+
+/**
+ * Ant Design Vue 4.x occasionally forwards vnode props such as `children` and
+ * `prefix` to native DOM nodes in tests. jsdom exposes these as getter-only
+ * properties, so Vue logs a patch warning and some component tests wait until
+ * the default timeout. Keep the real getter behavior and add a noop setter only
+ * for the unit-test DOM.
+ */
+function ensureReadonlyDomPropPatch(proto: object, key: string) {
+  const descriptor = Object.getOwnPropertyDescriptor(proto, key)
+  if (!descriptor || descriptor.set || !descriptor.configurable) {
+    return
+  }
+
+  Object.defineProperty(proto, key, {
+    configurable: true,
+    enumerable: descriptor.enumerable,
+    get: descriptor.get,
+    set: noopReadonlyDomPropSetter,
+  })
+}
+
+function noopReadonlyDomPropSetter() {}
+
+ensureReadonlyDomPropPatch(Element.prototype, 'children')
+ensureReadonlyDomPropPatch(Element.prototype, 'prefix')

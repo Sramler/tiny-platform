@@ -2,10 +2,11 @@
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { userManager } from '@/auth/oidc.ts'
-import { useAuth } from '@/auth/auth'
+import { consumePostLogoutRedirectMarker } from '@/auth/auth'
 import { persistentLogger } from '@/utils/logger'
 import { sanitizeInternalRedirect } from '@/utils/redirect'
 import {
+  clearActiveTenantId,
   getActiveTenantId,
   syncTenantContextFromAccessToken,
   syncTenantContextFromClaims,
@@ -13,7 +14,6 @@ import {
 } from '@/utils/tenant'
 
 const router = useRouter()
-const { isAuthenticated } = useAuth()
 const processing = ref(true)
 const error = ref<string | null>(null)
 // 非生产环境默认开启 OIDC 调试日志，也支持通过环境变量强制开启
@@ -35,6 +35,24 @@ const buildHomeTarget = () => ({
   path: '/',
   query: withActiveTenantQuery({}, getActiveTenantId()),
 })
+
+const isPrincipalMissingAuthorizationError = (
+  errorParam: string | null,
+  errorDescription: string | null,
+): boolean =>
+  errorParam === 'invalid_request' &&
+  /OAuth 2\.0 Parameter:\s*principal/i.test(errorDescription ?? '')
+
+const redirectToLoginAfterEndedSession = async () => {
+  consumePostLogoutRedirectMarker()
+  try {
+    await userManager.removeUser()
+  } catch (e) {
+    console.warn('清除用户状态失败:', e)
+  }
+  clearActiveTenantId()
+  await router.replace('/login')
+}
 
 onMounted(async () => {
   try {
@@ -61,7 +79,7 @@ onMounted(async () => {
         })
 
         // 等待用户状态更新
-        await new Promise(resolve => setTimeout(resolve, 100))
+        await new Promise((resolve) => setTimeout(resolve, 100))
 
         // 登录成功后跳转回主页或原始路径
         const returnUrl = sanitizeInternalRedirect((user?.state as any)?.returnUrl || '/')
@@ -71,8 +89,10 @@ onMounted(async () => {
         await router.replace(returnUrl === '/' ? buildHomeTarget() : returnUrl)
       } catch (callbackError: any) {
         // 检查是否是 state 不匹配的错误
-        if (callbackError?.message?.includes('No matching state') ||
-          callbackError?.message?.includes('state')) {
+        if (
+          callbackError?.message?.includes('No matching state') ||
+          callbackError?.message?.includes('state')
+        ) {
           trace('state.mismatch', callbackError?.message)
 
           // 清除可能存在的无效 state
@@ -99,6 +119,15 @@ onMounted(async () => {
       const errorDescription = urlParams.get('error_description')
 
       trace('authorization.error', { error: errorParam, error_description: errorDescription })
+      if (isPrincipalMissingAuthorizationError(errorParam, errorDescription)) {
+        persistError('authorization-principal-missing', {
+          error: errorParam,
+          description: errorDescription,
+        })
+        await redirectToLoginAfterEndedSession()
+        return
+      }
+
       error.value = errorDescription || errorParam || '登录失败'
       persistError('authorization-error', { error: errorParam, description: errorDescription })
 

@@ -44,20 +44,47 @@
     </div>
 
     <!-- 部署流程对话框 -->
-    <a-modal v-model:open="saveDialogVisible" title="部署流程" :width="600" @ok="handleSaveProcess"
-      @cancel="handleCancelSave" :confirm-loading="saveLoading" :zIndex="20001" :centered="true" :draggable="true">
-      <a-form :model="saveFormData" :label-col="{ span: 6 }" :wrapper-col="{ span: 18 }" :rules="saveFormRules"
-        ref="saveFormRef">
+    <a-modal
+      v-model:open="saveDialogVisible"
+      title="部署流程"
+      :width="600"
+      @ok="handleSaveProcess"
+      @cancel="handleCancelSave"
+      :confirm-loading="saveLoading"
+      :zIndex="20001"
+      :centered="true"
+      :draggable="true"
+    >
+      <a-form
+        :model="saveFormData"
+        :label-col="{ span: 6 }"
+        :wrapper-col="{ span: 18 }"
+        :rules="saveFormRules"
+        ref="saveFormRef"
+      >
         <a-form-item label="部署名称" name="deploymentName">
-          <a-input v-model:value="saveFormData.deploymentName" placeholder="请输入部署名称" :maxlength="100" show-count />
+          <a-input
+            v-model:value="saveFormData.deploymentName"
+            placeholder="请输入部署名称"
+            :maxlength="100"
+            show-count
+          />
         </a-form-item>
       </a-form>
     </a-modal>
     <!-- 部署结果弹窗（本页展示，让用户选择跳转） -->
-    <ProcessDeployResultModal v-model:open="saveResultOpen"
-      :result="{ deploymentId: lastSaveResult.deploymentId, deploymentName: lastSaveResult.deploymentName, description: lastSaveResult.description }"
-      :actions="nextActions" @run-action="onRunAction" @go-deployment="goToDeployment"
-      @go-definition="goToDefinition" />
+    <ProcessDeployResultModal
+      v-model:open="saveResultOpen"
+      :result="{
+        deploymentId: lastSaveResult.deploymentId,
+        deploymentName: lastSaveResult.deploymentName,
+        description: lastSaveResult.description,
+      }"
+      :actions="nextActions"
+      @run-action="onRunAction"
+      @go-deployment="goToDeployment"
+      @go-definition="goToDefinition"
+    />
   </div>
 </template>
 
@@ -71,7 +98,7 @@ import {
   DownloadOutlined,
   FileImageOutlined,
   FolderOpenOutlined,
-  PlusOutlined
+  PlusOutlined,
 } from '@ant-design/icons-vue'
 // bpmn-js 及属性面板相关依赖
 import BpmnModeler from 'bpmn-js/lib/Modeler'
@@ -79,14 +106,23 @@ import BpmnModeler from 'bpmn-js/lib/Modeler'
 import {
   BpmnPropertiesPanelModule,
   BpmnPropertiesProviderModule,
-  CamundaPlatformPropertiesProviderModule
+  CamundaPlatformPropertiesProviderModule,
 } from 'bpmn-js-properties-panel'
-import minimapModule from 'diagram-js-minimap';
+import minimapModule from 'diagram-js-minimap'
 import camundaModdleDescriptor from 'camunda-bpmn-moddle/resources/camunda.json'
 // i18n - 使用简化的翻译模块
 import { getTranslateModule, translateUtils } from '@/utils/bpmn/utils/translateUtils'
 import ProcessDeployResultModal from '@/components/process/ProcessDeployResultModal.vue'
-import { getActiveTenantId, resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
+import {
+  getActiveTenantId,
+  resolveActiveTenantQueryValue,
+  withActiveTenantQuery,
+} from '@/utils/tenant'
+import {
+  buildPlatformProcessRouteQuery,
+  buildPlatformProcessTabPath,
+  isPlatformRuntimePath,
+} from '@/utils/platformRuntime'
 
 // 声明全局变量类型
 declare global {
@@ -98,8 +134,8 @@ declare global {
 // 导入必要的 CSS 样式
 import 'bpmn-js/dist/assets/diagram-js.css'
 import 'bpmn-js/dist/assets/bpmn-font/css/bpmn.css'
-import "bpmn-js/dist/assets/bpmn-font/css/bpmn-codes.css";
-import 'bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css';
+import 'bpmn-js/dist/assets/bpmn-font/css/bpmn-codes.css'
+import 'bpmn-js/dist/assets/bpmn-font/css/bpmn-embedded.css'
 // 使用新版本包的 CSS 样式（旧版本包没有 CSS 文件）
 import '@bpmn-io/properties-panel/dist/assets/properties-panel.css'
 // 导入 minimap 样式
@@ -121,6 +157,7 @@ const emit = defineEmits<{
 const bpmnContainer = ref<HTMLDivElement | null>(null)
 const propertiesPanel = ref<HTMLDivElement | null>(null)
 const modeler = ref<BpmnModeler | null>(null)
+let propertiesPanelLocalizationObserver: MutationObserver | null = null
 
 // 初始化路由
 const route = useRoute()
@@ -131,20 +168,31 @@ function resolveNavigationTenantId() {
 }
 
 function buildNavigationQuery() {
+  if (isPlatformRuntimePath(route.path, 'process')) {
+    return buildPlatformProcessRouteQuery(route.query)
+  }
   return withActiveTenantQuery({}, resolveNavigationTenantId())
 }
 
 function goToDeployment() {
   router.push({
-    path: '/deployment',
-    query: buildNavigationQuery(),
+    path: isPlatformRuntimePath(route.path, 'process')
+      ? buildPlatformProcessTabPath('deployment')
+      : '/deployment',
+    query: isPlatformRuntimePath(route.path, 'process')
+      ? buildPlatformProcessRouteQuery(route.query)
+      : buildNavigationQuery(),
   })
 }
 
 function goToDefinition() {
   router.push({
-    path: '/process/definition',
-    query: buildNavigationQuery(),
+    path: isPlatformRuntimePath(route.path, 'process')
+      ? buildPlatformProcessTabPath('definition')
+      : '/process/definition',
+    query: isPlatformRuntimePath(route.path, 'process')
+      ? buildPlatformProcessRouteQuery(route.query)
+      : buildNavigationQuery(),
   })
 }
 
@@ -164,29 +212,29 @@ const nextActions = ref([
     color: '#52c41a',
     title: '启动流程实例',
     description: '立即启动一个流程实例进行测试',
-    action: () => startProcessInstance()
+    action: () => startProcessInstance(),
   },
   {
     icon: '👥',
     color: '#1890ff',
     title: '分配任务处理人',
     description: '为流程中的用户任务分配具体的处理人',
-    action: () => assignTaskUsers()
+    action: () => assignTaskUsers(),
   },
   {
     icon: '📊',
     color: '#722ed1',
     title: '查看流程监控',
     description: '监控流程实例的执行状态和性能指标',
-    action: () => viewProcessMonitoring()
+    action: () => viewProcessMonitoring(),
   },
   {
     icon: '⚙️',
     color: '#fa8c16',
     title: '配置流程参数',
     description: '设置流程的全局参数和业务规则',
-    action: () => configureProcessParams()
-  }
+    action: () => configureProcessParams(),
+  },
 ])
 
 const onRunAction = (index: number) => {
@@ -206,7 +254,7 @@ async function startProcessInstance() {
     }
     const result = await instanceApi.startProcess({
       processKey: currentProcessKey.value,
-      variables: {}
+      variables: {},
     })
     message.success(`流程实例启动成功！实例ID: ${result.instanceId}`)
   } catch (error: unknown) {
@@ -228,7 +276,7 @@ function configureProcessParams() {
 // 保存表单数据
 const saveFormData = reactive({
   deploymentName: '',
-  description: ''
+  description: '',
 })
 const currentProcessKey = ref('')
 
@@ -236,19 +284,134 @@ const currentProcessKey = ref('')
 const saveFormRules: Record<string, Rule[]> = {
   deploymentName: [
     { required: true, message: '请输入部署名称', trigger: 'blur' },
-    { min: 2, max: 100, message: '部署名称长度应在2-100个字符之间', trigger: 'blur' }
+    { min: 2, max: 100, message: '部署名称长度应在2-100个字符之间', trigger: 'blur' },
   ],
-  description: [
-    { max: 500, message: '流程描述不能超过500个字符', trigger: 'blur' }
-  ]
+  description: [{ max: 500, message: '流程描述不能超过500个字符', trigger: 'blur' }],
 }
 
 // 翻译模块将在 onMounted 中异步加载
- 
+
 let customTranslateModule: unknown = null
 
+function translateKnownPropertiesPanelText(text: string) {
+  const value = text.trim()
+  if (!value) return value
+
+  if (translateUtils.hasTranslation(value)) {
+    return translateUtils.translate(value)
+  }
+
+  const lowerValue = value.toLowerCase()
+  if (lowerValue !== value && translateUtils.hasTranslation(lowerValue)) {
+    return translateUtils.translate(lowerValue)
+  }
+
+  return value
+}
+
+function translatePropertiesPanelListTitle(text: string) {
+  const value = text.trim()
+  if (!value) return value
+
+  const directTranslation = translateKnownPropertiesPanelText(value)
+  if (directTranslation !== value) {
+    return directTranslation
+  }
+
+  // The BPMN properties panel builds some list titles from untranslated fragments
+  // (for example "Start: Java class"), so translate each fragment after render.
+  const compositeTitleMatch = /^([^:]+):\s*(.+)$/.exec(value)
+  if (!compositeTitleMatch) {
+    return value
+  }
+
+  const eventType = translateKnownPropertiesPanelText(compositeTitleMatch[1])
+  const listenerType = translateKnownPropertiesPanelText(compositeTitleMatch[2])
+  return `${eventType}: ${listenerType}`
+}
+
+function localizePropertiesPanelTextElements(selector: string) {
+  const panel = propertiesPanel.value
+  if (!panel) return
+
+  panel.querySelectorAll<HTMLElement>(selector).forEach((element) => {
+    const text = element.textContent?.trim()
+    if (!text) return
+
+    const translated = translatePropertiesPanelListTitle(text)
+    if (translated !== text) {
+      element.textContent = translated
+    }
+  })
+}
+
+function localizePropertiesPanelStaticText() {
+  const panel = propertiesPanel.value
+  if (!panel) return
+
+  panel.querySelectorAll<HTMLElement>('.bio-properties-panel-add-entry').forEach((button) => {
+    if (button.getAttribute('title') === 'Create new list item') {
+      button.setAttribute('title', translateUtils.translate('Create new list item'))
+    }
+  })
+
+  panel
+    .querySelectorAll<HTMLElement>('.bio-properties-panel-add-entry-label')
+    .forEach((label) => {
+      if (label.textContent?.trim() === 'Create') {
+        label.textContent = translateUtils.translate('Create')
+      }
+    })
+
+  panel.querySelectorAll<HTMLElement>('.bio-properties-panel-list-badge').forEach((badge) => {
+    const title = badge.getAttribute('title') || ''
+    const match = /^List contains (\d+) items?$/.exec(title)
+    if (!match) return
+
+    const count = match[1]
+    const key =
+      count === '1' ? 'List contains {numOfItems} item' : 'List contains {numOfItems} items'
+    badge.setAttribute('title', translateUtils.translate(key, { numOfItems: count }))
+  })
+
+  panel.querySelectorAll<HTMLElement>('.bio-properties-panel-arrow').forEach((button) => {
+    const title = button.getAttribute('title')
+    if (title === 'Toggle list item' || title === 'Toggle section') {
+      button.setAttribute('title', translateUtils.translate(title))
+    }
+  })
+
+  panel.querySelectorAll<HTMLElement>('[title="Delete item"]').forEach((button) => {
+    button.setAttribute('title', translateUtils.translate('Delete item'))
+  })
+
+  localizePropertiesPanelTextElements('.bio-properties-panel-list-entry-header-title')
+  localizePropertiesPanelTextElements('.bio-properties-panel-collapsible-entry-header-title')
+}
+
+function startPropertiesPanelStaticTextLocalization() {
+  propertiesPanelLocalizationObserver?.disconnect()
+
+  const panel = propertiesPanel.value
+  if (!panel) return
+
+  localizePropertiesPanelStaticText()
+  propertiesPanelLocalizationObserver = new MutationObserver(localizePropertiesPanelStaticText)
+  propertiesPanelLocalizationObserver.observe(panel, {
+    attributes: true,
+    attributeFilter: ['title'],
+    childList: true,
+    subtree: true,
+  })
+}
+
+function stopPropertiesPanelStaticTextLocalization() {
+  propertiesPanelLocalizationObserver?.disconnect()
+  propertiesPanelLocalizationObserver = null
+}
+
 // 处理保存 XML 的通用函数
- 
+
 const handleSaveXML = async (err: Error | null, xml: string, processInfo: ProcessInfoInput) => {
   console.log('🔍 handleSaveXML 被调用')
   console.log('🔍 err:', err)
@@ -290,7 +453,7 @@ const handleSaveXML = async (err: Error | null, xml: string, processInfo: Proces
       bpmnXml: xml,
       source: 'custom-tool',
       deploymentName: processInfo.deploymentName.trim(),
-      key: processInfo.key ?? currentProcessKey.value
+      key: processInfo.key ?? currentProcessKey.value,
     }
 
     console.log('🔍 准备发送的数据:', saveData)
@@ -315,8 +478,6 @@ const handleSaveXML = async (err: Error | null, xml: string, processInfo: Proces
 
       // 触发保存事件（可选）
       emit('save', xml, { ...processInfo, deploymentId: result.deploymentId })
-
-       
     } catch (apiError: any) {
       loadingMessage()
       console.error('部署流程到后端失败:', apiError)
@@ -362,7 +523,6 @@ const handleSaveProcess = async () => {
 
     // 获取 BPMN XML
     await getBpmnXmlAndSave(saveFormData)
-
   } catch (error) {
     console.error('❌ 表单验证失败:', error)
     // 表单验证失败，不关闭对话框
@@ -380,7 +540,7 @@ const handleCancelSave = () => {
 }
 
 // 获取 BPMN XML 并部署
- 
+
 const getBpmnXmlAndSave = async (processInfo: ProcessInfoInput) => {
   console.log('🔍 开始获取 BPMN XML 并部署')
   console.log('🔍 processInfo:', processInfo)
@@ -394,18 +554,17 @@ const getBpmnXmlAndSave = async (processInfo: ProcessInfoInput) => {
   try {
     console.log('🔍 开始调用 saveXML...')
     console.log('🔍 modeler.value:', modeler.value)
-     
+
     console.log('🔍 modeler.value.saveXML:', (modeler.value as any).saveXML)
 
     // 检查 saveXML 方法是否存在
-     
+
     if (typeof (modeler.value as any).saveXML !== 'function') {
       console.error('❌ saveXML 方法不存在或不是函数')
       console.log('🔍 尝试使用 getXML 方法...')
 
       // 使用 getXML 作为备用方法
       try {
-         
         const xml = await (modeler.value as any).getXML({ format: true })
         console.log('✅ getXML 成功，XML 长度:', xml.length)
         await handleSaveXML(null, xml, processInfo)
@@ -421,7 +580,6 @@ const getBpmnXmlAndSave = async (processInfo: ProcessInfoInput) => {
     console.log('🔍 准备调用 saveXML 方法...')
 
     try {
-       
       const result = await (modeler.value as any).saveXML({ format: true })
       console.log('✅ saveXML 方法调用成功')
       console.log('🔍 返回结果:', result)
@@ -444,8 +602,6 @@ const getBpmnXmlAndSave = async (processInfo: ProcessInfoInput) => {
   }
 }
 
-
-
 // 导出BPMN文件
 const exportBpmn = async () => {
   if (!modeler.value) {
@@ -457,7 +613,7 @@ const exportBpmn = async () => {
     console.log('🔍 开始导出BPMN文件...')
 
     // 使用Promise方式获取XML
-     
+
     const result = await (modeler.value as any).saveXML({ format: true })
     console.log('✅ BPMN XML获取成功，长度:', result.xml.length)
 
@@ -491,7 +647,7 @@ const exportSvg = async () => {
     console.log('🔍 开始导出SVG文件...')
 
     // 使用Promise方式获取SVG
-     
+
     const result = await (modeler.value as any).saveSVG()
     console.log('✅ SVG获取成功，长度:', result.svg.length)
 
@@ -558,7 +714,7 @@ const openLocalFile = () => {
         console.log('✅ BPMN文件导入成功')
 
         // 自动调整视图以适应内容
-         
+
         const canvas = modeler.value!.get('canvas') as any
         canvas.zoom('fit-viewport')
 
@@ -567,7 +723,6 @@ const openLocalFile = () => {
         // 更新表单数据中的流程名称（从文件名推断）
         const fileName = file.name.replace(/\.(bpmn|xml)$/i, '')
         saveFormData.deploymentName = fileName
-
       } catch (error) {
         console.error('❌ 文件导入失败:', error)
         message.error('文件导入失败：' + (error as Error).message)
@@ -580,7 +735,6 @@ const openLocalFile = () => {
     // 添加到DOM并触发点击
     document.body.appendChild(input)
     input.click()
-
   } catch (error) {
     console.error('❌ 打开文件失败:', error)
     message.error('打开文件失败：' + (error as Error).message)
@@ -679,7 +833,7 @@ const createNewBpmn = async () => {
     console.log('✅ 新BPMN流程创建成功')
 
     // 自动调整视图以适应内容
-     
+
     const canvas = modeler.value.get('canvas') as any
     canvas.zoom('fit-viewport')
 
@@ -689,30 +843,18 @@ const createNewBpmn = async () => {
 
     message.success('新BPMN流程创建成功')
     console.log('✅ 画布已重置，可以开始设计新流程')
-
   } catch (error) {
     console.error('❌ 创建新BPMN流程失败:', error)
     message.error('创建新流程失败：' + (error as Error).message)
   }
 }
 
-
-
-
-
-
-
-
-
-
-
-
 onMounted(async () => {
   console.log('🔍 开始初始化工作流设计器...')
   console.log('🔍 当前 modeler 状态:', modeler.value)
 
   // 等待 DOM 完全渲染
-  await new Promise(resolve => setTimeout(resolve, 100))
+  await new Promise((resolve) => setTimeout(resolve, 100))
 
   console.log('🔍 DOM 渲染等待完成')
   console.log('🔍 bpmnContainer.value:', bpmnContainer.value)
@@ -728,16 +870,12 @@ onMounted(async () => {
 
   console.log('✅ 容器元素检查通过')
 
-
-
-
-
   // 尝试加载翻译模块，如果失败则使用默认配置
   try {
     customTranslateModule = await getTranslateModule(true)
     translateUtils.addCustomTranslations({
       'Test Translation': '测试翻译',
-      'Custom Task': '自定义任务'
+      'Custom Task': '自定义任务',
     })
     console.log('✅ 翻译模块加载成功')
   } catch (error) {
@@ -752,7 +890,7 @@ onMounted(async () => {
       BpmnPropertiesPanelModule,
       BpmnPropertiesProviderModule,
       CamundaPlatformPropertiesProviderModule,
-      minimapModule
+      minimapModule,
     ]
 
     if (customTranslateModule) {
@@ -762,18 +900,19 @@ onMounted(async () => {
     modeler.value = new BpmnModeler({
       container: bpmnContainer.value,
       propertiesPanel: {
-        parent: propertiesPanel.value
+        parent: propertiesPanel.value,
       },
       additionalModules: additionalModules,
       moddleExtensions: {
-        camunda: camundaModdleDescriptor
+        camunda: camundaModdleDescriptor,
       },
       minimap: {
         open: true,
         height: 280,
-        width: 280
-      }
+        width: 280,
+      },
     })
+    startPropertiesPanelStaticTextLocalization()
 
     console.log('✅ BPMN Modeler 初始化成功')
     console.log('🔍 创建后的 modeler 对象:', modeler.value)
@@ -781,11 +920,11 @@ onMounted(async () => {
     console.log('🔍 modeler 是否为 null:', modeler.value === null)
     console.log('🔍 modeler 是否为 undefined:', modeler.value === undefined)
 
-
-
     // 加载一个简化的请假审批流程
     console.log('Loading BPMN XML...')
-    modeler.value.importXML(`<?xml version="1.0" encoding="UTF-8"?>
+    modeler.value
+      .importXML(
+        `<?xml version="1.0" encoding="UTF-8"?>
 <bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
                   xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
                   xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
@@ -875,28 +1014,29 @@ onMounted(async () => {
       </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>
-</bpmn:definitions>`).then(() => {
-      console.log('✅ BPMN XML imported successfully - 简单请假流程已加载')
-      console.log('🔍 Modeler 在 importXML 后:', modeler.value)
-      console.log('🔍 Modeler 在 importXML 后是否为 null:', modeler.value === null)
+</bpmn:definitions>`,
+      )
+      .then(() => {
+        console.log('✅ BPMN XML imported successfully - 简单请假流程已加载')
+        console.log('🔍 Modeler 在 importXML 后:', modeler.value)
+        console.log('🔍 Modeler 在 importXML 后是否为 null:', modeler.value === null)
 
-      // 自动调整视图以适应内容
-      if (modeler.value) {
-         
-        const canvas = modeler.value.get('canvas') as any
-        canvas.zoom('fit-viewport')
-        console.log('🔍 视图已调整')
-        console.log('🎉 初始化完成，部署按钮应该可用')
-      } else {
-        console.error('❌ importXML 后 modeler 为 null')
-      }
-    }).catch((error: unknown) => {
-      console.error('❌ Error importing BPMN XML:', error)
-      const errorObj = error as Error
-      console.error('Error details:', errorObj?.message || 'Unknown error')
-      console.error('Error stack:', errorObj?.stack || 'No stack trace')
-    })
-
+        // 自动调整视图以适应内容
+        if (modeler.value) {
+          const canvas = modeler.value.get('canvas') as any
+          canvas.zoom('fit-viewport')
+          console.log('🔍 视图已调整')
+          console.log('🎉 初始化完成，部署按钮应该可用')
+        } else {
+          console.error('❌ importXML 后 modeler 为 null')
+        }
+      })
+      .catch((error: unknown) => {
+        console.error('❌ Error importing BPMN XML:', error)
+        const errorObj = error as Error
+        console.error('Error details:', errorObj?.message || 'Unknown error')
+        console.error('Error stack:', errorObj?.stack || 'No stack trace')
+      })
   } catch (error) {
     console.error('❌ BPMN Modeler 初始化失败:', error)
     message.error('BPMN Modeler 初始化失败：' + (error as Error).message)
@@ -904,9 +1044,8 @@ onMounted(async () => {
   }
 })
 
-
-
 onBeforeUnmount(() => {
+  stopPropertiesPanelStaticTextLocalization()
   if (modeler.value) {
     modeler.value.destroy()
     modeler.value = null
@@ -1104,7 +1243,7 @@ onUnmounted(() => {
 }
 
 .canvas :deep(.djs-minimap .djs-minimap-toggle::before) {
-  content: "🗺️";
+  content: '🗺️';
   margin-right: 3px;
   font-size: 12px;
 }
@@ -1178,7 +1317,7 @@ onUnmounted(() => {
 }
 
 /* 特别针对"更改元素"弹窗的样式 */
-.canvas :deep(.djs-popup[data-action="replace"]) {
+.canvas :deep(.djs-popup[data-action='replace']) {
   background: #ffffff !important;
   color: #262626 !important;
   border: 1px solid #d9d9d9 !important;
@@ -1213,7 +1352,7 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
-:deep(.bio-properties-panel-checkbox input[type="checkbox"]) {
+:deep(.bio-properties-panel-checkbox input[type='checkbox']) {
   flex: 0 0 auto;
   width: 16px;
   min-width: 16px;

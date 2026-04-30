@@ -19,7 +19,7 @@ public class SchedulingDagEdge implements Serializable {
     @Column(name = "dag_version_id", nullable = false)
     private Long dagVersionId;
 
-    @Column(name = "tenant_id", nullable = false)
+    @Column(name = "tenant_id")
     private Long tenantId;
 
     @Column(name = "from_node_code", nullable = false, length = 128)

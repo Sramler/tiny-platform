@@ -619,12 +619,12 @@ watch(() => pagination.value.pageSize, () => {
 }
 
 /* 数据为空时，AntD 会通过 ant-table-content/placeholder 渲染，占用的仍是内容区域滚动条，继续隐藏 */
-::deep(.ant-table-content) {
+:deep(.ant-table-content) {
     scrollbar-width: none;
     -ms-overflow-style: none;
 }
 
-::deep(.ant-table-content::-webkit-scrollbar) {
+:deep(.ant-table-content::-webkit-scrollbar) {
     display: none;
 }
 
@@ -643,7 +643,7 @@ watch(() => pagination.value.pageSize, () => {
     border-top: 1px solid #f0f0f0;
 }
 
-::deep(.ant-pagination) {
+:deep(.ant-pagination) {
     display: flex !important;
     flex-direction: row !important;
     align-items: center !important;
@@ -752,21 +752,21 @@ watch(() => pagination.value.pageSize, () => {
     color: #1890ff;
 }
 
-::deep(.ant-table-tbody > tr) {
+:deep(.ant-table-tbody > tr) {
     cursor: pointer;
     transition: background-color 0.2s ease;
     user-select: none;
 }
 
-::deep(.ant-table-tbody > tr:hover) {
+:deep(.ant-table-tbody > tr:hover) {
     background-color: #f5f5f5 !important;
 }
 
-::deep(.ant-table-tbody > tr .ant-checkbox-wrapper) {
+:deep(.ant-table-tbody > tr .ant-checkbox-wrapper) {
     pointer-events: auto;
 }
 
-::deep(.ant-table-tbody > tr td) {
+:deep(.ant-table-tbody > tr td) {
     pointer-events: auto;
 }
 
@@ -783,9 +783,9 @@ watch(() => pagination.value.pageSize, () => {
     border-radius: 4px;
 }
 
-::deep(.ant-pagination),
-::deep(.ant-pagination-item),
-::deep(.ant-pagination-item-link) {
+:deep(.ant-pagination),
+:deep(.ant-pagination-item),
+:deep(.ant-pagination-item-link) {
     height: 32px !important;
     line-height: 32px !important;
     min-width: 32px;
@@ -793,20 +793,20 @@ watch(() => pagination.value.pageSize, () => {
     vertical-align: middle;
 }
 
-::deep(.ant-table-tbody > tr:nth-child(odd)) {
+:deep(.ant-table-tbody > tr:nth-child(odd)) {
     background-color: #fafbfc;
 }
 
-::deep(.ant-table-tbody > tr:nth-child(even)) {
+:deep(.ant-table-tbody > tr:nth-child(even)) {
     background-color: #fff;
 }
 
-::deep(.ant-table-body) {
+:deep(.ant-table-body) {
     scrollbar-width: none;
     -ms-overflow-style: none;
 }
 
-::deep(.ant-table-body::-webkit-scrollbar) {
+:deep(.ant-table-body::-webkit-scrollbar) {
     display: none;
 }
 
@@ -829,40 +829,40 @@ watch(() => pagination.value.pageSize, () => {
     border-radius: 4px;
 }
 
-::deep(.ant-modal-header) {
+:deep(.ant-modal-header) {
     border-bottom: 1px solid #f0f0f0;
     padding: 16px 24px;
 }
 
-::deep(.ant-modal-body) {
+:deep(.ant-modal-body) {
     padding: 24px;
 }
 
-::deep(.ant-modal-footer) {
+:deep(.ant-modal-footer) {
     border-top: 1px solid #f0f0f0;
     padding: 16px 24px;
 }
 
-::deep(.ant-form-item-label > label) {
+:deep(.ant-form-item-label > label) {
     font-weight: 500;
     color: #262626;
 }
 
-::deep(.ant-switch) {
+:deep(.ant-switch) {
     min-width: 44px;
 }
 
-::deep(.ant-descriptions-item-label) {
+:deep(.ant-descriptions-item-label) {
     font-weight: 500;
     color: #262626;
     background-color: #fafafa;
 }
 
-::deep(.ant-descriptions-item-content) {
+:deep(.ant-descriptions-item-content) {
     color: #595959;
 }
 
-::deep(.ant-table-thead > tr > th) {
+:deep(.ant-table-thead > tr > th) {
     white-space: nowrap;
     text-overflow: clip;
     overflow: visible;
@@ -873,29 +873,29 @@ watch(() => pagination.value.pageSize, () => {
     vertical-align: middle;
 }
 
-::deep(.ant-pagination-item-container) {
+:deep(.ant-pagination-item-container) {
     margin-right: 8px;
 }
 
-::deep(.ant-pagination-item-ellipsis) {
+:deep(.ant-pagination-item-ellipsis) {
     line-height: 32px !important;
     vertical-align: middle !important;
     display: inline-block !important;
     font-size: 16px !important;
 }
 
-::deep(.ant-pagination) {
+:deep(.ant-pagination) {
     min-height: 32px !important;
     height: 32px !important;
     line-height: 32px !important;
 }
 
-::deep(.ant-pagination-item),
-::deep(.ant-pagination-item-link),
-::deep(.ant-pagination-prev),
-::deep(.ant-pagination-next),
-::deep(.ant-pagination-jump-next),
-::deep(.ant-pagination-jump-prev) {
+:deep(.ant-pagination-item),
+:deep(.ant-pagination-item-link),
+:deep(.ant-pagination-prev),
+:deep(.ant-pagination-next),
+:deep(.ant-pagination-jump-next),
+:deep(.ant-pagination-jump-prev) {
     height: 32px !important;
     min-width: 32px !important;
     line-height: 32px !important;
@@ -906,7 +906,7 @@ watch(() => pagination.value.pageSize, () => {
     padding: 0 !important;
 }
 
-::deep(.ant-pagination-item-ellipsis) {
+:deep(.ant-pagination-item-ellipsis) {
     line-height: 32px !important;
     vertical-align: middle !important;
     display: inline-block !important;
@@ -920,7 +920,7 @@ watch(() => pagination.value.pageSize, () => {
     overflow: hidden;
     text-overflow: ellipsis;
 }
-::deep(.ant-table-tbody > tr > td) {
+:deep(.ant-table-tbody > tr > td) {
     white-space: nowrap;
 }
 </style>

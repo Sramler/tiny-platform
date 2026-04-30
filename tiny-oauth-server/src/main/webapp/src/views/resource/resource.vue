@@ -914,7 +914,7 @@ function removeEmptyChildren(nodes: ResourceItem[]) {
 :deep(.ant-table-tbody > tr.checkbox-selected-row:hover) {
   background-color: #bae7ff !important;
 }
-::deep(.ant-table-tbody > tr > td) {
+:deep(.ant-table-tbody > tr > td) {
   white-space: nowrap;
 }
 </style> 

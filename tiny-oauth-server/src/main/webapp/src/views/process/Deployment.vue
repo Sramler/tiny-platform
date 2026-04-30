@@ -6,7 +6,7 @@
                     <a-form-item label="部署名称">
                         <a-input v-model:value="query.name" placeholder="请输入部署名称" />
                     </a-form-item>
-                    <a-form-item label="记录租户筛选">
+                    <a-form-item v-if="!isPlatformProcessRuntime" label="记录租户筛选">
                         <a-select v-model:value="query.recordTenantId" placeholder="默认当前活动租户" allow-clear style="width: 150px">
                             <a-select-option value="">全部租户</a-select-option>
                             <a-select-option v-for="tenant in tenants" :key="tenant.id" :value="tenant.id">
@@ -239,19 +239,30 @@ import { deploymentApi, tenantApi } from '@/api/process'
 import type { Deployment } from '@/api/process'
 import { useThrottle } from '@/utils/debounce'
 import { getActiveTenantId, resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
+import { isPlatformRuntimePath } from '@/utils/platformRuntime'
 
 const route = useRoute()
 const router = useRouter()
+const isPlatformProcessRuntime = computed(() => isPlatformRuntimePath(route.path, 'process'))
 
 function resolveActiveTenantFilter() {
+    if (isPlatformProcessRuntime.value) {
+        return ''
+    }
     return getActiveTenantId() ?? ''
 }
 
 function resolveInitialRecordTenantFilter() {
+    if (isPlatformProcessRuntime.value) {
+        return ''
+    }
     return resolveActiveTenantQueryValue(route.query) ?? resolveActiveTenantFilter()
 }
 
 async function syncActiveTenantContextToRoute(activeTenantId: string | null | undefined) {
+    if (isPlatformProcessRuntime.value) {
+        return
+    }
     const currentTenant = resolveActiveTenantQueryValue(route.query) ?? ''
     const nextTenant = activeTenantId || ''
     if (currentTenant === nextTenant) {
@@ -457,6 +468,10 @@ async function loadData() {
 }
 
 const loadTenants = async () => {
+    if (isPlatformProcessRuntime.value) {
+        tenants.value = []
+        return
+    }
     try {
         const result = await tenantApi.getTenants()
         tenants.value = Array.isArray(result) ? result : []
@@ -703,7 +718,7 @@ onMounted(async () => {
     query.value.recordTenantId = initialRecordTenantId
     await syncActiveTenantContextToRoute(initialRecordTenantId)
     loadData()
-    loadTenants()
+    void loadTenants()
     updateTableBodyHeight()
     window.addEventListener('resize', updateTableBodyHeight)
 })
@@ -961,7 +976,8 @@ watch(() => pagination.value.pageSize, () => {
     font-weight: 600;
     color: #262626;
 }
-::deep(.ant-table-tbody > tr > td) {
+:deep(.ant-table-thead > tr > th),
+:deep(.ant-table-tbody > tr > td) {
     white-space: nowrap;
 }
 </style>

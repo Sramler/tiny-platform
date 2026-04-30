@@ -36,7 +36,7 @@ public class ProcessController {
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> deploy(@RequestBody String bpmnXml) {
         try {
-            String activeTenantId = TenantContext.getCurrentTenant();
+            String activeTenantId = resolveCurrentWorkflowTenantForRuntime();
             String deploymentId = processEngineService.deployProcess(bpmnXml, activeTenantId);
             return ResponseEntity.ok(Map.of(
                 "success", true,
@@ -59,7 +59,7 @@ public class ProcessController {
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> deployWithInfo(@RequestBody Map<String, Object> request, Principal principal) {
         try {
-            String activeTenantId = TenantContext.getCurrentTenant();
+            String activeTenantId = resolveCurrentWorkflowTenantForRuntime();
             String bpmnXml = (String) request.get("bpmnXml");
             String deploymentName = (String) request.get("deploymentName");
             String source = (String) request.get("source");
@@ -70,7 +70,7 @@ public class ProcessController {
 
             String deploymentId = processEngineService.deployProcess(bpmnXml, activeTenantId, deploymentName, deployer,source);
             return ResponseEntity.ok(Map.of(
-                "  ", true,
+                "success", true,
                 "deploymentId", deploymentId != null ? deploymentId : "",
                 "processName", deploymentName != null ? deploymentName : "",
                 "source", source != null ? source : "",
@@ -91,7 +91,7 @@ public class ProcessController {
     @PreAuthorize("@workflowAccessGuard.canView(authentication)")
     public ResponseEntity<Object> listDeployments(@RequestParam(value = "recordTenantId", required = false) String recordTenantId) {
         try {
-            Object result = processEngineService.listDeployments(recordTenantId);
+            Object result = processEngineService.listDeployments(resolveEffectiveRecordTenantId(recordTenantId));
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of(
@@ -133,7 +133,7 @@ public class ProcessController {
     public ResponseEntity<Map<String, Object>> start(@RequestParam(value = "processKey") String processKey,
                         @RequestBody(required = false) Map<String, Object> variables) {
         try {
-            String activeTenantId = TenantContext.getCurrentTenant();
+            String activeTenantId = resolveCurrentWorkflowTenantForRuntime();
             String instanceId = processEngineService.startProcessInstance(processKey, activeTenantId, variables);
             return ResponseEntity.ok(Map.of(
                 "success", true,
@@ -156,7 +156,7 @@ public class ProcessController {
     public ResponseEntity<Object> listInstances(@RequestParam(value = "recordTenantId", required = false) String recordTenantId,
                                 @RequestParam(value = "state", required = false) String state) {
         try {
-            Object result = processEngineService.listProcessInstances(recordTenantId, state);
+            Object result = processEngineService.listProcessInstances(resolveEffectiveRecordTenantId(recordTenantId), state);
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of(
@@ -252,7 +252,7 @@ public class ProcessController {
     @PreAuthorize("@workflowAccessGuard.canView(authentication)")
     public ResponseEntity<Object> tasks(@RequestParam(value = "assignee", required = false) String assignee) {
         try {
-            String activeTenantId = TenantContext.getCurrentTenant();
+            String activeTenantId = resolveCurrentWorkflowTenantForRuntime();
             Object result = processEngineService.getTasks(assignee, activeTenantId);
             return ResponseEntity.ok(result);
         } catch (Exception e) {
@@ -315,7 +315,7 @@ public class ProcessController {
     @PreAuthorize("@workflowAccessGuard.canView(authentication)")
     public ResponseEntity<Object> historyInstances(@RequestParam(value = "recordTenantId", required = false) String recordTenantId) {
         try {
-            Object result = processEngineService.listHistoricInstances(recordTenantId);
+            Object result = processEngineService.listHistoricInstances(resolveEffectiveRecordTenantId(recordTenantId));
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of(
@@ -423,7 +423,7 @@ public class ProcessController {
     @PreAuthorize("@workflowAccessGuard.canView(authentication)")
     public ResponseEntity<Object> listProcessDefinitions(@RequestParam(value = "recordTenantId", required = false) String recordTenantId) {
         try {
-            Object result = processEngineService.listProcessDefinitions(recordTenantId);
+            Object result = processEngineService.listProcessDefinitions(resolveEffectiveRecordTenantId(recordTenantId));
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of(
@@ -522,5 +522,42 @@ public class ProcessController {
                 "error", e.getMessage() != null ? e.getMessage() : "未知错误"
             ));
         }
+    }
+
+    private String resolveEffectiveRecordTenantId(String recordTenantId) {
+        if (com.tiny.platform.core.oauth.tenant.TenantContext.isPlatformScope()) {
+            if (recordTenantId != null && !recordTenantId.isBlank()) {
+                throw new IllegalStateException("平台流程管理不支持按租户过滤");
+            }
+            return null;
+        }
+        return requireCurrentWorkflowTenant();
+    }
+
+    private String resolveCurrentWorkflowTenantForRuntime() {
+        if (com.tiny.platform.core.oauth.tenant.TenantContext.isPlatformScope()) {
+            return null;
+        }
+        return requireCurrentWorkflowTenant();
+    }
+
+    private String requireCurrentWorkflowTenant() {
+        String currentTenant = resolveCurrentWorkflowTenant();
+        if (currentTenant != null && !currentTenant.isBlank()) {
+            return currentTenant;
+        }
+        if (com.tiny.platform.core.oauth.tenant.TenantContext.isPlatformScope()) {
+            throw new IllegalStateException("平台流程请求使用无租户运行态，不应要求租户上下文");
+        }
+        throw new IllegalStateException("当前请求未解析到有效租户上下文");
+    }
+
+    private String resolveCurrentWorkflowTenant() {
+        Long coreTenantId = com.tiny.platform.core.oauth.tenant.TenantContext.getActiveTenantId();
+        if (coreTenantId != null && coreTenantId > 0) {
+            return String.valueOf(coreTenantId);
+        }
+        String currentTenant = TenantContext.getCurrentTenant();
+        return currentTenant != null && !currentTenant.isBlank() ? currentTenant : null;
     }
 }

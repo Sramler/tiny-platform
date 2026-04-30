@@ -176,7 +176,7 @@ function findMenuPosition(
     if (!item) continue
 
     // 检查一级菜单
-    if (item.url === targetPath) {
+    if (isMenuPathActive(targetPath, item.url)) {
       return {
         firstLevelIdx: i,
         secondLevelIdx: null
@@ -189,7 +189,7 @@ function findMenuPosition(
         const sub = item.children![j]
         if (!sub) continue
 
-        if (sub.url === targetPath) {
+        if (isMenuPathActive(targetPath, sub.url)) {
           return {
             firstLevelIdx: i,
             secondLevelIdx: j
@@ -200,7 +200,7 @@ function findMenuPosition(
         if (hasChildren(sub)) {
           for (const third of sub.children!) {
             if (!third) continue
-            if (third.url === targetPath) {
+            if (isMenuPathActive(targetPath, third.url)) {
               return {
                 firstLevelIdx: i,
                 secondLevelIdx: j
@@ -318,13 +318,24 @@ function goMenu(path: string) {
   }
 }
 
+function isMenuPathActive(currentPath: string, menuPath?: string): boolean {
+  if (!menuPath) {
+    return false
+  }
+  const normalizedMenuPath = menuPath.endsWith('/') ? menuPath.slice(0, -1) : menuPath
+  if (!normalizedMenuPath) {
+    return currentPath === '/'
+  }
+  return currentPath === normalizedMenuPath || currentPath.startsWith(`${normalizedMenuPath}/`)
+}
+
 /**
  * 判断当前路由是否激活（用于高亮显示）
  * @param item 菜单项
  * @returns 是否激活
  */
 function isActive(item: MenuItem): boolean {
-  return route.path === item.url
+  return isMenuPathActive(route.path, item.url)
 }
 
 /**

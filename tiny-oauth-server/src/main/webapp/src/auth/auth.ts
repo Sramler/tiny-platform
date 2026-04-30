@@ -1,6 +1,12 @@
 import { ref, computed } from 'vue'
 import type { Ref, ComputedRef } from 'vue'
-import { bindUserManagerEvents, ensureOidcAuthoritySynced, oidcClient, settings, userManager } from './oidc'
+import {
+  bindUserManagerEvents,
+  ensureOidcAuthoritySynced,
+  oidcClient,
+  settings,
+  userManager,
+} from './oidc'
 import { authRuntimeConfig } from './config'
 import type { User } from 'oidc-client-ts'
 import { jwtVerify, createRemoteJWKSet } from 'jose'
@@ -15,9 +21,7 @@ import {
   syncTenantContextFromClaims,
 } from '@/utils/tenant'
 
-export type ActiveScopePostSwitchRenewResult =
-  | { ok: true; user: User }
-  | { ok: false }
+export type ActiveScopePostSwitchRenewResult = { ok: true; user: User } | { ok: false }
 
 const OIDC_TRACE_ENABLED =
   import.meta.env.VITE_ENABLE_OIDC_TRACE === 'true' || !import.meta.env.PROD
@@ -103,6 +107,161 @@ const isAuthenticated = computed(() => !!user.value && !user.value.expired)
 let loginInProgress = false
 let lastLoginAttempt = 0
 const LOGIN_COOLDOWN = 2000 // 2秒冷却时间
+const POST_LOGOUT_REDIRECT_MARKER_KEY = 'tiny-platform:oidc:post-logout-redirect'
+const POST_LOGOUT_REDIRECT_MARKER_TTL_MS = 30_000
+
+type PostLogoutRedirectMarker = {
+  nonce: string
+  createdAt: number
+}
+
+type PostLogoutUserState = {
+  postLogoutNonce?: unknown
+}
+
+const getSessionStorage = (): Storage | null => {
+  try {
+    return typeof window === 'undefined' ? null : window.sessionStorage
+  } catch {
+    return null
+  }
+}
+
+const normalizeApiBaseUrl = (): string => {
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000'
+  return apiBaseUrl.endsWith('/') ? apiBaseUrl.slice(0, -1) : apiBaseUrl
+}
+
+const generateLogoutNonce = (): string => {
+  try {
+    if (typeof window !== 'undefined' && window.crypto?.randomUUID) {
+      return window.crypto.randomUUID()
+    }
+  } catch {
+    // ignore and use the deterministic fallback shape below
+  }
+  return `logout-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+const readPostLogoutRedirectMarker = (): PostLogoutRedirectMarker | null => {
+  const storage = getSessionStorage()
+  if (!storage) return null
+
+  const raw = storage.getItem(POST_LOGOUT_REDIRECT_MARKER_KEY)
+  if (!raw) return null
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<PostLogoutRedirectMarker> | number
+    if (typeof parsed === 'object' && parsed !== null) {
+      if (typeof parsed.nonce !== 'string' || typeof parsed.createdAt !== 'number') {
+        return null
+      }
+      return {
+        nonce: parsed.nonce,
+        createdAt: parsed.createdAt,
+      }
+    }
+  } catch {
+    // fall through to legacy timestamp parsing
+  }
+
+  const legacyTimestamp = Number(raw)
+  if (!Number.isFinite(legacyTimestamp)) return null
+  return {
+    nonce: '',
+    createdAt: legacyTimestamp,
+  }
+}
+
+const removePostLogoutRedirectMarker = (): void => {
+  getSessionStorage()?.removeItem(POST_LOGOUT_REDIRECT_MARKER_KEY)
+}
+
+const isPostLogoutMarkerFresh = (marker: PostLogoutRedirectMarker): boolean =>
+  Date.now() - marker.createdAt <= POST_LOGOUT_REDIRECT_MARKER_TTL_MS
+
+const markPostLogoutRedirect = (): string => {
+  const storage = getSessionStorage()
+  const nonce = generateLogoutNonce()
+  if (!storage) return nonce
+  const marker: PostLogoutRedirectMarker = {
+    nonce,
+    createdAt: Date.now(),
+  }
+  storage.setItem(POST_LOGOUT_REDIRECT_MARKER_KEY, JSON.stringify(marker))
+  return nonce
+}
+
+export const consumePostLogoutRedirectMarker = (): boolean => {
+  const marker = readPostLogoutRedirectMarker()
+  if (!marker) return false
+
+  removePostLogoutRedirectMarker()
+  return isPostLogoutMarkerFresh(marker)
+}
+
+const isMatchingPostLogoutUserState = (
+  userState: unknown,
+  marker: PostLogoutRedirectMarker,
+): boolean => {
+  if (!marker.nonce || typeof userState !== 'object' || userState === null) {
+    return false
+  }
+  return (userState as PostLogoutUserState).postLogoutNonce === marker.nonce
+}
+
+export const completePostLogoutRedirect = async (url = window.location.href): Promise<boolean> => {
+  const marker = readPostLogoutRedirectMarker()
+  if (!marker) return false
+
+  removePostLogoutRedirectMarker()
+  if (!isPostLogoutMarkerFresh(marker)) {
+    persistentLogger.warn('[OIDC] 忽略过期的退出回跳标记')
+    return false
+  }
+
+  const callbackUrl = new URL(url, window.location.origin)
+  if (!callbackUrl.searchParams.has('state')) {
+    persistentLogger.warn('[OIDC] 退出回跳未携带 state，按本地退出标记完成兜底处理')
+    return true
+  }
+
+  try {
+    const response = await userManager.signoutRedirectCallback(url)
+    if (isMatchingPostLogoutUserState(response.userState, marker)) {
+      oidcTrace('logout.callback.validated')
+      return true
+    }
+
+    persistentLogger.warn('[OIDC] 退出回跳 state 校验未通过，已停止自动授权并回登录页')
+    return true
+  } catch (error) {
+    persistentLogger.warn('[OIDC] 退出回跳 state 处理失败，已停止自动授权并回登录页', error)
+    return true
+  }
+}
+
+const performServerLogoutFallback = async (): Promise<void> => {
+  try {
+    const response = await fetch(
+      `${normalizeApiBaseUrl()}/logout`,
+      addTraceIdToFetchOptions({
+        method: 'POST',
+        credentials: 'include',
+        redirect: 'manual',
+        headers: {
+          Accept: 'application/json',
+        },
+      }),
+    )
+
+    if (!response.ok && response.status !== 0) {
+      logger.warn(`[OIDC] 服务端 logout fallback 返回非成功状态: ${response.status}`)
+    }
+  } catch (error) {
+    logger.warn('[OIDC] 服务端 logout fallback 调用失败，继续执行本地退出跳转', error)
+  }
+}
 
 const appendTenantHeader = (headers: Headers): void => {
   const activeTenantId = getActiveTenantId()
@@ -183,37 +342,52 @@ export const login = async (returnUrl?: string) => {
 }
 
 export const logout = async () => {
+  const postLogoutRedirect = settings.post_logout_redirect_uri ?? window.location.origin
+  let localStateCleared = false
+
+  const clearLocalLogoutState = async () => {
+    if (localStateCleared) return
+    await userManager.removeUser()
+    user.value = null
+    clearActiveTenantId()
+    loginInProgress = false
+    localStateCleared = true
+  }
+
   try {
     ensureOidcAuthoritySynced()
     const currentUser = await userManager.getUser()
     if (currentUser && currentUser.id_token) {
-      const postLogoutRedirect = settings.post_logout_redirect_uri ?? window.location.origin
       // 为注销流程单独创建新的 traceId，避免跨会话复用
       const traceId = createNewTraceId()
+      const postLogoutNonce = markPostLogoutRedirect()
+      await clearLocalLogoutState()
+      clearTraceId()
       await userManager.signoutRedirect({
         id_token_hint: currentUser.id_token,
         // post_logout_redirect_uri 必须与后端注册值完全一致，禁止追加 query
         post_logout_redirect_uri: postLogoutRedirect,
+        state: {
+          postLogoutNonce,
+          trace_id: traceId,
+        },
         // 将 trace_id 作为额外查询参数传给注销端点，后端过滤器会读取
         extraQueryParams: {
           trace_id: traceId,
         },
       })
-      // 最佳努力清理；若浏览器已开始跳转，此行可能来不及执行
-      clearTraceId()
       return
     }
   } catch (error) {
     logger.error('[OIDC] 注销重定向失败，使用本地回退逻辑', error)
   }
 
-  await userManager.removeUser()
-  user.value = null
-  clearActiveTenantId()
+  markPostLogoutRedirect()
+  await clearLocalLogoutState()
+  await performServerLogoutFallback()
   clearTraceId()
-  loginInProgress = false
   // 本地回退：使用与后端注册值一致的固定跳转地址，避免 OIDC 校验失败
-  window.location.href = settings.post_logout_redirect_uri ?? window.location.origin
+  window.location.href = postLogoutRedirect
 }
 
 let renewInProgress = false

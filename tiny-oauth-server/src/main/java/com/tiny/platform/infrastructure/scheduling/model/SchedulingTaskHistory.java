@@ -31,7 +31,7 @@ public class SchedulingTaskHistory implements Serializable {
     @Column(name = "task_id")
     private Long taskId;
 
-    @Column(name = "tenant_id", nullable = false)
+    @Column(name = "tenant_id")
     private Long tenantId;
 
     @Column(name = "attempt_no")

@@ -15,6 +15,7 @@ type Env = {
   VITE_OIDC_REDIRECT_URI?: string
   VITE_OIDC_POST_LOGOUT_REDIRECT_URI?: string
   VITE_OIDC_SILENT_REDIRECT_URI?: string
+  VITE_OIDC_SILENT_REQUEST_TIMEOUT_SECONDS?: string
   VITE_OIDC_SCOPES?: string
   VITE_OIDC_STORAGE?: 'local' | 'session'
 }
@@ -97,6 +98,38 @@ const scopes = resolveEnvValue(env.VITE_OIDC_SCOPES, 'openid profile offline_acc
   key: 'VITE_OIDC_SCOPES',
 })
 
+const resolveNumberEnvValue = (
+  value: string | undefined,
+  fallback: number,
+  options: { key: keyof Env; min?: number; max?: number },
+): number => {
+  if (!value) {
+    return fallback
+  }
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) {
+    logger.warn(`[OIDC][config] ${options.key}=${value} 不是有效数字，使用默认值 ${fallback}`)
+    return fallback
+  }
+  if (options.min !== undefined && parsed < options.min) {
+    return options.min
+  }
+  if (options.max !== undefined && parsed > options.max) {
+    return options.max
+  }
+  return parsed
+}
+
+const silentRequestTimeoutInSeconds = resolveNumberEnvValue(
+  env.VITE_OIDC_SILENT_REQUEST_TIMEOUT_SECONDS,
+  3,
+  {
+    key: 'VITE_OIDC_SILENT_REQUEST_TIMEOUT_SECONDS',
+    min: 1,
+    max: 30,
+  },
+)
+
 /**
  * 为 oidc-client-ts 使用的 fetch 安装 TRACE_ID 支持
  *
@@ -172,6 +205,7 @@ function buildSettings(authority: string): UserManagerSettings {
     loadUserInfo: true,
     automaticSilentRenew: true,
     silent_redirect_uri: silentRedirectUri,
+    silentRequestTimeoutInSeconds,
   }
   if (userStore) {
     nextSettings.userStore = userStore

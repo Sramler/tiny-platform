@@ -575,7 +575,8 @@ CREATE TABLE IF NOT EXISTS `demo_export_usage` (
 -- 1) scheduling_task_type：任务类型表
 CREATE TABLE IF NOT EXISTS `scheduling_task_type` (
   `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID，自增',
-  `tenant_id` BIGINT NOT NULL COMMENT '租户ID',
+  `tenant_id` BIGINT NULL COMMENT '租户ID；平台调度记录为 NULL',
+  `runtime_tenant_key` BIGINT GENERATED ALWAYS AS (COALESCE(`tenant_id`, 0)) STORED COMMENT '运行边界键：平台=0，租户=tenant_id',
   `code` VARCHAR(128) NOT NULL COMMENT '类型唯一编码（租户范围内唯一）',
   `name` VARCHAR(128) NOT NULL COMMENT '类型名称，用于展示',
   `description` TEXT DEFAULT NULL COMMENT '类型描述，说明用途与注意事项',
@@ -589,6 +590,7 @@ CREATE TABLE IF NOT EXISTS `scheduling_task_type` (
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间（UTC）',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_scheduling_task_type_tenant_code` (`tenant_id`,`code`),
+  UNIQUE KEY `uk_scheduling_task_type_runtime_code` (`runtime_tenant_key`,`code`),
   KEY `idx_scheduling_task_type_executor` (`executor`),
   KEY `idx_scheduling_task_type_enabled` (`enabled`),
   KEY `idx_scheduling_task_type_created_at` (`created_at`)
@@ -598,7 +600,8 @@ CREATE TABLE IF NOT EXISTS `scheduling_task_type` (
 -- 2) scheduling_task：任务实例定义表
 CREATE TABLE IF NOT EXISTS `scheduling_task` (
   `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID，自增',
-  `tenant_id` BIGINT NOT NULL COMMENT '租户ID',
+  `tenant_id` BIGINT NULL COMMENT '租户ID；平台调度记录为 NULL',
+  `runtime_tenant_key` BIGINT GENERATED ALWAYS AS (COALESCE(`tenant_id`, 0)) STORED COMMENT '运行边界键：平台=0，租户=tenant_id',
   `type_id` BIGINT NOT NULL COMMENT '引用 scheduling_task_type.id（应用层保证存在）',
   `code` VARCHAR(128) DEFAULT NULL COMMENT '业务编码（租户范围内可唯一标识）',
   `name` VARCHAR(128) NOT NULL COMMENT '任务名称，用于展示',
@@ -615,6 +618,7 @@ CREATE TABLE IF NOT EXISTS `scheduling_task` (
   PRIMARY KEY (`id`),
   KEY `idx_scheduling_task_type_id` (`type_id`),
   UNIQUE KEY `uk_scheduling_task_tenant_code` (`tenant_id`,`code`),
+  UNIQUE KEY `uk_scheduling_task_runtime_code` (`runtime_tenant_key`,`code`),
   KEY `idx_scheduling_task_enabled` (`enabled`),
   KEY `idx_scheduling_task_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -623,7 +627,8 @@ CREATE TABLE IF NOT EXISTS `scheduling_task` (
 -- 3) scheduling_dag：DAG 主表
 CREATE TABLE IF NOT EXISTS `scheduling_dag` (
   `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT 'DAG 主键ID',
-  `tenant_id` BIGINT NOT NULL COMMENT '租户ID',
+  `tenant_id` BIGINT NULL COMMENT '租户ID；平台调度记录为 NULL',
+  `runtime_tenant_key` BIGINT GENERATED ALWAYS AS (COALESCE(`tenant_id`, 0)) STORED COMMENT '运行边界键：平台=0，租户=tenant_id',
   `code` VARCHAR(128) DEFAULT NULL COMMENT 'DAG 编码（租户内唯一）',
   `name` VARCHAR(128) NOT NULL COMMENT 'DAG 名称',
   `description` TEXT DEFAULT NULL COMMENT 'DAG 描述',
@@ -636,6 +641,7 @@ CREATE TABLE IF NOT EXISTS `scheduling_dag` (
   `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间（UTC）',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_scheduling_dag_tenant_code` (`tenant_id`,`code`),
+  UNIQUE KEY `uk_scheduling_dag_runtime_code` (`runtime_tenant_key`,`code`),
   KEY `idx_scheduling_dag_enabled` (`enabled`),
   KEY `idx_scheduling_dag_cron_enabled` (`cron_enabled`),
   KEY `idx_scheduling_dag_created_at` (`created_at`)
@@ -646,6 +652,7 @@ CREATE TABLE IF NOT EXISTS `scheduling_dag` (
 CREATE TABLE IF NOT EXISTS `scheduling_dag_version` (
   `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '版本ID，自增',
   `dag_id` BIGINT NOT NULL COMMENT '引用 scheduling_dag.id（应用层保证存在）',
+  `tenant_id` BIGINT NULL COMMENT '租户ID；平台调度记录为 NULL',
   `version_no` INT NOT NULL DEFAULT 1 COMMENT '版本号，递增',
   `status` VARCHAR(32) DEFAULT 'DRAFT' COMMENT 'DRAFT/ACTIVE/ARCHIVED',
   `active_dag_id` BIGINT GENERATED ALWAYS AS (CASE WHEN `status` = 'ACTIVE' THEN `dag_id` ELSE NULL END) STORED COMMENT 'ACTIVE 状态下的 dag_id，用于单活唯一约束',
@@ -655,6 +662,7 @@ CREATE TABLE IF NOT EXISTS `scheduling_dag_version` (
   `activated_at` DATETIME DEFAULT NULL COMMENT '激活时间（若 status=ACTIVE）',
   PRIMARY KEY (`id`),
   KEY `idx_scheduling_dag_version_dag` (`dag_id`),
+  KEY `idx_scheduling_dag_version_tenant_dag` (`tenant_id`, `dag_id`),
   KEY `idx_scheduling_dag_version_status` (`status`),
   KEY `idx_scheduling_dag_version_dag_status` (`dag_id`, `status`),
   UNIQUE KEY `uk_scheduling_dag_version_dag_version` (`dag_id`, `version_no`),
@@ -666,6 +674,7 @@ CREATE TABLE IF NOT EXISTS `scheduling_dag_version` (
 CREATE TABLE IF NOT EXISTS `scheduling_dag_task` (
   `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '节点主键ID',
   `dag_version_id` BIGINT NOT NULL COMMENT '引用 scheduling_dag_version.id（由业务保证一致性）',
+  `tenant_id` BIGINT NULL COMMENT '租户ID；平台调度记录为 NULL',
   `node_code` VARCHAR(128) NOT NULL COMMENT '版本内唯一的节点编码（用于 edges 引用）',
   `task_id` BIGINT NOT NULL COMMENT '引用 scheduling_task.id（执行逻辑），应用层需保证存在',
   `name` VARCHAR(128) DEFAULT NULL COMMENT '节点显示名称',
@@ -677,6 +686,7 @@ CREATE TABLE IF NOT EXISTS `scheduling_dag_task` (
   `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_scheduling_dag_task_version_node` (`dag_version_id`,`node_code`),
+  KEY `idx_scheduling_dag_task_tenant_version_node` (`tenant_id`, `dag_version_id`, `node_code`),
   KEY `idx_scheduling_dag_task_task` (`task_id`),
   KEY `idx_scheduling_dag_task_dag_version` (`dag_version_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -686,6 +696,7 @@ CREATE TABLE IF NOT EXISTS `scheduling_dag_task` (
 CREATE TABLE IF NOT EXISTS `scheduling_dag_edge` (
   `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `dag_version_id` BIGINT NOT NULL COMMENT '引用 scheduling_dag_version.id',
+  `tenant_id` BIGINT NULL COMMENT '租户ID；平台调度记录为 NULL',
   `from_node_code` VARCHAR(128) NOT NULL COMMENT '上游节点编码',
   `to_node_code` VARCHAR(128) NOT NULL COMMENT '下游节点编码',
   `condition` JSON DEFAULT NULL COMMENT '可选条件表达式 JSON',
@@ -694,6 +705,7 @@ CREATE TABLE IF NOT EXISTS `scheduling_dag_edge` (
   KEY `idx_scheduling_dag_edge_version` (`dag_version_id`),
   KEY `idx_scheduling_dag_edge_from` (`from_node_code`),
   KEY `idx_scheduling_dag_edge_to` (`to_node_code`),
+  KEY `idx_scheduling_dag_edge_tenant_version_from_to` (`tenant_id`, `dag_version_id`, `from_node_code`, `to_node_code`),
   KEY `idx_scheduling_dag_edge_version_from_to` (`dag_version_id`, `from_node_code`, `to_node_code`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   COMMENT='DAG 边表：版本级依赖关系（无外键）';
@@ -704,7 +716,7 @@ CREATE TABLE IF NOT EXISTS `scheduling_dag_run` (
   `dag_id` BIGINT NOT NULL COMMENT '引用 scheduling_dag.id',
   `dag_version_id` BIGINT DEFAULT NULL COMMENT '引用当时使用的 scheduling_dag_version.id',
   `run_no` VARCHAR(128) DEFAULT NULL COMMENT '外部可见的 run 编号（幂等用）',
-  `tenant_id` BIGINT NOT NULL COMMENT '租户ID',
+  `tenant_id` BIGINT NULL COMMENT '租户ID；平台调度记录为 NULL',
   `trigger_type` VARCHAR(32) DEFAULT 'MANUAL' COMMENT '触发类型：MANUAL / SCHEDULE / RETRY',
   `triggered_by` VARCHAR(128) DEFAULT NULL COMMENT '触发人或触发器标识',
   `status` VARCHAR(32) DEFAULT 'SCHEDULED' COMMENT 'SCHEDULED/RUNNING/SUCCESS/FAILED/CANCELLED/PARTIAL_FAILED',
@@ -731,7 +743,7 @@ CREATE TABLE IF NOT EXISTS `scheduling_task_instance` (
   `node_code` VARCHAR(128) DEFAULT NULL COMMENT '节点编码，对应 dag_version 中的 node_code',
   `concurrency_key` VARCHAR(128) DEFAULT NULL COMMENT 'KEYED 并发键：parallelGroup 优先否则 nodeCode 否则 TASK-<taskId>',
   `task_id` BIGINT NOT NULL COMMENT '引用 scheduling_task.id',
-  `tenant_id` BIGINT NOT NULL COMMENT '租户ID',
+  `tenant_id` BIGINT NULL COMMENT '租户ID；平台调度记录为 NULL',
   `attempt_no` INT DEFAULT 1 COMMENT '本次尝试序号',
   `status` VARCHAR(32) DEFAULT 'PENDING' COMMENT 'PENDING/RESERVED/RUNNING/SUCCESS/FAILED/SKIPPED/PAUSED/CANCELLED',
   `scheduled_at` DATETIME DEFAULT NULL COMMENT '计划执行时间',
@@ -766,7 +778,7 @@ CREATE TABLE IF NOT EXISTS `scheduling_task_history` (
   `dag_id` BIGINT DEFAULT NULL COMMENT '所属 scheduling_dag.id',
   `node_code` VARCHAR(128) DEFAULT NULL COMMENT '节点编码',
   `task_id` BIGINT DEFAULT NULL COMMENT '任务 ID',
-  `tenant_id` BIGINT NOT NULL COMMENT '租户ID',
+  `tenant_id` BIGINT NULL COMMENT '租户ID；平台调度记录为 NULL',
   `attempt_no` INT DEFAULT 1 COMMENT '执行尝试序号',
   `status` VARCHAR(32) DEFAULT 'PENDING' COMMENT 'PENDING/RUNNING/SUCCESS/FAILED/SKIPPED',
   `start_time` DATETIME DEFAULT NULL COMMENT '开始时间',
@@ -792,7 +804,7 @@ CREATE TABLE IF NOT EXISTS `scheduling_task_history` (
 -- 10) scheduling_audit：操作审计表
 CREATE TABLE IF NOT EXISTS `scheduling_audit` (
   `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '自增主键',
-  `tenant_id` BIGINT NOT NULL COMMENT '租户ID',
+  `tenant_id` BIGINT NULL COMMENT '租户ID；平台调度记录为 NULL',
   `object_type` VARCHAR(64) NOT NULL COMMENT '对象类型，如 dag/task/task_instance/task_history',
   `object_id` VARCHAR(128) DEFAULT NULL COMMENT '对象ID或业务标识',
   `action` VARCHAR(64) NOT NULL COMMENT '操作类型：CREATE/UPDATE/DELETE/TRIGGER/RETRY/CANCEL/ACTIVATE',

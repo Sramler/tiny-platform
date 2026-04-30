@@ -189,6 +189,8 @@
 - **第三方组件运行时契约**
   - 遇到 Ant Design Vue / 其他第三方组件“单测通过、浏览器行为不对”时，先怀疑当前安装版本的真实 prop / event 契约与测试替身是否一致，再决定修法。
   - 修复第三方组件接入问题时，至少补一条运行时契约回归测试；如果问题只会在真实浏览器里暴露，还要补一次真实页面验证结论。
+- `a-tabs` 若承载页面级 / 路由级状态，应优先使用 path 子路由（例如 `/platform/process/definition`），并采用 `:active-key` + `@change` 的受控写法，由路由作为唯一真相源；不要再用本地 `ref + watch` 复制一份 tab 状态，也不要通过上层 `router-view :key` 拼业务 `tab` query 来强制重挂载。
+- 对路由驱动 tabs，回归至少覆盖：子路由 direct deep-link / 刷新进入、点击 tab 后路由更新到对应 path、平台页不透传租户上下文参数、隐藏重型 tab 不提前加载业务请求。只有纯展示偏好、筛选条件或临时 UI 状态才可考虑 query 参数；`query.tab` 不再作为页面级 tabs 的默认规范。
 
 - **前端 CI 测试环境**
   - 共享测试 setup 中的浏览器 API shim（`matchMedia` 等）必须对 `restoreMocks/resetMocks` 稳定；不能在本地可过、CI 因监听器方法被还原而失败。

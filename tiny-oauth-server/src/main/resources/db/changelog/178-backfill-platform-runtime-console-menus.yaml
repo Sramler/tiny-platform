@@ -2,7 +2,9 @@ databaseChangeLog:
   - changeSet:
       id: 178-backfill-platform-runtime-console-menus
       author: codex
-      comment: 将 PLATFORM 作用域下调度/工作流入口收口到 /platform 控制台，避免平台菜单继续直落 tenant runtime
+      comment: 将 PLATFORM 作用域下调度/工作流入口收口到 /platform 模块页，平台侧使用原生 PLATFORM 运行态
+      validCheckSum:
+        - 9:a581d65d6e99473d95ef5ba54becfb58
       preConditions:
         - onFail: HALT
         - onError: HALT
@@ -30,9 +32,9 @@ databaseChangeLog:
                AND workflow_view_permission.`permission_code` = 'workflow:console:view'
               SET
                 platform_process_menu.`resource_level` = 'PLATFORM',
-                platform_process_menu.`title` = '平台工作流控制台',
+                platform_process_menu.`title` = '平台流程管理',
                 platform_process_menu.`path` = '/platform/process',
-                platform_process_menu.`component` = '/views/platform/runtime/ModuleTenantBridge.vue',
+                platform_process_menu.`component` = '/views/platform/runtime/PlatformProcessModule.vue',
                 platform_process_menu.`redirect` = '',
                 platform_process_menu.`hidden` = 0,
                 platform_process_menu.`keep_alive` = 0,
@@ -73,12 +75,12 @@ databaseChangeLog:
                 NULL AS `tenant_id`,
                 'PLATFORM' AS `resource_level`,
                 'process' AS `name`,
-                '平台工作流控制台' AS `title`,
+                '平台流程管理' AS `title`,
                 '/platform/process' AS `path`,
                 COALESCE(seed_process.`icon`, 'DeploymentUnitOutlined') AS `icon`,
                 COALESCE(seed_process.`show_icon`, 0) AS `show_icon`,
                 COALESCE(seed_process.`sort`, 0) AS `sort`,
-                '/views/platform/runtime/ModuleTenantBridge.vue' AS `component`,
+                '/views/platform/runtime/PlatformProcessModule.vue' AS `component`,
                 '' AS `redirect`,
                 0 AS `hidden`,
                 0 AS `keep_alive`,
@@ -116,9 +118,9 @@ databaseChangeLog:
                AND scheduling_entry_permission.`permission_code` = 'scheduling:entry:view'
               SET
                 platform_scheduling_menu.`resource_level` = 'PLATFORM',
-                platform_scheduling_menu.`title` = '平台调度控制台',
+                platform_scheduling_menu.`title` = '平台调度管理',
                 platform_scheduling_menu.`path` = '/platform/scheduling',
-                platform_scheduling_menu.`component` = '/views/platform/runtime/ModuleTenantBridge.vue',
+                platform_scheduling_menu.`component` = '/views/platform/runtime/PlatformSchedulingModule.vue',
                 platform_scheduling_menu.`redirect` = '',
                 platform_scheduling_menu.`hidden` = 0,
                 platform_scheduling_menu.`keep_alive` = 0,
@@ -159,12 +161,12 @@ databaseChangeLog:
                 NULL AS `tenant_id`,
                 'PLATFORM' AS `resource_level`,
                 'scheduling' AS `name`,
-                '平台调度控制台' AS `title`,
+                '平台调度管理' AS `title`,
                 '/platform/scheduling' AS `path`,
                 COALESCE(seed_scheduling.`icon`, 'ScheduleOutlined') AS `icon`,
                 COALESCE(seed_scheduling.`show_icon`, 0) AS `show_icon`,
                 COALESCE(seed_scheduling.`sort`, 3) AS `sort`,
-                '/views/platform/runtime/ModuleTenantBridge.vue' AS `component`,
+                '/views/platform/runtime/PlatformSchedulingModule.vue' AS `component`,
                 '' AS `redirect`,
                 0 AS `hidden`,
                 0 AS `keep_alive`,

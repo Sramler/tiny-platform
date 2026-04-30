@@ -6,8 +6,12 @@ const mocks = vi.hoisted(() => ({
   routerReplace: vi.fn(),
   signinRedirectCallback: vi.fn(),
   removeUser: vi.fn(),
+  consumePostLogoutRedirectMarker: vi.fn(),
   getActiveTenantId: vi.fn(),
-  withActiveTenantQuery: vi.fn((query, activeTenantId) => (activeTenantId ? { ...query, activeTenantId: String(activeTenantId) } : { ...query })),
+  clearActiveTenantId: vi.fn(),
+  withActiveTenantQuery: vi.fn((query, activeTenantId) =>
+    activeTenantId ? { ...query, activeTenantId: String(activeTenantId) } : { ...query },
+  ),
   persistentLogger: {
     debug: vi.fn(),
     error: vi.fn(),
@@ -34,6 +38,7 @@ vi.mock('@/auth/auth', () => ({
   useAuth: () => ({
     isAuthenticated: ref(false),
   }),
+  consumePostLogoutRedirectMarker: mocks.consumePostLogoutRedirectMarker,
 }))
 
 vi.mock('@/utils/logger', () => ({
@@ -41,6 +46,7 @@ vi.mock('@/utils/logger', () => ({
 }))
 
 vi.mock('@/utils/tenant', () => ({
+  clearActiveTenantId: mocks.clearActiveTenantId,
   getActiveTenantId: mocks.getActiveTenantId,
   syncTenantContextFromClaims: mocks.syncTenantContextFromClaims,
   syncTenantContextFromAccessToken: mocks.syncTenantContextFromAccessToken,
@@ -61,10 +67,12 @@ describe('OidcCallback.vue', () => {
     mocks.routerReplace.mockReset()
     mocks.signinRedirectCallback.mockReset()
     mocks.removeUser.mockReset()
+    mocks.consumePostLogoutRedirectMarker.mockReset()
     mocks.persistentLogger.debug.mockReset()
     mocks.persistentLogger.error.mockReset()
     mocks.persistentLogger.info.mockReset()
     mocks.getActiveTenantId.mockReset()
+    mocks.clearActiveTenantId.mockReset()
     mocks.syncTenantContextFromClaims.mockReset()
     mocks.syncTenantContextFromAccessToken.mockReset()
     mocks.withActiveTenantQuery.mockClear()
@@ -135,6 +143,23 @@ describe('OidcCallback.vue', () => {
     await flushPromises()
 
     expect(mocks.routerReplace).toHaveBeenCalledWith('/login')
+  })
+
+  it('should redirect to login directly when authorization fails because principal is missing', async () => {
+    window.history.replaceState(
+      {},
+      '',
+      '/callback?error=invalid_request&error_description=OAuth%202.0%20Parameter%3A%20principal',
+    )
+
+    const wrapper = mount(OidcCallback)
+    await flushPromises()
+
+    expect(mocks.consumePostLogoutRedirectMarker).toHaveBeenCalledTimes(1)
+    expect(mocks.removeUser).toHaveBeenCalledTimes(1)
+    expect(mocks.clearActiveTenantId).toHaveBeenCalledTimes(1)
+    expect(mocks.routerReplace).toHaveBeenCalledWith('/login')
+    expect(wrapper.text()).not.toContain('OAuth 2.0 Parameter')
   })
 
   it('should redirect home when current page is not an oidc callback', async () => {

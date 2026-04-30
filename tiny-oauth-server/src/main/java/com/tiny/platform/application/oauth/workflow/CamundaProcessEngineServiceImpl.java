@@ -3,6 +3,9 @@ package com.tiny.platform.application.oauth.workflow;
 import org.camunda.bpm.engine.*;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.camunda.bpm.engine.repository.Deployment;
+import org.camunda.bpm.engine.repository.DeploymentQuery;
+import org.camunda.bpm.engine.repository.ProcessDefinitionQuery;
+import org.camunda.bpm.engine.runtime.ProcessInstanceQuery;
 import org.camunda.bpm.engine.runtime.ProcessInstance;
 import org.camunda.bpm.engine.task.Task;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -54,22 +57,22 @@ public class CamundaProcessEngineServiceImpl implements ProcessEngineService {
         // 先尝试修复 BPMN 验证错误
         String fixedBpmnXml = bpmnValidationHelper.fixBpmnValidationErrors(bpmnXml);
 
-        Deployment deployment = repositoryService.createDeployment()
-                .tenantId(activeTenantId)
+        var deploymentBuilder = repositoryService.createDeployment()
                 .name(deploymentName)
                 .addInputStream("process.bpmn",
                         new ByteArrayInputStream(fixedBpmnXml.getBytes(StandardCharsets.UTF_8)))
-                .source(source)
-                .deploy();
+                .source(source);
+        if (hasTenant(activeTenantId)) {
+            deploymentBuilder.tenantId(activeTenantId.trim());
+        }
+        Deployment deployment = deploymentBuilder.deploy();
         return deployment.getId();
     }
 
     @Override
     public Object listDeployments(String recordTenantId) {
         var query = repositoryService.createDeploymentQuery();
-        if (recordTenantId != null && !recordTenantId.trim().isEmpty()) {
-            query = query.tenantIdIn(recordTenantId);
-        }
+        query = applyTenantFilter(query, recordTenantId);
         List<Deployment> deployments = query.list();
         return deployments.stream()
                 .map(d -> {
@@ -346,9 +349,7 @@ public class CamundaProcessEngineServiceImpl implements ProcessEngineService {
     @Override
     public Object listProcessInstances(String recordTenantId, String state) {
         var query = runtimeService.createProcessInstanceQuery();
-        if (recordTenantId != null && !recordTenantId.trim().isEmpty()) {
-            query = query.tenantIdIn(recordTenantId);
-        }
+        query = applyTenantFilter(query, recordTenantId);
         if ("active".equalsIgnoreCase(state)) {
             query = query.active();
         } else if ("suspended".equalsIgnoreCase(state)) {
@@ -438,6 +439,8 @@ public class CamundaProcessEngineServiceImpl implements ProcessEngineService {
 
         if (activeTenantId != null && !activeTenantId.trim().isEmpty()) {
             query = query.tenantIdIn(activeTenantId);
+        } else {
+            query = query.withoutTenantId();
         }
 
         List<Task> tasks = query.list();
@@ -471,9 +474,7 @@ public class CamundaProcessEngineServiceImpl implements ProcessEngineService {
     @Override
     public Object listHistoricInstances(String recordTenantId) {
         var query = historyService.createHistoricProcessInstanceQuery();
-        if (recordTenantId != null && !recordTenantId.trim().isEmpty()) {
-            query = query.tenantIdIn(recordTenantId);
-        }
+        query = hasTenant(recordTenantId) ? query.tenantIdIn(recordTenantId.trim()) : query.withoutTenantId();
         List<org.camunda.bpm.engine.history.HistoricProcessInstance> instances = query.list();
         return instances.stream()
                 .map(this::convertHistoricInstanceToMap)
@@ -550,9 +551,7 @@ public class CamundaProcessEngineServiceImpl implements ProcessEngineService {
     @Override
     public Object listProcessDefinitions(String recordTenantId) {
         var query = repositoryService.createProcessDefinitionQuery();
-        if (recordTenantId != null && !recordTenantId.trim().isEmpty()) {
-            query = query.tenantIdIn(recordTenantId);
-        }
+        query = applyTenantFilter(query, recordTenantId);
         List<org.camunda.bpm.engine.repository.ProcessDefinition> definitions = query.list();
         return definitions.stream()
                 .map(pd -> Map.of(
@@ -649,5 +648,21 @@ public class CamundaProcessEngineServiceImpl implements ProcessEngineService {
             e.printStackTrace();
             return false;
         }
+    }
+
+    private boolean hasTenant(String tenantId) {
+        return tenantId != null && !tenantId.trim().isEmpty();
+    }
+
+    private DeploymentQuery applyTenantFilter(DeploymentQuery query, String tenantId) {
+        return hasTenant(tenantId) ? query.tenantIdIn(tenantId.trim()) : query.withoutTenantId();
+    }
+
+    private ProcessDefinitionQuery applyTenantFilter(ProcessDefinitionQuery query, String tenantId) {
+        return hasTenant(tenantId) ? query.tenantIdIn(tenantId.trim()) : query.withoutTenantId();
+    }
+
+    private ProcessInstanceQuery applyTenantFilter(ProcessInstanceQuery query, String tenantId) {
+        return hasTenant(tenantId) ? query.tenantIdIn(tenantId.trim()) : query.withoutTenantId();
     }
 }

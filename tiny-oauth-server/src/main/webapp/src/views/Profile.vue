@@ -61,7 +61,7 @@
       <!-- 右侧：详细信息 -->
       <a-col :xs="24" :md="18">
         <a-card :bordered="false">
-          <a-tabs v-model:activeKey="activeKey" size="large" @change="handleTabChange">
+          <a-tabs v-model:activeKey="activeKey" size="large" destroy-inactive-tab-pane @change="handleTabChange">
             <!-- 基本信息 -->
             <a-tab-pane key="base" tab="基本信息">
               <a-descriptions :column="2" bordered>

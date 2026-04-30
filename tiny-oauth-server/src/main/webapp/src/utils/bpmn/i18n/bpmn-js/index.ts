@@ -45,6 +45,8 @@ const localTranslations: TranslationMap = {
   // 其他
   'no parent for {element} in {parent}': '在 {element} 中没有父元素 {parent}',
   'flow elements must be children of pools/participants': '元素必须是池/参与者的子级',
+  'Open minimap': '打开缩略图',
+  'Close minimap': '关闭缩略图',
 }
 
 // 官方翻译存储

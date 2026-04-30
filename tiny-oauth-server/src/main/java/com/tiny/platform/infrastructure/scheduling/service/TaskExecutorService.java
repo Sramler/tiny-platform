@@ -115,6 +115,7 @@ public class TaskExecutorService {
                     .orElseThrow(() -> SchedulingExceptions.notFound("任务不存在: %s", taskId));
         }
         return taskRepository.findById(taskId)
+                .filter(task -> task.getTenantId() == null)
                 .orElseThrow(() -> SchedulingExceptions.notFound("任务不存在: %s", taskId));
     }
 
@@ -124,7 +125,16 @@ public class TaskExecutorService {
                     .orElseThrow(() -> SchedulingExceptions.notFound("任务类型不存在: %s", taskTypeId));
         }
         return taskTypeRepository.findById(taskTypeId)
+                .filter(taskType -> taskType.getTenantId() == null)
                 .orElseThrow(() -> SchedulingExceptions.notFound("任务类型不存在: %s", taskTypeId));
+    }
+
+    private Optional<SchedulingDagTask> findDagTaskInRuntimeTenant(Long dagVersionId, String nodeCode, Long tenantId) {
+        if (tenantId != null && tenantId > 0) {
+            return dagTaskRepository.findByDagVersionIdAndNodeCodeAndTenantId(dagVersionId, nodeCode, tenantId);
+        }
+        return dagTaskRepository.findByDagVersionIdAndNodeCode(dagVersionId, nodeCode)
+                .filter(dagTask -> dagTask.getTenantId() == null);
     }
 
     private SchedulingTaskExecutionSnapshot readExecutionSnapshot(SchedulingTaskInstance instance) {
@@ -266,10 +276,7 @@ public class TaskExecutorService {
 
         // 2. 节点定义覆盖参数（最高优先级）；无请求上下文时按租户过滤
         if (instance.getDagVersionId() != null && instance.getNodeCode() != null) {
-            (instance.getTenantId() != null
-                    ? dagTaskRepository.findByDagVersionIdAndNodeCodeAndTenantId(
-                            instance.getDagVersionId(), instance.getNodeCode(), instance.getTenantId())
-                    : dagTaskRepository.findByDagVersionIdAndNodeCode(instance.getDagVersionId(), instance.getNodeCode()))
+            findDagTaskInRuntimeTenant(instance.getDagVersionId(), instance.getNodeCode(), instance.getTenantId())
                     .map(SchedulingDagTask::getOverrideParams)
                     .ifPresent(json -> mergedParams.putAll(parseJsonToMap(json)));
         }

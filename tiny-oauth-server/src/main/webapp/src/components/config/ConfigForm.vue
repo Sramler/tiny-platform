@@ -1,3 +1,5 @@
+<!-- ConfigForm 的契约是直接写入父级传入的表单 model，类似 Ant Design Vue Form.Item 绑定外部 model。 -->
+<!-- eslint-disable vue/no-mutating-props -->
 <template>
   <a-form ref="formRef" :model="model" :rules="rules" layout="vertical">
     <a-form-item

@@ -5,6 +5,9 @@ const mocks = vi.hoisted(() => ({
   oidcClientAuthorities: [] as string[],
 }))
 
+// This file tests the real OIDC wrapper while mocking its external SDK dependency.
+vi.unmock('@/auth/oidc')
+
 vi.mock('oidc-client-ts', () => {
   class MockWebStorageStateStore {
     constructor(_options: unknown) {}
@@ -61,7 +64,6 @@ vi.mock('oidc-client-ts', () => {
 describe('oidc runtime rebinding', () => {
   beforeEach(() => {
     vi.resetModules()
-    vi.unmock('@/auth/oidc')
     mocks.userManagerAuthorities.length = 0
     mocks.oidcClientAuthorities.length = 0
     window.localStorage.clear()

@@ -276,9 +276,9 @@ function statusColor(status: string) {
   }
 }
 
-function isRequester(record: PlatformRoleAssignmentRequestItem) {
+function isRequester(record: PlatformRoleAssignmentRequestItem | Record<string, any>) {
   const self = currentUserId.value
-  return self != null && record.requestedBy === self
+  return self != null && Number(record.requestedBy) === self
 }
 
 function filterRoleOption(input: string, option?: { label?: string }) {
@@ -401,9 +401,9 @@ async function submitRequest() {
   }
 }
 
-function openReviewModal(mode: 'approve' | 'reject', record: PlatformRoleAssignmentRequestItem) {
+function openReviewModal(mode: 'approve' | 'reject', record: PlatformRoleAssignmentRequestItem | Record<string, any>) {
   reviewMode.value = mode
-  reviewRecord.value = record
+  reviewRecord.value = record as PlatformRoleAssignmentRequestItem
   reviewComment.value = ''
   reviewOpen.value = true
 }
@@ -435,9 +435,14 @@ async function submitReview() {
   }
 }
 
-async function confirmCancel(record: PlatformRoleAssignmentRequestItem) {
+async function confirmCancel(record: PlatformRoleAssignmentRequestItem | Record<string, any>) {
+  const requestId = Number(record.id)
+  if (!Number.isInteger(requestId) || requestId <= 0) {
+    message.warning('缺少审批申请 ID，暂无法撤销')
+    return
+  }
   try {
-    await cancelPlatformRoleAssignmentRequest(record.id)
+    await cancelPlatformRoleAssignmentRequest(requestId)
     message.success('已撤销')
     await loadTable()
   } catch (e: any) {

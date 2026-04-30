@@ -49,6 +49,7 @@ const routerMocks = vi.hoisted(() => ({
 }))
 
 const routeState = reactive({
+  path: '/platform/users/governance',
   query: {} as Record<string, unknown>,
 })
 
@@ -149,6 +150,7 @@ const CardStub = defineComponent({
 const TabsStub = defineComponent({
   props: {
     activeKey: { type: String, default: '' },
+    destroyInactiveTabPane: { type: Boolean, default: false },
   },
   emits: ['change'],
   template: '<div class="tabs-stub"><slot /></div>',
@@ -296,6 +298,7 @@ describe('PlatformUsers.vue', () => {
     authMocks.fetchWithAuth.mockResolvedValue(createFetchResponse(true, 200, {}))
     routerMocks.push.mockReset()
     routerMocks.replace.mockReset()
+    routeState.path = '/platform/users/governance'
     routeState.query = {}
     platformUserMocks.listPlatformUsers.mockResolvedValue({
       records: [{ userId: 1001, username: 'platform_admin', displayName: 'Platform Admin', platformStatus: 'ACTIVE' }],
@@ -371,13 +374,13 @@ describe('PlatformUsers.vue', () => {
 
   it('loads tenant stewardship tab when route requests it and tenant authorities are present', async () => {
     authMocks.token = 'platform-tenant-token'
-    routeState.query = {
-      tab: 'tenantStewardship',
-    }
+    routeState.path = '/platform/users/tenant-stewardship'
+    routeState.query = {}
 
     const wrapper = mountPlatformUsers()
     await flushPromises()
 
+    expect(wrapper.findComponent(TabsStub).props('activeKey')).toBe('tenantStewardship')
     expect(getPlatformGovernanceTab(wrapper).exists()).toBe(false)
     expect(getTenantStewardshipTab(wrapper).exists()).toBe(true)
     expect(platformUserMocks.listPlatformUsers).not.toHaveBeenCalled()
@@ -389,6 +392,49 @@ describe('PlatformUsers.vue', () => {
       expect.arrayContaining([{ value: 9, label: 'Tenant 9 (tenant-9)' }]),
     )
     expect(wrapper.text()).toContain('租户侧用户列表')
+  })
+
+  it('writes tenant stewardship tab changes to route and preserves selected tenant context', async () => {
+    authMocks.token = 'platform-tenant-token'
+    routeState.query = {
+      tenantId: '9',
+    }
+
+    const wrapper = mountPlatformUsers()
+    await flushPromises()
+
+    expect(wrapper.findComponent(TabsStub).props('activeKey')).toBe('platformUsers')
+
+    wrapper.findComponent(TabsStub).vm.$emit('change', 'tenantStewardship')
+    await flushPromises()
+
+    expect(routerMocks.replace).toHaveBeenCalledWith({
+      path: '/platform/users/tenant-stewardship',
+      query: {
+        tenantId: '9',
+      },
+    })
+  })
+
+  it('clears tenant stewardship route context when switching back to platform users tab', async () => {
+    authMocks.token = 'platform-tenant-token'
+    routeState.path = '/platform/users/tenant-stewardship'
+    routeState.query = {
+      tenantId: '9',
+    }
+
+    const wrapper = mountPlatformUsers()
+    await flushPromises()
+
+    expect(wrapper.findComponent(TabsStub).props('activeKey')).toBe('tenantStewardship')
+
+    wrapper.findComponent(TabsStub).vm.$emit('change', 'platformUsers')
+    await flushPromises()
+
+    expect(routerMocks.replace).toHaveBeenCalledWith({
+      path: '/platform/users/governance',
+      query: {},
+    })
   })
 
   it('opens create drawer with grouped platform profile form sections', async () => {
@@ -502,9 +548,8 @@ describe('PlatformUsers.vue', () => {
 
   it('checks tenant detail readability before navigating to tenant detail', async () => {
     authMocks.token = 'platform-tenant-token'
-    routeState.query = {
-      tab: 'tenantStewardship',
-    }
+    routeState.path = '/platform/users/tenant-stewardship'
+    routeState.query = {}
     authMocks.fetchWithAuth.mockResolvedValue(createFetchResponse(true, 200, {}))
 
     const wrapper = mountPlatformUsers()
@@ -526,16 +571,15 @@ describe('PlatformUsers.vue', () => {
     expect(routerMocks.push).toHaveBeenCalledWith({
       path: '/platform/tenants/9',
       query: {
-        from: '/platform/users?tab=tenantStewardship&tenantId=9',
+        from: '/platform/users/tenant-stewardship?tenantId=9',
       },
     })
   })
 
   it('loads platform bridge user list in-page after selecting a stewardship tenant', async () => {
     authMocks.token = 'platform-tenant-token'
-    routeState.query = {
-      tab: 'tenantStewardship',
-    }
+    routeState.path = '/platform/users/tenant-stewardship'
+    routeState.query = {}
 
     const wrapper = mountPlatformUsers()
     await flushPromises()
@@ -554,9 +598,8 @@ describe('PlatformUsers.vue', () => {
     expect(wrapper.text()).toContain('平台详情')
     expect(wrapper.text()).toContain('租户侧用户列表')
     expect(routerMocks.replace).toHaveBeenCalledWith({
-      path: '/platform/users',
+      path: '/platform/users/tenant-stewardship',
       query: {
-        tab: 'tenantStewardship',
         tenantId: '9',
       },
     })
@@ -568,9 +611,8 @@ describe('PlatformUsers.vue', () => {
 
   it('aligns tenant stewardship columns with tenant-side user management structure', async () => {
     authMocks.token = 'platform-tenant-token'
-    routeState.query = {
-      tab: 'tenantStewardship',
-    }
+    routeState.path = '/platform/users/tenant-stewardship'
+    routeState.query = {}
 
     const wrapper = mountPlatformUsers()
     await flushPromises()
@@ -599,8 +641,8 @@ describe('PlatformUsers.vue', () => {
 
   it('restores tenant stewardship context from route query when returning from tenant detail', async () => {
     authMocks.token = 'platform-tenant-token'
+    routeState.path = '/platform/users/tenant-stewardship'
     routeState.query = {
-      tab: 'tenantStewardship',
       tenantId: '9',
     }
 
@@ -621,9 +663,8 @@ describe('PlatformUsers.vue', () => {
 
   it('clears stewardship tenant through toolbar action', async () => {
     authMocks.token = 'platform-tenant-token'
-    routeState.query = {
-      tab: 'tenantStewardship',
-    }
+    routeState.path = '/platform/users/tenant-stewardship'
+    routeState.query = {}
 
     const wrapper = mountPlatformUsers()
     await flushPromises()
@@ -639,10 +680,8 @@ describe('PlatformUsers.vue', () => {
 
     expect((getTenantStewardshipTab(wrapper).vm as any).selectedStewardshipTenant).toBeNull()
     expect(routerMocks.replace).toHaveBeenLastCalledWith({
-      path: '/platform/users',
-      query: {
-        tab: 'tenantStewardship',
-      },
+      path: '/platform/users/tenant-stewardship',
+      query: {},
     })
   })
 })

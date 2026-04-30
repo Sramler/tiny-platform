@@ -1,5 +1,5 @@
 <template>
-  <div class="content-container" style="position: relative;">
+  <div class="content-container" style="position: relative">
     <div class="content-card">
       <div class="form-container">
         <a-form layout="inline" :model="query">
@@ -33,90 +33,119 @@
         </div>
       </div>
 
-      <a-table
-        :columns="columns"
-        :data-source="dataSource"
-        :loading="loading"
-        :pagination="pagination"
-        :row-selection="{ selectedRowKeys, onChange: onSelectChange }"
-        @change="handleTableChange"
-        row-key="id"
-      >
-        <template #bodyCell="{ column, record }">
-          <template v-if="column.key === 'enabled'">
-            <a-tag :color="record.enabled ? 'green' : 'red'">
-              {{ record.enabled ? '启用' : '禁用' }}
-            </a-tag>
-          </template>
-          <template v-if="column.key === 'cronState'">
-            <a-tooltip :title="getCronEffectiveReason(record)">
-              <a-tag v-if="isCronConfigured(record)" :color="isCronEffective(record) ? 'green' : 'red'">
-                {{ isCronEffective(record) ? 'Cron 生效' : 'Cron 未生效' }}
-              </a-tag>
-              <span v-else style="color: #999;">-</span>
-            </a-tooltip>
-          </template>
-          <template v-if="column.key === 'runState'">
-            <a-space size="small">
-              <a-tag v-if="record.hasRunningRun" color="processing">运行中</a-tag>
-              <a-tag v-if="record.hasRetryableRun" color="orange">可重试</a-tag>
-              <span v-if="!record.hasRunningRun && !record.hasRetryableRun" style="color: #999;">-</span>
-            </a-space>
-          </template>
-          <template v-if="column.key === 'currentVersionId'">
-            {{ record.currentVersionId || '-' }}
-          </template>
-          <template v-if="column.key === 'action'">
-            <a-space>
-              <a-button type="link" size="small" @click="handleEdit(record)">编辑</a-button>
-              <a-button type="link" size="small" @click="handleDetail(record)">详情</a-button>
-              <a-button type="link" size="small" @click="handleHistory(record)">历史</a-button>
-              <a-tooltip :title="getTriggerDisabledReason(record)">
-                <span>
-                  <a-popconfirm
-                    title="确认立即按当前 ACTIVE 版本创建一条新的手动运行吗？"
-                    ok-text="确认触发"
-                    cancel-text="取消"
-                    :disabled="!canTriggerDag(record)"
-                    @confirm="handleTrigger(record)"
+      <div class="table-container">
+        <div class="table-scroll-container">
+          <a-table
+            class="bottom-pagination-table"
+            :columns="columns"
+            :data-source="dataSource"
+            :loading="loading"
+            :pagination="false"
+            :row-selection="{ selectedRowKeys, onChange: onSelectChange }"
+            :scroll="{ x: 'max-content' }"
+            row-key="id"
+          >
+            <template #bodyCell="{ column, record }">
+              <template v-if="column.key === 'enabled'">
+                <a-tag :color="record.enabled ? 'green' : 'red'">
+                  {{ record.enabled ? '启用' : '禁用' }}
+                </a-tag>
+              </template>
+              <template v-if="column.key === 'cronState'">
+                <a-tooltip :title="getCronEffectiveReason(record)">
+                  <a-tag
+                    v-if="isCronConfigured(record)"
+                    :color="isCronEffective(record) ? 'green' : 'red'"
                   >
-                    <a-button type="link" size="small" :disabled="!canTriggerDag(record)">触发</a-button>
-                  </a-popconfirm>
-                </span>
-              </a-tooltip>
-              <a-tooltip :title="getStopDisabledReason(record)">
-                <span>
-                  <a-popconfirm
-                    title="确认停止该 DAG 当前所有 RUNNING 运行，并暂停 Quartz 调度吗？如需只处理单次运行，请前往历史页。"
-                    ok-text="确认停止"
-                    cancel-text="取消"
-                    :disabled="!canStopDag(record)"
-                    @confirm="handleStop(record)"
+                    {{ isCronEffective(record) ? 'Cron 生效' : 'Cron 未生效' }}
+                  </a-tag>
+                  <span v-else style="color: #999">-</span>
+                </a-tooltip>
+              </template>
+              <template v-if="column.key === 'runState'">
+                <a-space size="small">
+                  <a-tag v-if="record.hasRunningRun" color="processing">运行中</a-tag>
+                  <a-tag v-if="record.hasRetryableRun" color="orange">可重试</a-tag>
+                  <span v-if="!record.hasRunningRun && !record.hasRetryableRun" style="color: #999"
+                    >-</span
                   >
-                    <a-button type="link" size="small" :disabled="!canStopDag(record)">停止 DAG</a-button>
+                </a-space>
+              </template>
+              <template v-if="column.key === 'currentVersionId'">
+                {{ record.currentVersionId || '-' }}
+              </template>
+              <template v-if="column.key === 'action'">
+                <a-space>
+                  <a-button type="link" size="small" @click="handleEdit(record)">编辑</a-button>
+                  <a-button type="link" size="small" @click="handleDetail(record)">详情</a-button>
+                  <a-button type="link" size="small" @click="handleHistory(record)">历史</a-button>
+                  <a-tooltip :title="getTriggerDisabledReason(record)">
+                    <span>
+                      <a-popconfirm
+                        title="确认立即按当前 ACTIVE 版本创建一条新的手动运行吗？"
+                        ok-text="确认触发"
+                        cancel-text="取消"
+                        :disabled="!canTriggerDag(record)"
+                        @confirm="handleTrigger(record)"
+                      >
+                        <a-button type="link" size="small" :disabled="!canTriggerDag(record)"
+                          >触发</a-button
+                        >
+                      </a-popconfirm>
+                    </span>
+                  </a-tooltip>
+                  <a-tooltip :title="getStopDisabledReason(record)">
+                    <span>
+                      <a-popconfirm
+                        title="确认停止该 DAG 当前所有 RUNNING 运行，并暂停 Quartz 调度吗？如需只处理单次运行，请前往历史页。"
+                        ok-text="确认停止"
+                        cancel-text="取消"
+                        :disabled="!canStopDag(record)"
+                        @confirm="handleStop(record)"
+                      >
+                        <a-button type="link" size="small" :disabled="!canStopDag(record)"
+                          >停止 DAG</a-button
+                        >
+                      </a-popconfirm>
+                    </span>
+                  </a-tooltip>
+                  <a-tooltip :title="getRetryDisabledReason(record)">
+                    <span>
+                      <a-popconfirm
+                        title="确认重试该 DAG 最近一次失败运行吗？系统会创建新的 Run。如需指定某次运行，请前往历史页。"
+                        ok-text="确认重试"
+                        cancel-text="取消"
+                        :disabled="!canRetryDag(record)"
+                        @confirm="handleRetry(record)"
+                      >
+                        <a-button type="link" size="small" :disabled="!canRetryDag(record)"
+                          >重试最近失败运行</a-button
+                        >
+                      </a-popconfirm>
+                    </span>
+                  </a-tooltip>
+                  <a-popconfirm title="确定要删除吗？" @confirm="handleDelete(record.id)">
+                    <a-button type="link" danger size="small">删除</a-button>
                   </a-popconfirm>
-                </span>
-              </a-tooltip>
-              <a-tooltip :title="getRetryDisabledReason(record)">
-                <span>
-                  <a-popconfirm
-                    title="确认重试该 DAG 最近一次失败运行吗？系统会创建新的 Run。如需指定某次运行，请前往历史页。"
-                    ok-text="确认重试"
-                    cancel-text="取消"
-                    :disabled="!canRetryDag(record)"
-                    @confirm="handleRetry(record)"
-                  >
-                    <a-button type="link" size="small" :disabled="!canRetryDag(record)">重试最近失败运行</a-button>
-                  </a-popconfirm>
-                </span>
-              </a-tooltip>
-              <a-popconfirm title="确定要删除吗？" @confirm="handleDelete(record.id)">
-                <a-button type="link" danger size="small">删除</a-button>
-              </a-popconfirm>
-            </a-space>
-          </template>
-        </template>
-      </a-table>
+                </a-space>
+              </template>
+            </template>
+          </a-table>
+        </div>
+        <div class="pagination-container">
+          <a-pagination
+            v-model:current="pagination.current"
+            :page-size="pagination.pageSize"
+            :total="pagination.total"
+            :show-size-changer="pagination.showSizeChanger"
+            :page-size-options="pagination.pageSizeOptions"
+            :show-total="pagination.showTotal"
+            :locale="{ items_per_page: '条/页' }"
+            @change="handlePageChange"
+            @showSizeChange="handlePageSizeChange"
+          />
+        </div>
+      </div>
     </div>
 
     <!-- DAG 表单弹窗 -->
@@ -158,7 +187,9 @@
           >
             <a-select-option value="Asia/Shanghai">Asia/Shanghai (中国标准时间)</a-select-option>
             <a-select-option value="UTC">UTC (协调世界时)</a-select-option>
-            <a-select-option value="America/New_York">America/New_York (美国东部时间)</a-select-option>
+            <a-select-option value="America/New_York"
+              >America/New_York (美国东部时间)</a-select-option
+            >
             <a-select-option value="Europe/London">Europe/London (英国时间)</a-select-option>
             <a-select-option value="Asia/Tokyo">Asia/Tokyo (日本标准时间)</a-select-option>
           </a-select>
@@ -194,13 +225,34 @@ import type { ColumnsType } from 'ant-design-vue/es/table'
 import type { Key } from 'ant-design-vue/es/_util/type'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import { useRoute, useRouter } from 'vue-router'
-import { dagList, createDag, updateDag, deleteDag, triggerDag, stopDag, retryDag } from '@/api/scheduling'
+import {
+  dagList,
+  createDag,
+  updateDag,
+  deleteDag,
+  triggerDag,
+  stopDag,
+  retryDag,
+} from '@/api/scheduling'
 import { throttle } from '@/utils/debounce'
 import { useAuth } from '@/auth/auth'
 import { extractAuthoritiesFromJwt } from '@/utils/jwt'
-import { SCHEDULING_CONSOLE_CONFIG, SCHEDULING_RUN_CONTROL, SCHEDULING_WILDCARD } from '@/constants/permission'
-import { getActiveTenantId, resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
+import {
+  SCHEDULING_CONSOLE_CONFIG,
+  SCHEDULING_RUN_CONTROL,
+  SCHEDULING_WILDCARD,
+} from '@/constants/permission'
+import {
+  getActiveTenantId,
+  resolveActiveTenantQueryValue,
+  withActiveTenantQuery,
+} from '@/utils/tenant'
 import { ACTIVE_SCOPE_CHANGED_EVENT } from '@/utils/activeScopeEvents'
+import {
+  buildPlatformSchedulingQuery,
+  buildPlatformSchedulingPath,
+  isPlatformRuntimePath,
+} from '@/utils/platformRuntime'
 
 const route = useRoute()
 const router = useRouter()
@@ -208,13 +260,15 @@ const { user } = useAuth()
 const schedulingAuthorities = computed(() =>
   extractAuthoritiesFromJwt(user.value?.access_token).filter((a) => a.startsWith('scheduling:')),
 )
-const canManageSchedulingConfig = computed(() =>
-  schedulingAuthorities.value.includes(SCHEDULING_CONSOLE_CONFIG) ||
-  schedulingAuthorities.value.includes(SCHEDULING_WILDCARD),
+const canManageSchedulingConfig = computed(
+  () =>
+    schedulingAuthorities.value.includes(SCHEDULING_CONSOLE_CONFIG) ||
+    schedulingAuthorities.value.includes(SCHEDULING_WILDCARD),
 )
-const canOperateSchedulingRun = computed(() =>
-  schedulingAuthorities.value.includes(SCHEDULING_RUN_CONTROL) ||
-  schedulingAuthorities.value.includes(SCHEDULING_WILDCARD),
+const canOperateSchedulingRun = computed(
+  () =>
+    schedulingAuthorities.value.includes(SCHEDULING_RUN_CONTROL) ||
+    schedulingAuthorities.value.includes(SCHEDULING_WILDCARD),
 )
 const loading = ref(false)
 const refreshing = ref(false)
@@ -244,6 +298,7 @@ const pagination = reactive({
   pageSize: 10,
   total: 0,
   showSizeChanger: true,
+  pageSizeOptions: ['10', '20', '50', '100'],
   showTotal: (total: number) => `共 ${total} 条`,
 })
 
@@ -308,9 +363,14 @@ const handleRefresh = throttle(() => {
   })
 }, 500)
 
-const handleTableChange = (pag: any) => {
-  pagination.current = pag.current
-  pagination.pageSize = pag.pageSize
+const handlePageChange = (page: number) => {
+  pagination.current = page || 1
+  loadData()
+}
+
+const handlePageSizeChange = (_current: number, size: number) => {
+  pagination.pageSize = size || 10
+  pagination.current = 1
   loadData()
 }
 
@@ -362,21 +422,25 @@ const handleEdit = (record: any) => {
 
 const handleDetail = (record: any) => {
   router.push({
-    path: '/scheduling/dag/detail',
-    query: withActiveTenantQuery(
-      { id: record.id },
-      resolveActiveTenantQueryValue(route.query) ?? getActiveTenantId(),
-    ),
+    path: buildPlatformSchedulingPath(route.path, '/scheduling/dag/detail'),
+    query: isPlatformRuntimePath(route.path, 'scheduling')
+      ? buildPlatformSchedulingQuery({ id: record.id })
+      : withActiveTenantQuery(
+          { id: record.id },
+          resolveActiveTenantQueryValue(route.query) ?? getActiveTenantId(),
+        ),
   })
 }
 
 const handleHistory = (record: any) => {
   router.push({
-    path: '/scheduling/dag/history',
-    query: withActiveTenantQuery(
-      { dagId: record.id },
-      resolveActiveTenantQueryValue(route.query) ?? getActiveTenantId(),
-    ),
+    path: buildPlatformSchedulingPath(route.path, '/scheduling/dag/history'),
+    query: isPlatformRuntimePath(route.path, 'scheduling')
+      ? buildPlatformSchedulingQuery({ dagId: record.id })
+      : withActiveTenantQuery(
+          { dagId: record.id },
+          resolveActiveTenantQueryValue(route.query) ?? getActiveTenantId(),
+        ),
   })
 }
 
@@ -413,7 +477,10 @@ const getCronEffectiveReason = (record: {
   return 'Cron 已生效（以 ACTIVE 版本执行）'
 }
 
-const getTriggerDisabledReason = (record: { enabled?: boolean; currentVersionId?: number | null }) => {
+const getTriggerDisabledReason = (record: {
+  enabled?: boolean
+  currentVersionId?: number | null
+}) => {
   if (record.enabled === false) {
     return 'DAG 已禁用'
   }
@@ -441,7 +508,10 @@ const canRetryDag = (record: { enabled?: boolean; hasRetryableRun?: boolean | nu
   return Boolean(record.enabled && record.hasRetryableRun)
 }
 
-const getRetryDisabledReason = (record: { enabled?: boolean; hasRetryableRun?: boolean | null }) => {
+const getRetryDisabledReason = (record: {
+  enabled?: boolean
+  hasRetryableRun?: boolean | null
+}) => {
   if (record.enabled === false) {
     return 'DAG 已禁用'
   }
@@ -574,24 +644,69 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .content-container {
-  padding: 16px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
 }
 
 .content-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   background: #fff;
-  border-radius: 4px;
-  padding: 16px;
 }
 
 .form-container {
-  margin-bottom: 16px;
+  padding: 24px;
+  border-bottom: 1px solid #f0f0f0;
 }
 
 .toolbar-container {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  padding: 8px 24px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.table-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.table-scroll-container {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 12px;
+}
+
+:deep(.bottom-pagination-table) {
+  min-width: 0;
+  width: 100%;
+}
+
+:deep(.bottom-pagination-table .ant-table-thead > tr > th),
+:deep(.bottom-pagination-table .ant-table-tbody > tr > td) {
+  white-space: nowrap;
+}
+
+.pagination-container {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 56px;
+  padding: 12px 24px;
+  border-top: 1px solid #f0f0f0;
+  background: #fff;
 }
 
 .table-title {

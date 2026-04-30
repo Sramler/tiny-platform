@@ -41,6 +41,7 @@ const mocks = vi.hoisted(() => ({
   getCurrentTraceId: vi.fn(),
   clearTenantContext: vi.fn(),
   getActiveTenantId: vi.fn(),
+  getLoginMode: vi.fn(),
   getTenantId: vi.fn(),
   syncTenantContextFromAccessToken: vi.fn(),
   createIdempotencyHeaders: vi.fn(),
@@ -49,6 +50,11 @@ const mocks = vi.hoisted(() => ({
   extractErrorFromAxios: vi.fn(),
   extractErrorInfo: vi.fn(),
   persistentWarn: vi.fn(),
+  currentRouteValue: {
+    path: '/dashboard',
+    fullPath: '/dashboard?tab=security',
+    query: {} as Record<string, unknown>,
+  },
 }))
 
 vi.mock('axios', () => {
@@ -56,11 +62,13 @@ vi.mock('axios', () => {
     axiosState.requestFulfilled = fulfilled
     return 0
   })
-  axiosState.service.interceptors.response.use.mockImplementation((_fulfilled: unknown, rejected: ResponseRejected) => {
-    axiosState.responseFulfilled = _fulfilled as ResponseFulfilled
-    axiosState.responseRejected = rejected
-    return 0
-  })
+  axiosState.service.interceptors.response.use.mockImplementation(
+    (_fulfilled: unknown, rejected: ResponseRejected) => {
+      axiosState.responseFulfilled = _fulfilled as ResponseFulfilled
+      axiosState.responseRejected = rejected
+      return 0
+    },
+  )
 
   return {
     default: {
@@ -80,10 +88,7 @@ vi.mock('@/auth/auth', () => ({
 vi.mock('@/router', () => ({
   default: {
     currentRoute: {
-      value: {
-        path: '/dashboard',
-        fullPath: '/dashboard?tab=security',
-      },
+      value: mocks.currentRouteValue,
     },
     push: mocks.routerPush,
     replace: mocks.routerReplace,
@@ -99,6 +104,7 @@ vi.mock('@/utils/traceId', () => ({
 vi.mock('@/utils/tenant', () => ({
   clearTenantContext: mocks.clearTenantContext,
   getActiveTenantId: mocks.getActiveTenantId,
+  getLoginMode: mocks.getLoginMode,
   getTenantId: mocks.getTenantId,
   syncTenantContextFromAccessToken: mocks.syncTenantContextFromAccessToken,
 }))
@@ -132,12 +138,16 @@ describe('request.ts interceptors', () => {
     mocks.generateRequestId.mockReturnValue('request-id')
     mocks.getCurrentTraceId.mockReturnValue('trace-current')
     mocks.getActiveTenantId.mockReturnValue('101')
+    mocks.getLoginMode.mockReturnValue('TENANT')
     mocks.getTenantId.mockReturnValue('101')
     mocks.createIdempotencyHeaders.mockReturnValue({ 'X-Idempotency-Key': 'idem-key' })
     mocks.createIdempotencyFingerprint.mockImplementation((value: unknown) => JSON.stringify(value))
     mocks.createSubmitIdempotencyKey.mockReturnValue('submit-key')
     mocks.extractErrorFromAxios.mockReturnValue('conflict')
     mocks.extractErrorInfo.mockReturnValue({ code: 40903, message: 'conflict', status: 409 })
+    mocks.currentRouteValue.path = '/dashboard'
+    mocks.currentRouteValue.fullPath = '/dashboard?tab=security'
+    mocks.currentRouteValue.query = {}
 
     await import('@/utils/request')
   })
@@ -166,6 +176,44 @@ describe('request.ts interceptors', () => {
     expect(mocks.syncTenantContextFromAccessToken).toHaveBeenCalledWith('access-token')
   })
 
+  it('should not inject tenant headers for platform workflow runtime requests', async () => {
+    const fulfilled = axiosState.service.interceptors.request.use.mock.calls[0]?.[0] as
+      | RequestFulfilled
+      | undefined
+    expect(fulfilled).toBeTypeOf('function')
+
+    mocks.getActiveTenantId.mockReturnValue('101')
+    mocks.currentRouteValue.path = '/platform/process'
+    mocks.currentRouteValue.fullPath = '/platform/process'
+    mocks.currentRouteValue.query = {}
+
+    const config = await fulfilled!({
+      headers: {} as any,
+      url: '/process/definitions',
+      method: 'get',
+    } as InternalAxiosRequestConfig)
+
+    expect(config.headers['X-Active-Tenant-Id']).toBeUndefined()
+  })
+
+  it('should not inject tenant headers in platform login mode even when stale tenant remains', async () => {
+    const fulfilled = axiosState.service.interceptors.request.use.mock.calls[0]?.[0] as
+      | RequestFulfilled
+      | undefined
+    expect(fulfilled).toBeTypeOf('function')
+
+    mocks.getLoginMode.mockReturnValue('PLATFORM')
+    mocks.getActiveTenantId.mockReturnValue('101')
+
+    const config = await fulfilled!({
+      headers: {} as any,
+      url: '/sys/users/current',
+      method: 'get',
+    } as InternalAxiosRequestConfig)
+
+    expect(config.headers['X-Active-Tenant-Id']).toBeUndefined()
+  })
+
   it('should inject idempotency header when config declares idempotency', async () => {
     const fulfilled = axiosState.service.interceptors.request.use.mock.calls[0]?.[0] as
       | RequestFulfilled
@@ -182,7 +230,9 @@ describe('request.ts interceptors', () => {
       },
     } as InternalAxiosRequestConfig)
 
-    expect(mocks.createIdempotencyHeaders).toHaveBeenCalledWith('sys-users:create', { username: 'alice' })
+    expect(mocks.createIdempotencyHeaders).toHaveBeenCalledWith('sys-users:create', {
+      username: 'alice',
+    })
     expect(config.headers['X-Idempotency-Key']).toBe('idem-key')
   })
 

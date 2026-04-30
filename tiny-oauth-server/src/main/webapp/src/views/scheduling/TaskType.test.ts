@@ -141,6 +141,11 @@ const TableStub = defineComponent({
   },
 })
 
+const PaginationStub = defineComponent({
+  emits: ['change', 'showSizeChange'],
+  template: '<div class="pagination-stub"></div>',
+})
+
 async function flushPromises() {
   await Promise.resolve()
   await Promise.resolve()
@@ -189,7 +194,7 @@ describe('TaskType.vue', () => {
           }),
           'a-space': PassThrough,
           'a-tag': PassThrough,
-          'a-pagination': PassThrough,
+          'a-pagination': PaginationStub,
           PlusOutlined: defineComponent({ template: '<span>+</span>' }),
           ReloadOutlined: defineComponent({ template: '<span>↻</span>' }),
         },
@@ -380,7 +385,7 @@ describe('TaskType.vue', () => {
     )
   })
 
-  it('should reset filters refresh list and handle table change', async () => {
+  it('should reset filters refresh list and handle pagination change', async () => {
     const wrapper = mountView()
     await flushPromises()
     apiMocks.taskTypeList.mockClear()
@@ -400,8 +405,9 @@ describe('TaskType.vue', () => {
     expect(apiMocks.taskTypeList).toHaveBeenCalled()
 
     apiMocks.taskTypeList.mockClear()
-    const table = wrapper.findComponent(TableStub)
-    table.vm.$emit('change', { current: 2, pageSize: 20 })
+    const pagination = wrapper.findComponent(PaginationStub)
+    pagination.vm.$emit('showSizeChange', 1, 20)
+    pagination.vm.$emit('change', 2)
     await flushPromises()
     expect(apiMocks.taskTypeList).toHaveBeenCalledWith(expect.objectContaining({ current: 2, pageSize: 20 }))
   })

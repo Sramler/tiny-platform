@@ -1,7 +1,7 @@
 <template>
   <div class="setting-page">
     <a-card title="个人设置" :bordered="false">
-      <a-tabs v-model:activeKey="activeKey">
+      <a-tabs v-model:activeKey="activeKey" destroy-inactive-tab-pane>
         <!-- 基本信息 -->
         <a-tab-pane key="basic" tab="基本信息">
           <a-form

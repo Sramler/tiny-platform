@@ -1,6 +1,7 @@
 package com.tiny.platform.infrastructure.scheduling.service;
 
 import com.tiny.platform.infrastructure.scheduling.model.SchedulingTaskInstance;
+import com.tiny.platform.infrastructure.scheduling.model.SchedulingDagEdge;
 import com.tiny.platform.infrastructure.scheduling.repository.SchedulingTaskInstanceRepository;
 import com.tiny.platform.infrastructure.scheduling.repository.SchedulingDagEdgeRepository;
 import org.slf4j.Logger;
@@ -37,6 +38,18 @@ public class DependencyCheckerService {
     }
 
     /**
+     * 平台调度运行域使用 tenant_id IS NULL。tenantId 为空时只读取平台边，不退化为全版本边。
+     */
+    private List<SchedulingDagEdge> findInboundEdgesInRuntimeTenant(Long dagVersionId, String nodeCode, Long tenantId) {
+        if (tenantId != null) {
+            return dagEdgeRepository.findByDagVersionIdAndToNodeCodeAndTenantId(dagVersionId, nodeCode, tenantId);
+        }
+        return dagEdgeRepository.findByDagVersionIdAndToNodeCode(dagVersionId, nodeCode).stream()
+                .filter(edge -> edge.getTenantId() == null)
+                .toList();
+    }
+
+    /**
      * 检查任务实例的依赖是否全部满足
      */
     public boolean checkDependencies(SchedulingTaskInstance instance) {
@@ -46,10 +59,8 @@ public class DependencyCheckerService {
         }
 
         // 1. 查找所有上游节点（依赖的节点）；无请求上下文时按租户过滤
-        List<String> upstreamNodeCodes = (instance.getTenantId() != null
-                ? dagEdgeRepository.findByDagVersionIdAndToNodeCodeAndTenantId(
-                        instance.getDagVersionId(), instance.getNodeCode(), instance.getTenantId())
-                : dagEdgeRepository.findByDagVersionIdAndToNodeCode(instance.getDagVersionId(), instance.getNodeCode()))
+        List<String> upstreamNodeCodes = findInboundEdgesInRuntimeTenant(
+                instance.getDagVersionId(), instance.getNodeCode(), instance.getTenantId())
                 .stream()
                 .map(edge -> edge.getFromNodeCode())
                 .collect(Collectors.toList());
@@ -95,10 +106,8 @@ public class DependencyCheckerService {
         if (instance.getDagVersionId() == null || instance.getNodeCode() == null) {
             return false;
         }
-        List<String> upstreamNodeCodes = (instance.getTenantId() != null
-                ? dagEdgeRepository.findByDagVersionIdAndToNodeCodeAndTenantId(
-                        instance.getDagVersionId(), instance.getNodeCode(), instance.getTenantId())
-                : dagEdgeRepository.findByDagVersionIdAndToNodeCode(instance.getDagVersionId(), instance.getNodeCode()))
+        List<String> upstreamNodeCodes = findInboundEdgesInRuntimeTenant(
+                instance.getDagVersionId(), instance.getNodeCode(), instance.getTenantId())
                 .stream()
                 .map(edge -> edge.getFromNodeCode())
                 .collect(Collectors.toList());
@@ -118,4 +127,3 @@ public class DependencyCheckerService {
                 .anyMatch(up -> up.getStatus() != null && UPSTREAM_TERMINAL_FAIL_OR_SKIP.contains(up.getStatus()));
     }
 }
-
