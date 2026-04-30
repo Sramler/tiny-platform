@@ -32,6 +32,8 @@ const propertiesPanelTranslations: TranslationMap = {
   'Create new list item': '新增列表项',
   'List contains {numOfItems} item': '列表包含 {numOfItems} 项',
   'List contains {numOfItems} items': '列表包含 {numOfItems} 项',
+  'Section contains an error': '分组包含错误',
+  'Section contains edits': '分组包含已编辑项',
   'Toggle section': '展开/折叠分组',
   'Toggle list item': '展开/折叠列表项',
   'Delete item': '删除项',
