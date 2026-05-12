@@ -7,7 +7,7 @@ import type {
   InternalAxiosRequestConfig,
 } from 'axios'
 // 引入 auth.ts 中的认证方法
-import { useAuth, logout } from '@/auth/auth'
+import { useAuth, logout, refreshAccessTokenOnce } from '@/auth/auth'
 import router from '@/router' // 引入路由实例
 // 引入 TRACE_ID 工具
 import { getOrCreateTraceId, generateRequestId, getCurrentTraceId } from '@/utils/traceId'
@@ -26,6 +26,7 @@ import { isPlatformRuntimePath } from '@/utils/platformRuntime'
 import { persistentLogger } from '@/utils/logger'
 // 引入 Problem 响应解析工具
 import { extractErrorFromAxios, extractErrorInfo } from '@/utils/problemParser'
+import { dispatchAuthorizationRuntimeReset } from '@/runtime/authorizationRuntimeEvents'
 
 export type RequestIdempotencyMode = 'deterministic' | 'submit'
 
@@ -42,6 +43,7 @@ export type TinyRequestConfig = AxiosRequestConfig & {
 
 type ManagedAxiosRequestConfig = InternalAxiosRequestConfig & {
   __idempotencyFingerprint?: string
+  __retriedAfterStalePermissions?: boolean
 }
 
 type SubmitIdempotencyEntry = {
@@ -57,7 +59,7 @@ function buildSubmitIdempotencyFingerprint(
 ): string {
   const activeTenantId = shouldSuppressActiveTenantHeader(config)
     ? 'platform'
-    : getActiveTenantId() ?? 'anonymous'
+    : (getActiveTenantId() ?? 'anonymous')
   return createIdempotencyFingerprint({
     activeTenantId,
     baseURL: config.baseURL ?? null,
@@ -159,6 +161,40 @@ const service: AxiosInstance = axios.create({
 // 防抖：避免多个请求同时触发多次跳转
 let redirectTimer: ReturnType<typeof setTimeout> | null = null
 const REDIRECT_DELAY = 200 // 200ms 内的多个错误只触发一次跳转
+
+function readProblemErrorCode(data: unknown): string {
+  if (!data || typeof data !== 'object') {
+    return ''
+  }
+  const record = data as Record<string, unknown>
+  return String(record.error || record.errorCode || record.code || record.type || '')
+}
+
+function isStalePermissionsError(error: any): boolean {
+  const data = error?.response?.data
+  const errorCode = readProblemErrorCode(data)
+  const description = String(data?.error_description || data?.message || data?.detail || '')
+  return /stale_permissions/i.test(`${errorCode} ${description}`)
+}
+
+function isTokenRevokedError(error: any): boolean {
+  const data = error?.response?.data
+  const errorCode = readProblemErrorCode(data)
+  const description = String(data?.error_description || data?.message || data?.detail || '')
+  return /token_revoked/i.test(`${errorCode} ${description}`)
+}
+
+function resolveCurrentBusinessRedirect(currentFullPath: string): string {
+  const currentRoute = router.currentRoute.value
+  if (currentRoute.path === '/bootstrap') {
+    const redirect = currentRoute.query.redirect
+    if (Array.isArray(redirect)) {
+      return redirect[0] || '/'
+    }
+    return typeof redirect === 'string' && redirect ? redirect : '/'
+  }
+  return currentFullPath || '/'
+}
 
 // 请求拦截器
 service.interceptors.request.use(
@@ -277,6 +313,72 @@ service.interceptors.response.use(
     // 处理401未授权错误
     if (error.response?.status === 401) {
       const requestUrl = error.config?.url || 'unknown'
+      const traceId =
+        error.response?.headers?.['x-trace-id'] ||
+        error.response?.headers?.['X-Trace-Id'] ||
+        getCurrentTraceId()
+      if (isStalePermissionsError(error)) {
+        const retryConfig = error.config as ManagedAxiosRequestConfig | undefined
+        if (retryConfig && !retryConfig.__retriedAfterStalePermissions) {
+          retryConfig.__retriedAfterStalePermissions = true
+          const refreshed = await refreshAccessTokenOnce()
+          if (refreshed) {
+            dispatchAuthorizationRuntimeReset('stale_permissions', {
+              message: '授权快照已更新，正在重建权限运行态',
+              traceId,
+            })
+            return service(retryConfig)
+          }
+        }
+        const message =
+          error.response?.data?.error_description ||
+          error.response?.data?.message ||
+          '授权快照已过期，请重新恢复登录态'
+        dispatchAuthorizationRuntimeReset('stale_permissions', {
+          message,
+          traceId,
+        })
+        if (currentPath !== '/login') {
+          await router.replace({
+            path: '/login',
+            query: {
+              redirect: resolveCurrentBusinessRedirect(currentFullPath),
+              error: 'stale_permissions',
+              message,
+              traceId: traceId || undefined,
+            },
+          })
+        }
+        return Promise.reject(error)
+      }
+
+      if (isTokenRevokedError(error)) {
+        const message =
+          error.response?.data?.error_description ||
+          error.response?.data?.message ||
+          '登录安全状态已变更，请重新登录'
+        dispatchAuthorizationRuntimeReset('unauthorized', {
+          message,
+          traceId,
+        })
+        if (currentPath !== '/login') {
+          await router.replace({
+            path: '/login',
+            query: {
+              redirect: resolveCurrentBusinessRedirect(currentFullPath),
+              error: 'token_revoked',
+              message,
+              traceId: traceId || undefined,
+            },
+          })
+        }
+        return Promise.reject(error)
+      }
+
+      dispatchAuthorizationRuntimeReset('unauthorized', {
+        message: '接口返回 401，清理授权运行态',
+        traceId,
+      })
       console.log('[401] axios 拦截器检测到 401 错误，URL:', requestUrl)
 
       // 记录持久化日志（避免302跳转清空控制台）
@@ -312,10 +414,6 @@ service.interceptors.response.use(
         // 注意：不要在这里调用 logout()，因为它会覆盖这个跳转
         // logout() 会在 401 页面加载后由页面自己处理
         const errorMessage = error.response?.data?.message || '未授权访问'
-        const traceId =
-          error.response?.headers?.['x-trace-id'] ||
-          error.response?.headers?.['X-Trace-Id'] ||
-          getCurrentTraceId()
         const params = new URLSearchParams()
         if (referer) params.set('from', referer)
         if (requestUrl) params.set('path', requestUrl)
@@ -357,6 +455,10 @@ service.interceptors.response.use(
       const problemDescription = error.response?.data?.error_description
       if (problemError === 'missing_tenant') {
         console.warn('[400] missing_tenant，清理本地租户上下文并跳转登录页')
+        dispatchAuthorizationRuntimeReset('missing_tenant', {
+          message: typeof problemDescription === 'string' ? problemDescription : '租户上下文缺失',
+          traceId: getTraceId(),
+        })
         clearTenantContext()
         if (currentPath !== '/login' && currentPath !== '/callback') {
           router.push({
@@ -472,6 +574,35 @@ service.interceptors.response.use(
       if (currentPath !== '/exception/500') {
         router.push({
           path: '/exception/500',
+          query: {
+            from: referer || undefined,
+            path: requestUrl,
+            message: errorMessage,
+            traceId: traceId || undefined,
+          },
+        })
+      }
+      return Promise.reject(error)
+    }
+
+    // 处理503服务不可用错误（例如当前运行环境未启用某个可选能力）
+    if (error.response?.status === 503) {
+      const requestUrl = error.config?.url || currentPath
+      const errorMessage =
+        error.response?.data?.message || error.response?.data?.detail || '服务暂时不可用'
+      const traceId = getTraceId()
+      console.error(
+        '[503] 检测到 503 错误，URL:',
+        requestUrl,
+        'Message:',
+        errorMessage,
+        'TraceId:',
+        traceId,
+      )
+
+      if (currentPath !== '/exception/503') {
+        router.push({
+          path: '/exception/503',
           query: {
             from: referer || undefined,
             path: requestUrl,

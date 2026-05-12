@@ -22,6 +22,7 @@ import E400 from '@/views/exception/400.vue'
 import E403 from '@/views/exception/403.vue'
 import E404 from '@/views/exception/404.vue'
 import E500 from '@/views/exception/500.vue'
+import E503 from '@/views/exception/503.vue'
 
 describe('exception pages', () => {
   it('should render 400', () => {
@@ -111,5 +112,26 @@ describe('exception pages', () => {
     expect(wrapper.text()).toContain('500')
     expect(wrapper.text()).toContain('服务器错误')
   })
-})
 
+  it('should render 503', () => {
+    const wrapper = mount(E503, {
+      global: {
+        stubs: {
+          'a-card': PassThrough,
+          'a-divider': PassThrough,
+          'a-descriptions': PassThrough,
+          'a-descriptions-item': PassThrough,
+          'a-typography-text': PassThrough,
+          'a-tooltip': PassThrough,
+          'a-button': PassThrough,
+          ThunderboltOutlined: PassThrough,
+          HomeOutlined: PassThrough,
+          ArrowLeftOutlined: PassThrough,
+          InfoCircleOutlined: PassThrough,
+        },
+      },
+    })
+    expect(wrapper.text()).toContain('503')
+    expect(wrapper.text()).toContain('服务不可用')
+  })
+})

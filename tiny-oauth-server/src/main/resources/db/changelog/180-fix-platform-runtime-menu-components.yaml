@@ -1,0 +1,53 @@
+databaseChangeLog:
+  - changeSet:
+      id: 180-fix-platform-runtime-menu-components
+      author: codex
+      comment: 修复已执行过旧平台运行态菜单回填的环境，避免菜单继续指向已移除的 ModuleTenantBridge 组件
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - tableExists:
+            tableName: menu
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              UPDATE `menu`
+              SET
+                `title` = '平台流程管理',
+                `component` = '/views/platform/runtime/PlatformProcessModule.vue',
+                `resource_level` = 'PLATFORM',
+                `hidden` = 0,
+                `enabled` = 1,
+                `updated_at` = NOW(),
+                `updated_by` = NULL
+              WHERE `tenant_id` IS NULL
+                AND `path` = '/platform/process'
+                AND (
+                  `component` IS NULL
+                  OR `component` = ''
+                  OR `component` = '/views/platform/runtime/ModuleTenantBridge.vue'
+                  OR `component` <> '/views/platform/runtime/PlatformProcessModule.vue'
+                );
+
+              UPDATE `menu`
+              SET
+                `title` = '平台调度管理',
+                `component` = '/views/platform/runtime/PlatformSchedulingModule.vue',
+                `resource_level` = 'PLATFORM',
+                `hidden` = 0,
+                `enabled` = 1,
+                `updated_at` = NOW(),
+                `updated_by` = NULL
+              WHERE `tenant_id` IS NULL
+                AND `path` = '/platform/scheduling'
+                AND (
+                  `component` IS NULL
+                  OR `component` = ''
+                  OR `component` = '/views/platform/runtime/ModuleTenantBridge.vue'
+                  OR `component` <> '/views/platform/runtime/PlatformSchedulingModule.vue'
+                );

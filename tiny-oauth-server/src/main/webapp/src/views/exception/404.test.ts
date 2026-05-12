@@ -82,4 +82,31 @@ describe('404.vue', () => {
       query: { activeTenantId: '6' },
     })
   })
+
+  it('should sanitize unsafe from query before returning', async () => {
+    routerMocks.route.query = { from: 'javascript:alert(1)' }
+
+    const wrapper = mount(Page404, {
+      global: {
+        stubs: {
+          'a-card': PassThrough,
+          'a-divider': PassThrough,
+          'a-descriptions': PassThrough,
+          'a-descriptions-item': PassThrough,
+          'a-typography-text': PassThrough,
+          'a-tooltip': PassThrough,
+          'a-button': ButtonStub,
+          FileSearchOutlined: PassThrough,
+          HomeOutlined: PassThrough,
+          ArrowLeftOutlined: PassThrough,
+          InfoCircleOutlined: PassThrough,
+        },
+      },
+    })
+
+    await wrapper.findAll('button')[1]?.trigger('click')
+
+    expect(routerMocks.push).toHaveBeenCalledWith('/')
+    expect(routerMocks.push).not.toHaveBeenCalledWith('javascript:alert(1)')
+  })
 })

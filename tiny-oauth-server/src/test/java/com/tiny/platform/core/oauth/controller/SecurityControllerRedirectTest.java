@@ -87,7 +87,7 @@ class SecurityControllerRedirectTest {
 
         verify(securityService).skipMfaRemind(user, true);
         verify(sessionManager).tryPromoteToFullyAuthenticated(eq(user), eq(request), eq(response), isNull());
-        assertThat(view).isEqualTo("redirect:http://localhost:5173/");
+        assertThat(view).isEqualTo("redirect:http://localhost:5173/bootstrap?redirect=%2F");
     }
 
     @Test

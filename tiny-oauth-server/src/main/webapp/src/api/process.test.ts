@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const requestMocks = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
+  put: vi.fn(),
+  delete: vi.fn(),
 }))
 
 const tenantMocks = vi.hoisted(() => ({
@@ -13,6 +15,8 @@ vi.mock('@/utils/request', () => ({
   default: {
     get: requestMocks.get,
     post: requestMocks.post,
+    put: requestMocks.put,
+    delete: requestMocks.delete,
   },
 }))
 
@@ -69,6 +73,42 @@ describe('process API (read & validate)', () => {
 
       expect(requestMocks.get).toHaveBeenCalledWith('/process/deployments', { params: { recordTenantId: 'tenant-1' } })
       expect(result).toHaveLength(1)
+    })
+  })
+
+  describe('processModelApi', () => {
+    it('should use design-state process model endpoints', async () => {
+      requestMocks.get.mockResolvedValueOnce([{ id: 1, modelKey: 'leave_process' }])
+      requestMocks.get.mockResolvedValueOnce([{ modelKey: 'leave_process', versionCount: 1 }])
+      requestMocks.post.mockResolvedValueOnce({ id: 1, modelKey: 'leave_process' })
+      requestMocks.put.mockResolvedValueOnce({ id: 1, modelKey: 'leave_process' })
+      const { processModelApi } = await import('@/api/process')
+
+      await processModelApi.listModels()
+      await processModelApi.listModelGroups()
+      await processModelApi.createModel({ name: 'Leave Process', bpmnXml: '<bpmn />' })
+      await processModelApi.saveModel(1, { name: 'Leave Process', bpmnXml: '<bpmn />', lockVersion: 0 })
+
+      expect(requestMocks.get).toHaveBeenCalledWith('/process/models')
+      expect(requestMocks.get).toHaveBeenCalledWith('/process/models/groups')
+      expect(requestMocks.post).toHaveBeenCalledWith('/process/models', { name: 'Leave Process', bpmnXml: '<bpmn />' }, {
+        idempotency: {
+          scope: 'process-model:create',
+          payload: { name: 'Leave Process', bpmnXml: '<bpmn />' },
+          mode: 'submit',
+        },
+      })
+      expect(requestMocks.put).toHaveBeenCalledWith('/process/models/1', {
+        name: 'Leave Process',
+        bpmnXml: '<bpmn />',
+        lockVersion: 0,
+      }, {
+        idempotency: {
+          scope: 'process-model:update:1',
+          payload: { id: 1, name: 'Leave Process', bpmnXml: '<bpmn />', lockVersion: 0 },
+          mode: 'submit',
+        },
+      })
     })
   })
 

@@ -13,11 +13,18 @@
               <!-- 用户头像 -->
               <img v-if="avatarUrl" class="avatar" :src="avatarUrl" alt="avatar" @error="handleAvatarError" />
               <!-- 默认头像图标（当没有头像时显示） -->
-              <div v-else class="avatar-icon" :style="avatarStyle">
-                <UserOutlined />
+              <div
+                v-else
+                class="avatar-icon"
+                :class="{ 'avatar-icon--loading': !userInfoReady }"
+                :style="userInfoReady ? avatarStyle : undefined"
+                :aria-label="userInfoReady ? '默认头像' : '用户信息加载中'"
+              >
+                <UserOutlined v-if="userInfoReady" />
               </div>
               <!-- 用户名和下拉箭头 -->
-              <span class="username">{{ username }}</span>
+              <span v-if="userInfoReady" class="username">{{ username }}</span>
+              <span v-else class="username username--loading" aria-label="用户信息加载中">用户信息加载中</span>
               <DownOutlined class="dropdown-icon" />
             </div>
           </div>
@@ -31,7 +38,7 @@
                 <SettingOutlined class="menu-icon" />
                 个人设置
               </a-menu-item>
-              <a-menu-item v-if="canSwitchScopeEntry" :key="MENU_KEYS.SCOPE">
+              <a-menu-item v-if="userInfoReady && canSwitchScopeEntry" :key="MENU_KEYS.SCOPE">
                 <SettingOutlined class="menu-icon" />
                 切换作用域
               </a-menu-item>
@@ -42,7 +49,7 @@
             </a-menu>
           </template>
         </a-dropdown>
-        <a-tag v-if="activeScopeLabel" class="scope-tag" color="blue">{{ activeScopeLabel }}</a-tag>
+        <a-tag v-if="userInfoReady && activeScopeLabel" class="scope-tag" color="blue">{{ activeScopeLabel }}</a-tag>
       </div>
     </div>
     <!-- 标签页导航插槽 -->
@@ -119,10 +126,6 @@ const ROUTES = {
   PROFILE_SETTING: '/profile/setting' // 个人设置路由
 } as const
 
-/**
- * 默认用户名常量
- */
-const DEFAULT_USERNAME = '管理员' // 默认显示的用户名
 const FALLBACK_USERNAME = '用户' // 加载失败时的备用用户名
 
 /**
@@ -153,28 +156,34 @@ defineOptions({
  * 路由和认证
  */
 const router = useRouter()
-const { logout } = useAuth()
+const { logout, fetchWithAuth } = useAuth()
 
 /**
  * 响应式状态
  */
 // 用户名
-const username = ref<string>(DEFAULT_USERNAME)
+const username = ref<string>('')
 // 头像 URL
 const avatarUrl = ref<string>('')
 // 用户 ID
 const userId = ref<string>('')
-const activeScopeType = ref<string>('TENANT')
+const activeScopeType = ref<string>('')
 const activeScopeId = ref<number | undefined>(undefined)
+const userInfoReady = ref(false)
+const hasAvatar = ref(false)
 
 const scopeModalOpen = ref(false)
 const scopeSwitching = ref(false)
 const nextScopeType = ref<ActiveScopeType>('TENANT')
 const nextScopeId = ref<number | undefined>(undefined)
 const orgUnits = ref<OrgUnit[]>([])
+let userInfoLoadVersion = 0
+let avatarLoadVersion = 0
+let avatarObjectUrl: string | null = null
 
 /** 平台态（activeScopeType=PLATFORM）且本地没有 activeTenantId 时，不允许打开作用域切换入口。 */
 const canSwitchScopeEntry = computed(() => {
+  if (!userInfoReady.value) return false
   if (activeScopeType.value !== 'PLATFORM') return true
   return Boolean(getActiveTenantId())
 })
@@ -208,6 +217,7 @@ function syncLocalScopeSwitchContext(switchResult: ActiveScopeSwitchResult) {
 }
 
 const activeScopeLabel = computed(() => {
+  if (!userInfoReady.value) return ''
   if (!activeScopeType.value) return ''
   if (activeScopeType.value === 'TENANT') return 'TENANT'
   if (!activeScopeId.value) return activeScopeType.value
@@ -240,27 +250,73 @@ function getApiBaseUrl(): string {
 }
 
 /**
- * 构建头像 URL
- * 添加时间戳参数避免浏览器缓存
- * @param userId 用户ID
- * @returns 头像 URL
+ * 释放上一轮头像 Blob URL，避免作用域切换或组件卸载后泄漏。
  */
-function buildAvatarUrl(userId: string | number): string {
-  if (!userId) return ''
-  const baseUrl = getApiBaseUrl()
-  return `${baseUrl}/sys/users/${userId}/avatar?t=${Date.now()}`
+function revokeAvatarObjectUrl() {
+  if (avatarObjectUrl) {
+    URL.revokeObjectURL(avatarObjectUrl)
+    avatarObjectUrl = null
+  }
 }
 
 /**
- * 更新头像 URL
- * 根据当前用户ID更新头像URL
+ * 鉴权拉取当前用户头像，成功后转成本地 object URL。
+ * 不再把受保护接口直接塞进 <img src>，避免 401/JSON/404 被浏览器按图片资源拦截成 ORB。
  */
-function updateAvatarUrl() {
-  if (userId.value) {
-    avatarUrl.value = buildAvatarUrl(userId.value)
-  } else {
-    avatarUrl.value = ''
+async function loadCurrentUserAvatar() {
+  const version = ++avatarLoadVersion
+  revokeAvatarObjectUrl()
+  avatarUrl.value = ''
+  if (!userId.value || !hasAvatar.value) {
+    return
   }
+
+  try {
+    const baseUrl = getApiBaseUrl()
+    const response = await fetchWithAuth(`${baseUrl}/sys/users/current/avatar?t=${Date.now()}`, {
+      method: 'GET',
+      cache: 'no-store',
+      credentials: 'include',
+      headers: {
+        Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+      },
+    })
+    if (version !== avatarLoadVersion) return
+    if (response.status === 204 || response.status === 404) {
+      hasAvatar.value = false
+      return
+    }
+    if (!response.ok) return
+
+    const contentType = response.headers.get('content-type')?.toLowerCase() ?? ''
+    if (!contentType.startsWith('image/')) {
+      hasAvatar.value = false
+      return
+    }
+
+    const blob = await response.blob()
+    if (version !== avatarLoadVersion) return
+    if (blob.size <= 0) {
+      hasAvatar.value = false
+      return
+    }
+
+    const objectUrl = URL.createObjectURL(blob)
+    if (version !== avatarLoadVersion) {
+      URL.revokeObjectURL(objectUrl)
+      return
+    }
+    avatarObjectUrl = objectUrl
+    avatarUrl.value = objectUrl
+  } catch {
+    if (version === avatarLoadVersion) {
+      avatarUrl.value = ''
+    }
+  }
+}
+
+function updateAvatarUrl() {
+  void loadCurrentUserAvatar()
 }
 
 /**
@@ -362,8 +418,11 @@ const handleMenuSelect: MenuProps['onClick'] = (info) => {
  * @returns 是否成功拉取并更新展示字段（失败时回退展示占位；默认 toast，可抑制以避免与作用域切换提示重复）
  */
 async function loadUserInfo(options?: { suppressErrorToast?: boolean }): Promise<boolean> {
+  const version = ++userInfoLoadVersion
+  userInfoReady.value = false
   try {
     const data = await getCurrentUser()
+    if (version !== userInfoLoadVersion) return false
     const tid = (data as { activeTenantId?: unknown }).activeTenantId
     if (tid != null && tid !== '') {
       setActiveTenantId(tid as string | number)
@@ -371,11 +430,14 @@ async function loadUserInfo(options?: { suppressErrorToast?: boolean }): Promise
     // 优先使用昵称，其次用户名，最后使用备用用户名
     username.value = data.nickname || data.username || FALLBACK_USERNAME
     userId.value = String(data.id || '')
-    activeScopeType.value = (data as any).activeScopeType || 'TENANT'
-    activeScopeId.value = typeof (data as any).activeScopeId === 'number' ? (data as any).activeScopeId : undefined
+    activeScopeType.value = data.activeScopeType || ''
+    activeScopeId.value = typeof data.activeScopeId === 'number' ? data.activeScopeId : undefined
+    hasAvatar.value = data.hasAvatar === true
+    userInfoReady.value = true
     updateAvatarUrl()
     return true
   } catch (error) {
+    if (version !== userInfoLoadVersion) return false
     const errorMessage = error instanceof Error ? error.message : '未知错误'
     if (!options?.suppressErrorToast) {
       message.error(`加载用户信息失败：${errorMessage}`)
@@ -383,7 +445,12 @@ async function loadUserInfo(options?: { suppressErrorToast?: boolean }): Promise
     // 加载失败时使用备用值
     username.value = FALLBACK_USERNAME
     userId.value = ''
+    activeScopeType.value = ''
+    activeScopeId.value = undefined
+    hasAvatar.value = false
     avatarUrl.value = ''
+    revokeAvatarObjectUrl()
+    userInfoReady.value = true
     return false
   }
 }
@@ -394,6 +461,8 @@ async function loadUserInfo(options?: { suppressErrorToast?: boolean }): Promise
  */
 function handleAvatarError() {
   avatarUrl.value = ''
+  hasAvatar.value = false
+  revokeAvatarObjectUrl()
 }
 
 /**
@@ -419,6 +488,7 @@ function handleAvatarUploaded(event: Event) {
   // 如果事件中包含 userId，且与当前用户ID匹配，则更新头像
   // 如果没有 userId，则默认更新（可能是当前用户上传的）
   if (!customEvent.detail?.userId || String(customEvent.detail.userId) === userId.value) {
+    hasAvatar.value = true
     updateAvatarUrl()
   }
 }
@@ -437,6 +507,8 @@ onMounted(() => {
 // 组件卸载时移除事件监听
 onUnmounted(() => {
   window.removeEventListener('avatar-uploaded', handleAvatarUploaded)
+  avatarLoadVersion += 1
+  revokeAvatarObjectUrl()
 })
 
 /** 供单元测试直接编排 `confirmSwitchScope`，勿在生产业务代码中依赖。 */
@@ -552,6 +624,18 @@ defineExpose({
   /* 背景色由 avatarStyle 动态设置 */
 }
 
+.avatar-icon--loading,
+.username--loading {
+  color: transparent;
+  background: linear-gradient(90deg, #f2f4f7 0%, #e6ebf2 50%, #f2f4f7 100%);
+  background-size: 200% 100%;
+  animation: header-skeleton 1.2s ease-in-out infinite;
+}
+
+.avatar-icon--loading {
+  background-color: #edf1f7;
+}
+
 /* 用户名文字 */
 .username {
   margin-right: 4px;
@@ -560,6 +644,22 @@ defineExpose({
   font-size: 14px;
   line-height: 1.5715;
   white-space: nowrap;
+}
+
+.username--loading {
+  width: 86px;
+  height: 16px;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+@keyframes header-skeleton {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
 }
 
 /* 下拉箭头图标 */

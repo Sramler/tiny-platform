@@ -1,0 +1,54 @@
+databaseChangeLog:
+  - changeSet:
+      id: 184-process-model
+      author: codex
+      comment: 新增流程设计态模型表，保存 BPMN 草稿并以 PLATFORM/TENANT scope 隔离，部署与保存分离
+      preConditions:
+        onFail: MARK_RAN
+        onError: HALT
+        not:
+          tableExists:
+            tableName: process_model
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              CREATE TABLE `process_model` (
+                `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '流程模型ID',
+                `model_key` VARCHAR(128) NOT NULL COMMENT '流程模型业务 key，对应 BPMN process id',
+                `name` VARCHAR(200) NOT NULL COMMENT '流程模型名称',
+                `description` TEXT DEFAULT NULL COMMENT '流程模型描述',
+                `scope_type` VARCHAR(16) NOT NULL COMMENT '作用域：PLATFORM/TENANT',
+                `tenant_id` BIGINT DEFAULT NULL COMMENT '租户ID，PLATFORM 为空，TENANT 为当前 active tenant',
+                `normalized_tenant_id` BIGINT GENERATED ALWAYS AS (IFNULL(`tenant_id`, 0)) STORED COMMENT '归一化租户键，避免 MySQL UNIQUE NULL 语义松散',
+                `status` VARCHAR(32) NOT NULL DEFAULT 'DRAFT' COMMENT '模型状态：DRAFT/VALIDATED/DEPLOYED/ARCHIVED',
+                `version` INT NOT NULL DEFAULT 1 COMMENT '模型版本',
+                `bpmn_xml` LONGTEXT NOT NULL COMMENT 'BPMN XML',
+                `svg` LONGTEXT DEFAULT NULL COMMENT '设计器 SVG 快照',
+                `validation_status` VARCHAR(32) NOT NULL DEFAULT 'NOT_VALIDATED' COMMENT '校验状态：NOT_VALIDATED/PASSED/FAILED',
+                `validation_summary` TEXT DEFAULT NULL COMMENT '最近一次校验摘要',
+                `deployment_id` VARCHAR(128) DEFAULT NULL COMMENT '最近一次部署ID',
+                `process_definition_id` VARCHAR(255) DEFAULT NULL COMMENT '最近一次流程定义ID',
+                `process_definition_key` VARCHAR(128) DEFAULT NULL COMMENT '最近一次流程定义 key',
+                `process_definition_version` INT DEFAULT NULL COMMENT '最近一次流程定义版本',
+                `created_by` VARCHAR(128) DEFAULT NULL,
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                `updated_by` VARCHAR(128) DEFAULT NULL,
+                `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                `deployed_by` VARCHAR(128) DEFAULT NULL,
+                `deployed_at` DATETIME DEFAULT NULL,
+                `lock_version` BIGINT NOT NULL DEFAULT 0 COMMENT '乐观锁版本',
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uk_process_model_scope_key_version` (`scope_type`, `normalized_tenant_id`, `model_key`, `version`),
+                KEY `idx_process_model_scope_updated` (`scope_type`, `normalized_tenant_id`, `updated_at`),
+                KEY `idx_process_model_deployment` (`deployment_id`),
+                CONSTRAINT `chk_process_model_scope_type` CHECK (`scope_type` IN ('PLATFORM', 'TENANT')),
+                CONSTRAINT `chk_process_model_scope_tenant` CHECK (
+                  (`scope_type` = 'PLATFORM' AND `tenant_id` IS NULL)
+                  OR (`scope_type` = 'TENANT' AND `tenant_id` IS NOT NULL)
+                ),
+                CONSTRAINT `chk_process_model_status` CHECK (`status` IN ('DRAFT', 'VALIDATED', 'DEPLOYED', 'ARCHIVED')),
+                CONSTRAINT `chk_process_model_validation_status` CHECK (`validation_status` IN ('NOT_VALIDATED', 'PASSED', 'FAILED'))
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='流程设计态模型';

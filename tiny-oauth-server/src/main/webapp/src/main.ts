@@ -5,17 +5,15 @@ import './assets/theme.css'
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 import 'ant-design-vue/dist/reset.css'
-import { initPromise } from './auth/auth'
 
 import App from './App.vue'
 import router from './router'
-async function bootstrap() {
-  await initPromise // 初始化 auth 状态，必须在 app mount 前
-
+function bootstrap() {
   const app = createApp(App)
   app.use(createPinia())
   app.use(router)
   app.mount('#app')
+  ;(window as Window & { __TINY_APP_MOUNTED__?: boolean }).__TINY_APP_MOUNTED__ = true
 }
 
 bootstrap()

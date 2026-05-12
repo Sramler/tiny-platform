@@ -41,6 +41,7 @@
 
 - `OIDC_TROUBLESHOOTING.md` - OIDC 登录问题排查指南
 - `README_USER_EDIT.md` - 用户管理页面编辑功能说明
+- `STARTUP_AUTH_BOOTSTRAP.md` - 前端启动、认证恢复、TOTP 与权限菜单编排说明
 - `WORKFLOW_DESIGN_INTEGRATION.md` - WorkflowDesign.vue 翻译模块集成说明
 
 ### 🛠️ 技术文档 (`technical/`)
@@ -57,6 +58,7 @@
 - **翻译优化**: 查看 `translation-optimization/` 目录
 - **问题修复**: 查看 `fixes/` 目录
 - **功能特性**: 查看 `features/` 目录
+- **启动/认证编排**: 查看 `features/STARTUP_AUTH_BOOTSTRAP.md`
 - **技术实现**: 查看 `technical/` 目录
 
 ### 按时间查找
@@ -65,6 +67,6 @@
 
 ## 文档统计
 
-- **总文档数**: 25 个
+- **总文档数**: 26 个
 - **分类数**: 6 个
 - **最后更新**: 2025-08-05

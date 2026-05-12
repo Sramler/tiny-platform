@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   ensureCsrfToken: vi.fn(),
+  getCsrfFailureMessage: vi.fn(),
 }))
 
 const routeState: { query: Record<string, unknown> } = {
@@ -16,6 +17,7 @@ vi.mock('vue-router', () => ({
 
 vi.mock('@/utils/csrf', () => ({
   ensureCsrfToken: mocks.ensureCsrfToken,
+  getCsrfFailureMessage: mocks.getCsrfFailureMessage,
 }))
 
 import TotpVerify from '@/views/security/TotpVerify.vue'
@@ -30,11 +32,13 @@ describe('TotpVerify.vue', () => {
   beforeEach(() => {
     routeState.query = {}
     mocks.ensureCsrfToken.mockReset()
+    mocks.getCsrfFailureMessage.mockReset()
     mocks.ensureCsrfToken.mockResolvedValue({
       token: 'csrf-token',
       parameterName: '_csrf',
       headerName: 'X-XSRF-TOKEN',
     })
+    mocks.getCsrfFailureMessage.mockReturnValue('认证服务暂不可用，请确认后端服务已启动后重试')
   })
 
   it('should sanitize redirect and render query error text', async () => {
@@ -98,5 +102,6 @@ describe('TotpVerify.vue', () => {
     await flushPromises()
 
     expect(submitSpy).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('认证服务暂不可用，请确认后端服务已启动后重试')
   })
 })

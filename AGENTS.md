@@ -17,6 +17,7 @@
 - **测试数据命名与清理规范**：`docs/TINY_PLATFORM_TEST_ACCOUNT_NAMING_AND_CLEANUP_RULES.md`
 - **授权模型与重构方案**：`docs/TINY_PLATFORM_AUTHORIZATION_MODEL.md`
 - **Session / Bearer 认证来源矩阵**：`docs/TINY_PLATFORM_SESSION_BEARER_AUTH_MATRIX.md`（含 **`/sys/users/current` 读 vs `/active-scope` 写的 M4 分口径**，§8）
+- **前端启动 / 认证编排说明**：`tiny-oauth-server/src/main/webapp/docs/features/STARTUP_AUTH_BOOTSTRAP.md`
 - **功能权限 + 数据权限分层总图**：`docs/TINY_PLATFORM_AUTHORIZATION_LAYERED_MODEL.md`
 - **下一阶段变更与改进清单**：`docs/TINY_PLATFORM_AUTHORIZATION_NEXT_PHASE_AND_IMPROVEMENTS.md`
 - **权限/授权可执行任务清单**：`docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md`
@@ -44,6 +45,7 @@
 - **校验**：`.agent/build/validate.sh --target cursor --cursor-format mdc`
 
 > 说明：
+>
 > - `AGENTS.md` 是统一入口与顶层契约，不是所有规则的全文展开版。
 > - Cursor 运行时直接消费 `.cursor/rules/**`。
 > - Codex 当前没有仓库内专用生成产物，默认以 `AGENTS.md`、`docs/**` 和 `.agent/src/**` 为规则来源。
@@ -128,11 +130,14 @@
 - 前端：Vue3 + Ant Design Vue
 - 安全：RS256 JWT + JWK Set + MFA(TOTP)
 - 新签发 access token 的 `authorities` / `permissions` / `roleCodes` 与 `permissionsVersion` 必须来自同一份当前运行时授权快照；若可按当前 active scope 重载权威链，不得只刷新 `permissionsVersion` 而继续复用登录期 `SecurityUser` 快照，尤其 `PLATFORM` 作用域
+- `permissionsVersion` 只表达授权快照漂移；用户禁用/删除、密码重置、TOTP 解绑/重绑等强制失效必须走 `tokenSecurityVersion` / `tokenNotBefore`，前端收到 `token_revoked` 不做 silent retry，直接清理运行态并重新登录
+- 菜单结构/路由/显隐/排序/菜单权限 requirement 变化必须走 `runtime_version_signal` 的 `MENU_CONFIG` 版本域与 `/sys/menus/tree` ETag 校验；禁止使用无版本失效机制的浏览器本地菜单缓存作为权限或路由真相源
 - 授权/控制面 DTO 或兼容写链一旦变更，必须同步后端 DTO、前端 TS 接口、表单透传与定向测试；不要只改服务层后宣称“任务已完成”
 - 涉及 `db/changelog/**`、`db.changelog-master.yaml`、`api_endpoint` / `menu_permission_requirement` / `role_permission` 回填、权限/菜单 seed 或 DDL 的任务，完成条件必须包含一次真实 `SpringLiquibase` / 应用启动验证；只跑单测/集测不算完成。若环境前置不足，只能标“阻塞/未验证”，不得写“已完成，待用户启动验证”
 - 平台角色治理 `CARD-PR-01 ~ CARD-PR-08` 必须显式写清本卡负责与不负责的边界，尤其统一守卫回填、菜单回填、Liquibase include、real-controller 测试、启动验证不得默认外推到下一张卡或留给用户首次启动时发现
 - `POST /sys/roles/{id}/resources` 当前控制面契约只接受 `permissionIds`；前端组件 emit、TS payload、测试命名不得继续传播 `resourceIds` 运行态语义
 - 菜单控制面主入口是 `/sys/menus`；不要新增/恢复 `/sys/resources/menus*`，也不要让菜单前端 API 再借用 `/sys/resources/check-*`
 - 收口 `permission` 历史写链时，不能只改 `ResourceForm`；`MenuForm`、`MenuServiceImpl` 与菜单 DTO 也必须同步切到 `requiredPermissionId` 主入口
+- 字典中心只承载“展示可治理的稳定编码映射”和“可配置业务分类”；关键状态机、状态码 / 枚举码、主数据、系统配置、元数据和业务模型不得退化为普通动态字典。`workflow_model_status`、`workflow_runtime_state` 等影响后端逻辑的值必须由代码枚举固定，字典最多管理 label / color / sort / i18n 等展示属性
 - 租户初始化向导当前态（CARD-TW-01~TW-04）必须保持：create 走 `TenantCreateWizard`、edit 走 `TenantForm`、确认步骤走 `POST /sys/tenants/precheck` dry-run、最终由 wizard 一次性 `POST /sys/tenants`、结果页成功后不自动关闭且详情跳转携带 `query.from`
 - 规则扩展记录：2026-02-05 增补 logging/performance/dependency/config/docs/code-review 规则并加强构建清理策略

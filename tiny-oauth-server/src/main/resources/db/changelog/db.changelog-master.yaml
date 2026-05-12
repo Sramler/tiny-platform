@@ -711,3 +711,28 @@ databaseChangeLog:
   - include:
       file: 179-enable-platform-native-runtime-tenant-null.yaml
       relativeToChangelogFile: true
+
+  # 修复已执行旧平台运行态菜单回填的环境，避免平台菜单继续指向已移除的桥接组件
+  - include:
+      file: 180-fix-platform-runtime-menu-components.yaml
+      relativeToChangelogFile: true
+
+  # 运行态版本存储表，用于菜单配置版本等可校验缓存失效
+  - include:
+      file: 181-runtime-version-store.yaml
+      relativeToChangelogFile: true
+
+  # 运行态版本表更名为版本信号表，避免与应用 runtime 版本产生歧义
+  - include:
+      file: 182-rename-runtime-version-signal.yaml
+      relativeToChangelogFile: true
+
+  # 用户 token 安全状态，独立承载 tokenVersion / tokenNotBefore 等强制失效信号
+  - include:
+      file: 183-user-token-security-state.yaml
+      relativeToChangelogFile: true
+
+  # 流程设计态模型表，保存 BPMN 草稿并以 PLATFORM/TENANT scope 隔离
+  - include:
+      file: 184-process-model.yaml
+      relativeToChangelogFile: true

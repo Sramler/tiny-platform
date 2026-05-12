@@ -82,4 +82,31 @@ describe('500.vue', () => {
       query: { activeTenantId: '12' },
     })
   })
+
+  it('should sanitize unsafe from query before returning', async () => {
+    routerMocks.route.query = { from: 'https://evil.example/phish' }
+
+    const wrapper = mount(Page500, {
+      global: {
+        stubs: {
+          'a-card': PassThrough,
+          'a-divider': PassThrough,
+          'a-descriptions': PassThrough,
+          'a-descriptions-item': PassThrough,
+          'a-typography-text': PassThrough,
+          'a-tooltip': PassThrough,
+          'a-button': ButtonStub,
+          ThunderboltOutlined: PassThrough,
+          HomeOutlined: PassThrough,
+          ArrowLeftOutlined: PassThrough,
+          InfoCircleOutlined: PassThrough,
+        },
+      },
+    })
+
+    await wrapper.findAll('button')[1]?.trigger('click')
+
+    expect(routerMocks.push).toHaveBeenCalledWith('/')
+    expect(routerMocks.push).not.toHaveBeenCalledWith('https://evil.example/phish')
+  })
 })

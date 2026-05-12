@@ -192,12 +192,14 @@ public class DefaultSecurityConfig {
     @Bean
     public TenantContextFilter tenantContextFilter(TenantRepository tenantRepository,
                                                    ObjectProvider<PermissionVersionService> permissionVersionServiceProvider,
+                                                   ObjectProvider<com.tiny.platform.core.oauth.security.TokenSecurityStateService> tokenSecurityStateServiceProvider,
                                                    ObjectProvider<com.tiny.platform.infrastructure.auth.audit.service.AuthorizationAuditService> authorizationAuditServiceProvider,
                                                    ObjectProvider<TenantLifecycleReadPolicy> tenantLifecycleReadPolicyProvider,
                                                    ObjectProvider<com.tiny.platform.infrastructure.auth.org.repository.OrganizationUnitRepository> organizationUnitRepositoryProvider,
                                                    ObjectProvider<com.tiny.platform.infrastructure.auth.org.repository.UserUnitRepository> userUnitRepositoryProvider) {
         return new TenantContextFilter(tenantRepository,
                 permissionVersionServiceProvider.getIfAvailable(),
+                tokenSecurityStateServiceProvider.getIfAvailable(),
                 authorizationAuditServiceProvider.getIfAvailable(),
                 tenantLifecycleReadPolicyProvider.getIfAvailable(),
                 organizationUnitRepositoryProvider.getIfAvailable(),

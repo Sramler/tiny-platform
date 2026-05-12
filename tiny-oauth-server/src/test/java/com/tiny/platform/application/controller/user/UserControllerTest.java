@@ -175,6 +175,7 @@ class UserControllerTest {
             .containsEntry("credentialsNonExpired", true)
             .containsEntry("email", "alice@example.com")
             .containsEntry("phone", "13800000000")
+            .containsEntry("hasAvatar", false)
             .containsEntry("failedLoginCount", 2);
         assertThat(successBody.get("lastLoginAt")).isEqualTo("2026-03-01T10:00");
         assertThat(successBody.get("lastFailedLoginAt")).isEqualTo("2026-03-01T09:00");
@@ -357,12 +358,12 @@ class UserControllerTest {
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         when(avatarService.getAvatarMetadata(1L)).thenReturn(null);
-        assertThat(controller.getUserAvatar(1L, request, response).getStatusCode().value()).isEqualTo(404);
+        assertThat(controller.getUserAvatar(1L, request, response).getStatusCode().value()).isEqualTo(204);
 
         AvatarService.AvatarMetadata metadata = new AvatarService.AvatarMetadata("image/png", "a.png", 3, "hash1");
         when(avatarService.getAvatarMetadata(2L)).thenReturn(metadata);
         when(avatarService.getAvatarData(2L)).thenReturn(null);
-        assertThat(controller.getUserAvatar(2L, request, response).getStatusCode().value()).isEqualTo(404);
+        assertThat(controller.getUserAvatar(2L, request, response).getStatusCode().value()).isEqualTo(204);
 
         when(avatarService.getAvatarMetadata(3L)).thenReturn(metadata);
         when(avatarService.getAvatarData(3L)).thenReturn(new byte[]{1, 2, 3});

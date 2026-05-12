@@ -98,7 +98,7 @@ export default defineConfig({
       'bpmn-js/lib/Modeler',
       'bpmn-js/lib/Viewer',
       'bpmn-js-i18n',
-      'bpmn-js-i18n/translations/en.js',
+      'bpmn-js-i18n/translations/zn.js',
       'bpmn-js-properties-panel',
       'camunda-bpmn-moddle',
       'camunda-bpmn-moddle/resources/camunda.json',

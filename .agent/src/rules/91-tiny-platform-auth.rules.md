@@ -16,9 +16,12 @@
 ## 必须（Must）
 
 - ✅ OAuth2 授权流程：使用 `authorization_code`（Web 应用）和 `refresh_token`（刷新令牌）。
-- ✅ JWT Token Claims：标准字段（iss, sub, aud, exp, iat, jti）由框架自动添加；企业级字段应与当前授权主线一致，至少稳定包含 `userId`、`username`、`permissions`、`activeTenantId`、`activeScopeType`、`permissionsVersion`；`authorities` 可保留兼容语义，但不得替代 `permissions` 作为当前能力判断入口。
+- ✅ JWT Token Claims：标准字段（iss, sub, aud, exp, iat, jti）由框架自动添加；企业级字段应与当前授权主线一致，至少稳定包含 `userId`、`username`、`permissions`、`activeTenantId`、`activeScopeType`、`permissionsVersion`、`tokenSecurityVersion`、`tokenNotBefore`；`authorities` 可保留兼容语义，但不得替代 `permissions` 作为当前能力判断入口。
 - ✅ 新签发 access token 的 `authorities` / `permissions` / `roleCodes` 与 `permissionsVersion` 必须尽量同源于当前 active scope 的运行时授权快照；当 `UserDetailsService` 或等价权威链可用时，不得优先信任登录期残留的 `SecurityUser` / session snapshot，尤其 `PLATFORM` 作用域。
 - ✅ 若 `role_assignment` / `role_hierarchy` / `role_permission` 变化已能影响 `permissionsVersion`，token minting 也必须让权限 claims 同步反映当前结果；禁止出现“`permissionsVersion` 已更新但 JWT `authorities` / `roleCodes` 仍是旧快照”的不一致。
+- ✅ `permissionsVersion` 只表达授权快照版本，不得承担用户禁用、删除、密码重置、TOTP 解绑/重绑等安全撤销语义；这类强制重新登录必须使用独立的 `tokenSecurityVersion` / `tokenNotBefore` 安全状态信号。
+- ✅ 后端请求链路必须先校验 token/session 安全状态，再校验权限快照漂移：`token_revoked` 代表不可静默自愈，前端必须清理运行态并重新登录；`stale_permissions` 才允许 silent renew 一次并重试原请求。
+- ✅ 菜单结构、路由字段、显隐、排序和菜单权限 requirement 的变化必须通过 `MENU_CONFIG` 运行态版本信号和 `/sys/menus/tree` 的 ETag / `X-Menu-Config-Version` 体现；不得把菜单配置变化塞进 `permissionsVersion` 或依赖无失效机制的浏览器本地缓存。
 - ✅ 认证方式选择：按客户端来源切换 JWT/Session（Web 前端用 Session，API 客户端用 JWT）。
 - ✅ 多认证方式：支持 PASSWORD（密码）和 TOTP（时间戳一次性密码），从 `user_authentication_method` 表动态查询。
 - ✅ 安全策略：JWT 使用 RS256 算法，密钥使用 JWK Set；支持 MFA（TOTP）。
@@ -35,10 +38,15 @@
 - ✅ 平台身份、租户身份、readonly 身份、bind 身份的 auth-state / setup helper 必须显式区分 `login mode` 与 tenant code 归属；不得因 fallback 把 tenant 登录误导向 platform scope，或把 platform 管理调用错误复用为 tenant 身份。
 - ✅ 首绑 TOTP / post-login 安全中心 / MFA 继续跳转类 E2E 必须按真实浏览器会话契约工作：优先使用页面真实渲染结果或 `credentials: include` 的 first-party 请求，不能假设 OIDC callback 一定已经把 token 写入 `localStorage`。
 - ✅ 涉及 Session / Bearer 同时存在、`activeTenantId` 来源裁决、`activeScopeType/id` 成对解析、`prompt=none` / silent renew 行为的改动，必须与 `docs/TINY_PLATFORM_SESSION_BEARER_AUTH_MATRIX.md` 保持一致；不得用“浏览器请求一律只看 Session”或“只要带 Bearer 就完全忽略 Session”这种简化口径替代当前主线契约。
+- ✅ 前端启动/认证恢复必须遵循 `/bootstrap` 编排口径：`main.ts` 只挂载应用，`/bootstrap` 统一执行 `authBootstrap -> securityBootstrap -> permissionBootstrap`，普通 router guard 只做轻量分流，不得重新塞入 `signinSilent()`、`/sys/menus/tree` 请求或动态路由注册这类重型异步编排。
+- ✅ `/bootstrap`、OIDC 登录 callback、登录页、安全流程页和异常页必须是启动守卫 bypass 路由；尤其 `/callback` 不得被重定向回 `/bootstrap` 造成回环。OIDC silent renew 统一使用独立 `silent-renew.html` iframe 入口，不注册为 Vue Router 路由；登录 callback 处理完 code 后再显式回流 `/bootstrap?redirect=...`。
+- ✅ TOTP bind/check/skip 等安全流程完成后应回流 `/bootstrap?redirect=...`，由前端重新恢复 OIDC 登录态、检查安全状态、加载权限菜单并注册动态路由；redirect 必须经过内部路径净化，禁止 open redirect。
+- ✅ 菜单权限加载与动态路由注册必须集中在 permission bootstrap；菜单为空、无效 URL、缺失组件、重复 path 或注册失败时默认 fail-closed 阻断业务区，不得进入“半登录半可用”状态。
 - ✅ **M4（Bearer + Session 一致）在 user 端点上分两种正式语义，不得混用**：`GET /sys/users/current` 为 **M4 读**（只读快照，不改 Session scope）；`POST /sys/users/current/active-scope` 为 **M4 写**（会话 active scope **持久化以 Session 为权威落点**，Bearer 写成功须返回 `tokenRefreshRequired` / `newActiveScope*`）。默认不得假设“矩阵 §4 的 M4 放行 = 所有 `/sys/users/**` 同一口径”；须按 `docs/TINY_PLATFORM_SESSION_BEARER_AUTH_MATRIX.md` **§8**。
 - ✅ **默认心智模型（Cursor/Codex/实现者）**：将 `POST /sys/users/current/active-scope` 视为 **会话状态变更写**（session-first 持久化）；在 **M4** 下 **额外**允许带 Bearer 完成同一写，且**必须**按响应 `tokenRefreshRequired` 规划 refresh，不得假装 JWT 已随该请求更新。
 - ✅ `POST /sys/users/current/active-scope` 在 M4（Bearer + Session 成对一致）下允许写 Session 时，成功响应必须携带可机器解析的 `tokenRefreshRequired` 与 `newActiveScopeType`/`newActiveScopeId`（及说明写后 JWT 与 Session 可预测行为的文档），且与 `docs/TINY_PLATFORM_SESSION_BEARER_AUTH_MATRIX.md` §8 一致；不得静默忽略“写后显式 scope claims 陈旧导致下一请求 M5 fail-closed”的风险。
 - ✅ 涉及 silent renew、`tokenRefreshRequired`、`prompt=none` 的 real-link 断言时，必须优先验证 durable evidence（真实 `/oauth2/authorize?...prompt=none...`、刷新后 Bearer 请求恢复 200、稳定页面态），不能只依赖瞬时 success toast 或壳页标题判定通过。
+- ✅ 涉及前端启动链路、OIDC callback、silent renew、TOTP 跳转或菜单权限加载的变更，至少应补前端路由/认证定向测试，并优先执行 `npm run type-check`、相关 `vitest`、`npm run build-only`；涉及后端 TOTP redirect 时同步执行 `mvn -pl tiny-oauth-server -Dtest=SecurityControllerRedirectTest test`。
 - ✅ tiny-platform 本地认证 / 租户 / 平台模板验证应优先复用仓库脚本，且**默认入口**为 `tiny-oauth-server/scripts/verify-platform-local-dev-stack.sh`；只有在明确不需要前端联动时，才降级为 `tiny-oauth-server/scripts/verify-platform-dev-bootstrap.sh`；登录链专项快速门禁再使用 `tiny-oauth-server/scripts/verify-platform-login-auth-chain.sh`。不要先要求人工逐个启动数据库、后端、前端，再开始判断认证结论。
 - ✅ 如需读取本机已导出的数据库密码、启动命令或路径，只允许通过 login shell 子进程读取**白名单环境变量**；`DB_*` 为 dev/bootstrap 主变量，`E2E_DB_*` 可作为兼容别名回填，不得打印或上传 `~/.zprofile`、`~/.zshrc`、`~/.bashrc` 全文。
 - ✅ `verify-platform-dev-bootstrap.sh` / `verify-platform-local-dev-stack.sh` 返回 `exit 2` 时，只能记为“环境前置未满足”，不得写成认证链路失败或代码回归。
@@ -88,7 +96,9 @@
   "scope": "openid profile email",
   "activeTenantId": 1,
   "activeScopeType": "TENANT",
-  "permissionsVersion": 7
+  "permissionsVersion": 7,
+  "tokenSecurityVersion": "sha256-token-security-snapshot",
+  "tokenNotBefore": 1778235330
 }
 ```
 

@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   logout: vi.fn(),
+  fetchWithAuth: vi.fn(),
   refreshTokenAfterActiveScopeSwitch: vi.fn(),
   switchActiveScope: vi.fn(),
   getCurrentUser: vi.fn(),
@@ -28,7 +29,7 @@ const messageMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/auth/auth', () => ({
-  useAuth: () => ({ logout: mocks.logout }),
+  useAuth: () => ({ logout: mocks.logout, fetchWithAuth: mocks.fetchWithAuth }),
   refreshTokenAfterActiveScopeSwitch: mocks.refreshTokenAfterActiveScopeSwitch,
 }))
 
@@ -93,6 +94,8 @@ async function mountHeaderBar() {
 describe('HeaderBar.vue confirmSwitchScope', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    URL.revokeObjectURL = vi.fn()
+    URL.createObjectURL = vi.fn(() => 'blob:avatar')
     mocks.getCurrentUser.mockResolvedValue(currentUserPayload)
     mocks.getOrgList.mockResolvedValue([])
     mocks.switchActiveScope.mockResolvedValue({ success: true, tokenRefreshRequired: false })
@@ -236,5 +239,67 @@ describe('HeaderBar.vue confirmSwitchScope', () => {
       'getCurrentUser',
     ])
     expect(messageMocks.success).toHaveBeenCalledWith('作用域已切换')
+  })
+
+  it('shows a neutral skeleton before current user resolves to avoid TENANT/PLATFORM flicker', async () => {
+    let resolveCurrentUser: (value: typeof currentUserPayload) => void = () => {}
+    mocks.getCurrentUser.mockReturnValue(
+      new Promise((resolve) => {
+        resolveCurrentUser = resolve
+      }),
+    )
+
+    const wrapper = mount(HeaderBar, {
+      global: {
+        stubs: {
+          UserOutlined: true,
+          SettingOutlined: true,
+          LogoutOutlined: true,
+          DownOutlined: true,
+        },
+      },
+    })
+
+    expect(wrapper.text()).toContain('用户信息加载中')
+    expect(wrapper.text()).not.toContain('管理员')
+    expect(wrapper.text()).not.toContain('TENANT')
+
+    resolveCurrentUser(currentUserPayload)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Alice')
+    expect(wrapper.text()).toContain('TENANT')
+  })
+
+  it('does not request avatar when current user reports no avatar', async () => {
+    mocks.getCurrentUser.mockResolvedValue({ ...currentUserPayload, hasAvatar: false })
+
+    await mountHeaderBar()
+
+    expect(mocks.fetchWithAuth).not.toHaveBeenCalled()
+  })
+
+  it('loads avatar through authenticated blob fetch when current user has avatar', async () => {
+    const blob = new Blob(['avatar'], { type: 'image/png' })
+    mocks.getCurrentUser.mockResolvedValue({ ...currentUserPayload, hasAvatar: true })
+    mocks.fetchWithAuth.mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'image/png' }),
+      blob: vi.fn().mockResolvedValue(blob),
+    })
+
+    const wrapper = await mountHeaderBar()
+    await flushPromises()
+
+    expect(mocks.fetchWithAuth).toHaveBeenCalledWith(
+      expect.stringContaining('/sys/users/current/avatar?'),
+      expect.objectContaining({
+        method: 'GET',
+        cache: 'no-store',
+      }),
+    )
+    expect(URL.createObjectURL).toHaveBeenCalledWith(blob)
+    expect(wrapper.find('img.avatar').attributes('src')).toBe('blob:avatar')
   })
 })

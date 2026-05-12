@@ -9,6 +9,7 @@ import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
 import com.tiny.platform.core.oauth.security.AuthorizationEndpointMfaAuthorizationManager;
 import com.tiny.platform.core.oauth.security.AuthorizationEndpointMfaEntryPoint;
 import com.tiny.platform.core.oauth.security.AuthenticationFactorAuthorities;
+import com.tiny.platform.core.oauth.security.TokenSecurityStateService;
 import com.tiny.platform.core.oauth.tenant.IssuerTenantSupport;
 import com.tiny.platform.core.oauth.tenant.TenantContextFilter;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -266,8 +267,9 @@ public class AuthorizationServerConfig {
             com.tiny.platform.infrastructure.auth.user.repository.UserRepository userRepository,
             AuthUserResolutionService authUserResolutionService,
             com.tiny.platform.core.oauth.security.PermissionVersionService permissionVersionService,
-            UserDetailsService userDetailsService) {
-        return new JwtTokenCustomizer(userRepository, authUserResolutionService, permissionVersionService, userDetailsService);
+            UserDetailsService userDetailsService,
+            TokenSecurityStateService tokenSecurityStateService) {
+        return new JwtTokenCustomizer(userRepository, authUserResolutionService, permissionVersionService, userDetailsService, tokenSecurityStateService);
     }
 
     /**

@@ -33,6 +33,7 @@ const axiosState = vi.hoisted(() => {
 
 const mocks = vi.hoisted(() => ({
   getAccessToken: vi.fn(),
+  refreshAccessTokenOnce: vi.fn(),
   logout: vi.fn(),
   routerPush: vi.fn(),
   routerReplace: vi.fn(),
@@ -82,6 +83,7 @@ vi.mock('@/auth/auth', () => ({
   useAuth: () => ({
     getAccessToken: mocks.getAccessToken,
   }),
+  refreshAccessTokenOnce: mocks.refreshAccessTokenOnce,
   logout: mocks.logout,
 }))
 
@@ -134,6 +136,7 @@ describe('request.ts interceptors', () => {
     axiosState.responseFulfilled = undefined
     axiosState.responseRejected = undefined
     mocks.getAccessToken.mockResolvedValue('access-token')
+    mocks.refreshAccessTokenOnce.mockResolvedValue(false)
     mocks.getOrCreateTraceId.mockReturnValue('trace-id')
     mocks.generateRequestId.mockReturnValue('request-id')
     mocks.getCurrentTraceId.mockReturnValue('trace-current')
@@ -396,6 +399,42 @@ describe('request.ts interceptors', () => {
     })
   })
 
+  it('should redirect to login for token_revoked 401 without silent retry', async () => {
+    const rejected = axiosState.service.interceptors.response.use.mock.calls[0]?.[1] as
+      | ResponseRejected
+      | undefined
+    expect(rejected).toBeTypeOf('function')
+
+    const error = {
+      response: {
+        status: 401,
+        data: {
+          error: 'token_revoked',
+          error_description: 'token security state is outdated',
+        },
+        headers: {
+          'x-trace-id': 'trace-token-revoked',
+        },
+      },
+      config: {
+        url: '/sys/users/current',
+      },
+    }
+
+    await expect(rejected!(error)).rejects.toBe(error)
+
+    expect(mocks.refreshAccessTokenOnce).not.toHaveBeenCalled()
+    expect(mocks.routerReplace).toHaveBeenCalledWith({
+      path: '/login',
+      query: {
+        redirect: '/dashboard?tab=security',
+        error: 'token_revoked',
+        message: 'token security state is outdated',
+        traceId: 'trace-token-revoked',
+      },
+    })
+  })
+
   it('should route 403 errors to exception page with trace id', async () => {
     const rejected = axiosState.service.interceptors.response.use.mock.calls[0]?.[1] as
       | ResponseRejected
@@ -492,6 +531,41 @@ describe('request.ts interceptors', () => {
         path: '/api/system',
         message: 'server exploded',
         traceId: 'trace-500',
+      },
+    })
+  })
+
+  it('should route 503 errors to service unavailable exception page', async () => {
+    const rejected = axiosState.service.interceptors.response.use.mock.calls[0]?.[1] as
+      | ResponseRejected
+      | undefined
+    expect(rejected).toBeTypeOf('function')
+
+    const error = {
+      response: {
+        status: 503,
+        data: {
+          error: 'workflow_engine_disabled',
+          message: '当前运行环境未启用流程引擎，流程管理接口不可用',
+        },
+        headers: {
+          'x-trace-id': 'trace-503',
+        },
+      },
+      config: {
+        url: '/process/definitions',
+      },
+    }
+
+    await expect(rejected!(error)).rejects.toBe(error)
+
+    expect(mocks.routerPush).toHaveBeenCalledWith({
+      path: '/exception/503',
+      query: {
+        from: '/dashboard?tab=security',
+        path: '/process/definitions',
+        message: '当前运行环境未启用流程引擎，流程管理接口不可用',
+        traceId: 'trace-503',
       },
     })
   })

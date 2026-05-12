@@ -2,6 +2,7 @@ package com.tiny.platform.infrastructure.auth.user.service;
 
 import com.tiny.platform.core.oauth.security.LoginFailurePolicy;
 import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
+import com.tiny.platform.core.oauth.security.TokenSecurityStateService;
 import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.core.oauth.tenant.TenantContextContract;
@@ -66,6 +67,9 @@ public class UserServiceImpl implements UserService {
     private final TenantLifecycleGuard tenantLifecycleGuard;
     private final TenantQuotaService tenantQuotaService;
     private final UserAuthenticationBridgeWriter authenticationBridgeWriter;
+
+    @Autowired(required = false)
+    private TokenSecurityStateService tokenSecurityStateService;
 
     @Autowired
     public UserServiceImpl(UserRepository userRepository, PasswordEncoder passwordEncoder,
@@ -174,12 +178,17 @@ public class UserServiceImpl implements UserService {
     public User update(Long id, User user) {
         return findById(id)
             .map(existing -> {
+                boolean securityChanged = hasAccountSecurityStateChanged(existing, user);
                 existing.setUsername(user.getUsername());
                 // 不再更新 user.password，密码已迁移到认证凭证模型
                 existing.setNickname(user.getNickname());
                 existing.setEnabled(user.isEnabled());
                 existing.setLastLoginAt(user.getLastLoginAt());
-                return userRepository.save(existing);
+                User saved = userRepository.save(existing);
+                if (securityChanged) {
+                    revokeAllUserTokens(saved.getId(), "user_security_state_update");
+                }
+                return saved;
             })
             .orElseThrow(() -> new RuntimeException("User not found"));
     }
@@ -264,6 +273,8 @@ public class UserServiceImpl implements UserService {
             );
         }
         
+        boolean securityChanged = hasAccountSecurityStateChanged(existingUser, userDto);
+
         // 更新基本信息
         existingUser.setUsername(userDto.getUsername());
         existingUser.setNickname(userDto.getNickname());
@@ -284,6 +295,7 @@ public class UserServiceImpl implements UserService {
         // 如果提供了新密码，则更新认证方法表中的密码
         if (userDto.needUpdatePassword()) {
             updatePasswordAuthenticationMethod(userDto.getId(), tenantId, userDto.getPassword());
+            securityChanged = true;
         }
         
         // 处理角色
@@ -300,6 +312,9 @@ public class UserServiceImpl implements UserService {
 
         User savedUser = userRepository.save(existingUser);
         syncUserUnitsIfPresent(tenantId, existingUser.getId(), userDto);
+        if (securityChanged) {
+            revokeAllUserTokens(existingUser.getId(), "user_security_state_update");
+        }
         return savedUser;
     }
     
@@ -424,6 +439,7 @@ public class UserServiceImpl implements UserService {
             user.setEnabled(true);
         }
         userRepository.saveAll(users);
+        users.forEach(user -> revokeAllUserTokens(user.getId(), "user_batch_enable"));
     }
     
     @Override
@@ -437,6 +453,7 @@ public class UserServiceImpl implements UserService {
             user.setEnabled(false);
         }
         userRepository.saveAll(users);
+        users.forEach(user -> revokeAllUserTokens(user.getId(), "user_batch_disable"));
     }
     
     @Override
@@ -447,6 +464,7 @@ public class UserServiceImpl implements UserService {
         List<User> users = requireUsersInTenant(ids);
         
         userRepository.deleteAll(users);
+        users.forEach(user -> revokeAllUserTokens(user.getId(), "user_batch_delete"));
     }
 
     @Override
@@ -609,6 +627,29 @@ public class UserServiceImpl implements UserService {
             return securityUser.getUserId();
         }
         return null;
+    }
+
+    private boolean hasAccountSecurityStateChanged(User existing, User incoming) {
+        return existing != null && incoming != null
+            && (existing.isEnabled() != incoming.isEnabled()
+            || existing.isAccountNonExpired() != incoming.isAccountNonExpired()
+            || existing.isAccountNonLocked() != incoming.isAccountNonLocked()
+            || existing.isCredentialsNonExpired() != incoming.isCredentialsNonExpired());
+    }
+
+    private boolean hasAccountSecurityStateChanged(User existing, UserCreateUpdateDto incoming) {
+        return existing != null && incoming != null
+            && (existing.isEnabled() != Boolean.TRUE.equals(incoming.getEnabled())
+            || existing.isAccountNonExpired() != Boolean.TRUE.equals(incoming.getAccountNonExpired())
+            || existing.isAccountNonLocked() != Boolean.TRUE.equals(incoming.getAccountNonLocked())
+            || existing.isCredentialsNonExpired() != Boolean.TRUE.equals(incoming.getCredentialsNonExpired()));
+    }
+
+    private void revokeAllUserTokens(Long userId, String reason) {
+        if (tokenSecurityStateService == null || userId == null) {
+            return;
+        }
+        tokenSecurityStateService.revokeAllUserTokens(userId, reason, extractCurrentUserId());
     }
 
     private void syncUserUnitsIfPresent(Long tenantId, Long userId, UserCreateUpdateDto userDto) {

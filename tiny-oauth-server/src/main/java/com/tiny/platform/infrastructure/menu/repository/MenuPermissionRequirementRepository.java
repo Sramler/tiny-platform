@@ -24,6 +24,14 @@ public interface MenuPermissionRequirementRepository extends JpaRepository<MenuP
     boolean existsByPermissionIdAndTenantScope(@Param("permissionId") Long permissionId,
                                                @Param("tenantId") Long tenantId);
 
+    @Query("""
+        SELECT r
+        FROM MenuPermissionRequirement r
+        WHERE ((:tenantId IS NULL AND r.tenantId IS NULL) OR r.tenantId = :tenantId)
+        ORDER BY r.menuId ASC, r.requirementGroup ASC, r.sortOrder ASC, r.id ASC
+        """)
+    List<MenuPermissionRequirement> findByTenantScopeOrderByStableFields(@Param("tenantId") Long tenantId);
+
     @Query(value = """
         SELECT
           r.menu_id AS carrierId,

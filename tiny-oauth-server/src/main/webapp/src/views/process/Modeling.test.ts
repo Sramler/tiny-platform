@@ -1,139 +1,176 @@
 import { mount } from '@vue/test-utils'
-import { defineComponent } from 'vue'
+import { defineComponent, nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Avoid pulling in heavy BPMN libs in unit tests.
-vi.mock('bpmn-js/lib/Modeler', () => ({
-  default: class {
-    importXML = vi.fn(() => Promise.resolve())
-    get = vi.fn(() => ({ zoom: vi.fn() }))
-    destroy = vi.fn()
-  },
-}))
-vi.mock('bpmn-js-properties-panel', () => ({
-  BpmnPropertiesPanelModule: {},
-  BpmnPropertiesProviderModule: {},
-  CamundaPlatformPropertiesProviderModule: {},
-}))
-vi.mock('diagram-js-minimap', () => ({ default: {} }))
-vi.mock('camunda-bpmn-moddle/resources/camunda.json', () => ({ default: {} }))
-vi.mock('@/utils/bpmn/utils/translateUtils', () => ({
-  getTranslateModule: () => ({}),
-  translateUtils: {
-    addCustomTranslations: vi.fn(),
-  },
+const modalMocks = vi.hoisted(() => ({
+  confirm: vi.fn(),
 }))
 
-vi.mock('ant-design-vue', () => ({
-  message: { error: vi.fn(), success: vi.fn(), warning: vi.fn() },
-}))
-
-const tenantContextMocks = vi.hoisted(() => ({
-  getActiveTenantId: vi.fn(),
+const messageMocks = vi.hoisted(() => ({
+  warning: vi.fn(),
 }))
 
 const routerMocks = vi.hoisted(() => ({
-  routeQuery: {} as Record<string, unknown>,
-  routerPush: vi.fn(),
+  route: {
+    path: '/process/modeling',
+    query: {} as Record<string, unknown>,
+  },
+  routerReplace: vi.fn(),
+  beforeRouteLeave: vi.fn(),
+}))
+
+vi.mock('ant-design-vue', () => ({
+  Modal: { confirm: modalMocks.confirm },
+  message: { warning: messageMocks.warning },
 }))
 
 vi.mock('vue-router', () => ({
-  useRoute: () => ({
-    query: routerMocks.routeQuery,
-  }),
+  useRoute: () => routerMocks.route,
   useRouter: () => ({
-    push: routerMocks.routerPush,
+    replace: routerMocks.routerReplace,
   }),
+  onBeforeRouteLeave: routerMocks.beforeRouteLeave,
 }))
 
-vi.mock('@/utils/tenant', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/utils/tenant')>()
-  return {
-    ...actual,
-    getActiveTenantId: tenantContextMocks.getActiveTenantId,
-  }
+vi.mock('@/views/process/modeling/ProcessDraftList.vue', () => ({
+  default: {
+    name: 'ProcessDraftList',
+    emits: ['open-design'],
+    template: `
+      <div class="process-draft-list-stub">
+        流程草稿
+        <button class="open-design" @click="$emit('open-design', { id: 7, modelKey: 'leave_process', name: 'Leave Process' })">
+          打开设计
+        </button>
+      </div>
+    `,
+  },
+}))
+
+vi.mock('@/views/process/modeling/ProcessDesigner.vue', () => ({
+  default: {
+    name: 'ProcessDesigner',
+    emits: ['dirty-change'],
+    template: `
+      <div class="process-designer-stub">
+        流程设计
+        <button class="mark-dirty" @click="$emit('dirty-change', true)">dirty</button>
+      </div>
+    `,
+  },
+}))
+
+const TabsStub = defineComponent({
+  props: ['activeKey'],
+  emits: ['change'],
+  template: '<div class="tabs" :data-active-key="activeKey"><slot /></div>',
 })
 
-const PassThrough = defineComponent({ template: '<div><slot /></div>' })
-const ButtonStub = defineComponent({
-  emits: ['click'],
-  template: '<button @click="$emit(\'click\')"><slot /></button>',
-})
-const ProcessDeployResultModalStub = defineComponent({
-  emits: ['go-deployment', 'go-definition'],
-  template: `
-    <div>
-      <button class="go-deployment" @click="$emit('go-deployment')">go-deployment</button>
-      <button class="go-definition" @click="$emit('go-definition')">go-definition</button>
-    </div>
-  `,
+const TabPaneStub = defineComponent({
+  props: ['tab', 'disabled'],
+  template: '<section class="tab-pane" :data-tab="tab" :data-disabled="disabled ? \'true\' : \'false\'"><slot /></section>',
 })
 
 import Modeling from '@/views/process/Modeling.vue'
 
-describe('process Modeling.vue', () => {
+async function flushPromises() {
+  await Promise.resolve()
+  await nextTick()
+  await Promise.resolve()
+  await nextTick()
+}
+
+function resetRouteQuery(query: Record<string, unknown> = {}) {
+  routerMocks.route.query = query
+}
+
+function mountModeling() {
+  return mount(Modeling, {
+    global: {
+      stubs: {
+        'a-tabs': TabsStub,
+        'a-tab-pane': TabPaneStub,
+      },
+    },
+  })
+}
+
+describe('process Modeling.vue workspace', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    Object.keys(routerMocks.routeQuery).forEach((key) => {
-      delete routerMocks.routeQuery[key]
-    })
-    tenantContextMocks.getActiveTenantId.mockReturnValue('9')
+    resetRouteQuery()
   })
 
-  it('should render modeling shell', () => {
-    const wrapper = mount(Modeling, {
-      global: {
-        stubs: {
-          'a-button': ButtonStub,
-          'a-modal': PassThrough,
-          'a-form': PassThrough,
-          'a-form-item': PassThrough,
-          'a-input': PassThrough,
-          ProcessDeployResultModal: ProcessDeployResultModalStub,
-          PlusOutlined: PassThrough,
-          FolderOpenOutlined: PassThrough,
-          RocketOutlined: PassThrough,
-          DownloadOutlined: PassThrough,
-          FileImageOutlined: PassThrough,
-        },
+  it('should default to draft list tab', async () => {
+    const wrapper = mountModeling()
+    await flushPromises()
+
+    expect(wrapper.attributes('data-active-tab')).toBe('drafts')
+    expect(wrapper.text()).toContain('流程草稿')
+    expect(wrapper.find('.process-draft-list-stub').exists()).toBe(true)
+  })
+
+  it('should open selected draft in design tab and preserve active tenant query', async () => {
+    resetRouteQuery({ activeTenantId: '11' })
+    const wrapper = mountModeling()
+
+    await wrapper.get('.open-design').trigger('click')
+
+    expect(routerMocks.routerReplace).toHaveBeenCalledWith({
+      path: '/process/modeling',
+      query: {
+        activeTenantId: '11',
+        tab: 'design',
+        modelId: '7',
       },
     })
-
-    expect(wrapper.text()).toContain('创建BPMN')
   })
 
-  it('should preserve activeTenantId when navigating from deploy result modal', async () => {
-    routerMocks.routeQuery.activeTenantId = '11'
+  it('should render design tab when modelId is present', async () => {
+    resetRouteQuery({ tab: 'design', modelId: '7' })
+    const wrapper = mountModeling()
+    await flushPromises()
 
-    const wrapper = mount(Modeling, {
-      global: {
-        stubs: {
-          'a-button': ButtonStub,
-          'a-modal': PassThrough,
-          'a-form': PassThrough,
-          'a-form-item': PassThrough,
-          'a-input': PassThrough,
-          ProcessDeployResultModal: ProcessDeployResultModalStub,
-          PlusOutlined: PassThrough,
-          FolderOpenOutlined: PassThrough,
-          RocketOutlined: PassThrough,
-          DownloadOutlined: PassThrough,
-          FileImageOutlined: PassThrough,
-        },
+    expect(wrapper.attributes('data-active-tab')).toBe('design')
+    expect(wrapper.attributes('data-process-model-id')).toBe('7')
+    expect(wrapper.find('.process-designer-stub').exists()).toBe(true)
+  })
+
+  it('should confirm before leaving dirty designer for another draft', async () => {
+    resetRouteQuery({ tab: 'design', modelId: '5', activeTenantId: '11' })
+    const wrapper = mountModeling()
+    await wrapper.get('.mark-dirty').trigger('click')
+    await wrapper.get('.open-design').trigger('click')
+
+    expect(modalMocks.confirm).toHaveBeenCalledWith(expect.objectContaining({
+      title: '存在未保存的流程设计',
+    }))
+
+    const options = modalMocks.confirm.mock.calls[0]?.[0] as { onOk: () => void }
+    options.onOk()
+
+    expect(routerMocks.routerReplace).toHaveBeenCalledWith({
+      path: '/process/modeling',
+      query: {
+        activeTenantId: '11',
+        tab: 'design',
+        modelId: '7',
       },
     })
-
-    await wrapper.get('.go-deployment').trigger('click')
-    expect(routerMocks.routerPush).toHaveBeenCalledWith({
-      path: '/deployment',
-      query: { activeTenantId: '11' },
-    })
-
-    await wrapper.get('.go-definition').trigger('click')
-    expect(routerMocks.routerPush).toHaveBeenCalledWith({
-      path: '/process/definition',
-      query: { activeTenantId: '11' },
-    })
   })
 
+  it('should normalize invalid design query back to drafts', async () => {
+    resetRouteQuery({ tab: 'design', activeTenantId: '11' })
+    mountModeling()
+    await flushPromises()
+
+    expect(messageMocks.warning).toHaveBeenCalledWith('请先选择流程草稿')
+    expect(routerMocks.routerReplace).toHaveBeenCalledWith({
+      path: '/process/modeling',
+      query: {
+        activeTenantId: '11',
+        tab: 'drafts',
+      },
+    })
+  })
 })

@@ -1,10 +1,14 @@
 import { reactive, readonly } from 'vue'
+import type { MenuItem } from '@/api/menu'
 
 interface MenuRouteState {
   loading: boolean
   loaded: boolean
   error: string | null
   lastLoadedAt?: number
+  cacheSource?: 'network' | 'verified_cache'
+  etag?: string
+  menus: MenuItem[]
 }
 
 const state = reactive<MenuRouteState>({
@@ -12,6 +16,7 @@ const state = reactive<MenuRouteState>({
   loaded: false,
   error: null,
   lastLoadedAt: undefined,
+  menus: [],
 })
 
 export function useMenuRouteState() {
@@ -21,4 +26,3 @@ export function useMenuRouteState() {
 export function updateMenuRouteState(patch: Partial<MenuRouteState>) {
   Object.assign(state, patch)
 }
-

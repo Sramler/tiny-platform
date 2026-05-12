@@ -15,6 +15,7 @@ logs/
 **/test-results/
 **/playwright-report/
 **/blob-report/
+/output/
 
 # Java 编译产物
 *.class

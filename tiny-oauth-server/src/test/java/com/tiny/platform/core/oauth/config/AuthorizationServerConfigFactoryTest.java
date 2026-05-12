@@ -8,6 +8,7 @@ import com.tiny.platform.core.oauth.security.AuthorizationEndpointMfaAuthorizati
 import com.tiny.platform.core.oauth.security.AuthorizationEndpointMfaEntryPoint;
 import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
 import com.tiny.platform.core.oauth.security.PermissionVersionService;
+import com.tiny.platform.core.oauth.security.TokenSecurityStateService;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
@@ -51,12 +52,14 @@ class AuthorizationServerConfigFactoryTest {
         UserRepository userRepository = mock(UserRepository.class);
         AuthUserResolutionService authUserResolutionService = mock(AuthUserResolutionService.class);
         PermissionVersionService permissionVersionService = mock(PermissionVersionService.class);
+        TokenSecurityStateService tokenSecurityStateService = mock(TokenSecurityStateService.class);
         UserDetailsService userDetailsService = mock(UserDetailsService.class);
         JwtTokenCustomizer customizer = config.jwtTokenCustomizer(
                 userRepository,
                 authUserResolutionService,
                 permissionVersionService,
-                userDetailsService
+                userDetailsService,
+                tokenSecurityStateService
         );
         assertThat(customizer).isNotNull();
 

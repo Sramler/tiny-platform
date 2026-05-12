@@ -1,0 +1,41 @@
+databaseChangeLog:
+  - changeSet:
+      id: 181-runtime-version-store
+      author: codex
+      comment: 新增运行态版本存储表，为菜单配置版本、权限缓存校验等运行态版本提供 DB 兜底实现
+      preConditions:
+        onFail: MARK_RAN
+        onError: HALT
+        and:
+          - not:
+              tableExists:
+                tableName: runtime_version
+          - not:
+              tableExists:
+                tableName: runtime_version_signal
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              CREATE TABLE `runtime_version` (
+                `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+                `version_domain` VARCHAR(64) NOT NULL COMMENT '版本域，例如 MENU_CONFIG',
+                `tenant_id` BIGINT DEFAULT NULL COMMENT '租户ID，NULL=平台/全局',
+                `normalized_tenant_id` BIGINT GENERATED ALWAYS AS (IFNULL(`tenant_id`, 0)) STORED COMMENT '归一化租户键，避免 MySQL UNIQUE NULL 语义松散',
+                `scope_type` VARCHAR(32) NOT NULL DEFAULT 'TENANT' COMMENT '作用域类型：PLATFORM/TENANT/ORG/DEPT 等',
+                `scope_id` BIGINT DEFAULT NULL COMMENT '作用域ID，平台作用域为空',
+                `normalized_scope_id` BIGINT GENERATED ALWAYS AS (IFNULL(`scope_id`, 0)) STORED COMMENT '归一化作用域键，避免 MySQL UNIQUE NULL 语义松散',
+                `version_value` VARCHAR(128) NOT NULL COMMENT '当前版本值',
+                `version_seq` BIGINT NOT NULL DEFAULT 1 COMMENT '单调递增版本序号',
+                `reason` VARCHAR(128) DEFAULT NULL COMMENT '最近一次初始化或 bump 原因',
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                `created_by` BIGINT DEFAULT NULL,
+                `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                `updated_by` BIGINT DEFAULT NULL,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uk_runtime_version_scope` (`version_domain`, `normalized_tenant_id`, `scope_type`, `normalized_scope_id`),
+                KEY `idx_runtime_version_updated_at` (`updated_at`),
+                KEY `idx_runtime_version_tenant_scope` (`normalized_tenant_id`, `scope_type`, `normalized_scope_id`)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='运行态版本存储';

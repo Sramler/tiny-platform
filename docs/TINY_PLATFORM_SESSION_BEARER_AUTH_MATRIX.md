@@ -222,6 +222,7 @@
 | **M4 含义** | 当过滤器判定 M4（Bearer 与 Session 对 `activeTenantId` + active scope **成对**一致）时，本接口**允许**返回 200；响应中 `activeTenantId` / `activeScopeType` / `activeScopeId` 与 `TenantContext` 一致。 |
 | **主体** | Session 链：`SecurityUser`；Bearer 链：`JwtAuthenticationToken` 时仍受同一 `TenantContext` 约束。 |
 | **permissionsVersion** | Session：`SecurityUser` 指纹；JWT：claim 优先，缺失时可由 `PermissionVersionService` 按当前 tenant+scope 权威解析（实现见 `CurrentActorResolver`）。 |
+| **tokenSecurityVersion / tokenNotBefore** | JWT：必须来自当前 `user_token_security_state` 安全状态；Session：以 session creation time 对比 `tokenNotBefore`。该信号只表达强制失效/重新登录，不表达授权快照漂移。 |
 | **常见误解** | ❌ “M4 一致 = 所有 user 接口都同等处理” — **否**；只读不写 Session scope。 |
 
 ### 8.2 正式语义：M4 在写接口上是什么
@@ -263,6 +264,8 @@
 
 **相关错误**
 
+- `token_revoked`：用户 token/session 安全状态已过期；前端不得 silent retry，必须清理运行态并重新登录。
+- `stale_permissions`：权限快照漂移；前端可 silent renew 一次并重试原请求，失败后再回登录。
 - `bearer_subject_user_mismatch`：主体 `userId` 与绑定用户不一致。  
 - 历史码 `active_scope_switch_requires_session_principal`：**保留兼容**；当前主线以 §8.2 **M4 写 + refresh 信号**为准。
 

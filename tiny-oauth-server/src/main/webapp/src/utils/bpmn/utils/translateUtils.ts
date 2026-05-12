@@ -5,7 +5,7 @@
  */
 
 import {
-  getMergedTranslations,
+  getOfficialTranslations,
   loadOfficialTranslations as loadBpmnJsOfficialTranslations,
   isOfficialTranslationsLoaded,
 } from '../i18n/bpmn-js'
@@ -17,6 +17,14 @@ import allTranslations, {
 } from '../i18n'
 import type { TranslationMap } from '../i18n'
 
+type ResolvedTranslation = {
+  translation: string
+  source: 'custom' | 'local' | 'official' | 'case-insensitive' | 'none'
+  translated: boolean
+}
+
+const isDevMode = Boolean(import.meta.env?.DEV)
+
 /**
  * 翻译工具类
  */
@@ -24,6 +32,7 @@ export class TranslateUtils {
   private static instance: TranslateUtils
   private customTranslations: TranslationMap = {}
   private officialTranslations: TranslationMap = {}
+  private translationCache = new Map<string, ResolvedTranslation>()
   private enableOfficialFallback: boolean = true
   private enableDebugLogs: boolean = false
 
@@ -50,13 +59,29 @@ export class TranslateUtils {
     }
   }
 
+  private infoLog(message: string, ...args: unknown[]): void {
+    if (this.enableDebugLogs || isDevMode) {
+      console.info(message, ...args)
+    }
+  }
+
+  private warnLog(message: string, ...args: unknown[]): void {
+    if (this.enableDebugLogs || isDevMode) {
+      console.warn(message, ...args)
+    }
+  }
+
+  private clearTranslationCache(): void {
+    this.translationCache.clear()
+  }
+
   /**
    * 初始化翻译系统
    */
   public async initialize(): Promise<void> {
     try {
       await this.loadOfficialTranslations()
-      console.log('✅ 翻译系统已初始化')
+      this.infoLog('✅ 翻译系统已初始化')
     } catch (error) {
       console.error('❌ 翻译系统初始化失败:', error)
     }
@@ -75,12 +100,10 @@ export class TranslateUtils {
       if (syncLoaded) {
         this.debugLog('✅ 官方翻译同步加载成功')
       } else {
-        // 如果同步加载失败，尝试异步加载
-        if (Object.keys(this.officialTranslations).length === 0) {
-          this.debugLog('📥 同步加载失败，尝试异步加载官方翻译...')
-          await this.loadOfficialTranslationsAsync()
-          this.debugLog('✅ 官方翻译异步加载成功')
-        }
+        // 即使调用方曾手动追加过少量官方词条，也仍需加载完整官方中文包。
+        this.debugLog('📥 同步加载失败，尝试异步加载官方翻译...')
+        await this.loadOfficialTranslationsAsync()
+        this.debugLog('✅ 官方翻译异步加载成功')
       }
 
       const count = Object.keys(this.officialTranslations).length
@@ -98,14 +121,16 @@ export class TranslateUtils {
       // 方案1: 从全局变量加载
       if (typeof window !== 'undefined' && (window as any).bpmnOfficialTranslations) {
         Object.assign(this.officialTranslations, (window as any).bpmnOfficialTranslations)
+        this.clearTranslationCache()
         this.debugLog('✅ 从全局变量同步加载官方翻译成功')
         return true
       }
 
       // 方案2: 检查是否已经通过其他方式加载
       if (isOfficialTranslationsLoaded()) {
-        const officialTranslations = getMergedTranslations()
+        const officialTranslations = getOfficialTranslations()
         Object.assign(this.officialTranslations, officialTranslations)
+        this.clearTranslationCache()
         this.debugLog('✅ 从已加载的官方翻译同步获取成功')
         return true
       }
@@ -118,6 +143,7 @@ export class TranslateUtils {
             this.officialTranslations,
             (window as any).bpmnOfficialTranslationsPreloaded,
           )
+          this.clearTranslationCache()
           this.debugLog('✅ 从预加载的官方翻译同步获取成功')
           return true
         }
@@ -138,16 +164,17 @@ export class TranslateUtils {
    */
   private async loadOfficialTranslationsAsync(): Promise<void> {
     try {
-      console.log('📥 开始异步加载 BPMN.js 官方翻译包...')
+      this.debugLog('📥 开始异步加载 BPMN.js 官方中文翻译包...')
       // 加载 BPMN.js 官方翻译包
       await loadBpmnJsOfficialTranslations()
 
       // 如果官方翻译已加载，更新本地存储
       if (isOfficialTranslationsLoaded()) {
-        const officialTranslations = getMergedTranslations()
+        const officialTranslations = getOfficialTranslations()
         Object.assign(this.officialTranslations, officialTranslations)
+        this.clearTranslationCache()
       } else {
-        console.log('⚠️ 异步加载官方翻译包完成，但翻译未正确加载')
+        this.warnLog('⚠️ 异步加载官方中文翻译包完成，但翻译未正确加载')
       }
     } catch (error) {
       console.error('❌ 异步加载官方翻译失败:', error)
@@ -178,30 +205,35 @@ export class TranslateUtils {
 
       // 输入验证
       if (!template || typeof template !== 'string') {
-        console.warn('❌ 无效的翻译键:', template)
+        this.warnLog('❌ 无效的翻译键:', template)
         return String(template || '')
       }
+
+      const cached = this.translationCache.get(template)
+      if (cached) {
+        performanceStats.cacheHits += 1
+        notifyStatsUpdate()
+        return this.replacePlaceholders(cached.translation, replacements)
+      }
+
+      performanceStats.cacheMisses += 1
 
       // 翻译优先级：
       // 1. 临时/业务自定义翻译：用于项目侧紧急补齐或覆盖第三方词条
       // 2. 本地模块翻译：项目维护的稳定中文词典
-      // 3. 官方翻译兜底：只在项目词典没有覆盖时使用
+      // 3. 官方中文翻译兜底：只在项目词典没有覆盖时使用
       // 4. BPMN.js 默认英文：最后兜底
-      let translation = template
-      let isTranslated = false
+      const resolved = this.resolveTranslation(template)
+      this.translationCache.set(template, resolved)
 
-      if (this.customTranslations[template]) {
-        translation = this.customTranslations[template]
-        isTranslated = true
+      if (resolved.source === 'custom') {
         performanceStats.temporaryTranslations += 1
-        this.debugLog(`🎨 [临时] ${template} -> ${translation}`)
+        this.debugLog(`🎨 [临时] ${template} -> ${resolved.translation}`)
         notifyStatsUpdate()
-        return this.replacePlaceholders(translation, replacements)
+        return this.replacePlaceholders(resolved.translation, replacements)
       }
 
-      if (!isTranslated && allTranslations[template]) {
-        translation = allTranslations[template]
-        isTranslated = true
+      if (resolved.source === 'local') {
         performanceStats.moduleTranslations += 1
 
         // 确定具体是哪个模块提供的翻译
@@ -216,43 +248,78 @@ export class TranslateUtils {
           moduleName = 'zeebe-properties-panel'
         }
 
-        this.debugLog(`📚 [${moduleName}] ${template} -> ${translation}`)
+        this.debugLog(`📚 [${moduleName}] ${template} -> ${resolved.translation}`)
         notifyStatsUpdate()
-        return this.replacePlaceholders(translation, replacements)
+        return this.replacePlaceholders(resolved.translation, replacements)
       }
 
-      if (!isTranslated && this.enableOfficialFallback && this.officialTranslations[template]) {
-        translation = this.officialTranslations[template]
-        isTranslated = true
+      if (resolved.source === 'official') {
         performanceStats.officialFallbacks += 1
-        this.debugLog(`🌍 [官方] ${template} -> ${translation}`)
+        this.debugLog(`🌍 [官方中文] ${template} -> ${resolved.translation}`)
         notifyStatsUpdate()
-        return this.replacePlaceholders(translation, replacements)
+        return this.replacePlaceholders(resolved.translation, replacements)
       }
 
-      if (!isTranslated) {
-        const caseInsensitiveTranslation = this.findTranslationCaseInsensitive(template)
-        if (caseInsensitiveTranslation) {
-          translation = caseInsensitiveTranslation
-          isTranslated = true
-          this.debugLog(`🔍 使用大小写不敏感匹配: ${template} -> ${translation}`)
-          return this.replacePlaceholders(translation, replacements)
-        }
+      if (resolved.source === 'case-insensitive') {
+        this.debugLog(`🔍 使用大小写不敏感匹配: ${template} -> ${resolved.translation}`)
+        notifyStatsUpdate()
+        return this.replacePlaceholders(resolved.translation, replacements)
       }
 
       // 记录未翻译的键
-      if (!isTranslated) {
-        console.warn(`❌ 翻译键未找到: ${template}`)
+      if (!resolved.translated) {
+        this.warnLog(`❌ 翻译键未找到: ${template}`)
         performanceStats.untranslatedKeys.add(template)
         notifyStatsUpdate()
       }
 
       // 替换占位符
-      return this.replacePlaceholders(translation, replacements)
+      return this.replacePlaceholders(resolved.translation, replacements)
     } catch (error) {
       console.error('❌ 翻译过程中发生错误:', error, '翻译键:', template)
       // 容错处理：返回原文
       return String(template || '')
+    }
+  }
+
+  private resolveTranslation(template: string): ResolvedTranslation {
+    if (this.customTranslations[template]) {
+      return {
+        translation: this.customTranslations[template],
+        source: 'custom',
+        translated: true,
+      }
+    }
+
+    if (allTranslations[template]) {
+      return {
+        translation: allTranslations[template],
+        source: 'local',
+        translated: true,
+      }
+    }
+
+    if (this.enableOfficialFallback && this.officialTranslations[template]) {
+      return {
+        translation: this.officialTranslations[template],
+        source: 'official',
+        translated: true,
+      }
+    }
+
+    const caseInsensitiveTranslation = this.findTranslationCaseInsensitive(template)
+    if (caseInsensitiveTranslation) {
+      return {
+        translation: caseInsensitiveTranslation,
+        source: 'case-insensitive',
+        translated: true,
+      }
+    }
+
+    return {
+      translation: template,
+      source: 'none',
+      translated: false,
     }
   }
 
@@ -274,13 +341,14 @@ export class TranslateUtils {
    * @param translations 临时翻译映射
    */
   public addCustomTranslations(translations: TranslationMap): void {
-    console.log('🎨 开始添加临时翻译...')
+    this.infoLog('🎨 开始添加临时翻译...')
     const beforeCount = Object.keys(this.customTranslations).length
     Object.assign(this.customTranslations, translations)
+    this.clearTranslationCache()
     const afterCount = Object.keys(this.customTranslations).length
     const addedCount = afterCount - beforeCount
 
-    console.log(`✅ 添加临时翻译: +${addedCount}, 总计${afterCount}个`)
+    this.infoLog(`✅ 添加临时翻译: +${addedCount}, 总计${afterCount}个`)
   }
 
   /**
@@ -288,15 +356,16 @@ export class TranslateUtils {
    * @param keys 要移除的翻译键数组
    */
   public removeCustomTranslations(keys: string[]): void {
-    console.log('🗑️ 开始移除临时翻译...')
+    this.infoLog('🗑️ 开始移除临时翻译...')
     const beforeCount = Object.keys(this.customTranslations).length
     keys.forEach((key) => {
       delete this.customTranslations[key]
     })
+    this.clearTranslationCache()
     const afterCount = Object.keys(this.customTranslations).length
     const removedCount = beforeCount - afterCount
 
-    console.log(`✅ 移除临时翻译: -${removedCount}, 剩余${afterCount}个`)
+    this.infoLog(`✅ 移除临时翻译: -${removedCount}, 剩余${afterCount}个`)
   }
 
   /**
@@ -364,6 +433,9 @@ export class TranslateUtils {
    * @param enable 是否启用
    */
   public setOfficialFallback(enable: boolean): void {
+    if (this.enableOfficialFallback !== enable) {
+      this.clearTranslationCache()
+    }
     this.enableOfficialFallback = enable
   }
 
@@ -375,13 +447,17 @@ export class TranslateUtils {
     return this.enableOfficialFallback
   }
 
+  public getOfficialTranslationCount(): number {
+    return Object.keys(this.officialTranslations).length
+  }
+
   /**
    * 启用/禁用调试日志
    * @param enable 是否启用
    */
   public setDebugLogs(enable: boolean): void {
     this.enableDebugLogs = enable
-    console.log(`🔧 调试日志已${enable ? '启用' : '禁用'}`)
+    this.infoLog(`🔧 调试日志已${enable ? '启用' : '禁用'}`)
   }
 
   /**
@@ -398,7 +474,8 @@ export class TranslateUtils {
    */
   public addOfficialTranslations(translations: TranslationMap): void {
     Object.assign(this.officialTranslations, translations)
-    console.debug(`手动添加了 ${Object.keys(translations).length} 个官方翻译`)
+    this.clearTranslationCache()
+    this.debugLog(`手动添加了 ${Object.keys(translations).length} 个官方翻译`)
   }
 
   /**
@@ -470,8 +547,13 @@ export class TranslateUtils {
     if (data.custom) {
       this.customTranslations = { ...data.custom }
     }
+    this.clearTranslationCache()
 
-    console.log('📥 翻译数据导入完成')
+    this.infoLog('📥 翻译数据导入完成')
+  }
+
+  public clearCache(): void {
+    this.clearTranslationCache()
   }
 }
 
@@ -613,8 +695,8 @@ export function getOfficialPackagesInfo(): Record<string, unknown> {
 }
 
 export function getOfficialTranslationStatus(): { loaded: boolean; count: number } {
-  const merged = translateUtils.getMergedTranslations()
-  return { loaded: Object.keys(merged).length > 0, count: Object.keys(merged).length }
+  const count = translateUtils.getOfficialTranslationCount()
+  return { loaded: count > 0, count }
 }
 
 export async function initializeTranslationSystem(): Promise<void> {
@@ -622,7 +704,7 @@ export async function initializeTranslationSystem(): Promise<void> {
 }
 
 export function clearCache(): void {
-  // 暂无缓存实现，保留接口
+  translateUtils.clearCache()
 }
 
 // 全局上下文管理

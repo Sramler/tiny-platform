@@ -78,7 +78,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { ensureCsrfToken } from '@/utils/csrf'
+import { ensureCsrfToken, getCsrfFailureMessage } from '@/utils/csrf'
 import { sanitizeInternalRedirect } from '@/utils/redirect'
 import {
   clearActiveTenantId,
@@ -199,11 +199,11 @@ const handleSubmit = async (event: Event) => {
     await loadCsrfToken()
   } catch (error) {
     console.error('获取 CSRF token 失败:', error)
-    errorMessage.value = '安全校验初始化失败，请刷新页面重试'
+    errorMessage.value = getCsrfFailureMessage(error)
     return
   }
   if (!csrfToken.value) {
-    errorMessage.value = '安全校验初始化失败，请刷新页面重试'
+    errorMessage.value = '认证服务返回异常，请稍后重试'
     return
   }
 
@@ -217,6 +217,7 @@ const handleSubmit = async (event: Event) => {
 onMounted(async () => {
   loadCsrfToken().catch((error) => {
     console.error('初始化 CSRF token 失败:', error)
+    errorMessage.value = getCsrfFailureMessage(error)
   })
   const storedMode = getLoginMode()
   if (storedMode) {

@@ -17,6 +17,7 @@ export interface SecurityStatusResponse {
   forceMfa?: boolean
   totpBound?: boolean
   totpActivated?: boolean
+  requireTotp?: boolean
   [key: string]: unknown
 }
 

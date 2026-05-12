@@ -3,6 +3,8 @@ package com.tiny.platform.core.oauth.tenant;
 import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
 import com.tiny.platform.core.oauth.security.PermissionVersionService;
+import com.tiny.platform.core.oauth.security.TokenSecurityState;
+import com.tiny.platform.core.oauth.security.TokenSecurityStateService;
 import com.tiny.platform.infrastructure.auth.audit.domain.AuthorizationAuditEventType;
 import com.tiny.platform.infrastructure.auth.audit.service.AuthorizationAuditService;
 import com.tiny.platform.infrastructure.auth.org.domain.OrganizationUnit;
@@ -23,6 +25,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
@@ -659,6 +662,182 @@ class TenantContextFilterTest {
 
         assertThat(response.getStatus()).isEqualTo(200);
         assertThat(tenantInChain.get()).isEqualTo(1L);
+    }
+
+    @Test
+    void shouldRejectBearerTokenWhenTokenSecurityVersionMismatches() throws Exception {
+        TokenSecurityStateService tokenSecurityStateService = Mockito.mock(TokenSecurityStateService.class);
+        TenantContextFilter tokenSecurityFilter = new TenantContextFilter(
+            tenantRepository,
+            null,
+            tokenSecurityStateService,
+            null,
+            new TenantLifecycleReadPolicy(),
+            null,
+            null
+        );
+
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/sys/menus/tree");
+        request.addHeader("Authorization", "Bearer " + jwtWithPayload("""
+            {"sub":"admin","userId":1,"activeTenantId":1,
+             "tokenSecurityVersion":"old-token-security","iat":1778234400}
+            """));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        when(tokenSecurityStateService.resolveEffectiveState(eq(1L), eq(1L), eq("TENANT"), eq(1L)))
+            .thenReturn(new TokenSecurityState(
+                1L,
+                1L,
+                "TENANT",
+                1L,
+                "new-token-security",
+                LocalDateTime.of(1970, 1, 1, 0, 0),
+                1L,
+                2L
+            ));
+
+        tokenSecurityFilter.doFilter(request, response, (req, resp) -> {
+            throw new AssertionError("filter chain should not be executed");
+        });
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(response.getHeader("WWW-Authenticate")).isEqualTo("Bearer error=\"invalid_token\"");
+        assertThat(response.getContentAsString()).contains("token_revoked");
+    }
+
+    @Test
+    void shouldAcceptBearerTokenWhenTokenSecurityStateMatches() throws Exception {
+        TokenSecurityStateService tokenSecurityStateService = Mockito.mock(TokenSecurityStateService.class);
+        TenantContextFilter tokenSecurityFilter = new TenantContextFilter(
+            tenantRepository,
+            null,
+            tokenSecurityStateService,
+            null,
+            new TenantLifecycleReadPolicy(),
+            null,
+            null
+        );
+
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/sys/menus/tree");
+        request.addHeader("Authorization", "Bearer " + jwtWithPayload("""
+            {"sub":"admin","userId":1,"activeTenantId":1,
+             "tokenSecurityVersion":"token-security-v1","iat":1778234400}
+            """));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AtomicReference<Long> tenantInChain = new AtomicReference<>();
+
+        when(tokenSecurityStateService.resolveEffectiveState(eq(1L), eq(1L), eq("TENANT"), eq(1L)))
+            .thenReturn(new TokenSecurityState(
+                1L,
+                1L,
+                "TENANT",
+                1L,
+                "token-security-v1",
+                LocalDateTime.of(1970, 1, 1, 0, 0),
+                1L,
+                1L
+            ));
+
+        tokenSecurityFilter.doFilter(request, response, (req, resp) -> tenantInChain.set(TenantContext.getActiveTenantId()));
+
+        assertThat(response.getStatus()).isEqualTo(200);
+        assertThat(tenantInChain.get()).isEqualTo(1L);
+    }
+
+    @Test
+    void shouldRejectBearerTokenWhenIssuedBeforeTokenNotBefore() throws Exception {
+        TokenSecurityStateService tokenSecurityStateService = Mockito.mock(TokenSecurityStateService.class);
+        TenantContextFilter tokenSecurityFilter = new TenantContextFilter(
+            tenantRepository,
+            null,
+            tokenSecurityStateService,
+            null,
+            new TenantLifecycleReadPolicy(),
+            null,
+            null
+        );
+
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/sys/menus/tree");
+        request.addHeader("Authorization", "Bearer " + jwtWithPayload("""
+            {"sub":"admin","userId":1,"activeTenantId":1,
+             "tokenSecurityVersion":"token-security-v1","iat":1}
+            """));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        when(tokenSecurityStateService.resolveEffectiveState(eq(1L), eq(1L), eq("TENANT"), eq(1L)))
+            .thenReturn(new TokenSecurityState(
+                1L,
+                1L,
+                "TENANT",
+                1L,
+                "token-security-v1",
+                LocalDateTime.of(1970, 1, 2, 0, 0),
+                1L,
+                1L
+            ));
+
+        tokenSecurityFilter.doFilter(request, response, (req, resp) -> {
+            throw new AssertionError("filter chain should not be executed");
+        });
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(response.getContentAsString()).contains("token_revoked");
+    }
+
+    @Test
+    void shouldRejectSessionSecurityBeforeCheckingPermissionsVersionWhenTokenRevoked() throws Exception {
+        PermissionVersionService permissionVersionService = Mockito.mock(PermissionVersionService.class);
+        TokenSecurityStateService tokenSecurityStateService = Mockito.mock(TokenSecurityStateService.class);
+        TenantContextFilter tokenSecurityFilter = new TenantContextFilter(
+            tenantRepository,
+            permissionVersionService,
+            tokenSecurityStateService,
+            null,
+            new TenantLifecycleReadPolicy(),
+            null,
+            null
+        );
+
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/sys/menus/tree");
+        request.getSession(true);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        SecurityUser principal = new SecurityUser(
+                1L,
+                1L,
+                "admin",
+                "",
+                List.of(),
+                true,
+                true,
+                true,
+                true,
+                "stale-v1"
+        );
+        var auth = UsernamePasswordAuthenticationToken.authenticated(principal, null, List.of());
+        SecurityContextHolder.getContext().setAuthentication(auth);
+
+        when(tokenSecurityStateService.resolveEffectiveState(eq(1L), eq(1L), eq("TENANT"), eq(1L)))
+            .thenReturn(new TokenSecurityState(
+                1L,
+                1L,
+                "TENANT",
+                1L,
+                "token-security-v1",
+                LocalDateTime.of(2999, 1, 1, 0, 0),
+                1L,
+                1L
+            ));
+
+        tokenSecurityFilter.doFilter(request, response, (req, resp) -> {
+            throw new AssertionError("filter chain should not be executed");
+        });
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        assertThat(response.getContentAsString()).contains("token_revoked");
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+        assertThat(request.getSession(false)).isNull();
+        verify(permissionVersionService, never()).resolvePermissionsVersion(eq(1L), eq(1L), eq("TENANT"), eq(1L));
     }
 
     @Test

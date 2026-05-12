@@ -1,25 +1,45 @@
+import type { Component } from 'vue'
+
+type AntdIconModule = { default: Component }
+type AntdIconLoader = () => Promise<AntdIconModule>
+
 /**
- * Ant Design Icons 按文件拆分的懒加载映射（Vite import.meta.glob）。
- * 禁止 `import * from '@ant-design/icons-vue'`，否则会把整包打进 vendor-antd-icons。
+ * 侧栏菜单图标白名单。
+ *
+ * 这里不能使用 `import.meta.glob('@ant-design/icons-vue/es/icons/*.js')`：
+ * Vite 会为完整图标目录生成巨大映射，弱网下会把数百/数千个 icon 模块拖进启动瀑布。
+ * 新菜单图标进入数据库 seed 时，同步把图标名加入此静态 map；未知图标统一兜底 MenuOutlined。
  */
-/** 相对路径以满足 Vite import.meta.glob 必须以 `./` 或 `/` 开头的要求 */
-export const antdIconLoaders = import.meta.glob(
-  '../../node_modules/@ant-design/icons-vue/es/icons/*.js',
-) as Record<string, () => Promise<{ default: import('vue').Component }>>
+export const antdIconLoaders: Record<string, AntdIconLoader> = {
+  AlertOutlined: () => import('@ant-design/icons-vue/es/icons/AlertOutlined.js'),
+  DeploymentUnitOutlined: () => import('@ant-design/icons-vue/es/icons/DeploymentUnitOutlined.js'),
+  DownOutlined: () => import('@ant-design/icons-vue/es/icons/DownOutlined.js'),
+  HomeOutlined: () => import('@ant-design/icons-vue/es/icons/HomeOutlined.js'),
+  MenuFoldOutlined: () => import('@ant-design/icons-vue/es/icons/MenuFoldOutlined.js'),
+  MenuOutlined: () => import('@ant-design/icons-vue/es/icons/MenuOutlined.js'),
+  MenuUnfoldOutlined: () => import('@ant-design/icons-vue/es/icons/MenuUnfoldOutlined.js'),
+  RadarChartOutlined: () => import('@ant-design/icons-vue/es/icons/RadarChartOutlined.js'),
+  ReadOutlined: () => import('@ant-design/icons-vue/es/icons/ReadOutlined.js'),
+  RightOutlined: () => import('@ant-design/icons-vue/es/icons/RightOutlined.js'),
+  ScheduleOutlined: () => import('@ant-design/icons-vue/es/icons/ScheduleOutlined.js'),
+  SettingOutlined: () => import('@ant-design/icons-vue/es/icons/SettingOutlined.js'),
+  SolutionOutlined: () => import('@ant-design/icons-vue/es/icons/SolutionOutlined.js'),
+  TeamOutlined: () => import('@ant-design/icons-vue/es/icons/TeamOutlined.js'),
+  UserOutlined: () => import('@ant-design/icons-vue/es/icons/UserOutlined.js'),
+}
+
+export const supportedAntdIconNames = Object.freeze(Object.keys(antdIconLoaders))
 
 export function resolveAntdIconLoader(
   iconName: string | undefined | null,
-): (() => Promise<{ default: import('vue').Component }>) | null {
+): AntdIconLoader | null {
   const n = iconName?.trim()
   if (!n) return null
-  const suffix = `/${n}.js`
-  const key = Object.keys(antdIconLoaders).find((k) => k.endsWith(suffix))
-  if (!key) return null
-  return antdIconLoaders[key] ?? null
+  return antdIconLoaders[n] ?? null
 }
 
 export function getAntdIconLoaderOrFallback(
   iconName: string | undefined | null,
-): () => Promise<{ default: import('vue').Component }> {
-  return resolveAntdIconLoader(iconName) ?? resolveAntdIconLoader('MenuOutlined')!
+): AntdIconLoader {
+  return resolveAntdIconLoader(iconName) ?? antdIconLoaders.MenuOutlined
 }

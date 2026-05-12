@@ -92,7 +92,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { getSecurityStatus } from '@/api/security'
-import { ensureCsrfToken } from '@/utils/csrf'
+import { ensureCsrfToken, getCsrfFailureMessage } from '@/utils/csrf'
 import { sanitizeInternalRedirect } from '@/utils/redirect'
 import { fetchWithTraceId } from '@/utils/traceId'
 
@@ -150,7 +150,7 @@ const handleBindSubmit = async (event: Event) => {
       await loadCsrfToken()
     } catch (error) {
       console.error('获取 CSRF token 失败:', error)
-      loadError.value = '安全校验初始化失败，请刷新页面重试'
+      loadError.value = getCsrfFailureMessage(error)
       return
     }
   }
@@ -165,7 +165,7 @@ const handleSkipSubmit = async (event: Event) => {
       await loadCsrfToken()
     } catch (error) {
       console.error('获取 CSRF token 失败:', error)
-      loadError.value = '安全校验初始化失败，请刷新页面重试'
+      loadError.value = getCsrfFailureMessage(error)
       return
     }
   }
@@ -176,7 +176,7 @@ const handleSkipSubmit = async (event: Event) => {
 onMounted(async () => {
   await loadCsrfToken().catch((error) => {
     console.error('初始化 CSRF token 失败:', error)
-    loadError.value = '安全校验初始化失败，请刷新页面重试'
+    loadError.value = getCsrfFailureMessage(error)
   })
   await Promise.all([fetchSecurityStatus(), fetchTotpInfo()])
 })

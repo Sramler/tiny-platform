@@ -8,7 +8,10 @@ import com.tiny.platform.infrastructure.auth.user.service.UserAuthenticationBrid
 import com.tiny.platform.infrastructure.auth.user.support.UserAuthenticationCredential;
 import com.tiny.platform.infrastructure.auth.user.support.UserAuthenticationMethodProfiles;
 import com.tiny.platform.infrastructure.auth.user.support.UserAuthenticationScopePolicy;
+import com.tiny.platform.core.oauth.security.AuthenticationFactorAuthorities;
+import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
 import com.tiny.platform.core.oauth.security.TotpVerificationGuard;
+import com.tiny.platform.core.oauth.security.TokenSecurityStateService;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.core.oauth.tenant.ActiveTenantResponseSupport;
 import com.tiny.platform.core.oauth.tenant.TenantContextContract;
@@ -16,6 +19,7 @@ import com.tiny.platform.infrastructure.core.util.IpUtils;
 import com.tiny.platform.infrastructure.core.util.DeviceUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -50,6 +54,9 @@ public class SecurityServiceImpl implements SecurityService {
     private final TotpVerificationGuard totpVerificationGuard;
     private final UserAuthenticationBridgeWriter authenticationBridgeWriter;
 
+    @Autowired(required = false)
+    private TokenSecurityStateService tokenSecurityStateService;
+
     @Autowired
     public SecurityServiceImpl(UserAuthenticationMethodProfileService authenticationMethodProfileService,
                                PasswordEncoder passwordEncoder,
@@ -81,11 +88,14 @@ public class SecurityServiceImpl implements SecurityService {
         }
         boolean skipMfaRemind = resolveSkipMfaRemind(user);
 
-        // 基于全局配置 + 用户绑定状态计算本次会话“是否要求 TOTP”
-        boolean requireTotpThisSession = isTotpRequiredForUser(totpBound, totpActivated);
+        // 基于全局策略、用户绑定状态和当前认证因子，计算本次会话是否仍缺 TOTP。
+        boolean requireTotpByPolicy = isTotpRequiredForUser(totpBound, totpActivated);
+        boolean totpCompletedInSession = hasCompletedTotpFactor();
+        boolean requireTotpThisSession = requireTotpByPolicy && !totpCompletedInSession;
         if (logger.isDebugEnabled()) {
-            logger.debug("[MFA] getSecurityStatus - userId={}, mode={}, totpBound={}, totpActivated={}, requireTotp={}",
-                    user.getId(), mfaProperties.getMode(), totpBound, totpActivated, requireTotpThisSession);
+            logger.debug("[MFA] getSecurityStatus - userId={}, mode={}, totpBound={}, totpActivated={}, requireTotpByPolicy={}, totpCompletedInSession={}, requireTotp={}",
+                    user.getId(), mfaProperties.getMode(), totpBound, totpActivated,
+                    requireTotpByPolicy, totpCompletedInSession, requireTotpThisSession);
         }
 
         boolean forceMfa = mfaProperties.isRequired();
@@ -103,11 +113,22 @@ public class SecurityServiceImpl implements SecurityService {
         return status;
     }
 
+    private boolean hasCompletedTotpFactor() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return AuthenticationFactorAuthorities.hasFactor(
+                authentication,
+                MultiFactorAuthenticationToken.AuthenticationFactorType.TOTP
+        );
+    }
+
     /**
      * 根据全局配置（security.mfa.mode）和用户当前 TOTP 绑定/激活状态，
-     * 计算“本次会话是否要求 TOTP 作为必需因子”。
+     * 计算策略层是否要求 TOTP 作为必需因子。
      * <p>
-     * 思路 A 的核心就是：先算出本次会话的必需因子集合 requiredFactors，再在所有必需因子完成后才发最终 Token。
+     * 注意：这里只回答“策略上是否需要 TOTP”，不回答“当前会话是否已经完成 TOTP”。
+     * 当前会话是否仍需 TOTP 由 {@link #getSecurityStatus(User)} 结合已完成 factor 计算。
+     * <p>
+     * 思路 A 的核心就是：先算出策略层必需因子集合 requiredFactors，再扣除当前认证中已完成的 factor。
      * 这里先聚焦在 PASSWORD / TOTP 两种因子的决策：
      * <ul>
      *   <li>NONE：完全关闭 MFA，本次永远不要求 TOTP</li>
@@ -244,6 +265,7 @@ public class SecurityServiceImpl implements SecurityService {
         method.setUpdatedAt(LocalDateTime.now());
         if (method.getId() == null) method.setCreatedAt(LocalDateTime.now());
         persistRuntimeMethod(method, activeScopeType, authTenantId);
+        revokeUserTokens(user.getId(), "totp_bind");
         return Map.of("success", true, "message", "TOTP绑定并激活成功", "otpauthUri", totpConfig.get("otpauthUri"));
     }
 
@@ -315,6 +337,7 @@ public class SecurityServiceImpl implements SecurityService {
         // 验证通过，删除 TOTP 认证方法
         UserAuthenticationMethod totpMethod = Objects.requireNonNull(totpMethodOpt.orElse(null));
         deleteRuntimeMethod(totpMethod, activeScopeType, authTenantId);
+        revokeUserTokens(user.getId(), "totp_unbind");
         return Map.of("success", true, "message", "二步验证已解绑");
     }
 
@@ -567,6 +590,13 @@ public class SecurityServiceImpl implements SecurityService {
         } catch (DateTimeParseException ex) {
             return null;
         }
+    }
+
+    private void revokeUserTokens(Long userId, String reason) {
+        if (tokenSecurityStateService == null || userId == null) {
+            return;
+        }
+        tokenSecurityStateService.revokeAllUserTokens(userId, reason, userId);
     }
 
     private String buildDeviceFingerprint() {

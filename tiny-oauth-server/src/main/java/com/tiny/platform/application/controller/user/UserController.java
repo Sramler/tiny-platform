@@ -172,6 +172,7 @@ public class UserController {
                     if (user.getLastFailedLoginAt() != null) {
                         userInfo.put("lastFailedLoginAt", user.getLastFailedLoginAt().toString());
                     }
+                    userInfo.put("hasAvatar", hasAvatar(user.getId()));
                     return ResponseEntity.ok(userInfo);
                 })
                 .orElse(ResponseEntity.status(404).body(Map.of(
@@ -626,13 +627,13 @@ public class UserController {
             // 获取头像元信息
             AvatarService.AvatarMetadata metadata = avatarService.getAvatarMetadata(userId);
             if (metadata == null) {
-                return ResponseEntity.notFound().build();
+                return ResponseEntity.noContent().build();
             }
 
             // 获取头像数据
             byte[] avatarData = avatarService.getAvatarData(userId);
             if (avatarData == null) {
-                return ResponseEntity.notFound().build();
+                return ResponseEntity.noContent().build();
             }
 
             // 设置ETag（使用content_hash）
@@ -648,8 +649,11 @@ public class UserController {
 
             // 构建响应头
             HttpHeaders headers = new HttpHeaders();
-            String contentType = metadata.getContentType();
-            headers.setContentType(MediaType.parseMediaType(contentType != null ? contentType : "application/octet-stream"));
+            MediaType avatarMediaType = resolveAvatarMediaType(metadata.getContentType());
+            if (avatarMediaType == null) {
+                return ResponseEntity.noContent().build();
+            }
+            headers.setContentType(avatarMediaType);
             headers.setContentLength(metadata.getFileSize());
             if (etag != null) {
                 headers.setETag(etag);
@@ -674,6 +678,24 @@ public class UserController {
         } catch (Exception e) {
             return ResponseEntity.status(500).build();
         }
+    }
+
+    private boolean hasAvatar(Long userId) {
+        if (userId == null) {
+            return false;
+        }
+        try {
+            return avatarService.getAvatarMetadata(userId) != null;
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private MediaType resolveAvatarMediaType(String contentType) {
+        if (contentType == null || !contentType.toLowerCase(java.util.Locale.ROOT).startsWith("image/")) {
+            return null;
+        }
+        return MediaType.parseMediaType(contentType);
     }
 
     /**

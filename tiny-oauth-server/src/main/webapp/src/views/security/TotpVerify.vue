@@ -47,12 +47,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { ensureCsrfToken } from '@/utils/csrf'
+import { ensureCsrfToken, getCsrfFailureMessage } from '@/utils/csrf'
 import { sanitizeInternalRedirect } from '@/utils/redirect'
 
 const route = useRoute()
 const isSubmitting = ref(false)
 const verifyFormRef = ref<HTMLFormElement | null>(null)
+const loadError = ref('')
 const csrfToken = ref('')
 const csrfParameterName = ref('_csrf')
 
@@ -77,6 +78,7 @@ const redirectParam = computed(() => {
 
 const errorText = computed(() => {
   const value = route.query.error ?? route.query.message
+  if (!value && loadError.value) return loadError.value
   if (!value) return ''
   if (Array.isArray(value)) return value[0] ? String(value[0]) : ''
   return String(value)
@@ -91,6 +93,7 @@ const loadCsrfToken = async () => {
 onMounted(() => {
   loadCsrfToken().catch((error) => {
     console.error('初始化 CSRF token 失败:', error)
+    loadError.value = getCsrfFailureMessage(error)
   })
 })
 
@@ -101,6 +104,7 @@ const handleSubmit = async (event: Event) => {
       await loadCsrfToken()
     } catch (error) {
       console.error('获取 CSRF token 失败:', error)
+      loadError.value = getCsrfFailureMessage(error)
       return
     }
   }

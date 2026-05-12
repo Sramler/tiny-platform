@@ -49,24 +49,46 @@
 
 ### OIDC 客户端配置
 
-| 变量名                               | 说明                          | 默认值                                    | 可选值                                                     |
-| ------------------------------------ | ----------------------------- | ----------------------------------------- | ---------------------------------------------------------- |
-| `VITE_OIDC_AUTHORITY`                | 授权服务器地址                | `http://localhost:9000`                   | 任意合法 URL                                               |
-| `VITE_OIDC_CLIENT_ID`                | 客户端 ID                     | `vue-client`                              | 与 Spring Authorization Server `RegisteredClient` 保持一致 |
-| `VITE_OIDC_REDIRECT_URI`             | 登录回调地址                  | `http://localhost:5173/callback`          | 任意合法 URL                                               |
-| `VITE_OIDC_POST_LOGOUT_REDIRECT_URI` | 退出后回调地址                | `http://localhost:5173/`                  | 任意合法 URL                                               |
-| `VITE_OIDC_SILENT_REDIRECT_URI`      | 静默续期页面                  | `http://localhost:5173/silent-renew.html` | 任意合法 URL                                               |
-| `VITE_OIDC_SCOPES`                   | 请求的 scope（空格分隔）      | `openid profile offline_access`           | 与服务器允许的 scope 匹配                                  |
-| `VITE_OIDC_STORAGE`                  | OIDC state/storage 的存储介质 | `local`                                   | `local` \| `session`                                       |
+| 变量名                                     | 说明                           | 默认值                                    | 可选值                                                     |
+| ------------------------------------------ | ------------------------------ | ----------------------------------------- | ---------------------------------------------------------- |
+| `VITE_OIDC_AUTHORITY`                      | 授权服务器地址                 | `http://localhost:9000`                   | 任意合法 URL                                               |
+| `VITE_OIDC_CLIENT_ID`                      | 客户端 ID                      | `vue-client`                              | 与 Spring Authorization Server `RegisteredClient` 保持一致 |
+| `VITE_OIDC_REDIRECT_URI`                   | 登录回调地址                   | `http://localhost:5173/callback`          | 任意合法 URL                                               |
+| `VITE_OIDC_POST_LOGOUT_REDIRECT_URI`       | 退出后回调地址                 | `http://localhost:5173/`                  | 任意合法 URL                                               |
+| `VITE_OIDC_SILENT_REDIRECT_URI`            | 静默续期页面                   | `http://localhost:5173/silent-renew.html` | 已登记的独立 silent renew 回调 URL                         |
+| `VITE_OIDC_SILENT_REQUEST_TIMEOUT_SECONDS` | 静默续期 iframe 超时时间（秒） | `10`                                      | `1` ~ `30`，弱网建议 `10` ~ `15`                           |
+| `VITE_OIDC_SCOPES`                         | 请求的 scope（空格分隔）       | `openid profile offline_access`           | 与服务器允许的 scope 匹配                                  |
+| `VITE_OIDC_STORAGE`                        | OIDC state/storage 的存储介质  | `local`                                   | `local` \| `session`                                       |
 
 > **生产环境要求**：`VITE_OIDC_AUTHORITY`、`VITE_OIDC_CLIENT_ID`、`VITE_OIDC_REDIRECT_URI`、`VITE_OIDC_POST_LOGOUT_REDIRECT_URI`、`VITE_OIDC_SILENT_REDIRECT_URI` 必须显式配置，否则启动会抛出错误。
 
+> **silent renew 入口约束**：`VITE_OIDC_SILENT_REDIRECT_URI` 默认且推荐指向 `silent-renew.html`。该页面是隐藏 iframe 使用的极小独立 HTML 入口，只执行 `signinSilentCallback()`；不要配置为 Vue Router 路由，避免 iframe 回调进入完整应用启动、`/bootstrap` 编排或业务守卫链路。
+
 ### 认证运行时配置
 
-| 变量名                                 | 说明                               | 默认值 | 可选值            |
-| -------------------------------------- | ---------------------------------- | ------ | ----------------- |
-| `VITE_AUTH_FORCE_LOGOUT_ON_RENEW_FAIL` | 静默续期失败时是否强制登出         | `true` | `true` \| `false` |
-| `VITE_AUTH_FETCH_TIMEOUT_MS`           | `fetchWithAuth` 的超时时间（毫秒） | `8000` | `3000` ~ `60000`  |
+| 变量名                                           | 说明                                              | 默认值 | 可选值            |
+| ------------------------------------------------ | ------------------------------------------------- | ------ | ----------------- |
+| `VITE_AUTH_FORCE_LOGOUT_ON_RENEW_FAIL`           | 静默续期失败时是否强制登出                        | `true` | `true` \| `false` |
+| `VITE_AUTH_FETCH_TIMEOUT_MS`                     | `fetchWithAuth` 的超时时间（毫秒）                | `8000` | `3000` ~ `60000`  |
+| `VITE_AUTH_ENABLE_PLATFORM_SESSION_SILENT_LOGIN` | 是否允许平台 Session 桥接静默恢复前端 OIDC 登录态 | `true` | `true` \| `false` |
+
+> 当前启动链路中，平台账号完成表单登录、TOTP 绑定/跳过等后端 Session 流程后，前端会进入 `/bootstrap`，再通过 `prompt=none` 尝试把平台 Session 桥接成前端 OIDC token。弱网或浏览器限制导致静默恢复失败时，应展示可见的启动错误与重试/返回登录操作，而不是白屏。
+
+### 启动编排入口
+
+前端启动不再由 `main.ts` 或普通路由守卫阻塞执行认证恢复。标准职责如下：
+
+| 阶段                  | 责任                                                                   |
+| --------------------- | ---------------------------------------------------------------------- |
+| `index.html` preboot  | Vue 资源加载前展示静态启动壳，避免首屏白屏                             |
+| `main.ts`             | 只创建、安装并挂载 Vue 应用                                            |
+| `/bootstrap`          | 展示启动状态，并统一编排认证、安全状态、菜单权限与动态路由             |
+| `authBootstrap`       | 恢复本地 OIDC user；必要时执行平台 Session 静默桥接                    |
+| `securityBootstrap`   | 检查 TOTP/MFA 状态，并分流到安全流程页                                 |
+| `permissionBootstrap` | 加载 `/sys/menus/tree`、校验菜单路由、注册动态路由；失败时 fail-closed |
+| router guard          | 只做轻量分流，不再承担 `signinSilent()`、菜单请求或动态路由注册        |
+
+详细设计见 `docs/features/STARTUP_AUTH_BOOTSTRAP.md`。
 
 ### 调试/追踪开关
 

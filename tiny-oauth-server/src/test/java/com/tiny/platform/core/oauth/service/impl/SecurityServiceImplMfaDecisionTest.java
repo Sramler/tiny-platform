@@ -2,6 +2,7 @@ package com.tiny.platform.core.oauth.service.impl;
 
 import com.tiny.platform.core.oauth.config.MfaProperties;
 import com.tiny.platform.core.oauth.model.SecurityUser;
+import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.core.oauth.security.TotpService;
 import com.tiny.platform.core.oauth.security.TotpVerificationGuard;
@@ -16,6 +17,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -69,6 +71,28 @@ class SecurityServiceImplMfaDecisionTest {
         TenantContext.setActiveTenantId(1L);
         assertThat(boundActivatedService.getSecurityStatus(mockUser()).get("requireTotp")).isEqualTo(true);
         assertThat(unboundService.getSecurityStatus(mockUser()).get("requireTotp")).isEqualTo(false);
+    }
+
+    @Test
+    void shouldNotRequireTotpWhenCurrentSessionAlreadyCompletedTotpFactor() {
+        SecurityServiceImpl service = createService("OPTIONAL", true, true);
+        TenantContext.setActiveTenantId(1L);
+        SecurityContextHolder.getContext().setAuthentication(new MultiFactorAuthenticationToken(
+                "admin",
+                null,
+                MultiFactorAuthenticationToken.AuthenticationProviderType.LOCAL,
+                Set.of(
+                        MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD,
+                        MultiFactorAuthenticationToken.AuthenticationFactorType.TOTP
+                ),
+                List.of()
+        ));
+
+        Map<String, Object> status = service.getSecurityStatus(mockUser());
+
+        assertThat(status.get("totpBound")).isEqualTo(true);
+        assertThat(status.get("totpActivated")).isEqualTo(true);
+        assertThat(status.get("requireTotp")).isEqualTo(false);
     }
 
     @Test

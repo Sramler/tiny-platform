@@ -17,12 +17,21 @@ interface ImportMetaEnv {
   readonly VITE_OIDC_REDIRECT_URI?: string
   readonly VITE_OIDC_POST_LOGOUT_REDIRECT_URI?: string
   readonly VITE_OIDC_SILENT_REDIRECT_URI?: string
+  readonly VITE_OIDC_SILENT_REQUEST_TIMEOUT_SECONDS?: string
   readonly VITE_OIDC_SCOPES?: string
   readonly VITE_OIDC_STORAGE?: 'local' | 'session'
   readonly VITE_AUTH_FORCE_LOGOUT_ON_RENEW_FAIL?: string
   readonly VITE_AUTH_FETCH_TIMEOUT_MS?: string
+  readonly VITE_AUTH_ENABLE_PLATFORM_SESSION_SILENT_LOGIN?: string
 }
 
 interface ImportMeta {
   readonly env: ImportMetaEnv
+}
+
+declare module '@ant-design/icons-vue/es/icons/*.js' {
+  import type { Component } from 'vue'
+
+  const component: Component
+  export default component
 }

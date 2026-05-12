@@ -7,10 +7,15 @@
         </div>
         <h1 class="error-code">500</h1>
         <h2 class="error-title">服务器错误</h2>
-        <p class="error-description">抱歉，服务器发生了错误。我们正在努力修复这个问题，请稍后再试。如果问题持续存在，请联系技术支持。</p>
-        
+        <p class="error-description">
+          抱歉，服务器发生了错误。我们正在努力修复这个问题，请稍后再试。如果问题持续存在，请联系技术支持。
+        </p>
+
         <!-- 错误详情信息 -->
-        <div v-if="errorInfo.from || errorInfo.path || errorInfo.message || errorInfo.traceId" class="error-details">
+        <div
+          v-if="errorInfo.from || errorInfo.path || errorInfo.message || errorInfo.traceId"
+          class="error-details"
+        >
           <a-divider>错误详情</a-divider>
           <a-descriptions :column="1" bordered size="small">
             <a-descriptions-item v-if="errorInfo.from" label="来源页面">
@@ -25,7 +30,7 @@
             <a-descriptions-item v-if="errorInfo.traceId" label="追踪ID">
               <a-typography-text copyable code>{{ errorInfo.traceId }}</a-typography-text>
               <a-tooltip title="用于追踪本次请求的日志，便于排查问题">
-                <InfoCircleOutlined style="margin-left: 8px; color: #1890ff; cursor: help;" />
+                <InfoCircleOutlined style="margin-left: 8px; color: #1890ff; cursor: help" />
               </a-tooltip>
             </a-descriptions-item>
           </a-descriptions>
@@ -53,8 +58,18 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { ThunderboltOutlined, HomeOutlined, ArrowLeftOutlined, InfoCircleOutlined } from '@ant-design/icons-vue'
-import { getActiveTenantId, resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
+import {
+  ThunderboltOutlined,
+  HomeOutlined,
+  ArrowLeftOutlined,
+  InfoCircleOutlined,
+} from '@ant-design/icons-vue'
+import {
+  getActiveTenantId,
+  resolveActiveTenantQueryValue,
+  withActiveTenantQuery,
+} from '@/utils/tenant'
+import { sanitizeInternalRedirect } from '@/utils/redirect'
 
 const router = useRouter()
 const route = useRoute()
@@ -81,11 +96,15 @@ const goHome = () => {
 }
 
 const goBack = () => {
-  if (errorInfo.value.from) {
-    window.location.href = errorInfo.value.from
-  } else {
-    router.go(-1)
+  const from = errorInfo.value.from
+  if (from) {
+    const safeFrom = sanitizeInternalRedirect(from, '/')
+    router
+      .push(safeFrom)
+      .catch(() => router.push({ path: '/', query: resolveNavigationTenantQuery() }))
+    return
   }
+  router.go(-1)
 }
 </script>
 
@@ -124,13 +143,21 @@ const goBack = () => {
 }
 
 @keyframes shake {
-  0%, 100% {
+  0%,
+  100% {
     transform: rotate(0deg);
   }
-  10%, 30%, 50%, 70%, 90% {
+  10%,
+  30%,
+  50%,
+  70%,
+  90% {
     transform: rotate(-5deg);
   }
-  20%, 40%, 60%, 80% {
+  20%,
+  40%,
+  60%,
+  80% {
     transform: rotate(5deg);
   }
 }

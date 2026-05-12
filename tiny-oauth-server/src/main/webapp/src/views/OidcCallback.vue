@@ -81,12 +81,18 @@ onMounted(async () => {
         // 等待用户状态更新
         await new Promise((resolve) => setTimeout(resolve, 100))
 
-        // 登录成功后跳转回主页或原始路径
+        // 登录回调只负责完成 code 处理，业务启动统一回流 /bootstrap 编排。
         const returnUrl = sanitizeInternalRedirect((user?.state as any)?.returnUrl || '/')
-        trace('redirect', { returnUrl })
+        const bootstrapRedirect = returnUrl === '/' ? router.resolve(buildHomeTarget()).fullPath : returnUrl
+        trace('redirect.bootstrap', { returnUrl: bootstrapRedirect })
 
         // 使用 replace 避免历史记录问题
-        await router.replace(returnUrl === '/' ? buildHomeTarget() : returnUrl)
+        await router.replace({
+          path: '/bootstrap',
+          query: {
+            redirect: bootstrapRedirect,
+          },
+        })
       } catch (callbackError: any) {
         // 检查是否是 state 不匹配的错误
         if (
@@ -138,7 +144,12 @@ onMounted(async () => {
       }, 3000)
     } else {
       console.warn('⚠️ 非 OIDC 回调，跳转到主页')
-      router.replace(buildHomeTarget())
+      router.replace({
+        path: '/bootstrap',
+        query: {
+          redirect: router.resolve(buildHomeTarget()).fullPath,
+        },
+      })
     }
   } catch (e) {
     trace('callback.error', e instanceof Error ? e.message : e)

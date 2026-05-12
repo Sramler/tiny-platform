@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.security.AuthenticationFactorAuthorities;
 import com.tiny.platform.core.oauth.security.PermissionVersionService;
+import com.tiny.platform.core.oauth.security.TokenSecurityState;
+import com.tiny.platform.core.oauth.security.TokenSecurityStateService;
 import com.tiny.platform.infrastructure.auth.audit.domain.AuthorizationAuditEventType;
 import com.tiny.platform.infrastructure.auth.audit.service.AuthorizationAuditService;
 import com.tiny.platform.infrastructure.auth.org.repository.OrganizationUnitRepository;
@@ -28,7 +30,9 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -61,6 +65,9 @@ public class TenantContextFilter extends OncePerRequestFilter {
     private static final String AUTHORITIES_CLAIM = "authorities";
     private static final String PERMISSIONS_CLAIM = "permissions";
     private static final String PERMISSIONS_VERSION_CLAIM = "permissionsVersion";
+    private static final String TOKEN_SECURITY_VERSION_CLAIM = "tokenSecurityVersion";
+    private static final String IAT_CLAIM = "iat";
+    private static final String JTI_CLAIM = "jti";
     private static final String SESSION_ACTIVE_TENANT_ID_KEY = TenantContextContract.SESSION_ACTIVE_TENANT_ID_KEY;
     private static final String TENANT_CODE_PARAM = "tenantCode";
     private static final Pattern TENANT_CODE_PATTERN = Pattern.compile("^[a-z0-9][a-z0-9-]{1,31}$");
@@ -79,17 +86,18 @@ public class TenantContextFilter extends OncePerRequestFilter {
 
     private final TenantRepository tenantRepository;
     private final PermissionVersionService permissionVersionService;
+    private final TokenSecurityStateService tokenSecurityStateService;
     private final AuthorizationAuditService authorizationAuditService;
     private final TenantLifecycleReadPolicy tenantLifecycleReadPolicy;
     private final OrganizationUnitRepository organizationUnitRepository;
     private final UserUnitRepository userUnitRepository;
 
     public TenantContextFilter(TenantRepository tenantRepository) {
-        this(tenantRepository, null, null, new TenantLifecycleReadPolicy(), null, null);
+        this(tenantRepository, null, null, null, new TenantLifecycleReadPolicy(), null, null);
     }
 
     public TenantContextFilter(TenantRepository tenantRepository, PermissionVersionService permissionVersionService) {
-        this(tenantRepository, permissionVersionService, null, new TenantLifecycleReadPolicy(), null, null);
+        this(tenantRepository, permissionVersionService, null, null, new TenantLifecycleReadPolicy(), null, null);
     }
 
     public TenantContextFilter(TenantRepository tenantRepository,
@@ -98,8 +106,19 @@ public class TenantContextFilter extends OncePerRequestFilter {
                                TenantLifecycleReadPolicy tenantLifecycleReadPolicy,
                                OrganizationUnitRepository organizationUnitRepository,
                                UserUnitRepository userUnitRepository) {
+        this(tenantRepository, permissionVersionService, null, authorizationAuditService, tenantLifecycleReadPolicy, organizationUnitRepository, userUnitRepository);
+    }
+
+    public TenantContextFilter(TenantRepository tenantRepository,
+                               PermissionVersionService permissionVersionService,
+                               TokenSecurityStateService tokenSecurityStateService,
+                               AuthorizationAuditService authorizationAuditService,
+                               TenantLifecycleReadPolicy tenantLifecycleReadPolicy,
+                               OrganizationUnitRepository organizationUnitRepository,
+                               UserUnitRepository userUnitRepository) {
         this.tenantRepository = tenantRepository;
         this.permissionVersionService = permissionVersionService;
+        this.tokenSecurityStateService = tokenSecurityStateService;
         this.authorizationAuditService = authorizationAuditService;
         this.tenantLifecycleReadPolicy = tenantLifecycleReadPolicy != null
             ? tenantLifecycleReadPolicy
@@ -113,7 +132,7 @@ public class TenantContextFilter extends OncePerRequestFilter {
                                PermissionVersionService permissionVersionService,
                                AuthorizationAuditService authorizationAuditService,
                                TenantLifecycleReadPolicy tenantLifecycleReadPolicy) {
-        this(tenantRepository, permissionVersionService, authorizationAuditService, tenantLifecycleReadPolicy, null, null);
+        this(tenantRepository, permissionVersionService, null, authorizationAuditService, tenantLifecycleReadPolicy, null, null);
     }
 
     @Override
@@ -306,7 +325,16 @@ public class TenantContextFilter extends OncePerRequestFilter {
 
         // POST /login is the boundary that replaces an old identity snapshot. A stale previous
         // session must not block the new credential submission before Spring Security can re-auth.
+        // Token/security revocation is stricter than authorization snapshot drift, so evaluate it first.
+        if (!loginPostRequest && !validateSessionTokenSecurityState(request, response, activeTenantId, scopeType, scopeId)) {
+            return;
+        }
+
         if (!loginPostRequest && !validateSessionPermissionsVersion(request, response, activeTenantId, scopeType, scopeId)) {
+            return;
+        }
+
+        if (!loginPostRequest && !validateBearerTokenSecurityState(request, response, activeTenantId, scopeType, scopeId)) {
             return;
         }
 
@@ -1162,6 +1190,83 @@ public class TenantContextFilter extends OncePerRequestFilter {
         response.getWriter().write("{\"error\":\"tenant_frozen\",\"error_description\":\"tenant has been frozen\"}");
     }
 
+    private boolean validateBearerTokenSecurityState(HttpServletRequest request,
+                                                     HttpServletResponse response,
+                                                     Long activeTenantId,
+                                                     String scopeType,
+                                                     Long scopeId) throws IOException {
+        if (tokenSecurityStateService == null) {
+            return true;
+        }
+        ResolvedBearerClaims bearerClaims = resolveBearerClaims(request);
+        if (bearerClaims == null) {
+            return true;
+        }
+        if (bearerClaims.userId() == null
+            || bearerClaims.tokenSecurityVersion() == null
+            || bearerClaims.tokenSecurityVersion().isBlank()
+            || bearerClaims.issuedAt() == null) {
+            rejectTokenRevoked(response, "token security claims are missing");
+            return false;
+        }
+
+        TokenSecurityState currentState = tokenSecurityStateService.resolveEffectiveState(
+            bearerClaims.userId(),
+            activeTenantId,
+            scopeType,
+            scopeId
+        );
+        if (currentState == null
+            || currentState.tokenSecurityVersion() == null
+            || !currentState.tokenSecurityVersion().equals(bearerClaims.tokenSecurityVersion())
+            || isIssuedBeforeNotBefore(bearerClaims.issuedAt(), currentState)) {
+            rejectTokenRevoked(response, "token security state is outdated");
+            return false;
+        }
+        return true;
+    }
+
+    private boolean validateSessionTokenSecurityState(HttpServletRequest request,
+                                                      HttpServletResponse response,
+                                                      Long activeTenantId,
+                                                      String scopeType,
+                                                      Long scopeId) throws IOException {
+        if (tokenSecurityStateService == null) {
+            return true;
+        }
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        SecurityUser securityUser = resolveSessionSecurityUser(authentication);
+        if (securityUser == null || securityUser.getUserId() == null) {
+            return true;
+        }
+        HttpSession session = request.getSession(false);
+        if (session == null) {
+            return true;
+        }
+
+        TokenSecurityState currentState = tokenSecurityStateService.resolveEffectiveState(
+            securityUser.getUserId(),
+            activeTenantId,
+            scopeType,
+            scopeId
+        );
+        Instant sessionCreatedAt = Instant.ofEpochMilli(session.getCreationTime());
+        if (currentState != null && isIssuedBeforeNotBefore(sessionCreatedAt, currentState)) {
+            invalidateAuthenticatedSession(request);
+            rejectTokenRevoked(response, "session token security state is outdated");
+            return false;
+        }
+        return true;
+    }
+
+    private static boolean isIssuedBeforeNotBefore(Instant issuedAt, TokenSecurityState currentState) {
+        if (issuedAt == null || currentState == null || currentState.tokenNotBefore() == null) {
+            return false;
+        }
+        Instant notBefore = currentState.tokenNotBefore().toInstant(ZoneOffset.UTC);
+        return issuedAt.isBefore(notBefore);
+    }
+
     private boolean validateBearerPermissionsVersion(HttpServletRequest request,
                                                      HttpServletResponse response,
                                                      Long activeTenantId,
@@ -1252,11 +1357,14 @@ public class TenantContextFilter extends OncePerRequestFilter {
         }
         Long userId = parseLongClaim(claims.get(USER_ID_CLAIM));
         String permissionsVersion = parseStringClaim(claims.get(PERMISSIONS_VERSION_CLAIM));
+        String tokenSecurityVersion = parseStringClaim(claims.get(TOKEN_SECURITY_VERSION_CLAIM));
+        Instant issuedAt = parseInstantClaim(claims.get(IAT_CLAIM));
+        String jti = parseStringClaim(claims.get(JTI_CLAIM));
         Set<String> authorities = parseAuthoritiesClaim(claims.get(AUTHORITIES_CLAIM));
         if (authorities.isEmpty()) {
             authorities = parseAuthoritiesClaim(claims.get(PERMISSIONS_CLAIM));
         }
-        return new ResolvedBearerClaims(userId, permissionsVersion, authorities);
+        return new ResolvedBearerClaims(userId, permissionsVersion, tokenSecurityVersion, issuedAt, jti, authorities);
     }
 
     private ResolvedBearerClaims resolveBearerClaims(JsonNode payload) {
@@ -1265,11 +1373,14 @@ public class TenantContextFilter extends OncePerRequestFilter {
         }
         Long userId = parseLongClaim(payload.get(USER_ID_CLAIM));
         String permissionsVersion = parseStringClaim(payload.get(PERMISSIONS_VERSION_CLAIM));
+        String tokenSecurityVersion = parseStringClaim(payload.get(TOKEN_SECURITY_VERSION_CLAIM));
+        Instant issuedAt = parseInstantClaim(payload.get(IAT_CLAIM));
+        String jti = parseStringClaim(payload.get(JTI_CLAIM));
         Set<String> authorities = parseAuthoritiesClaim(payload.get(AUTHORITIES_CLAIM));
         if (authorities.isEmpty()) {
             authorities = parseAuthoritiesClaim(payload.get(PERMISSIONS_CLAIM));
         }
-        return new ResolvedBearerClaims(userId, permissionsVersion, authorities);
+        return new ResolvedBearerClaims(userId, permissionsVersion, tokenSecurityVersion, issuedAt, jti, authorities);
     }
 
     private SecurityUser resolveSessionSecurityUser(Authentication authentication) {
@@ -1388,6 +1499,49 @@ public class TenantContextFilter extends OncePerRequestFilter {
         return null;
     }
 
+    private Instant parseInstantClaim(Object rawClaim) {
+        if (rawClaim instanceof Instant instant) {
+            return instant;
+        }
+        if (rawClaim instanceof Number number) {
+            return Instant.ofEpochSecond(number.longValue());
+        }
+        if (rawClaim instanceof String text) {
+            return parseInstantText(text);
+        }
+        return null;
+    }
+
+    private Instant parseInstantClaim(JsonNode rawClaim) {
+        if (rawClaim == null || rawClaim.isNull()) {
+            return null;
+        }
+        if (rawClaim.isNumber()) {
+            return Instant.ofEpochSecond(rawClaim.asLong());
+        }
+        if (rawClaim.isTextual()) {
+            return parseInstantText(rawClaim.asText());
+        }
+        return null;
+    }
+
+    private Instant parseInstantText(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String normalized = value.trim();
+        try {
+            return Instant.ofEpochSecond(Long.parseLong(normalized));
+        } catch (NumberFormatException ignored) {
+            // fall through
+        }
+        try {
+            return Instant.parse(normalized);
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
+
     private String resolveBearerToken(HttpServletRequest request) {
         String authorization = request.getHeader(AUTHORIZATION_HEADER);
         if (authorization == null || authorization.isBlank()
@@ -1404,6 +1558,17 @@ public class TenantContextFilter extends OncePerRequestFilter {
         response.setContentType("application/json;charset=UTF-8");
         response.setHeader("WWW-Authenticate", "Bearer error=\"invalid_token\"");
         response.getWriter().write("{\"error\":\"stale_permissions\",\"error_description\":\"token permissions are outdated\"}");
+    }
+
+    private void rejectTokenRevoked(HttpServletResponse response, String description) throws IOException {
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        response.setCharacterEncoding(StandardCharsets.UTF_8.name());
+        response.setContentType("application/json;charset=UTF-8");
+        response.setHeader("WWW-Authenticate", "Bearer error=\"invalid_token\"");
+        String safeDescription = description == null || description.isBlank()
+            ? "token security state is outdated"
+            : description.replace("\\", "\\\\").replace("\"", "\\\"");
+        response.getWriter().write("{\"error\":\"token_revoked\",\"error_description\":\"" + safeDescription + "\"}");
     }
 
     private void rejectStaleSessionPermissions(HttpServletRequest request, HttpServletResponse response) throws IOException {
@@ -1439,7 +1604,14 @@ public class TenantContextFilter extends OncePerRequestFilter {
 
     private record ResolvedTenant(Long activeTenantId, String source) {}
 
-    private record ResolvedBearerClaims(Long userId, String permissionsVersion, Set<String> authorities) {}
+    private record ResolvedBearerClaims(
+        Long userId,
+        String permissionsVersion,
+        String tokenSecurityVersion,
+        Instant issuedAt,
+        String jti,
+        Set<String> authorities
+    ) {}
 
     private enum ActiveScopeFailureReason {
         MISSING_SCOPE_ID,

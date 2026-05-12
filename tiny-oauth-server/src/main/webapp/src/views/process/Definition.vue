@@ -345,6 +345,7 @@ import VueDraggable from 'vuedraggable'
 import { processApi, deploymentApi, tenantApi } from '@/api/process'
 import type { ProcessDefinition } from '@/api/process'
 import { useThrottle } from '@/utils/debounce'
+import { buildProcessPreviewHtml } from '@/utils/processPreviewHtml'
 import ProcessPreviewDrawer from '@/components/process/ProcessPreviewDrawer.vue'
 import ProcessDeployResultModal from '@/components/process/ProcessDeployResultModal.vue'
 import {
@@ -994,41 +995,7 @@ const previewProcess = async (process: ProcessDefinition) => {
     // 简化预览功能 - 直接跳转到新窗口显示流程信息
     const previewWindow = window.open('', '_blank', 'width=1200,height=800')
     if (previewWindow) {
-      const htmlContent =
-        '<!DOCTYPE html>' +
-        '<html>' +
-        '<head>' +
-        '<title>流程预览</title>' +
-        '<style>' +
-        'body { margin: 20px; font-family: Arial, sans-serif; }' +
-        '.header { margin-bottom: 20px; padding: 20px; background: #f5f5f5; border-radius: 8px; }' +
-        '.header h1 { margin: 0 0 10px 0; color: #333; }' +
-        '.header p { margin: 5px 0; color: #666; }' +
-        '.info { background: #e6f7ff; padding: 15px; border-radius: 6px; margin: 20px 0; }' +
-        '</style>' +
-        '</head>' +
-        '<body>' +
-        '<div class="header">' +
-        '<h1>' +
-        process.name +
-        '</h1>' +
-        '<p><strong>流程Key:</strong> ' +
-        process.key +
-        '</p>' +
-        '<p><strong>版本:</strong> ' +
-        process.version +
-        '</p>' +
-        '<p><strong>状态:</strong> 活跃</p>' +
-        '</div>' +
-        '<div class="info">' +
-        '<h3>流程预览功能</h3>' +
-        '<p>BPMN流程图预览功能正在开发中，当前显示流程基本信息。</p>' +
-        '<p>您可以在建模页面查看和编辑完整的BPMN流程图。</p>' +
-        '</div>' +
-        '</body>' +
-        '</html>'
-
-      previewWindow.document.write(htmlContent)
+      previewWindow.document.write(buildProcessPreviewHtml(process))
       previewWindow.document.close()
     }
   } catch (error: unknown) {

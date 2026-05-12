@@ -24,6 +24,7 @@ import com.tiny.platform.infrastructure.auth.resource.service.ResourcePermission
 import com.tiny.platform.infrastructure.auth.resource.support.PlatformControlPlaneResourcePolicy;
 import com.tiny.platform.infrastructure.auth.role.repository.RoleRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.TenantUserRepository;
+import com.tiny.platform.infrastructure.menu.runtime.MenuConfigVersionInvalidator;
 import com.tiny.platform.infrastructure.menu.domain.MenuEntry;
 import com.tiny.platform.infrastructure.menu.repository.MenuEntryRepository;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
@@ -77,6 +78,7 @@ public class MenuServiceImpl implements MenuService {
     private final CarrierPermissionRequirementEvaluator carrierPermissionRequirementEvaluator;
     private final AuthorizationAuditService authorizationAuditService;
     private final RoleRepository roleRepository;
+    private final MenuConfigVersionInvalidator menuConfigVersionInvalidator;
 
     @Autowired
     public MenuServiceImpl(MenuEntryRepository menuEntryRepository,
@@ -88,7 +90,8 @@ public class MenuServiceImpl implements MenuService {
                            CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService,
                            CarrierPermissionRequirementEvaluator carrierPermissionRequirementEvaluator,
                            AuthorizationAuditService authorizationAuditService,
-                           RoleRepository roleRepository) {
+                           RoleRepository roleRepository,
+                           MenuConfigVersionInvalidator menuConfigVersionInvalidator) {
         this.menuEntryRepository = menuEntryRepository;
         this.uiActionEntryRepository = uiActionEntryRepository;
         this.apiEndpointEntryRepository = apiEndpointEntryRepository;
@@ -99,6 +102,7 @@ public class MenuServiceImpl implements MenuService {
         this.carrierPermissionRequirementEvaluator = carrierPermissionRequirementEvaluator;
         this.authorizationAuditService = authorizationAuditService;
         this.roleRepository = roleRepository;
+        this.menuConfigVersionInvalidator = menuConfigVersionInvalidator;
     }
 
     private Long normalizeParentId(Long parentId) {
@@ -303,6 +307,7 @@ public class MenuServiceImpl implements MenuService {
      * 创建菜单
      */
     @Override
+    @Transactional
     public Resource createMenu(ResourceCreateUpdateDto resourceDto) {
         Long tenantId = requireTenantId();
         // 只允许 type=0/1
@@ -336,15 +341,19 @@ public class MenuServiceImpl implements MenuService {
         resource.setParentId(resourceDto.getParentId());
         resourcePermissionBindingService.bindResource(resource, resource.getCreatedBy());
         failClosedWhenLegacyPermissionInputPersists(resource);
-        return toResource(menuEntryRepository.save(toMenuEntry(resource)));
+        Resource saved = toResource(menuEntryRepository.save(toMenuEntry(resource)));
+        bumpMenuConfigVersion("menu_create", resource.getCreatedBy());
+        return saved;
     }
 
     /**
      * 更新菜单
      */
     @Override
+    @Transactional
     public Resource updateMenu(ResourceCreateUpdateDto resourceDto) {
         Long tenantId = requireTenantId();
+        Long actorUserId = extractCurrentUserId();
         MenuEntry carrier = menuEntryRepository.findById(resourceDto.getId())
                 .filter(r -> Objects.equals(r.getTenantId(), tenantId))
                 .orElseThrow(() -> new RuntimeException("菜单不存在"));
@@ -368,11 +377,13 @@ public class MenuServiceImpl implements MenuService {
         carrier.setType(resourceDto.getType());
         carrier.setParentId(resourceDto.getParentId());
         Resource marker = toResource(carrier);
-        resourcePermissionBindingService.bindResource(marker, extractCurrentUserId());
+        resourcePermissionBindingService.bindResource(marker, actorUserId);
         failClosedWhenLegacyPermissionInputPersists(marker);
         carrier.setPermission(marker.getPermission());
         carrier.setRequiredPermissionId(marker.getRequiredPermissionId());
-        return toResource(menuEntryRepository.save(carrier));
+        Resource saved = toResource(menuEntryRepository.save(carrier));
+        bumpMenuConfigVersion("menu_update", actorUserId);
+        return saved;
     }
 
     private void failClosedWhenLegacyPermissionInputPersists(Resource resource) {
@@ -486,6 +497,7 @@ public class MenuServiceImpl implements MenuService {
         
         // 删除当前菜单（会先删除角色关联）
         deleteResourceWithRoleAssociations(id, menu.getRequiredPermissionId());
+        bumpMenuConfigVersion("menu_delete", extractCurrentUserId());
     }
     
     /**
@@ -549,7 +561,12 @@ public class MenuServiceImpl implements MenuService {
             .orElseThrow(() -> new RuntimeException("菜单不存在"));
         carrier.setSort(sort);
         MenuEntry savedCarrier = menuEntryRepository.save(carrier);
+        bumpMenuConfigVersion("menu_sort_update", extractCurrentUserId());
         return toResource(savedCarrier);
+    }
+
+    private void bumpMenuConfigVersion(String reason, Long actorUserId) {
+        menuConfigVersionInvalidator.bumpCurrentMenuConfigVersion(reason, actorUserId);
     }
 
     /**

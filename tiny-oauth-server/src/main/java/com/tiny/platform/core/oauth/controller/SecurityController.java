@@ -360,7 +360,7 @@ public class SecurityController {
             }
             // 记录登录IP和登录时间
             recordLoginInfo(user, request);
-            return buildRedirectUrl(safeRedirect, request);
+            return buildBootstrapRedirectUrl(safeRedirect, request);
         } else {
             String error = String.valueOf(result.getOrDefault("error", "绑定失败"));
             String encodedRedirect = URLEncoder.encode(safeRedirect, StandardCharsets.UTF_8);
@@ -400,7 +400,7 @@ public class SecurityController {
             return buildSessionPromotionFailureRedirect(safeRedirect);
         }
         recordLoginInfo(user, request);
-        return buildRedirectUrl(safeRedirect, request);
+        return buildBootstrapRedirectUrl(safeRedirect, request);
     }
 
     /**
@@ -443,7 +443,7 @@ public class SecurityController {
             recordLoginInfo(user, request);
             // 记录登录成功审计（TOTP验证完成，完全登录）
             auditService.recordLoginSuccess(user.getUsername(), user.getId(), "LOCAL", "MFA", request);
-            return buildRedirectUrl(safeRedirect, request);
+            return buildBootstrapRedirectUrl(safeRedirect, request);
         } else {
             String error = String.valueOf(result.getOrDefault("error", "验证失败"));
             String encodedRedirect = URLEncoder.encode(safeRedirect, StandardCharsets.UTF_8);
@@ -644,6 +644,20 @@ public class SecurityController {
             // 生产环境：使用相对路径
             return "redirect:" + safeRedirect;
         }
+    }
+
+    /**
+     * 安全流程完成后回到前端启动编排页，由 /bootstrap 统一恢复认证态、检查安全状态并加载权限。
+     * 对 /oauth2/** 等后端续链地址保持原有直跳，避免破坏授权请求中的 state/code challenge。
+     */
+    private String buildBootstrapRedirectUrl(String redirect, HttpServletRequest request) {
+        String safeRedirect = RedirectPathSanitizer.sanitize(redirect, request);
+        if (isBackendOnlyPath(safeRedirect)) {
+            return buildRedirectUrl(safeRedirect, request);
+        }
+        String bootstrapRedirect = "/bootstrap?redirect="
+                + URLEncoder.encode(safeRedirect, StandardCharsets.UTF_8);
+        return buildRedirectUrl(bootstrapRedirect, request);
     }
 
     private boolean isBackendOnlyPath(String redirect) {

@@ -3,6 +3,8 @@ package com.tiny.platform.core.oauth.config;
 import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
 import com.tiny.platform.core.oauth.security.PermissionVersionService;
+import com.tiny.platform.core.oauth.security.TokenSecurityState;
+import com.tiny.platform.core.oauth.security.TokenSecurityStateService;
 import com.tiny.platform.core.oauth.tenant.ActiveScope;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.core.oauth.tenant.TenantContextContract;
@@ -23,6 +25,7 @@ import org.springframework.security.oauth2.server.authorization.token.JwtEncodin
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer;
 
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashSet;
@@ -74,6 +77,7 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
     private final UserRepository userRepository;
     private final AuthUserResolutionService authUserResolutionService;
     private final PermissionVersionService permissionVersionService;
+    private final TokenSecurityStateService tokenSecurityStateService;
     private final UserDetailsService userDetailsService;
 
     /**
@@ -83,22 +87,31 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
      */
     public JwtTokenCustomizer(UserRepository userRepository,
                               PermissionVersionService permissionVersionService) {
-        this(userRepository, null, permissionVersionService, null);
+        this(userRepository, null, permissionVersionService, null, null);
     }
 
     public JwtTokenCustomizer(UserRepository userRepository,
                               AuthUserResolutionService authUserResolutionService,
                               PermissionVersionService permissionVersionService) {
-        this(userRepository, authUserResolutionService, permissionVersionService, null);
+        this(userRepository, authUserResolutionService, permissionVersionService, null, null);
     }
 
     public JwtTokenCustomizer(UserRepository userRepository,
                               AuthUserResolutionService authUserResolutionService,
                               PermissionVersionService permissionVersionService,
                               UserDetailsService userDetailsService) {
+        this(userRepository, authUserResolutionService, permissionVersionService, userDetailsService, null);
+    }
+
+    public JwtTokenCustomizer(UserRepository userRepository,
+                              AuthUserResolutionService authUserResolutionService,
+                              PermissionVersionService permissionVersionService,
+                              UserDetailsService userDetailsService,
+                              TokenSecurityStateService tokenSecurityStateService) {
         this.userRepository = userRepository;
         this.authUserResolutionService = authUserResolutionService;
         this.permissionVersionService = permissionVersionService;
+        this.tokenSecurityStateService = tokenSecurityStateService;
         this.userDetailsService = userDetailsService;
     }
 
@@ -232,6 +245,13 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
             claims.claim("permissions", toStableStringList(extractPermissionAuthorities(nonRoleAuthorities)));
             claims.claim("roleCodes", toStableStringList(claimSource.roleCodes()));
             addPermissionsVersionClaim(
+                claims,
+                userId,
+                activeTenantId,
+                com.tiny.platform.core.oauth.tenant.TenantContext.getActiveScopeType(),
+                com.tiny.platform.core.oauth.tenant.TenantContext.getActiveScopeId()
+            );
+            addTokenSecurityClaims(
                 claims,
                 userId,
                 activeTenantId,
@@ -586,6 +606,39 @@ public class JwtTokenCustomizer implements OAuth2TokenCustomizer<JwtEncodingCont
         if (permissionsVersion != null && !permissionsVersion.isBlank()) {
             claims.claim("permissionsVersion", permissionsVersion);
         }
+    }
+
+    private void addTokenSecurityClaims(JwtClaimsSet.Builder claims,
+                                        Long userId,
+                                        Long activeTenantId,
+                                        String activeScopeType,
+                                        Long activeScopeId) {
+        if (tokenSecurityStateService == null || userId == null) {
+            return;
+        }
+        ActiveScope activeScope = ActiveScope.of(activeScopeType, activeScopeId);
+        String scopeType = activeScope.scopeType();
+        Long scopeId = activeScope.scopeId();
+        if (scopeType == null) {
+            scopeType = activeTenantId != null && activeTenantId > 0
+                ? TenantContextContract.SCOPE_TYPE_TENANT
+                : TenantContextContract.SCOPE_TYPE_PLATFORM;
+        }
+        if (TenantContextContract.SCOPE_TYPE_TENANT.equals(scopeType) && (scopeId == null || scopeId <= 0)) {
+            scopeId = activeTenantId;
+        }
+        if (TenantContextContract.SCOPE_TYPE_PLATFORM.equals(scopeType)) {
+            scopeId = null;
+        }
+        TokenSecurityState state = tokenSecurityStateService.resolveEffectiveState(userId, activeTenantId, scopeType, scopeId);
+        if (state == null || state.tokenSecurityVersion() == null || state.tokenSecurityVersion().isBlank()) {
+            return;
+        }
+        claims.claim("tokenSecurityVersion", state.tokenSecurityVersion());
+        claims.claim(
+            "tokenNotBefore",
+            state.tokenNotBefore().toInstant(ZoneOffset.UTC).getEpochSecond()
+        );
     }
     
     /**

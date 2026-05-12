@@ -74,7 +74,7 @@ class ApplicationControllerCoverageTest {
         when(menuService.existsByUrl("/menu", 7L)).thenReturn(false);
 
         assertThat(controller.getMenus(query).getBody()).containsExactly(responseDto);
-        assertThat(controller.getMenuTree().getBody()).containsExactly(responseDto);
+        assertThat(controller.getMenuTree(null, null).getBody()).containsExactly(responseDto);
         assertThat(controller.getFullMenuTree().getBody()).containsExactly(responseDto);
         assertThat(controller.getMenusByParentId(9L).getBody()).containsExactly(responseDto);
         assertThat(controller.createMenu(createDto).getBody()).isEqualTo(resource);

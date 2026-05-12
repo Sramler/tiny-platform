@@ -7,10 +7,15 @@
         </div>
         <h1 class="error-code">404</h1>
         <h2 class="error-title">页面未找到</h2>
-        <p class="error-description">抱歉，您访问的页面不存在。请检查 URL 是否正确，或返回首页继续浏览。</p>
-        
+        <p class="error-description">
+          抱歉，您访问的页面不存在。请检查 URL 是否正确，或返回首页继续浏览。
+        </p>
+
         <!-- 错误详情信息 -->
-        <div v-if="errorInfo.from || errorInfo.path || errorInfo.message || errorInfo.traceId" class="error-details">
+        <div
+          v-if="errorInfo.from || errorInfo.path || errorInfo.message || errorInfo.traceId"
+          class="error-details"
+        >
           <a-divider>错误详情</a-divider>
           <a-descriptions :column="1" bordered size="small">
             <a-descriptions-item v-if="errorInfo.from" label="来源页面">
@@ -25,7 +30,7 @@
             <a-descriptions-item v-if="errorInfo.traceId" label="追踪ID">
               <a-typography-text copyable code>{{ errorInfo.traceId }}</a-typography-text>
               <a-tooltip title="用于追踪本次请求的日志，便于排查问题">
-                <InfoCircleOutlined style="margin-left: 8px; color: #1890ff; cursor: help;" />
+                <InfoCircleOutlined style="margin-left: 8px; color: #1890ff; cursor: help" />
               </a-tooltip>
             </a-descriptions-item>
           </a-descriptions>
@@ -53,8 +58,18 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { FileSearchOutlined, HomeOutlined, ArrowLeftOutlined, InfoCircleOutlined } from '@ant-design/icons-vue'
-import { getActiveTenantId, resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
+import {
+  FileSearchOutlined,
+  HomeOutlined,
+  ArrowLeftOutlined,
+  InfoCircleOutlined,
+} from '@ant-design/icons-vue'
+import {
+  getActiveTenantId,
+  resolveActiveTenantQueryValue,
+  withActiveTenantQuery,
+} from '@/utils/tenant'
+import { sanitizeInternalRedirect } from '@/utils/redirect'
 
 const router = useRouter()
 const route = useRoute()
@@ -85,18 +100,14 @@ const goBack = () => {
   /** 是否为异常页 URL（避免在 400/401/403/404/500 之间循环返回） */
   const isExceptionPageUrl = (url: string) =>
     !url || /\/exception\/(400|401|403|404|500)(\?|$|\/)/.test(url) || url.includes('/exception/')
-  const isInternalPath = (p: string) => typeof p === 'string' && p.startsWith('/') && !p.startsWith('http')
 
-  if (from && !isExceptionPageUrl(from)) {
-    if (isInternalPath(from)) {
-      router.push(from).catch(() => router.push({ path: '/', query: resolveNavigationTenantQuery() }))
+  if (from) {
+    const safeFrom = sanitizeInternalRedirect(from, '/')
+    if (!isExceptionPageUrl(safeFrom)) {
+      router
+        .push(safeFrom)
+        .catch(() => router.push({ path: '/', query: resolveNavigationTenantQuery() }))
       return
-    }
-    try {
-      window.location.href = from
-      return
-    } catch {
-      // 跨域或无效 URL 时 fallback
     }
   }
   if (window.history.length > 1) {
@@ -142,7 +153,8 @@ const goBack = () => {
 }
 
 @keyframes float {
-  0%, 100% {
+  0%,
+  100% {
     transform: translateY(0px);
   }
   50% {

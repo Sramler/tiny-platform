@@ -1,11 +1,17 @@
 package com.tiny.platform.application.controller.menu;
 
+import com.tiny.platform.application.controller.menu.runtime.MenuRuntimeTreeService;
+import com.tiny.platform.application.controller.menu.runtime.MenuRuntimeTreeSnapshot;
 import com.tiny.platform.infrastructure.auth.resource.domain.Resource;
 import com.tiny.platform.infrastructure.auth.resource.dto.ResourceCreateUpdateDto;
 import com.tiny.platform.infrastructure.auth.resource.dto.ResourceRequestDto;
 import com.tiny.platform.infrastructure.auth.resource.dto.ResourceResponseDto;
 import com.tiny.platform.infrastructure.idempotent.sdk.annotation.Idempotent;
 import com.tiny.platform.infrastructure.menu.service.MenuService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
+import org.springframework.security.core.Authentication;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -22,9 +28,15 @@ import java.util.Map;
 @RequestMapping("/sys/menus")
 public class MenuController {
     private final MenuService menuService;
+    private MenuRuntimeTreeService menuRuntimeTreeService;
 
     public MenuController(MenuService menuService) {
         this.menuService = menuService;
+    }
+
+    @Autowired(required = false)
+    public void setMenuRuntimeTreeService(MenuRuntimeTreeService menuRuntimeTreeService) {
+        this.menuRuntimeTreeService = menuRuntimeTreeService;
     }
 
     /**
@@ -42,8 +54,27 @@ public class MenuController {
      * 获取菜单树结构（type为0-目录，1-菜单）
      */
     @GetMapping("/tree")
-    public ResponseEntity<List<ResourceResponseDto>> getMenuTree() {
-        return ResponseEntity.ok(menuService.menuTree());
+    public ResponseEntity<List<ResourceResponseDto>> getMenuTree(
+            @RequestHeader(value = HttpHeaders.IF_NONE_MATCH, required = false) String ifNoneMatch,
+            Authentication authentication) {
+        if (menuRuntimeTreeService == null) {
+            return ResponseEntity.ok(menuService.menuTree());
+        }
+        MenuRuntimeTreeSnapshot snapshot = menuRuntimeTreeService.loadRuntimeTree(authentication, ifNoneMatch);
+        ResponseEntity.BodyBuilder builder = snapshot.notModified()
+            ? ResponseEntity.status(304)
+            : ResponseEntity.ok();
+        builder.eTag(snapshot.etag())
+            .cacheControl(CacheControl.noCache().cachePrivate())
+            .header("X-Menu-Config-Version", snapshot.menuConfigVersion())
+            .header("X-Permissions-Version", snapshot.permissionsVersion())
+            .header("X-Menu-Cache-Key", snapshot.cacheKey())
+            .header("X-Menu-Cache-Hit", String.valueOf(snapshot.cacheHit()))
+            .varyBy(HttpHeaders.AUTHORIZATION, HttpHeaders.COOKIE, "X-Active-Tenant-Id");
+        if (snapshot.notModified()) {
+            return builder.build();
+        }
+        return builder.body(snapshot.menus());
     }
 
     /**

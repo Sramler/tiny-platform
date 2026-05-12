@@ -122,7 +122,7 @@ const resolveNumberEnvValue = (
 
 const silentRequestTimeoutInSeconds = resolveNumberEnvValue(
   env.VITE_OIDC_SILENT_REQUEST_TIMEOUT_SECONDS,
-  3,
+  10,
   {
     key: 'VITE_OIDC_SILENT_REQUEST_TIMEOUT_SECONDS',
     min: 1,

@@ -20,6 +20,7 @@ import com.tiny.platform.infrastructure.auth.role.repository.RoleRepository;
 import com.tiny.platform.infrastructure.auth.role.service.EffectiveRoleResolutionService;
 import com.tiny.platform.infrastructure.auth.user.repository.TenantUserRepository;
 import com.tiny.platform.infrastructure.menu.repository.MenuEntryRepository;
+import com.tiny.platform.infrastructure.menu.runtime.MenuConfigVersionInvalidator;
 import com.tiny.platform.infrastructure.auth.audit.domain.AuthorizationAuditEventType;
 import com.tiny.platform.infrastructure.auth.audit.domain.RequirementAwareAuditDetail;
 import com.tiny.platform.infrastructure.auth.audit.service.AuthorizationAuditService;
@@ -67,6 +68,9 @@ public class ResourceServiceImpl implements ResourceService {
     private final CarrierPermissionReferenceSafetyService carrierPermissionReferenceSafetyService;
     private final CarrierPermissionRequirementEvaluator carrierPermissionRequirementEvaluator;
     private final AuthorizationAuditService authorizationAuditService;
+
+    @Autowired(required = false)
+    private MenuConfigVersionInvalidator menuConfigVersionInvalidator;
 
     @Autowired
     public ResourceServiceImpl(RoleRepository roleRepository,
@@ -730,6 +734,9 @@ public class ResourceServiceImpl implements ResourceService {
         Long requiredPermissionId = resource.getRequiredPermissionId();
 
         deleteCarrierEntriesById(resource.getId());
+        if (isMenuCarrier(resource.getType())) {
+            bumpMenuConfigVersion("resource_menu_carrier_delete");
+        }
 
         if (requiredPermissionId == null) {
             return;
@@ -1239,11 +1246,15 @@ public class ResourceServiceImpl implements ResourceService {
         if (resource == null || resource.getType() == null) {
             return resource;
         }
-        return switch (resource.getType()) {
+        Resource saved = switch (resource.getType()) {
             case DIRECTORY, MENU -> toResource(menuEntryRepository.save(toMenuEntry(resource)));
             case BUTTON -> toResource(uiActionEntryRepository.save(toUiActionEntry(resource)));
             case API -> toResource(apiEndpointEntryRepository.save(toApiEndpointEntry(resource)));
         };
+        if (isMenuCarrier(resource.getType())) {
+            bumpMenuConfigVersion("resource_menu_carrier_save");
+        }
+        return saved;
     }
 
     private void deleteCarrierEntriesById(Long resourceId) {
@@ -1254,6 +1265,17 @@ public class ResourceServiceImpl implements ResourceService {
         menuEntryRepository.deleteAllByIdInBatch(ids);
         uiActionEntryRepository.deleteAllByIdInBatch(ids);
         apiEndpointEntryRepository.deleteAllByIdInBatch(ids);
+    }
+
+    private boolean isMenuCarrier(ResourceType type) {
+        return type == ResourceType.DIRECTORY || type == ResourceType.MENU;
+    }
+
+    private void bumpMenuConfigVersion(String reason) {
+        if (menuConfigVersionInvalidator == null) {
+            return;
+        }
+        menuConfigVersionInvalidator.bumpCurrentMenuConfigVersion(reason, extractCurrentUserId());
     }
 
     private com.tiny.platform.infrastructure.menu.domain.MenuEntry toMenuEntry(Resource resource) {

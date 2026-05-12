@@ -28,6 +28,27 @@ export interface MenuItem {
   enabled?: boolean
 }
 
+export interface MenuTreeSnapshot {
+  status: 'ok'
+  menus: MenuItem[]
+  etag?: string
+  menuConfigVersion?: string
+  permissionsVersion?: string
+  cacheKey?: string
+  cacheHit?: boolean
+}
+
+export interface MenuTreeNotModifiedSnapshot {
+  status: 'not_modified'
+  etag?: string
+  menuConfigVersion?: string
+  permissionsVersion?: string
+  cacheKey?: string
+  cacheHit?: boolean
+}
+
+export type MenuTreeFetchResult = MenuTreeSnapshot | MenuTreeNotModifiedSnapshot
+
 // 查询参数类型
 export interface MenuQuery {
   name?: string
@@ -82,6 +103,52 @@ export function menuList(params: {
 // 获取菜单树
 export function menuTree() {
   return request.get('/sys/menus/tree')
+}
+
+function getApiBaseUrl(): string {
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000'
+  return apiBaseUrl.endsWith('/') ? apiBaseUrl.slice(0, -1) : apiBaseUrl
+}
+
+function readMenuTreeHeaders(response: Response) {
+  return {
+    etag: response.headers.get('etag') || undefined,
+    menuConfigVersion: response.headers.get('x-menu-config-version') || undefined,
+    permissionsVersion: response.headers.get('x-permissions-version') || undefined,
+    cacheKey: response.headers.get('x-menu-cache-key') || undefined,
+    cacheHit: response.headers.get('x-menu-cache-hit') === 'true',
+  }
+}
+
+export async function fetchMenuTreeSnapshot(options: { ifNoneMatch?: string } = {}): Promise<MenuTreeFetchResult> {
+  const { useAuth } = await import('@/auth/auth')
+  const headers = new Headers()
+  headers.set('Accept', 'application/json')
+  if (options.ifNoneMatch) {
+    headers.set('If-None-Match', options.ifNoneMatch)
+  }
+  const response = await useAuth().fetchWithAuth(`${getApiBaseUrl()}/sys/menus/tree`, {
+    method: 'GET',
+    cache: 'no-store',
+    credentials: 'include',
+    headers,
+  })
+  const metadata = readMenuTreeHeaders(response)
+  if (response.status === 304) {
+    return {
+      status: 'not_modified',
+      ...metadata,
+    }
+  }
+  if (!response.ok) {
+    throw new Error(`菜单权限加载失败：HTTP ${response.status}`)
+  }
+  const menus = (await response.json()) as MenuItem[]
+  return {
+    status: 'ok',
+    menus,
+    ...metadata,
+  }
 }
 
 // 获取完整菜单树（包含隐藏/禁用/空目录）

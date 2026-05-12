@@ -121,7 +121,8 @@ user
 - `roleCodes` 作为显式字段保留，仅供少量合法角色码消费者（如 workflow bridge）
 - （更新：CARD-15B 已完成）`SecurityUser.buildAuthorities(...)` 已不再在 Session carrier 中保留 `role.code` authorities；`JwtTokenCustomizer.resolveRoleCodes(...)` 也只接受显式 `roleCodes`
 - 不再把 `role.name` 放入 authority / JWT / Session
-- claims 已包含 `permissions`、`roleCodes`、`activeTenantId`、`activeScopeType`、`permissionsVersion`
+- claims 已包含 `permissions`、`roleCodes`、`activeTenantId`、`activeScopeType`、`permissionsVersion`、`tokenSecurityVersion`、`tokenNotBefore`
+- `permissionsVersion` 只表达授权快照漂移；`tokenSecurityVersion` / `tokenNotBefore` 独立表达用户禁用、删除、密码/TOTP 安全状态变化后的强制失效
 
 **User 控制面与 M4（Bearer + Session 一致）的读/写分口径**：矩阵 **M4** 描述的是过滤器层对「Bearer 与 Session 成对一致」的放行；**同一矩阵行不等价于** `GET /sys/users/current`（只读）与 `POST /sys/users/current/active-scope`（会话 active scope 写）的**同一套**产品语义。**读**仅返回当前快照；**写**以 **HttpSession** 为权威落点，Bearer 写成功后须按响应 `tokenRefreshRequired` / `newActiveScope*` 处理 token 刷新，避免写后显式 JWT claims 与 Session 漂移触发 **M5**。正式契约见 [TINY_PLATFORM_SESSION_BEARER_AUTH_MATRIX.md](./TINY_PLATFORM_SESSION_BEARER_AUTH_MATRIX.md) §8。
 

@@ -1,14 +1,127 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="">
   <head>
-    <meta charset="UTF-8">
-    <link rel="icon" href="/favicon.ico">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <link rel="icon" href="/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- 网页标题，已由 Vite App 修改为 Tiny app -->
     <title>Tiny app</title>
+    <style>
+      html,
+      body,
+      #app {
+        min-height: 100%;
+        margin: 0;
+      }
+
+      .app-preboot {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background:
+          radial-gradient(circle at 18% 16%, rgba(28, 115, 255, 0.14), transparent 30%),
+          linear-gradient(135deg, #f7fbff 0%, #eef5ff 48%, #f8fbff 100%);
+        color: #102033;
+        font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      }
+
+      .app-preboot__card {
+        width: min(360px, calc(100vw - 48px));
+        padding: 28px;
+        border: 1px solid rgba(82, 129, 196, 0.18);
+        border-radius: 22px;
+        background: rgba(255, 255, 255, 0.82);
+        box-shadow: 0 24px 70px rgba(34, 74, 126, 0.16);
+        text-align: center;
+      }
+
+      .app-preboot__brand {
+        margin-bottom: 12px;
+        color: #13775d;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.18em;
+      }
+
+      .app-preboot__title {
+        margin: 0;
+        font-size: 22px;
+        font-weight: 700;
+      }
+
+      .app-preboot__text {
+        margin: 10px 0 20px;
+        color: #66758a;
+        font-size: 14px;
+      }
+
+      .app-preboot__text--slow {
+        color: #9a5b12;
+      }
+
+      .app-preboot__bar {
+        position: relative;
+        height: 4px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: rgba(40, 111, 220, 0.12);
+      }
+
+      .app-preboot__bar::after {
+        position: absolute;
+        inset: 0;
+        width: 40%;
+        border-radius: inherit;
+        background: linear-gradient(90deg, #1d8f73, #2477ff);
+        animation: preboot-slide 1.2s ease-in-out infinite;
+        content: '';
+      }
+
+      @keyframes preboot-slide {
+        0% {
+          transform: translateX(-110%);
+        }
+
+        100% {
+          transform: translateX(260%);
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <div class="app-preboot" aria-live="polite">
+        <div class="app-preboot__card">
+          <div class="app-preboot__brand">TINY PLATFORM</div>
+          <h1 class="app-preboot__title">正在加载应用</h1>
+          <p id="app-preboot-text" class="app-preboot__text">正在准备启动资源，请稍候...</p>
+          <div class="app-preboot__bar"></div>
+        </div>
+      </div>
+    </div>
+    <noscript>
+      <div class="app-preboot">
+        <div class="app-preboot__card">
+          <div class="app-preboot__brand">TINY PLATFORM</div>
+          <h1 class="app-preboot__title">需要启用 JavaScript</h1>
+          <p class="app-preboot__text">请启用浏览器 JavaScript 后重新访问系统。</p>
+        </div>
+      </div>
+    </noscript>
+    <script>
+      window.setTimeout(function () {
+        if (window.__TINY_APP_MOUNTED__) {
+          return
+        }
+        var text = document.getElementById('app-preboot-text')
+        if (!text) {
+          return
+        }
+        text.textContent = '启动资源加载较慢，请继续等待；如长时间无响应，请刷新页面重试。'
+        text.className = 'app-preboot__text app-preboot__text--slow'
+      }, 15000)
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

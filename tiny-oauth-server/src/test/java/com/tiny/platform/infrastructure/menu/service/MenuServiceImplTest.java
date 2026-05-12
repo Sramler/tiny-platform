@@ -14,6 +14,7 @@ import static org.mockito.Mockito.when;
 import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.core.oauth.tenant.TenantContextContract;
+import com.tiny.platform.infrastructure.menu.runtime.MenuConfigVersionInvalidator;
 import com.tiny.platform.infrastructure.auth.datascope.framework.DataScopeContext;
 import com.tiny.platform.infrastructure.auth.datascope.framework.ResolvedDataScope;
 import com.tiny.platform.infrastructure.auth.org.repository.UserUnitRepository;
@@ -67,6 +68,7 @@ class MenuServiceImplTest {
     private ApiEndpointPermissionRequirementRepository apiEndpointPermissionRequirementRepository;
     private AuthorizationAuditService authorizationAuditService;
     private RoleRepository roleRepository;
+    private MenuConfigVersionInvalidator menuConfigVersionInvalidator;
     private MenuServiceImpl service;
 
     @BeforeEach
@@ -83,6 +85,7 @@ class MenuServiceImplTest {
         apiEndpointPermissionRequirementRepository = Mockito.mock(ApiEndpointPermissionRequirementRepository.class);
         authorizationAuditService = Mockito.mock(AuthorizationAuditService.class);
         roleRepository = Mockito.mock(RoleRepository.class);
+        menuConfigVersionInvalidator = Mockito.mock(MenuConfigVersionInvalidator.class);
 
         CarrierPermissionRequirementEvaluator evaluator = new CarrierPermissionRequirementEvaluator(
             menuPermissionRequirementRepository,
@@ -99,7 +102,8 @@ class MenuServiceImplTest {
             carrierPermissionReferenceSafetyService,
             evaluator,
             authorizationAuditService,
-            roleRepository
+            roleRepository,
+            menuConfigVersionInvalidator
         );
 
         when(menuPermissionRequirementRepository.findRowsByMenuIdIn(anyCollection())).thenReturn(List.of());
@@ -196,6 +200,7 @@ class MenuServiceImplTest {
         assertThat(created.getTenantId()).isEqualTo(2L);
         verify(resourcePermissionBindingService).bindResource(any(Resource.class), eq(7L));
         verify(menuEntryRepository).save(any(MenuEntry.class));
+        verify(menuConfigVersionInvalidator).bumpCurrentMenuConfigVersion("menu_create", 7L);
     }
 
     @Test
@@ -292,6 +297,7 @@ class MenuServiceImplTest {
             Objects.equals(saved.getRequiredPermissionId(), 99L)
                 && Objects.equals(saved.getPermission(), "system:menu:edit")
         ));
+        verify(menuConfigVersionInvalidator).bumpCurrentMenuConfigVersion("menu_update", 7L);
     }
 
     @Test
@@ -330,6 +336,7 @@ class MenuServiceImplTest {
         verify(menuEntryRepository).deleteAllByIdInBatch(List.of(9L));
         verify(uiActionEntryRepository).deleteAllByIdInBatch(List.of(9L));
         verify(apiEndpointEntryRepository).deleteAllByIdInBatch(List.of(9L));
+        verify(menuConfigVersionInvalidator).bumpCurrentMenuConfigVersion("menu_delete", null);
     }
 
     @Test
@@ -401,6 +408,7 @@ class MenuServiceImplTest {
         verify(menuEntryRepository).save(argThat(saved ->
             Objects.equals(saved.getId(), 40L) && saved.getSort().equals(8)
         ));
+        verify(menuConfigVersionInvalidator).bumpCurrentMenuConfigVersion("menu_sort_update", null);
     }
 
     @Test
@@ -562,6 +570,7 @@ class MenuServiceImplTest {
             List.of(ResourceType.DIRECTORY.getCode(), ResourceType.MENU.getCode())
         )).thenReturn(List.of(system, legacyConstraint, platformConstraint));
         when(menuPermissionRequirementRepository.findRowsByMenuIdIn(anyCollection())).thenReturn(List.of(
+            row(1L, 0, 1, "system:role:constraint:view", false),
             row(2L, 0, 1, "system:role:constraint:view", false),
             row(3L, 0, 1, "system:role:constraint:view", false)
         ));

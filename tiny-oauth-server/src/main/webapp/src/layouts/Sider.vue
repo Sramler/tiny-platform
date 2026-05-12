@@ -52,11 +52,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { menuTree, type MenuItem } from '@/api/menu'
+import type { MenuItem } from '@/api/menu'
 import { message } from 'ant-design-vue'
 import Icon from '@/components/Icon.vue'
+import { useMenuRouteState } from '@/router/menuState'
+import { reloadPermissionRoutes } from '@/permission/permissionBootstrap'
 
 /**
  * 常量定义
@@ -78,6 +80,7 @@ defineOptions({
  */
 const router = useRouter()
 const route = useRoute()
+const menuState = useMenuRouteState()
 
 /**
  * 响应式状态
@@ -89,8 +92,8 @@ const getInitialCollapsedState = (): boolean => {
 }
 const collapsed = ref<boolean>(getInitialCollapsedState())
 
-// 菜单项列表，初始为空，后续通过接口加载
-const menuList = ref<MenuItem[]>([])
+// 菜单由 permissionBootstrap 统一加载，侧边栏只消费当前运行态，避免与动态路由重复请求。
+const menuList = computed<MenuItem[]>(() => [...menuState.menus] as MenuItem[])
 
 // 当前打开的一级菜单索引，默认工作台（0）
 const openMenu = ref<number>(DEFAULT_OPEN_MENU)
@@ -223,20 +226,10 @@ function findMenuPosition(
  * 加载菜单数据
  * 从后端 API 获取菜单树结构
  */
-async function loadMenu() {
-  try {
-    const data = await menuTree()
-
-    if (data && Array.isArray(data) && data.length > 0) {
-      menuList.value = data
-    } else {
-      menuList.value = []
-      message.warning('未加载到可用菜单')
-    }
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : '未知错误'
-    message.error(`加载菜单失败：${errorMessage}`)
-    menuList.value = []
+async function reloadMenuRoutes() {
+  const result = await reloadPermissionRoutes(router)
+  if (result.status !== 'ready') {
+    message.error(result.message || '菜单加载失败')
   }
 }
 
@@ -399,12 +392,11 @@ watch(
 const handleMenuReload = () => {
   // 避免事件在服务端渲染环境触发
   if (typeof window !== 'undefined') {
-    loadMenu()
+    reloadMenuRoutes()
   }
 }
 
 onMounted(() => {
-  loadMenu()
   if (typeof window !== 'undefined') {
     window.addEventListener('reload-menu-tree', handleMenuReload)
   }

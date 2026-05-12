@@ -1,0 +1,38 @@
+databaseChangeLog:
+  - changeSet:
+      id: 183-user-token-security-state
+      author: codex
+      comment: 新增用户 token 安全状态表，独立表达 token 禁用/强制重新登录信号，避免复用 permissionsVersion 承担安全撤销语义
+      preConditions:
+        onFail: MARK_RAN
+        onError: HALT
+        not:
+          tableExists:
+            tableName: user_token_security_state
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              CREATE TABLE `user_token_security_state` (
+                `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键',
+                `user_id` BIGINT NOT NULL COMMENT '用户ID',
+                `tenant_id` BIGINT DEFAULT NULL COMMENT '租户ID，NULL=平台/全局',
+                `normalized_tenant_id` BIGINT GENERATED ALWAYS AS (IFNULL(`tenant_id`, 0)) STORED COMMENT '归一化租户键，避免 MySQL UNIQUE NULL 语义松散',
+                `scope_type` VARCHAR(32) NOT NULL DEFAULT 'TENANT' COMMENT '作用域类型：GLOBAL/PLATFORM/TENANT/ORG/DEPT',
+                `scope_id` BIGINT DEFAULT NULL COMMENT '作用域ID，GLOBAL/PLATFORM 为空',
+                `normalized_scope_id` BIGINT GENERATED ALWAYS AS (IFNULL(`scope_id`, 0)) STORED COMMENT '归一化作用域键，避免 MySQL UNIQUE NULL 语义松散',
+                `token_version` BIGINT NOT NULL DEFAULT 1 COMMENT '单调递增 token 安全版本',
+                `token_not_before` DATETIME NOT NULL DEFAULT '1970-01-01 00:00:00' COMMENT '早于该时间签发的 token 全部拒绝',
+                `reason` VARCHAR(128) DEFAULT NULL COMMENT '最近一次初始化或撤销原因',
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                `created_by` BIGINT DEFAULT NULL,
+                `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                `updated_by` BIGINT DEFAULT NULL,
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uk_user_token_security_scope` (`user_id`, `normalized_tenant_id`, `scope_type`, `normalized_scope_id`),
+                KEY `idx_user_token_security_user` (`user_id`),
+                KEY `idx_user_token_security_updated_at` (`updated_at`),
+                KEY `idx_user_token_security_scope` (`normalized_tenant_id`, `scope_type`, `normalized_scope_id`)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='用户 token 安全状态';

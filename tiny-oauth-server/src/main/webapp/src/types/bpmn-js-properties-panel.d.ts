@@ -6,8 +6,3 @@ declare module 'bpmn-js-properties-panel' {
   export const ZeebeTooltipProvider: any
   export const useService: any
 }
-
-declare module 'bpmn-js-i18n/translations/zn.js' {
-  const translations: Record<string, string>
-  export default translations
-}

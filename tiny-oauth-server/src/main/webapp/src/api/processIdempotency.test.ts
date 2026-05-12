@@ -23,13 +23,18 @@ describe('process API idempotency', () => {
   })
 
   it('should attach idempotency config for process mutations', async () => {
-    const { processApi, deploymentApi, instanceApi, taskApi, tenantApi } = await import('@/api/process')
+    const { processApi, processModelApi, deploymentApi, instanceApi, taskApi, tenantApi } = await import('@/api/process')
     const deployInfo = { bpmnXml: '<xml />', deploymentName: 'demo', key: 'demo' }
     const startData = { processKey: 'demo', variables: { orderId: 'A-1' } }
     const completeData = { taskId: 'task-2', variables: { approved: true } }
     const tenantInfo = { id: 'tenant-a', name: 'Tenant A' }
+    const modelCreate = { name: 'Demo', bpmnXml: '<xml />' }
+    const modelUpdate = { name: 'Demo', bpmnXml: '<xml />', lockVersion: 0 }
 
     await processApi.deleteProcessDefinition('def-1')
+    await processModelApi.createModel(modelCreate)
+    await processModelApi.saveModel(7, modelUpdate)
+    await processModelApi.deployModel(7)
     await deploymentApi.deployProcess('<xml />')
     await deploymentApi.deployProcessWithInfo(deployInfo)
     await deploymentApi.deleteDeployment('dep-1')
@@ -47,6 +52,27 @@ describe('process API idempotency', () => {
       idempotency: {
         scope: 'process-definition:delete:def-1',
         payload: { processDefinitionId: 'def-1' },
+      },
+    })
+    expect(mocks.post).toHaveBeenCalledWith('/process/models', modelCreate, {
+      idempotency: {
+        scope: 'process-model:create',
+        payload: modelCreate,
+        mode: 'submit',
+      },
+    })
+    expect(mocks.put).toHaveBeenCalledWith('/process/models/7', modelUpdate, {
+      idempotency: {
+        scope: 'process-model:update:7',
+        payload: { id: 7, ...modelUpdate },
+        mode: 'submit',
+      },
+    })
+    expect(mocks.post).toHaveBeenCalledWith('/process/models/7/deploy', null, {
+      idempotency: {
+        scope: 'process-model:deploy:7',
+        payload: { id: 7 },
+        mode: 'submit',
       },
     })
     expect(mocks.post).toHaveBeenCalledWith('/process/deploy', '<xml />', {

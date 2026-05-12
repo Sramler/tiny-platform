@@ -144,6 +144,147 @@ export interface CompleteTaskRequest {
   variables?: Record<string, unknown>
 }
 
+export type ProcessModelScopeType = 'PLATFORM' | 'TENANT'
+export type ProcessModelStatus = 'DRAFT' | 'VALIDATED' | 'DEPLOYED' | 'ARCHIVED'
+export type ProcessModelValidationStatus = 'NOT_VALIDATED' | 'PASSED' | 'FAILED'
+export type ProcessModelRuntimeState = 'NOT_DEPLOYED' | 'CURRENT_RUNTIME' | 'HISTORICAL_DEPLOYED'
+
+export interface ProcessModel {
+  id: number
+  modelKey: string
+  name: string
+  description?: string
+  scopeType: ProcessModelScopeType
+  recordTenantId?: string | number | null
+  status: ProcessModelStatus
+  runtimeState: ProcessModelRuntimeState
+  version: number
+  bpmnXml: string
+  svg?: string
+  validationStatus: ProcessModelValidationStatus
+  validationSummary?: string
+  deploymentId?: string
+  processDefinitionId?: string
+  processDefinitionKey?: string
+  processDefinitionVersion?: number
+  createdBy?: string
+  createdAt?: string
+  updatedBy?: string
+  updatedAt?: string
+  deployedBy?: string
+  deployedAt?: string
+  lockVersion: number
+}
+
+export interface ProcessModelGroup {
+  modelKey: string
+  name: string
+  scopeType: ProcessModelScopeType
+  recordTenantId?: string | number | null
+  latestVersion: number
+  latestDesignVersion: number
+  latestStatus: ProcessModelStatus
+  currentRuntimeVersion?: number | null
+  currentDeploymentId?: string | null
+  hasUndeployedChanges: boolean
+  versionCount: number
+  updatedAt?: string
+  updatedBy?: string
+  latestModel: ProcessModel
+  versions: ProcessModel[]
+}
+
+export interface ProcessModelCreateRequest {
+  modelKey?: string
+  name?: string
+  description?: string
+  version?: number
+  bpmnXml: string
+  svg?: string
+}
+
+export interface ProcessModelUpdateRequest {
+  name?: string
+  description?: string
+  bpmnXml: string
+  svg?: string
+  lockVersion?: number
+}
+
+export interface ProcessModelValidationResponse {
+  id: number
+  valid: boolean
+  message: string
+  warnings: string[]
+  validationStatus: ProcessModelValidationStatus
+}
+
+export interface ProcessModelDeployResponse {
+  id: number
+  deploymentId: string
+  processDefinitionKey: string
+  status: ProcessModelStatus
+  message: string
+}
+
+function listProcessModels() {
+  return request.get<ProcessModel[]>('/process/models')
+}
+
+function listProcessModelGroups() {
+  return request.get<ProcessModelGroup[]>('/process/models/groups')
+}
+
+function getProcessModel(id: number) {
+  return request.get<ProcessModel>(`/process/models/${id}`)
+}
+
+function createProcessModel(data: ProcessModelCreateRequest) {
+  return request.post<ProcessModel>(
+    '/process/models',
+    data,
+    withSubmitIdempotency('process-model:create', data),
+  )
+}
+
+function saveProcessModel(id: number, data: ProcessModelUpdateRequest) {
+  return request.put<ProcessModel>(
+    `/process/models/${id}`,
+    data,
+    withSubmitIdempotency(`process-model:update:${id}`, { id, ...data }),
+  )
+}
+
+function validateProcessModel(id: number) {
+  return request.post<ProcessModelValidationResponse>(`/process/models/${id}/validate`)
+}
+
+function deployProcessModel(id: number) {
+  return request.post<ProcessModelDeployResponse>(
+    `/process/models/${id}/deploy`,
+    null,
+    withSubmitIdempotency(`process-model:deploy:${id}`, { id }),
+  )
+}
+
+export const processModelApi = {
+  listModels: listProcessModels,
+  listModelGroups: listProcessModelGroups,
+  createModel: createProcessModel,
+  getModel: getProcessModel,
+  saveModel: saveProcessModel,
+  validateModel: validateProcessModel,
+  deployModel: deployProcessModel,
+
+  // Backward-compatible aliases for the initial 1.5 implementation.
+  list: listProcessModels,
+  create: createProcessModel,
+  get: getProcessModel,
+  update: saveProcessModel,
+  validate: validateProcessModel,
+  deploy: deployProcessModel,
+}
+
 // 流程定义管理
 export const processApi = {
   // 获取流程定义列表

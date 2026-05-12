@@ -1,5 +1,7 @@
 package com.tiny.platform.application.controller.menu;
 
+import com.tiny.platform.application.controller.menu.runtime.MenuRuntimeTreeService;
+import com.tiny.platform.application.controller.menu.runtime.MenuRuntimeTreeSnapshot;
 import com.tiny.platform.infrastructure.auth.resource.domain.Resource;
 import com.tiny.platform.infrastructure.auth.resource.dto.ResourceCreateUpdateDto;
 import com.tiny.platform.infrastructure.auth.resource.dto.ResourceRequestDto;
@@ -44,10 +46,35 @@ class MenuControllerTest {
         when(menuService.menuTree()).thenReturn(List.of());
         when(menuService.menuTreeAll()).thenReturn(List.of());
 
-        assertEquals(HttpStatus.OK, controller.getMenuTree().getStatusCode());
+        assertEquals(HttpStatus.OK, controller.getMenuTree(null, null).getStatusCode());
         assertEquals(HttpStatus.OK, controller.getFullMenuTree().getStatusCode());
         verify(menuService).menuTree();
         verify(menuService).menuTreeAll();
+    }
+
+    @Test
+    void runtimeTreeShouldReturnConditionalCacheHeadersAnd304() {
+        MenuRuntimeTreeService runtimeTreeService = mock(MenuRuntimeTreeService.class);
+        MenuController runtimeController = new MenuController(menuService);
+        runtimeController.setMenuRuntimeTreeService(runtimeTreeService);
+        MenuRuntimeTreeSnapshot snapshot = new MenuRuntimeTreeSnapshot(
+            List.of(),
+            "\"etag-1\"",
+            "menu-v1",
+            "perm-v1",
+            "cache-key",
+            true,
+            true
+        );
+        when(runtimeTreeService.loadRuntimeTree(null, "\"etag-1\"")).thenReturn(snapshot);
+
+        ResponseEntity<List<ResourceResponseDto>> response = runtimeController.getMenuTree("\"etag-1\"", null);
+
+        assertEquals(HttpStatus.NOT_MODIFIED, response.getStatusCode());
+        assertEquals("\"etag-1\"", response.getHeaders().getETag());
+        assertEquals("menu-v1", response.getHeaders().getFirst("X-Menu-Config-Version"));
+        assertEquals("perm-v1", response.getHeaders().getFirst("X-Permissions-Version"));
+        verify(menuService, never()).menuTree();
     }
 
     @Test

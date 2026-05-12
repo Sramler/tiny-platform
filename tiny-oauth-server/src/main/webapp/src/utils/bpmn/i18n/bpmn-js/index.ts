@@ -1,14 +1,41 @@
 /**
  * BPMN.js 翻译主入口
  * 对应 bpmn-js-i18n-zh/lib/bpmn-js/index.js
- * 支持官方翻译包补充
+ * 支持 bpmn-js-i18n 官方中文翻译包补充
  */
 
 import elementTranslations from './elements'
 import contextMenuTranslations from './context-menu'
+import officialZhTranslations from 'bpmn-js-i18n/translations/zn.js'
 
 export interface TranslationMap {
   [key: string]: string
+}
+
+const isDevMode = Boolean(import.meta.env?.DEV)
+
+function debugLog(message: string, ...args: unknown[]): void {
+  if (isDevMode) {
+    console.debug(message, ...args)
+  }
+}
+
+function normalizeTranslationModule(moduleValue: unknown): TranslationMap {
+  const maybeDefault =
+    moduleValue && typeof moduleValue === 'object' && 'default' in moduleValue
+      ? (moduleValue as { default?: unknown }).default
+      : moduleValue
+
+  const maybeNestedDefault =
+    maybeDefault && typeof maybeDefault === 'object' && 'default' in maybeDefault
+      ? (maybeDefault as { default?: unknown }).default
+      : maybeDefault
+
+  if (maybeNestedDefault && typeof maybeNestedDefault === 'object') {
+    return maybeNestedDefault as TranslationMap
+  }
+
+  return {}
 }
 
 // 本地翻译（基于 bpmn-js-i18n-zh 源码的 TypeScript 实现）
@@ -96,27 +123,23 @@ class OfficialTranslationLoader {
       // 尝试从全局变量获取预加载的翻译
       if (typeof window !== 'undefined' && (window as any).bpmnOfficialTranslationsPreloaded) {
         officialTranslations = (window as any).bpmnOfficialTranslationsPreloaded
-        console.debug('✅ 从全局变量同步加载官方翻译成功')
+        debugLog('✅ 从全局变量同步加载官方中文翻译成功')
         this.isLoaded = true
         return
       }
 
-      // 动态导入官方翻译
-      const officialModule = await import(
-        /* webpackChunkName: "bpmn-official" */ 'bpmn-js-i18n/translations/en.js'
-      )
+      // bpmn-js-i18n 当前中文文件名是 zn.js。这里作为“官方中文兜底词典”，
+      // 项目本地词典仍然拥有更高优先级，便于统一业务用语。
+      const normalizedTranslations = normalizeTranslationModule(officialZhTranslations)
 
-      if (officialModule.default && typeof officialModule.default === 'object') {
-        officialTranslations = officialModule.default as TranslationMap
-        console.debug('✅ 成功异步加载官方 bpmn-js-i18n 英文翻译包')
-      } else if (typeof officialModule === 'object') {
-        officialTranslations = officialModule as unknown as TranslationMap
-        console.debug('✅ 成功异步加载官方 bpmn-js-i18n 英文翻译包 (对象格式)')
+      if (Object.keys(normalizedTranslations).length > 0) {
+        officialTranslations = normalizedTranslations
+        debugLog('✅ 成功异步加载官方 bpmn-js-i18n 中文翻译包')
       }
 
       this.isLoaded = true
     } catch (error) {
-      console.debug('官方 bpmn-js-i18n 翻译包未安装或加载失败，跳过加载:', error)
+      debugLog('官方 bpmn-js-i18n 中文翻译包未安装或加载失败，跳过加载:', error)
       this.isLoaded = true // 标记为已加载，避免重复尝试
     }
   }

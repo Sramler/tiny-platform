@@ -20,8 +20,22 @@ import {
   syncTenantContextFromAccessToken,
   syncTenantContextFromClaims,
 } from '@/utils/tenant'
+import { dispatchAuthorizationRuntimeReset } from '@/runtime/authorizationRuntimeEvents'
 
 export type ActiveScopePostSwitchRenewResult = { ok: true; user: User } | { ok: false }
+export type SilentLoginErrorCode =
+  | 'login_required'
+  | 'interaction_required'
+  | 'consent_required'
+  | 'timeout'
+  | 'network_error'
+  | 'invalid_state'
+  | 'cookie_blocked'
+  | 'unknown'
+
+export type PlatformSessionSilentLoginResult =
+  | { ok: true; user: User }
+  | { ok: false; errorCode: SilentLoginErrorCode; message: string }
 
 const OIDC_TRACE_ENABLED =
   import.meta.env.VITE_ENABLE_OIDC_TRACE === 'true' || !import.meta.env.PROD
@@ -350,6 +364,7 @@ export const logout = async () => {
     await userManager.removeUser()
     user.value = null
     clearActiveTenantId()
+    dispatchAuthorizationRuntimeReset('logout', { message: '用户退出登录，清理授权运行态' })
     loginInProgress = false
     localStateCleared = true
   }
@@ -424,6 +439,7 @@ async function signinSilentAndSyncUser(options?: SigninSilentOptions): Promise<U
       await userManager.removeUser()
       user.value = null
       clearTraceId()
+      dispatchAuthorizationRuntimeReset('renew_failed', { message: '令牌续期失败，清理授权运行态' })
       loginInProgress = false // 重置登录状态
       window.location.href = '/login'
     }
@@ -439,6 +455,52 @@ async function safeSilentRenew() {
   } finally {
     renewInProgress = false
   }
+}
+
+export async function refreshAccessTokenOnce(): Promise<boolean> {
+  if (renewInProgress) return false
+  renewInProgress = true
+  try {
+    const renewed = await signinSilentAndSyncUser({ suppressForceLogoutOnError: true })
+    return !!renewed && !renewed.expired
+  } finally {
+    renewInProgress = false
+  }
+}
+
+function classifySilentLoginError(error: unknown): PlatformSessionSilentLoginResult {
+  const anyError = error as {
+    error?: unknown
+    error_description?: unknown
+    message?: unknown
+    name?: unknown
+  }
+  const raw = String(anyError?.error || anyError?.name || anyError?.message || error || '')
+  const description = String(anyError?.error_description || anyError?.message || '')
+  const text = `${raw} ${description}`.toLowerCase()
+
+  if (text.includes('login_required')) {
+    return { ok: false, errorCode: 'login_required', message: '登录会话已失效' }
+  }
+  if (text.includes('interaction_required')) {
+    return { ok: false, errorCode: 'interaction_required', message: '需要用户交互完成登录' }
+  }
+  if (text.includes('consent_required')) {
+    return { ok: false, errorCode: 'consent_required', message: '需要重新授权' }
+  }
+  if (text.includes('timeout') || text.includes('timed out')) {
+    return { ok: false, errorCode: 'timeout', message: '静默恢复登录态超时' }
+  }
+  if (text.includes('state')) {
+    return { ok: false, errorCode: 'invalid_state', message: '登录状态校验失败' }
+  }
+  if (text.includes('cookie') || text.includes('iframe')) {
+    return { ok: false, errorCode: 'cookie_blocked', message: '浏览器限制导致静默登录不可用' }
+  }
+  if (text.includes('network') || text.includes('failed to fetch')) {
+    return { ok: false, errorCode: 'network_error', message: '网络异常，无法恢复登录态' }
+  }
+  return { ok: false, errorCode: 'unknown', message: '静默恢复登录态失败' }
 }
 
 /**
@@ -477,8 +539,17 @@ export async function refreshTokenAfterActiveScopeSwitch(): Promise<ActiveScopeP
  * 避免路由守卫误跳 `/login?redirect=/`（典型：平台账号 → totp-bind → 跳过 → 回首页）。
  */
 export async function trySilentLoginFromPlatformSession(): Promise<boolean> {
+  const result = await trySilentLoginFromPlatformSessionDetailed()
+  return result.ok
+}
+
+export async function trySilentLoginFromPlatformSessionDetailed(): Promise<PlatformSessionSilentLoginResult> {
   if (getTenantCode()) {
-    return false
+    return {
+      ok: false,
+      errorCode: 'unknown',
+      message: '当前存在租户上下文，不执行平台 Session 桥接',
+    }
   }
   try {
     ensureOidcAuthoritySynced()
@@ -491,12 +562,13 @@ export async function trySilentLoginFromPlatformSession(): Promise<boolean> {
         hasRefreshToken: !!renewed.refresh_token,
         expires_at: renewed.expires_at,
       })
-      return true
+      return { ok: true, user: renewed }
     }
   } catch (error) {
     oidcTrace('trySilentLoginFromPlatformSession.miss', { message: String(error) })
+    return classifySilentLoginError(error)
   }
-  return false
+  return { ok: false, errorCode: 'login_required', message: '没有可用的平台登录会话' }
 }
 
 export async function initAuth() {
@@ -535,6 +607,15 @@ export async function initAuth() {
     user.value = null
     clearActiveTenantId()
   }
+}
+
+let authInitializationPromise: Promise<void> | null = null
+
+export function ensureAuthInitialized(options: { force?: boolean } = {}): Promise<void> {
+  if (!authInitializationPromise || options.force) {
+    authInitializationPromise = initAuth()
+  }
+  return authInitializationPromise
 }
 
 // 提供 Vue 组件中使用的 Auth API
@@ -606,8 +687,8 @@ export function useAuth(): AuthContext {
   }
 }
 
-// 初始化调用（模块加载即执行）
-export const initPromise = initAuth()
+// 兼容历史测试/旧模块导入。启动链路不再依赖模块加载副作用，真实恢复由 authBootstrap 显式触发。
+export const initPromise = Promise.resolve()
 
 // OIDC 事件监听
 bindUserManagerEvents({
@@ -627,6 +708,7 @@ bindUserManagerEvents({
     oidcTrace('event.userUnloaded')
     user.value = null
     clearActiveTenantId()
+    dispatchAuthorizationRuntimeReset('user_unloaded', { message: 'OIDC 用户状态已卸载' })
     loginInProgress = false // 重置登录状态
   },
   onSilentRenewError: (err) => {
@@ -636,6 +718,7 @@ bindUserManagerEvents({
     oidcTrace('event.userSignedOut')
     user.value = null
     clearActiveTenantId()
+    dispatchAuthorizationRuntimeReset('user_signed_out', { message: 'OIDC 会话已退出' })
     loginInProgress = false // 重置登录状态
     // 可选：跳转登录页
     window.location.href = '/login'

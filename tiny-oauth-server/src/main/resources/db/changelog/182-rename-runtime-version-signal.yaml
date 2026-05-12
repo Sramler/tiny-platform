@@ -1,0 +1,24 @@
+databaseChangeLog:
+  - changeSet:
+      id: 182-rename-runtime-version-signal
+      author: codex
+      comment: 将 runtime_version 重命名为 runtime_version_signal，明确其用途是运行态版本信号而非应用运行版本
+      preConditions:
+        onFail: MARK_RAN
+        onError: HALT
+        and:
+          - tableExists:
+              tableName: runtime_version
+          - not:
+              tableExists:
+                tableName: runtime_version_signal
+      changes:
+        - renameTable:
+            oldTableName: runtime_version
+            newTableName: runtime_version_signal
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              ALTER TABLE `runtime_version_signal` COMMENT='运行态版本信号存储';

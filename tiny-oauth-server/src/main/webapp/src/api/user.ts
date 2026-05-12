@@ -24,6 +24,9 @@ export type UserSummary = {
   nickname?: string
   email?: string
   phone?: string
+  activeScopeType?: ActiveScopeType
+  activeScopeId?: number
+  hasAvatar?: boolean
   enabled?: boolean
   accountNonExpired?: boolean
   accountNonLocked?: boolean

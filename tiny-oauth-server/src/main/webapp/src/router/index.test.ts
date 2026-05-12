@@ -50,6 +50,13 @@ vi.mock('@/api/menu', () => ({
   menuTree: routerMocks.menuTree,
 }))
 
+vi.mock('@/permission/menuTreeLoader', () => ({
+  loadVerifiedMenuTree: async () => ({
+    menus: await routerMocks.menuTree(),
+    source: 'network',
+  }),
+}))
+
 vi.mock('ant-design-vue', () => ({
   message: routerMocks.message,
 }))
@@ -72,6 +79,20 @@ vi.mock('@/utils/tenant', () => ({
 async function loadRouterModule() {
   vi.resetModules()
   return import('./index')
+}
+
+async function markRuntimeReady() {
+  const boot = await import('@/bootstrap/bootState')
+  const menuState = await import('./menuState')
+  boot.beginBootRun('/')
+  boot.markBootReady()
+  menuState.updateMenuRouteState({
+    loading: false,
+    loaded: true,
+    error: null,
+    menus: [],
+    lastLoadedAt: Date.now(),
+  })
 }
 
 describe('router guards', () => {
@@ -107,7 +128,7 @@ describe('router guards', () => {
     expect(notFoundRoute?.components?.default).toBeTypeOf('function')
   })
 
-  it('aborts current navigation after triggering tenant login redirect', async () => {
+  it('redirects protected business routes to bootstrap before heavy auth work', async () => {
     const { authGuard } = await loadRouterModule()
 
     const result = await authGuard(
@@ -121,8 +142,42 @@ describe('router guards', () => {
       undefined as any,
     )
 
-    expect(routerMocks.login).toHaveBeenCalledWith('/system/menu')
-    expect(result).toBe(false)
+    expect(routerMocks.login).not.toHaveBeenCalled()
+    expect(routerMocks.trySilentLoginFromPlatformSession).not.toHaveBeenCalled()
+    expect(result).toEqual({
+      path: '/bootstrap',
+      query: {
+        redirect: '/system/menu',
+      },
+      replace: true,
+    })
+  })
+
+  it('allows bootstrap, callback and security routes without bootstrap recursion', async () => {
+    const { authGuard } = await loadRouterModule()
+
+    for (const path of ['/bootstrap', '/callback', '/self/security/totp-bind']) {
+      const result = await authGuard(
+        {
+          path,
+          fullPath: path,
+          meta: {},
+          query: {},
+        } as any,
+        {} as any,
+        undefined as any,
+      )
+      expect(result).toBe(true)
+    }
+
+    expect(routerMocks.login).not.toHaveBeenCalled()
+    expect(routerMocks.trySilentLoginFromPlatformSession).not.toHaveBeenCalled()
+  })
+
+  it('keeps silent renew outside Vue Router', async () => {
+    const { default: router } = await loadRouterModule()
+
+    expect(router.getRoutes().some((route) => route.path === '/oidc/silent-callback')).toBe(false)
   })
 
   it('redirects to login without auto-authorize after post logout landing', async () => {
@@ -142,6 +197,9 @@ describe('router guards', () => {
 
     expect(result).toEqual({
       path: '/login',
+      query: {
+        redirect: '/',
+      },
       replace: true,
     })
     expect(routerMocks.completePostLogoutRedirect).toHaveBeenCalledTimes(1)
@@ -151,6 +209,7 @@ describe('router guards', () => {
 
   it('redirects platform runtime module entry to platform console in platform mode', async () => {
     const { platformRuntimeBridgeGuard } = await loadRouterModule()
+    await markRuntimeReady()
 
     routerMocks.isAuthenticated = true
     routerMocks.loginMode = 'PLATFORM'
@@ -270,9 +329,10 @@ describe('router guards', () => {
     })
   })
 
-  it('retries a direct dynamic route refresh after menu routes are loaded', async () => {
+  it('loads dynamic menu routes through permission bootstrap instead of router guard', async () => {
     const module = await loadRouterModule()
     const router = module.default
+    const { loadAndRegisterPermission } = await import('@/permission/permissionBootstrap')
 
     routerMocks.isAuthenticated = true
     routerMocks.menuTree.mockResolvedValue([
@@ -290,23 +350,129 @@ describe('router guards', () => {
     const unresolvedTarget = router.resolve('/system/menu') as any
     expect(unresolvedTarget.name).toBe('NotFound')
 
-    const result = await module.dynamicRoutesGuard(
-      unresolvedTarget,
-      {
-        fullPath: '/',
-        path: '/',
-      } as any,
-      undefined as any,
-    )
+    const result = await loadAndRegisterPermission(router)
 
     expect(routerMocks.menuTree).toHaveBeenCalledTimes(1)
-    expect(result).toMatchObject({
-      path: '/system/menu',
-      replace: true,
-    })
+    expect(result.status).toBe('ready')
 
     const resolvedAfterLoad = router.resolve('/system/menu')
     expect(resolvedAfterLoad.name).not.toBe('NotFound')
     expect(resolvedAfterLoad.meta.title).toBe('菜单管理')
+  })
+
+  it('keeps permission bootstrap fail-closed when menu tree is empty', async () => {
+    const module = await loadRouterModule()
+    const { loadAndRegisterPermission } = await import('@/permission/permissionBootstrap')
+    const menuState = await import('./menuState')
+
+    routerMocks.menuTree.mockResolvedValue([])
+
+    const result = await loadAndRegisterPermission(module.default)
+
+    expect(result.status).toBe('empty_menu')
+    expect(menuState.useMenuRouteState().loaded).toBe(false)
+    expect(menuState.useMenuRouteState().error).toContain('菜单数据为空')
+  })
+
+  it('keeps permission bootstrap fail-closed when menu URL is external', async () => {
+    const module = await loadRouterModule()
+    const { loadAndRegisterPermission } = await import('@/permission/permissionBootstrap')
+    const menuState = await import('./menuState')
+
+    routerMocks.menuTree.mockResolvedValue([
+      {
+        id: 201,
+        name: 'external-menu',
+        title: '外部菜单',
+        url: 'https://evil.example/system/menu',
+        component: '/views/menu/Menu.vue',
+        enabled: true,
+        hidden: false,
+        children: [],
+      },
+    ])
+
+    const result = await loadAndRegisterPermission(module.default)
+
+    expect(result.status).toBe('route_register_error')
+    expect(result.diagnostics?.invalidUrls).toEqual([
+      {
+        menu: 'external-menu',
+        url: 'https://evil.example/system/menu',
+      },
+    ])
+    expect(menuState.useMenuRouteState().loaded).toBe(false)
+    expect(menuState.useMenuRouteState().error).toContain('菜单路由配置存在无效路径')
+  })
+
+  it('keeps permission bootstrap fail-closed when menu component is missing', async () => {
+    const module = await loadRouterModule()
+    const router = module.default
+    const { loadAndRegisterPermission } = await import('@/permission/permissionBootstrap')
+    const menuState = await import('./menuState')
+
+    routerMocks.menuTree.mockResolvedValue([
+      {
+        id: 202,
+        name: 'missing-component',
+        title: '缺失组件',
+        url: '/broken/component',
+        component: '/views/missing/Nope.vue',
+        enabled: true,
+        hidden: false,
+        children: [],
+      },
+    ])
+
+    const result = await loadAndRegisterPermission(router)
+
+    expect(result.status).toBe('route_register_error')
+    expect(result.diagnostics?.missingComponents).toEqual([
+      {
+        menu: 'missing-component',
+        component: '/views/missing/Nope.vue',
+      },
+    ])
+    expect(router.resolve('/broken/component').name).toBe('NotFound')
+    expect(menuState.useMenuRouteState().loaded).toBe(false)
+    expect(menuState.useMenuRouteState().error).toContain('菜单路由配置存在无效路径')
+  })
+
+  it('keeps permission bootstrap fail-closed when menu paths are duplicated', async () => {
+    const module = await loadRouterModule()
+    const router = module.default
+    const { loadAndRegisterPermission } = await import('@/permission/permissionBootstrap')
+    const menuState = await import('./menuState')
+
+    routerMocks.menuTree.mockResolvedValue([
+      {
+        id: 203,
+        name: 'system-menu-a',
+        title: '菜单管理 A',
+        url: '/system/menu',
+        component: '/views/menu/Menu.vue',
+        enabled: true,
+        hidden: false,
+        children: [],
+      },
+      {
+        id: 204,
+        name: 'system-menu-b',
+        title: '菜单管理 B',
+        url: '/system/menu',
+        component: '/views/menu/Menu.vue',
+        enabled: true,
+        hidden: false,
+        children: [],
+      },
+    ])
+
+    const result = await loadAndRegisterPermission(router)
+
+    expect(result.status).toBe('route_register_error')
+    expect(result.diagnostics?.duplicatePaths).toEqual(['/system/menu'])
+    expect(router.resolve('/system/menu').name).toBe('NotFound')
+    expect(menuState.useMenuRouteState().loaded).toBe(false)
+    expect(menuState.useMenuRouteState().error).toContain('菜单路由配置存在无效路径')
   })
 })

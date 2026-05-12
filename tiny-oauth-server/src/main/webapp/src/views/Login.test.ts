@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   ensureCsrfToken: vi.fn(),
+  getCsrfFailureMessage: vi.fn(),
   clearActiveTenantId: vi.fn(),
   clearTenantCode: vi.fn(),
   getLoginMode: vi.fn(),
@@ -30,6 +31,7 @@ vi.mock('vue-router', () => ({
 
 vi.mock('@/utils/csrf', () => ({
   ensureCsrfToken: mocks.ensureCsrfToken,
+  getCsrfFailureMessage: mocks.getCsrfFailureMessage,
 }))
 
 vi.mock('@/utils/tenant', () => ({
@@ -58,6 +60,7 @@ describe('Login.vue', () => {
       // ignore
     }
     mocks.ensureCsrfToken.mockReset()
+    mocks.getCsrfFailureMessage.mockReset()
     mocks.clearActiveTenantId.mockReset()
     mocks.clearTenantCode.mockReset()
     mocks.getLoginMode.mockReset()
@@ -71,6 +74,7 @@ describe('Login.vue', () => {
       parameterName: '_csrf',
       headerName: 'X-XSRF-TOKEN',
     })
+    mocks.getCsrfFailureMessage.mockReturnValue('认证服务暂不可用，请确认后端服务已启动后重试')
     mocks.getLoginMode.mockReturnValue(null)
     mocks.getTenantCode.mockReturnValue(null)
     mocks.isValidTenantCode.mockReturnValue(true)
@@ -151,6 +155,16 @@ describe('Login.vue', () => {
     expect(wrapper.text()).toContain('登录失败次数过多，请 15 分钟后重试')
   })
 
+  it('should show auth service unavailable when initial csrf load fails', async () => {
+    mocks.ensureCsrfToken.mockRejectedValue(new Error('Failed to fetch'))
+
+    const wrapper = mount(Login)
+    await flushPromises()
+
+    expect(mocks.getCsrfFailureMessage).toHaveBeenCalled()
+    expect(wrapper.text()).toContain('认证服务暂不可用，请确认后端服务已启动后重试')
+  })
+
   it('should normalize tenant code and submit form for valid input', async () => {
     const wrapper = mount(Login)
     await flushPromises()
@@ -222,6 +236,33 @@ describe('Login.vue', () => {
     expect(mocks.clearTenantCode).toHaveBeenCalledTimes(1)
     expect(mocks.clearActiveTenantId).toHaveBeenCalledTimes(1)
     expect(submitSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('should block submit and show auth service unavailable when csrf reload fails', async () => {
+    mocks.ensureCsrfToken.mockResolvedValueOnce({
+      token: '',
+      parameterName: '_csrf',
+      headerName: 'X-XSRF-TOKEN',
+    })
+    mocks.ensureCsrfToken.mockRejectedValueOnce(new Error('Failed to fetch'))
+    const wrapper = mount(Login)
+    await flushPromises()
+
+    await wrapper.findAll('button.scope-tab')[1]?.trigger('click')
+    await flushPromises()
+
+    const form = wrapper.find('form')
+    const submitSpy = vi.fn()
+    Object.defineProperty(form.element, 'submit', {
+      value: submitSpy,
+      configurable: true,
+    })
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(submitSpy).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('认证服务暂不可用，请确认后端服务已启动后重试')
   })
 
   it('should set form action to VITE_API_BASE_URL + /login (see .env.test in Vitest)', async () => {

@@ -27,6 +27,7 @@
 - ✅ `/platform/**` 控制面不得默认把 `/sys/**` 或 tenant-only 控制面接口当作核心读写主链；若平台侧缺最小 lookup / query / action 能力，必须优先补平台语义下的最小接口，而不是继续借道租户/系统控制面。
 - ✅ `/platform/**` 页面、接口与前端权限守卫不得把 `system:*` 权限作为本域核心能力的必备前置；若存在历史桥接，必须明确标注为临时方案，并给出退出条件与后续收口任务。
 - ✅ 允许复用 service / repository / domain 逻辑，但 controller path、permission、menu、route、前端 API contract 与 scope guard 必须保持平台/租户分流；涉及平台路径时，`tenant_id IS NULL` 必须被显式建模或校验，禁止把 `NULL tenantId` 直接塞进 tenant-only 查询宣称完成。
+- ✅ 字典中心只承载“展示可治理的稳定编码映射”和“可配置业务分类”；关键状态机、状态码 / 枚举码、主数据、系统配置、元数据和业务模型不得退化为普通动态字典。`workflow_model_status`、`workflow_runtime_state` 等影响后端逻辑的值必须由代码枚举固定，字典最多管理 label / color / sort / i18n 等展示属性。
 - ✅ 平台治理任务卡若触及 `db/changelog/**`、`db.changelog-master.yaml`、`api_endpoint` / `menu_permission_requirement` / `role_permission` 回填、权限/菜单 seed 或 DDL，完成条件必须包含一次真实 `SpringLiquibase` / 应用启动验证；只跑单测、组件测试或静态检查不得标记完成。
 - ✅ 平台治理任务卡交付必须显式说明“本卡负责什么、不负责什么”，尤其统一守卫回填、菜单回填、Liquibase include、real-controller 测试、启动验证这些责任不得默认外推到下一张卡或留给用户首次启动时发现。
 - ✅ 当前仓库分支治理默认口径是：`sb4` 为业务主干，`sb3` 为维护线，`main`/`master` 仅为历史入口；除非用户明确要求，助手不得默认把提交、PR、workflow 目标指向 `main`。
