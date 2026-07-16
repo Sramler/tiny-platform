@@ -816,6 +816,14 @@ String skipSchedulingAdminAuth = System.getenv("E2E_SKIP_SCHEDULING_ADMIN_AUTH")
             throw new IllegalStateException("缺少平台角色 ROLE_PLATFORM_ADMIN，无法完成 PLATFORM 登录所需赋权");
         }
         ensureActiveRoleAssignment(connection, userId, platformAdminRoleId, null, "PLATFORM", null);
+        try (PreparedStatement ps = connection.prepareStatement(
+                "INSERT INTO platform_user_profile (user_id, status, display_name, created_at, updated_at) " +
+                "VALUES (?, 'ACTIVE', ?, NOW(), NOW()) " +
+                "ON DUPLICATE KEY UPDATE status = 'ACTIVE', display_name = VALUES(display_name), updated_at = NOW()")) {
+            ps.setLong(1, userId);
+            ps.setString(2, username);
+            ps.executeUpdate();
+        }
         // Tenant management (/sys/tenants) is platform-scope only (TenantContext.activeScopeType=PLATFORM).
         // Bind platform governance permissions to ROLE_PLATFORM_ADMIN on platform-template rows (tenant_id IS NULL),
         // so PLATFORM-scope tokens can actually carry system:tenant:freeze/unfreeze/... authorities in CI.
