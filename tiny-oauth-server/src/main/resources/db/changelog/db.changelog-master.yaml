@@ -746,3 +746,8 @@ databaseChangeLog:
   - include:
       file: 189-spring-session-jdbc.yaml
       relativeToChangelogFile: true
+
+  # 修复载体 required_permission_id 与默认兼容 requirement 的历史漂移
+  - include:
+      file: 190-repair-carrier-compatibility-requirements.yaml
+      relativeToChangelogFile: true

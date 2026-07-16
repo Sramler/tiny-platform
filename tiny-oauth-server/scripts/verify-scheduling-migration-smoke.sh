@@ -65,7 +65,7 @@ duplicate_count=$(query_value "
 [[ "${duplicate_count:-0}" -eq 0 ]] || fail "scheduling_dag_version 仍存在重复 (dag_id, version_no) 数据: ${duplicate_count}"
 echo "  [OK] 035: scheduling_dag_version 不存在重复 (dag_id, version_no)"
 
-check_column_not_null() {
+check_column_exists() {
   local table_name="$1"
   local column_name="$2"
   local nullable
@@ -77,15 +77,7 @@ check_column_not_null() {
       AND column_name = '${column_name}'
     LIMIT 1;
   ")
-  [[ "$nullable" == "NO" ]] || fail "${table_name}.${column_name} 不是 NOT NULL"
-}
-
-check_null_rows() {
-  local table_name="$1"
-  local column_name="$2"
-  local null_count
-  null_count=$(query_value "SELECT COUNT(*) FROM \`${table_name}\` WHERE \`${column_name}\` IS NULL;")
-  [[ "${null_count:-0}" -eq 0 ]] || fail "${table_name}.${column_name} 仍存在 NULL 数据: ${null_count}"
+  [[ -n "$nullable" ]] || fail "${table_name}.${column_name} 不存在"
 }
 
 check_index_exists() {
@@ -102,11 +94,10 @@ check_index_exists() {
   [[ "${count:-0}" -ge 1 ]] || fail "${table_name} 缺少索引 ${index_name}"
 }
 
-# 036: tenant_id + 回填 + 索引
+# 036/179: tenant_id + 索引；179 起 PLATFORM 原生运行记录以 NULL 表示平台作用域
 for table_name in scheduling_dag_version scheduling_dag_task scheduling_dag_edge; do
-  check_column_not_null "$table_name" "tenant_id"
-  check_null_rows "$table_name" "tenant_id"
-  echo "  [OK] 036: ${table_name}.tenant_id 为 NOT NULL 且无脏数据"
+  check_column_exists "$table_name" "tenant_id"
+  echo "  [OK] 036/179: ${table_name}.tenant_id 已存在（允许 PLATFORM 记录为 NULL）"
 done
 
 check_index_exists "scheduling_dag_version" "idx_scheduling_dag_version_tenant_dag"

@@ -230,6 +230,7 @@ jobs:
       - name: Start backend
         env:
           SPRING_PROFILES_ACTIVE: ${{ env.E2E_BACKEND_PROFILE }}
+          SPRING_LIQUIBASE_ENABLED: "false"
           E2E_DB_HOST: ${{ env.E2E_DB_HOST }}
           E2E_DB_PORT: ${{ env.E2E_DB_PORT }}
           E2E_DB_NAME: ${{ env.E2E_DB_NAME }}

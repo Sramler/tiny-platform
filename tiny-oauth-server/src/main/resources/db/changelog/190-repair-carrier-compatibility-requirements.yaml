@@ -1,0 +1,58 @@
+databaseChangeLog:
+  - changeSet:
+      id: 190-repair-carrier-compatibility-requirements
+      author: codex
+      comment: 修复 required_permission_id 已绑定但缺少默认兼容 requirement 的载体行
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - tableExists:
+            tableName: menu_permission_requirement
+        - tableExists:
+            tableName: ui_action_permission_requirement
+        - tableExists:
+            tableName: api_endpoint_permission_requirement
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT INTO `menu_permission_requirement` (
+                `tenant_id`, `menu_id`, `permission_id`, `requirement_group`, `sort_order`, `negated`
+              )
+              SELECT m.`tenant_id`, m.`id`, m.`required_permission_id`, 0, 1, 0
+              FROM `menu` m
+              LEFT JOIN `menu_permission_requirement` r
+                ON r.`menu_id` = m.`id`
+               AND r.`permission_id` = m.`required_permission_id`
+               AND r.`requirement_group` = 0
+               AND r.`negated` = 0
+              WHERE m.`required_permission_id` IS NOT NULL
+                AND r.`id` IS NULL;
+
+              INSERT INTO `ui_action_permission_requirement` (
+                `tenant_id`, `ui_action_id`, `permission_id`, `requirement_group`, `sort_order`, `negated`
+              )
+              SELECT a.`tenant_id`, a.`id`, a.`required_permission_id`, 0, 1, 0
+              FROM `ui_action` a
+              LEFT JOIN `ui_action_permission_requirement` r
+                ON r.`ui_action_id` = a.`id`
+               AND r.`permission_id` = a.`required_permission_id`
+               AND r.`requirement_group` = 0
+               AND r.`negated` = 0
+              WHERE a.`required_permission_id` IS NOT NULL
+                AND r.`id` IS NULL;
+
+              INSERT INTO `api_endpoint_permission_requirement` (
+                `tenant_id`, `api_endpoint_id`, `permission_id`, `requirement_group`, `sort_order`, `negated`
+              )
+              SELECT e.`tenant_id`, e.`id`, e.`required_permission_id`, 0, 1, 0
+              FROM `api_endpoint` e
+              LEFT JOIN `api_endpoint_permission_requirement` r
+                ON r.`api_endpoint_id` = e.`id`
+               AND r.`permission_id` = e.`required_permission_id`
+               AND r.`requirement_group` = 0
+               AND r.`negated` = 0
+              WHERE e.`required_permission_id` IS NOT NULL
+                AND r.`id` IS NULL;
