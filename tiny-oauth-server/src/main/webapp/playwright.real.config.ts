@@ -190,7 +190,9 @@ export default defineConfig({
           reuseExistingServer: true,
           env: {
             ...process.env,
-            VITE_API_BASE_URL: backendBaseURL,
+            // Session/BFF real-link 默认从浏览器同源访问真实领域路径，由 Vite server-side proxy 转发。
+            VITE_API_BASE_URL: process.env.E2E_VITE_API_BASE_URL ?? '',
+            VITE_DEV_BACKEND_TARGET: backendBaseURL,
             VITE_OIDC_AUTHORITY: backendBaseURL,
             VITE_OIDC_CLIENT_ID: process.env.E2E_OIDC_CLIENT_ID ?? 'vue-client',
             VITE_OIDC_REDIRECT_URI: `${frontendBaseURL}/callback`,

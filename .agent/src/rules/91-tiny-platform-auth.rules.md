@@ -22,7 +22,9 @@
 - ✅ `permissionsVersion` 只表达授权快照版本，不得承担用户禁用、删除、密码重置、TOTP 解绑/重绑等安全撤销语义；这类强制重新登录必须使用独立的 `tokenSecurityVersion` / `tokenNotBefore` 安全状态信号。
 - ✅ 后端请求链路必须先校验 token/session 安全状态，再校验权限快照漂移：`token_revoked` 代表不可静默自愈，前端必须清理运行态并重新登录；`stale_permissions` 才允许 silent renew 一次并重试原请求。
 - ✅ 菜单结构、路由字段、显隐、排序和菜单权限 requirement 的变化必须通过 `MENU_CONFIG` 运行态版本信号和 `/sys/menus/tree` 的 ETag / `X-Menu-Config-Version` 体现；不得把菜单配置变化塞进 `permissionsVersion` 或依赖无失效机制的浏览器本地缓存。
-- ✅ 认证方式选择：按客户端来源切换 JWT/Session（Web 前端用 Session，API 客户端用 JWT）。
+- ✅ 认证方式选择：按客户端来源切换 JWT/Session（Web 前端默认使用 BFF/HttpOnly Session，浏览器业务请求不得持有或发送 access/refresh token；API 客户端继续使用 JWT）。
+- ✅ Web Session-only 模式下，启动恢复以 `credentials: include` 调用 `/sys/users/current` 为准；业务写请求必须携带 CSRF token，不能因移除 Bearer 而关闭或缩小 CSRF 防护范围。
+- ✅ Web Session-only 模式下，前端可保存非凭证型的当前用户/权限展示快照，但该快照不得作为可发送的 Bearer token，不得进入 localStorage，也不得替代后端权限守卫。
 - ✅ 多认证方式：支持 PASSWORD（密码）和 TOTP（时间戳一次性密码），从 `user_authentication_method` 表动态查询。
 - ✅ 安全策略：JWT 使用 RS256 算法，密钥使用 JWK Set；支持 MFA（TOTP）。
 - ✅ Token 过期：Access Token 短期（如 1 小时），Refresh Token 长期（如 7 天）；过期后必须重新授权。
@@ -38,7 +40,7 @@
 - ✅ 平台身份、租户身份、readonly 身份、bind 身份的 auth-state / setup helper 必须显式区分 `login mode` 与 tenant code 归属；不得因 fallback 把 tenant 登录误导向 platform scope，或把 platform 管理调用错误复用为 tenant 身份。
 - ✅ 首绑 TOTP / post-login 安全中心 / MFA 继续跳转类 E2E 必须按真实浏览器会话契约工作：优先使用页面真实渲染结果或 `credentials: include` 的 first-party 请求，不能假设 OIDC callback 一定已经把 token 写入 `localStorage`。
 - ✅ 涉及 Session / Bearer 同时存在、`activeTenantId` 来源裁决、`activeScopeType/id` 成对解析、`prompt=none` / silent renew 行为的改动，必须与 `docs/TINY_PLATFORM_SESSION_BEARER_AUTH_MATRIX.md` 保持一致；不得用“浏览器请求一律只看 Session”或“只要带 Bearer 就完全忽略 Session”这种简化口径替代当前主线契约。
-- ✅ 前端启动/认证恢复必须遵循 `/bootstrap` 编排口径：`main.ts` 只挂载应用，`/bootstrap` 统一执行 `authBootstrap -> securityBootstrap -> permissionBootstrap`，普通 router guard 只做轻量分流，不得重新塞入 `signinSilent()`、`/sys/menus/tree` 请求或动态路由注册这类重型异步编排。
+- ✅ 前端启动/认证恢复必须遵循 `/bootstrap` 编排口径：`main.ts` 只挂载应用，`/bootstrap` 统一执行 `authBootstrap -> securityBootstrap -> permissionBootstrap`；Web Session-only 模式由 `authBootstrap` 读取 `/sys/users/current`，不得为恢复浏览器登录态重新调用 `signinSilent()`。
 - ✅ `/bootstrap`、OIDC 登录 callback、登录页、安全流程页和异常页必须是启动守卫 bypass 路由；尤其 `/callback` 不得被重定向回 `/bootstrap` 造成回环。OIDC silent renew 统一使用独立 `silent-renew.html` iframe 入口，不注册为 Vue Router 路由；登录 callback 处理完 code 后再显式回流 `/bootstrap?redirect=...`。
 - ✅ TOTP bind/check/skip 等安全流程完成后应回流 `/bootstrap?redirect=...`，由前端重新恢复 OIDC 登录态、检查安全状态、加载权限菜单并注册动态路由；redirect 必须经过内部路径净化，禁止 open redirect。
 - ✅ 菜单权限加载与动态路由注册必须集中在 permission bootstrap；菜单为空、无效 URL、缺失组件、重复 path 或注册失败时默认 fail-closed 阻断业务区，不得进入“半登录半可用”状态。

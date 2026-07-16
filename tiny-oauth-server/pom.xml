@@ -43,6 +43,12 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
+        <!-- Spring 4.1 标准跨线程上下文传播（MDC / Observation / Tracing） -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>context-propagation</artifactId>
+        </dependency>
+
         <!-- 用于业务系统 ORM -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -59,6 +65,16 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-jdbc</artifactId>
+        </dependency>
+
+        <!-- Spring Session 存储实现由 tiny.session.store-type 条件启用；直接依赖模块以避免 Boot 同时自动选择多个 store。 -->
+        <dependency>
+            <groupId>org.springframework.session</groupId>
+            <artifactId>spring-session-jdbc</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.session</groupId>
+            <artifactId>spring-session-data-redis</artifactId>
         </dependency>
 
         <!-- Redis 支持（用于幂等性 Redis 存储实现，可选） -->
@@ -319,7 +335,7 @@
                                                 <include>com/tiny/platform/core/oauth/interceptor/HttpRequestLoggingInterceptor</include>
                                                 <include>com/tiny/platform/core/oauth/logging/HttpLogSanitizer</include>
                                                 <include>com/tiny/platform/core/oauth/config/HttpRequestLoggingProperties</include>
-                                                <include>com/tiny/platform/core/oauth/config/MdcTaskDecorator</include>
+                                                <include>com/tiny/platform/core/oauth/config/ContextPropagationConfig</include>
                                                 <include>com/tiny/platform/core/oauth/service/impl/HttpRequestLogServiceImpl</include>
                                             </includes>
                                             <limits>

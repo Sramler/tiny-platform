@@ -293,7 +293,7 @@ const avatarUrl = ref<string>('')
 // 计算头像URL（如果用户有头像）
 const getAvatarUrl = () => {
   if (!userInfo.value.id) return ''
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000'
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || ''
   const baseUrl = apiBaseUrl.endsWith('/') ? apiBaseUrl.slice(0, -1) : apiBaseUrl
   return `${baseUrl}/sys/users/${userInfo.value.id}/avatar?t=${Date.now()}`
 }
@@ -423,7 +423,7 @@ const loadSecurityStatus = async () => {
 const loadLoginHistory = async () => {
   loginHistoryLoading.value = true
   try {
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000'
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || ''
     const baseUrl = apiBaseUrl.endsWith('/') ? apiBaseUrl.slice(0, -1) : apiBaseUrl
     // 构建分页参数：Spring Data JPA 使用 page (从0开始) 和 size
     const page = loginHistoryPagination.value.current - 1 // Ant Design Vue 从1开始，后端从0开始

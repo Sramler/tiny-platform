@@ -18,6 +18,15 @@
    - API 客户端：以 **Bearer/JWT** 为主
    - active scope：遵循 `TenantContextFilter` 的**成对解析**，不是“有 token 就全看 token”
 6. **M4（Bearer + Session 一致）不是“全端点同一口径”**：矩阵行 M4 只说明 **TenantContextFilter 是否放行**与 **active scope 成对来源**。**读接口**与**写接口**在 user 控制面上仍有独立契约，见 **§8**；不得推断为“只要 M4 一致，所有 `/sys/users/**` 行为都相同”。
+7. **Web 控制面当前默认采用 BFF/Session-only 传输**：浏览器通过 HttpOnly Session Cookie 调用业务接口，不发送 Bearer，也不持有 refresh token；M2~M5 继续适用于 API 客户端、兼容调用和显式 Bearer 测试，不再是 Vue 控制面的默认请求形态。
+
+### 1.1 Web BFF / Session-only 当前契约
+
+- 登录表单成功后由服务端建立并冻结 HttpSession；前端 `/bootstrap` 使用 `GET /sys/users/current` 恢复身份与非凭证型权限展示快照。
+- `/sys/**`、`/platform/**` 及业务控制面请求使用 `credentials: include`，不得注入 `Authorization: Bearer ...`。
+- POST / PUT / PATCH / DELETE 必须先从 `/csrf` 获取 token 并携带响应指定的 header。
+- access token / refresh token 不进入 localStorage；OIDC/JWT 能力继续服务于 API、CLI、移动端或 BFF 调用下游服务。
+- 前端展示快照只用于 UI；真实授权仍由 Session `SecurityContext`、`TenantContextFilter` 与统一 API guard 决定。
 
 ---
 

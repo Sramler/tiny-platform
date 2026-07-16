@@ -99,7 +99,7 @@ import { fetchWithTraceId } from '@/utils/traceId'
 const route = useRoute()
 
 // 获取后端 API 基础 URL，如果没有配置则使用默认值
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000'
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || ''
 // 确保 URL 以 / 结尾
 const baseUrl = apiBaseUrl.endsWith('/') ? apiBaseUrl.slice(0, -1) : apiBaseUrl
 // 构建表单提交的完整 URL

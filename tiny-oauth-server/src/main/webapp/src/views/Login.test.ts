@@ -1,7 +1,7 @@
 /**
  * Login.vue 单测说明：
  * - 覆盖：模式切换、租户校验、平台模式 DOM、提交前租户工具函数调用、CSRF/redirect 渲染。
- * - 不覆盖：真实 POST /login、Session 粘性租户、OIDC 回调；这些见后端集成测试
+ * - 不覆盖：真实 POST /auth/login、Session 粘性租户、OIDC 回调；这些见后端集成测试
  *   （如 AuthenticationFlowE2eProfileIntegrationTest）与 Playwright real-link（如 e2e/real/platform-vue-login.spec.ts）。
  * - `VITE_API_BASE_URL`：Vitest 使用 `.env.test`（见该文件），表单 action 与之一致而非硬编码 localhost。
  */
@@ -265,13 +265,13 @@ describe('Login.vue', () => {
     expect(wrapper.text()).toContain('认证服务暂不可用，请确认后端服务已启动后重试')
   })
 
-  it('should set form action to VITE_API_BASE_URL + /login (see .env.test in Vitest)', async () => {
+  it('should set form action to VITE_API_BASE_URL + /auth/login (see .env.test in Vitest)', async () => {
     const raw = import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000'
     const base = raw.endsWith('/') ? raw.slice(0, -1) : raw
     const wrapper = mount(Login)
     await flushPromises()
     const form = wrapper.find('form').element as HTMLFormElement
-    expect(form.getAttribute('action')).toBe(`${base}/login`)
+    expect(form.getAttribute('action')).toBe(`${base}/auth/login`)
   })
 
   it('should not include tenantCode in platform mode form control names', async () => {

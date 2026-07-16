@@ -33,7 +33,7 @@ export function isBackendOnlyRedirect(path: string): boolean {
 }
 
 export function buildBackendRedirectUrl(path: string): string {
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000'
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || ''
   const base = apiBaseUrl.endsWith('/') ? apiBaseUrl.slice(0, -1) : apiBaseUrl
   return `${base}${path}`
 }

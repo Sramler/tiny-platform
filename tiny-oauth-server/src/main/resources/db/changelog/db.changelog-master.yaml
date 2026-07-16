@@ -736,3 +736,13 @@ databaseChangeLog:
   - include:
       file: 184-process-model.yaml
       relativeToChangelogFile: true
+
+  # BFF Session 登录后的平台租户控制面基础接口载体，保持统一守卫 fail-closed
+  - include:
+      file: 188-backfill-platform-tenant-control-api-endpoints.yaml
+      relativeToChangelogFile: true
+
+  # Spring Session JDBC 共享存储表；memory/redis 模式不会写入这些表。
+  - include:
+      file: 189-spring-session-jdbc.yaml
+      relativeToChangelogFile: true

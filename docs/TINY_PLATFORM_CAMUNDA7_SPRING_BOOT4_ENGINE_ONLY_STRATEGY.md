@@ -32,7 +32,7 @@
 
 从当前代码可确认：
 
-- 父工程当前 Spring Boot 基线为 `4.1.0-SNAPSHOT`
+- 父工程当前 Spring Boot 基线为 `4.1.1-SNAPSHOT`
 - 父工程当前 JDK 基线为 `21`
 - 父工程通过 BOM 使用 Camunda `7.24.0`
 - `tiny-oauth-server` 当前已引入：

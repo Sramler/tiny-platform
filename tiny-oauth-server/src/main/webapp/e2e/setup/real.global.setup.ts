@@ -34,6 +34,10 @@ type StorageStateOrigin = {
 
 type StorageState = {
   origins?: StorageStateOrigin[]
+  cookies?: Array<{
+    name: string
+    value: string
+  }>
 }
 
 type ResolvedIdentityEnv = {
@@ -78,6 +82,22 @@ export function extractAccessTokenFromStorageState(storageState: StorageState): 
   }
 
   throw new Error('未在 storageState 中找到可用的 OIDC access_token')
+}
+
+export function extractSessionHeadersFromStorageState(storageState: StorageState): {
+  cookie: string
+  csrfToken?: string
+} {
+  const cookies = storageState.cookies ?? []
+  const sessionCookie = cookies.find((cookie) => cookie.name === 'JSESSIONID')
+  if (!sessionCookie) {
+    throw new Error('未在 storageState 中找到 HttpOnly JSESSIONID')
+  }
+  const csrfCookie = cookies.find((cookie) => cookie.name === 'XSRF-TOKEN')
+  return {
+    cookie: cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join('; '),
+    csrfToken: csrfCookie ? decodeURIComponent(csrfCookie.value) : undefined,
+  }
 }
 
 export function shouldCreateTenantViaApi(
@@ -138,13 +158,13 @@ export function deriveTenantCodeForTenantScope(
 async function ensureTenantViaApi(authStateFilePath: string, targetTenantCode: string) {
   const normalizedTargetTenantCode = targetTenantCode.trim().toLowerCase()
   const storageState = JSON.parse(await fs.readFile(authStateFilePath, 'utf8')) as StorageState
-  const accessToken = extractAccessTokenFromStorageState(storageState)
+  const sessionHeaders = extractSessionHeadersFromStorageState(storageState)
 
   const listResponse = await fetch(
     `${backendBaseURL}/sys/tenants?code=${encodeURIComponent(normalizedTargetTenantCode)}&page=0&size=20`,
     {
       headers: {
-        Authorization: `Bearer ${accessToken}`,
+        Cookie: sessionHeaders.cookie,
       },
     },
   )
@@ -169,9 +189,10 @@ async function ensureTenantViaApi(authStateFilePath: string, targetTenantCode: s
   const createResponse = await fetch(`${backendBaseURL}/sys/tenants`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${accessToken}`,
+      Cookie: sessionHeaders.cookie,
       'Content-Type': 'application/json',
       'X-Idempotency-Key': `e2e-tenant-create:${normalizedTargetTenantCode}`,
+      ...(sessionHeaders.csrfToken ? { 'X-XSRF-TOKEN': sessionHeaders.csrfToken } : {}),
     },
     body: JSON.stringify({
       code: normalizedTargetTenantCode,

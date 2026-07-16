@@ -55,8 +55,10 @@ import org.springframework.security.web.authentication.logout.LogoutHandler;
 public class DefaultSecurityConfig {
 
     static final RequestMatcher CSRF_PROTECTED_PATHS = new OrRequestMatcher(
-            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/login"),
-            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/self/security/**")
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, "/**"),
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.PUT, "/**"),
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.PATCH, "/**"),
+            PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.DELETE, "/**")
     );
 
     private final CorsConfigurationSource corsConfigurationSource;
@@ -120,6 +122,7 @@ public class DefaultSecurityConfig {
                         .anyRequest().authenticated()
                 )
                 .logout(logout -> logout
+                        .logoutUrl("/auth/logout")
                         .addLogoutHandler(sessionAuditLogoutHandler)
                 )
                 .addFilterBefore(tenantContextFilter, UsernamePasswordAuthenticationFilter.class)
@@ -127,7 +130,7 @@ public class DefaultSecurityConfig {
                 .addFilterAfter(userSessionActivityFilter, ApiEndpointRequirementFilter.class)
                 .formLogin(formLogin -> formLogin
                         .loginPage("/login")
-                        .loginProcessingUrl("/login")
+                        .loginProcessingUrl("/auth/login")
                         .successHandler(customLoginSuccessHandler)
                         .failureHandler(customLoginFailureHandler)
                         .authenticationDetailsSource(customAuthenticationDetailsSource())

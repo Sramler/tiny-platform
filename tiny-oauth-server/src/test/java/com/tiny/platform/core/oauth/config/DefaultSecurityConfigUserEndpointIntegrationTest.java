@@ -1,6 +1,7 @@
 package com.tiny.platform.core.oauth.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -369,6 +370,7 @@ class DefaultSecurityConfigUserEndpointIntegrationTest {
 
         mockMvc.perform(post("/sys/users/current/active-scope")
                 .session(session)
+                .with(csrf())
                 .with(user(principal))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -421,6 +423,7 @@ class DefaultSecurityConfigUserEndpointIntegrationTest {
 
         mockMvc.perform(post("/sys/users/current/active-scope")
                 .session(session)
+                .with(csrf())
                 .with(user(principal))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -480,6 +483,7 @@ class DefaultSecurityConfigUserEndpointIntegrationTest {
 
         mockMvc.perform(post("/sys/users/current/active-scope")
                 .session(session)
+                .with(csrf())
                 .with(user(principal))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -514,6 +518,7 @@ class DefaultSecurityConfigUserEndpointIntegrationTest {
 
         mockMvc.perform(post("/sys/users/current/active-scope")
                 .session(session)
+                .with(csrf())
                 .with(user(principal))
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""

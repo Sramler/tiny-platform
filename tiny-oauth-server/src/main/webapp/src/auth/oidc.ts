@@ -186,7 +186,9 @@ const createOidcStore = () => {
     logger.warn('[OIDC][config] window 未定义，跳过 WebStorageStateStore 初始化')
     return undefined
   }
-  const storagePreference = env.VITE_OIDC_STORAGE === 'session' ? 'session' : 'local'
+  // 即使显式启用 OIDC 浏览器客户端，也默认使用 sessionStorage；localStorage
+  // 必须显式选择，避免 refresh token 跨浏览器重启长期暴露给 JavaScript。
+  const storagePreference = env.VITE_OIDC_STORAGE === 'local' ? 'local' : 'session'
   const store = storagePreference === 'session' ? window.sessionStorage : window.localStorage
   logger.info(`[OIDC][config] 使用 ${storagePreference}Storage 作为 OIDC state store`)
   return new WebStorageStateStore({ store })
@@ -203,7 +205,7 @@ function buildSettings(authority: string): UserManagerSettings {
     response_type: 'code',
     scope: scopes,
     loadUserInfo: true,
-    automaticSilentRenew: true,
+    automaticSilentRenew: false,
     silent_redirect_uri: silentRedirectUri,
     silentRequestTimeoutInSeconds,
   }

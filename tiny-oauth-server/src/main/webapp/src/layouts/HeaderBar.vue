@@ -245,7 +245,7 @@ function filterScopeOption(input: string, option?: DefaultOptionType) {
  * @returns API 基础 URL（已去除尾部斜杠）
  */
 function getApiBaseUrl(): string {
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000'
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || ''
   return apiBaseUrl.endsWith('/') ? apiBaseUrl.slice(0, -1) : apiBaseUrl
 }
 

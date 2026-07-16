@@ -149,7 +149,7 @@ public abstract class BaseExceptionHandler {
      * @return 错误响应
      */
     @ExceptionHandler(RuntimeException.class)
-    public final ResponseEntity<ProblemDetail> handleRuntimeException(
+    public ResponseEntity<ProblemDetail> handleRuntimeException(
             @Nonnull RuntimeException ex, @Nonnull NativeWebRequest request) {
 
         // 如果不是业务异常，使用默认处理
@@ -179,7 +179,7 @@ public abstract class BaseExceptionHandler {
      * @return 错误响应
      */
     @ExceptionHandler(Exception.class)
-    public final ResponseEntity<ProblemDetail> handleException(@Nonnull Exception ex, @Nonnull NativeWebRequest request) {
+    public ResponseEntity<ProblemDetail> handleException(@Nonnull Exception ex, @Nonnull NativeWebRequest request) {
 
         log.error("系统异常: {}", ex.getMessage(), ex);
 

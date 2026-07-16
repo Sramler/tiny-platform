@@ -9,6 +9,7 @@ import { AntDesignVueResolver } from 'unplugin-vue-components/resolvers'
 
 const schedulingCoverageOnly = process.env.VITEST_SCHEDULING_COVERAGE === '1'
 const analyzeBundle = process.env.VITE_BUNDLE_ANALYZE === '1'
+const devBackendTarget = process.env.VITE_DEV_BACKEND_TARGET || 'http://localhost:9000'
 
 /**
  * 将 node_modules 按稳定边界拆块，降低入口 index chunk 体积；顺序需避免误匹配（如 ant-design-vue 含 vue 字样）。
@@ -63,6 +64,25 @@ export default defineConfig({
         template: 'treemap',
       }),
   ].filter(Boolean),
+  server: {
+    proxy: Object.fromEntries(
+      [
+        '/sys',
+        // `/self/security/totp-bind|verify` 是 Vue 页面；其余 `/self/**` 才代理后端。
+        '^/self/(?!security/totp-(?:bind|verify)(?:[/?]|$))',
+        '/scheduling',
+        '/workflow',
+        '/process',
+        '/export',
+        '/idempotent',
+        '/auth',
+        '/csrf',
+        '/oauth2',
+        '/connect',
+        '/.well-known',
+      ].map((path) => [path, { target: devBackendTarget, changeOrigin: true }]),
+    ),
+  },
   build: {
     /** 管理端主入口 chunk 目标随拆包策略变化；消除默认 500kB 噪声，不等于已完成业务分包（见 docs 构建卫生台账）。 */
     chunkSizeWarningLimit: 3072,
@@ -76,11 +96,6 @@ export default defineConfig({
       },
     },
   },
-  // server: {
-  //   open: true, // 启动时自动打开浏览器
-  //   host: 'localhost', // 可选，指定主机
-  //   port: 5173, // 可选，指定端口
-  // },
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

@@ -47,7 +47,7 @@ import java.util.regex.Pattern;
  * TenantContextFilter
  * - 认证后只信任 SecurityContext / Session 中冻结的 activeTenantId
  * - 未认证阶段只允许：
- *   1) POST /login 参数解析 tenant（兼容 tenantCode）
+ *   1) POST /auth/login 参数解析 tenant（兼容 tenantCode）
  *   2) issuer path (`/{tenantCode}/oauth2/**`) 解析 tenant
  * - 若无有效 tenant，则拒绝请求（fail-closed）
  */
@@ -226,7 +226,7 @@ public class TenantContextFilter extends OncePerRequestFilter {
             tenantSource = unauthenticatedTenant.source();
         }
 
-        // 单入口：POST /login 且未提交 tenantCode 时视为平台登录尝试，忽略会话/头里残留的活动租户，
+        // 单入口：POST /auth/login 且未提交 tenantCode 时视为平台登录尝试，忽略会话/头里残留的活动租户，
         // 否则上次租户登录写入的 SESSION_ACTIVE_TENANT_ID 会串到平台登录并触发「缺少租户信息」等误报。
         if (isPlatformLoginFormAttemptWithoutTenantCode(request)) {
             activeTenantId = null;
@@ -323,7 +323,7 @@ public class TenantContextFilter extends OncePerRequestFilter {
             }
         }
 
-        // POST /login is the boundary that replaces an old identity snapshot. A stale previous
+        // POST /auth/login is the boundary that replaces an old identity snapshot. A stale previous
         // session must not block the new credential submission before Spring Security can re-auth.
         // Token/security revocation is stricter than authorization snapshot drift, so evaluate it first.
         if (!loginPostRequest && !validateSessionTokenSecurityState(request, response, activeTenantId, scopeType, scopeId)) {
@@ -1071,7 +1071,7 @@ public class TenantContextFilter extends OncePerRequestFilter {
         if (path == null || path.isEmpty()) {
             path = stripContextPath(request.getRequestURI(), request.getContextPath());
         }
-        return "/login".equals(path);
+        return "/auth/login".equals(path);
     }
 
     /**

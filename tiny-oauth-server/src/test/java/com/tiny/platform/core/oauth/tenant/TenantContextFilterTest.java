@@ -507,7 +507,7 @@ class TenantContextFilterTest {
 
     @Test
     void shouldUsePlatformScopeForLoginPostWithoutTenantCode() throws Exception {
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/login");
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/auth/login");
         MockHttpServletResponse response = new MockHttpServletResponse();
         AtomicReference<String> scopeInChain = new AtomicReference<>();
 
@@ -519,7 +519,7 @@ class TenantContextFilterTest {
 
     @Test
     void shouldIgnoreSessionTenantForPlatformLoginPostWithoutTenantCode() throws Exception {
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/login");
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/auth/login");
         request.getSession(true).setAttribute(TenantContextContract.SESSION_ACTIVE_TENANT_ID_KEY, 99L);
         MockHttpServletResponse response = new MockHttpServletResponse();
         AtomicReference<Long> tenantInChain = new AtomicReference<>();
@@ -544,7 +544,7 @@ class TenantContextFilterTest {
         tenant.setEnabled(true);
         when(tenantRepository.findByCode("acme")).thenReturn(Optional.of(tenant));
 
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/login");
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/auth/login");
         request.setParameter("tenantCode", "acme");
         MockHttpServletResponse response = new MockHttpServletResponse();
         AtomicReference<Long> tenantInChain = new AtomicReference<>();
@@ -570,7 +570,7 @@ class TenantContextFilterTest {
         when(tenantRepository.findByCode("bench")).thenReturn(Optional.of(tenant));
         when(tenantRepository.findLoginBlockedLifecycleStatus(89L)).thenReturn(Optional.of("FROZEN"));
 
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/login");
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/auth/login");
         request.setParameter("tenantCode", "bench");
         MockHttpServletResponse response = new MockHttpServletResponse();
         AtomicReference<Long> tenantInChain = new AtomicReference<>();
@@ -887,7 +887,7 @@ class TenantContextFilterTest {
         tenant.setEnabled(true);
         when(tenantRepository.findByCode("default")).thenReturn(Optional.of(tenant));
 
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/login");
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/auth/login");
         request.setParameter("tenantCode", "default");
         request.getSession(true);
         MockHttpServletResponse response = new MockHttpServletResponse();

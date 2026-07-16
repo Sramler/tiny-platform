@@ -146,7 +146,7 @@ class AuthenticationFlowE2ERegressionTest {
         when(userRepository.save(any(User.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(securityService.getSecurityStatus(user)).thenReturn(securityStatus(mode, totpBoundAndActivated));
 
-        MockHttpServletRequest loginRequest = new MockHttpServletRequest("POST", "/login");
+        MockHttpServletRequest loginRequest = new MockHttpServletRequest("POST", "/auth/login");
         MockHttpServletResponse loginResponse = new MockHttpServletResponse();
 
         TenantContext.setActiveTenantId(1L);

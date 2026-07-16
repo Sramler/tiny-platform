@@ -52,7 +52,7 @@ public class ExportConfig {
 
     @Bean
     public ThreadPoolTaskExecutor exportExecutor(
-        @Qualifier("mdcTaskDecorator") TaskDecorator mdcTaskDecorator,
+        @Qualifier("contextPropagatingTaskDecorator") TaskDecorator contextPropagatingTaskDecorator,
         @Value("${export.executor.core-pool-size:8}") int corePoolSize,
         @Value("${export.executor.max-pool-size:16}") int maxPoolSize,
         @Value("${export.executor.queue-capacity:1000}") int queueCapacity,
@@ -68,7 +68,7 @@ public class ExportConfig {
         t.setKeepAliveSeconds(keepAliveSeconds);
         t.setAllowCoreThreadTimeOut(true);
         t.setThreadNamePrefix("export-exec-");
-        t.setTaskDecorator(mdcTaskDecorator);
+        t.setTaskDecorator(contextPropagatingTaskDecorator);
         // 拒绝策略：队列满时立即拒绝，避免回退到请求线程执行导致接口线程被长任务占用
         t.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
         // 优雅关闭：等待队列与执行中的任务完成，避免中断写文件

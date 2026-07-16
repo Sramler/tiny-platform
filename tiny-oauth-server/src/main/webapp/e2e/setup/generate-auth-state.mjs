@@ -31,7 +31,7 @@ const loginMode = (readEnv('E2E_LOGIN_MODE') ?? 'TENANT').trim().toUpperCase()
 const totpCodeOverride = readEnv('E2E_TOTP_CODE')
 const totpSecret = totpCodeOverride ? readEnv('E2E_TOTP_SECRET') : requireEnv('E2E_TOTP_SECRET')
 const authStatePath = process.env.E2E_AUTH_STATE_PATH
-const landingPath = '/OIDCDebug'
+const landingPath = '/'
 
 if (!authStatePath) {
   throw new Error('缺少 E2E_AUTH_STATE_PATH，无法生成 Playwright 登录态')
@@ -83,80 +83,17 @@ function generateTotpCode(secret, timestampMs = Date.now()) {
  */
 async function syncActiveTenantIdBeforeSave(page, apiBase) {
   await page.evaluate(async (api) => {
-    const oidcKey = Object.keys(window.localStorage).find((key) => key.startsWith('oidc.user:'))
-    if (!oidcKey) {
-      return
-    }
-    const rawUser = window.localStorage.getItem(oidcKey)
-    if (!rawUser) {
-      return
-    }
-    let accessToken
-    try {
-      accessToken = JSON.parse(rawUser).access_token
-    } catch {
-      return
-    }
-    if (!accessToken) {
-      return
-    }
-
-    function decodeJwtPayload(accessTokenInner) {
-      try {
-        const parts = accessTokenInner.split('.')
-        if (parts.length < 2) {
-          return null
-        }
-        const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
-        const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=')
-        const json = atob(padded)
-        return JSON.parse(json)
-      } catch {
-        return null
-      }
-    }
-
-    function pickTenantId(...candidates) {
-      for (const candidate of candidates) {
-        if (candidate == null) {
-          continue
-        }
-        const text = String(candidate).trim()
-        if (text !== '' && text !== 'undefined') {
-          return text
-        }
-      }
-      return ''
-    }
-
-    const user = JSON.parse(rawUser)
-    const payload = decodeJwtPayload(accessToken)
-    let tenantId = pickTenantId(
-      window.localStorage.getItem('app_active_tenant_id'),
-      user.profile?.activeTenantId,
-      payload?.activeTenantId,
-    )
-
-    if (!tenantId) {
-      const r = await fetch(`${api}/sys/users/current`, {
-        credentials: 'include',
-        headers: {
-          Accept: 'application/json',
-          Authorization: `Bearer ${accessToken}`,
-        },
-      })
-      if (r.ok) {
-        try {
-          const body = await r.json()
-          tenantId = pickTenantId(body.activeTenantId)
-        } catch {
-          // ignore
-        }
-      }
-    }
-
-    if (tenantId) {
-      window.localStorage.setItem('app_active_tenant_id', tenantId)
+    const response = await fetch(`${api}/sys/users/current`, {
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    })
+    if (!response.ok) return
+    const body = await response.json()
+    const tenantId = body?.activeTenantId
+    if (tenantId != null && Number(tenantId) > 0) {
+      window.localStorage.setItem('app_active_tenant_id', String(tenantId))
+    } else {
+      window.localStorage.removeItem('app_active_tenant_id')
     }
   }, apiBase)
 }
@@ -165,77 +102,43 @@ async function syncActiveTenantIdBeforeSave(page, apiBase) {
  * 租户登录模式下若换票得到 PLATFORM 作用域或缺少 activeTenantId，调度/menu real-link 会在首屏即失败。
  * 在持久化 storageState 前强断言，避免 CI 带着“假绿路径”的残缺 JWT 继续跑用例。
  */
-async function assertTenantAccessTokenClaims(page) {
+async function assertTenantSessionScope(page) {
   if (loginMode !== 'TENANT') {
     return
   }
-  const message = await page.evaluate(() => {
-    function decodeJwtPayload(token) {
-      try {
-        const parts = token.split('.')
-        if (parts.length < 2) {
-          return null
-        }
-        const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
-        const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=')
-        return JSON.parse(atob(padded))
-      } catch {
-        return null
-      }
+  const message = await page.evaluate(async (api) => {
+    const response = await fetch(`${api}/sys/users/current`, {
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    })
+    if (!response.ok) return `/sys/users/current 返回 ${response.status}`
+    const principal = await response.json()
+    if (principal.activeScopeType === 'PLATFORM') {
+      return 'Session activeScopeType 为 PLATFORM（期望非 PLATFORM 租户态）'
     }
-
-    const oidcKey = Object.keys(window.localStorage).find((key) => key.startsWith('oidc.user:'))
-    if (!oidcKey) {
-      return '未找到 oidc.user:* localStorage 项'
-    }
-    const rawUser = window.localStorage.getItem(oidcKey)
-    if (!rawUser) {
-      return 'OIDC 存储为空'
-    }
-    let accessToken
-    try {
-      accessToken = JSON.parse(rawUser).access_token
-    } catch {
-      return '无法解析 OIDC 用户 JSON'
-    }
-    if (!accessToken) {
-      return '缺少 access_token'
-    }
-    const payload = decodeJwtPayload(accessToken)
-    if (!payload) {
-      return '无法解析 access_token JWT payload'
-    }
-    if (payload.activeScopeType === 'PLATFORM') {
-      return 'access_token.activeScopeType 为 PLATFORM（期望非 PLATFORM 租户态）。请核对 E2E_TENANT_CODE、种子与登录流程。'
-    }
-    const tid = payload.activeTenantId
+    const tid = principal.activeTenantId
     if (tid == null || Number(tid) <= 0) {
-      return `access_token 缺少有效 activeTenantId（当前=${String(tid)}）`
+      return `Session 缺少有效 activeTenantId（当前=${String(tid)}）`
     }
     return null
-  })
+  }, backendBaseURL)
   if (message) {
     throw new Error(`generate-auth-state (E2E_LOGIN_MODE=TENANT): ${message}`)
   }
 }
 
-async function waitForOidcIdentity(page) {
-  await page.waitForFunction(() => {
-    const oidcKey = Object.keys(window.localStorage).find((key) => key.startsWith('oidc.user:'))
-    if (!oidcKey) {
-      return false
-    }
-    const rawUser = window.localStorage.getItem(oidcKey)
-    if (!rawUser) {
-      return false
-    }
+async function waitForSessionIdentity(page) {
+  await page.waitForFunction(async (api) => {
     try {
-      const user = JSON.parse(rawUser)
-      return Boolean(user?.access_token)
+      const response = await fetch(`${api}/sys/users/current`, {
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+      })
+      return response.ok
     } catch {
       return false
     }
-  }, { timeout: 90_000 })
+  }, backendBaseURL, { timeout: 90_000 })
 }
 
 function tryGetOrigin(url) {
@@ -313,6 +216,10 @@ async function main() {
   const browser = await chromium.launch({ headless: true })
   const context = await browser.newContext()
   const page = await context.newPage()
+  const failedRequests = []
+  page.on('requestfailed', (request) => {
+    failedRequests.push(`${request.method()} ${request.url()} ${request.failure()?.errorText ?? 'unknown'}`)
+  })
 
   try {
     await page.addInitScript(
@@ -355,11 +262,39 @@ async function main() {
         window.localStorage.removeItem('app_active_tenant_id')
       })
     }
+    const loginFormAction = await page.locator('form.login-form').getAttribute('action')
     await page.getByRole('button', { name: loginMode === 'PLATFORM' ? '登录平台' : '登录租户' }).click()
 
-    await page.waitForURL(/\/(callback|self\/security\/totp-(bind|verify)|OIDCDebug)/, {
-      timeout: 90_000,
-    })
+    try {
+      await page.waitForURL(
+        (url) =>
+          url.protocol === 'chrome-error:' ||
+          (url.origin === new URL(frontendBaseURL).origin &&
+            !url.pathname.includes('/login') &&
+            (url.pathname === '/' ||
+              url.pathname.includes('/callback') ||
+              url.pathname.includes('/self/security/totp-bind') ||
+              url.pathname.includes('/self/security/totp-verify') ||
+              url.pathname.includes('/OIDCDebug') ||
+              url.pathname.includes('/exception/'))),
+        { timeout: 90_000 },
+      )
+      if (page.url().startsWith('chrome-error:')) {
+        throw new Error('browser navigation reached chrome-error page')
+      }
+    } catch (error) {
+      const diagnostics = await readPageDiagnostics(page)
+      throw new Error([
+        error instanceof Error ? error.message : String(error),
+        `generate-auth-state: Session login navigation failed`,
+        `formAction=${loginFormAction ?? 'null'}`,
+        `currentUrl=${page.url()}`,
+        `expectedFrontendBaseURL=${frontendBaseURL}`,
+        `title=${diagnostics.title}`,
+        `body=${diagnostics.bodyText}`,
+        `requestFailures=${failedRequests.join(' | ') || 'none'}`,
+      ].join('\n'))
+    }
 
     if (page.url().includes('/self/security/totp-bind')) {
       const skipButton = page.getByRole('button', { name: '跳过' })
@@ -374,20 +309,26 @@ async function main() {
       await page.getByRole('button', { name: '确认' }).click()
     }
 
-    await page.waitForURL(/\/(callback|OIDCDebug|exception\/(403|404)|$)/, {
-      timeout: 90_000,
-    })
+    await page.waitForURL(
+      (url) =>
+        url.origin === new URL(frontendBaseURL).origin &&
+        !url.pathname.includes('/login') &&
+        !url.pathname.includes('/self/security/totp-bind') &&
+        !url.pathname.includes('/self/security/totp-verify') &&
+        !url.pathname.includes('/callback'),
+      { timeout: 90_000 },
+    )
 
     await assertExpectedFrontendOrigin(page, 'post-login-redirect')
 
     try {
-      await waitForOidcIdentity(page)
+      await waitForSessionIdentity(page)
     } catch (error) {
       const diagnostics = await readPageDiagnostics(page)
       throw new Error(
         [
           error instanceof Error ? error.message : String(error),
-          `generate-auth-state: 等待 oidc.user:* 超时。`,
+          `generate-auth-state: 等待 HttpOnly Session /sys/users/current 超时。`,
           `currentUrl=${page.url()}`,
           `expectedFrontendBaseURL=${frontendBaseURL}`,
           `title=${diagnostics.title}`,
@@ -400,19 +341,14 @@ async function main() {
     }
     await syncActiveTenantIdBeforeSave(page, backendBaseURL)
 
-    if (!page.url().includes(landingPath)) {
+    if (!page.url().startsWith(frontendBaseURL)) {
       await page.goto(`${frontendBaseURL}${landingPath}`)
-      const oidcDebugHeading = page.getByRole('heading', { name: 'OIDC 调试工具' })
-      const oidcDebugVisible = await oidcDebugHeading.isVisible({ timeout: 5_000 }).catch(() => false)
-      if (!oidcDebugVisible) {
-        // 某些租户未初始化菜单资源时，/OIDCDebug 会退化到“菜单为空”的壳页；此时只要浏览器中已有真实 OIDC 登录态即可持久化 storageState。
-        await waitForOidcIdentity(page)
-      }
+      await waitForSessionIdentity(page)
       await assertExpectedFrontendOrigin(page, 'landing-page-recovery')
       await syncActiveTenantIdBeforeSave(page, backendBaseURL)
     }
 
-    await assertTenantAccessTokenClaims(page)
+    await assertTenantSessionScope(page)
     await context.storageState({ path: path.resolve(authStatePath) })
   } finally {
     await context.close()

@@ -3,12 +3,14 @@ package com.tiny.platform.core.oauth.config;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.tiny.platform.core.oauth.config.jackson.JacksonConfig;
 import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
 import com.tiny.platform.core.oauth.security.PermissionVersionService;
+import com.tiny.platform.core.oauth.security.TokenSecurityStateService;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.core.oauth.tenant.TenantContextContract;
 import com.tiny.platform.core.oauth.tenant.TenantContextFilter;
@@ -158,8 +160,10 @@ class AuthorizationServerUserInfoIntegrationTest {
 
         mockMvc.perform(get("/platform/userinfo")
                 .header("Authorization", "Bearer " + tokenValue)
+                .header("Origin", "http://localhost:5173")
                 .accept(MediaType.APPLICATION_JSON))
             .andExpect(status().isOk())
+            .andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:5173"))
             .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
             .andExpect(jsonPath("$.sub").value("platform_admin"));
     }
@@ -179,6 +183,7 @@ class AuthorizationServerUserInfoIntegrationTest {
             configuration.addAllowedOriginPattern("*");
             configuration.addAllowedHeader("*");
             configuration.addAllowedMethod("*");
+            configuration.setAllowCredentials(true);
             UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
             source.registerCorsConfiguration("/**", configuration);
             return source;
@@ -229,6 +234,11 @@ class AuthorizationServerUserInfoIntegrationTest {
         @Bean
         PermissionVersionService permissionVersionService() {
             return Mockito.mock(PermissionVersionService.class);
+        }
+
+        @Bean
+        TokenSecurityStateService tokenSecurityStateService() {
+            return Mockito.mock(TokenSecurityStateService.class);
         }
 
         @Bean

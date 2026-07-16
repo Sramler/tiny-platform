@@ -51,6 +51,7 @@ const mocks = vi.hoisted(() => ({
   extractErrorFromAxios: vi.fn(),
   extractErrorInfo: vi.fn(),
   persistentWarn: vi.fn(),
+  ensureCsrfToken: vi.fn(),
   currentRouteValue: {
     path: '/dashboard',
     fullPath: '/dashboard?tab=security',
@@ -85,6 +86,16 @@ vi.mock('@/auth/auth', () => ({
   }),
   refreshAccessTokenOnce: mocks.refreshAccessTokenOnce,
   logout: mocks.logout,
+}))
+
+vi.mock('@/auth/config', () => ({
+  authRuntimeConfig: { sessionOnly: true },
+}))
+
+vi.mock('@/utils/csrf', () => ({
+  isUnsafeHttpMethod: (method?: string) =>
+    !['GET', 'HEAD', 'OPTIONS', 'TRACE'].includes((method || 'GET').toUpperCase()),
+  ensureCsrfToken: mocks.ensureCsrfToken,
 }))
 
 vi.mock('@/router', () => ({
@@ -136,6 +147,11 @@ describe('request.ts interceptors', () => {
     axiosState.responseFulfilled = undefined
     axiosState.responseRejected = undefined
     mocks.getAccessToken.mockResolvedValue('access-token')
+    mocks.ensureCsrfToken.mockResolvedValue({
+      token: 'csrf-token',
+      parameterName: '_csrf',
+      headerName: 'X-XSRF-TOKEN',
+    })
     mocks.refreshAccessTokenOnce.mockResolvedValue(false)
     mocks.getOrCreateTraceId.mockReturnValue('trace-id')
     mocks.generateRequestId.mockReturnValue('request-id')
@@ -160,7 +176,7 @@ describe('request.ts interceptors', () => {
     vi.unstubAllGlobals()
   })
 
-  it('should inject trace, auth and tenant headers in request interceptor', async () => {
+  it('should use the HttpOnly session and omit bearer authorization', async () => {
     const fulfilled = axiosState.service.interceptors.request.use.mock.calls[0]?.[0] as
       | RequestFulfilled
       | undefined
@@ -174,9 +190,10 @@ describe('request.ts interceptors', () => {
 
     expect(config.headers['X-Trace-Id']).toBe('trace-id')
     expect(config.headers['X-Request-Id']).toBe('request-id')
-    expect(config.headers.Authorization).toBe('Bearer access-token')
+    expect(config.headers.Authorization).toBeUndefined()
     expect(config.headers['X-Active-Tenant-Id']).toBe('101')
-    expect(mocks.syncTenantContextFromAccessToken).toHaveBeenCalledWith('access-token')
+    expect(mocks.getAccessToken).not.toHaveBeenCalled()
+    expect(mocks.syncTenantContextFromAccessToken).not.toHaveBeenCalled()
   })
 
   it('should not inject tenant headers for platform workflow runtime requests', async () => {
@@ -237,6 +254,7 @@ describe('request.ts interceptors', () => {
       username: 'alice',
     })
     expect(config.headers['X-Idempotency-Key']).toBe('idem-key')
+    expect(config.headers['X-XSRF-TOKEN']).toBe('csrf-token')
   })
 
   it('should reuse submit-mode key while duplicate requests are in flight and rotate after completion', async () => {

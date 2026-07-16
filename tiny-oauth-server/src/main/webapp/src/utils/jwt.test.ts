@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { decodeJwtPayload, extractAuthoritiesFromJwt } from '@/utils/jwt'
+import {
+  decodeJwtPayload,
+  extractAuthoritiesFromJwt,
+  extractUserIdFromJwt,
+  setSessionClaimsSnapshot,
+} from '@/utils/jwt'
 
 function createToken(payload: Record<string, unknown>) {
   const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')
@@ -40,5 +45,16 @@ describe('jwt utils', () => {
       'system:user:view',
     ])
     expect(extractAuthoritiesFromJwt(permissionsStringToken)).toEqual(['system:user:list', 'system:user:view'])
+  })
+
+  it('should read Session identity from the in-memory snapshot without creating a pseudo JWT', () => {
+    setSessionClaimsSnapshot({ id: '7', permissions: ['system:user:view'] })
+
+    expect(decodeJwtPayload(null)).toEqual({ id: '7', permissions: ['system:user:view'] })
+    expect(extractAuthoritiesFromJwt(null)).toEqual(['system:user:view'])
+    expect(extractUserIdFromJwt(null)).toBe(7)
+
+    setSessionClaimsSnapshot(null)
+    expect(decodeJwtPayload(null)).toBeNull()
   })
 })

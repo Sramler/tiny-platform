@@ -3,10 +3,12 @@ package com.tiny.platform.core.oauth.config;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.MDC;
+import org.springframework.core.task.TaskDecorator;
+import org.springframework.core.task.support.ContextPropagatingTaskDecorator;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class MdcTaskDecoratorTest {
+class ContextPropagationConfigTest {
 
     @AfterEach
     void tearDown() {
@@ -15,7 +17,8 @@ class MdcTaskDecoratorTest {
 
     @Test
     void shouldPropagateCapturedMdcAndRestorePreviousContext() {
-        MdcTaskDecorator decorator = new MdcTaskDecorator();
+        TaskDecorator decorator = new ContextPropagationConfig().contextPropagatingTaskDecorator();
+        assertThat(decorator).isInstanceOf(ContextPropagatingTaskDecorator.class);
 
         MDC.put("traceId", "captured");
         Runnable decorated = decorator.decorate(() -> {
@@ -34,7 +37,7 @@ class MdcTaskDecoratorTest {
 
     @Test
     void shouldClearMdcInsideTaskWhenNoCapturedContextAndRestoreEmpty() {
-        MdcTaskDecorator decorator = new MdcTaskDecorator();
+        TaskDecorator decorator = new ContextPropagationConfig().contextPropagatingTaskDecorator();
 
         MDC.clear();
         Runnable decorated = decorator.decorate(() -> {

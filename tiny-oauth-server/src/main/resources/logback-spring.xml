@@ -56,8 +56,8 @@
     <!-- 注意：如果 APP_NAME_SPRING 是占位符字符串，会使用默认值 oauth-server -->
     <property name="APP_NAME" value="${APP_NAME:-${APP_NAME_SPRING:-oauth-server}}"/>
     
-    <springProperty scope="context" name="ASYNC_QUEUE_SIZE" source="logging.async.queue-size" defaultValue="512"/>
-    <springProperty scope="context" name="ASYNC_DISCARD_THRESHOLD" source="logging.async.discard-threshold" defaultValue="0"/>
+    <springProperty scope="context" name="ASYNC_QUEUE_SIZE" source="tiny.logging.async.queue-size" defaultValue="512"/>
+    <springProperty scope="context" name="ASYNC_DISCARD_THRESHOLD" source="tiny.logging.async.discard-threshold" defaultValue="0"/>
 
     <!-- ==================== 控制台输出 ==================== -->
     <!-- 开发环境使用，包含 traceId/requestId 等上下文 -->
@@ -155,7 +155,7 @@
     <!-- 审计日志独立输出配置 -->
     <!-- 使用 additivity="false" 避免审计日志重复输出到其他 appender -->
     <!-- 日志级别由 application.yaml 中的 logging.level 控制 -->
-    <logger name="com.tiny.oauthserver.sys.service.AuthenticationAuditService" additivity="false">
+    <logger name="com.tiny.platform.core.oauth.service.impl.AuthenticationAuditServiceImpl" additivity="false">
         <appender-ref ref="AUDIT_FILE"/>
         <appender-ref ref="STDOUT"/>
     </logger>

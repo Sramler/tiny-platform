@@ -488,7 +488,7 @@ const handleUnbindSubmit = async () => {
     await unbindFormRef.value?.validate()
     
     unbindLoading.value = true
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000'
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || ''
     const baseUrl = apiBaseUrl.endsWith('/') ? apiBaseUrl.slice(0, -1) : apiBaseUrl
 
     const response = await fetchWithTraceId(`${baseUrl}/self/security/totp/unbind`, {
@@ -534,7 +534,7 @@ const handleUnbindSubmit = async () => {
 // 计算头像URL（如果用户有头像）
 const getAvatarUrl = () => {
   if (!basicForm.id) return ''
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000'
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || ''
   const baseUrl = apiBaseUrl.endsWith('/') ? apiBaseUrl.slice(0, -1) : apiBaseUrl
   return `${baseUrl}/sys/users/${basicForm.id}/avatar?t=${Date.now()}`
 }
@@ -588,7 +588,7 @@ const handleAvatarUpload = (options: UploadRequestOption) => {
   const { file } = options
   avatarLoading.value = true
   try {
-    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000'
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || ''
     const baseUrl = apiBaseUrl.endsWith('/') ? apiBaseUrl.slice(0, -1) : apiBaseUrl
     
     const formData = new FormData()

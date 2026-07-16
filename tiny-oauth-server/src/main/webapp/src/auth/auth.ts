@@ -21,6 +21,8 @@ import {
   syncTenantContextFromClaims,
 } from '@/utils/tenant'
 import { dispatchAuthorizationRuntimeReset } from '@/runtime/authorizationRuntimeEvents'
+import { ensureCsrfToken, isUnsafeHttpMethod } from '@/utils/csrf'
+import { setSessionClaimsSnapshot } from '@/utils/jwt'
 
 export type ActiveScopePostSwitchRenewResult = { ok: true; user: User } | { ok: false }
 export type SilentLoginErrorCode =
@@ -142,7 +144,7 @@ const getSessionStorage = (): Storage | null => {
 }
 
 const normalizeApiBaseUrl = (): string => {
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000'
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || ''
   return apiBaseUrl.endsWith('/') ? apiBaseUrl.slice(0, -1) : apiBaseUrl
 }
 
@@ -257,14 +259,16 @@ export const completePostLogoutRedirect = async (url = window.location.href): Pr
 
 const performServerLogoutFallback = async (): Promise<void> => {
   try {
+    const csrf = await ensureCsrfToken(normalizeApiBaseUrl())
     const response = await fetch(
-      `${normalizeApiBaseUrl()}/logout`,
+      `${normalizeApiBaseUrl()}/auth/logout`,
       addTraceIdToFetchOptions({
         method: 'POST',
         credentials: 'include',
         redirect: 'manual',
         headers: {
           Accept: 'application/json',
+          [csrf.headerName]: csrf.token,
         },
       }),
     )
@@ -282,6 +286,35 @@ const appendTenantHeader = (headers: Headers): void => {
   if (activeTenantId) {
     headers.set('X-Active-Tenant-Id', activeTenantId)
   }
+}
+
+type SessionUserSnapshot = Record<string, unknown> & {
+  id?: string
+  username?: string
+  permissions?: string[]
+  authorities?: string[]
+  roleCodes?: string[]
+}
+
+async function restoreUserFromHttpSession(): Promise<User | null> {
+  const response = await fetch(`${normalizeApiBaseUrl()}/sys/users/current`, {
+    method: 'GET',
+    credentials: 'include',
+    headers: { Accept: 'application/json' },
+  })
+  if (response.status === 401 || response.status === 403) return null
+  if (!response.ok) throw new Error(`session bootstrap failed with status ${response.status}`)
+  const snapshot = (await response.json()) as SessionUserSnapshot
+  setSessionClaimsSnapshot(snapshot)
+  syncTenantContextFromClaims(snapshot as any)
+  return {
+    profile: snapshot,
+    access_token: '',
+    token_type: 'Session',
+    scope: '',
+    state: null,
+    expired: false,
+  } as unknown as User
 }
 
 // 顶层定义，避免 useAuth() 调用循环引用
@@ -363,6 +396,7 @@ export const logout = async () => {
     if (localStateCleared) return
     await userManager.removeUser()
     user.value = null
+    setSessionClaimsSnapshot(null)
     clearActiveTenantId()
     dispatchAuthorizationRuntimeReset('logout', { message: '用户退出登录，清理授权运行态' })
     loginInProgress = false
@@ -573,6 +607,15 @@ export async function trySilentLoginFromPlatformSessionDetailed(): Promise<Platf
 
 export async function initAuth() {
   try {
+    if (authRuntimeConfig.sessionOnly) {
+      user.value = await restoreUserFromHttpSession()
+      if (!user.value) {
+        setSessionClaimsSnapshot(null)
+        clearActiveTenantId()
+      }
+      oidcTrace('initAuth.session', { authenticated: !!user.value })
+      return
+    }
     ensureOidcAuthoritySynced()
     oidcTrace('initAuth.start')
 
@@ -605,6 +648,7 @@ export async function initAuth() {
     logger.error('[OIDC] 初始化认证状态失败', error)
     oidcTrace('initAuth.error', error)
     user.value = null
+    setSessionClaimsSnapshot(null)
     clearActiveTenantId()
   }
 }
@@ -621,6 +665,7 @@ export function ensureAuthInitialized(options: { force?: boolean } = {}): Promis
 // 提供 Vue 组件中使用的 Auth API
 export function useAuth(): AuthContext {
   const getAccessToken = async () => {
+    if (authRuntimeConfig.sessionOnly) return null
     if (!user.value) {
       const cachedUser = await userManager.getUser()
       if (cachedUser && !cachedUser.expired) {
@@ -640,8 +685,8 @@ export function useAuth(): AuthContext {
   }
 
   const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
-    const token = await getAccessToken()
-    if (!token) throw new Error('Not authenticated')
+    const token = authRuntimeConfig.sessionOnly ? null : await getAccessToken()
+    if (!authRuntimeConfig.sessionOnly && !token) throw new Error('Not authenticated')
 
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), authRuntimeConfig.fetchTimeoutMs)
@@ -649,7 +694,11 @@ export function useAuth(): AuthContext {
     try {
       // 添加 TRACE_ID 和 Authorization headers
       const headers = new Headers(options.headers)
-      headers.set('Authorization', `Bearer ${token}`)
+      if (token) headers.set('Authorization', `Bearer ${token}`)
+      if (authRuntimeConfig.sessionOnly && isUnsafeHttpMethod(options.method)) {
+        const csrf = await ensureCsrfToken(normalizeApiBaseUrl())
+        headers.set(csrf.headerName, csrf.token)
+      }
       appendTenantHeader(headers)
 
       const traceOptions = addTraceIdToFetchOptions({
@@ -659,6 +708,7 @@ export function useAuth(): AuthContext {
 
       return await fetch(url, {
         ...traceOptions,
+        credentials: 'include',
         signal: controller.signal,
       })
     } catch (err) {

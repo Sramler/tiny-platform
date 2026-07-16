@@ -1,6 +1,6 @@
 # 前端启动与认证编排说明
 
-> 当前态：2026-05-08。  
+> 当前态：2026-07-16。
 > 适用范围：`tiny-oauth-server/src/main/webapp` 的登录恢复、OIDC callback、TOTP 安全流程、菜单权限加载与动态路由注册。
 
 ## 目标
@@ -14,6 +14,10 @@
 - `/bootstrap` 负责展示可见启动状态和统一编排启动流程。
 - router guard 只做轻量分流，不承载重型异步流程。
 - `BasicLayout` 只在认证、安全状态、菜单权限和动态路由都 ready 后进入。
+
+Web 控制面默认采用 BFF/Session-only 传输：登录表单由后端建立 HttpOnly Session，
+`authBootstrap` 使用带 `credentials: include` 的 `/sys/users/current` 恢复登录态；浏览器业务请求不发送 Bearer，
+也不保存 refresh token。JWT/OIDC 继续服务于 API、CLI、移动端等非 Web 控制面客户端。
 
 ## 标准流程
 
@@ -43,8 +47,8 @@ flowchart TD
 | 类别       | 路由                                                     | 行为                                                         |
 | ---------- | -------------------------------------------------------- | ------------------------------------------------------------ |
 | 启动编排   | `/bootstrap`                                             | 只负责启动状态展示与编排，不能再次被重定向到 `/bootstrap`    |
-| OIDC 登录回调 | `/callback`                                             | 必须绕过启动回环；callback 完成 code 处理后回流 `/bootstrap` |
-| OIDC 静默续期 | `silent-renew.html`                                     | 独立 HTML iframe 入口，只执行 `signinSilentCallback()`；不注册 Vue Router 路由，不进入 `/bootstrap` 守卫 |
+| OIDC 登录回调 | `/callback`                                             | API/OIDC 兼容入口；Web Session-only 默认登录链不经过该路由 |
+| OIDC 静默续期 | `silent-renew.html`                                     | API/OIDC 兼容入口；Web Session-only 默认禁用 automatic silent renew |
 | 登录页     | `/login`                                                 | 未认证入口；已认证时回到 `/bootstrap` 或首页                 |
 | 安全流程页 | `/self/security/totp-bind`、`/self/security/totp-verify` | 需要已认证会话，但不依赖菜单、动态路由或 `BasicLayout`       |
 | 异常页     | `/exception/**`                                          | 最小可用错误展示，不依赖业务权限菜单                         |
@@ -67,7 +71,8 @@ flowchart TD
 
 ## 失败策略
 
-- OIDC `prompt=none` 返回 `login_required` / `interaction_required` / `consent_required` 时，进入登录页。
+- Web Session-only 下 `/sys/users/current` 返回 401/403 时进入登录页，不尝试 `prompt=none`。
+- OIDC 兼容模式下 `prompt=none` 返回 `login_required` / `interaction_required` / `consent_required` 时，进入登录页。
 - 静默恢复超时、网络异常、Cookie/iframe 受限时，停留在 `/bootstrap` 展示可重试错误。
 - `invalid_state` 等认证状态异常应清理本地态并回到登录流程。
 - 菜单为空、菜单 URL 非内部路径、组件缺失、重复 path 等情况必须 fail-closed，不能进入半可用业务区。
@@ -116,7 +121,7 @@ TOTP 绑定或验证成功后，后端不直接把用户送进业务页，而是
 
 这样可以重新执行：
 
-1. OIDC 登录态恢复。
+1. HttpOnly Session 登录态恢复。
 2. 安全状态检查。
 3. 菜单权限加载。
 4. 动态路由注册。

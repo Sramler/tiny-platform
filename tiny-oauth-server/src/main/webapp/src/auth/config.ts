@@ -36,6 +36,9 @@ const numberFromEnv = (
 }
 
 export const authRuntimeConfig = Object.freeze({
+  // Web 控制面默认使用服务端 HttpSession。JWT/OIDC 仍保留给 API 客户端，
+  // 但浏览器业务请求不再读取、持久化或发送 access/refresh token。
+  sessionOnly: boolFromEnv('VITE_AUTH_SESSION_ONLY', true),
   forceLogoutOnRenewFail: boolFromEnv('VITE_AUTH_FORCE_LOGOUT_ON_RENEW_FAIL', true),
   fetchTimeoutMs: numberFromEnv('VITE_AUTH_FETCH_TIMEOUT_MS', 8000, { min: 3000, max: 60000 }),
   enablePlatformSessionSilentLogin: boolFromEnv('VITE_AUTH_ENABLE_PLATFORM_SESSION_SILENT_LOGIN', true),

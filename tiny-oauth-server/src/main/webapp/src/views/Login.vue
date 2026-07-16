@@ -124,12 +124,12 @@ function applyDevDefaultsForMode(mode: 'TENANT' | 'PLATFORM') {
   }
 }
 
-// 获取后端 API 基础 URL，如果没有配置则使用默认值
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000'
+// 同源 BFF 默认使用当前 origin；仅在显式跨源兼容模式下配置基础 URL。
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || ''
 // 确保 URL 以 / 结尾
 const baseUrl = apiBaseUrl.endsWith('/') ? apiBaseUrl.slice(0, -1) : apiBaseUrl
 // 构建登录表单提交的完整 URL
-const loginActionUrl = `${baseUrl}/login`
+const loginActionUrl = `${baseUrl}/auth/login`
 
 const errorText = computed(() => {
   const raw = route.query.error ?? route.query.message

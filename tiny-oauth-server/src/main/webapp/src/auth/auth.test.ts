@@ -35,6 +35,7 @@ const mocks = vi.hoisted(() => ({
   syncTenantContextFromAccessToken: vi.fn(),
   jwtVerify: vi.fn(),
   createRemoteJWKSet: vi.fn(),
+  sessionOnly: false,
 }))
 
 vi.mock('@/auth/oidc', () => ({
@@ -65,6 +66,9 @@ vi.mock('@/auth/oidc', () => ({
 
 vi.mock('@/auth/config', () => ({
   authRuntimeConfig: {
+    get sessionOnly() {
+      return mocks.sessionOnly
+    },
     forceLogoutOnRenewFail: true,
     fetchTimeoutMs: 8000,
   },
@@ -103,6 +107,7 @@ describe('auth login flow', () => {
     window.sessionStorage.clear()
     window.history.replaceState({}, '', '/')
     mocks.getUser.mockResolvedValue(null)
+    mocks.sessionOnly = false
     mocks.signoutRedirect.mockResolvedValue(undefined)
     mocks.signoutRedirectCallback.mockResolvedValue({ userState: null })
     mocks.getTenantCode.mockReturnValue('tiny-prod')
@@ -146,6 +151,35 @@ describe('auth login flow', () => {
       },
     })
     expect(assignSpy).toHaveBeenCalledWith('http://issuer.example/authorize?client_id=vue-client')
+  })
+
+  it('should restore authentication from the HttpOnly server session without an OAuth token', async () => {
+    mocks.sessionOnly = true
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: '7',
+          username: 'alice',
+          activeTenantId: 101,
+          permissions: ['system:user:view'],
+          authorities: ['system:user:view'],
+          roleCodes: [],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const authModule = await import('@/auth/auth')
+
+    await authModule.ensureAuthInitialized({ force: true })
+
+    expect(authModule.useAuth().isAuthenticated.value).toBe(true)
+    expect(authModule.useAuth().user.value?.access_token).toBe('')
+    await expect(authModule.useAuth().getAccessToken()).resolves.toBeNull()
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://test-api.example.com/sys/users/current',
+      expect.objectContaining({ credentials: 'include', method: 'GET' }),
+    )
   })
 
   it('should reject login when tenant context is missing', async () => {
@@ -210,7 +244,15 @@ describe('auth login flow', () => {
       id_token: 'id-token',
     })
     mocks.signoutRedirect.mockRejectedValue(new Error('redirect failed'))
-    const fetchSpy = vi.fn().mockResolvedValue(new Response(null, { status: 204 }))
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ token: 'csrf-token', headerName: 'X-XSRF-TOKEN', parameterName: '_csrf' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
     vi.stubGlobal('fetch', fetchSpy)
     vi.stubGlobal('location', {
       ...window.location,
@@ -228,8 +270,9 @@ describe('auth login flow', () => {
     expect(mocks.removeUser).toHaveBeenCalledTimes(1)
     expect(mocks.clearActiveTenantId).toHaveBeenCalledTimes(1)
     expect(mocks.clearTraceId).toHaveBeenCalled()
-    expect(fetchSpy).toHaveBeenCalledWith(
-      `${(import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000').replace(/\/$/, '')}/logout`,
+    expect(fetchSpy).toHaveBeenNthCalledWith(
+      2,
+      `${(import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')}/auth/logout`,
       expect.objectContaining({
         method: 'POST',
         credentials: 'include',

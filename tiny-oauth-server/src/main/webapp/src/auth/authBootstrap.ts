@@ -54,6 +54,14 @@ export async function restoreAuthState(url = window.location.href): Promise<Auth
       return { status: 'authenticated' }
     }
 
+    if (authRuntimeConfig.sessionOnly) {
+      return {
+        status: 'login_required',
+        errorCode: 'login_required',
+        message: '没有可用的服务端登录会话',
+      }
+    }
+
     const tenantCode = getTenantCode()
     if (tenantCode) {
       return {

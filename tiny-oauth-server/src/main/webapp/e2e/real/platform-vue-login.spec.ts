@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test'
 /**
  * real-link：从 /login 的「平台登录」页签走完整 Session 登录（无 tenantCode）
  *
- * 覆盖 Login.vue 平台模式与后端 TenantContextFilter 对无租户 POST /login 的语义；
+ * 覆盖 Login.vue 平台模式与后端 TenantContextFilter 对无租户 POST /auth/login 的语义；
  * Vitest 单测无法替代本链路。
  *
  * 依赖：与 global setup 一致，使用 E2E_PLATFORM_USERNAME / E2E_PLATFORM_PASSWORD /
@@ -122,11 +122,11 @@ async function fetchCurrentUser(page: import('@playwright/test').Page) {
   }, { apiBaseUrl: backendBaseUrl })
 }
 
-async function fetchTenantControlPlane(page: import('@playwright/test').Page) {
+async function fetchRuntimeMenuTree(page: import('@playwright/test').Page) {
   const backendBaseUrl =
     process.env.E2E_BACKEND_BASE_URL ?? process.env.VITE_API_BASE_URL ?? 'http://localhost:9000'
   return page.evaluate(async ({ apiBaseUrl }) => {
-    const response = await fetch(`${apiBaseUrl}/sys/tenants?page=0&size=5`, {
+    const response = await fetch(`${apiBaseUrl}/sys/menus/tree`, {
       method: 'GET',
       credentials: 'include',
       headers: { Accept: 'application/json' },
@@ -177,12 +177,15 @@ test.describe('real-link: Login.vue 平台登录', () => {
       await page.getByLabel('动态验证码').fill(cfg!.totpCode)
       await page.getByRole('button', { name: '确认' }).click()
       await page.waitForURL(
-        (u) => !u.pathname.includes('/self/security/totp-verify') && !u.pathname.includes('/callback'),
+        (u) =>
+          !u.pathname.includes('/self/security/totp-verify') &&
+          !u.pathname.includes('/callback') &&
+          !u.pathname.includes('/login'),
         { timeout: 60_000 },
       )
     }
 
-    await page.waitForLoadState('networkidle').catch(() => {})
+    await page.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => {})
     const securityStatus = await fetchSecurityStatus(page)
     expect(securityStatus.status).toBe(200)
     expect(securityStatus.payload).not.toBeNull()
@@ -191,13 +194,13 @@ test.describe('real-link: Login.vue 平台登录', () => {
     expect(typeof securityStatus.payload?.requireTotp).toBe('boolean')
 
     const currentUser = await fetchCurrentUser(page)
-    expect(currentUser.status).toBe(200)
+    expect(currentUser.status, JSON.stringify(currentUser.payload)).toBe(200)
     expect(currentUser.payload).not.toBeNull()
     expect(currentUser.payload?.activeScopeType).toBe('PLATFORM')
 
-    const tenantControlPlane = await fetchTenantControlPlane(page)
-    expect(tenantControlPlane.status).toBe(200)
-    expect(tenantControlPlane.payload).not.toBeNull()
-    expect(Array.isArray(tenantControlPlane.payload?.content)).toBe(true)
+    const runtimeMenuTree = await fetchRuntimeMenuTree(page)
+    expect(runtimeMenuTree.status).toBe(200)
+    expect(Array.isArray(runtimeMenuTree.payload)).toBe(true)
+    expect((runtimeMenuTree.payload as unknown[]).length).toBeGreaterThan(1)
   })
 })

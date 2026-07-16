@@ -3,12 +3,13 @@
 
 server:
   port: ${E2E_BACKEND_PORT:9000}
-  error:
-    include-stacktrace: on-param
-    include-message: always
-    include-binding-errors: always
 
 spring:
+  web:
+    error:
+      include-stacktrace: on-param
+      include-message: always
+      include-binding-errors: always
   autoconfigure:
     exclude:
       - org.camunda.bpm.spring.boot.starter.rest.CamundaBpmRestJerseyAutoConfiguration
@@ -25,6 +26,7 @@ spring:
     username: ${E2E_DB_USER:root}
     password: ${E2E_DB_PASSWORD:${MYSQL_ROOT_PASSWORD:}}
   jpa:
+    open-in-view: false
     hibernate:
       ddl-auto: none
   liquibase:
@@ -46,7 +48,7 @@ logging:
     path: ./logs
   level:
     root: INFO
-    com.tiny.oauthserver: INFO
+    com.tiny.platform: INFO
     org.springframework.security: INFO
 
 http:

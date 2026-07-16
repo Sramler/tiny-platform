@@ -32,23 +32,25 @@ public class SchedulingWorkerConfig {
     private int dispatchPoolSize;
 
     @Bean(name = "schedulingTaskExecutor")
-    public ExecutorService schedulingTaskExecutor(@Qualifier("mdcTaskDecorator") TaskDecorator mdcTaskDecorator) {
+    public ExecutorService schedulingTaskExecutor(
+            @Qualifier("contextPropagatingTaskDecorator") TaskDecorator contextPropagatingTaskDecorator) {
         return createTenantAwareExecutor(
                 "scheduling-worker-",
                 coreSize,
                 maxSize,
                 queueCapacity,
-                mdcTaskDecorator);
+                contextPropagatingTaskDecorator);
     }
 
     @Bean(name = "schedulingDispatchExecutor")
-    public ExecutorService schedulingDispatchExecutor(@Qualifier("mdcTaskDecorator") TaskDecorator mdcTaskDecorator) {
+    public ExecutorService schedulingDispatchExecutor(
+            @Qualifier("contextPropagatingTaskDecorator") TaskDecorator contextPropagatingTaskDecorator) {
         return createTenantAwareExecutor(
                 "scheduling-dispatch-",
                 dispatchPoolSize,
                 dispatchPoolSize,
                 queueCapacity,
-                mdcTaskDecorator);
+                contextPropagatingTaskDecorator);
     }
 
     private ExecutorService createTenantAwareExecutor(
@@ -56,11 +58,11 @@ public class SchedulingWorkerConfig {
             int corePoolSize,
             int maximumPoolSize,
             int taskQueueCapacity,
-            TaskDecorator mdcTaskDecorator) {
+            TaskDecorator contextPropagatingTaskDecorator) {
         TaskDecorator tenantAwareTaskDecorator = command -> {
             Long capturedTenantId = TenantContext.getActiveTenantId();
             String capturedTenantSource = TenantContext.getTenantSource();
-            Runnable mdcDecorated = mdcTaskDecorator.decorate(command);
+            Runnable contextDecorated = contextPropagatingTaskDecorator.decorate(command);
             return () -> {
                 Long previousTenantId = TenantContext.getActiveTenantId();
                 String previousTenantSource = TenantContext.getTenantSource();
@@ -72,7 +74,7 @@ public class SchedulingWorkerConfig {
                     if (capturedTenantSource != null) {
                         TenantContext.setTenantSource(capturedTenantSource);
                     }
-                    mdcDecorated.run();
+                    contextDecorated.run();
                 } finally {
                     TenantContext.clear();
                     if (previousTenantId != null) {

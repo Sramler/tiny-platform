@@ -17,9 +17,6 @@ logging:
   file:
     path: ./logs
   # 异步日志配置（开发环境使用较小的队列，便于快速发现问题）
-  async:
-    queue-size: 256 # 队列大小：开发环境较小，便于快速响应
-    discard-threshold: 0 # 不丢弃日志：开发环境需要完整日志
   # 日志级别：开发环境可以更详细
   level:
     root: DEBUG
@@ -30,12 +27,7 @@ logging:
     # Hibernate Validator 启动噪音
     #org.hibernate.validator: WARN
     #org.hibernate.validator.internal: WARN
-    com.tiny.oauthserver: DEBUG # 业务代码 DEBUG 级别，便于调试
-    com.tiny.oauthserver.sys.security.MultiAuthenticationProvider: DEBUG
-    com.tiny.oauthserver.sys.security.UserDetailsServiceImpl: DEBUG
-    com.tiny.oauthserver.sys.service.impl.SecurityServiceImpl: DEBUG
-    com.tiny.oauthserver.config.CustomJdbcOAuth2AuthorizationService: DEBUG
-    com.tiny.oauthserver.config: DEBUG
+    com.tiny.platform: DEBUG # 业务代码 DEBUG 级别，便于调试
     org.springframework.security: TRACE # 安全框架 TRACE，便于排查认证问题
     # Spring Security 配置警告：开发环境保持 WARN，便于发现问题
     # 这是预期的配置：MultiAuthenticationProvider 内部使用 UserDetailsService，符合设计
@@ -46,7 +38,6 @@ logging:
     org.camunda.bpm.engine.impl.persistence: DEBUG
     com.zaxxer.hikari: INFO
     org.hibernate.SQL: INFO # SQL 日志 DEBUG，便于查看完整 SQL
-    org.hibernate.type.descriptor.sql.BasicBinder: INFO
     org.hibernate.orm.jdbc.bind: INFO # 参数绑定 TRACE
 
 # HTTP 请求日志配置（开发环境：记录更多信息，便于调试）
@@ -61,3 +52,9 @@ http:
       - /dist
       - /static
       - /webjars
+
+tiny:
+  logging:
+    async:
+      queue-size: 256
+      discard-threshold: 0

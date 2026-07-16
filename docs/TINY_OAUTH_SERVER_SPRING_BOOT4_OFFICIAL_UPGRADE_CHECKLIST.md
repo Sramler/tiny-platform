@@ -24,7 +24,7 @@
 
 当前 `tiny-oauth-server` 已满足以下基线：
 
-- 父工程 Spring Boot 版本：`4.1.0-SNAPSHOT`
+- 父工程 Spring Boot 版本：`4.1.1-SNAPSHOT`
 - JDK 基线：`21`
 - Servlet 基线：`6.1`
 - `tiny-oauth-server` 已完成：

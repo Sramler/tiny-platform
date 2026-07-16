@@ -152,6 +152,22 @@ public class UserController {
                             permissionVersionService
                         )
                     );
+                    java.util.List<String> authorities = authentication.getAuthorities().stream()
+                        .map(org.springframework.security.core.GrantedAuthority::getAuthority)
+                        .filter(java.util.Objects::nonNull)
+                        .map(String::trim)
+                        .filter(value -> !value.isEmpty())
+                        .distinct()
+                        .sorted()
+                        .toList();
+                    userInfo.put("authorities", authorities);
+                    userInfo.put("permissions", authorities.stream()
+                        .filter(value -> !value.startsWith("ROLE_") && !value.startsWith("FACTOR_"))
+                        .toList());
+                    SecurityUser currentSecurityUser = CurrentActorResolver.resolveSecurityUser(authentication);
+                    userInfo.put("roleCodes", currentSecurityUser != null
+                        ? currentSecurityUser.getRoleCodes().stream().sorted().toList()
+                        : java.util.List.of());
                     userInfo.put("nickname", user.getNickname() != null ? user.getNickname() : "");
                     userInfo.put("enabled", user.isEnabled());
                     userInfo.put("accountNonExpired", user.isAccountNonExpired());

@@ -1,5 +1,13 @@
 export type JwtClaims = Record<string, unknown>
 
+// Session/BFF 模式下，浏览器只保存由 `/sys/users/current` 返回的内存身份快照，
+// 不再为了复用 JWT helper 而伪造三段式 access token。
+let sessionClaimsSnapshot: JwtClaims | null = null
+
+export function setSessionClaimsSnapshot(claims: JwtClaims | null): void {
+  sessionClaimsSnapshot = claims ? { ...claims } : null
+}
+
 function decodeBase64Url(value: string): string {
   const normalized = value.replace(/-/g, '+').replace(/_/g, '/')
   const padding = normalized.length % 4 === 0 ? '' : '='.repeat(4 - (normalized.length % 4))
@@ -8,7 +16,7 @@ function decodeBase64Url(value: string): string {
 
 export function decodeJwtPayload<T extends JwtClaims = JwtClaims>(token?: string | null): T | null {
   if (!token) {
-    return null
+    return sessionClaimsSnapshot as T | null
   }
 
   const parts = token.split('.')
@@ -42,8 +50,8 @@ function extractStringList(value: unknown): string[] {
  * 从 access token payload 读取数据库用户主键（与 JwtTokenCustomizer 的 userId claim 对齐）。
  */
 export function extractUserIdFromJwt(token?: string | null): number | null {
-  const claims = decodeJwtPayload<{ userId?: unknown }>(token)
-  const raw = claims?.userId
+  const claims = decodeJwtPayload<{ userId?: unknown; id?: unknown }>(token)
+  const raw = claims?.userId ?? claims?.id
   if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) {
     return raw
   }

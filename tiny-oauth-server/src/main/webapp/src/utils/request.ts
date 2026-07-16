@@ -27,6 +27,8 @@ import { persistentLogger } from '@/utils/logger'
 // 引入 Problem 响应解析工具
 import { extractErrorFromAxios, extractErrorInfo } from '@/utils/problemParser'
 import { dispatchAuthorizationRuntimeReset } from '@/runtime/authorizationRuntimeEvents'
+import { authRuntimeConfig } from '@/auth/config'
+import { ensureCsrfToken, isUnsafeHttpMethod } from '@/utils/csrf'
 
 export type RequestIdempotencyMode = 'deterministic' | 'submit'
 
@@ -151,11 +153,12 @@ function shouldSuppressActiveTenantHeader(config: InternalAxiosRequestConfig): b
 
 // 创建axios实例
 const service: AxiosInstance = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000/', // 从环境变量获取API基础URL
+  baseURL: import.meta.env.VITE_API_BASE_URL || '', // 默认同源；开发环境由 Vite 代理真实后端路径
   timeout: 5000, // 请求超时时间（5秒，缩短以快速检测后端不可用）
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true,
 })
 
 // 防抖：避免多个请求同时触发多次跳转
@@ -217,15 +220,20 @@ service.interceptors.request.use(
     config.headers['X-Trace-Id'] = traceId
     // 同时添加 x-request-id，后端会使用它作为 fallback
     config.headers['X-Request-Id'] = requestId
-    // 调用 getAccessToken 动态获取有效 token
-    const { getAccessToken } = useAuth()
-    const token = await getAccessToken()
-
-    if (token) {
+    if (!authRuntimeConfig.sessionOnly) {
+      const { getAccessToken } = useAuth()
+      const token = await getAccessToken()
+      if (token) {
       // 如果获取到 token，则添加到请求头中
-      config.headers.Authorization = `Bearer ${token}`
-      // 当前活动租户以 access_token 中的 activeTenantId claim 为准。
-      syncTenantContextFromAccessToken(token)
+        config.headers.Authorization = `Bearer ${token}`
+        syncTenantContextFromAccessToken(token)
+      }
+    } else {
+      delete config.headers.Authorization
+      if (isUnsafeHttpMethod(config.method)) {
+        const csrf = await ensureCsrfToken(config.baseURL || import.meta.env.VITE_API_BASE_URL || '')
+        config.headers[csrf.headerName] = csrf.token
+      }
     }
 
     // 当前活动租户统一通过 X-Active-Tenant-Id 传输。

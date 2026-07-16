@@ -24,6 +24,7 @@ import java.io.IOException;
 public class ApiEndpointRequirementFilter extends OncePerRequestFilter {
 
     private static final String SELF_SECURITY_PREFIX = "/self/security/";
+    private static final String CURRENT_USER_PATH = "/sys/users/current";
     private static final String RUNTIME_MENU_TREE_PATH = "/sys/menus/tree";
     private static final String PLATFORM_TOKEN_DEBUG_PREFIX = "/sys/platform/token-debug/";
 
@@ -43,6 +44,8 @@ public class ApiEndpointRequirementFilter extends OncePerRequestFilter {
             return false;
         }
         return "/login".equals(path)
+            || "/auth/login".equals(path)
+            || "/auth/logout".equals(path)
             || "/csrf".equals(path)
             || "/favicon.ico".equals(path)
             || "/error".equals(path)
@@ -50,6 +53,8 @@ public class ApiEndpointRequirementFilter extends OncePerRequestFilter {
             || path.startsWith("/assets/")
             || path.startsWith("/css/")
             || path.startsWith("/js/")
+            // Session/BFF bootstrap endpoint: authenticated users must be able to restore their runtime identity.
+            || CURRENT_USER_PATH.equals(path)
             // Runtime sidebar tree is guarded by menu carrier requirements instead of control-plane api_endpoint rows.
             || RUNTIME_MENU_TREE_PATH.equals(path)
             // Platform token debug is a readonly troubleshooting endpoint guarded by PreAuthorize + platform-scope checks.

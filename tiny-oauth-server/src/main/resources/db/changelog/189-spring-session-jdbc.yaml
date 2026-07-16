@@ -1,0 +1,85 @@
+databaseChangeLog:
+  - changeSet:
+      id: 189-spring-session-jdbc
+      author: codex
+      comment: Spring Session JDBC 多节点共享存储表，由 Liquibase 统一管理
+      changes:
+        - createTable:
+            tableName: SPRING_SESSION
+            columns:
+              - column:
+                  name: PRIMARY_ID
+                  type: CHAR(36)
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: SESSION_ID
+                  type: CHAR(36)
+                  constraints:
+                    nullable: false
+                    unique: true
+              - column:
+                  name: CREATION_TIME
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: LAST_ACCESS_TIME
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: MAX_INACTIVE_INTERVAL
+                  type: INT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: EXPIRY_TIME
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: PRINCIPAL_NAME
+                  type: VARCHAR(100)
+        - createIndex:
+            tableName: SPRING_SESSION
+            indexName: SPRING_SESSION_IX1
+            columns:
+              - column:
+                  name: SESSION_ID
+        - createIndex:
+            tableName: SPRING_SESSION
+            indexName: SPRING_SESSION_IX2
+            columns:
+              - column:
+                  name: EXPIRY_TIME
+        - createIndex:
+            tableName: SPRING_SESSION
+            indexName: SPRING_SESSION_IX3
+            columns:
+              - column:
+                  name: PRINCIPAL_NAME
+        - createTable:
+            tableName: SPRING_SESSION_ATTRIBUTES
+            columns:
+              - column:
+                  name: SESSION_PRIMARY_ID
+                  type: CHAR(36)
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+                    foreignKeyName: SPRING_SESSION_ATTRIBUTES_FK
+                    references: SPRING_SESSION(PRIMARY_ID)
+                    deleteCascade: true
+              - column:
+                  name: ATTRIBUTE_NAME
+                  type: VARCHAR(200)
+                  constraints:
+                    nullable: false
+                    primaryKey: true
+              - column:
+                  name: ATTRIBUTE_BYTES
+                  type: BLOB
+                  constraints:
+                    nullable: false

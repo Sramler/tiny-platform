@@ -83,7 +83,7 @@ class AuthenticationFlowE2eProfileIntegrationTest {
             String username = firstNonBlankEnv("E2E_ADMIN_USERNAME", "E2E_USERNAME", "e2e_admin");
             String password = firstNonBlankEnv("E2E_ADMIN_PASSWORD", "E2E_PASSWORD", "e2e_admin_password");
             mockMvc.perform(
-                            post("/login")
+                            post("/auth/login")
                                     .param("username", username)
                                     .param("password", password)
                                     .param("tenantCode", tenantCode)
@@ -128,7 +128,7 @@ class AuthenticationFlowE2eProfileIntegrationTest {
         @DisplayName("tenantCode=default + 不存在用户 => 仍然返回用户不存在类错误（通常是 302 /login?error=xxx）")
         void loginWithUnknownUserShouldReturnUserNotFoundError() throws Exception {
             var result = mockMvc.perform(
-                            post("/login")
+                            post("/auth/login")
                                     .param("username", "e2e_unknown_user_" + System.currentTimeMillis())
                                     .param("password", "any-password")
                                     .param("tenantCode", System.getenv().getOrDefault("E2E_TENANT_CODE", "default"))
@@ -156,7 +156,7 @@ class AuthenticationFlowE2eProfileIntegrationTest {
         @DisplayName("非法或不存在的 tenantCode => 触发租户解析错误（例如 missing_tenant 或 equivalent）")
         void loginWithInvalidTenantCodeShouldFailFastOnTenant() throws Exception {
             mockMvc.perform(
-                            post("/login")
+                            post("/auth/login")
                                     .param("username", "e2e_admin_invalid_tenant")
                                     .param("password", "any-password")
                                     .param("tenantCode", "___invalid-tenant-code___")
@@ -188,7 +188,7 @@ class AuthenticationFlowE2eProfileIntegrationTest {
             String password = System.getenv().getOrDefault("E2E_PLATFORM_ADMIN_PASSWORD", "admin");
 
             MvcResult loginResult = mockMvc.perform(
-                            post("/login")
+                            post("/auth/login")
                                     .param("username", username)
                                     .param("password", password)
                                     .param("authenticationProvider", "LOCAL")

@@ -3,6 +3,7 @@ package com.tiny.platform.core.oauth.config;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.mock.web.MockHttpServletRequest;
 
 import java.util.List;
 import java.util.Set;
@@ -10,6 +11,19 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class DefaultSecurityConfigAccessPolicyTest {
+
+    @Test
+    void sessionBusinessWritesShouldRequireCsrfWhileReadsRemainSafe() {
+        assertThat(DefaultSecurityConfig.CSRF_PROTECTED_PATHS.matches(request("POST", "/sys/users"))).isTrue();
+        assertThat(DefaultSecurityConfig.CSRF_PROTECTED_PATHS.matches(request("PUT", "/sys/users/1"))).isTrue();
+        assertThat(DefaultSecurityConfig.CSRF_PROTECTED_PATHS.matches(request("PATCH", "/sys/permissions/1"))).isTrue();
+        assertThat(DefaultSecurityConfig.CSRF_PROTECTED_PATHS.matches(request("DELETE", "/sys/users/1"))).isTrue();
+        assertThat(DefaultSecurityConfig.CSRF_PROTECTED_PATHS.matches(request("GET", "/sys/users/current"))).isFalse();
+    }
+
+    private static MockHttpServletRequest request(String method, String path) {
+        return new MockHttpServletRequest(method, path);
+    }
 
     @Test
     void challengeFlowShouldRequireAuthenticatedSession() {

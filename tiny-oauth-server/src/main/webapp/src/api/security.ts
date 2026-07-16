@@ -2,7 +2,7 @@ import { fetchWithTraceId } from '@/utils/traceId'
 import { syncTenantContextFromClaims } from '@/utils/tenant'
 
 function getApiBaseUrl(): string {
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:9000'
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || ''
   return apiBaseUrl.endsWith('/') ? apiBaseUrl.slice(0, -1) : apiBaseUrl
 }
 

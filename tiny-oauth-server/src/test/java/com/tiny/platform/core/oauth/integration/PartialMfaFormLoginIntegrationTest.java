@@ -189,7 +189,7 @@ class PartialMfaFormLoginIntegrationTest {
         ));
         loginFilter.setAuthenticationDetailsSource(new CustomWebAuthenticationDetailsSource());
         loginFilter.setSecurityContextRepository(securityContextRepository);
-        loginFilter.setFilterProcessesUrl("/login");
+        loginFilter.setFilterProcessesUrl("/auth/login");
         loginFilter.afterPropertiesSet();
 
         mockMvc = MockMvcBuilders.standaloneSetup(new CsrfController(), securityController)
@@ -208,7 +208,7 @@ class PartialMfaFormLoginIntegrationTest {
     void loginShouldRejectPostWithoutCsrfToken_whenTenantCodeProvided() throws Exception {
         when(tenantRepository.findByCode("acme")).thenReturn(Optional.of(activeTenant(1L, "acme")));
 
-        mockMvc.perform(post("/login")
+        mockMvc.perform(post("/auth/login")
                         .param("username", "admin")
                         .param("password", "raw-password")
                         .param("tenantCode", "acme")
@@ -247,7 +247,7 @@ class PartialMfaFormLoginIntegrationTest {
         ));
         var csrf = fetchCsrf();
 
-        var loginResult = mockMvc.perform(post("/login")
+        var loginResult = mockMvc.perform(post("/auth/login")
                         .cookie(csrf.cookie())
                         .param("username", "admin")
                         .param("password", "raw-password")
@@ -303,7 +303,7 @@ class PartialMfaFormLoginIntegrationTest {
     }
 
     /**
-     * 登录成功路径（MFA 关闭）：POST /login 后会话为完整认证且含 activeTenantId，用于授权模型验证。
+     * 登录成功路径（MFA 关闭）：POST /auth/login 后会话为完整认证且含 activeTenantId，用于授权模型验证。
      * 与 AuthenticationFlowE2ERegressionTest、UserControllerRbacIntegrationTest、JwtTokenCustomizerTest 一起构成完整验证矩阵。
      */
     @Test
@@ -342,7 +342,7 @@ class PartialMfaFormLoginIntegrationTest {
         ));
         var csrf = fetchCsrf();
 
-        var loginResult = mockMvc.perform(post("/login")
+        var loginResult = mockMvc.perform(post("/auth/login")
                         .cookie(csrf.cookie())
                         .param("username", "admin")
                         .param("password", "raw-password")

@@ -70,7 +70,7 @@ class CustomLoginSuccessHandlerTest {
                 MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD,
                 List.of()
         );
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/login");
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/auth/login");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         TenantContext.setActiveTenantId(1L);
@@ -113,7 +113,7 @@ class CustomLoginSuccessHandlerTest {
                 java.util.Set.of(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD),
                 List.of()
         );
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/login");
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/auth/login");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         TenantContext.setActiveTenantId(1L);
@@ -158,7 +158,7 @@ class CustomLoginSuccessHandlerTest {
                 ),
                 List.of()
         );
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/login");
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/auth/login");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         TenantContext.setActiveTenantId(1L);
@@ -203,7 +203,7 @@ class CustomLoginSuccessHandlerTest {
         );
         authentication.setDetails(new SecurityUser(user, "", 9L, Set.of()));
 
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/login");
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/auth/login");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         TenantContext.clear();
@@ -246,7 +246,7 @@ class CustomLoginSuccessHandlerTest {
                 java.util.Set.of(MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD),
                 List.of()
         );
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/login");
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/auth/login");
         request.setParameter("redirect", "/default/oauth2/authorize?client_id=vue-client");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
@@ -288,7 +288,7 @@ class CustomLoginSuccessHandlerTest {
                 MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD,
                 List.of()
         );
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/login");
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/auth/login");
         request.setScheme("http");
         request.setServerName("localhost");
         request.setServerPort(80);
@@ -344,7 +344,7 @@ class CustomLoginSuccessHandlerTest {
         requestCache.saveRequest(authorizeRequest, authorizeResponse);
 
         MockHttpSession session = (MockHttpSession) authorizeRequest.getSession(false);
-        MockHttpServletRequest loginRequest = new MockHttpServletRequest("POST", "/login");
+        MockHttpServletRequest loginRequest = new MockHttpServletRequest("POST", "/auth/login");
         loginRequest.setScheme("http");
         loginRequest.setServerName("localhost");
         loginRequest.setServerPort(80);
@@ -390,7 +390,7 @@ class CustomLoginSuccessHandlerTest {
                 MultiFactorAuthenticationToken.AuthenticationFactorType.PASSWORD,
                 List.of()
         );
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/login");
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/auth/login");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         TenantContext.setActiveTenantId(1L);
@@ -432,7 +432,7 @@ class CustomLoginSuccessHandlerTest {
                 List.of()
         );
         authentication.setDetails(new SecurityUser(1L, 7L, "admin", "", List.of(), true, true, true, true));
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/login");
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/auth/login");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         TenantContext.clear();
