@@ -104,10 +104,11 @@ async function seedAuthenticatedSession(page: Page, authorities: string[]) {
 
 async function mockAuthenticatedApis(
   page: Page,
+  authorities: string[],
   metricsRequestCounter?: { count: number },
   metricsRequestUrls?: string[],
 ) {
-  await page.route('**/sys/menus/tree', async (route) => {
+  await page.route(/\/sys\/menus\/tree(?:\?.*)?$/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -115,7 +116,7 @@ async function mockAuthenticatedApis(
     })
   })
 
-  await page.route('**/sys/users/current', async (route) => {
+  await page.route(/\/sys\/users\/current(?:\?.*)?$/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -123,7 +124,18 @@ async function mockAuthenticatedApis(
         id: 1,
         username: 'alice',
         nickname: 'Alice',
+        activeTenantId: 1,
+        activeScopeType: 'PLATFORM',
+        authorities,
       }),
+    })
+  })
+
+  await page.route(/\/self\/security\/status(?:\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ totpBound: true, totpActivated: true, requireTotp: false }),
     })
   })
 
@@ -196,9 +208,11 @@ async function mockAuthenticatedApis(
 test.describe('idempotent ops access', () => {
   test('platform metrics operator can open governance page from home', async ({ page }) => {
     await seedAuthenticatedSession(page, ['ROLE_ADMIN', 'idempotent:ops:view'])
-    await mockAuthenticatedApis(page)
+    await mockAuthenticatedApis(page, ['ROLE_ADMIN', 'idempotent:ops:view'])
 
     await page.goto('/')
+    await page.waitForURL((url) => url.pathname === '/bootstrap', { timeout: 30_000 })
+    await page.waitForURL((url) => url.pathname === '/', { timeout: 30_000 })
     await expect(page.getByRole('button', { name: '进入治理页' })).toBeVisible()
     await expect(page.getByText('通过请求')).toBeVisible()
 
@@ -216,7 +230,7 @@ test.describe('idempotent ops access', () => {
   }) => {
     const metricsRequestCounter = { count: 0 }
     await seedAuthenticatedSession(page, ['ROLE_ADMIN'])
-    await mockAuthenticatedApis(page, metricsRequestCounter)
+    await mockAuthenticatedApis(page, ['ROLE_ADMIN'], metricsRequestCounter)
 
     await page.goto('/')
 
@@ -230,7 +244,7 @@ test.describe('idempotent ops access', () => {
   }) => {
     const metricsRequestUrls: string[] = []
     await seedAuthenticatedSession(page, ['ROLE_ADMIN', 'idempotent:ops:view'])
-    await mockAuthenticatedApis(page, undefined, metricsRequestUrls)
+    await mockAuthenticatedApis(page, ['ROLE_ADMIN', 'idempotent:ops:view'], undefined, metricsRequestUrls)
 
     await page.goto('/ops/idempotent')
     await expect(page.getByRole('heading', { name: '幂等治理页' })).toBeVisible()
@@ -249,7 +263,7 @@ test.describe('idempotent ops access', () => {
   }) => {
     const metricsRequestUrls: string[] = []
     await seedAuthenticatedSession(page, ['ROLE_ADMIN', 'idempotent:ops:view'])
-    await mockAuthenticatedApis(page, undefined, metricsRequestUrls)
+    await mockAuthenticatedApis(page, ['ROLE_ADMIN', 'idempotent:ops:view'], undefined, metricsRequestUrls)
 
     await page.goto('/ops/idempotent?activeTenantId=7')
     await expect(page.getByRole('heading', { name: '幂等治理页' })).toBeVisible()

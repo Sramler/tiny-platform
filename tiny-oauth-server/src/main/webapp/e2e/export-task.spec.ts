@@ -155,7 +155,19 @@ async function seedAuthenticatedSession(page: Page) {
 }
 
 async function mockAuthenticatedApis(page: Page, tasks: ExportTask[]) {
-  await page.route('**/sys/menus/tree', async (route) => {
+  await page.route(/\/csrf(?:\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        token: 'csrf-token',
+        parameterName: '_csrf',
+        headerName: 'X-CSRF-TOKEN',
+      }),
+    })
+  })
+
+  await page.route(/\/sys\/menus\/tree(?:\?.*)?$/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -163,7 +175,7 @@ async function mockAuthenticatedApis(page: Page, tasks: ExportTask[]) {
     })
   })
 
-  await page.route('**/sys/users/current', async (route) => {
+  await page.route(/\/sys\/users\/current(?:\?.*)?$/, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -171,7 +183,18 @@ async function mockAuthenticatedApis(page: Page, tasks: ExportTask[]) {
         id: 1,
         username: 'alice',
         nickname: 'Alice',
+        activeTenantId: 1,
+        activeScopeType: 'TENANT',
+        authorities: ['ROLE_ADMIN'],
       }),
+    })
+  })
+
+  await page.route(/\/self\/security\/status(?:\?.*)?$/, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ totpBound: true, totpActivated: true, requireTotp: false }),
     })
   })
 
@@ -202,7 +225,7 @@ async function openExportTaskPage(page: Page) {
       .filter({ hasText: '导出任务' })
       .first()
 
-    await exportMenu.waitFor({ state: 'visible', timeout: 10_000 })
+    await exportMenu.waitFor({ state: 'visible', timeout: 20_000 })
     return exportMenu
   }
   const waitForTaskPage = async (timeout: number) =>
@@ -214,7 +237,7 @@ async function openExportTaskPage(page: Page) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const exportMenu = await waitForMenuReady()
     await exportMenu.click()
-    const rendered = await waitForTaskPage(10_000)
+    const rendered = await waitForTaskPage(20_000)
     if (rendered && !page.url().includes('/exception/404')) {
       return
     }

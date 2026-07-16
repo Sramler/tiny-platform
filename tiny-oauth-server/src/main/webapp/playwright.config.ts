@@ -14,9 +14,12 @@ export default defineConfig({
   testDir: './e2e',
   // 显式排除 real-link 套件，避免 `npm run test:e2e` 误跑真实链路用例。
   testIgnore: /e2e\/real\/.*\.spec\.ts/,
-  timeout: 30_000,
+  // mock-assisted 套件共享一个 Vite dev server；并发冷转换会挤占浏览器内服务请求的超时预算。
+  workers: 1,
+  // Vite 8 首轮按需转换仍可能超过 30 秒；业务断言使用较短 expect 超时。
+  timeout: 60_000,
   expect: {
-    timeout: 5_000,
+    timeout: 10_000,
   },
   use: {
     baseURL,
@@ -30,7 +33,8 @@ export default defineConfig({
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     env: {
-      VITE_API_BASE_URL: `${baseURL}/api`,
+      // BFF 与前端同源，不使用伪 `/api` 前缀；mock-assisted E2E 也必须遵循生产契约。
+      VITE_API_BASE_URL: baseURL,
       VITE_AUTH_ENABLE_PLATFORM_SESSION_SILENT_LOGIN: 'false',
       VITE_OIDC_REDIRECT_URI: `${baseURL}/callback`,
       VITE_OIDC_POST_LOGOUT_REDIRECT_URI: `${baseURL}/`,

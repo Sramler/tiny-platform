@@ -262,7 +262,8 @@
                     </dependency>
                 </dependencies>
                 <configuration>
-                    <changeLogFile>src/main/resources/db/changelog/db.changelog-master.yaml</changeLogFile>
+                    <searchPath>${project.basedir}/src/main/resources</searchPath>
+                    <changeLogFile>db/changelog/db.changelog-master.yaml</changeLogFile>
                     <driver>com.mysql.cj.jdbc.Driver</driver>
                     <url>jdbc:mysql://${env.E2E_DB_HOST}:${env.E2E_DB_PORT}/${env.E2E_DB_NAME}?useSSL=false&amp;allowPublicKeyRetrieval=true&amp;useUnicode=true&amp;characterEncoding=UTF-8&amp;serverTimezone=Asia/Shanghai</url>
                     <username>${env.E2E_DB_USER}</username>

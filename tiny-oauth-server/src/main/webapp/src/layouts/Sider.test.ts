@@ -2,7 +2,6 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-  menuTree: vi.fn(),
   routerPush: vi.fn(),
   route: { path: '/' },
   messageWarning: vi.fn(),
@@ -17,7 +16,7 @@ vi.mock('vue-router', () => ({
 }))
 
 vi.mock('@/api/menu', () => ({
-  menuTree: mocks.menuTree,
+  menuTree: vi.fn(),
 }))
 
 vi.mock('ant-design-vue', () => ({
@@ -28,16 +27,20 @@ vi.mock('ant-design-vue', () => ({
 }))
 
 import Sider from '@/layouts/Sider.vue'
+import { updateMenuRouteState } from '@/router/menuState'
 
 describe('Sider.vue', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     window.localStorage.clear()
     mocks.route.path = '/'
+    updateMenuRouteState({ menus: [], loaded: false, loading: false, error: null })
   })
 
   it('should fallback to first visible child when directory redirect points to a missing menu', async () => {
-    mocks.menuTree.mockResolvedValue([
+    updateMenuRouteState({
+      loaded: true,
+      menus: [
       {
         id: 1,
         title: '系统管理',
@@ -53,7 +56,8 @@ describe('Sider.vue', () => {
           },
         ],
       },
-    ])
+      ],
+    })
 
     const wrapper = mount(Sider, {
       global: {
@@ -72,7 +76,9 @@ describe('Sider.vue', () => {
   })
 
   it('should keep using directory redirect when it still points to a visible descendant', async () => {
-    mocks.menuTree.mockResolvedValue([
+    updateMenuRouteState({
+      loaded: true,
+      menus: [
       {
         id: 1,
         title: '系统管理',
@@ -94,7 +100,8 @@ describe('Sider.vue', () => {
           },
         ],
       },
-    ])
+      ],
+    })
 
     const wrapper = mount(Sider, {
       global: {

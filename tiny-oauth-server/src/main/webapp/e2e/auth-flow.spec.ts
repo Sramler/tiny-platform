@@ -19,11 +19,16 @@ test.describe('auth flow pages', () => {
       window.sessionStorage.clear()
     })
 
-    await page.route('**/api/csrf', async (route) => {
+    await page.route(/\/sys\/users\/current(?:\?.*)?$/, async (route) => {
+      await route.fulfill({ status: 401, contentType: 'application/json', body: '{}' })
+    })
+
+    await page.route('**/csrf', async (route) => {
       await route.fulfill(buildCsrfResponse())
     })
 
     await page.goto('/OIDCDebug')
+    await page.waitForURL((url) => url.pathname === '/login', { timeout: 30_000 })
     await expect(page).toHaveURL(/\/login\?redirect=(%2F|\/)OIDCDebug$/)
     await expect(page.getByRole('heading', { name: '欢迎登录' })).toBeVisible()
     await expect(page.locator('input[name="redirect"]')).toHaveValue('/OIDCDebug')
@@ -34,7 +39,7 @@ test.describe('auth flow pages', () => {
   }) => {
     let posted: URLSearchParams | null = null
 
-    await page.route('**/api/csrf', async (route) => {
+    await page.route('**/csrf', async (route) => {
       await route.fulfill(buildCsrfResponse())
     })
 
@@ -69,7 +74,7 @@ test.describe('auth flow pages', () => {
   })
 
   test('login page shows lock message and keeps internal redirect', async ({ page }) => {
-    await page.route('**/api/csrf', async (route) => {
+    await page.route('**/csrf', async (route) => {
       await route.fulfill(buildCsrfResponse())
     })
 
@@ -84,11 +89,11 @@ test.describe('auth flow pages', () => {
   test('totp bind page renders secret and skip submit keeps redirect internal', async ({ page }) => {
     let posted: URLSearchParams | null = null
 
-    await page.route('**/api/csrf', async (route) => {
+    await page.route('**/csrf', async (route) => {
       await route.fulfill(buildCsrfResponse())
     })
 
-    await page.route('**/api/self/security/status', async (route) => {
+    await page.route('**/self/security/status', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -99,7 +104,7 @@ test.describe('auth flow pages', () => {
       })
     })
 
-    await page.route('**/api/self/security/totp/pre-bind', async (route) => {
+    await page.route('**/self/security/totp/pre-bind', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -111,7 +116,7 @@ test.describe('auth flow pages', () => {
       })
     })
 
-    await page.route('**/api/self/security/totp/skip', async (route) => {
+    await page.route('**/self/security/totp/skip', async (route) => {
       posted = new URLSearchParams(route.request().postData() ?? '')
       await route.fulfill({
         status: 302,
@@ -137,11 +142,11 @@ test.describe('auth flow pages', () => {
   test('totp verify page keeps redirect internal when posting code', async ({ page }) => {
     let posted: URLSearchParams | null = null
 
-    await page.route('**/api/csrf', async (route) => {
+    await page.route('**/csrf', async (route) => {
       await route.fulfill(buildCsrfResponse())
     })
 
-    await page.route('**/api/self/security/totp/check-form', async (route) => {
+    await page.route('**/self/security/totp/check-form', async (route) => {
       posted = new URLSearchParams(route.request().postData() ?? '')
       await route.fulfill({
         status: 302,
@@ -165,7 +170,7 @@ test.describe('auth flow pages', () => {
   })
 
   test('exception pages render details and can navigate back to safe routes', async ({ page }) => {
-    await page.route('**/api/csrf', async (route) => {
+    await page.route('**/csrf', async (route) => {
       await route.fulfill(buildCsrfResponse())
     })
 
@@ -183,7 +188,7 @@ test.describe('auth flow pages', () => {
   })
 
   test('400 and 403 exception pages render details and return to safe destinations', async ({ page }) => {
-    await page.route('**/api/csrf', async (route) => {
+    await page.route('**/csrf', async (route) => {
       await route.fulfill(buildCsrfResponse())
     })
 
@@ -204,7 +209,7 @@ test.describe('auth flow pages', () => {
   })
 
   test('500 exception page can return to the provided internal previous page', async ({ page }) => {
-    await page.route('**/api/csrf', async (route) => {
+    await page.route('**/csrf', async (route) => {
       await route.fulfill(buildCsrfResponse())
     })
 

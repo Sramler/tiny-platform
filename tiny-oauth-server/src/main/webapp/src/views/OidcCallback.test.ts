@@ -4,6 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   routerReplace: vi.fn(),
+  routerResolve: vi.fn((target) => ({
+    fullPath: `${target.path}?activeTenantId=${target.query.activeTenantId}`,
+  })),
   signinRedirectCallback: vi.fn(),
   removeUser: vi.fn(),
   consumePostLogoutRedirectMarker: vi.fn(),
@@ -24,6 +27,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('vue-router', () => ({
   useRouter: () => ({
     replace: mocks.routerReplace,
+    resolve: mocks.routerResolve,
   }),
 }))
 
@@ -65,6 +69,7 @@ describe('OidcCallback.vue', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     mocks.routerReplace.mockReset()
+    mocks.routerResolve.mockClear()
     mocks.signinRedirectCallback.mockReset()
     mocks.removeUser.mockReset()
     mocks.consumePostLogoutRedirectMarker.mockReset()
@@ -106,8 +111,8 @@ describe('OidcCallback.vue', () => {
     expect(mocks.syncTenantContextFromClaims).toHaveBeenCalledTimes(1)
     expect(mocks.syncTenantContextFromAccessToken).toHaveBeenCalledWith('access-token')
     expect(mocks.routerReplace).toHaveBeenCalledWith({
-      path: '/',
-      query: { activeTenantId: '1' },
+      path: '/bootstrap',
+      query: { redirect: '/?activeTenantId=1' },
     })
   })
 
@@ -169,8 +174,8 @@ describe('OidcCallback.vue', () => {
     await flushPromises()
 
     expect(mocks.routerReplace).toHaveBeenCalledWith({
-      path: '/',
-      query: { activeTenantId: '9' },
+      path: '/bootstrap',
+      query: { redirect: '/?activeTenantId=9' },
     })
   })
 })
