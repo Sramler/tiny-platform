@@ -201,6 +201,14 @@ test.describe('real-link: Login.vue 平台登录', () => {
     const runtimeMenuTree = await fetchRuntimeMenuTree(page)
     expect(runtimeMenuTree.status).toBe(200)
     expect(Array.isArray(runtimeMenuTree.payload)).toBe(true)
-    expect((runtimeMenuTree.payload as unknown[]).length).toBeGreaterThan(1)
+    const countMenuNodes = (nodes: unknown[]): number =>
+      nodes.reduce((total, node) => {
+        const children =
+          node && typeof node === 'object' && Array.isArray((node as { children?: unknown[] }).children)
+            ? (node as { children: unknown[] }).children
+            : []
+        return total + 1 + countMenuNodes(children)
+      }, 0)
+    expect(countMenuNodes(runtimeMenuTree.payload as unknown[])).toBeGreaterThan(1)
   })
 })

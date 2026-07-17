@@ -627,7 +627,7 @@ void ensureSchedulingApiEndpointTemplates(Connection connection, Long tenantId) 
             "INSERT INTO api_endpoint (tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at) " +
             "SELECT ?, 'TENANT', template.name, template.title, template.uri, template.method, template.permission, target_permission.id, template.enabled, NOW(), NOW() " +
             "FROM api_endpoint template " +
-            "JOIN permission target_permission ON target_permission.normalized_tenant_id = IFNULL(?, 0) AND target_permission.permission_code = template.permission AND target_permission.enabled = 1 " +
+            "JOIN permission target_permission ON target_permission.normalized_tenant_id = IFNULL(?, 0) AND target_permission.permission_code = CASE WHEN template.method = 'GET' AND template.uri = '/scheduling/task-type/list' THEN 'scheduling:console:view' ELSE template.permission END AND target_permission.enabled = 1 " +
             "WHERE template.tenant_id IS NULL AND template.uri LIKE '/scheduling/%' AND template.enabled = 1 " +
             "AND NOT EXISTS (SELECT 1 FROM api_endpoint existing WHERE existing.tenant_id = ? AND existing.method = template.method AND existing.uri = template.uri)")) {
         ps.setLong(1, tenantId);
@@ -638,8 +638,8 @@ void ensureSchedulingApiEndpointTemplates(Connection connection, Long tenantId) 
     try (PreparedStatement ps = connection.prepareStatement(
             "UPDATE api_endpoint endpoint " +
             "JOIN api_endpoint template ON template.tenant_id IS NULL AND template.method = endpoint.method AND template.uri = endpoint.uri " +
-            "JOIN permission target_permission ON target_permission.normalized_tenant_id = IFNULL(?, 0) AND target_permission.permission_code = template.permission AND target_permission.enabled = 1 " +
-            "SET endpoint.permission = template.permission, endpoint.required_permission_id = target_permission.id, endpoint.updated_at = NOW() " +
+            "JOIN permission target_permission ON target_permission.normalized_tenant_id = IFNULL(?, 0) AND target_permission.permission_code = CASE WHEN template.method = 'GET' AND template.uri = '/scheduling/task-type/list' THEN 'scheduling:console:view' ELSE template.permission END AND target_permission.enabled = 1 " +
+            "SET endpoint.permission = target_permission.permission_code, endpoint.required_permission_id = target_permission.id, endpoint.updated_at = NOW() " +
             "WHERE endpoint.tenant_id = ? AND endpoint.uri LIKE '/scheduling/%'")) {
         ps.setLong(1, tenantId);
         ps.setLong(2, tenantId);

@@ -20,7 +20,10 @@ test.describe('real-link: active scope + BFF Session', () => {
       }
     })
 
-    await page.locator('.header-bar .dropdown').click()
+    await page.goto('/')
+    const headerDropdown = page.locator('.header-bar .dropdown')
+    await expect(headerDropdown).toBeVisible({ timeout: 30_000 })
+    await headerDropdown.click()
     await page.getByText('切换作用域', { exact: true }).click()
     const scopeModal = page.locator('.ant-modal:visible')
     await expect(scopeModal.locator('.ant-modal-title').filter({ hasText: '切换作用域' })).toBeVisible()

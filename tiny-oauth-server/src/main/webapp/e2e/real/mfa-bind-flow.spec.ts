@@ -98,6 +98,18 @@ function generateTotpCode(secret: string, timestampMs = Date.now()): string {
   return String(binaryCode % 1_000_000).padStart(6, '0')
 }
 
+async function waitForNextTotpWindow(previousCode: string, secret: string): Promise<string> {
+  const deadline = Date.now() + 35_000
+  while (Date.now() < deadline) {
+    const nextCode = generateTotpCode(secret)
+    if (nextCode !== previousCode) {
+      return nextCode
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500))
+  }
+  throw new Error('等待下一 TOTP 时间窗口超时')
+}
+
 async function fetchPreBindSecret(page: import('@playwright/test').Page): Promise<string> {
   const renderedSecret = page.locator('.secret-value').first()
   if (await renderedSecret.isVisible({ timeout: 10_000 }).catch(() => false)) {
@@ -254,7 +266,8 @@ test.describe('real-link: 未绑定 TOTP 首绑链路', () => {
       timeout: 30_000,
     })
 
-    const verifyCode = generateTotpCode(secretKey)
+    // 同一 TOTP 不能在绑定和后续登录中重放；等待下一个时间窗口再验证新会话。
+    const verifyCode = await waitForNextTotpWindow(bindCode, secretKey)
     await page.getByLabel('动态验证码').fill(verifyCode)
     await page.getByRole('button', { name: '确认' }).click()
 

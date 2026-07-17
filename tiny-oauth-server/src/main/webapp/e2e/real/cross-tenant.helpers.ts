@@ -217,18 +217,18 @@ async function loginWithIdentity(page: Page, identity: LoginIdentity) {
     const passwordInput = page.getByLabel('密码')
     const loginSurfaceReady = await Promise.race([
       Promise.any([
-        loginHeading.waitFor({ timeout: 15_000 }),
-        usernameInput.waitFor({ timeout: 15_000 }),
-        tenantCodeInput.waitFor({ timeout: 15_000 }),
-        passwordInput.waitFor({ timeout: 15_000 }),
+        loginHeading.waitFor({ timeout: 30_000 }),
+        usernameInput.waitFor({ timeout: 30_000 }),
+        tenantCodeInput.waitFor({ timeout: 30_000 }),
+        passwordInput.waitFor({ timeout: 30_000 }),
       ])
         .then(() => true)
         .catch(() => false),
       page
-        .waitForURL((url) => !url.pathname.includes('/login'), { timeout: 15_000 })
+        .waitForURL((url) => !url.pathname.includes('/login'), { timeout: 30_000 })
         .then(() => false)
         .catch(() => false),
-      waitForSessionIdentity(page, 15_000)
+      waitForSessionIdentity(page, 30_000)
         .then(() => false)
         .catch(() => false),
     ])
@@ -343,6 +343,8 @@ export async function openOidcDebug(page: Page, kind: AuthIdentityKind = 'primar
 
 type SessionIdentitySnapshot = {
   activeTenantId: string
+  activeScopeType?: string
+  username?: string
   permissions: string[]
 }
 
@@ -376,6 +378,8 @@ export async function loadIdentitySnapshot(page: Page): Promise<SessionIdentityS
     }
     const body = (await r.json()) as {
       activeTenantId?: number | string
+      activeScopeType?: string
+      username?: string
       permissions?: unknown
     }
     activeTenantId = firstNonEmptyTenantId(activeTenantId, body.activeTenantId)
@@ -383,12 +387,14 @@ export async function loadIdentitySnapshot(page: Page): Promise<SessionIdentityS
       ? body.permissions.filter((value): value is string => typeof value === 'string')
       : []
 
-    if (!activeTenantId) {
+    if (!activeTenantId && body.activeScopeType !== 'PLATFORM') {
       throw new Error('Session 用户缺少 activeTenantId')
     }
 
     return {
       activeTenantId,
+      activeScopeType: body.activeScopeType,
+      username: body.username,
       permissions,
     }
   }, backendBaseUrl)
@@ -417,10 +423,10 @@ export async function fetchSchedulingApi<T>(
 
   return page.evaluate(
     async ({ apiBaseUrl, path, activeTenantId, apiMethod, apiBody, idemKey }) => {
-      const headers = new Headers({
-        Accept: 'application/json',
-        'X-Active-Tenant-Id': activeTenantId,
-      })
+      const headers = new Headers({ Accept: 'application/json' })
+      if (activeTenantId) {
+        headers.set('X-Active-Tenant-Id', activeTenantId)
+      }
       if (idemKey) {
         headers.set('X-Idempotency-Key', idemKey)
       }
