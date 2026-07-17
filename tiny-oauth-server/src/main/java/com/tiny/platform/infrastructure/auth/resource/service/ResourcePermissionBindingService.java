@@ -236,6 +236,46 @@ public class ResourcePermissionBindingService {
             WHERE source_carrier.`tenant_id` <=> :sourceTenantId
               AND source_req.`tenant_id` <=> :sourceTenantId
             """, params);
+        inserted += ensureCompatibilityRequirements(targetTenantId);
+        return inserted;
+    }
+
+    private int ensureCompatibilityRequirements(Long tenantId) {
+        MapSqlParameterSource params = tenantParams(tenantId);
+        int inserted = 0;
+        inserted += namedParameterJdbcTemplate.update("""
+            INSERT IGNORE INTO `menu_permission_requirement`
+              (`tenant_id`, `menu_id`, `requirement_group`, `sort_order`, `permission_id`, `negated`, `created_at`, `updated_at`)
+            SELECT m.`tenant_id`, m.`id`, 0, 1, m.`required_permission_id`, 0, NOW(), NOW()
+            FROM `menu` m
+            WHERE m.`tenant_id` <=> :tenantId
+              AND m.`required_permission_id` IS NOT NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM `menu_permission_requirement` r WHERE r.`menu_id` = m.`id`
+              )
+            """, params);
+        inserted += namedParameterJdbcTemplate.update("""
+            INSERT IGNORE INTO `ui_action_permission_requirement`
+              (`tenant_id`, `ui_action_id`, `requirement_group`, `sort_order`, `permission_id`, `negated`, `created_at`, `updated_at`)
+            SELECT a.`tenant_id`, a.`id`, 0, 1, a.`required_permission_id`, 0, NOW(), NOW()
+            FROM `ui_action` a
+            WHERE a.`tenant_id` <=> :tenantId
+              AND a.`required_permission_id` IS NOT NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM `ui_action_permission_requirement` r WHERE r.`ui_action_id` = a.`id`
+              )
+            """, params);
+        inserted += namedParameterJdbcTemplate.update("""
+            INSERT IGNORE INTO `api_endpoint_permission_requirement`
+              (`tenant_id`, `api_endpoint_id`, `requirement_group`, `sort_order`, `permission_id`, `negated`, `created_at`, `updated_at`)
+            SELECT e.`tenant_id`, e.`id`, 0, 1, e.`required_permission_id`, 0, NOW(), NOW()
+            FROM `api_endpoint` e
+            WHERE e.`tenant_id` <=> :tenantId
+              AND e.`required_permission_id` IS NOT NULL
+              AND NOT EXISTS (
+                SELECT 1 FROM `api_endpoint_permission_requirement` r WHERE r.`api_endpoint_id` = e.`id`
+              )
+            """, params);
         return inserted;
     }
 
