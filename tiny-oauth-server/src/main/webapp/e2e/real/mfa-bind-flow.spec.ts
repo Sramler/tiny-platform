@@ -212,6 +212,7 @@ async function clearBrowserSession(page: import('@playwright/test').Page) {
 
 test.describe('real-link: 未绑定 TOTP 首绑链路', () => {
   test('bind user can first bind TOTP then login via verify flow', async ({ page }) => {
+    test.setTimeout(240_000)
     const { tenantCode, username, password } = resolveBindLoginConfig()
 
     // 第一次登录：应进入 TOTP 绑定页

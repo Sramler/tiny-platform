@@ -613,7 +613,8 @@ Long ensurePlatformMenuEntry(Connection connection,
 void ensureSchedulingAdminAuthority(Connection connection, Long tenantId, Long roleId) throws SQLException {
     Long wildcardPermissionId = ensurePermission(connection, tenantId, "scheduling:*", "调度全权限", "OTHER", "real e2e scheduling wildcard");
     ensureRolePermissionBinding(connection, tenantId, roleId, wildcardPermissionId);
-    ensurePermission(connection, tenantId, "scheduling:console:view", "调度控制面查看权限", "MENU", "real e2e scheduling read carrier");
+    Long schedulingReadPermissionId = ensurePermission(connection, tenantId, "scheduling:console:view", "调度控制面查看权限", "MENU", "real e2e scheduling read carrier");
+    ensureRolePermissionBinding(connection, tenantId, roleId, schedulingReadPermissionId);
     // HeaderBar 打开「切换作用域」时会拉取 ORG/DEPT 选项（GET /sys/org/list）；调度 E2E 身份需具备读权限，否则会 403 并被前端导向异常页。
     Long orgListPermissionId = ensurePermission(connection, tenantId, "system:org:list", "组织列表", "API", "real e2e org list authority");
     ensureRolePermissionBinding(connection, tenantId, roleId, orgListPermissionId);
@@ -1096,6 +1097,7 @@ String skipSchedulingAdminAuth = System.getenv("E2E_SKIP_SCHEDULING_ADMIN_AUTH")
 
         Long schedulingReadPermissionId = ensurePermission(connection, readonlyTenantId, "scheduling:console:view", "调度控制面查看权限", "MENU", "real e2e scheduling readonly authority");
         ensureRolePermissionBinding(connection, readonlyTenantId, readonlyRoleId, schedulingReadPermissionId);
+        ensureSchedulingApiEndpointTemplates(connection, readonlyTenantId);
 
         try (PreparedStatement ps = connection.prepareStatement(
                 "DELETE FROM role_assignment WHERE tenant_id = ? AND principal_type = 'USER' AND principal_id = ? AND role_id <> ?")) {
