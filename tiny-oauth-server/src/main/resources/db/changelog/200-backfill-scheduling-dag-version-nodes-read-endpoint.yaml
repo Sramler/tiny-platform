@@ -1,0 +1,68 @@
+databaseChangeLog:
+  - changeSet:
+      id: 200-backfill-scheduling-dag-version-nodes-read-endpoint
+      author: codex
+      comment: 补齐 DAG 节点记录弹窗初始化所需的版本节点读取载体
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT INTO api_endpoint (
+                tenant_id, resource_level, name, title, uri, method, permission,
+                required_permission_id, enabled, created_at, updated_at
+              )
+              SELECT NULL, 'PLATFORM', 'scheduling-dag-version-nodes-read', '查询 DAG 版本节点',
+                     '/scheduling/dag/{dagId}/version/{versionId}/nodes', 'GET',
+                     'scheduling:console:view', permission.id, 1,
+                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission
+              WHERE permission.tenant_id IS NULL
+                AND permission.permission_code = 'scheduling:console:view'
+                AND permission.enabled = 1
+                AND NOT EXISTS (
+                  SELECT 1 FROM api_endpoint endpoint
+                  WHERE endpoint.tenant_id IS NULL
+                    AND endpoint.method = 'GET'
+                    AND endpoint.uri = '/scheduling/dag/{dagId}/version/{versionId}/nodes'
+                );
+
+              INSERT INTO api_endpoint (
+                tenant_id, resource_level, name, title, uri, method, permission,
+                required_permission_id, enabled, created_at, updated_at
+              )
+              SELECT tenant.id, 'TENANT', template.name, template.title, template.uri,
+                     template.method, template.permission, permission.id, 1,
+                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM tenant
+              JOIN permission
+                ON permission.tenant_id = tenant.id
+               AND permission.permission_code = 'scheduling:console:view'
+               AND permission.enabled = 1
+              JOIN api_endpoint template
+                ON template.tenant_id IS NULL
+               AND template.method = 'GET'
+               AND template.uri = '/scheduling/dag/{dagId}/version/{versionId}/nodes'
+               AND template.enabled = 1
+              WHERE NOT EXISTS (
+                SELECT 1 FROM api_endpoint endpoint
+                WHERE endpoint.tenant_id = tenant.id
+                  AND endpoint.method = template.method
+                  AND endpoint.uri = template.uri
+              );
+
+              INSERT IGNORE INTO api_endpoint_permission_requirement (
+                tenant_id, api_endpoint_id, requirement_group, sort_order, permission_id, negated,
+                created_at, updated_at
+              )
+              SELECT endpoint.tenant_id, endpoint.id, 0, 1, endpoint.required_permission_id, 0,
+                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM api_endpoint endpoint
+              WHERE endpoint.method = 'GET'
+                AND endpoint.uri = '/scheduling/dag/{dagId}/version/{versionId}/nodes'
+                AND endpoint.required_permission_id IS NOT NULL
+                AND NOT EXISTS (
+                  SELECT 1 FROM api_endpoint_permission_requirement requirement_row
+                  WHERE requirement_row.api_endpoint_id = endpoint.id
+                );

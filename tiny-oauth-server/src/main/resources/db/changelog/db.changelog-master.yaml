@@ -796,3 +796,8 @@ databaseChangeLog:
   - include:
       file: 199-seed-scheduling-history-read-permission-and-endpoints.yaml
       relativeToChangelogFile: true
+
+  # DAG 节点记录弹窗初始化读取版本节点，统一守卫要求精确 endpoint 载体。
+  - include:
+      file: 200-backfill-scheduling-dag-version-nodes-read-endpoint.yaml
+      relativeToChangelogFile: true
