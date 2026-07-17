@@ -182,6 +182,19 @@ async function ensureTenantViaApi(authStateFilePath: string, targetTenantCode: s
     return
   }
 
+  const csrfResponse = await fetch(`${backendBaseURL}/csrf`, {
+    headers: {
+      Cookie: sessionHeaders.cookie,
+    },
+  })
+  if (!csrfResponse.ok) {
+    throw new Error(`刷新 CSRF token 失败: HTTP ${csrfResponse.status}`)
+  }
+  const csrf = (await csrfResponse.json()) as { token?: string; headerName?: string }
+  if (!csrf.token || !csrf.headerName) {
+    throw new Error('刷新 CSRF token 失败: 响应缺少 token/headerName')
+  }
+
   const safeTenantCode = normalizedTargetTenantCode.replace(/[^a-z0-9_]/gi, '_').slice(0, 11) // keep username length <= 20 (e2e_init_ prefix)
   const initialAdminPassword = process.env.E2E_INITIAL_ADMIN_PASSWORD ?? 'Tianye0903.'
   const initialAdminUsername = `e2e_init_${safeTenantCode}`
@@ -192,7 +205,7 @@ async function ensureTenantViaApi(authStateFilePath: string, targetTenantCode: s
       Cookie: sessionHeaders.cookie,
       'Content-Type': 'application/json',
       'X-Idempotency-Key': `e2e-tenant-create:${normalizedTargetTenantCode}`,
-      ...(sessionHeaders.csrfToken ? { 'X-XSRF-TOKEN': sessionHeaders.csrfToken } : {}),
+      [csrf.headerName]: csrf.token,
     },
     body: JSON.stringify({
       code: normalizedTargetTenantCode,
