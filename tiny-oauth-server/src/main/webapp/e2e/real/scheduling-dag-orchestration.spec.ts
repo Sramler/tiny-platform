@@ -45,7 +45,7 @@ function dagTableRow(page: Page, dagCode: string): Locator {
 }
 
 function historyTableRows(page: Page): Locator {
-  return page.locator('.ant-table-tbody > tr')
+  return page.locator('.ant-table-tbody > tr.ant-table-row')
 }
 
 function nodeDialog(page: Page): Locator {
@@ -829,7 +829,7 @@ async function openLatestRunNodes(page: Page) {
 
 async function readNodeSnapshot(page: Page): Promise<NodeSnapshot> {
   const dialog = nodeDialog(page)
-  const rows = dialog.locator('.ant-table-tbody > tr')
+  const rows = dialog.locator('.ant-table-tbody > tr.ant-table-row')
   const count = await rows.count()
   const snapshot: NodeSnapshot = {}
   for (let index = 0; index < count; index += 1) {
@@ -845,7 +845,7 @@ async function readNodeSnapshot(page: Page): Promise<NodeSnapshot> {
 
 async function readNodeRecords(page: Page): Promise<NodeRecord[]> {
   const dialog = nodeDialog(page)
-  const rows = dialog.locator('.ant-table-tbody > tr')
+  const rows = dialog.locator('.ant-table-tbody > tr.ant-table-row')
   const count = await rows.count()
   const records: NodeRecord[] = []
   for (let index = 0; index < count; index += 1) {
