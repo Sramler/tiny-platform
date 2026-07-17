@@ -1,0 +1,79 @@
+databaseChangeLog:
+  - changeSet:
+      id: 193-seed-scheduling-permission-before-api-templates
+      author: codex
+      comment: 消除全新库中 data.sql 晚于 Liquibase 导致调度 API 模板零行的初始化时序依赖
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - tableExists:
+            tableName: permission
+        - tableExists:
+            tableName: api_endpoint
+        - tableExists:
+            tableName: api_endpoint_permission_requirement
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT INTO permission (
+                permission_code, permission_name, module_code, action_code, permission_type,
+                description, enabled, built_in_flag, tenant_id, created_at, updated_at
+              )
+              SELECT 'scheduling:*', '调度中心全部权限', 'scheduling', '*', 'OTHER',
+                     '调度中心运行时 API 的租户级通配权限', 1, 1, NULL,
+                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              WHERE NOT EXISTS (
+                SELECT 1 FROM permission
+                WHERE tenant_id IS NULL AND permission_code = 'scheduling:*'
+              );
+
+              INSERT INTO api_endpoint (
+                tenant_id, resource_level, name, title, uri, method, permission,
+                required_permission_id, enabled, created_at, updated_at
+              )
+              SELECT NULL, 'PLATFORM', CONCAT('scheduling-runtime-', LOWER(route.method), '-', route.route_key),
+                     route.title, route.uri, route.method, 'scheduling:*', permission.id, 1,
+                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM (
+                SELECT 'task-type-create' route_key, '创建任务类型' title, '/scheduling/task-type' uri, 'POST' method
+                UNION ALL SELECT 'task-type-read', '读取任务类型', '/scheduling/task-type/{id}', 'GET'
+                UNION ALL SELECT 'task-type-list', '查询任务类型', '/scheduling/task-type/list', 'GET'
+                UNION ALL SELECT 'task-create', '创建调度任务', '/scheduling/task', 'POST'
+                UNION ALL SELECT 'task-read', '读取调度任务', '/scheduling/task/{id}', 'GET'
+                UNION ALL SELECT 'dag-create', '创建 DAG', '/scheduling/dag', 'POST'
+                UNION ALL SELECT 'dag-version-create', '创建 DAG 版本', '/scheduling/dag/{dagId}/version', 'POST'
+                UNION ALL SELECT 'dag-version-update', '更新 DAG 版本', '/scheduling/dag/{dagId}/version/{versionId}', 'PUT'
+                UNION ALL SELECT 'dag-node-create', '创建 DAG 节点', '/scheduling/dag/{dagId}/version/{versionId}/node', 'POST'
+                UNION ALL SELECT 'dag-edge-create', '创建 DAG 边', '/scheduling/dag/{dagId}/version/{versionId}/edge', 'POST'
+                UNION ALL SELECT 'dag-trigger', '触发 DAG', '/scheduling/dag/{dagId}/trigger', 'POST'
+                UNION ALL SELECT 'audit-list', '查询调度审计', '/scheduling/audit/list', 'GET'
+                UNION ALL SELECT 'cluster-status', '查询调度集群状态', '/scheduling/quartz/cluster-status', 'GET'
+              ) route
+              JOIN permission permission
+                ON permission.tenant_id IS NULL
+               AND permission.permission_code = 'scheduling:*'
+               AND permission.enabled = 1
+              WHERE NOT EXISTS (
+                SELECT 1 FROM api_endpoint endpoint
+                WHERE endpoint.tenant_id IS NULL
+                  AND endpoint.method = route.method
+                  AND endpoint.uri = route.uri
+              );
+
+              INSERT IGNORE INTO api_endpoint_permission_requirement (
+                tenant_id, api_endpoint_id, requirement_group, sort_order, permission_id, negated,
+                created_at, updated_at
+              )
+              SELECT NULL, endpoint.id, 0, 1, endpoint.required_permission_id, 0,
+                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM api_endpoint endpoint
+              WHERE endpoint.tenant_id IS NULL
+                AND endpoint.uri LIKE '/scheduling/%'
+                AND endpoint.required_permission_id IS NOT NULL
+                AND NOT EXISTS (
+                  SELECT 1 FROM api_endpoint_permission_requirement requirement_row
+                  WHERE requirement_row.api_endpoint_id = endpoint.id
+                );

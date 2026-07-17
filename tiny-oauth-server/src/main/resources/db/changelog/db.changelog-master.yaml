@@ -761,3 +761,8 @@ databaseChangeLog:
   - include:
       file: 192-backfill-scheduling-runtime-api-endpoints.yaml
       relativeToChangelogFile: true
+
+  # 全新库先建立 scheduling:*，再补偿注册调度 API 模板，避免 data.sql 初始化时序依赖
+  - include:
+      file: 193-seed-scheduling-permission-before-api-templates.yaml
+      relativeToChangelogFile: true
