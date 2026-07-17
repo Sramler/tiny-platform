@@ -751,3 +751,8 @@ databaseChangeLog:
   - include:
       file: 190-repair-carrier-compatibility-requirements.yaml
       relativeToChangelogFile: true
+
+  # 平台管理员租户控制权限在应用权限缓存初始化前完成绑定
+  - include:
+      file: 191-bind-platform-admin-tenant-control-permissions.yaml
+      relativeToChangelogFile: true

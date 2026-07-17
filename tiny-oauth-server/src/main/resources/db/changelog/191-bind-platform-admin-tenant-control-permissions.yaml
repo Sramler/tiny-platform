@@ -1,0 +1,38 @@
+databaseChangeLog:
+  - changeSet:
+      id: 191-bind-platform-admin-tenant-control-permissions
+      author: codex
+      comment: 在应用缓存初始化前为 ROLE_PLATFORM_ADMIN 绑定租户控制面基础权限
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - tableExists:
+            tableName: role
+        - tableExists:
+            tableName: permission
+        - tableExists:
+            tableName: role_permission
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT IGNORE INTO `role_permission` (`tenant_id`, `role_id`, `permission_id`)
+              SELECT NULL, role_entry.`id`, permission_entry.`id`
+              FROM `role` role_entry
+              JOIN `permission` permission_entry
+                ON permission_entry.`tenant_id` IS NULL
+               AND permission_entry.`permission_code` IN (
+                 'system:tenant:list',
+                 'system:tenant:view',
+                 'system:tenant:create',
+                 'system:tenant:edit',
+                 'system:tenant:template:initialize',
+                 'system:tenant:freeze',
+                 'system:tenant:unfreeze',
+                 'system:tenant:decommission',
+                 'system:tenant:delete'
+               )
+              WHERE role_entry.`tenant_id` IS NULL
+                AND role_entry.`code` = 'ROLE_PLATFORM_ADMIN';
