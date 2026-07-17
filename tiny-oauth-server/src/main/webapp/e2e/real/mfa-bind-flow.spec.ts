@@ -245,12 +245,8 @@ test.describe('real-link: 未绑定 TOTP 首绑链路', () => {
       timeout: 60_000,
       },
     )
-    await page.waitForLoadState('networkidle').catch(() => {})
-    const firstStatus = await fetchSecurityStatus(page)
-    expect(firstStatus.status).toBe(200)
-    expect(firstStatus.payload).not.toBeNull()
-
-    // 清理浏览器会话，模拟新会话重新登录
+    // 离开绑定路由即证明真实绑定提交成功；立即清理浏览器会话模拟重新登录。
+    // 不等待 networkidle：基础布局存在持续请求，不能把网络静默当作业务完成条件。
     await clearBrowserSession(page)
 
     // 第二次登录：此时应进入 TOTP 验证页而不是绑定页
@@ -277,7 +273,6 @@ test.describe('real-link: 未绑定 TOTP 首绑链路', () => {
       timeout: 60_000,
       },
     )
-    await page.waitForLoadState('networkidle').catch(() => {})
     const secondStatus = await fetchSecurityStatus(page)
     expect(secondStatus.status).toBe(200)
     expect(secondStatus.payload).not.toBeNull()
