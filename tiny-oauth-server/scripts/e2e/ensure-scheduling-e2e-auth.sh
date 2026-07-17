@@ -610,6 +610,33 @@ Long ensurePlatformMenuEntry(Connection connection,
     return existingId;
 }
 
+void ensureSchedulingRuntimeMenus(Connection connection, Long tenantId, Long entryPermissionId, Long readPermissionId) throws SQLException {
+    Long rootId = null;
+    try (PreparedStatement ps = connection.prepareStatement("SELECT id FROM menu WHERE tenant_id = ? AND name = 'scheduling' LIMIT 1")) {
+        ps.setLong(1, tenantId);
+        try (ResultSet rs = ps.executeQuery()) { if (rs.next()) rootId = rs.getLong(1); }
+    }
+    if (rootId == null) {
+        try (PreparedStatement ps = connection.prepareStatement(
+                "INSERT INTO menu (tenant_id, resource_level, name, title, path, icon, show_icon, sort, component, redirect, hidden, keep_alive, permission, required_permission_id, type, parent_id, enabled, created_at, updated_at) VALUES (?, 'TENANT', 'scheduling', '调度中心', '/scheduling', 'ScheduleOutlined', true, 80, '', '/scheduling/dag/history', false, false, 'scheduling:entry:view', ?, 0, NULL, true, NOW(), NOW())",
+                Statement.RETURN_GENERATED_KEYS)) {
+            ps.setLong(1, tenantId);
+            ps.setLong(2, entryPermissionId);
+            ps.executeUpdate();
+            try (ResultSet rs = ps.getGeneratedKeys()) { if (rs.next()) rootId = rs.getLong(1); }
+        }
+    }
+    if (rootId == null) throw new IllegalStateException("创建 scheduling 根菜单失败");
+    try (PreparedStatement ps = connection.prepareStatement(
+            "UPDATE menu SET resource_level='TENANT', path='/scheduling', redirect='/scheduling/dag/history', permission='scheduling:entry:view', required_permission_id=?, enabled=true, updated_at=NOW() WHERE id=?")) {
+        ps.setLong(1, entryPermissionId); ps.setLong(2, rootId); ps.executeUpdate();
+    }
+    try (PreparedStatement ps = connection.prepareStatement(
+            "INSERT INTO menu (tenant_id, resource_level, name, title, path, icon, show_icon, sort, component, redirect, hidden, keep_alive, permission, required_permission_id, type, parent_id, enabled, created_at, updated_at) VALUES (?, 'TENANT', 'schedulingDagHistory', '运行历史', '/scheduling/dag/history', 'HistoryOutlined', true, 14, '/views/scheduling/DagHistory.vue', '', false, false, 'scheduling:console:view', ?, 1, ?, true, NOW(), NOW()) ON DUPLICATE KEY UPDATE title=VALUES(title), path=VALUES(path), component=VALUES(component), permission=VALUES(permission), required_permission_id=VALUES(required_permission_id), parent_id=VALUES(parent_id), enabled=true, updated_at=NOW()")) {
+        ps.setLong(1, tenantId); ps.setLong(2, readPermissionId); ps.setLong(3, rootId); ps.executeUpdate();
+    }
+}
+
 void ensureSchedulingAdminAuthority(Connection connection, Long tenantId, Long roleId) throws SQLException {
     Long wildcardPermissionId = ensurePermission(connection, tenantId, "scheduling:*", "调度全权限", "OTHER", "real e2e scheduling wildcard");
     ensureRolePermissionBinding(connection, tenantId, roleId, wildcardPermissionId);
@@ -617,6 +644,7 @@ void ensureSchedulingAdminAuthority(Connection connection, Long tenantId, Long r
     ensureRolePermissionBinding(connection, tenantId, roleId, schedulingReadPermissionId);
     Long schedulingEntryPermissionId = ensurePermission(connection, tenantId, "scheduling:entry:view", "调度入口查看权限", "MENU", "real e2e scheduling route entry");
     ensureRolePermissionBinding(connection, tenantId, roleId, schedulingEntryPermissionId);
+    ensureSchedulingRuntimeMenus(connection, tenantId, schedulingEntryPermissionId, schedulingReadPermissionId);
     // HeaderBar 打开「切换作用域」时会拉取 ORG/DEPT 选项（GET /sys/org/list）；调度 E2E 身份需具备读权限，否则会 403 并被前端导向异常页。
     Long orgListPermissionId = ensurePermission(connection, tenantId, "system:org:list", "组织列表", "API", "real e2e org list authority");
     ensureRolePermissionBinding(connection, tenantId, roleId, orgListPermissionId);
