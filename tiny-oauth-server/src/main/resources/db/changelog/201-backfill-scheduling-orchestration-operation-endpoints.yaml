@@ -1,0 +1,80 @@
+databaseChangeLog:
+  - changeSet:
+      id: 201-backfill-scheduling-orchestration-operation-endpoints
+      author: codex
+      comment: 补齐调度编排更新、重试、停止、节点触发及暂停恢复操作载体
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT INTO api_endpoint (
+                tenant_id, resource_level, name, title, uri, method, permission,
+                required_permission_id, enabled, created_at, updated_at
+              )
+              SELECT NULL, 'PLATFORM', CONCAT('scheduling-operation-', route.route_key),
+                     route.title, route.uri, route.method, 'scheduling:*', permission.id, 1,
+                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM (
+                SELECT 'task-update' route_key, '更新调度任务' title, '/scheduling/task/{id}' uri, 'PUT' method
+                UNION ALL SELECT 'dag-stop', '停止 DAG', '/scheduling/dag/{dagId}/stop', 'POST'
+                UNION ALL SELECT 'run-stop', '停止 DAG 运行', '/scheduling/dag/{dagId}/run/{runId}/stop', 'POST'
+                UNION ALL SELECT 'dag-retry', '重试 DAG', '/scheduling/dag/{dagId}/retry', 'POST'
+                UNION ALL SELECT 'run-retry', '重试 DAG 运行', '/scheduling/dag/{dagId}/run/{runId}/retry', 'POST'
+                UNION ALL SELECT 'node-trigger', '触发 DAG 节点', '/scheduling/dag/{dagId}/node/{nodeId}/trigger', 'POST'
+                UNION ALL SELECT 'run-node-trigger', '触发运行节点', '/scheduling/dag/{dagId}/run/{runId}/node/{nodeId}/trigger', 'POST'
+                UNION ALL SELECT 'node-retry', '重试 DAG 节点', '/scheduling/dag/{dagId}/node/{nodeId}/retry', 'POST'
+                UNION ALL SELECT 'run-node-retry', '重试运行节点', '/scheduling/dag/{dagId}/run/{runId}/node/{nodeId}/retry', 'POST'
+                UNION ALL SELECT 'node-pause', '暂停 DAG 节点', '/scheduling/dag/{dagId}/node/{nodeId}/pause', 'POST'
+                UNION ALL SELECT 'run-node-pause', '暂停运行节点', '/scheduling/dag/{dagId}/run/{runId}/node/{nodeId}/pause', 'POST'
+                UNION ALL SELECT 'node-resume', '恢复 DAG 节点', '/scheduling/dag/{dagId}/node/{nodeId}/resume', 'POST'
+                UNION ALL SELECT 'run-node-resume', '恢复运行节点', '/scheduling/dag/{dagId}/run/{runId}/node/{nodeId}/resume', 'POST'
+              ) route
+              JOIN permission
+                ON permission.tenant_id IS NULL
+               AND permission.permission_code = 'scheduling:*'
+               AND permission.enabled = 1
+              WHERE NOT EXISTS (
+                SELECT 1 FROM api_endpoint endpoint
+                WHERE endpoint.tenant_id IS NULL
+                  AND endpoint.method = route.method
+                  AND endpoint.uri = route.uri
+              );
+
+              INSERT INTO api_endpoint (
+                tenant_id, resource_level, name, title, uri, method, permission,
+                required_permission_id, enabled, created_at, updated_at
+              )
+              SELECT tenant.id, 'TENANT', template.name, template.title, template.uri,
+                     template.method, template.permission, permission.id, 1,
+                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM tenant
+              JOIN permission
+                ON permission.tenant_id = tenant.id
+               AND permission.permission_code = 'scheduling:*'
+               AND permission.enabled = 1
+              JOIN api_endpoint template
+                ON template.tenant_id IS NULL
+               AND template.name LIKE 'scheduling-operation-%'
+               AND template.enabled = 1
+              WHERE NOT EXISTS (
+                SELECT 1 FROM api_endpoint endpoint
+                WHERE endpoint.tenant_id = tenant.id
+                  AND endpoint.method = template.method
+                  AND endpoint.uri = template.uri
+              );
+
+              INSERT IGNORE INTO api_endpoint_permission_requirement (
+                tenant_id, api_endpoint_id, requirement_group, sort_order, permission_id, negated,
+                created_at, updated_at
+              )
+              SELECT endpoint.tenant_id, endpoint.id, 0, 1, endpoint.required_permission_id, 0,
+                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM api_endpoint endpoint
+              WHERE endpoint.name LIKE 'scheduling-operation-%'
+                AND endpoint.required_permission_id IS NOT NULL
+                AND NOT EXISTS (
+                  SELECT 1 FROM api_endpoint_permission_requirement requirement_row
+                  WHERE requirement_row.api_endpoint_id = endpoint.id
+                );

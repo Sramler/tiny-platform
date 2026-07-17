@@ -801,3 +801,8 @@ databaseChangeLog:
   - include:
       file: 200-backfill-scheduling-dag-version-nodes-read-endpoint.yaml
       relativeToChangelogFile: true
+
+  # 调度编排后半程更新、重试、停止、节点触发及暂停恢复操作载体。
+  - include:
+      file: 201-backfill-scheduling-orchestration-operation-endpoints.yaml
+      relativeToChangelogFile: true
