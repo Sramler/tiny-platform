@@ -635,6 +635,22 @@ void ensureSchedulingRuntimeMenus(Connection connection, Long tenantId, Long ent
             "INSERT INTO menu (tenant_id, resource_level, name, title, path, icon, show_icon, sort, component, redirect, hidden, keep_alive, permission, required_permission_id, type, parent_id, enabled, created_at, updated_at) VALUES (?, 'TENANT', 'schedulingDagHistory', '运行历史', '/scheduling/dag/history', 'HistoryOutlined', true, 14, '/views/scheduling/DagHistory.vue', '', false, false, 'scheduling:console:view', ?, 1, ?, true, NOW(), NOW()) ON DUPLICATE KEY UPDATE title=VALUES(title), path=VALUES(path), component=VALUES(component), permission=VALUES(permission), required_permission_id=VALUES(required_permission_id), parent_id=VALUES(parent_id), enabled=true, updated_at=NOW()")) {
         ps.setLong(1, tenantId); ps.setLong(2, readPermissionId); ps.setLong(3, rootId); ps.executeUpdate();
     }
+    Long historyId = null;
+    try (PreparedStatement ps = connection.prepareStatement("SELECT id FROM menu WHERE tenant_id = ? AND name = 'schedulingDagHistory' AND enabled = true ORDER BY id LIMIT 1")) {
+        ps.setLong(1, tenantId);
+        try (ResultSet rs = ps.executeQuery()) { if (rs.next()) historyId = rs.getLong(1); }
+    }
+    if (historyId == null) throw new IllegalStateException("创建 scheduling 历史菜单失败");
+    try (PreparedStatement ps = connection.prepareStatement(
+            "DELETE FROM menu_permission_requirement WHERE tenant_id = ? AND menu_id IN (?, ?)")) {
+        ps.setLong(1, tenantId); ps.setLong(2, rootId); ps.setLong(3, historyId); ps.executeUpdate();
+    }
+    try (PreparedStatement ps = connection.prepareStatement(
+            "INSERT INTO menu_permission_requirement (tenant_id, menu_id, requirement_group, sort_order, permission_id, negated, created_at, updated_at) VALUES (?, ?, 0, 1, ?, 0, NOW(), NOW()), (?, ?, 0, 1, ?, 0, NOW(), NOW())")) {
+        ps.setLong(1, tenantId); ps.setLong(2, rootId); ps.setLong(3, entryPermissionId);
+        ps.setLong(4, tenantId); ps.setLong(5, historyId); ps.setLong(6, readPermissionId);
+        ps.executeUpdate();
+    }
 }
 
 void ensureSchedulingAdminAuthority(Connection connection, Long tenantId, Long roleId) throws SQLException {
