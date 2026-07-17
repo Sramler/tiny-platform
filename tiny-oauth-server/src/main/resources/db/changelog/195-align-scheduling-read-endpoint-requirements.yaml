@@ -1,0 +1,38 @@
+databaseChangeLog:
+  - changeSet:
+      id: 195-align-scheduling-read-endpoint-requirements
+      author: codex
+      comment: 调度只读列表端点使用 scheduling:console:view，写操作继续要求 scheduling:*
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              UPDATE api_endpoint endpoint
+              JOIN permission permission
+                ON permission.normalized_tenant_id = IFNULL(endpoint.tenant_id, 0)
+               AND permission.permission_code = 'scheduling:console:view'
+               AND permission.enabled = 1
+              SET endpoint.permission = 'scheduling:console:view',
+                  endpoint.required_permission_id = permission.id,
+                  endpoint.updated_at = CURRENT_TIMESTAMP
+              WHERE endpoint.method = 'GET'
+                AND endpoint.uri = '/scheduling/task-type/list';
+
+              DELETE requirement_row
+              FROM api_endpoint_permission_requirement requirement_row
+              JOIN api_endpoint endpoint ON endpoint.id = requirement_row.api_endpoint_id
+              WHERE endpoint.method = 'GET'
+                AND endpoint.uri = '/scheduling/task-type/list';
+
+              INSERT INTO api_endpoint_permission_requirement (
+                tenant_id, api_endpoint_id, requirement_group, sort_order, permission_id, negated,
+                created_at, updated_at
+              )
+              SELECT endpoint.tenant_id, endpoint.id, 0, 1, endpoint.required_permission_id, 0,
+                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM api_endpoint endpoint
+              WHERE endpoint.method = 'GET'
+                AND endpoint.uri = '/scheduling/task-type/list'
+                AND endpoint.required_permission_id IS NOT NULL;

@@ -613,6 +613,7 @@ Long ensurePlatformMenuEntry(Connection connection,
 void ensureSchedulingAdminAuthority(Connection connection, Long tenantId, Long roleId) throws SQLException {
     Long wildcardPermissionId = ensurePermission(connection, tenantId, "scheduling:*", "调度全权限", "OTHER", "real e2e scheduling wildcard");
     ensureRolePermissionBinding(connection, tenantId, roleId, wildcardPermissionId);
+    ensurePermission(connection, tenantId, "scheduling:console:view", "调度控制面查看权限", "MENU", "real e2e scheduling read carrier");
     // HeaderBar 打开「切换作用域」时会拉取 ORG/DEPT 选项（GET /sys/org/list）；调度 E2E 身份需具备读权限，否则会 403 并被前端导向异常页。
     Long orgListPermissionId = ensurePermission(connection, tenantId, "system:org:list", "组织列表", "API", "real e2e org list authority");
     ensureRolePermissionBinding(connection, tenantId, roleId, orgListPermissionId);
@@ -624,14 +625,31 @@ void ensureSchedulingAdminAuthority(Connection connection, Long tenantId, Long r
 void ensureSchedulingApiEndpointTemplates(Connection connection, Long tenantId) throws SQLException {
     try (PreparedStatement ps = connection.prepareStatement(
             "INSERT INTO api_endpoint (tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at) " +
-            "SELECT ?, 'TENANT', template.name, template.title, template.uri, template.method, 'scheduling:*', target_permission.id, template.enabled, NOW(), NOW() " +
+            "SELECT ?, 'TENANT', template.name, template.title, template.uri, template.method, template.permission, target_permission.id, template.enabled, NOW(), NOW() " +
             "FROM api_endpoint template " +
-            "JOIN permission target_permission ON target_permission.normalized_tenant_id = IFNULL(?, 0) AND target_permission.permission_code = 'scheduling:*' AND target_permission.enabled = 1 " +
+            "JOIN permission target_permission ON target_permission.normalized_tenant_id = IFNULL(?, 0) AND target_permission.permission_code = template.permission AND target_permission.enabled = 1 " +
             "WHERE template.tenant_id IS NULL AND template.uri LIKE '/scheduling/%' AND template.enabled = 1 " +
             "AND NOT EXISTS (SELECT 1 FROM api_endpoint existing WHERE existing.tenant_id = ? AND existing.method = template.method AND existing.uri = template.uri)")) {
         ps.setLong(1, tenantId);
         ps.setLong(2, tenantId);
         ps.setLong(3, tenantId);
+        ps.executeUpdate();
+    }
+    try (PreparedStatement ps = connection.prepareStatement(
+            "UPDATE api_endpoint endpoint " +
+            "JOIN api_endpoint template ON template.tenant_id IS NULL AND template.method = endpoint.method AND template.uri = endpoint.uri " +
+            "JOIN permission target_permission ON target_permission.normalized_tenant_id = IFNULL(?, 0) AND target_permission.permission_code = template.permission AND target_permission.enabled = 1 " +
+            "SET endpoint.permission = template.permission, endpoint.required_permission_id = target_permission.id, endpoint.updated_at = NOW() " +
+            "WHERE endpoint.tenant_id = ? AND endpoint.uri LIKE '/scheduling/%'")) {
+        ps.setLong(1, tenantId);
+        ps.setLong(2, tenantId);
+        ps.executeUpdate();
+    }
+    try (PreparedStatement ps = connection.prepareStatement(
+            "DELETE requirement_row FROM api_endpoint_permission_requirement requirement_row " +
+            "JOIN api_endpoint endpoint ON endpoint.id = requirement_row.api_endpoint_id " +
+            "WHERE endpoint.tenant_id = ? AND endpoint.uri LIKE '/scheduling/%'")) {
+        ps.setLong(1, tenantId);
         ps.executeUpdate();
     }
     try (PreparedStatement ps = connection.prepareStatement(

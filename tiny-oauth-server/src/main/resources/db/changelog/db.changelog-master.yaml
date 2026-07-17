@@ -771,3 +771,8 @@ databaseChangeLog:
   - include:
       file: 194-backfill-existing-tenant-scheduling-api-endpoints.yaml
       relativeToChangelogFile: true
+
+  # 调度只读列表使用 console:view，写操作继续要求 scheduling:*
+  - include:
+      file: 195-align-scheduling-read-endpoint-requirements.yaml
+      relativeToChangelogFile: true
