@@ -621,6 +621,31 @@ void ensureSchedulingAdminAuthority(Connection connection, Long tenantId, Long r
     ensureRolePermissionBinding(connection, tenantId, roleId, menuListPermissionId);
 }
 
+void ensureSchedulingApiEndpointTemplates(Connection connection, Long tenantId) throws SQLException {
+    try (PreparedStatement ps = connection.prepareStatement(
+            "INSERT INTO api_endpoint (tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at) " +
+            "SELECT ?, 'TENANT', template.name, template.title, template.uri, template.method, 'scheduling:*', target_permission.id, template.enabled, NOW(), NOW() " +
+            "FROM api_endpoint template " +
+            "JOIN permission target_permission ON target_permission.normalized_tenant_id = IFNULL(?, 0) AND target_permission.permission_code = 'scheduling:*' AND target_permission.enabled = 1 " +
+            "WHERE template.tenant_id IS NULL AND template.uri LIKE '/scheduling/%' AND template.enabled = 1 " +
+            "AND NOT EXISTS (SELECT 1 FROM api_endpoint existing WHERE existing.tenant_id = ? AND existing.method = template.method AND existing.uri = template.uri)")) {
+        ps.setLong(1, tenantId);
+        ps.setLong(2, tenantId);
+        ps.setLong(3, tenantId);
+        ps.executeUpdate();
+    }
+    try (PreparedStatement ps = connection.prepareStatement(
+            "INSERT IGNORE INTO api_endpoint_permission_requirement " +
+            "(tenant_id, api_endpoint_id, requirement_group, sort_order, permission_id, negated, created_at, updated_at) " +
+            "SELECT endpoint.tenant_id, endpoint.id, 0, 1, endpoint.required_permission_id, 0, NOW(), NOW() " +
+            "FROM api_endpoint endpoint WHERE endpoint.tenant_id = ? AND endpoint.uri LIKE '/scheduling/%' " +
+            "AND endpoint.required_permission_id IS NOT NULL " +
+            "AND NOT EXISTS (SELECT 1 FROM api_endpoint_permission_requirement requirement_row WHERE requirement_row.api_endpoint_id = endpoint.id)")) {
+        ps.setLong(1, tenantId);
+        ps.executeUpdate();
+    }
+}
+
 void ensurePlatformGovernanceAuthorities(Connection connection, Long roleId) throws SQLException {
     String[][] authorities = new String[][] {
             {"system:tenant:list", "租户列表访问"},
@@ -800,6 +825,7 @@ String skipSchedulingAdminAuth = System.getenv("E2E_SKIP_SCHEDULING_ADMIN_AUTH")
     ensureActiveRoleAssignment(connection, userId, roleId, tenantId, "TENANT", tenantId);
     if (!"true".equalsIgnoreCase(skipSchedulingAdminAuth)) {
         ensureSchedulingAdminAuthority(connection, tenantId, roleId);
+        ensureSchedulingApiEndpointTemplates(connection, tenantId);
     } else {
         System.out.println("Skipped scheduling admin authority bootstrap for user: " + username);
     }
