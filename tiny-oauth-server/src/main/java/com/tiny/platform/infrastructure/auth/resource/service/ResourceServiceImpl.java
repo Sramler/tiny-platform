@@ -897,6 +897,19 @@ public class ResourceServiceImpl implements ResourceService {
         RequirementAwareAuditDetail detail =
             carrierPermissionRequirementEvaluator.evaluateApiEndpointRequirementDetail(endpoint, authorityCodes);
 
+        if (detail == null || !"ALLOW".equalsIgnoreCase(detail.decision())) {
+            logger.warn(
+                "Api endpoint requirement denied (tenantId={}, method={}, uri={}, endpointId={}, reason={}, missingPermissions={}, negatedPermissions={})",
+                currentManagedTenantId(),
+                method,
+                normalizedUri,
+                endpoint.getId(),
+                detail == null ? "DETAIL_NULL" : detail.reason(),
+                detail == null ? List.of() : detail.missingPermissionCodes(),
+                detail == null ? List.of() : detail.negatedPermissionCodes()
+            );
+        }
+
         try {
             authorizationAuditService.logRequirementAware(
                 AuthorizationAuditEventType.REQUIREMENT_AWARE_ACCESS,
