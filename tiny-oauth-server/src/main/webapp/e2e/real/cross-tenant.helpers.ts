@@ -173,45 +173,28 @@ function resolveLoginIdentity(kind: AuthIdentityKind): LoginIdentity | null {
   return { mode: 'TENANT', tenantCode, username, password, totpCode, totpSecret }
 }
 
-async function hasOidcIdentity(page: Page): Promise<boolean> {
+async function hasSessionIdentity(page: Page): Promise<boolean> {
   return page
-    .evaluate(() => {
-      const oidcKey = Object.keys(window.localStorage).find((key) => key.startsWith('oidc.user:'))
-      if (!oidcKey) {
-        return false
-      }
-      const rawUser = window.localStorage.getItem(oidcKey)
-      if (!rawUser) {
-        return false
-      }
-      try {
-        const user = JSON.parse(rawUser) as { access_token?: string }
-        return Boolean(user.access_token)
-      } catch {
-        return false
-      }
-    })
+    .evaluate(async (apiBaseUrl) => {
+      const response = await fetch(`${apiBaseUrl}/sys/users/current`, {
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+      })
+      return response.ok
+    }, backendBaseUrl)
     .catch(() => false)
 }
 
-export async function waitForOidcIdentity(page: Page, timeout = 60_000) {
+export async function waitForSessionIdentity(page: Page, timeout = 60_000) {
   await page.waitForFunction(
-    () => {
-      const oidcKey = Object.keys(window.localStorage).find((key) => key.startsWith('oidc.user:'))
-      if (!oidcKey) {
-        return false
-      }
-      const rawUser = window.localStorage.getItem(oidcKey)
-      if (!rawUser) {
-        return false
-      }
-      try {
-        const user = JSON.parse(rawUser) as { access_token?: string }
-        return Boolean(user.access_token)
-      } catch {
-        return false
-      }
+    async (apiBaseUrl) => {
+      const response = await fetch(`${apiBaseUrl}/sys/users/current`, {
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+      })
+      return response.ok
     },
+    backendBaseUrl,
     { timeout },
   )
 }
@@ -237,12 +220,12 @@ async function loginWithIdentity(page: Page, identity: LoginIdentity) {
         .waitForURL((url) => !url.pathname.includes('/login'), { timeout: 15_000 })
         .then(() => false)
         .catch(() => false),
-      waitForOidcIdentity(page, 15_000)
+      waitForSessionIdentity(page, 15_000)
         .then(() => false)
         .catch(() => false),
     ])
 
-    if (!loginSurfaceReady && page.url().includes('/login') && !(await hasOidcIdentity(page))) {
+    if (!loginSurfaceReady && page.url().includes('/login') && !(await hasSessionIdentity(page))) {
       throw new Error(`实时登录页未就绪: ${page.url()}`)
     }
   }
@@ -326,7 +309,7 @@ export async function openOidcDebug(page: Page, kind: AuthIdentityKind = 'primar
     await gotoOidcDebug(page)
     const oidcDebugHeading = page.getByRole('heading', { name: /OIDC 调试工具/ })
     const oidcDebugVisible = await oidcDebugHeading.isVisible({ timeout: 5_000 }).catch(() => false)
-    const existingIdentity = await hasOidcIdentity(page)
+    const existingIdentity = await hasSessionIdentity(page)
 
     if (
       !existingIdentity &&
@@ -343,39 +326,23 @@ export async function openOidcDebug(page: Page, kind: AuthIdentityKind = 'primar
       await gotoOidcDebug(page)
     }
 
-    await waitForOidcIdentity(page, 90_000)
+    await waitForSessionIdentity(page, 90_000)
     await page.waitForLoadState('networkidle').catch(() => {})
     await page.waitForTimeout(1_000)
-    if (await hasOidcIdentity(page)) {
+    if (await hasSessionIdentity(page)) {
       return
     }
   }
 
-  await waitForOidcIdentity(page, 90_000)
+  await waitForSessionIdentity(page, 90_000)
 }
 
-type OidcIdentitySnapshot = {
-  accessToken: string
+type SessionIdentitySnapshot = {
   activeTenantId: string
 }
 
-async function loadIdentitySnapshot(page: Page): Promise<OidcIdentitySnapshot> {
+async function loadIdentitySnapshot(page: Page): Promise<SessionIdentitySnapshot> {
   return page.evaluate(async (apiBaseUrl) => {
-    function decodeJwtPayload(accessToken: string): Record<string, unknown> | null {
-      try {
-        const parts = accessToken.split('.')
-        if (parts.length < 2) {
-          return null
-        }
-        const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
-        const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=')
-        const json = atob(padded)
-        return JSON.parse(json) as Record<string, unknown>
-      } catch {
-        return null
-      }
-    }
-
     function firstNonEmptyTenantId(
       ...candidates: Array<string | number | null | undefined>
     ): string {
@@ -391,39 +358,12 @@ async function loadIdentitySnapshot(page: Page): Promise<OidcIdentitySnapshot> {
       return ''
     }
 
-    const oidcKey = Object.keys(window.localStorage).find((key) => key.startsWith('oidc.user:'))
-    if (!oidcKey) {
-      throw new Error('未找到 OIDC 登录态，无法构造跨租户请求')
-    }
-    const rawUser = window.localStorage.getItem(oidcKey)
-    if (!rawUser) {
-      throw new Error(`OIDC 存储为空: ${oidcKey}`)
-    }
-
-    const user = JSON.parse(rawUser) as {
-      access_token?: string
-      profile?: { activeTenantId?: number | string }
-    }
-    if (!user.access_token) {
-      throw new Error('OIDC 用户缺少 access_token')
-    }
-
-    const jwtPayload = decodeJwtPayload(user.access_token)
-    const fromJwt = jwtPayload?.activeTenantId
-
-    let activeTenantId = firstNonEmptyTenantId(
-      window.localStorage.getItem('app_active_tenant_id'),
-      user.profile?.activeTenantId,
-      fromJwt,
-    )
+    let activeTenantId = firstNonEmptyTenantId(window.localStorage.getItem('app_active_tenant_id'))
 
     if (!activeTenantId) {
       const r = await fetch(`${apiBaseUrl}/sys/users/current`, {
         credentials: 'include',
-        headers: {
-          Accept: 'application/json',
-          Authorization: `Bearer ${user.access_token}`,
-        },
+        headers: { Accept: 'application/json' },
       })
       if (r.ok) {
         try {
@@ -439,11 +379,10 @@ async function loadIdentitySnapshot(page: Page): Promise<OidcIdentitySnapshot> {
     }
 
     if (!activeTenantId) {
-      throw new Error('OIDC 用户缺少 activeTenantId')
+      throw new Error('Session 用户缺少 activeTenantId')
     }
 
     return {
-      accessToken: user.access_token,
       activeTenantId,
     }
   }, backendBaseUrl)
@@ -466,15 +405,14 @@ export async function fetchSchedulingApi<T>(
   apiPath: string,
   options: SchedulingFetchOptions = {},
 ): Promise<SchedulingFetchResponse<T>> {
-  await waitForOidcIdentity(page)
+  await waitForSessionIdentity(page)
   const identity = await loadIdentitySnapshot(page)
   const { method = 'GET', body, overrideTenantId, idempotencyKey } = options
 
   return page.evaluate(
-    async ({ apiBaseUrl, path, auth, activeTenantId, apiMethod, apiBody, idemKey }) => {
+    async ({ apiBaseUrl, path, activeTenantId, apiMethod, apiBody, idemKey }) => {
       const headers = new Headers({
         Accept: 'application/json',
-        Authorization: `Bearer ${auth.accessToken}`,
         'X-Active-Tenant-Id': activeTenantId,
       })
       if (idemKey) {
@@ -482,6 +420,18 @@ export async function fetchSchedulingApi<T>(
       }
       if (apiMethod !== 'GET') {
         headers.set('Content-Type', 'application/json')
+        const csrfResponse = await fetch(`${apiBaseUrl}/csrf`, {
+          credentials: 'include',
+          headers: { Accept: 'application/json' },
+        })
+        if (!csrfResponse.ok) {
+          throw new Error(`刷新 CSRF token 失败: HTTP ${csrfResponse.status}`)
+        }
+        const csrf = (await csrfResponse.json()) as { token?: string; headerName?: string }
+        if (!csrf.token || !csrf.headerName) {
+          throw new Error('刷新 CSRF token 失败: 响应缺少 token/headerName')
+        }
+        headers.set(csrf.headerName, csrf.token)
       }
 
       const response = await fetch(`${apiBaseUrl}${path}`, {
@@ -503,7 +453,6 @@ export async function fetchSchedulingApi<T>(
     {
       apiBaseUrl: backendBaseUrl,
       path: apiPath,
-      auth: identity,
       activeTenantId: overrideTenantId ?? identity.activeTenantId,
       apiMethod: method,
       apiBody: body,
