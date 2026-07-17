@@ -615,12 +615,24 @@ void ensureSchedulingAdminAuthority(Connection connection, Long tenantId, Long r
     ensureRolePermissionBinding(connection, tenantId, roleId, wildcardPermissionId);
     Long schedulingReadPermissionId = ensurePermission(connection, tenantId, "scheduling:console:view", "调度控制面查看权限", "MENU", "real e2e scheduling read carrier");
     ensureRolePermissionBinding(connection, tenantId, roleId, schedulingReadPermissionId);
+    Long schedulingEntryPermissionId = ensurePermission(connection, tenantId, "scheduling:entry:view", "调度入口查看权限", "MENU", "real e2e scheduling route entry");
+    ensureRolePermissionBinding(connection, tenantId, roleId, schedulingEntryPermissionId);
     // HeaderBar 打开「切换作用域」时会拉取 ORG/DEPT 选项（GET /sys/org/list）；调度 E2E 身份需具备读权限，否则会 403 并被前端导向异常页。
     Long orgListPermissionId = ensurePermission(connection, tenantId, "system:org:list", "组织列表", "API", "real e2e org list authority");
     ensureRolePermissionBinding(connection, tenantId, roleId, orgListPermissionId);
     // BasicLayout / 路由守卫会请求 GET /sys/menus/tree（MenuManagementAccessGuard.canRead → system:menu:list）；缺此权限时首屏 401/403，active-scope-token-refresh 等用例无法进入 OIDCDebug。
     Long menuListPermissionId = ensurePermission(connection, tenantId, "system:menu:list", "菜单树查询", "API", "real e2e menu tree for layout");
     ensureRolePermissionBinding(connection, tenantId, roleId, menuListPermissionId);
+
+    try (PreparedStatement ps = connection.prepareStatement(
+            "SELECT required_permission_id FROM api_endpoint WHERE tenant_id = ? AND method = 'POST' AND uri = '/sys/users/current/active-scope' AND enabled = true AND required_permission_id IS NOT NULL ORDER BY id LIMIT 1")) {
+        ps.setLong(1, tenantId);
+        try (ResultSet rs = ps.executeQuery()) {
+            if (rs.next()) {
+                ensureRolePermissionBinding(connection, tenantId, roleId, rs.getLong(1));
+            }
+        }
+    }
 }
 
 void ensureSchedulingApiEndpointTemplates(Connection connection, Long tenantId) throws SQLException {
@@ -642,6 +654,12 @@ void ensureSchedulingApiEndpointTemplates(Connection connection, Long tenantId) 
             "JOIN permission target_permission ON target_permission.normalized_tenant_id = IFNULL(?, 0) AND target_permission.permission_code = CASE WHEN template.method = 'GET' AND template.uri = '/scheduling/task-type/list' THEN 'scheduling:console:view' ELSE template.permission END AND target_permission.enabled = 1 " +
             "SET endpoint.permission = target_permission.permission_code, endpoint.required_permission_id = target_permission.id, endpoint.updated_at = NOW() " +
             "WHERE endpoint.tenant_id = ? AND endpoint.uri LIKE '/scheduling/%'")) {
+        ps.setLong(1, tenantId);
+        ps.setLong(2, tenantId);
+        ps.executeUpdate();
+    }
+    try (PreparedStatement ps = connection.prepareStatement(
+            "UPDATE api_endpoint endpoint JOIN (SELECT method, uri, MIN(id) keep_id FROM api_endpoint WHERE tenant_id = ? AND uri LIKE '/scheduling/%' GROUP BY method, uri HAVING COUNT(*) > 1) duplicate_set ON duplicate_set.method = endpoint.method AND duplicate_set.uri = endpoint.uri SET endpoint.enabled = CASE WHEN endpoint.id = duplicate_set.keep_id THEN true ELSE false END, endpoint.updated_at = NOW() WHERE endpoint.tenant_id = ?")) {
         ps.setLong(1, tenantId);
         ps.setLong(2, tenantId);
         ps.executeUpdate();

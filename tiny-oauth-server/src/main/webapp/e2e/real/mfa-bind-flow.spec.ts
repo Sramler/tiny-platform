@@ -129,6 +129,9 @@ async function fetchPreBindSecret(page: import('@playwright/test').Page): Promis
         credentials: 'include',
         headers: {
           Accept: 'application/json',
+          ...(window.localStorage.getItem('app_active_tenant_id')
+            ? { 'X-Active-Tenant-Id': window.localStorage.getItem('app_active_tenant_id')! }
+            : {}),
         },
       })
       const text = await resp.text()
@@ -177,11 +180,20 @@ async function fetchSecurityStatus(page: import('@playwright/test').Page) {
   const backendBaseUrl =
     process.env.E2E_BACKEND_BASE_URL ?? process.env.VITE_API_BASE_URL ?? 'http://localhost:9000'
   return page.evaluate(async ({ apiBaseUrl }) => {
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 15_000)
     const response = await fetch(`${apiBaseUrl}/self/security/status`, {
       method: 'GET',
       credentials: 'include',
-      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/json',
+        ...(window.localStorage.getItem('app_active_tenant_id')
+          ? { 'X-Active-Tenant-Id': window.localStorage.getItem('app_active_tenant_id')! }
+          : {}),
+      },
     })
+    window.clearTimeout(timeout)
     const text = await response.text()
     const contentType = response.headers.get('content-type') || ''
     return {
