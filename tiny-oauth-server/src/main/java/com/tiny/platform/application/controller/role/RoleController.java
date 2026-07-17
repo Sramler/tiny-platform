@@ -47,6 +47,9 @@ public class RoleController {
                     role.getUpdatedAt()
                 );
                 dto.setRecordTenantId(role.getTenantId());
+                dto.setRiskLevel(role.getRiskLevel());
+                dto.setApprovalMode(role.getApprovalMode());
+                dto.setPermissionIds(roleService.getPermissionIdsByRoleId(role.getId()));
                 return ResponseEntity.ok(dto);
             })
             .orElse(ResponseEntity.notFound().build());

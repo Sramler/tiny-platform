@@ -36,6 +36,28 @@ public interface RoleRepository extends JpaRepository<Role, Long>, JpaSpecificat
 
     List<Role> findByIdInAndTenantIdIsNullOrderByIdAsc(List<Long> ids);
 
+    @Query(value = """
+        SELECT r.code
+        FROM role r
+        WHERE r.tenant_id <=> :tenantId
+          AND r.enabled = 1
+          AND r.code IN (:roleCodes)
+        ORDER BY r.code ASC
+        """, nativeQuery = true)
+    List<String> findEnabledRoleCodesByTenantIdAndCodes(@Param("tenantId") Long tenantId,
+                                                        @Param("roleCodes") List<String> roleCodes);
+
+    @Query(value = """
+        SELECT p.permission_code
+        FROM permission p
+        WHERE p.normalized_tenant_id = IFNULL(:tenantId, 0)
+          AND p.enabled = 1
+          AND p.permission_code IN (:permissionCodes)
+        ORDER BY p.permission_code ASC
+        """, nativeQuery = true)
+    List<String> findEnabledPermissionCodesByTenantIdAndCodes(@Param("tenantId") Long tenantId,
+                                                              @Param("permissionCodes") List<String> permissionCodes);
+
     /**
      * 查询角色已经分配的所有资源ID（新模型口径：role_permission -> permission，carrier 通过 required_permission_id 绑定）。
      */

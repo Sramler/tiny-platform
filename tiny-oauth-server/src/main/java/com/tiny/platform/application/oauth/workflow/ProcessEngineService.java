@@ -26,6 +26,8 @@ public interface ProcessEngineService {
     // 任务管理
     Object getTasks(String assignee, String activeTenantId);
     void claimTask(String taskId, String userId);
+    WorkflowTaskContext getTaskContext(String taskId);
+    boolean hasOpenTasks(String processInstanceId);
     void completeTask(String taskId, Map<String, Object> variables);
 
     // 历史查询

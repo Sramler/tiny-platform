@@ -2,9 +2,10 @@ package com.tiny.platform.infrastructure.workflow.service;
 
 import com.tiny.platform.application.oauth.workflow.BpmnValidationHelper;
 import com.tiny.platform.application.oauth.workflow.ProcessEngineService;
-import com.tiny.platform.application.oauth.workflow.model.ProcessModelRequests;
 import com.tiny.platform.application.oauth.workflow.model.ProcessModelDeployResponse;
 import com.tiny.platform.application.oauth.workflow.model.ProcessModelDto;
+import com.tiny.platform.application.oauth.workflow.model.ProcessModelRequests;
+import com.tiny.platform.application.oauth.workflow.model.ProcessModelValidationResponse;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.core.oauth.tenant.TenantContextContract;
 import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
@@ -30,7 +31,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -50,14 +53,19 @@ class ProcessModelServiceTest {
     private BpmnValidationHelper bpmnValidationHelper;
 
     @Mock
+    private ProcessModelBusinessValidationService businessValidationService;
+
+    @Mock
     private ProcessEngineService processEngineService;
 
     private ProcessModelService service;
 
     @BeforeEach
     void setUp() {
-        service = new ProcessModelService(repository, bpmnValidationHelper, processEngineService);
+        service = new ProcessModelService(repository, bpmnValidationHelper, businessValidationService, processEngineService);
         lenient().when(repository.save(any(ProcessModelEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        lenient().when(businessValidationService.validate(any(), any(), any()))
+            .thenReturn(ProcessModelBusinessValidationService.BusinessValidationResult.empty());
     }
 
     @AfterEach
@@ -212,6 +220,105 @@ class ProcessModelServiceTest {
             .hasMessageContaining("BPMN XML 验证失败");
 
         assertThat(entity.getValidationStatus()).isEqualTo(ProcessModelValidationStatus.FAILED);
+    }
+
+    @Test
+    void validate_whenBusinessReferenceFails_marksModelFailed() {
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_PLATFORM);
+        ProcessModelEntity entity = draftEntity(ProcessModelScopeType.PLATFORM, null);
+        when(repository.findByIdInScope(10L, ProcessModelScopeType.PLATFORM, null)).thenReturn(Optional.of(entity));
+        when(bpmnValidationHelper.validateBpmnXml(BPMN_XML)).thenReturn(validationResult(true));
+        when(businessValidationService.validate(BPMN_XML, ProcessModelScopeType.PLATFORM, null))
+            .thenReturn(new ProcessModelBusinessValidationService.BusinessValidationResult(
+                List.of("权限码不存在、未启用或不属于当前 scope: workflow:platform:demo:start"),
+                List.of("表单注册中心尚未接入当前校验链，本次仅校验 formKey 非空与格式")
+            ));
+
+        ProcessModelValidationResponse response = service.validate(10L, "alice");
+
+        assertThat(response.valid()).isFalse();
+        assertThat(response.message()).contains("流程模型业务校验失败");
+        assertThat(response.warnings()).contains("表单注册中心尚未接入当前校验链，本次仅校验 formKey 非空与格式");
+        assertThat(entity.getStatus()).isEqualTo(ProcessModelStatus.DRAFT);
+        assertThat(entity.getValidationStatus()).isEqualTo(ProcessModelValidationStatus.FAILED);
+        assertThat(entity.getValidationSummary()).contains("Errors:");
+    }
+
+    @Test
+    void deploy_whenBusinessReferenceFails_doesNotDeploy() throws Exception {
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_PLATFORM);
+        ProcessModelEntity entity = draftEntity(ProcessModelScopeType.PLATFORM, null);
+        when(repository.findByIdInScope(10L, ProcessModelScopeType.PLATFORM, null)).thenReturn(Optional.of(entity));
+        when(bpmnValidationHelper.validateBpmnXml(BPMN_XML)).thenReturn(validationResult(true));
+        when(businessValidationService.validate(BPMN_XML, ProcessModelScopeType.PLATFORM, null))
+            .thenReturn(new ProcessModelBusinessValidationService.BusinessValidationResult(
+                List.of("角色不存在、未启用或不属于当前 scope: ROLE_PLATFORM_PRODUCT"),
+                List.of()
+            ));
+
+        assertThatThrownBy(() -> service.deploy(10L, "alice"))
+            .isInstanceOf(BusinessException.class)
+            .hasMessageContaining("流程模型业务校验失败");
+
+        assertThat(entity.getValidationStatus()).isEqualTo(ProcessModelValidationStatus.FAILED);
+        verify(processEngineService, never()).deployProcess(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void delete_whenDraftNotDeployed_deletesModel() {
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_TENANT);
+        TenantContext.setActiveTenantId(9L);
+        ProcessModelEntity entity = draftEntity(ProcessModelScopeType.TENANT, 9L);
+        when(repository.findByIdInScope(10L, ProcessModelScopeType.TENANT, 9L)).thenReturn(Optional.of(entity));
+
+        service.delete(10L);
+
+        verify(repository).delete(entity);
+    }
+
+    @Test
+    void delete_whenValidatedNotDeployed_deletesModel() {
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_PLATFORM);
+        ProcessModelEntity entity = draftEntity(ProcessModelScopeType.PLATFORM, null);
+        entity.setStatus(ProcessModelStatus.VALIDATED);
+        entity.setValidationStatus(ProcessModelValidationStatus.PASSED);
+        when(repository.findByIdInScope(10L, ProcessModelScopeType.PLATFORM, null)).thenReturn(Optional.of(entity));
+
+        service.delete(10L);
+
+        verify(repository).delete(entity);
+    }
+
+    @Test
+    void delete_whenModelWasDeployed_rejectsAndKeepsRecord() {
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_TENANT);
+        TenantContext.setActiveTenantId(9L);
+        ProcessModelEntity entity = draftEntity(ProcessModelScopeType.TENANT, 9L);
+        entity.setStatus(ProcessModelStatus.DEPLOYED);
+        entity.setDeploymentId("dep-1");
+        when(repository.findByIdInScope(10L, ProcessModelScopeType.TENANT, 9L)).thenReturn(Optional.of(entity));
+
+        assertThatThrownBy(() -> service.delete(10L))
+            .isInstanceOf(BusinessException.class)
+            .hasMessageContaining("仅允许删除未部署的草稿或已校验草稿");
+
+        verify(repository, never()).delete(any());
+    }
+
+    @Test
+    void delete_whenModelHasRuntimeReference_rejectsEvenIfStatusIsDraft() {
+        TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_TENANT);
+        TenantContext.setActiveTenantId(9L);
+        ProcessModelEntity entity = draftEntity(ProcessModelScopeType.TENANT, 9L);
+        entity.setProcessDefinitionId("def-1");
+        when(repository.findByIdInScope(10L, ProcessModelScopeType.TENANT, 9L)).thenReturn(Optional.of(entity));
+
+        assertThatThrownBy(() -> service.delete(10L))
+            .isInstanceOf(BusinessException.class)
+            .hasMessageContaining("仅允许删除未部署的草稿或已校验草稿");
+
+        verify(repository, never()).delete(any());
+        verifyNoInteractions(processEngineService);
     }
 
     private static ProcessModelEntity draftEntity(ProcessModelScopeType scopeType, Long tenantId) {

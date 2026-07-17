@@ -130,4 +130,15 @@ class ProcessModelControllerTest {
         assertThat(response.getBody()).isEqualTo(dto);
         verify(service).create(request, "alice");
     }
+
+    @Test
+    void delete_delegatesToServiceAndReturnsNoContent() {
+        ProcessModelService service = mock(ProcessModelService.class);
+        ProcessModelController controller = new ProcessModelController(service);
+
+        ResponseEntity<Void> response = controller.delete(7L);
+
+        assertThat(response.getStatusCode().value()).isEqualTo(204);
+        verify(service).delete(7L);
+    }
 }

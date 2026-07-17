@@ -1,0 +1,136 @@
+databaseChangeLog:
+  - changeSet:
+      id: 185-platform-workflow-template-business-assets
+      author: codex
+      comment: 补齐平台侧工作流模板所需角色、权限码与角色权限绑定，支撑流程模型业务校验
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: role
+            - tableExists:
+                tableName: permission
+            - tableExists:
+                tableName: role_permission
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              -- 1) 平台工作流模板候选角色。Camunda candidateGroups 使用去 ROLE_ 前缀后的组名，
+              --    业务校验仍以角色中心 ROLE_* 编码为准。
+              INSERT INTO `role` (`tenant_id`, `code`, `name`, `description`, `builtin`, `enabled`, `role_level`)
+              SELECT NULL, role_seed.`code`, role_seed.`name`, role_seed.`description`, 1, 1, 'PLATFORM'
+              FROM (
+                SELECT 'ROLE_PLATFORM_PRODUCT' AS `code`, '平台产品负责人' AS `name`, '负责平台租户生命周期、模板与连接器的产品侧审核' AS `description`
+                UNION ALL SELECT 'ROLE_PLATFORM_OPS', '平台运营负责人', '负责平台开通、变更、发布与运行结果复核'
+                UNION ALL SELECT 'ROLE_PLATFORM_SECURITY', '平台安全负责人', '负责权限、角色、凭据与高风险变更安全审核'
+              ) role_seed
+              WHERE NOT EXISTS (
+                SELECT 1
+                FROM `role` existing_role
+                WHERE existing_role.`tenant_id` IS NULL
+                  AND existing_role.`code` = role_seed.`code`
+              );
+
+              -- 2) 平台工作流模板业务权限码。它们不是页面菜单权限，而是流程发起/审批/管理门禁。
+              INSERT INTO `permission` (
+                `permission_code`,
+                `permission_name`,
+                `module_code`,
+                `action_code`,
+                `permission_type`,
+                `description`,
+                `enabled`,
+                `built_in_flag`,
+                `tenant_id`,
+                `created_by`,
+                `created_at`,
+                `updated_by`,
+                `updated_at`
+              )
+              SELECT permission_seed.`permission_code`, permission_seed.`permission_name`, 'workflow',
+                     permission_seed.`action_code`, 'BUTTON', permission_seed.`description`,
+                     1, 1, NULL, NULL, NOW(), NULL, NOW()
+              FROM (
+                SELECT 'workflow:platform:tenant-onboarding:start' AS `permission_code`, '租户开通流程发起' AS `permission_name`, 'start' AS `action_code`, '允许发起租户开通审批流程' AS `description`
+                UNION ALL SELECT 'workflow:platform:tenant-onboarding:approve', '租户开通流程审批', 'approve', '允许处理租户开通审批任务'
+                UNION ALL SELECT 'workflow:platform:tenant-onboarding:manage', '租户开通流程管理', 'manage', '允许管理租户开通审批流程'
+                UNION ALL SELECT 'workflow:platform:tenant-plan-change:start', '租户套餐变更流程发起', 'start', '允许发起租户套餐变更审批流程'
+                UNION ALL SELECT 'workflow:platform:tenant-plan-change:approve', '租户套餐变更流程审批', 'approve', '允许处理租户套餐变更审批任务'
+                UNION ALL SELECT 'workflow:platform:tenant-plan-change:manage', '租户套餐变更流程管理', 'manage', '允许管理租户套餐变更审批流程'
+                UNION ALL SELECT 'workflow:platform:tenant-suspend-restore:start', '租户停用恢复流程发起', 'start', '允许发起租户停用或恢复审批流程'
+                UNION ALL SELECT 'workflow:platform:tenant-suspend-restore:approve', '租户停用恢复流程审批', 'approve', '允许处理租户停用或恢复审批任务'
+                UNION ALL SELECT 'workflow:platform:tenant-suspend-restore:manage', '租户停用恢复流程管理', 'manage', '允许管理租户停用或恢复审批流程'
+                UNION ALL SELECT 'workflow:platform:permission-publish:start', '权限码发布流程发起', 'start', '允许发起平台权限码发布审批流程'
+                UNION ALL SELECT 'workflow:platform:permission-publish:approve', '权限码发布流程审批', 'approve', '允许处理平台权限码发布审批任务'
+                UNION ALL SELECT 'workflow:platform:permission-publish:manage', '权限码发布流程管理', 'manage', '允许管理平台权限码发布审批流程'
+                UNION ALL SELECT 'workflow:platform:role-baseline-change:start', '角色基线变更流程发起', 'start', '允许发起平台角色基线变更审批流程'
+                UNION ALL SELECT 'workflow:platform:role-baseline-change:approve', '角色基线变更流程审批', 'approve', '允许处理平台角色基线变更审批任务'
+                UNION ALL SELECT 'workflow:platform:role-baseline-change:manage', '角色基线变更流程管理', 'manage', '允许管理平台角色基线变更审批流程'
+                UNION ALL SELECT 'workflow:platform:connector-publish:start', '连接器发布流程发起', 'start', '允许发起连接器发布审批流程'
+                UNION ALL SELECT 'workflow:platform:connector-publish:approve', '连接器发布流程审批', 'approve', '允许处理连接器发布审批任务'
+                UNION ALL SELECT 'workflow:platform:connector-publish:manage', '连接器发布流程管理', 'manage', '允许管理连接器发布审批流程'
+                UNION ALL SELECT 'workflow:platform:template-publish:start', '流程模板发布流程发起', 'start', '允许发起流程模板发布审批流程'
+                UNION ALL SELECT 'workflow:platform:template-publish:approve', '流程模板发布流程审批', 'approve', '允许处理流程模板发布审批任务'
+                UNION ALL SELECT 'workflow:platform:template-publish:manage', '流程模板发布流程管理', 'manage', '允许管理流程模板发布审批流程'
+                UNION ALL SELECT 'workflow:platform:config-change:start', '生产配置变更流程发起', 'start', '允许发起生产配置变更审批流程'
+                UNION ALL SELECT 'workflow:platform:config-change:approve', '生产配置变更流程审批', 'approve', '允许处理生产配置变更审批任务'
+                UNION ALL SELECT 'workflow:platform:config-change:manage', '生产配置变更流程管理', 'manage', '允许管理生产配置变更审批流程'
+              ) permission_seed
+              WHERE NOT EXISTS (
+                SELECT 1
+                FROM `permission` existing_permission
+                WHERE existing_permission.`tenant_id` IS NULL
+                  AND existing_permission.`permission_code` = permission_seed.`permission_code`
+              );
+
+              -- 3) 平台管理员/超级管理员拥有全部模板业务权限。
+              INSERT IGNORE INTO `role_permission` (`tenant_id`, `role_id`, `permission_id`, `created_by`, `created_at`)
+              SELECT NULL, role_entity.`id`, permission_entity.`id`, NULL, NOW()
+              FROM `role` role_entity
+              JOIN `permission` permission_entity
+                ON permission_entity.`tenant_id` IS NULL
+               AND permission_entity.`permission_code` LIKE 'workflow:platform:%'
+              WHERE role_entity.`tenant_id` IS NULL
+                AND role_entity.`code` IN ('ROLE_SUPER_ADMIN', 'ROLE_PLATFORM_ADMIN');
+
+              -- 4) 业务候选角色按职责获得发起/审批权限；manage 仍由平台管理员类角色承载。
+              INSERT IGNORE INTO `role_permission` (`tenant_id`, `role_id`, `permission_id`, `created_by`, `created_at`)
+              SELECT NULL, role_entity.`id`, permission_entity.`id`, NULL, NOW()
+              FROM (
+                SELECT 'ROLE_PLATFORM_PRODUCT' AS `role_code`, 'workflow:platform:tenant-onboarding:start' AS `permission_code`
+                UNION ALL SELECT 'ROLE_PLATFORM_PRODUCT', 'workflow:platform:tenant-onboarding:approve'
+                UNION ALL SELECT 'ROLE_PLATFORM_PRODUCT', 'workflow:platform:tenant-plan-change:start'
+                UNION ALL SELECT 'ROLE_PLATFORM_PRODUCT', 'workflow:platform:tenant-plan-change:approve'
+                UNION ALL SELECT 'ROLE_PLATFORM_PRODUCT', 'workflow:platform:permission-publish:approve'
+                UNION ALL SELECT 'ROLE_PLATFORM_PRODUCT', 'workflow:platform:connector-publish:start'
+                UNION ALL SELECT 'ROLE_PLATFORM_PRODUCT', 'workflow:platform:connector-publish:approve'
+                UNION ALL SELECT 'ROLE_PLATFORM_PRODUCT', 'workflow:platform:template-publish:start'
+                UNION ALL SELECT 'ROLE_PLATFORM_PRODUCT', 'workflow:platform:template-publish:approve'
+                UNION ALL SELECT 'ROLE_PLATFORM_OPS', 'workflow:platform:tenant-onboarding:approve'
+                UNION ALL SELECT 'ROLE_PLATFORM_OPS', 'workflow:platform:tenant-plan-change:approve'
+                UNION ALL SELECT 'ROLE_PLATFORM_OPS', 'workflow:platform:tenant-suspend-restore:approve'
+                UNION ALL SELECT 'ROLE_PLATFORM_OPS', 'workflow:platform:connector-publish:approve'
+                UNION ALL SELECT 'ROLE_PLATFORM_OPS', 'workflow:platform:template-publish:approve'
+                UNION ALL SELECT 'ROLE_PLATFORM_OPS', 'workflow:platform:config-change:start'
+                UNION ALL SELECT 'ROLE_PLATFORM_OPS', 'workflow:platform:config-change:approve'
+                UNION ALL SELECT 'ROLE_PLATFORM_SECURITY', 'workflow:platform:tenant-suspend-restore:start'
+                UNION ALL SELECT 'ROLE_PLATFORM_SECURITY', 'workflow:platform:tenant-suspend-restore:approve'
+                UNION ALL SELECT 'ROLE_PLATFORM_SECURITY', 'workflow:platform:permission-publish:start'
+                UNION ALL SELECT 'ROLE_PLATFORM_SECURITY', 'workflow:platform:permission-publish:approve'
+                UNION ALL SELECT 'ROLE_PLATFORM_SECURITY', 'workflow:platform:role-baseline-change:start'
+                UNION ALL SELECT 'ROLE_PLATFORM_SECURITY', 'workflow:platform:role-baseline-change:approve'
+                UNION ALL SELECT 'ROLE_PLATFORM_SECURITY', 'workflow:platform:connector-publish:approve'
+                UNION ALL SELECT 'ROLE_PLATFORM_SECURITY', 'workflow:platform:config-change:approve'
+              ) binding_seed
+              JOIN `role` role_entity
+                ON role_entity.`tenant_id` IS NULL
+               AND role_entity.`code` = binding_seed.`role_code`
+              JOIN `permission` permission_entity
+                ON permission_entity.`tenant_id` IS NULL
+               AND permission_entity.`permission_code` = binding_seed.`permission_code`;

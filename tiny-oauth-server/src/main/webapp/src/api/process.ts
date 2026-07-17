@@ -267,6 +267,13 @@ function deployProcessModel(id: number) {
   )
 }
 
+function deleteProcessModel(id: number) {
+  return request.delete<void>(
+    `/process/models/${id}`,
+    withIdempotency(`process-model:delete:${id}`, { id }),
+  )
+}
+
 export const processModelApi = {
   listModels: listProcessModels,
   listModelGroups: listProcessModelGroups,
@@ -275,6 +282,7 @@ export const processModelApi = {
   saveModel: saveProcessModel,
   validateModel: validateProcessModel,
   deployModel: deployProcessModel,
+  deleteModel: deleteProcessModel,
 
   // Backward-compatible aliases for the initial 1.5 implementation.
   list: listProcessModels,
@@ -283,6 +291,7 @@ export const processModelApi = {
   update: saveProcessModel,
   validate: validateProcessModel,
   deploy: deployProcessModel,
+  delete: deleteProcessModel,
 }
 
 // 流程定义管理

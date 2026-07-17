@@ -2,6 +2,7 @@ package com.tiny.platform.infrastructure.workflow.repository;
 
 import com.tiny.platform.infrastructure.workflow.model.ProcessModelEntity;
 import com.tiny.platform.infrastructure.workflow.model.ProcessModelScopeType;
+import com.tiny.platform.infrastructure.workflow.model.ProcessModelStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -60,5 +61,21 @@ public interface ProcessModelRepository extends JpaRepository<ProcessModelEntity
         @Param("tenantId") Long tenantId,
         @Param("modelKey") String modelKey,
         @Param("version") Integer version
+    );
+
+    @Query("""
+        select m from ProcessModelEntity m
+        where m.scopeType = :scopeType
+          and ((:tenantId is null and m.tenantId is null) or m.tenantId = :tenantId)
+          and m.modelKey = :modelKey
+          and m.status = :status
+          and m.deploymentId is not null
+        order by m.deployedAt desc, m.processDefinitionVersion desc, m.version desc, m.id desc
+        """)
+    List<ProcessModelEntity> findRuntimeCandidatesInScope(
+        @Param("scopeType") ProcessModelScopeType scopeType,
+        @Param("tenantId") Long tenantId,
+        @Param("modelKey") String modelKey,
+        @Param("status") ProcessModelStatus status
     );
 }

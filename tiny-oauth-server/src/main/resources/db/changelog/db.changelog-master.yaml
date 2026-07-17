@@ -737,6 +737,21 @@ databaseChangeLog:
       file: 184-process-model.yaml
       relativeToChangelogFile: true
 
+  # 平台侧工作流模板业务资产：角色、权限码与角色权限绑定
+  - include:
+      file: 185-platform-workflow-template-business-assets.yaml
+      relativeToChangelogFile: true
+
+  # 流程业务申请单表：承载审批申请、状态流和业务回写结果
+  - include:
+      file: 186-workflow-business-request.yaml
+      relativeToChangelogFile: true
+
+  # 工作流治理资产表：承接 connector/template/config 审批后的真实业务落点
+  - include:
+      file: 187-workflow-governance-asset.yaml
+      relativeToChangelogFile: true
+
   # BFF Session 登录后的平台租户控制面基础接口载体，保持统一守卫 fail-closed
   - include:
       file: 188-backfill-platform-tenant-control-api-endpoints.yaml

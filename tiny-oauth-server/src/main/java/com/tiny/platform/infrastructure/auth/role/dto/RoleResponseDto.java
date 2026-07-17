@@ -12,6 +12,9 @@ public class RoleResponseDto {
     private String description; // 描述
     private boolean builtin; // 是否内置
     private boolean enabled; // 是否启用
+    private String riskLevel; // LOW/NORMAL/HIGH/CRITICAL
+    private String approvalMode; // NONE/ONE_STEP
+    private java.util.List<Long> permissionIds;
     private LocalDateTime createdAt; // 创建时间
     private LocalDateTime updatedAt; // 更新时间
     
@@ -49,6 +52,15 @@ public class RoleResponseDto {
     
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
+
+    public String getRiskLevel() { return riskLevel; }
+    public void setRiskLevel(String riskLevel) { this.riskLevel = riskLevel; }
+
+    public String getApprovalMode() { return approvalMode; }
+    public void setApprovalMode(String approvalMode) { this.approvalMode = approvalMode; }
+
+    public java.util.List<Long> getPermissionIds() { return permissionIds; }
+    public void setPermissionIds(java.util.List<Long> permissionIds) { this.permissionIds = permissionIds; }
     
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

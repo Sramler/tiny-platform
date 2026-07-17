@@ -1,0 +1,48 @@
+databaseChangeLog:
+  - changeSet:
+      id: 187-workflow-governance-asset
+      author: codex
+      comment: 工作流治理资产表，承接 connector/template/config 审批后的真实业务落点
+      preConditions:
+        onFail: MARK_RAN
+        onError: HALT
+        not:
+          tableExists:
+            tableName: workflow_governance_asset
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              CREATE TABLE `workflow_governance_asset` (
+                `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '治理资产ID',
+                `scope_type` VARCHAR(16) NOT NULL COMMENT '作用域：PLATFORM/TENANT',
+                `tenant_id` BIGINT DEFAULT NULL COMMENT '租户ID，PLATFORM 为 NULL',
+                `normalized_tenant_id` BIGINT GENERATED ALWAYS AS (IFNULL(`tenant_id`, 0)) STORED COMMENT '归一化租户键',
+                `asset_type` VARCHAR(32) NOT NULL COMMENT '资产类型：CONNECTOR/TEMPLATE/CONFIG',
+                `asset_key` VARCHAR(128) NOT NULL COMMENT '资产业务 key',
+                `asset_name` VARCHAR(200) NOT NULL COMMENT '资产名称',
+                `action_code` VARCHAR(32) NOT NULL COMMENT '审批动作',
+                `version` INT NOT NULL DEFAULT 1 COMMENT '资产版本',
+                `status` VARCHAR(32) NOT NULL COMMENT '资产状态',
+                `payload_json` LONGTEXT NOT NULL COMMENT '审批通过时的业务载荷快照',
+                `result_json` LONGTEXT DEFAULT NULL COMMENT '执行结果快照',
+                `created_by` VARCHAR(128) DEFAULT NULL,
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                `updated_by` VARCHAR(128) DEFAULT NULL,
+                `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                `published_by` VARCHAR(128) DEFAULT NULL,
+                `published_at` DATETIME DEFAULT NULL,
+                `lock_version` BIGINT NOT NULL DEFAULT 0 COMMENT '乐观锁版本',
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uk_workflow_governance_asset_version` (`scope_type`, `normalized_tenant_id`, `asset_type`, `asset_key`, `version`),
+                KEY `idx_workflow_governance_asset_scope_updated` (`scope_type`, `normalized_tenant_id`, `updated_at`),
+                KEY `idx_workflow_governance_asset_key` (`asset_type`, `asset_key`),
+                CONSTRAINT `chk_workflow_governance_asset_scope_type` CHECK (`scope_type` IN ('PLATFORM', 'TENANT')),
+                CONSTRAINT `chk_workflow_governance_asset_scope_tenant` CHECK (
+                  (`scope_type` = 'PLATFORM' AND `tenant_id` IS NULL)
+                  OR (`scope_type` = 'TENANT' AND `tenant_id` IS NOT NULL)
+                ),
+                CONSTRAINT `chk_workflow_governance_asset_type` CHECK (`asset_type` IN ('CONNECTOR', 'TEMPLATE', 'CONFIG'))
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='工作流治理资产';

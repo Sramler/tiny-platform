@@ -84,9 +84,13 @@ public class RoleServiceImpl implements RoleService {
         BeanUtils.copyProperties(dto, role);
         role.setTenantId(tenantId);
         role.setRoleLevel(currentRoleLevel());
+        applyRoleGovernanceFields(role, dto, null);
         Role saved = roleRepository.save(role);
         if (dto.getUserIds() != null && !dto.getUserIds().isEmpty()) {
             updateRoleUsers(saved.getId(), dto.getUserIds());
+        }
+        if (dto.getPermissionIds() != null) {
+            updateRolePermissions(saved.getId(), dto.getPermissionIds());
         }
         return toDto(saved);
     }
@@ -95,13 +99,21 @@ public class RoleServiceImpl implements RoleService {
     @Transactional
     public RoleResponseDto update(Long id, RoleCreateUpdateDto dto) {
         assertPlatformTemplateUsersSupported(dto.getUserIds());
-        Long tenantId = requireTenantId();
+        Long tenantId = currentManagedTenantId();
         Role role = findManagedRole(id).orElseThrow(() -> new RuntimeException("角色不存在"));
+        String currentRiskLevel = role.getRiskLevel();
+        String currentApprovalMode = role.getApprovalMode();
         BeanUtils.copyProperties(dto, role, "id");
         role.setTenantId(currentManagedTenantId());
         role.setRoleLevel(currentRoleLevel());
-        assertUsersVisibleInTenant(dto.getUserIds(), tenantId);
-        updateRoleUsers(role.getId(), dto.getUserIds());
+        applyRoleGovernanceFields(role, dto, currentRiskLevel, currentApprovalMode);
+        if (tenantId != null) {
+            assertUsersVisibleInTenant(dto.getUserIds(), tenantId);
+            updateRoleUsers(role.getId(), dto.getUserIds());
+        }
+        if (dto.getPermissionIds() != null) {
+            updateRolePermissions(role.getId(), dto.getPermissionIds());
+        }
 
         return toDto(roleRepository.save(role));
     }
@@ -195,7 +207,23 @@ public class RoleServiceImpl implements RoleService {
         RoleResponseDto dto = new RoleResponseDto();
         BeanUtils.copyProperties(role, dto);
         dto.setRecordTenantId(role.getTenantId());
+        List<Long> permissionIds = roleRepository.findPermissionIdsByRoleIdAndTenantId(role.getId(), role.getTenantId());
+        dto.setPermissionIds(permissionIds == null ? List.of() : permissionIds);
         return dto;
+    }
+
+    private void applyRoleGovernanceFields(Role role, RoleCreateUpdateDto dto, String... currentValues) {
+        if (role == null || dto == null) {
+            return;
+        }
+        String currentRiskLevel = currentValues != null && currentValues.length > 0 ? currentValues[0] : null;
+        String currentApprovalMode = currentValues != null && currentValues.length > 1 ? currentValues[1] : null;
+        role.setRiskLevel(dto.getRiskLevel() != null
+            ? dto.getRiskLevel()
+            : currentRiskLevel != null ? currentRiskLevel : "NORMAL");
+        role.setApprovalMode(dto.getApprovalMode() != null
+            ? dto.getApprovalMode()
+            : currentApprovalMode != null ? currentApprovalMode : "NONE");
     }
 
     private Long requireTenantId() {

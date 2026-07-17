@@ -12,14 +12,19 @@
       @change="handleTabChange"
     >
       <a-tab-pane key="drafts" tab="流程草稿">
-        <ProcessDraftList @open-design="openDesign" />
+        <ProcessDraftList
+          @open-design="openDesign"
+          @open-new-draft="openNewDraft"
+        />
       </a-tab-pane>
 
-      <a-tab-pane key="design" tab="流程设计" :disabled="!activeModelId">
+      <a-tab-pane key="design" tab="流程设计" :disabled="!activeModelId && !isNewDraftRoute">
         <ProcessDesigner
-          v-if="activeTab === 'design' && activeModelId"
-          :key="activeModelId"
+          v-if="activeTab === 'design' && (activeModelId || isNewDraftRoute)"
+          :key="activeModelId || unsavedDraft?.draftKey || 'new-draft'"
+          :initial-draft="unsavedDraft"
           @dirty-change="handleDesignerDirtyChange"
+          @saved="handleDesignerSaved"
         />
         <div v-else class="design-placeholder">
           <h3>请选择流程草稿</h3>
@@ -40,10 +45,18 @@ import ProcessDesigner from '@/views/process/modeling/ProcessDesigner.vue'
 import ProcessDraftList from '@/views/process/modeling/ProcessDraftList.vue'
 
 type ModelingTab = 'drafts' | 'design'
+type UnsavedProcessDraft = {
+  draftKey: string
+  modelKey: string
+  name: string
+  description?: string
+  bpmnXml: string
+}
 
 const route = useRoute()
 const router = useRouter()
 const designerDirty = ref(false)
+const unsavedDraft = ref<UnsavedProcessDraft | null>(null)
 
 function parseModelId(value: unknown): number | null {
   const rawValue = Array.isArray(value) ? value[0] : value
@@ -54,25 +67,31 @@ function parseModelId(value: unknown): number | null {
 }
 
 const activeModelId = computed(() => parseModelId(route.query.modelId))
+const isNewDraftRoute = computed(() => route.query.draft === 'new')
 
 const activeTab = computed<ModelingTab>(() =>
-  route.query.tab === 'design' && activeModelId.value ? 'design' : 'drafts',
+  route.query.tab === 'design' && (activeModelId.value || isNewDraftRoute.value) ? 'design' : 'drafts',
 )
 
-function buildQuery(tab: ModelingTab, modelId?: number) {
+function buildQuery(tab: ModelingTab, modelId?: number, draftMode?: 'new') {
   const nextQuery: LocationQueryRaw = { ...route.query, tab }
   if (tab === 'design' && modelId) {
     nextQuery.modelId = String(modelId)
+    delete nextQuery.draft
+  } else if (tab === 'design' && draftMode === 'new') {
+    nextQuery.draft = 'new'
+    delete nextQuery.modelId
   } else {
     delete nextQuery.modelId
+    delete nextQuery.draft
   }
   return nextQuery
 }
 
-function navigateTo(tab: ModelingTab, modelId?: number) {
+function navigateTo(tab: ModelingTab, modelId?: number, draftMode?: 'new') {
   router.replace({
     path: route.path,
-    query: buildQuery(tab, modelId),
+    query: buildQuery(tab, modelId, draftMode),
   })
 }
 
@@ -96,15 +115,16 @@ function handleTabChange(key: string | number) {
     return
   }
   if (nextTab === 'design') {
-    if (!activeModelId.value) {
+    if (!activeModelId.value && !(isNewDraftRoute.value && unsavedDraft.value)) {
       message.warning('请先选择流程草稿')
       return
     }
-    navigateTo('design', activeModelId.value)
+    navigateTo('design', activeModelId.value ?? undefined, isNewDraftRoute.value ? 'new' : undefined)
     return
   }
   confirmDiscardDirty(() => {
     designerDirty.value = false
+    unsavedDraft.value = null
     navigateTo('drafts')
   })
 }
@@ -112,7 +132,19 @@ function handleTabChange(key: string | number) {
 function openDesign(model: ProcessModel) {
   confirmDiscardDirty(() => {
     designerDirty.value = false
+    unsavedDraft.value = null
     navigateTo('design', model.id)
+  })
+}
+
+function openNewDraft(draft: Omit<UnsavedProcessDraft, 'draftKey'>) {
+  confirmDiscardDirty(() => {
+    designerDirty.value = false
+    unsavedDraft.value = {
+      ...draft,
+      draftKey: `${draft.modelKey}:${Date.now()}`,
+    }
+    navigateTo('design', undefined, 'new')
   })
 }
 
@@ -120,15 +152,30 @@ function handleDesignerDirtyChange(dirty: boolean) {
   designerDirty.value = dirty
 }
 
+function handleDesignerSaved(model: ProcessModel) {
+  designerDirty.value = false
+  unsavedDraft.value = null
+  navigateTo('design', model.id)
+}
+
 function normalizeRouteQuery() {
-  if (route.query.tab === 'design' && !activeModelId.value) {
+  if (route.query.tab === 'design' && activeModelId.value && isNewDraftRoute.value) {
+    navigateTo('design', activeModelId.value)
+    return
+  }
+  if (route.query.tab === 'design' && isNewDraftRoute.value && !unsavedDraft.value) {
+    message.warning('未保存草稿不存在，请重新新建或选择已有草稿')
+    navigateTo('drafts')
+    return
+  }
+  if (route.query.tab === 'design' && !activeModelId.value && !isNewDraftRoute.value) {
     message.warning('请先选择流程草稿')
     navigateTo('drafts')
   }
 }
 
 watch(
-  () => [route.query.tab, route.query.modelId],
+  () => [route.query.tab, route.query.modelId, route.query.draft],
   normalizeRouteQuery,
 )
 

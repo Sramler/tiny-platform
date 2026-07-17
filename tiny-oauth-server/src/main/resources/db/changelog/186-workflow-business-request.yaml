@@ -1,0 +1,59 @@
+databaseChangeLog:
+  - changeSet:
+      id: 186-workflow-business-request
+      author: codex
+      comment: 流程业务申请单表，承载启动申请、审批状态与业务回写结果，避免仅依赖 Camunda 变量
+      preConditions:
+        onFail: MARK_RAN
+        onError: HALT
+        not:
+          tableExists:
+            tableName: workflow_business_request
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              CREATE TABLE `workflow_business_request` (
+                `id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '流程业务申请ID',
+                `scope_type` VARCHAR(16) NOT NULL COMMENT '作用域：PLATFORM/TENANT',
+                `tenant_id` BIGINT DEFAULT NULL COMMENT '租户ID，PLATFORM 为 NULL',
+                `normalized_tenant_id` BIGINT GENERATED ALWAYS AS (IFNULL(`tenant_id`, 0)) STORED COMMENT '归一化租户键，避免 MySQL UNIQUE NULL 语义松散',
+                `request_id` VARCHAR(128) NOT NULL COMMENT '业务申请单号',
+                `request_title` VARCHAR(200) NOT NULL COMMENT '业务申请标题',
+                `request_reason` TEXT DEFAULT NULL COMMENT '业务申请原因',
+                `process_key` VARCHAR(128) NOT NULL COMMENT '流程定义 key',
+                `process_instance_id` VARCHAR(128) DEFAULT NULL COMMENT 'Camunda 流程实例ID',
+                `process_definition_id` VARCHAR(255) DEFAULT NULL COMMENT 'Camunda 流程定义ID',
+                `last_task_id` VARCHAR(128) DEFAULT NULL COMMENT '最近审批任务ID',
+                `last_task_key` VARCHAR(128) DEFAULT NULL COMMENT '最近审批任务 key',
+                `last_decision` VARCHAR(32) DEFAULT NULL COMMENT '最近一次审批决策',
+                `last_action_by` VARCHAR(128) DEFAULT NULL COMMENT '最近一次操作人',
+                `status` VARCHAR(32) NOT NULL DEFAULT 'SUBMITTED' COMMENT '申请状态',
+                `domain_resource_type` VARCHAR(64) DEFAULT NULL COMMENT '业务资源类型',
+                `domain_resource_id` VARCHAR(128) DEFAULT NULL COMMENT '业务资源ID',
+                `domain_status` VARCHAR(64) DEFAULT NULL COMMENT '业务域状态',
+                `payload_json` LONGTEXT NOT NULL COMMENT '提交时的业务载荷快照（脱敏）',
+                `result_json` LONGTEXT DEFAULT NULL COMMENT '审批/执行结果快照',
+                `error_message` TEXT DEFAULT NULL COMMENT '失败原因',
+                `created_by` VARCHAR(128) DEFAULT NULL,
+                `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                `updated_by` VARCHAR(128) DEFAULT NULL,
+                `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                `applied_at` DATETIME DEFAULT NULL,
+                `completed_at` DATETIME DEFAULT NULL,
+                `lock_version` BIGINT NOT NULL DEFAULT 0 COMMENT '乐观锁版本',
+                PRIMARY KEY (`id`),
+                UNIQUE KEY `uk_workflow_business_request_scope_request` (`scope_type`, `normalized_tenant_id`, `request_id`),
+                UNIQUE KEY `uk_workflow_business_request_instance` (`process_instance_id`),
+                KEY `idx_workflow_business_request_scope_updated` (`scope_type`, `normalized_tenant_id`, `updated_at`),
+                KEY `idx_workflow_business_request_process_key` (`process_key`),
+                KEY `idx_workflow_business_request_status` (`status`),
+                CONSTRAINT `chk_workflow_business_request_scope_type` CHECK (`scope_type` IN ('PLATFORM', 'TENANT')),
+                CONSTRAINT `chk_workflow_business_request_scope_tenant` CHECK (
+                  (`scope_type` = 'PLATFORM' AND `tenant_id` IS NULL)
+                  OR (`scope_type` = 'TENANT' AND `tenant_id` IS NOT NULL)
+                ),
+                CONSTRAINT `chk_workflow_business_request_status` CHECK (`status` IN ('SUBMITTED', 'START_FAILED', 'APPROVED_IN_STEP', 'REJECTED', 'APPLYING', 'APPLIED', 'COMPLETED', 'FAILED'))
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='流程业务申请单';

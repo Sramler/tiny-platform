@@ -35,6 +35,7 @@ describe('process API idempotency', () => {
     await processModelApi.createModel(modelCreate)
     await processModelApi.saveModel(7, modelUpdate)
     await processModelApi.deployModel(7)
+    await processModelApi.deleteModel(7)
     await deploymentApi.deployProcess('<xml />')
     await deploymentApi.deployProcessWithInfo(deployInfo)
     await deploymentApi.deleteDeployment('dep-1')
@@ -73,6 +74,12 @@ describe('process API idempotency', () => {
         scope: 'process-model:deploy:7',
         payload: { id: 7 },
         mode: 'submit',
+      },
+    })
+    expect(mocks.delete).toHaveBeenCalledWith('/process/models/7', {
+      idempotency: {
+        scope: 'process-model:delete:7',
+        payload: { id: 7 },
       },
     })
     expect(mocks.post).toHaveBeenCalledWith('/process/deploy', '<xml />', {

@@ -6,6 +6,7 @@ import jakarta.validation.Valid;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -84,6 +85,14 @@ public class ProcessModelController {
         Principal principal
     ) {
         return ResponseEntity.ok(processModelService.deploy(id, actor(principal)));
+    }
+
+    @DeleteMapping("/{id}")
+    @PreAuthorize("@workflowAccessGuard.canConfig(authentication)")
+    @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
+    public ResponseEntity<Void> delete(@PathVariable("id") Long id) {
+        processModelService.delete(id);
+        return ResponseEntity.noContent().build();
     }
 
     private static String actor(Principal principal) {

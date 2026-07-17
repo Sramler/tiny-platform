@@ -150,6 +150,16 @@ const emit = defineEmits<{
   (e: 'save', bpmnXml: string, processInfo: ProcessInfoInput): void
   (e: 'cancel'): void
   (e: 'dirty-change', dirty: boolean): void
+  (e: 'saved', model: ProcessModel): void
+}>()
+
+const props = defineProps<{
+  initialDraft?: {
+    modelKey: string
+    name: string
+    description?: string
+    bpmnXml: string
+  } | null
 }>()
 
 const bpmnContainer = ref<HTMLDivElement | null>(null)
@@ -303,6 +313,21 @@ function applyProcessModelSnapshot(processModel: ProcessModel) {
   emit('dirty-change', false)
 }
 
+async function applyUnsavedDraftSnapshot(draft: NonNullable<typeof props.initialDraft>) {
+  if (!modeler.value) {
+    return
+  }
+  await modeler.value.importXml(draft.bpmnXml)
+  currentModelId.value = null
+  currentModelLockVersion.value = undefined
+  currentModelVersion.value = undefined
+  currentProcessKey.value = draft.modelKey
+  saveFormData.deploymentName = draft.name || draft.modelKey || '新建流程草稿'
+  saveFormData.description = draft.description || ''
+  isModelDirty.value = true
+  emit('dirty-change', true)
+}
+
 async function loadProcessModel(modelId: number) {
   if (!modeler.value) {
     return
@@ -341,6 +366,7 @@ async function saveDraft() {
         lockVersion: currentModelLockVersion.value,
       })
       : await processModelApi.createModel({
+        modelKey: currentProcessKey.value || undefined,
         name,
         description: saveFormData.description,
         bpmnXml: xml,
@@ -348,6 +374,7 @@ async function saveDraft() {
       })
 
     applyProcessModelSnapshot(processModel)
+    emit('saved', processModel)
     message.success('流程草稿已保存')
   } catch (error) {
     console.error('保存流程草稿失败:', error)
@@ -747,6 +774,9 @@ onMounted(async () => {
     if (routeModelId) {
       console.log('Loading process model draft...', routeModelId)
       await loadProcessModel(routeModelId)
+    } else if (props.initialDraft) {
+      console.log('Loading unsaved process draft...', props.initialDraft.modelKey)
+      await applyUnsavedDraftSnapshot(props.initialDraft)
     } else {
       // 加载一个简化的请假审批流程
       console.log('Loading BPMN XML...')

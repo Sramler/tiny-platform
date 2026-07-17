@@ -88,6 +88,7 @@ describe('process API (read & validate)', () => {
       await processModelApi.listModelGroups()
       await processModelApi.createModel({ name: 'Leave Process', bpmnXml: '<bpmn />' })
       await processModelApi.saveModel(1, { name: 'Leave Process', bpmnXml: '<bpmn />', lockVersion: 0 })
+      await processModelApi.deleteModel(1)
 
       expect(requestMocks.get).toHaveBeenCalledWith('/process/models')
       expect(requestMocks.get).toHaveBeenCalledWith('/process/models/groups')
@@ -107,6 +108,12 @@ describe('process API (read & validate)', () => {
           scope: 'process-model:update:1',
           payload: { id: 1, name: 'Leave Process', bpmnXml: '<bpmn />', lockVersion: 0 },
           mode: 'submit',
+        },
+      })
+      expect(requestMocks.delete).toHaveBeenCalledWith('/process/models/1', {
+        idempotency: {
+          scope: 'process-model:delete:1',
+          payload: { id: 1 },
         },
       })
     })

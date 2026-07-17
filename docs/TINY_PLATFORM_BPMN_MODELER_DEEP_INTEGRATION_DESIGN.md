@@ -126,6 +126,7 @@
 - 平台模型若未来需要作为租户模板下发，必须新增独立的模板发布 / 克隆设计。
 - 不得把 platform scope 模型直接当成 tenant scope 模型复用。
 - 不得通过修改 `tenant_id` 把同一条 `process_model` 记录在 platform 与 tenant 之间转换。
+- 模板只能作为创建草稿的来源，不能作为运行态流程直接部署或启动。
 
 ## 4. 阶段总览
 
@@ -458,7 +459,7 @@ DELETE /process/models/{id}
 | `POST /process/models/{id}/validate` | `workflow:console:config` | 校验模型 XML |
 | `POST /process/models/{id}/deploy` | `workflow:console:config` | 部署模型到 Camunda |
 | `POST /process/models/{id}/versions` | `workflow:console:config` | 固化新平台版本 |
-| `DELETE /process/models/{id}` | `workflow:console:config` | 删除草稿或归档模型 |
+| `DELETE /process/models/{id}` | `workflow:console:config` | 删除未部署草稿 |
 
 #### 6.4.1 设计态与运行态 API 边界
 
@@ -705,6 +706,7 @@ bash tiny-oauth-server/scripts/verify-platform-local-dev-stack.sh
 
 - `流程草稿` 读取 `/process/models/**` 设计态资产。
 - `流程设计` 通过 `modelId` 打开单个草稿。
+- `新建草稿` 只进入未保存设计态，不得立即写入 `process_model`。
 - 不在草稿列表中直接持有 bpmn-js 实例。
 - 不把运行态部署列表、实例、任务、历史混入草稿列表。
 - 保存草稿仍然不得调用 Camunda 部署。
@@ -739,7 +741,7 @@ views/process/modeling/
 只有以下情况进入 `流程设计`：
 
 - 点击某个草稿的“设计”。
-- 新建草稿成功后自动打开该草稿。
+- 点击“新建草稿”或模板“设计最新”，打开未保存设计态。
 - URL 中存在合法 `modelId`。
 
 ### 7.3 路由与状态
@@ -749,6 +751,7 @@ views/process/modeling/
 ```text
 /process/modeling?tab=drafts
 /process/modeling?tab=design&modelId=10001
+/process/modeling?tab=design&draft=new
 ```
 
 平台运行态页仍按已有 platform runtime path 规则保留 scope query。
@@ -763,7 +766,10 @@ views/process/modeling/
 路由规则：
 
 - `tab` 缺省时等同 `drafts`。
-- `tab=design` 但缺少合法 `modelId` 时回退到 `drafts`，并提示先选择草稿。
+- `tab=design&modelId=...` 打开已保存草稿。
+- `tab=design&draft=new` 表示当前浏览器会话内的未保存草稿，只能由“新建草稿”或模板“设计最新”进入。
+- `tab=design&draft=new` 刷新或丢失内存草稿后必须回退到 `drafts`，并提示重新新建或选择已有草稿。
+- `tab=design` 但缺少合法 `modelId` 且不是有效 `draft=new` 时回退到 `drafts`，并提示先选择草稿。
 - 从草稿列表进入设计页时，必须保留当前 active tenant / platform scope query。
 - 切换 scope 后必须重新加载草稿列表，不得复用上一 scope 的缓存草稿。
 - 设计页存在 dirty 状态时，切换 Tab、切换草稿、离开路由均必须提示。
@@ -863,14 +869,32 @@ views/process/modeling/
 首版动作建议：
 
 - `新建草稿`
-- 资产行：`设计最新版本`、`校验最新版本`、`部署最新版本`、`展开版本`
-- 版本行：`设计`、`校验`、`部署`
+- 资产行：`设计最新版本`、`校验最新版本`、`部署最新版本`、`展开版本`、`删除草稿`
+- 版本行：`设计`、`校验`、`部署`、`删除`
+
+`新建草稿` 落库口径：
+
+- 点击 `新建草稿` 只生成前端内存中的未保存设计态，并跳转到 `tab=design&draft=new`。
+- 此时不得调用 `processModelApi.createModel()`，不得产生 `process_model` 行记录。
+- 只有在 `流程设计` 中点击 `保存草稿`，才允许调用 `processModelApi.createModel()` 创建首条 `process_model` 记录。
+- 保存成功后必须把路由从 `draft=new` 替换为真实 `modelId`，并清理未保存设计态。
+
+`删除草稿` 口径：
+
+- 未保存草稿没有落库，离开页面即丢弃，不提供删除接口。
+- 已保存且未部署的 `DRAFT` / `VALIDATED` 版本允许删除。
+- 删除条件必须由后端强制校验：`runtimeState = NOT_DEPLOYED`，`status in (DRAFT, VALIDATED)`，`deploymentId is null`，`processDefinitionId is null`。
+- 资产行只有一个未部署版本时可展示 `删除草稿`。
+- 资产行存在多个版本时，默认只在版本明细行对可删除版本展示 `删除`，避免误删整个流程资产。
+- 历史已部署版本和当前运行版本不得删除，只能在阶段 4 生命周期能力中进入归档、停用、回滚或迁移流程。
+- 平台模板虚拟行不是 `process_model` 记录，不提供删除动作。
 
 API 口径：
 
 - `GET /process/models`：版本记录列表，保留给兼容、导出、调试或后续版本详情页使用。
 - `GET /process/models/groups`：流程资产分组列表，作为 `流程草稿` 默认数据源。
 - `GET /process/models/{id}`：打开指定版本。
+- `DELETE /process/models/{id}`：仅删除未部署草稿；不删除 Camunda deployment、流程定义、实例或历史数据。
 
 运行态计算口径：
 
@@ -887,12 +911,153 @@ API 口径：
 阶段 1.6 暂不强制实现：
 
 - 归档。
-- 删除。
 - 复制版本。
+- 从模板创建草稿的完整后端能力。
 - 批量操作。
 - SVG 预览缩略图。
 
 这些能力可在阶段 4 生命周期流中补齐。
+
+### 7.4.1 流程模板库预留设计
+
+流程模板用于提供创建草稿的起点，不等同于流程草稿，也不等同于已部署流程。
+
+推荐链路：
+
+```text
+流程模板
+  -> 复制为当前 scope 下的流程草稿
+  -> 进入流程设计
+  -> 保存
+  -> 校验
+  -> 部署
+```
+
+模板治理规则：
+
+- 平台模板属于 platform scope 治理资产，由平台管理员维护、校验、发布和归档。
+- 租户不能修改平台模板原件，只能复制为自己的 tenant scope 草稿。
+- 模板本身不部署、不启动流程实例；只有复制出的草稿经过校验和部署后才进入运行态。
+- 不得通过修改 `tenant_id` 或 `scopeType` 把模板、平台草稿、租户草稿互相转换。
+- 模板中的候选人、候选组、表单、权限码和连接器优先引用稳定 key，不写死具体用户 ID。
+- 阶段 1.6 可以先用前端内置的首批平台模板作为“设计最新”的起点，但点击设计不得立即写入 `process_model`。
+- 模板“设计最新”与普通“新建草稿”一致，只进入未保存设计态；只有用户点击 `保存草稿` 才调用 `processModelApi.createModel()` 写入当前 scope。
+- 模板“校验”或“部署”属于显式执行动作；若当前 scope 尚无该模板对应草稿，可以在动作执行链路中创建草稿、校验并部署，但必须由按钮语义和操作反馈明确告知。
+- 阶段 3 / 阶段 4 再把内置模板替换为后端模板库 API，并补模板发布、复制和版本治理。
+
+模板数据建模建议：
+
+- 长期优先使用独立模板资产，例如 `process_template` / `process_template_version`，不要把模板混成普通 `process_model` 草稿记录。
+- 如果短期复用 `process_model`，必须增加明确的模板标识、发布状态和复制 API，且模板记录不得进入普通流程草稿列表。
+- 阶段 1.6 的模板展示行是前端虚拟行，只用于可见、可验证、可点击进入设计或触发显式校验/部署；它不是 `process_model` 记录，也不得参与运行态统计。
+- 模板复制必须创建新的草稿 ID、版本、scope 和审计字段，不能复用模板原记录。
+
+平台侧首批推荐模板：
+
+| 模板 key | 名称 | 场景 | 关键能力 |
+| --- | --- | --- | --- |
+| `platform_tenant_onboarding` | 租户开通审批 | 新租户入驻、套餐确认、初始化资源 | 多级审批、租户初始化、资源分配 |
+| `platform_tenant_plan_change` | 租户套餐变更审批 | 租户升级 / 降级套餐或调整额度 | 条件分支、额度变更、审计 |
+| `platform_tenant_suspend_restore` | 租户停用 / 恢复审批 | 欠费、违规、风控后的停用与恢复 | 高风险审批、状态变更、通知 |
+| `platform_permission_publish` | 平台权限码发布审批 | 新增、废弃或调整权限标识 | 权限治理、影响评估、发布记录 |
+| `platform_role_baseline_change` | 平台角色基线变更审批 | 平台角色、RBAC3 基线调整 | 权限差异审计、双人复核 |
+| `platform_connector_publish` | 连接器发布审批 | 服务任务 / connector 上架给租户使用 | 白名单、凭据引用、权限检查 |
+| `platform_template_publish` | 流程模板发布审批 | 平台模板上架给租户复制 | 模板校验、版本发布、归档保护 |
+| `platform_config_change` | 生产配置变更审批 | 平台级配置、功能开关、菜单策略变更 | 变更窗口、回滚方案、审计 |
+
+平台侧扩展模板池：
+
+| 模板 key | 名称 | 场景 | 关键能力 |
+| --- | --- | --- | --- |
+| `platform_tenant_deletion` | 租户注销 / 数据删除审批 | 合规删除、数据清理、监管要求 | 多人复核、脱敏、归档、保留周期 |
+| `platform_tenant_admin_reset` | 租户管理员重置审批 | 平台代租户重置管理员 | 身份校验、最小权限、审计 |
+| `platform_menu_change` | 平台菜单变更审批 | 菜单新增、隐藏、排序、权限绑定 | 菜单版本、权限码联动、发布审批 |
+| `platform_datascope_policy_change` | 数据权限策略变更审批 | 调整 scope / dataScope 规则 | 高风险配置审批、影响范围检查 |
+| `platform_system_dict_change` | 系统字典项变更审批 | 修改系统字典展示、颜色、排序 | system seed 治理、租户不可改约束 |
+| `platform_feature_canary` | 功能开关灰度审批 | 某能力对部分租户开放 | canary、回滚、租户范围 |
+| `platform_connector_retire` | 连接器下线审批 | 禁用不安全或废弃连接器 | 引用检查、租户影响评估 |
+| `platform_secret_rotation` | 连接器密钥轮换流程 | secret 到期、泄露或例行轮换 | 安全任务、通知、审计 |
+| `platform_release_approval` | 平台发布上线审批 | 应用版本、DB changelog、seed 发布 | 发布门禁、验收记录 |
+| `platform_emergency_rollback` | 紧急回滚流程 | 发布失败或线上故障回滚 | 快速审批、执行记录 |
+| `platform_incident_escalation` | 故障升级流程 | 租户故障升级到平台 / 研发 / 运维 | SLA、分派、异常节点 |
+| `platform_maintenance_window` | 维护窗口审批 | 停机维护、升级窗口 | 租户影响范围、通知 |
+| `platform_quota_expansion` | 容量 / 配额扩容审批 | 单租户资源超限或商务扩容 | quota、成本、风险 |
+| `platform_cross_tenant_support_access` | 跨租户支持访问审批 | 客服 / 运维临时访问租户数据 | 最小权限、时效、审计 |
+| `platform_audit_export` | 审计日志导出审批 | 合规、监管、客户审计导出 | 脱敏、下载有效期、不可抵赖 |
+| `platform_sensitive_operation_review` | 敏感操作复核流程 | 删除、批量变更、权限提升 | 双人复核、强审计 |
+
+阶段落地建议：
+
+- 阶段 1.6：流程草稿主表必须展示“可创建的平台模板”行，用户能直接在 `/platform/process/modeling` 验证首批模板；点击后创建结果是普通草稿。
+- 阶段 1.6 收尾验收不能只验证“页面可见”，还必须验证至少一个平台模板完成 `模板 XML -> 草稿 -> 校验 -> 部署 -> 运行态启动权限门禁 -> 启动实例` 闭环。
+- 阶段 1.6 页面必须提供可验证的模板运行态入口：
+  - 模板虚拟行与普通草稿行展示统一操作：`设计最新` / `校验` / `部署`。
+  - 模板行点击 `设计最新` 时，先把模板复制为普通草稿，再打开流程设计。
+  - 模板行点击 `校验` / `部署` 时，先把模板复制为普通草稿，再调用 `/process/models/{id}/validate` 或 `/process/models/{id}/deploy`。
+  - 草稿列表工具栏提供“部署平台模板”，批量处理尚未创建、未部署或存在未部署变更的首批平台模板。
+  - 已经是当前运行版本且没有未部署变更的模板必须跳过，避免重复部署同一设计版本。
+- 阶段 2：用少量模板验证 `candidateUsers` / `candidateGroups` / `formKey` 写入和恢复。
+- 阶段 3：模板引用的用户、角色、表单、权限码、连接器全部走 API 数据源和 scope 过滤。
+- 阶段 4：补模板发布审批、复制成草稿、版本归档、运行态部署和 viewer 验证。
+
+### 7.4.2 草稿接入业务流程与角色权限治理
+
+流程草稿进入业务流程时，必须区分三类权限语义：
+
+| 类型 | 示例 | 作用 | 维护位置 |
+| --- | --- | --- | --- |
+| 建模控制面权限 | `workflow:console:view` / `workflow:console:config` | 控制谁能看、改、校验、部署流程模型 | 平台菜单 / API 权限治理 |
+| 业务流程权限 | `workflow:platform:tenant-onboarding:start` / `approve` / `manage` | 控制谁能发起、处理、管理某类业务流程 | 权限中心 + 角色绑定 |
+| 任务候选角色 | `ROLE_PLATFORM_ADMIN` / `ROLE_PLATFORM_OPS` | 控制用户任务分派和候选组 | 角色中心 + BPMN `candidateGroups` |
+
+阶段 1.6 的最小落地口径：
+
+- 从模板创建的草稿必须在 BPMN XML 中携带业务模块与权限引用。
+- 业务权限引用先写入 process 级 `camunda:properties`，例如：
+  - `tp:businessModule`
+  - `tp:startPermission`
+  - `tp:approvePermission`
+  - `tp:managePermission`
+  - `tp:roleCodes`
+- 用户任务候选组继续使用 `camunda:candidateGroups`。
+- 角色码在平台 RBAC 中使用 `ROLE_PLATFORM_*`；Camunda 任务候选组使用去掉 `ROLE_` 前缀后的 group id，例如 `ROLE_PLATFORM_ADMIN` 对应 `PLATFORM_ADMIN`。
+- 模板创建草稿动作只声明“需要哪些角色/权限”，不得在用户点击创建草稿时临时创建角色、权限或授权。
+- 首批平台内置模板所需的平台角色、业务权限码和基础角色权限绑定，作为平台 baseline 资产由 Liquibase 显式 seed，接受代码评审与迁移审计；后续新增模板仍必须走现有角色 / 权限控制面或对应迁移。
+- 权限主数据创建、角色授权和用户绑定必须走现有角色 / 权限控制面，并接受审计、审批和租户 / 平台 scope 约束。
+- 阶段 1.6 收尾已引入 `ProcessModelBusinessValidationService` 的最小业务门禁：
+  - `validate` 会组合 BPMN 结构校验与业务引用校验。
+  - `deploy` 会在业务引用存在硬错误时阻断部署。
+  - 当前硬校验覆盖 `tp:startPermission` / `tp:approvePermission` / `tp:managePermission` / `tp:roleCodes` / `camunda:candidateGroups` / `camunda:formKey` 非空与格式 / `camunda:delegateExpression` 格式。
+  - 当前软提示覆盖表单与 connector 注册中心尚未接入；阶段 3 / 4 必须把它们升级为真实存在性与 scope 可用性校验。
+- 阶段 1.6 收尾同时接入运行态发起门禁：
+  - `/process/start` 在通用 `workflow:instance:control` 通过后，继续读取当前 scope 下已部署 `process_model` 的 `tp:startPermission`。
+  - 若该流程来自设计态模型且声明了 `tp:startPermission`，当前用户必须持有对应业务权限或 `workflow:*`，否则不得启动流程实例。
+  - 找不到设计态模型或未声明 `tp:*` 的历史部署按兼容模式处理，不阻断旧运行态流程。
+  - 这保证模板权限不是只停留在草稿页面，而是从模板 XML → 草稿 → 校验 → 部署 → 运行态启动形成闭环。
+- 阶段 1.6 收尾增加“四层业务校验”首版落地：
+  - 第 1 层：BPMN 模型结构校验由 `BpmnValidationHelper` 承担，并在 `ProcessModelService.validateModelXml` 中作为 `/process/models/{id}/validate` 与 `/process/models/{id}/deploy` 的第一道门禁。
+  - 第 2 层：流程业务引用校验由 `ProcessModelBusinessValidationService` 承担，校验 `tp:*` 元数据、平台 / 租户 scope 下的权限码和角色码、用户任务 `candidateGroups` / `formKey`、服务任务 `delegateExpression`。
+  - 第 3 层：业务申请数据校验由 `PlatformWorkflowBusinessDataValidationService.prepareStartVariables` 承担，并在 `/process/start` 启动前执行；首版覆盖 8 个平台内置模板，统一要求 `requestId` / `requestTitle` / `requestReason`，并按模板校验租户、权限、角色、连接器、模板、配置等业务字段与现有主数据。
+  - 第 4 层：业务状态流校验由 `ProcessEngineService.getTaskContext` + `PlatformWorkflowBusinessDataValidationService.prepareTaskCompleteVariables` 承担，并在 `/process/task/{taskId}/complete` 完成任务前执行；平台模板审批任务必须提交 `decision` / `approvalResult` 与 `comment` / `approvalComment`，并写入 `tpLastTaskId` / `tpLastTaskKey` / `tpLastDecision` / `tpLastActionBy` / `tpWorkflowStatus` 等标准运行态变量。
+  - 业务申请单落库由 `workflow_business_request` 承担：`/process/start` 在启动 Camunda 实例前创建申请记录，启动成功后回填 `process_instance_id`；启动失败写入 `START_FAILED`。
+  - 审批任务完成后同步更新 `workflow_business_request.last_task_*`、`last_decision`、`status`、`completed_at` 等字段；平台模板提交 `REJECT` 时，业务申请单进入 `REJECTED`，并终止流程实例，避免拒绝后继续推进服务任务。
+  - 服务任务 connector 不再是占位表达式：`platformTenantPlanChangeConnector` 调用 `TenantService.update` 写回租户套餐，`platformTenantLifecycleConnector` 调用 `TenantService.freeze/unfreeze` 写回租户生命周期；`platformTenantProvisioningConnector` 在提交了初始管理员凭据时调用 `TenantService.create` 创建租户，否则申请单记录为 `AWAITING_TENANT_CREDENTIALS`，等待安全凭据链路补齐。
+  - 权限码发布、角色基线、连接器发布、模板发布、配置变更首版先在 `workflow_business_request` 形成审批发布记录与状态闭环；后续接入各自注册中心/配置中心后，必须把 connector 从“记录闭环”升级为真实业务服务写链。
+  - Camunda 变量仍用于驱动流程流转和运行态展示，但业务事实以 `workflow_business_request` 及被调用的领域服务落库结果为准。
+- 本地/CI 验证必须覆盖平台模板业务资产：
+  - 首选入口：`bash tiny-oauth-server/scripts/verify-platform-workflow-template-runtime.sh`。
+  - 该脚本 Tier 1 使用真实 Camunda 内存引擎验证 `platform_tenant_onboarding` 可创建草稿、业务校验、部署为无租户运行态定义，并验证缺少 `tp:startPermission` 时不能启动、有业务发起权限时必须通过业务申请数据校验后才能启动实例、产生候选组任务，且首个审批任务完成后写入标准状态流变量；同时运行申请单持久化与控制器任务拒绝/完成链路单测。
+  - 该脚本 Tier 2 在存在 `DB_PASSWORD` 时继续校验本地 dev DB 中的平台工作流业务角色、权限码和绑定行数；若本机 `mysql` 不在 `PATH`，可设置 `MYSQL_BIN=/path/to/mysql`。
+  - `tiny-oauth-server/scripts/verify-platform-template-row-counts.sh` 不只检查平台模板 role / carrier 行数，也检查首批平台工作流模板所需的 `ROLE_PLATFORM_PRODUCT` / `ROLE_PLATFORM_OPS` / `ROLE_PLATFORM_SECURITY`、`workflow:platform:%` 权限码和角色权限绑定。
+  - 设置 `VERIFY_PLATFORM_TEMPLATE_MIN_ROWS=1` 时，工作流模板业务角色、权限码和绑定缺失必须失败。
+
+阶段 3 / 阶段 4 的收口口径：
+
+- 保存或部署前继续增强模板引用校验：表单 key、连接器 key 必须接入正式注册中心，并按当前 scope 过滤。
+- 若缺角色、缺权限、缺表单或连接器不可用，允许保存草稿，但部署必须阻断或进入显式审批 / 修复流程。
+- 平台模板发布时必须输出“角色权限清单”，作为发布审批和租户复制前检查项。
+- 租户从平台模板复制草稿时，平台角色引用必须映射为租户可用角色或租户业务角色，不得直接引用 platform-only 角色。
+- 后续引入 `tp:*` moddle descriptor 后，可以把 process 级 `camunda:properties` 迁移为 typed `tp` 扩展；迁移前必须保证旧 XML 可读。
 
 ### 7.5 流程设计 Tab
 
@@ -944,16 +1109,20 @@ API 口径：
 
 - 默认调用 `processModelApi.listModelGroups()`。
 - 仅在兼容旧接口或版本详情需要时调用 `processModelApi.listModels()`。
-- 调用 `processModelApi.createModel()` 创建草稿。
+- `新建草稿`、模板 `设计最新` 只向容器页发出未保存草稿事件，不直接调用 `processModelApi.createModel()`。
+- 模板 `校验`、`部署` 可在显式动作链路中调用 `processModelApi.createModel()` 创建当前 scope 草稿。
 - 调用 `processModelApi.validateModel()`。
 - 调用 `processModelApi.deployModel()`。
+- 调用 `processModelApi.deleteModel()` 删除未部署草稿。
 - 展示失败态、空态和加载态。
 
 `ProcessDesigner.vue` / `Modeling.vue`：
 
 - 接收 `modelId`。
+- 接收未保存草稿快照 `initialDraft`。
 - 调用 `processModelApi.getModel(modelId)` 加载 XML。
 - 调用 `processModelApi.saveModel(modelId, payload)` 保存草稿。
+- 无 `modelId` 的未保存草稿首次点击 `保存草稿` 时，调用 `processModelApi.createModel(payload)` 创建草稿。
 - 调用 `createModeler()` 初始化画布。
 - 监听 dirty 与 selection。
 - 销毁时释放 modeler。
@@ -968,7 +1137,7 @@ API 口径：
 
 必须覆盖：
 
-- loading：草稿列表加载、打开草稿、保存草稿、校验、部署。
+- loading：草稿列表加载、打开草稿、保存草稿、校验、部署、删除。
 - empty：当前 scope 下无草稿。
 - error：列表加载失败、打开草稿失败、保存失败。
 - dirty：设计页存在未保存变更。
@@ -979,6 +1148,7 @@ API 口径：
 
 - 未打开模型时，不显示或禁用保存/部署当前模型。
 - `DEPLOYED` 模型不得直接保存覆盖；需要 fork 新草稿的能力在阶段 4 补齐，阶段 1.6 可只读或提示。
+- `删除` 只对满足删除条件的未部署版本显示；当前运行、历史已部署、平台模板虚拟行不得显示删除。
 - `保存草稿` 失败后必须保留 dirty。
 - `保存草稿` 成功后必须重置 dirty。
 
@@ -1277,6 +1447,12 @@ DRAFT -> VALIDATED -> DEPLOYED -> ARCHIVED
 | `VALIDATED` | 已通过校验但未部署 | 是，编辑后回到 DRAFT | 是 |
 | `DEPLOYED` | 已部署版本 | 否，需 fork 新草稿 | 否 |
 | `ARCHIVED` | 已归档 | 否 | 否 |
+
+删除语义：
+
+- `DRAFT` / `VALIDATED` 只有在从未部署且没有运行态引用时才可删除。
+- `DEPLOYED` / `ARCHIVED` 不走删除接口；后续只允许归档、隐藏、停用、回滚或实例迁移等生命周期动作。
+- `DELETE /process/models/{id}` 是设计态草稿删除，不得级联删除 Camunda deployment、流程定义、流程实例或历史数据。
 
 `DEPLOYED` 口径：
 
@@ -1617,10 +1793,12 @@ src/utils/bpmn/viewer/**
 
 ```text
 流程草稿列表
-  -> 新建或打开一个草稿
+  -> 点击新建草稿
   -> 进入流程设计
+  -> 确认此时尚未产生 process_model 记录
   -> 修改 BPMN（例如调整名称或新增一个节点）
   -> 保存草稿
+  -> 确认保存后产生 process_model 记录并路由替换为 modelId
   -> 返回流程草稿列表
   -> 看到该草稿 updatedAt / 状态发生变化
   -> 再次打开该草稿
@@ -1630,6 +1808,7 @@ src/utils/bpmn/viewer/**
 验收要求：
 
 - 该用例必须经过真实 `processModelApi` 请求，不使用纯前端 mock 代替。
+- `新建草稿` 阶段不得出现 `POST /process/models`；只有 `保存草稿` 阶段允许出现创建请求。
 - 如果本地 real-link 因登录、DB 或密钥前置缺失无法执行，必须记录为环境前置缺口。
 - 该用例优先使用当前 active tenant；platform scope 需另补一条只读或保存冒烟，确保 platform / tenant 不串数据。
 

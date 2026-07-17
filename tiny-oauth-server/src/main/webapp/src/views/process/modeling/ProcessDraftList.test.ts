@@ -1,18 +1,24 @@
 import { mount } from '@vue/test-utils'
 import { defineComponent, nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ProcessModel } from '@/api/process'
 
 const processModelApiMocks = vi.hoisted(() => ({
   listModelGroups: vi.fn(),
   createModel: vi.fn(),
   validateModel: vi.fn(),
   deployModel: vi.fn(),
+  deleteModel: vi.fn(),
 }))
 
 const messageMocks = vi.hoisted(() => ({
   error: vi.fn(),
   success: vi.fn(),
   warning: vi.fn(),
+}))
+
+const modalMocks = vi.hoisted(() => ({
+  confirm: vi.fn(),
 }))
 
 vi.mock('@/api/process', () => ({
@@ -24,6 +30,7 @@ vi.mock('@/utils/bpmn/modeler', () => ({
 }))
 
 vi.mock('ant-design-vue', () => ({
+  Modal: modalMocks,
   message: messageMocks,
 }))
 
@@ -34,6 +41,10 @@ const ButtonStub = defineComponent({
 
 const PassThrough = defineComponent({
   template: '<div><slot /></div>',
+})
+
+const DropdownStub = defineComponent({
+  template: '<div class="dropdown-stub"><slot /><slot name="overlay" /></div>',
 })
 
 const AlertStub = defineComponent({
@@ -75,7 +86,7 @@ const TableStub = defineComponent({
 
 import ProcessDraftList from '@/views/process/modeling/ProcessDraftList.vue'
 
-const draftModel = {
+const draftModel: ProcessModel = {
   id: 7,
   modelKey: 'leave_process',
   name: 'Leave Process',
@@ -92,7 +103,7 @@ const draftModel = {
   lockVersion: 0,
 }
 
-function model(overrides: Partial<typeof draftModel>) {
+function model(overrides: Partial<ProcessModel>): ProcessModel {
   return { ...draftModel, ...overrides }
 }
 
@@ -116,6 +127,18 @@ const expenseV1 = model({
   name: 'Expense Process',
   version: 1,
   updatedAt: '2026-05-09T10:00:00',
+})
+
+const platformConfigChangeV1 = model({
+  id: 12,
+  modelKey: 'platform_config_change',
+  name: '生产配置变更审批',
+  scopeType: 'PLATFORM',
+  recordTenantId: null,
+  status: 'VALIDATED',
+  validationStatus: 'PASSED',
+  version: 1,
+  updatedAt: '2026-05-13T12:51:07',
 })
 
 const draftGroups = [
@@ -155,11 +178,29 @@ const draftGroups = [
   },
 ]
 
+const platformConfigChangeGroup = {
+  modelKey: 'platform_config_change',
+  name: '生产配置变更审批',
+  scopeType: 'PLATFORM',
+  recordTenantId: null,
+  latestVersion: 1,
+  latestDesignVersion: 1,
+  latestStatus: 'VALIDATED',
+  currentRuntimeVersion: null,
+  currentDeploymentId: null,
+  hasUndeployedChanges: true,
+  versionCount: 1,
+  updatedAt: '2026-05-13T12:51:07',
+  updatedBy: 'alice',
+  latestModel: platformConfigChangeV1,
+  versions: [platformConfigChangeV1],
+}
+
 async function flushPromises() {
-  await Promise.resolve()
-  await nextTick()
-  await Promise.resolve()
-  await nextTick()
+  for (let index = 0; index < 40; index += 1) {
+    await Promise.resolve()
+    await nextTick()
+  }
 }
 
 function mountDraftList() {
@@ -167,13 +208,16 @@ function mountDraftList() {
     global: {
       stubs: {
         'a-button': ButtonStub,
+        'a-dropdown': DropdownStub,
         'a-alert': AlertStub,
         'a-empty': EmptyStub,
         'a-table': TableStub,
         'a-tag': PassThrough,
         CheckCircleOutlined: PassThrough,
+        DeleteOutlined: PassThrough,
         DownOutlined: PassThrough,
         EditOutlined: PassThrough,
+        FileAddOutlined: PassThrough,
         PlusOutlined: PassThrough,
         ReloadOutlined: PassThrough,
         RocketOutlined: PassThrough,
@@ -202,6 +246,7 @@ describe('ProcessDraftList.vue', () => {
       status: 'DEPLOYED',
       message: '部署成功',
     })
+    processModelApiMocks.deleteModel.mockResolvedValue(undefined)
   })
 
   it('should load and render process model drafts', async () => {
@@ -210,7 +255,10 @@ describe('ProcessDraftList.vue', () => {
 
     expect(processModelApiMocks.listModelGroups).toHaveBeenCalled()
     expect(wrapper.text()).toContain('流程草稿')
-    expect(wrapper.text()).toContain('2 个流程 · 3 个版本')
+    expect(wrapper.text()).toContain('2 个草稿流程 · 3 个版本 · 8 个可创建平台模板')
+    expect(wrapper.text()).toContain('租户开通审批')
+    expect(wrapper.text()).toContain('平台模板')
+    expect(wrapper.text()).toContain('可创建')
     expect(wrapper.text()).toContain('Leave Process')
     expect(wrapper.text()).toContain('leave_process')
     expect(wrapper.text()).toContain('Expense Process')
@@ -219,7 +267,7 @@ describe('ProcessDraftList.vue', () => {
     expect(wrapper.text()).toContain('有变更')
     expect(wrapper.find('.draft-table').exists()).toBe(true)
     expect(wrapper.find('.draft-asset-list').exists()).toBe(false)
-    expect(wrapper.findAll('.draft-asset-row')).toHaveLength(2)
+    expect(wrapper.findAll('.draft-asset-row')).toHaveLength(10)
     expect(wrapper.findAll('.draft-version-row')).toHaveLength(0)
   })
 
@@ -232,7 +280,7 @@ describe('ProcessDraftList.vue', () => {
     await versionsButton!.trigger('click')
     await flushPromises()
 
-    expect(wrapper.findAll('.draft-asset-row')).toHaveLength(2)
+    expect(wrapper.findAll('.draft-asset-row')).toHaveLength(10)
     expect(wrapper.findAll('.draft-version-row')).toHaveLength(2)
     expect(wrapper.text()).toContain('v2')
     expect(wrapper.text()).toContain('v1')
@@ -244,7 +292,8 @@ describe('ProcessDraftList.vue', () => {
     const wrapper = mountDraftList()
     await flushPromises()
 
-    const designButton = wrapper.findAll('button').find((button) => button.text().includes('设计最新'))
+    const leaveRow = wrapper.find('[data-group-key="TENANT:11:leave_process"]')
+    const designButton = leaveRow.findAll('button').find((button) => button.text().includes('设计最新'))
     expect(designButton).toBeDefined()
     await designButton!.trigger('click')
 
@@ -267,7 +316,7 @@ describe('ProcessDraftList.vue', () => {
     expect(wrapper.emitted('open-design')?.[0]?.[0]).toMatchObject({ id: 7, modelKey: 'leave_process', version: 1 })
   })
 
-  it('should create draft and open it in designer', async () => {
+  it('should open an unsaved draft in designer without creating a database row', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(1700000000000)
     const wrapper = mountDraftList()
     await flushPromises()
@@ -277,20 +326,180 @@ describe('ProcessDraftList.vue', () => {
     await createButton!.trigger('click')
     await flushPromises()
 
-    expect(processModelApiMocks.createModel).toHaveBeenCalledWith(expect.objectContaining({
+    expect(processModelApiMocks.createModel).not.toHaveBeenCalled()
+    expect(messageMocks.success).not.toHaveBeenCalledWith('流程草稿已创建')
+    expect(wrapper.emitted('open-new-draft')?.[0]?.[0]).toMatchObject({
       modelKey: 'Process_1700000000000',
       name: '新建流程草稿',
+      bpmnXml: expect.stringContaining('id="Process_1700000000000"'),
+    })
+  })
+
+  it('should open an unsaved draft from a platform template in designer', async () => {
+    const wrapper = mountDraftList()
+    await flushPromises()
+
+    const templateButton = wrapper.findAll('button').find((button) => button.text().includes('租户开通审批'))
+    expect(templateButton).toBeDefined()
+    await templateButton!.trigger('click')
+    await flushPromises()
+
+    expect(processModelApiMocks.createModel).not.toHaveBeenCalled()
+    expect(wrapper.emitted('open-new-draft')?.[0]?.[0]).toMatchObject({
+      modelKey: 'platform_tenant_onboarding',
+      name: '租户开通审批',
+      description: expect.stringContaining('新租户入驻'),
+      bpmnXml: expect.stringContaining('id="platform_tenant_onboarding"'),
+    })
+    expect(wrapper.emitted('open-new-draft')?.[0]?.[0]).toMatchObject({
+      bpmnXml: expect.stringContaining('camunda:candidateGroups="PLATFORM_PRODUCT"'),
+    })
+    expect(wrapper.emitted('open-new-draft')?.[0]?.[0]).toMatchObject({
+      bpmnXml: expect.stringContaining('name="tp:startPermission" value="workflow:platform:tenant-onboarding:start"'),
+    })
+  })
+
+  it('should create and deploy a platform template from row action', async () => {
+    processModelApiMocks.createModel.mockResolvedValueOnce({
+      ...draftModel,
+      id: 31,
+      modelKey: 'platform_tenant_onboarding',
+      name: '租户开通审批',
+    })
+    processModelApiMocks.validateModel.mockResolvedValueOnce({
+      id: 31,
+      valid: true,
+      message: '校验通过',
+      warnings: [],
+      validationStatus: 'PASSED',
+    })
+    processModelApiMocks.deployModel.mockResolvedValueOnce({
+      id: 31,
+      deploymentId: 'dep-template-31',
+      processDefinitionKey: 'platform_tenant_onboarding',
+      status: 'DEPLOYED',
+      message: '部署成功',
+    })
+    const wrapper = mountDraftList()
+    await flushPromises()
+
+    const templateRow = wrapper.find('[data-group-key="TEMPLATE:PLATFORM:0:platform_tenant_onboarding"]')
+    const deployTemplateButton = templateRow.findAll('button').find((button) => button.text() === '部署')
+    expect(deployTemplateButton).toBeDefined()
+    await deployTemplateButton!.trigger('click')
+    await flushPromises()
+
+    expect(processModelApiMocks.createModel).toHaveBeenCalledWith(expect.objectContaining({
+      modelKey: 'platform_tenant_onboarding',
+      name: '租户开通审批',
     }))
-    expect(messageMocks.success).toHaveBeenCalledWith('流程草稿已创建')
-    expect(wrapper.emitted('open-design')?.[0]?.[0]).toMatchObject({ id: 8, modelKey: 'Process_1700000000000' })
+    expect(processModelApiMocks.validateModel).toHaveBeenCalledWith(31)
+    expect(processModelApiMocks.deployModel).toHaveBeenCalledWith(31)
+    expect(messageMocks.success).toHaveBeenCalledWith('部署成功')
+  })
+
+  it('should validate a platform template through the unified row action', async () => {
+    processModelApiMocks.createModel.mockResolvedValueOnce({
+      ...draftModel,
+      id: 32,
+      modelKey: 'platform_tenant_onboarding',
+      name: '租户开通审批',
+    })
+    processModelApiMocks.validateModel.mockResolvedValueOnce({
+      id: 32,
+      valid: true,
+      message: '校验通过',
+      warnings: [],
+      validationStatus: 'PASSED',
+    })
+    const wrapper = mountDraftList()
+    await flushPromises()
+
+    const templateRow = wrapper.find('[data-group-key="TEMPLATE:PLATFORM:0:platform_tenant_onboarding"]')
+    const validateTemplateButton = templateRow.findAll('button').find((button) => button.text() === '校验')
+    expect(validateTemplateButton).toBeDefined()
+    await validateTemplateButton!.trigger('click')
+    await flushPromises()
+
+    expect(processModelApiMocks.createModel).toHaveBeenCalledWith(expect.objectContaining({
+      modelKey: 'platform_tenant_onboarding',
+    }))
+    expect(processModelApiMocks.validateModel).toHaveBeenCalledWith(32)
+    expect(messageMocks.success).toHaveBeenCalledWith('校验通过')
+  })
+
+  it('should batch create and deploy platform templates that are not current runtime', async () => {
+    processModelApiMocks.listModelGroups.mockResolvedValueOnce([])
+    processModelApiMocks.createModel.mockImplementation((payload) => Promise.resolve({
+      ...draftModel,
+      id: processModelApiMocks.createModel.mock.calls.length + 100,
+      modelKey: payload.modelKey,
+      name: payload.name,
+    }))
+    const wrapper = mountDraftList()
+    await flushPromises()
+
+    const batchDeployButton = wrapper.findAll('button').find((button) => button.text().includes('部署平台模板'))
+    expect(batchDeployButton).toBeDefined()
+    await batchDeployButton!.trigger('click')
+    await flushPromises()
+
+    expect(processModelApiMocks.createModel).toHaveBeenCalledTimes(8)
+    expect(processModelApiMocks.validateModel).toHaveBeenCalledTimes(8)
+    expect(processModelApiMocks.deployModel).toHaveBeenCalledTimes(8)
+    expect(messageMocks.success).toHaveBeenCalledWith('已创建并部署 8 个平台模板')
+  })
+
+  it('should render platform templates as verifiable rows when there are no persisted drafts', async () => {
+    processModelApiMocks.listModelGroups.mockResolvedValueOnce([])
+    const wrapper = mountDraftList()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('0 个草稿流程 · 0 个版本 · 8 个可创建平台模板')
+    expect(wrapper.text()).toContain('租户开通审批')
+    expect(wrapper.text()).toContain('生产配置变更审批')
+    expect(wrapper.text()).toContain('平台模板')
+    expect(wrapper.text()).toContain('设计最新')
+    expect(wrapper.text()).toContain('校验')
+    expect(wrapper.text()).toContain('部署')
+    expect(wrapper.findAll('.draft-asset-row')).toHaveLength(8)
+    expect(wrapper.find('.empty').exists()).toBe(false)
+  })
+
+  it('should not render create template action when matching process model already exists', async () => {
+    processModelApiMocks.listModelGroups.mockResolvedValueOnce([platformConfigChangeGroup])
+    const wrapper = mountDraftList()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('1 个草稿流程 · 1 个版本 · 7 个可创建平台模板')
+    const configChangeRow = wrapper.find('[data-group-key="PLATFORM:0:platform_config_change"]')
+    expect(configChangeRow.exists()).toBe(true)
+    expect(configChangeRow.text()).toContain('生产配置变更审批')
+    expect(configChangeRow.text()).not.toContain('创建草稿')
+    expect(configChangeRow.text()).not.toContain('创建并部署')
+    expect(configChangeRow.text()).toContain('设计最新')
+    expect(configChangeRow.text()).toContain('校验')
+    expect(configChangeRow.text()).toContain('部署')
+  })
+
+  it('should not show virtual template rows when draft list fails to load', async () => {
+    processModelApiMocks.listModelGroups.mockRejectedValueOnce(new Error('接口失败'))
+    const wrapper = mountDraftList()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('接口失败')
+    expect(wrapper.text()).not.toContain('创建草稿')
+    expect(wrapper.text()).not.toContain('租户开通审批')
+    expect(wrapper.findAll('.draft-asset-row')).toHaveLength(0)
   })
 
   it('should validate and deploy draft from row actions', async () => {
     const wrapper = mountDraftList()
     await flushPromises()
 
-    const validateButton = wrapper.findAll('button').find((button) => button.text().includes('校验'))
-    const deployButton = wrapper.findAll('button').find((button) => button.text().includes('部署'))
+    const leaveRow = wrapper.find('[data-group-key="TENANT:11:leave_process"]')
+    const validateButton = leaveRow.findAll('button').find((button) => button.text().includes('校验'))
+    const deployButton = leaveRow.findAll('button').find((button) => button.text() === '部署')
     expect(validateButton).toBeDefined()
     expect(deployButton).toBeDefined()
 
@@ -303,5 +512,45 @@ describe('ProcessDraftList.vue', () => {
     expect(processModelApiMocks.deployModel).toHaveBeenCalledWith(8)
     expect(messageMocks.success).toHaveBeenCalledWith('校验通过')
     expect(messageMocks.success).toHaveBeenCalledWith('部署成功')
+  })
+
+  it('should delete a single-version undeployed draft from asset row after confirmation', async () => {
+    processModelApiMocks.listModelGroups
+      .mockResolvedValueOnce(draftGroups)
+      .mockResolvedValueOnce([draftGroups[0]])
+    const wrapper = mountDraftList()
+    await flushPromises()
+
+    const expenseRow = wrapper.find('[data-group-key="TENANT:11:expense_process"]')
+    const deleteButton = expenseRow.findAll('button').find((button) => button.text() === '删除')
+    expect(deleteButton).toBeDefined()
+    await deleteButton!.trigger('click')
+
+    expect(modalMocks.confirm).toHaveBeenCalledWith(expect.objectContaining({
+      title: '删除流程草稿',
+      okType: 'danger',
+    }))
+
+    const options = modalMocks.confirm.mock.calls[0]?.[0] as { onOk: () => Promise<void> }
+    await options.onOk()
+    await flushPromises()
+
+    expect(processModelApiMocks.deleteModel).toHaveBeenCalledWith(9)
+    expect(messageMocks.success).toHaveBeenCalledWith('流程草稿已删除')
+    expect(processModelApiMocks.listModelGroups).toHaveBeenCalledTimes(2)
+  })
+
+  it('should only show delete for undeployed versions in a multi-version process asset', async () => {
+    const wrapper = mountDraftList()
+    await flushPromises()
+
+    const versionsButton = wrapper.findAll('button').find((button) => button.text().includes('2 个版本'))
+    await versionsButton!.trigger('click')
+    await flushPromises()
+
+    const draftVersionRow = wrapper.find('[data-model-id="8"]')
+    const runtimeVersionRow = wrapper.find('[data-model-id="7"]')
+    expect(draftVersionRow.findAll('button').some((button) => button.text() === '删除')).toBe(true)
+    expect(runtimeVersionRow.findAll('button').some((button) => button.text() === '删除')).toBe(false)
   })
 })

@@ -1,6 +1,12 @@
 import { mount } from '@vue/test-utils'
-import { defineComponent } from 'vue'
+import { defineComponent, nextTick } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const processModelApiMocks = vi.hoisted(() => ({
+  createModel: vi.fn(),
+  saveModel: vi.fn(),
+  getModel: vi.fn(),
+}))
 
 // Avoid pulling in heavy BPMN libs in unit tests.
 vi.mock('bpmn-js/lib/Modeler', () => ({
@@ -33,6 +39,13 @@ vi.mock('ant-design-vue', () => ({
     loading: vi.fn(() => vi.fn()),
     success: vi.fn(),
     warning: vi.fn(),
+  },
+}))
+
+vi.mock('@/api/process', () => ({
+  processModelApi: processModelApiMocks,
+  instanceApi: {
+    startProcess: vi.fn(),
   },
 }))
 
@@ -81,8 +94,9 @@ const ProcessDeployResultModalStub = defineComponent({
 
 import ProcessDesigner from '@/views/process/modeling/ProcessDesigner.vue'
 
-function mountDesigner() {
+function mountDesigner(props?: Record<string, unknown>) {
   return mount(ProcessDesigner, {
+    props,
     global: {
       stubs: {
         'a-button': ButtonStub,
@@ -102,6 +116,19 @@ function mountDesigner() {
   })
 }
 
+async function flushDesignerMounted() {
+  await new Promise((resolve) => setTimeout(resolve, 250))
+  await nextTick()
+  await flushAsyncTasks()
+}
+
+async function flushAsyncTasks() {
+  for (let index = 0; index < 10; index += 1) {
+    await Promise.resolve()
+    await nextTick()
+  }
+}
+
 describe('process ProcessDesigner.vue', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -110,6 +137,20 @@ describe('process ProcessDesigner.vue', () => {
     })
     routerMocks.routePath = '/process/modeling'
     tenantContextMocks.getActiveTenantId.mockReturnValue('9')
+    processModelApiMocks.createModel.mockResolvedValue({
+      id: 31,
+      modelKey: 'platform_tenant_onboarding',
+      name: '租户开通审批',
+      description: '新租户入驻审批',
+      scopeType: 'PLATFORM',
+      recordTenantId: null,
+      status: 'DRAFT',
+      runtimeState: 'NOT_DEPLOYED',
+      version: 1,
+      bpmnXml: '<bpmn />',
+      validationStatus: 'NOT_VALIDATED',
+      lockVersion: 0,
+    })
   })
 
   it('should render designer shell actions', () => {
@@ -134,6 +175,37 @@ describe('process ProcessDesigner.vue', () => {
     expect(routerMocks.routerPush).toHaveBeenCalledWith({
       path: '/process/definition',
       query: { activeTenantId: '11' },
+    })
+  })
+
+  it('should create the persisted model only when saving an unsaved draft', async () => {
+    const wrapper = mountDesigner({
+      initialDraft: {
+        modelKey: 'platform_tenant_onboarding',
+        name: '租户开通审批',
+        description: '新租户入驻审批',
+        bpmnXml: '<bpmn:definitions id="platform_tenant_onboarding" />',
+      },
+    })
+    await flushDesignerMounted()
+
+    expect(processModelApiMocks.createModel).not.toHaveBeenCalled()
+
+    const saveButton = wrapper.findAll('button').find((button) => button.text().includes('保存草稿'))
+    expect(saveButton).toBeDefined()
+    await saveButton!.trigger('click')
+    await flushAsyncTasks()
+
+    expect(processModelApiMocks.createModel).toHaveBeenCalledWith(expect.objectContaining({
+      modelKey: 'platform_tenant_onboarding',
+      name: '租户开通审批',
+      description: '新租户入驻审批',
+      bpmnXml: '<bpmn />',
+      svg: '<svg />',
+    }))
+    expect(wrapper.emitted('saved')?.[0]?.[0]).toMatchObject({
+      id: 31,
+      modelKey: 'platform_tenant_onboarding',
     })
   })
 })

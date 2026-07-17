@@ -42,15 +42,18 @@ public class ProcessModelService {
 
     private final ProcessModelRepository repository;
     private final BpmnValidationHelper bpmnValidationHelper;
+    private final ProcessModelBusinessValidationService businessValidationService;
     private final ProcessEngineService processEngineService;
 
     public ProcessModelService(
         ProcessModelRepository repository,
         BpmnValidationHelper bpmnValidationHelper,
+        ProcessModelBusinessValidationService businessValidationService,
         ProcessEngineService processEngineService
     ) {
         this.repository = repository;
         this.bpmnValidationHelper = bpmnValidationHelper;
+        this.businessValidationService = businessValidationService;
         this.processEngineService = processEngineService;
     }
 
@@ -149,20 +152,20 @@ public class ProcessModelService {
     @Transactional
     public ProcessModelValidationResponse validate(Long id, String actor) {
         ProcessModelEntity entity = requireScopedModel(id);
-        BpmnValidationHelper.BpmnValidationResult result = bpmnValidationHelper.validateBpmnXml(entity.getBpmnXml());
-        entity.setValidationStatus(result.isValid()
+        ValidationOutcome outcome = validateModelXml(entity);
+        entity.setValidationStatus(outcome.valid()
             ? ProcessModelValidationStatus.PASSED
             : ProcessModelValidationStatus.FAILED);
-        entity.setValidationSummary(toValidationSummary(result));
-        entity.setStatus(result.isValid() ? ProcessModelStatus.VALIDATED : ProcessModelStatus.DRAFT);
+        entity.setValidationSummary(toValidationSummary(outcome));
+        entity.setStatus(outcome.valid() ? ProcessModelStatus.VALIDATED : ProcessModelStatus.DRAFT);
         entity.setUpdatedBy(actor);
         saveModel(entity);
 
         return new ProcessModelValidationResponse(
             entity.getId(),
-            result.isValid(),
-            result.getMessage(),
-            List.copyOf(result.getWarnings()),
+            outcome.valid(),
+            outcome.message(),
+            List.copyOf(outcome.warnings()),
             entity.getValidationStatus().name()
         );
     }
@@ -170,13 +173,13 @@ public class ProcessModelService {
     @Transactional
     public ProcessModelDeployResponse deploy(Long id, String actor) {
         ProcessModelEntity entity = requireScopedModel(id);
-        BpmnValidationHelper.BpmnValidationResult validation = bpmnValidationHelper.validateBpmnXml(entity.getBpmnXml());
-        if (!validation.isValid()) {
+        ValidationOutcome validation = validateModelXml(entity);
+        if (!validation.valid()) {
             entity.setValidationStatus(ProcessModelValidationStatus.FAILED);
             entity.setValidationSummary(toValidationSummary(validation));
             entity.setUpdatedBy(actor);
             saveModel(entity);
-            throw new BusinessException(ErrorCode.VALIDATION_ERROR, validation.getMessage());
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, validation.message());
         }
 
         ScopeContext scope = currentScope();
@@ -209,6 +212,18 @@ public class ProcessModelService {
         } catch (Exception ex) {
             throw new BusinessException(ErrorCode.BUSINESS_ERROR, "流程模型部署失败: " + ex.getMessage(), ex);
         }
+    }
+
+    @Transactional
+    public void delete(Long id) {
+        ProcessModelEntity entity = requireScopedModel(id);
+        if (!canDeleteDraft(entity)) {
+            throw new BusinessException(
+                ErrorCode.RESOURCE_STATE_INVALID,
+                "仅允许删除未部署的草稿或已校验草稿"
+            );
+        }
+        repository.delete(entity);
     }
 
     private ProcessModelEntity requireScopedModel(Long id) {
@@ -268,6 +283,13 @@ public class ProcessModelService {
             && ProcessModelStatus.DEPLOYED.equals(entity.getStatus());
     }
 
+    private static boolean canDeleteDraft(ProcessModelEntity entity) {
+        return (ProcessModelStatus.DRAFT.equals(entity.getStatus())
+            || ProcessModelStatus.VALIDATED.equals(entity.getStatus()))
+            && isBlank(entity.getDeploymentId())
+            && isBlank(entity.getProcessDefinitionId());
+    }
+
     private int nextVersion(ScopeContext scope, String modelKey) {
         Integer maxVersion = repository.findMaxVersionInScope(scope.scopeType(), scope.tenantId(), modelKey);
         return maxVersion == null ? 1 : maxVersion + 1;
@@ -284,11 +306,49 @@ public class ProcessModelService {
         return new ScopeContext(ProcessModelScopeType.TENANT, activeTenantId);
     }
 
-    private static String toValidationSummary(BpmnValidationHelper.BpmnValidationResult result) {
-        StringBuilder summary = new StringBuilder(result.getMessage() != null ? result.getMessage() : "");
-        if (!result.getWarnings().isEmpty()) {
+    private ValidationOutcome validateModelXml(ProcessModelEntity entity) {
+        ScopeContext scope = new ScopeContext(entity.getScopeType(), entity.getTenantId());
+        BpmnValidationHelper.BpmnValidationResult bpmnResult = bpmnValidationHelper.validateBpmnXml(entity.getBpmnXml());
+        List<String> errors = new ArrayList<>();
+        List<String> warnings = new ArrayList<>(bpmnResult.getWarnings());
+        if (bpmnResult.isValid()) {
+            ProcessModelBusinessValidationService.BusinessValidationResult businessResult =
+                businessValidationService.validate(entity.getBpmnXml(), scope.scopeType(), scope.tenantId());
+            errors.addAll(businessResult.errors());
+            warnings.addAll(businessResult.warnings());
+        }
+        boolean valid = bpmnResult.isValid() && errors.isEmpty();
+        String message = validationMessage(bpmnResult, errors, warnings, valid);
+        return new ValidationOutcome(valid, message, List.copyOf(errors), List.copyOf(warnings));
+    }
+
+    private static String validationMessage(
+        BpmnValidationHelper.BpmnValidationResult bpmnResult,
+        List<String> errors,
+        List<String> warnings,
+        boolean valid
+    ) {
+        if (!bpmnResult.isValid()) {
+            return bpmnResult.getMessage();
+        }
+        if (!errors.isEmpty()) {
+            return "流程模型业务校验失败: " + String.join("；", errors);
+        }
+        if (!warnings.isEmpty()) {
+            return "流程模型校验通过，存在 " + warnings.size() + " 条警告";
+        }
+        return bpmnResult.getMessage() != null ? bpmnResult.getMessage() : "流程模型校验通过";
+    }
+
+    private static String toValidationSummary(ValidationOutcome result) {
+        StringBuilder summary = new StringBuilder(result.message() != null ? result.message() : "");
+        if (!result.errors().isEmpty()) {
+            summary.append("\nErrors:\n");
+            result.errors().forEach(error -> summary.append("- ").append(error).append('\n'));
+        }
+        if (!result.warnings().isEmpty()) {
             summary.append("\nWarnings:\n");
-            result.getWarnings().forEach(warning -> summary.append("- ").append(warning).append('\n'));
+            result.warnings().forEach(warning -> summary.append("- ").append(warning).append('\n'));
         }
         return summary.toString().trim();
     }
@@ -320,6 +380,10 @@ public class ProcessModelService {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     private static BpmnMetadata extractMetadata(String bpmnXml) {
@@ -368,6 +432,9 @@ public class ProcessModelService {
     }
 
     private record ScopeContext(ProcessModelScopeType scopeType, Long tenantId) {
+    }
+
+    private record ValidationOutcome(boolean valid, String message, List<String> errors, List<String> warnings) {
     }
 
     private record BpmnMetadata(String processId, String processName) {

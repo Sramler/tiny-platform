@@ -3,7 +3,9 @@
     <div class="draft-toolbar">
       <div class="draft-toolbar-title">
         <h3>流程草稿</h3>
-        <span class="draft-count">{{ draftGroups.length }} 个流程 · {{ totalVersionCount }} 个版本</span>
+        <span class="draft-count">
+          {{ draftGroups.length }} 个草稿流程 · {{ totalVersionCount }} 个版本 · {{ templateGroups.length }} 个可创建平台模板
+        </span>
       </div>
       <div class="draft-toolbar-actions">
         <a-button size="small" @click="loadModels" :loading="loading">
@@ -11,6 +13,47 @@
             <ReloadOutlined />
           </template>
           刷新
+        </a-button>
+        <a-dropdown
+          :trigger="['click']"
+          placement="bottomRight"
+          :disabled="creating || !!templateCreatingKey || !!templateValidatingKey || !!templateDeployingKey || batchDeployingTemplates || creatablePlatformTemplates.length === 0"
+        >
+          <a-button size="small" :loading="!!templateCreatingKey">
+            <template #icon>
+              <FileAddOutlined />
+            </template>
+            从平台模板
+            <DownOutlined />
+          </a-button>
+          <template #overlay>
+            <div class="draft-template-menu">
+              <button
+                v-for="template in creatablePlatformTemplates"
+                :key="template.key"
+                type="button"
+                class="draft-template-item"
+                :disabled="creating || !!templateCreatingKey"
+                @click="createDraftFromTemplate(template)"
+              >
+                <span class="draft-template-name">{{ template.name }}</span>
+                <span class="draft-template-meta">
+                  {{ template.category }} · {{ template.tasks.length }} 个节点 · {{ template.roleCodes.length }} 个角色 · {{ template.permissions.length }} 个权限
+                </span>
+              </button>
+            </div>
+          </template>
+        </a-dropdown>
+        <a-button
+          size="small"
+          :loading="batchDeployingTemplates"
+          :disabled="batchDeployingTemplates || deployablePlatformTemplates.length === 0"
+          @click="deployPlatformTemplates"
+        >
+          <template #icon>
+            <RocketOutlined />
+          </template>
+          部署平台模板
         </a-button>
         <a-button type="primary" size="small" @click="createDraft" :loading="creating">
           <template #icon>
@@ -29,26 +72,31 @@
       :message="loadError"
     />
 
-    <a-empty v-else-if="!loading && draftGroups.length === 0" description="暂无流程草稿" />
+    <a-empty v-if="!loadError && !loading && visibleGroups.length === 0" description="暂无流程草稿" />
 
     <a-table
-      v-else
+      v-else-if="visibleGroups.length > 0 || loading"
       class="draft-table"
       size="small"
       :columns="assetColumns"
-      :data-source="draftGroups"
+      :data-source="visibleGroups"
       :expanded-row-keys="expandedRowKeys"
       :loading="loading"
       :pagination="{ pageSize: 10, showSizeChanger: false }"
       :row-key="groupRowKey"
-      :scroll="{ x: 1380 }"
+      :scroll="{ x: 1430 }"
       @expand="handleExpand"
     >
       <template #bodyCell="{ column, record }">
         <template v-if="column.key === 'name'">
-          <a-button type="link" class="draft-name-button" @click="openDesign(latestModelOf(record))">
+          <a-button
+            type="link"
+            class="draft-name-button"
+            @click="isTemplateGroup(record) ? createDraftFromTemplate(templateOf(record)!) : openDesign(latestModelOf(record))"
+          >
             <span class="single-line-text">{{ groupName(record) }}</span>
           </a-button>
+          <a-tag v-if="isTemplateGroup(record)" class="draft-template-tag" color="cyan">平台模板</a-tag>
         </template>
 
         <template v-else-if="column.key === 'modelKey'">
@@ -56,7 +104,8 @@
         </template>
 
         <template v-else-if="column.key === 'latestVersion'">
-          <span class="draft-version">v{{ toProcessModelGroup(record).latestDesignVersion }}</span>
+          <a-tag v-if="isTemplateGroup(record)" color="cyan">模板</a-tag>
+          <span v-else class="draft-version">v{{ toProcessModelGroup(record).latestDesignVersion }}</span>
         </template>
 
         <template v-else-if="column.key === 'currentRuntimeVersion'">
@@ -71,30 +120,38 @@
               <UpOutlined v-if="isExpanded(record)" />
               <DownOutlined v-else />
             </template>
-            {{ toProcessModelGroup(record).versionCount }} 个版本
+            <template v-if="isTemplateGroup(record)">
+              {{ templateOf(record)?.tasks.length ?? 0 }} 个节点
+            </template>
+            <template v-else>
+              {{ toProcessModelGroup(record).versionCount }} 个版本
+            </template>
           </a-button>
         </template>
 
         <template v-else-if="column.key === 'status'">
-          <a-tag :color="statusColor(latestModelOf(record).status)">
+          <a-tag v-if="isTemplateGroup(record)" color="cyan">可创建</a-tag>
+          <a-tag v-else :color="statusColor(latestModelOf(record).status)">
             {{ statusLabel(latestModelOf(record).status) }}
           </a-tag>
         </template>
 
         <template v-else-if="column.key === 'validationStatus'">
-          <a-tag :color="validationColor(latestModelOf(record).validationStatus)">
+          <a-tag v-if="isTemplateGroup(record)" color="green">内置模板</a-tag>
+          <a-tag v-else :color="validationColor(latestModelOf(record).validationStatus)">
             {{ validationLabel(latestModelOf(record).validationStatus) }}
           </a-tag>
         </template>
 
         <template v-else-if="column.key === 'hasUndeployedChanges'">
-          <a-tag :color="toProcessModelGroup(record).hasUndeployedChanges ? 'orange' : 'default'">
+          <a-tag v-if="isTemplateGroup(record)" color="cyan">待创建</a-tag>
+          <a-tag v-else :color="toProcessModelGroup(record).hasUndeployedChanges ? 'orange' : 'default'">
             {{ toProcessModelGroup(record).hasUndeployedChanges ? '有变更' : '无差异' }}
           </a-tag>
         </template>
 
         <template v-else-if="column.key === 'scope'">
-          <span class="single-line-text">{{ scopeLabel(latestModelOf(record)) }}</span>
+          <span class="single-line-text">{{ isTemplateGroup(record) ? '平台模板' : scopeLabel(latestModelOf(record)) }}</span>
         </template>
 
         <template v-else-if="column.key === 'updatedBy'">
@@ -107,6 +164,43 @@
 
         <template v-else-if="column.key === 'actions'">
           <div class="draft-row-actions">
+            <a-button
+              v-if="isTemplateGroup(record)"
+              type="link"
+              size="small"
+              :loading="templateCreatingKey === templateOf(record)?.key"
+              @click="createDraftFromTemplate(templateOf(record)!)"
+            >
+              <template #icon>
+                <EditOutlined />
+              </template>
+              设计最新
+            </a-button>
+            <a-button
+              v-if="isTemplateGroup(record)"
+              type="link"
+              size="small"
+              :loading="templateValidatingKey === templateOf(record)?.key"
+              @click="validateTemplate(templateOf(record)!)"
+            >
+              <template #icon>
+                <CheckCircleOutlined />
+              </template>
+              校验
+            </a-button>
+            <a-button
+              v-if="isTemplateGroup(record)"
+              type="link"
+              size="small"
+              :loading="templateDeployingKey === templateOf(record)?.key"
+              @click="createAndDeployTemplate(templateOf(record)!)"
+            >
+              <template #icon>
+                <RocketOutlined />
+              </template>
+              部署
+            </a-button>
+            <template v-else>
             <a-button type="link" size="small" @click="openDesign(latestModelOf(record))">
               <template #icon>
                 <EditOutlined />
@@ -135,12 +229,45 @@
               </template>
               部署
             </a-button>
+            <a-button
+              v-if="canDeleteDraft(latestModelOf(record)) && toProcessModelGroup(record).versionCount === 1"
+              type="link"
+              size="small"
+              danger
+              :loading="deletingId === latestModelOf(record).id"
+              @click="confirmDeleteModel(latestModelOf(record))"
+            >
+              <template #icon>
+                <DeleteOutlined />
+              </template>
+              删除
+            </a-button>
+            </template>
           </div>
         </template>
       </template>
 
       <template #expandedRowRender="{ record }">
+        <div v-if="isTemplateGroup(record)" class="draft-template-detail">
+          <div class="draft-template-detail-block">
+            <span class="draft-template-detail-label">业务模块</span>
+            <span>{{ templateOf(record)?.businessModule }}</span>
+          </div>
+          <div class="draft-template-detail-block">
+            <span class="draft-template-detail-label">候选角色</span>
+            <a-tag v-for="roleCode in templateOf(record)?.roleCodes" :key="roleCode" color="blue">
+              {{ roleCode }}
+            </a-tag>
+          </div>
+          <div class="draft-template-detail-block">
+            <span class="draft-template-detail-label">业务权限</span>
+            <a-tag v-for="permission in templateOf(record)?.permissions" :key="permission.code" color="purple">
+              {{ permission.code }}
+            </a-tag>
+          </div>
+        </div>
         <a-table
+          v-else
           class="draft-version-table"
           size="small"
           :columns="versionColumns"
@@ -217,6 +344,19 @@
                   </template>
                   部署
                 </a-button>
+                <a-button
+                  v-if="canDeleteDraft(toProcessModel(versionRecord))"
+                  type="link"
+                  size="small"
+                  danger
+                  :loading="deletingId === toProcessModel(versionRecord).id"
+                  @click="confirmDeleteModel(toProcessModel(versionRecord))"
+                >
+                  <template #icon>
+                    <DeleteOutlined />
+                  </template>
+                  删除
+                </a-button>
               </div>
             </template>
           </template>
@@ -228,11 +368,13 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { message } from 'ant-design-vue'
+import { Modal, message } from 'ant-design-vue'
 import {
   CheckCircleOutlined,
+  DeleteOutlined,
   DownOutlined,
   EditOutlined,
+  FileAddOutlined,
   PlusOutlined,
   ReloadOutlined,
   RocketOutlined,
@@ -247,28 +389,72 @@ import {
   type ProcessModelValidationStatus,
 } from '@/api/process'
 import { EMPTY_PROCESS_XML } from '@/utils/bpmn/modeler'
+import {
+  PLATFORM_DRAFT_TEMPLATES,
+  type PlatformDraftTemplate,
+} from '@/utils/bpmn/templates/platformDraftTemplates'
 
 const emit = defineEmits<{
   (e: 'open-design', model: ProcessModel): void
+  (e: 'open-new-draft', draft: UnsavedProcessDraft): void
 }>()
+
+export interface UnsavedProcessDraft {
+  modelKey: string
+  name: string
+  description?: string
+  bpmnXml: string
+}
 
 type ProcessModelGroupView = ProcessModelGroup & {
   groupKey: string
+  isTemplate?: boolean
+  template?: PlatformDraftTemplate
 }
 type ProcessModelGroupTableRecord = ProcessModelGroupView | Record<string, unknown>
 type ProcessModelTableRecord = ProcessModel | Record<string, unknown>
 
 const draftGroups = ref<ProcessModelGroupView[]>([])
 const loading = ref(false)
+const modelsLoaded = ref(false)
 const creating = ref(false)
+const templateCreatingKey = ref<string | null>(null)
+const templateValidatingKey = ref<string | null>(null)
+const templateDeployingKey = ref<string | null>(null)
+const batchDeployingTemplates = ref(false)
 const validatingId = ref<number | null>(null)
 const deployingId = ref<number | null>(null)
+const deletingId = ref<number | null>(null)
 const expandedGroupKey = ref<string | null>(null)
 const loadError = ref('')
+const platformDraftTemplates = PLATFORM_DRAFT_TEMPLATES
 
 const totalVersionCount = computed(() =>
   draftGroups.value.reduce((total, group) => total + group.versionCount, 0),
 )
+
+const creatablePlatformTemplates = computed(() => {
+  if (!modelsLoaded.value || loadError.value) {
+    return []
+  }
+  const existingModelKeys = new Set(draftGroups.value.map((group) => group.modelKey))
+  return platformDraftTemplates
+    .filter((template) => !existingModelKeys.has(template.key))
+})
+
+const templateGroups = computed(() => creatablePlatformTemplates.value.map(templateToGroup))
+
+const visibleGroups = computed(() => [
+  ...templateGroups.value,
+  ...draftGroups.value,
+])
+
+const deployablePlatformTemplates = computed(() => {
+  if (!modelsLoaded.value || loadError.value) {
+    return []
+  }
+  return platformDraftTemplates.filter((template) => templateNeedsRuntimeDeployment(template))
+})
 
 const expandedRowKeys = computed(() => expandedGroupKey.value ? [expandedGroupKey.value] : [])
 
@@ -284,7 +470,7 @@ const assetColumns = [
   { title: 'Scope', key: 'scope', width: 120 },
   { title: '更新人', key: 'updatedBy', width: 110 },
   { title: '更新时间', key: 'updatedAt', width: 170 },
-  { title: '操作', key: 'actions', width: 250 },
+  { title: '操作', key: 'actions', width: 370 },
 ]
 
 const versionColumns = [
@@ -296,7 +482,7 @@ const versionColumns = [
   { title: '更新人', key: 'updatedBy', width: 110 },
   { title: '更新时间', key: 'updatedAt', width: 170 },
   { title: '部署 ID', key: 'deploymentId', width: 160 },
-  { title: '操作', key: 'actions', width: 220 },
+  { title: '操作', key: 'actions', width: 300 },
 ]
 
 function groupKey(model: Pick<ProcessModel, 'modelKey' | 'scopeType' | 'recordTenantId'>) {
@@ -325,14 +511,54 @@ function buildDraftXml(modelKey: string, modelName: string) {
     .replace('bpmnElement="NewProcess"', `bpmnElement="${escapeXmlAttribute(modelKey)}"`)
 }
 
+function templateToGroup(template: PlatformDraftTemplate, index: number): ProcessModelGroupView {
+  const templateModel: ProcessModel = {
+    id: -index - 1,
+    modelKey: template.key,
+    name: template.name,
+    description: template.description,
+    scopeType: 'PLATFORM',
+    recordTenantId: null,
+    status: 'DRAFT',
+    runtimeState: 'NOT_DEPLOYED',
+    version: 0,
+    bpmnXml: template.bpmnXml,
+    validationStatus: 'NOT_VALIDATED',
+    lockVersion: 0,
+  }
+  return {
+    modelKey: template.key,
+    name: template.name,
+    scopeType: 'PLATFORM',
+    recordTenantId: null,
+    latestVersion: 0,
+    latestDesignVersion: 0,
+    latestStatus: 'DRAFT',
+    currentRuntimeVersion: null,
+    currentDeploymentId: null,
+    hasUndeployedChanges: false,
+    versionCount: 0,
+    updatedAt: undefined,
+    updatedBy: 'system',
+    latestModel: templateModel,
+    versions: [],
+    groupKey: `TEMPLATE:PLATFORM:0:${template.key}`,
+    isTemplate: true,
+    template,
+  }
+}
+
 async function loadModels() {
   loading.value = true
   loadError.value = ''
   try {
     const groups = await processModelApi.listModelGroups()
     draftGroups.value = groups.map(normalizeGroup)
+    modelsLoaded.value = true
   } catch (error) {
     console.error('加载流程草稿失败:', error)
+    draftGroups.value = []
+    modelsLoaded.value = false
     loadError.value = normalizeError(error, '加载流程草稿失败')
   } finally {
     loading.value = false
@@ -340,24 +566,125 @@ async function loadModels() {
 }
 
 async function createDraft() {
-  creating.value = true
+  const modelKey = buildDraftKey()
+  const name = '新建流程草稿'
+  emit('open-new-draft', {
+    modelKey,
+    name,
+    bpmnXml: buildDraftXml(modelKey, name),
+  })
+}
+
+async function createDraftFromTemplate(template: PlatformDraftTemplate) {
+  emit('open-new-draft', {
+    modelKey: template.key,
+    name: template.name,
+    description: template.description,
+    bpmnXml: template.bpmnXml,
+  })
+}
+
+async function createAndDeployTemplate(template: PlatformDraftTemplate) {
+  templateDeployingKey.value = template.key
   try {
-    const modelKey = buildDraftKey()
-    const name = '新建流程草稿'
-    const model = await processModelApi.createModel({
-      modelKey,
-      name,
-      bpmnXml: buildDraftXml(modelKey, name),
-    })
-    message.success('流程草稿已创建')
+    const existingModel = modelForTemplate(template)
+    const model = existingModel ?? await createTemplateDraft(template)
+    await validateModelForDeployment(model)
+    const result = await processModelApi.deployModel(model.id)
+    message.success(result.message || `已创建并部署平台模板：${template.name}`)
     await loadModels()
-    emit('open-design', model)
   } catch (error) {
-    console.error('创建流程草稿失败:', error)
-    message.error('创建流程草稿失败：' + normalizeError(error, '未知错误'))
+    console.error('创建并部署平台模板失败:', error)
+    message.error('创建并部署平台模板失败：' + normalizeError(error, '未知错误'))
   } finally {
-    creating.value = false
+    templateDeployingKey.value = null
   }
+}
+
+async function validateTemplate(template: PlatformDraftTemplate) {
+  templateValidatingKey.value = template.key
+  try {
+    const existingModel = modelForTemplate(template)
+    const model = existingModel ?? await createTemplateDraft(template)
+    const result = await processModelApi.validateModel(model.id)
+    if (result.valid) {
+      message.success(result.message || `平台模板校验通过：${template.name}`)
+    } else {
+      message.warning(result.message || `平台模板校验完成：${template.name}`)
+    }
+    await loadModels()
+  } catch (error) {
+    console.error('校验平台模板失败:', error)
+    message.error('校验平台模板失败：' + normalizeError(error, '未知错误'))
+  } finally {
+    templateValidatingKey.value = null
+  }
+}
+
+async function deployPlatformTemplates() {
+  batchDeployingTemplates.value = true
+  let deployedCount = 0
+  let skippedCount = 0
+  const failures: string[] = []
+  try {
+    for (const template of platformDraftTemplates) {
+      const existingGroup = groupForTemplate(template)
+      if (existingGroup && !templateNeedsRuntimeDeployment(template)) {
+        skippedCount += 1
+        continue
+      }
+      try {
+        const model = existingGroup?.latestModel ?? await createTemplateDraft(template)
+        await validateModelForDeployment(model)
+        await processModelApi.deployModel(model.id)
+        deployedCount += 1
+      } catch (error) {
+        failures.push(`${template.name}: ${normalizeError(error, '未知错误')}`)
+      }
+    }
+    await loadModels()
+    if (failures.length > 0) {
+      message.error(`平台模板部署完成 ${deployedCount} 个，失败 ${failures.length} 个：${failures[0]}`)
+    } else if (deployedCount > 0) {
+      message.success(`已创建并部署 ${deployedCount} 个平台模板`)
+    } else {
+      message.success(skippedCount > 0 ? '平台模板均已处于当前运行态' : '没有可部署的平台模板')
+    }
+  } finally {
+    batchDeployingTemplates.value = false
+  }
+}
+
+function createTemplateDraft(template: PlatformDraftTemplate) {
+  return processModelApi.createModel({
+    modelKey: template.key,
+    name: template.name,
+    description: template.description,
+    bpmnXml: template.bpmnXml,
+  })
+}
+
+async function validateModelForDeployment(model: ProcessModel) {
+  const validation = await processModelApi.validateModel(model.id)
+  if (!validation.valid) {
+    throw new Error(validation.message || '流程模型校验未通过')
+  }
+}
+
+function groupForTemplate(template: PlatformDraftTemplate) {
+  return draftGroups.value.find((group) => group.modelKey === template.key)
+}
+
+function modelForTemplate(template: PlatformDraftTemplate) {
+  return groupForTemplate(template)?.latestModel
+}
+
+function templateNeedsRuntimeDeployment(template: PlatformDraftTemplate) {
+  const group = groupForTemplate(template)
+  if (!group) {
+    return true
+  }
+  return !group.currentRuntimeVersion || group.hasUndeployedChanges
 }
 
 function normalizeGroup(group: ProcessModelGroup): ProcessModelGroupView {
@@ -397,6 +724,14 @@ function hasUndeployedChanges(latestDesignVersion?: number, currentRuntimeVersio
 
 function toProcessModelGroup(record: ProcessModelGroupTableRecord) {
   return record as ProcessModelGroupView
+}
+
+function isTemplateGroup(record: ProcessModelGroupTableRecord) {
+  return Boolean(toProcessModelGroup(record).isTemplate)
+}
+
+function templateOf(record: ProcessModelGroupTableRecord) {
+  return toProcessModelGroup(record).template
 }
 
 function toProcessModel(record: ProcessModelTableRecord) {
@@ -488,6 +823,42 @@ async function deployModel(model: ProcessModel) {
     message.error('部署流程草稿失败：' + normalizeError(error, '未知错误'))
   } finally {
     deployingId.value = null
+  }
+}
+
+function canDeleteDraft(model: ProcessModel) {
+  return (model.status === 'DRAFT' || model.status === 'VALIDATED')
+    && model.runtimeState === 'NOT_DEPLOYED'
+    && !model.deploymentId
+    && !model.processDefinitionId
+}
+
+function confirmDeleteModel(model: ProcessModel) {
+  Modal.confirm({
+    title: '删除流程草稿',
+    content: `确认删除「${modelName(model)}」v${model.version}？删除后不可恢复。`,
+    okText: '删除',
+    okType: 'danger',
+    cancelText: '取消',
+    onOk: () => deleteModel(model),
+  })
+}
+
+async function deleteModel(model: ProcessModel) {
+  if (!canDeleteDraft(model)) {
+    message.warning('仅允许删除未部署的草稿或已校验草稿')
+    return
+  }
+  deletingId.value = model.id
+  try {
+    await processModelApi.deleteModel(model.id)
+    message.success('流程草稿已删除')
+    await loadModels()
+  } catch (error) {
+    console.error('删除流程草稿失败:', error)
+    message.error('删除流程草稿失败：' + normalizeError(error, '未知错误'))
+  } finally {
+    deletingId.value = null
   }
 }
 
@@ -638,6 +1009,79 @@ onMounted(loadModels)
 
 .draft-version-count {
   padding: 0;
+}
+
+.draft-template-menu {
+  min-width: 280px;
+  max-width: 360px;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid #eaecf0;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgb(15 23 42 / 12%);
+}
+
+.draft-template-item {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  color: #344054;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.draft-template-item:hover:not(:disabled) {
+  background: #f2f4f7;
+}
+
+.draft-template-item:disabled {
+  color: #98a2b3;
+  cursor: not-allowed;
+}
+
+.draft-template-name,
+.draft-template-meta {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draft-template-name {
+  font-weight: 600;
+}
+
+.draft-template-meta {
+  margin-top: 2px;
+  color: #667085;
+  font-size: 12px;
+}
+
+.draft-template-tag {
+  margin-left: 6px;
+}
+
+.draft-template-detail {
+  display: grid;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.draft-template-detail-block {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: #344054;
+}
+
+.draft-template-detail-label {
+  flex: 0 0 72px;
+  color: #667085;
+  font-size: 12px;
 }
 
 .draft-row-actions {

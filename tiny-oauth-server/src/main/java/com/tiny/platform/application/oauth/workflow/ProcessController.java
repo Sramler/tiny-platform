@@ -1,13 +1,18 @@
 package com.tiny.platform.application.oauth.workflow;
 
 import com.tiny.platform.infrastructure.idempotent.sdk.annotation.Idempotent;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
+import com.tiny.platform.infrastructure.workflow.service.ProcessModelRuntimeBusinessAccessService;
+import com.tiny.platform.infrastructure.workflow.service.PlatformWorkflowBusinessDataValidationService;
+import com.tiny.platform.infrastructure.workflow.service.WorkflowBusinessRequestService;
 import org.springframework.beans.factory.annotation.Autowired;
-import java.security.Principal;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.security.Principal;
 import java.util.Map;
 
 /**
@@ -25,6 +30,15 @@ public class ProcessController {
 
     @Autowired
     private BpmnValidationHelper bpmnValidationHelper;
+
+    @Autowired
+    private ProcessModelRuntimeBusinessAccessService processModelRuntimeBusinessAccessService;
+
+    @Autowired
+    private PlatformWorkflowBusinessDataValidationService platformWorkflowBusinessDataValidationService;
+
+    @Autowired
+    private WorkflowBusinessRequestService workflowBusinessRequestService;
 
     // ------------------- 1. 部署管理 -------------------
 
@@ -131,15 +145,45 @@ public class ProcessController {
     @PreAuthorize("@workflowAccessGuard.canControlInstance(authentication)")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> start(@RequestParam(value = "processKey") String processKey,
-                        @RequestBody(required = false) Map<String, Object> variables) {
+                                                     @RequestBody(required = false) Map<String, Object> variables,
+                                                     Authentication authentication) {
         try {
             String activeTenantId = resolveCurrentWorkflowTenantForRuntime();
-            String instanceId = processEngineService.startProcessInstance(processKey, activeTenantId, variables);
+            processModelRuntimeBusinessAccessService.assertCanStartProcess(processKey, authentication);
+            Map<String, Object> startVariables = platformWorkflowBusinessDataValidationService.prepareStartVariables(
+                processKey,
+                variables,
+                authentication
+            );
+            Long businessRequestId = workflowBusinessRequestService.createSubmittedRequest(
+                processKey,
+                activeTenantId,
+                startVariables,
+                authentication
+            ).orElse(null);
+            if (businessRequestId != null) {
+                startVariables.put("tpBusinessRequestId", businessRequestId);
+            }
+            String instanceId;
+            try {
+                instanceId = processEngineService.startProcessInstance(processKey, activeTenantId, startVariables);
+                workflowBusinessRequestService.attachProcessInstance(
+                    businessRequestId,
+                    instanceId,
+                    null,
+                    authentication
+                );
+            } catch (Exception startException) {
+                workflowBusinessRequestService.markStartFailed(businessRequestId, startException, authentication);
+                throw startException;
+            }
             return ResponseEntity.ok(Map.of(
                 "success", true,
                 "instanceId", instanceId,
                 "message", "流程实例启动成功"
             ));
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of(
                 "success", false,
@@ -291,13 +335,34 @@ public class ProcessController {
     @PreAuthorize("@workflowAccessGuard.canControlInstance(authentication)")
     @Idempotent(key = "#request.getHeader('X-Idempotency-Key')", failOpen = false)
     public ResponseEntity<Map<String, Object>> completeTask(@PathVariable String taskId,
-                               @RequestBody(required = false) Map<String, Object> variables) {
+                               @RequestBody(required = false) Map<String, Object> variables,
+                               Authentication authentication) {
         try {
-            processEngineService.completeTask(taskId, variables);
+            WorkflowTaskContext taskContext = processEngineService.getTaskContext(taskId);
+            Map<String, Object> completeVariables = platformWorkflowBusinessDataValidationService
+                .prepareTaskCompleteVariables(taskContext, variables, authentication);
+            if (workflowBusinessRequestService.isRejectDecision(completeVariables)
+                && workflowBusinessRequestService.isPlatformWorkflow(taskContext.processDefinitionKey())) {
+                workflowBusinessRequestService.rejectTask(taskContext, completeVariables, authentication);
+                processEngineService.deleteInstance(taskContext.processInstanceId());
+                return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "message", "任务已拒绝，流程实例已终止"
+                ));
+            }
+            processEngineService.completeTask(taskId, completeVariables);
+            workflowBusinessRequestService.finishTask(
+                taskContext,
+                completeVariables,
+                authentication,
+                processEngineService.hasOpenTasks(taskContext.processInstanceId())
+            );
             return ResponseEntity.ok(Map.of(
                 "success", true,
                 "message", "任务完成"
             ));
+        } catch (BusinessException e) {
+            throw e;
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of(
                 "success", false,

@@ -466,6 +466,44 @@ public class CamundaProcessEngineServiceImpl implements ProcessEngineService {
     }
 
     @Override
+    public WorkflowTaskContext getTaskContext(String taskId) {
+        Task task = taskService.createTaskQuery()
+                .taskId(taskId)
+                .singleResult();
+        if (task == null) {
+            throw new IllegalArgumentException("任务不存在: " + taskId);
+        }
+        String processDefinitionKey = null;
+        if (task.getProcessDefinitionId() != null) {
+            var definition = repositoryService.createProcessDefinitionQuery()
+                    .processDefinitionId(task.getProcessDefinitionId())
+                    .singleResult();
+            if (definition != null) {
+                processDefinitionKey = definition.getKey();
+            }
+        }
+        return new WorkflowTaskContext(
+                task.getId(),
+                task.getName(),
+                task.getTaskDefinitionKey(),
+                task.getProcessInstanceId(),
+                task.getProcessDefinitionId(),
+                processDefinitionKey,
+                task.getTenantId()
+        );
+    }
+
+    @Override
+    public boolean hasOpenTasks(String processInstanceId) {
+        if (processInstanceId == null || processInstanceId.isBlank()) {
+            return false;
+        }
+        return taskService.createTaskQuery()
+                .processInstanceId(processInstanceId)
+                .count() > 0;
+    }
+
+    @Override
     public void completeTask(String taskId, Map<String, Object> variables) {
         taskService.complete(taskId, variables);
     }

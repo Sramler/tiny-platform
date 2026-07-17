@@ -1,22 +1,33 @@
 package com.tiny.platform.application.oauth.workflow;
 
+import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
+import com.tiny.platform.infrastructure.workflow.service.PlatformWorkflowBusinessDataValidationService;
+import com.tiny.platform.infrastructure.workflow.service.ProcessModelRuntimeBusinessAccessService;
+import com.tiny.platform.infrastructure.workflow.service.WorkflowBusinessRequestService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.security.Principal;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -28,15 +39,30 @@ class ProcessControllerTest {
 
     private ProcessEngineService processEngineService;
     private BpmnValidationHelper bpmnValidationHelper;
+    private ProcessModelRuntimeBusinessAccessService runtimeBusinessAccessService;
+    private PlatformWorkflowBusinessDataValidationService platformWorkflowBusinessDataValidationService;
+    private WorkflowBusinessRequestService workflowBusinessRequestService;
     private ProcessController controller;
 
     @BeforeEach
     void setUp() {
         processEngineService = mock(ProcessEngineService.class);
         bpmnValidationHelper = mock(BpmnValidationHelper.class);
+        runtimeBusinessAccessService = mock(ProcessModelRuntimeBusinessAccessService.class);
+        platformWorkflowBusinessDataValidationService = mock(PlatformWorkflowBusinessDataValidationService.class);
+        workflowBusinessRequestService = mock(WorkflowBusinessRequestService.class);
+        when(workflowBusinessRequestService.createSubmittedRequest(anyString(), any(), any(), any()))
+            .thenReturn(Optional.empty());
         controller = new ProcessController();
         ReflectionTestUtils.setField(controller, "processEngineService", processEngineService);
         ReflectionTestUtils.setField(controller, "bpmnValidationHelper", bpmnValidationHelper);
+        ReflectionTestUtils.setField(controller, "processModelRuntimeBusinessAccessService", runtimeBusinessAccessService);
+        ReflectionTestUtils.setField(
+            controller,
+            "platformWorkflowBusinessDataValidationService",
+            platformWorkflowBusinessDataValidationService
+        );
+        ReflectionTestUtils.setField(controller, "workflowBusinessRequestService", workflowBusinessRequestService);
         TenantContext.setCurrentTenant("tenant-1");
     }
 
@@ -247,26 +273,91 @@ class ProcessControllerTest {
         void start_whenSuccess_returns200WithInstanceId() {
             when(processEngineService.startProcessInstance(anyString(), anyString(), any()))
                 .thenReturn("inst-1");
+            Authentication authentication = auth("workflow:platform:tenant-onboarding:start");
+            Map<String, Object> requestVariables = Map.of("var", "value");
+            Map<String, Object> startVariables = Map.of("var", "value", "tpWorkflowStatus", "SUBMITTED");
+            when(platformWorkflowBusinessDataValidationService.prepareStartVariables(
+                "processKey",
+                requestVariables,
+                authentication
+            )).thenReturn(startVariables);
 
             ResponseEntity<Map<String, Object>> response =
-                controller.start("processKey", Map.of("var", "value"));
+                controller.start("processKey", requestVariables, authentication);
 
             assertThat(response.getStatusCode().value()).isEqualTo(200);
             assertThat(response.getBody()).containsEntry("success", true);
             assertThat(response.getBody()).containsEntry("instanceId", "inst-1");
-            verify(processEngineService).startProcessInstance("processKey", "tenant-1", Map.of("var", "value"));
+            verify(runtimeBusinessAccessService).assertCanStartProcess("processKey", authentication);
+            verify(platformWorkflowBusinessDataValidationService)
+                .prepareStartVariables("processKey", requestVariables, authentication);
+            verify(workflowBusinessRequestService).createSubmittedRequest(
+                "processKey",
+                "tenant-1",
+                startVariables,
+                authentication
+            );
+            verify(processEngineService).startProcessInstance("processKey", "tenant-1", startVariables);
+        }
+
+        @Test
+        void start_whenBusinessRequestCreated_attachesProcessInstance() {
+            when(processEngineService.startProcessInstance(anyString(), anyString(), any()))
+                .thenReturn("inst-1");
+            Authentication authentication = auth("workflow:*");
+            Map<String, Object> requestVariables = new java.util.LinkedHashMap<>();
+            requestVariables.put("requestId", "REQ-001");
+            requestVariables.put("requestTitle", "流程申请");
+            requestVariables.put("requestReason", "测试");
+            when(platformWorkflowBusinessDataValidationService.prepareStartVariables(
+                "platform_tenant_plan_change",
+                requestVariables,
+                authentication
+            )).thenReturn(requestVariables);
+            when(workflowBusinessRequestService.createSubmittedRequest(
+                "platform_tenant_plan_change",
+                "tenant-1",
+                requestVariables,
+                authentication
+            )).thenReturn(Optional.of(100L));
+
+            ResponseEntity<Map<String, Object>> response =
+                controller.start("platform_tenant_plan_change", requestVariables, authentication);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            assertThat(requestVariables).containsEntry("tpBusinessRequestId", 100L);
+            verify(processEngineService).startProcessInstance("platform_tenant_plan_change", "tenant-1", requestVariables);
+            verify(workflowBusinessRequestService).attachProcessInstance(100L, "inst-1", null, authentication);
         }
 
         @Test
         void start_whenServiceThrows_returns400() {
             when(processEngineService.startProcessInstance(anyString(), anyString(), any()))
                 .thenThrow(new RuntimeException("process key not found"));
+            Authentication authentication = auth("workflow:*");
+            when(platformWorkflowBusinessDataValidationService.prepareStartVariables("unknown", null, authentication))
+                .thenReturn(Map.of());
 
-            ResponseEntity<Map<String, Object>> response = controller.start("unknown", null);
+            ResponseEntity<Map<String, Object>> response = controller.start("unknown", null, authentication);
 
             assertThat(response.getStatusCode().value()).isEqualTo(400);
             assertThat(response.getBody()).containsEntry("success", false);
             assertThat(response.getBody()).containsEntry("error", "process key not found");
+        }
+
+        @Test
+        void start_whenBusinessPermissionFails_propagatesForbiddenAndDoesNotStartEngine() {
+            Authentication authentication = auth("workflow:instance:control");
+            doThrow(BusinessException.forbidden("缺少流程发起权限: workflow:platform:tenant-onboarding:start"))
+                .when(runtimeBusinessAccessService)
+                .assertCanStartProcess("platform_tenant_onboarding", authentication);
+
+            assertThatThrownBy(() -> controller.start("platform_tenant_onboarding", null, authentication))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("缺少流程发起权限");
+
+            verify(processEngineService, never()).startProcessInstance(anyString(), any(), any());
+            verify(platformWorkflowBusinessDataValidationService, never()).prepareStartVariables(anyString(), any(), any());
         }
 
         @Test
@@ -276,13 +367,138 @@ class ProcessControllerTest {
             );
             when(processEngineService.startProcessInstance(eq("processKey"), isNull(), any()))
                 .thenReturn("inst-platform");
+            Authentication authentication = auth("workflow:*");
+            Map<String, Object> requestVariables = Map.of("var", "value");
+            when(platformWorkflowBusinessDataValidationService.prepareStartVariables(
+                "processKey",
+                requestVariables,
+                authentication
+            )).thenReturn(requestVariables);
 
             ResponseEntity<Map<String, Object>> response =
-                controller.start("processKey", Map.of("var", "value"));
+                controller.start("processKey", requestVariables, authentication);
 
             assertThat(response.getStatusCode().value()).isEqualTo(200);
             assertThat(response.getBody()).containsEntry("instanceId", "inst-platform");
-            verify(processEngineService).startProcessInstance("processKey", null, Map.of("var", "value"));
+            verify(runtimeBusinessAccessService).assertCanStartProcess("processKey", authentication);
+            verify(processEngineService).startProcessInstance("processKey", null, requestVariables);
+        }
+    }
+
+    @Nested
+    class CompleteTask {
+
+        @Test
+        void completeTask_whenSuccess_passesValidatedVariablesToEngine() {
+            Authentication authentication = auth("workflow:platform:tenant-onboarding:approve");
+            WorkflowTaskContext taskContext = new WorkflowTaskContext(
+                "task-1",
+                "资料审核",
+                "UserTask_Review",
+                "inst-1",
+                "platform_tenant_onboarding:1:1",
+                "platform_tenant_onboarding",
+                null
+            );
+            Map<String, Object> requestVariables = Map.of(
+                "decision",
+                "APPROVE",
+                "comment",
+                "资料完整"
+            );
+            Map<String, Object> completeVariables = Map.of(
+                "decision",
+                "APPROVE",
+                "comment",
+                "资料完整",
+                "tpWorkflowStatus",
+                "APPROVED_IN_STEP"
+            );
+            when(processEngineService.getTaskContext("task-1")).thenReturn(taskContext);
+            when(platformWorkflowBusinessDataValidationService.prepareTaskCompleteVariables(
+                taskContext,
+                requestVariables,
+                authentication
+            )).thenReturn(completeVariables);
+
+            ResponseEntity<Map<String, Object>> response =
+                controller.completeTask("task-1", requestVariables, authentication);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            assertThat(response.getBody()).containsEntry("success", true);
+            verify(processEngineService).getTaskContext("task-1");
+            verify(platformWorkflowBusinessDataValidationService)
+                .prepareTaskCompleteVariables(taskContext, requestVariables, authentication);
+            verify(processEngineService).completeTask("task-1", completeVariables);
+            verify(processEngineService).hasOpenTasks("inst-1");
+            verify(workflowBusinessRequestService).finishTask(taskContext, completeVariables, authentication, false);
+        }
+
+        @Test
+        void completeTask_whenPlatformDecisionRejected_terminatesProcessAndMarksRequestRejected() {
+            Authentication authentication = auth("workflow:platform:tenant-onboarding:approve");
+            WorkflowTaskContext taskContext = new WorkflowTaskContext(
+                "task-1",
+                "资料审核",
+                "UserTask_Review",
+                "inst-1",
+                "platform_tenant_onboarding:1:1",
+                "platform_tenant_onboarding",
+                null
+            );
+            Map<String, Object> requestVariables = Map.of("decision", "REJECT", "comment", "资料不完整");
+            Map<String, Object> completeVariables = Map.of(
+                "decision",
+                "REJECT",
+                "comment",
+                "资料不完整",
+                "tpWorkflowStatus",
+                "REJECTED"
+            );
+            when(processEngineService.getTaskContext("task-1")).thenReturn(taskContext);
+            when(platformWorkflowBusinessDataValidationService.prepareTaskCompleteVariables(
+                taskContext,
+                requestVariables,
+                authentication
+            )).thenReturn(completeVariables);
+            when(workflowBusinessRequestService.isRejectDecision(completeVariables)).thenReturn(true);
+            when(workflowBusinessRequestService.isPlatformWorkflow("platform_tenant_onboarding")).thenReturn(true);
+
+            ResponseEntity<Map<String, Object>> response =
+                controller.completeTask("task-1", requestVariables, authentication);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(200);
+            assertThat(response.getBody()).containsEntry("message", "任务已拒绝，流程实例已终止");
+            verify(workflowBusinessRequestService).rejectTask(taskContext, completeVariables, authentication);
+            verify(processEngineService).deleteInstance("inst-1");
+            verify(processEngineService, never()).completeTask(anyString(), any());
+        }
+
+        @Test
+        void completeTask_whenBusinessValidationFails_propagatesAndDoesNotComplete() {
+            Authentication authentication = auth("workflow:platform:tenant-onboarding:approve");
+            WorkflowTaskContext taskContext = new WorkflowTaskContext(
+                "task-1",
+                "资料审核",
+                "UserTask_Review",
+                "inst-1",
+                "platform_tenant_onboarding:1:1",
+                "platform_tenant_onboarding",
+                null
+            );
+            Map<String, Object> requestVariables = Map.of("decision", "APPROVE");
+            when(processEngineService.getTaskContext("task-1")).thenReturn(taskContext);
+            when(platformWorkflowBusinessDataValidationService.prepareTaskCompleteVariables(
+                taskContext,
+                requestVariables,
+                authentication
+            )).thenThrow(BusinessException.validationError("审批任务必须提交审批意见"));
+
+            assertThatThrownBy(() -> controller.completeTask("task-1", requestVariables, authentication))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("审批任务必须提交审批意见");
+
+            verify(processEngineService, never()).completeTask(anyString(), any());
         }
     }
 
@@ -303,5 +519,13 @@ class ProcessControllerTest {
             assertThat(response.getBody()).doesNotContainKey("tenantId");
             verify(processEngineService).createTenant(Map.of("id", "acme", "name", "Acme"));
         }
+    }
+
+    private static Authentication auth(String authority) {
+        return new UsernamePasswordAuthenticationToken(
+            "alice",
+            "n/a",
+            List.of(new SimpleGrantedAuthority(authority))
+        );
     }
 }
