@@ -776,3 +776,13 @@ databaseChangeLog:
   - include:
       file: 195-align-scheduling-read-endpoint-requirements.yaml
       relativeToChangelogFile: true
+
+  # PLATFORM 角色目录仍由 /sys/roles 提供，只读访问必须有精确 endpoint 载体。
+  - include:
+      file: 196-backfill-platform-role-list-api-endpoint.yaml
+      relativeToChangelogFile: true
+
+  # PLATFORM 基础角色/菜单/资源控制面载体，避免管理页逐接口 fail-closed。
+  - include:
+      file: 197-backfill-platform-foundation-control-api-endpoints.yaml
+      relativeToChangelogFile: true

@@ -261,7 +261,7 @@ export default defineConfig({
     {
       name: 'chromium-platform-admin',
       // 平台管理员租户治理 real-link（租户初始化向导等）。
-      testMatch: /real\/tenant-create-wizard\.spec\.ts/,
+      testMatch: /real\/(tenant-create-wizard|platform-role-page)\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
         storageState: platformAdminAuthStatePath,

@@ -67,7 +67,8 @@ export default defineConfig({
   server: {
     proxy: Object.fromEntries(
       [
-        '/sys',
+        // 严格限定后端 `/sys` 边界；字符串前缀 `/sys` 会误代理 SPA `/system/**` 文档导航。
+        '^/sys(?:/|$)',
         // `/self/security/totp-bind|verify` 是 Vue 页面；其余 `/self/**` 才代理后端。
         '^/self/(?!security/totp-(?:bind|verify)(?:[/?]|$))',
         '/scheduling',

@@ -26,6 +26,7 @@ public class ApiEndpointRequirementFilter extends OncePerRequestFilter {
     private static final String SELF_SECURITY_PREFIX = "/self/security/";
     private static final String CURRENT_USER_PATH = "/sys/users/current";
     private static final String RUNTIME_MENU_TREE_PATH = "/sys/menus/tree";
+    private static final String RUNTIME_UI_ACTIONS_PATH = "/sys/resources/runtime/ui-actions";
     private static final String PLATFORM_TOKEN_DEBUG_PREFIX = "/sys/platform/token-debug/";
 
     private final ResourceService resourceService;
@@ -57,6 +58,8 @@ public class ApiEndpointRequirementFilter extends OncePerRequestFilter {
             || CURRENT_USER_PATH.equals(path)
             // Runtime sidebar tree is guarded by menu carrier requirements instead of control-plane api_endpoint rows.
             || RUNTIME_MENU_TREE_PATH.equals(path)
+            // Runtime button discovery is guarded by ui_action carrier requirements in ResourceService.
+            || RUNTIME_UI_ACTIONS_PATH.equals(path)
             // Platform token debug is a readonly troubleshooting endpoint guarded by PreAuthorize + platform-scope checks.
             || path.startsWith(PLATFORM_TOKEN_DEBUG_PREFIX)
             || "/self/security".equals(path)

@@ -1,0 +1,91 @@
+databaseChangeLog:
+  - changeSet:
+      id: 197-backfill-platform-foundation-control-api-endpoints
+      author: codex
+      comment: 补齐 PLATFORM 角色、菜单、资源基础控制面 endpoint 与 requirement，保持统一守卫精确匹配和 fail-closed
+      preConditions:
+        onFail: HALT
+        onError: HALT
+        and:
+          - tableExists:
+              tableName: permission
+          - tableExists:
+              tableName: api_endpoint
+          - tableExists:
+              tableName: api_endpoint_permission_requirement
+      changes:
+        - sql:
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT INTO api_endpoint (
+                tenant_id, resource_level, name, title, uri, method, permission,
+                required_permission_id, enabled, created_at, updated_at
+              )
+              SELECT NULL, 'PLATFORM',
+                     CONCAT('platform-foundation-', LOWER(spec.method), '-',
+                            REPLACE(REPLACE(REPLACE(spec.uri, '/', '-'), '{id}', 'id'), '{type}', 'type')),
+                     spec.title, spec.uri, spec.method, spec.permission_code,
+                     permission_entry.id, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM (
+                SELECT '/sys/roles/{id}' uri, 'GET' method, 'system:role:list' permission_code, '读取角色详情' title
+                UNION ALL SELECT '/sys/roles/all', 'GET', 'system:role:list', '查询全部角色'
+                UNION ALL SELECT '/sys/roles', 'POST', 'system:role:create', '创建角色'
+                UNION ALL SELECT '/sys/roles/{id}', 'PUT', 'system:role:edit', '更新角色'
+                UNION ALL SELECT '/sys/roles/{id}', 'DELETE', 'system:role:delete', '删除角色'
+
+                UNION ALL SELECT '/sys/menus', 'GET', 'system:menu:list', '查询菜单列表'
+                UNION ALL SELECT '/sys/menus/tree/all', 'GET', 'system:menu:list', '查询完整菜单树'
+                UNION ALL SELECT '/sys/menus/parent/{id}', 'GET', 'system:menu:list', '查询子菜单'
+                UNION ALL SELECT '/sys/menus/check-name', 'GET', 'system:menu:list', '校验菜单名称'
+                UNION ALL SELECT '/sys/menus/check-url', 'GET', 'system:menu:list', '校验菜单地址'
+                UNION ALL SELECT '/sys/menus', 'POST', 'system:menu:create', '创建菜单'
+                UNION ALL SELECT '/sys/menus/{id}', 'PUT', 'system:menu:edit', '更新菜单'
+                UNION ALL SELECT '/sys/menus/{id}/sort', 'PUT', 'system:menu:edit', '更新菜单排序'
+                UNION ALL SELECT '/sys/menus/{id}', 'DELETE', 'system:menu:delete', '删除菜单'
+                UNION ALL SELECT '/sys/menus/batch/delete', 'POST', 'system:menu:batch-delete', '批量删除菜单'
+
+                UNION ALL SELECT '/sys/resources', 'GET', 'system:resource:list', '查询资源列表'
+                UNION ALL SELECT '/sys/resources/{id}', 'GET', 'system:resource:list', '读取资源详情'
+                UNION ALL SELECT '/sys/resources/tree', 'GET', 'system:resource:list', '查询资源树'
+                UNION ALL SELECT '/sys/resources/type/{type}', 'GET', 'system:resource:list', '按类型查询资源'
+                UNION ALL SELECT '/sys/resources/parent/{id}', 'GET', 'system:resource:list', '查询子资源'
+                UNION ALL SELECT '/sys/resources/top-level', 'GET', 'system:resource:list', '查询顶级资源'
+                UNION ALL SELECT '/sys/resources/types', 'GET', 'system:resource:list', '查询资源类型'
+                UNION ALL SELECT '/sys/resources/check-name', 'GET', 'system:resource:list', '校验资源名称'
+                UNION ALL SELECT '/sys/resources/check-url', 'GET', 'system:resource:list', '校验资源地址'
+                UNION ALL SELECT '/sys/resources/check-uri', 'GET', 'system:resource:list', '校验资源 URI'
+                UNION ALL SELECT '/sys/resources', 'POST', 'system:resource:create', '创建资源'
+                UNION ALL SELECT '/sys/resources/{id}', 'PUT', 'system:resource:edit', '更新资源'
+                UNION ALL SELECT '/sys/resources/{id}/sort', 'PUT', 'system:resource:edit', '更新资源排序'
+                UNION ALL SELECT '/sys/resources/{id}', 'DELETE', 'system:resource:delete', '删除资源'
+                UNION ALL SELECT '/sys/resources/batch/delete', 'POST', 'system:resource:batch-delete', '批量删除资源'
+              ) spec
+              JOIN permission permission_entry
+                ON permission_entry.tenant_id IS NULL
+               AND permission_entry.permission_code = spec.permission_code
+               AND permission_entry.enabled = 1
+              WHERE NOT EXISTS (
+                SELECT 1 FROM api_endpoint existing
+                WHERE existing.tenant_id IS NULL
+                  AND existing.resource_level = 'PLATFORM'
+                  AND existing.uri = spec.uri
+                  AND existing.method = spec.method
+              );
+
+              INSERT IGNORE INTO api_endpoint_permission_requirement (
+                tenant_id, api_endpoint_id, requirement_group, sort_order,
+                permission_id, negated, created_at, updated_at
+              )
+              SELECT NULL, endpoint_entry.id, 0, 0,
+                     endpoint_entry.required_permission_id, 0,
+                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM api_endpoint endpoint_entry
+              WHERE endpoint_entry.tenant_id IS NULL
+                AND endpoint_entry.resource_level = 'PLATFORM'
+                AND endpoint_entry.required_permission_id IS NOT NULL
+                AND (
+                  endpoint_entry.uri LIKE '/sys/roles%'
+                  OR endpoint_entry.uri LIKE '/sys/menus%'
+                  OR endpoint_entry.uri LIKE '/sys/resources%'
+                );

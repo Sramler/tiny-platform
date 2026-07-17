@@ -1,0 +1,52 @@
+databaseChangeLog:
+  - changeSet:
+      id: 196-backfill-platform-role-list-api-endpoint
+      author: codex
+      comment: 补齐 PLATFORM 角色目录只读 endpoint，避免统一守卫将已授权的 /system/role 列表请求误判为未登记
+      preConditions:
+        onFail: HALT
+        onError: HALT
+        and:
+          - tableExists:
+              tableName: permission
+          - tableExists:
+              tableName: api_endpoint
+          - tableExists:
+              tableName: api_endpoint_permission_requirement
+      changes:
+        - sql:
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT INTO api_endpoint (
+                tenant_id, resource_level, name, title, uri, method, permission,
+                required_permission_id, enabled, created_at, updated_at
+              )
+              SELECT NULL, 'PLATFORM', 'platform-role-list-get', '查询平台角色目录',
+                     '/sys/roles', 'GET', p.permission_code, p.id, 1,
+                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM permission p
+              WHERE p.tenant_id IS NULL
+                AND p.permission_code = 'system:role:list'
+                AND p.enabled = 1
+                AND NOT EXISTS (
+                  SELECT 1 FROM api_endpoint existing
+                  WHERE existing.tenant_id IS NULL
+                    AND existing.resource_level = 'PLATFORM'
+                    AND existing.uri = '/sys/roles'
+                    AND existing.method = 'GET'
+                );
+
+              INSERT IGNORE INTO api_endpoint_permission_requirement (
+                tenant_id, api_endpoint_id, requirement_group, sort_order,
+                permission_id, negated, created_at, updated_at
+              )
+              SELECT NULL, endpoint_entry.id, 0, 0,
+                     endpoint_entry.required_permission_id, 0,
+                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM api_endpoint endpoint_entry
+              WHERE endpoint_entry.tenant_id IS NULL
+                AND endpoint_entry.resource_level = 'PLATFORM'
+                AND endpoint_entry.uri = '/sys/roles'
+                AND endpoint_entry.method = 'GET'
+                AND endpoint_entry.required_permission_id IS NOT NULL;
