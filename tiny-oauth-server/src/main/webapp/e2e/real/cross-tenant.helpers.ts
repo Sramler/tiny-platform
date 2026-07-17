@@ -228,9 +228,6 @@ async function loginWithIdentity(page: Page, identity: LoginIdentity) {
         .waitForURL((url) => !url.pathname.includes('/login'), { timeout: 30_000 })
         .then(() => false)
         .catch(() => false),
-      waitForSessionIdentity(page, 30_000)
-        .then(() => false)
-        .catch(() => false),
     ])
 
     if (!loginSurfaceReady && page.url().includes('/login') && !(await hasSessionIdentity(page))) {

@@ -625,11 +625,13 @@ void ensureSchedulingAdminAuthority(Connection connection, Long tenantId, Long r
     ensureRolePermissionBinding(connection, tenantId, roleId, menuListPermissionId);
 
     try (PreparedStatement ps = connection.prepareStatement(
-            "SELECT required_permission_id FROM api_endpoint WHERE tenant_id = ? AND method = 'POST' AND uri = '/sys/users/current/active-scope' AND enabled = true AND required_permission_id IS NOT NULL ORDER BY id LIMIT 1")) {
+            "SELECT permission FROM api_endpoint WHERE (tenant_id = ? OR tenant_id IS NULL) AND method = 'POST' AND uri = '/sys/users/current/active-scope' AND enabled = true AND permission IS NOT NULL AND permission <> '' ORDER BY tenant_id IS NULL, id LIMIT 1")) {
         ps.setLong(1, tenantId);
         try (ResultSet rs = ps.executeQuery()) {
             if (rs.next()) {
-                ensureRolePermissionBinding(connection, tenantId, roleId, rs.getLong(1));
+                String permissionCode = rs.getString(1);
+                Long permissionId = ensurePermission(connection, tenantId, permissionCode, "活动作用域切换", "API", "real e2e active scope switch");
+                ensureRolePermissionBinding(connection, tenantId, roleId, permissionId);
             }
         }
     }
@@ -660,6 +662,18 @@ void ensureSchedulingApiEndpointTemplates(Connection connection, Long tenantId) 
     }
     try (PreparedStatement ps = connection.prepareStatement(
             "UPDATE api_endpoint endpoint JOIN (SELECT method, uri, MIN(id) keep_id FROM api_endpoint WHERE tenant_id = ? AND uri LIKE '/scheduling/%' GROUP BY method, uri HAVING COUNT(*) > 1) duplicate_set ON duplicate_set.method = endpoint.method AND duplicate_set.uri = endpoint.uri SET endpoint.enabled = CASE WHEN endpoint.id = duplicate_set.keep_id THEN true ELSE false END, endpoint.updated_at = NOW() WHERE endpoint.tenant_id = ?")) {
+        ps.setLong(1, tenantId);
+        ps.setLong(2, tenantId);
+        ps.executeUpdate();
+    }
+    try (PreparedStatement ps = connection.prepareStatement(
+            "DELETE requirement_row FROM api_endpoint_permission_requirement requirement_row JOIN api_endpoint endpoint ON endpoint.id = requirement_row.api_endpoint_id JOIN (SELECT method, uri, MIN(id) keep_id FROM api_endpoint WHERE tenant_id = ? AND uri LIKE '/scheduling/%' GROUP BY method, uri HAVING COUNT(*) > 1) duplicate_set ON duplicate_set.method = endpoint.method AND duplicate_set.uri = endpoint.uri WHERE endpoint.tenant_id = ? AND endpoint.id <> duplicate_set.keep_id")) {
+        ps.setLong(1, tenantId);
+        ps.setLong(2, tenantId);
+        ps.executeUpdate();
+    }
+    try (PreparedStatement ps = connection.prepareStatement(
+            "DELETE endpoint FROM api_endpoint endpoint JOIN (SELECT method, uri, MIN(id) keep_id FROM api_endpoint WHERE tenant_id = ? AND uri LIKE '/scheduling/%' GROUP BY method, uri HAVING COUNT(*) > 1) duplicate_set ON duplicate_set.method = endpoint.method AND duplicate_set.uri = endpoint.uri WHERE endpoint.tenant_id = ? AND endpoint.id <> duplicate_set.keep_id")) {
         ps.setLong(1, tenantId);
         ps.setLong(2, tenantId);
         ps.executeUpdate();

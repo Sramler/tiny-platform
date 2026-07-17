@@ -179,31 +179,21 @@ async function waitForFirstBindReady(page: import('@playwright/test').Page): Pro
 async function fetchSecurityStatus(page: import('@playwright/test').Page) {
   const backendBaseUrl =
     process.env.E2E_BACKEND_BASE_URL ?? process.env.VITE_API_BASE_URL ?? 'http://localhost:9000'
-  return page.evaluate(async ({ apiBaseUrl }) => {
-    const controller = new AbortController()
-    const timeout = window.setTimeout(() => controller.abort(), 15_000)
-    const response = await fetch(`${apiBaseUrl}/self/security/status`, {
-      method: 'GET',
-      credentials: 'include',
-      signal: controller.signal,
-      headers: {
-        Accept: 'application/json',
-        ...(window.localStorage.getItem('app_active_tenant_id')
-          ? { 'X-Active-Tenant-Id': window.localStorage.getItem('app_active_tenant_id')! }
-          : {}),
-      },
-    })
-    window.clearTimeout(timeout)
-    const text = await response.text()
-    const contentType = response.headers.get('content-type') || ''
-    return {
-      status: response.status,
-      payload:
-        text && contentType.includes('application/json')
-          ? (JSON.parse(text) as Record<string, unknown>)
-          : null,
-    }
-  }, { apiBaseUrl: backendBaseUrl })
+  const activeTenantId = await page.evaluate(() => window.localStorage.getItem('app_active_tenant_id'))
+  const response = await page.request.get(`${backendBaseUrl}/self/security/status`, {
+    timeout: 15_000,
+    headers: {
+      Accept: 'application/json',
+      ...(activeTenantId ? { 'X-Active-Tenant-Id': activeTenantId } : {}),
+    },
+  })
+  const contentType = response.headers()['content-type'] || ''
+  return {
+    status: response.status(),
+    payload: contentType.includes('application/json')
+      ? ((await response.json()) as Record<string, unknown>)
+      : null,
+  }
 }
 
 function resolveBindLoginConfig() {
