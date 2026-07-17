@@ -756,3 +756,8 @@ databaseChangeLog:
   - include:
       file: 191-bind-platform-admin-tenant-control-permissions.yaml
       relativeToChangelogFile: true
+
+  # 调度真实运行接口的平台模板；租户初始化按统一载体链克隆
+  - include:
+      file: 192-backfill-scheduling-runtime-api-endpoints.yaml
+      relativeToChangelogFile: true
