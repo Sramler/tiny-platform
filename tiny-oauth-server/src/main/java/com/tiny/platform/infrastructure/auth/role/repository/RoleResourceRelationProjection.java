@@ -5,7 +5,5 @@ public interface RoleResourceRelationProjection {
 
     Long getResourceId();
 
-    default String getCarrierType() {
-        return null;
-    }
+    String getCarrierType();
 }

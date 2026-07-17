@@ -1029,6 +1029,11 @@ class TenantBootstrapServiceImplTest {
             public Long getResourceId() {
                 return resourceId;
             }
+
+            @Override
+            public String getCarrierType() {
+                return null;
+            }
         };
     }
 
@@ -1037,6 +1042,11 @@ class TenantBootstrapServiceImplTest {
             @Override
             public Long getId() {
                 return id;
+            }
+
+            @Override
+            public String getCarrierType() {
+                return null;
             }
 
             @Override
