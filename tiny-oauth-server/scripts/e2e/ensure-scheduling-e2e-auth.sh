@@ -625,9 +625,13 @@ void ensurePlatformGovernanceAuthorities(Connection connection, Long roleId) thr
     String[][] authorities = new String[][] {
             {"system:tenant:list", "租户列表访问"},
             {"system:tenant:view", "租户详情访问"},
+            {"system:tenant:create", "租户创建"},
+            {"system:tenant:edit", "租户更新"},
+            {"system:tenant:template:initialize", "租户模板初始化"},
             {"system:tenant:freeze", "租户冻结"},
             {"system:tenant:unfreeze", "租户解冻"},
             {"system:tenant:decommission", "租户下线"},
+            {"system:tenant:delete", "租户删除"},
             {"system:audit:auth:view", "授权审计查看"},
             {"system:audit:auth:export", "授权审计导出"},
             {"system:audit:authentication:view", "认证审计查看"},
