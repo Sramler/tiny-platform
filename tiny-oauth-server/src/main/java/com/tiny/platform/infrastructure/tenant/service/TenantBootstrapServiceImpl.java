@@ -96,6 +96,7 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
         PlatformTemplateSnapshot snapshot = resolvePlatformTemplateSnapshot(targetTenantId);
         ResourceCloneResult resourceCloneResult = cloneResourcesFromSourceList(snapshot.resources(), targetTenantId, "TENANT");
         backfillPermissionBindings(targetTenantId);
+        resourcePermissionBindingService.clonePermissionRequirements(null, targetTenantId);
         assertPermissionBindingsReady(targetTenantId, "目标租户");
         cloneRolesAndRelationsFromLists(snapshot.roles(), snapshot.relations(), resourceCloneResult, targetTenantId, "TENANT");
     }
@@ -337,6 +338,7 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
 
         ResourceCloneResult resourceCloneResult = cloneResourcesFromSourceList(sourceResources, null, "PLATFORM");
         backfillPermissionBindings(null);
+        resourcePermissionBindingService.clonePermissionRequirements(sourceTenant.getId(), null);
         assertPermissionBindingsReady(null, "平台模板");
         cloneRolesAndRelationsFromLists(sourceRoles, sourceRelations, resourceCloneResult, null, "PLATFORM");
     }

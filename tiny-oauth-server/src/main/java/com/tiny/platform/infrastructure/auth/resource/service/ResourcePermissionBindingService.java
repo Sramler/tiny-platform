@@ -171,6 +171,74 @@ public class ResourcePermissionBindingService {
         return updated;
     }
 
+    /**
+     * Clone requirement groups without weakening their AND/OR/negated semantics. Carrier ids and
+     * permission ids are tenant-local, so both sides are resolved again by stable carrier fields
+     * and permission_code instead of copying numeric ids.
+     */
+    public int clonePermissionRequirements(Long sourceTenantId, Long targetTenantId) {
+        MapSqlParameterSource params = new MapSqlParameterSource()
+            .addValue("sourceTenantId", sourceTenantId)
+            .addValue("targetTenantId", targetTenantId);
+        int inserted = 0;
+        inserted += namedParameterJdbcTemplate.update("""
+            INSERT IGNORE INTO `menu_permission_requirement`
+              (`tenant_id`, `menu_id`, `requirement_group`, `sort_order`, `permission_id`, `negated`, `created_at`, `updated_at`)
+            SELECT :targetTenantId, target_carrier.`id`, source_req.`requirement_group`, source_req.`sort_order`,
+                   target_permission.`id`, source_req.`negated`, NOW(), NOW()
+            FROM `menu_permission_requirement` source_req
+            JOIN `menu` source_carrier ON source_carrier.`id` = source_req.`menu_id`
+            JOIN `menu` target_carrier
+              ON target_carrier.`name` = source_carrier.`name`
+             AND target_carrier.`path` = source_carrier.`path`
+             AND target_carrier.`tenant_id` <=> :targetTenantId
+            JOIN `permission` source_permission ON source_permission.`id` = source_req.`permission_id`
+            JOIN `permission` target_permission
+              ON target_permission.`normalized_tenant_id` = IFNULL(:targetTenantId, 0)
+             AND target_permission.`permission_code` = source_permission.`permission_code`
+            WHERE source_carrier.`tenant_id` <=> :sourceTenantId
+              AND source_req.`tenant_id` <=> :sourceTenantId
+            """, params);
+        inserted += namedParameterJdbcTemplate.update("""
+            INSERT IGNORE INTO `ui_action_permission_requirement`
+              (`tenant_id`, `ui_action_id`, `requirement_group`, `sort_order`, `permission_id`, `negated`, `created_at`, `updated_at`)
+            SELECT :targetTenantId, target_carrier.`id`, source_req.`requirement_group`, source_req.`sort_order`,
+                   target_permission.`id`, source_req.`negated`, NOW(), NOW()
+            FROM `ui_action_permission_requirement` source_req
+            JOIN `ui_action` source_carrier ON source_carrier.`id` = source_req.`ui_action_id`
+            JOIN `ui_action` target_carrier
+              ON target_carrier.`name` = source_carrier.`name`
+             AND target_carrier.`action_key` = source_carrier.`action_key`
+             AND target_carrier.`page_path` = source_carrier.`page_path`
+             AND target_carrier.`tenant_id` <=> :targetTenantId
+            JOIN `permission` source_permission ON source_permission.`id` = source_req.`permission_id`
+            JOIN `permission` target_permission
+              ON target_permission.`normalized_tenant_id` = IFNULL(:targetTenantId, 0)
+             AND target_permission.`permission_code` = source_permission.`permission_code`
+            WHERE source_carrier.`tenant_id` <=> :sourceTenantId
+              AND source_req.`tenant_id` <=> :sourceTenantId
+            """, params);
+        inserted += namedParameterJdbcTemplate.update("""
+            INSERT IGNORE INTO `api_endpoint_permission_requirement`
+              (`tenant_id`, `api_endpoint_id`, `requirement_group`, `sort_order`, `permission_id`, `negated`, `created_at`, `updated_at`)
+            SELECT :targetTenantId, target_carrier.`id`, source_req.`requirement_group`, source_req.`sort_order`,
+                   target_permission.`id`, source_req.`negated`, NOW(), NOW()
+            FROM `api_endpoint_permission_requirement` source_req
+            JOIN `api_endpoint` source_carrier ON source_carrier.`id` = source_req.`api_endpoint_id`
+            JOIN `api_endpoint` target_carrier
+              ON target_carrier.`method` = source_carrier.`method`
+             AND target_carrier.`uri` = source_carrier.`uri`
+             AND target_carrier.`tenant_id` <=> :targetTenantId
+            JOIN `permission` source_permission ON source_permission.`id` = source_req.`permission_id`
+            JOIN `permission` target_permission
+              ON target_permission.`normalized_tenant_id` = IFNULL(:targetTenantId, 0)
+             AND target_permission.`permission_code` = source_permission.`permission_code`
+            WHERE source_carrier.`tenant_id` <=> :sourceTenantId
+              AND source_req.`tenant_id` <=> :sourceTenantId
+            """, params);
+        return inserted;
+    }
+
     private String findPermissionCodeById(Long tenantId, Long permissionId) {
         List<String> permissionCodes = namedParameterJdbcTemplate.query(
             """
