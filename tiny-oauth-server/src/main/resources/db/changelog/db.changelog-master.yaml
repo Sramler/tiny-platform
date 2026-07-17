@@ -791,3 +791,8 @@ databaseChangeLog:
   - include:
       file: 198-backfill-scheduling-history-read-api-endpoints.yaml
       relativeToChangelogFile: true
+
+  # 全新库先建立 scheduling:console:view，再生成历史页读取模板与存量租户载体。
+  - include:
+      file: 199-seed-scheduling-history-read-permission-and-endpoints.yaml
+      relativeToChangelogFile: true

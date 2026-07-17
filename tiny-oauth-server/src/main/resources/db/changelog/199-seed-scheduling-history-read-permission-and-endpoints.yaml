@@ -1,0 +1,121 @@
+databaseChangeLog:
+  - changeSet:
+      id: 199-seed-scheduling-history-read-permission-and-endpoints
+      author: codex
+      comment: 先建立调度只读权限，再补齐历史页全局模板及存量租户载体
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT INTO permission (
+                permission_code, permission_name, module_code, action_code, permission_type,
+                description, enabled, built_in_flag, tenant_id, created_at, updated_at
+              )
+              SELECT 'scheduling:console:view', '调度控制面查看权限', 'scheduling', 'console:view', 'MENU',
+                     '调度列表、统计和运行历史只读权限', 1, 1, NULL,
+                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              WHERE NOT EXISTS (
+                SELECT 1 FROM permission
+                WHERE tenant_id IS NULL AND permission_code = 'scheduling:console:view'
+              );
+
+              INSERT INTO permission (
+                permission_code, permission_name, module_code, action_code, permission_type,
+                description, enabled, built_in_flag, tenant_id, created_at, updated_at
+              )
+              SELECT 'scheduling:console:view', '调度控制面查看权限', 'scheduling', 'console:view', 'MENU',
+                     '调度列表、统计和运行历史只读权限', 1, 1, tenant.id,
+                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM tenant
+              WHERE NOT EXISTS (
+                SELECT 1 FROM permission
+                WHERE permission.tenant_id = tenant.id
+                  AND permission.permission_code = 'scheduling:console:view'
+              );
+
+              INSERT IGNORE INTO role_permission (
+                role_id, permission_id, tenant_id, created_by, created_at
+              )
+              SELECT role.id, permission.id, role.tenant_id, NULL, CURRENT_TIMESTAMP
+              FROM role
+              JOIN permission
+                ON permission.tenant_id = role.tenant_id
+               AND permission.permission_code = 'scheduling:console:view'
+               AND permission.enabled = 1
+              WHERE role.code = 'ROLE_TENANT_ADMIN'
+                AND role.enabled = 1;
+
+              INSERT INTO api_endpoint (
+                tenant_id, resource_level, name, title, uri, method, permission,
+                required_permission_id, enabled, created_at, updated_at
+              )
+              SELECT NULL, 'PLATFORM', CONCAT('scheduling-history-read-', route.route_key),
+                     route.title, route.uri, 'GET', 'scheduling:console:view', permission.id, 1,
+                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM (
+                SELECT 'dag-list' route_key, '查询 DAG 列表' title, '/scheduling/dag/list' uri
+                UNION ALL SELECT 'dag-stats', '查询 DAG 统计', '/scheduling/dag/{dagId}/stats'
+                UNION ALL SELECT 'dag-runs', '查询 DAG 运行历史', '/scheduling/dag/{dagId}/runs'
+                UNION ALL SELECT 'dag-run-nodes', '查询 DAG 节点记录', '/scheduling/dag/{dagId}/run/{runId}/nodes'
+              ) route
+              JOIN permission
+                ON permission.tenant_id IS NULL
+               AND permission.permission_code = 'scheduling:console:view'
+               AND permission.enabled = 1
+              WHERE NOT EXISTS (
+                SELECT 1 FROM api_endpoint endpoint
+                WHERE endpoint.tenant_id IS NULL
+                  AND endpoint.method = 'GET'
+                  AND endpoint.uri = route.uri
+              );
+
+              INSERT INTO api_endpoint (
+                tenant_id, resource_level, name, title, uri, method, permission,
+                required_permission_id, enabled, created_at, updated_at
+              )
+              SELECT tenant.id, 'TENANT', template.name, template.title, template.uri,
+                     template.method, 'scheduling:console:view', permission.id, 1,
+                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM tenant
+              JOIN permission
+                ON permission.tenant_id = tenant.id
+               AND permission.permission_code = 'scheduling:console:view'
+               AND permission.enabled = 1
+              JOIN api_endpoint template
+                ON template.tenant_id IS NULL
+               AND template.method = 'GET'
+               AND template.uri IN (
+                 '/scheduling/dag/list',
+                 '/scheduling/dag/{dagId}/stats',
+                 '/scheduling/dag/{dagId}/runs',
+                 '/scheduling/dag/{dagId}/run/{runId}/nodes'
+               )
+               AND template.enabled = 1
+              WHERE NOT EXISTS (
+                SELECT 1 FROM api_endpoint endpoint
+                WHERE endpoint.tenant_id = tenant.id
+                  AND endpoint.method = template.method
+                  AND endpoint.uri = template.uri
+              );
+
+              INSERT IGNORE INTO api_endpoint_permission_requirement (
+                tenant_id, api_endpoint_id, requirement_group, sort_order, permission_id, negated,
+                created_at, updated_at
+              )
+              SELECT endpoint.tenant_id, endpoint.id, 0, 1, endpoint.required_permission_id, 0,
+                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM api_endpoint endpoint
+              WHERE endpoint.method = 'GET'
+                AND endpoint.uri IN (
+                  '/scheduling/dag/list',
+                  '/scheduling/dag/{dagId}/stats',
+                  '/scheduling/dag/{dagId}/runs',
+                  '/scheduling/dag/{dagId}/run/{runId}/nodes'
+                )
+                AND endpoint.required_permission_id IS NOT NULL
+                AND NOT EXISTS (
+                  SELECT 1 FROM api_endpoint_permission_requirement requirement_row
+                  WHERE requirement_row.api_endpoint_id = endpoint.id
+                );
