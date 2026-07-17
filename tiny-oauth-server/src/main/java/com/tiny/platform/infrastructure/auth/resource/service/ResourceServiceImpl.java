@@ -872,6 +872,7 @@ public class ResourceServiceImpl implements ResourceService {
     public ApiEndpointRequirementDecision evaluateApiEndpointRequirement(String method, String uri) {
         String normalizedUri = normalizeCarrierPath(uri);
         if (!StringUtils.hasText(normalizedUri)) {
+            logApiEndpointEarlyDenial(method, uri, "URI_EMPTY", 0);
             return ApiEndpointRequirementDecision.DENIED;
         }
 
@@ -880,6 +881,7 @@ public class ResourceServiceImpl implements ResourceService {
             Sort.by(Sort.Order.asc("id"))
         );
         if (endpoints.isEmpty()) {
+            logApiEndpointEarlyDenial(method, normalizedUri, "ENDPOINT_NOT_REGISTERED", 0);
             return ApiEndpointRequirementDecision.DENIED;
         }
         // Template match must be strict and deterministic.
@@ -887,9 +889,11 @@ public class ResourceServiceImpl implements ResourceService {
             .filter(e -> apiEndpointUriTemplateMatches(e.getUri(), normalizedUri))
             .toList();
         if (endpoints.isEmpty()) {
+            logApiEndpointEarlyDenial(method, normalizedUri, "URI_TEMPLATE_NOT_MATCHED", 0);
             return ApiEndpointRequirementDecision.DENIED;
         }
         if (endpoints.size() != 1) {
+            logApiEndpointEarlyDenial(method, normalizedUri, "ENDPOINT_AMBIGUOUS", endpoints.size());
             return ApiEndpointRequirementDecision.DENIED;
         }
         ApiEndpointEntry endpoint = endpoints.getFirst();
@@ -930,6 +934,13 @@ public class ResourceServiceImpl implements ResourceService {
         return detail != null && "ALLOW".equalsIgnoreCase(detail.decision())
             ? ApiEndpointRequirementDecision.ALLOWED
             : ApiEndpointRequirementDecision.DENIED;
+    }
+
+    private void logApiEndpointEarlyDenial(String method, String uri, String reason, int candidateCount) {
+        logger.warn(
+            "Api endpoint requirement denied before evaluation (tenantId={}, method={}, uri={}, reason={}, candidateCount={})",
+            currentManagedTenantId(), method, uri, reason, candidateCount
+        );
     }
 
     @Override
