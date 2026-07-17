@@ -864,6 +864,12 @@ public class ResourceServiceImpl implements ResourceService {
         if (endpoints.isEmpty()) {
             return false;
         }
+        List<ApiEndpointEntry> exactEndpoints = endpoints.stream()
+            .filter(endpoint -> normalizedUri.equals(normalizeCarrierPath(endpoint.getUri())))
+            .toList();
+        if (!exactEndpoints.isEmpty()) {
+            endpoints = exactEndpoints;
+        }
         Set<Long> allowedEndpointIds = carrierPermissionRequirementEvaluator.resolveAllowedApiEndpointIds(endpoints, resolveCurrentAuthorityCodes());
         return endpoints.stream().anyMatch(endpoint -> endpoint.getId() != null && allowedEndpointIds.contains(endpoint.getId()));
     }
@@ -891,6 +897,14 @@ public class ResourceServiceImpl implements ResourceService {
         if (endpoints.isEmpty()) {
             logApiEndpointEarlyDenial(method, normalizedUri, "URI_TEMPLATE_NOT_MATCHED", 0);
             return ApiEndpointRequirementDecision.DENIED;
+        }
+        // An exact registered path is more specific than a templated sibling such as
+        // /scheduling/task-type/{id}. Keep duplicate exact rows fail-closed below.
+        List<ApiEndpointEntry> exactEndpoints = endpoints.stream()
+            .filter(endpoint -> normalizedUri.equals(normalizeCarrierPath(endpoint.getUri())))
+            .toList();
+        if (!exactEndpoints.isEmpty()) {
+            endpoints = exactEndpoints;
         }
         if (endpoints.size() != 1) {
             logApiEndpointEarlyDenial(method, normalizedUri, "ENDPOINT_AMBIGUOUS", endpoints.size());

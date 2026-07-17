@@ -624,6 +624,22 @@ void ensureSchedulingAdminAuthority(Connection connection, Long tenantId, Long r
     Long menuListPermissionId = ensurePermission(connection, tenantId, "system:menu:list", "菜单树查询", "API", "real e2e menu tree for layout");
     ensureRolePermissionBinding(connection, tenantId, roleId, menuListPermissionId);
 
+    Long activeScopePermissionId = ensurePermission(connection, tenantId, "system:user:update", "用户作用域切换", "API", "real e2e active scope endpoint");
+    ensureRolePermissionBinding(connection, tenantId, roleId, activeScopePermissionId);
+    try (PreparedStatement ps = connection.prepareStatement(
+            "INSERT INTO api_endpoint (tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at) SELECT ?, 'TENANT', 'e2eUserActiveScopeSwitch', '活动作用域切换', '/sys/users/current/active-scope', 'POST', 'system:user:update', ?, true, NOW(), NOW() WHERE NOT EXISTS (SELECT 1 FROM api_endpoint WHERE tenant_id = ? AND method = 'POST' AND uri = '/sys/users/current/active-scope' AND enabled = true)")) {
+        ps.setLong(1, tenantId);
+        ps.setLong(2, activeScopePermissionId);
+        ps.setLong(3, tenantId);
+        ps.executeUpdate();
+    }
+    try (PreparedStatement ps = connection.prepareStatement(
+            "INSERT IGNORE INTO api_endpoint_permission_requirement (tenant_id, api_endpoint_id, requirement_group, sort_order, permission_id, negated, created_at, updated_at) SELECT endpoint.tenant_id, endpoint.id, 0, 1, ?, 0, NOW(), NOW() FROM api_endpoint endpoint WHERE endpoint.tenant_id = ? AND endpoint.method = 'POST' AND endpoint.uri = '/sys/users/current/active-scope' AND endpoint.enabled = true")) {
+        ps.setLong(1, activeScopePermissionId);
+        ps.setLong(2, tenantId);
+        ps.executeUpdate();
+    }
+
     try (PreparedStatement ps = connection.prepareStatement(
             "SELECT permission FROM api_endpoint WHERE (tenant_id = ? OR tenant_id IS NULL) AND method = 'POST' AND uri = '/sys/users/current/active-scope' AND enabled = true AND permission IS NOT NULL AND permission <> '' ORDER BY tenant_id IS NULL, id LIMIT 1")) {
         ps.setLong(1, tenantId);
@@ -638,6 +654,14 @@ void ensureSchedulingAdminAuthority(Connection connection, Long tenantId, Long r
 }
 
 void ensureSchedulingApiEndpointTemplates(Connection connection, Long tenantId) throws SQLException {
+    Long schedulingReadPermissionId = ensurePermission(connection, tenantId, "scheduling:console:view", "调度控制面查看权限", "MENU", "real e2e scheduling exact read endpoints");
+    try (PreparedStatement ps = connection.prepareStatement(
+            "INSERT INTO api_endpoint (tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at) SELECT ?, 'TENANT', 'e2eSchedulingDagHistory', '调度运行历史', '/scheduling/dag/history', 'GET', 'scheduling:console:view', ?, true, NOW(), NOW() WHERE NOT EXISTS (SELECT 1 FROM api_endpoint WHERE tenant_id = ? AND method = 'GET' AND uri = '/scheduling/dag/history' AND enabled = true)")) {
+        ps.setLong(1, tenantId);
+        ps.setLong(2, schedulingReadPermissionId);
+        ps.setLong(3, tenantId);
+        ps.executeUpdate();
+    }
     try (PreparedStatement ps = connection.prepareStatement(
             "INSERT INTO api_endpoint (tenant_id, resource_level, name, title, uri, method, permission, required_permission_id, enabled, created_at, updated_at) " +
             "SELECT ?, 'TENANT', template.name, template.title, template.uri, template.method, template.permission, target_permission.id, template.enabled, NOW(), NOW() " +
