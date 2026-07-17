@@ -179,13 +179,9 @@ async function waitForFirstBindReady(page: import('@playwright/test').Page): Pro
 async function fetchSecurityStatus(page: import('@playwright/test').Page) {
   const backendBaseUrl =
     process.env.E2E_BACKEND_BASE_URL ?? process.env.VITE_API_BASE_URL ?? 'http://localhost:9000'
-  const activeTenantId = await page.evaluate(() => window.localStorage.getItem('app_active_tenant_id'))
   const response = await page.request.get(`${backendBaseUrl}/self/security/status`, {
     timeout: 15_000,
-    headers: {
-      Accept: 'application/json',
-      ...(activeTenantId ? { 'X-Active-Tenant-Id': activeTenantId } : {}),
-    },
+    headers: { Accept: 'application/json' },
   })
   const contentType = response.headers()['content-type'] || ''
   return {

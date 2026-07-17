@@ -80,7 +80,22 @@ export default defineConfig({
         '/oauth2',
         '/connect',
         '/.well-known',
-      ].map((path) => [path, { target: devBackendTarget, changeOrigin: true }]),
+      ].map((path) => [
+        path,
+        {
+          target: devBackendTarget,
+          changeOrigin: true,
+          ...(path === '/scheduling'
+            ? {
+                bypass(req: { headers: { accept?: string } }) {
+                  // `/scheduling/**` 同时是 SPA 路由和后端 API。浏览器文档导航应回到
+                  // Vite index，JSON/fetch 请求继续代理后端，无需引入伪 `/api` 前缀。
+                  return req.headers.accept?.includes('text/html') ? '/index.html' : undefined
+                },
+              }
+            : {}),
+        },
+      ]),
     ),
   },
   build: {
