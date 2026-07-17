@@ -766,3 +766,8 @@ databaseChangeLog:
   - include:
       file: 193-seed-scheduling-permission-before-api-templates.yaml
       relativeToChangelogFile: true
+
+  # 历史租户未走新版 bootstrap，补齐调度权限、API 模板与 requirement
+  - include:
+      file: 194-backfill-existing-tenant-scheduling-api-endpoints.yaml
+      relativeToChangelogFile: true
