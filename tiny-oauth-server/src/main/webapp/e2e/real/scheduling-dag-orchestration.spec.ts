@@ -1,7 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { openOidcDebug } from './cross-tenant.helpers'
+import { fetchSchedulingApi, openOidcDebug } from './cross-tenant.helpers'
 
-const backendBaseUrl = process.env.E2E_BACKEND_BASE_URL ?? 'http://localhost:9000'
 const parallelDagBaseCode = process.env.E2E_PARALLEL_DAG_CODE_BASE ?? 'sales-report-pipeline'
 const serialDagBaseCode = process.env.E2E_SERIAL_DAG_CODE_BASE ?? 'serial-sales-pipeline'
 const retryableFailureDagBaseCode =
@@ -103,131 +102,11 @@ async function callSchedulingApi<T>(
   path: string,
   body?: unknown
 ): Promise<T> {
-  return page.evaluate(
-    async ({ apiMethod, apiPath, apiBody, apiBaseUrl }) => {
-      const oidcKey = Object.keys(window.localStorage).find((key) => key.startsWith('oidc.user:'))
-      if (!oidcKey) {
-        throw new Error('未找到 OIDC 登录态，无法调用调度 API')
-      }
-
-      const rawUser = window.localStorage.getItem(oidcKey)
-      if (!rawUser) {
-        throw new Error(`OIDC 存储为空: ${oidcKey}`)
-      }
-
-      const user = JSON.parse(rawUser) as {
-        access_token?: string
-        profile?: { activeTenantId?: number | string }
-      }
-      const accessToken = user.access_token
-      if (!accessToken) {
-        throw new Error('OIDC 用户缺少 access_token')
-      }
-
-      function decodeJwtPayload(token: string): Record<string, unknown> | null {
-        try {
-          const parts = token.split('.')
-          if (parts.length < 2) {
-            return null
-          }
-          const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
-          const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=')
-          return JSON.parse(atob(padded)) as Record<string, unknown>
-        } catch {
-          return null
-        }
-      }
-
-      function pickTenantId(...candidates: Array<string | number | null | undefined>): string {
-        for (const candidate of candidates) {
-          if (candidate == null) {
-            continue
-          }
-          const text = String(candidate).trim()
-          if (text !== '' && text !== 'undefined') {
-            return text
-          }
-        }
-        return ''
-      }
-
-      const jwtPayload = decodeJwtPayload(accessToken)
-      let activeTenantId = pickTenantId(
-        window.localStorage.getItem('app_active_tenant_id'),
-        user.profile?.activeTenantId,
-        jwtPayload?.activeTenantId,
-      )
-
-      if (!activeTenantId) {
-        const r = await fetch(`${apiBaseUrl}/sys/users/current`, {
-          credentials: 'include',
-          headers: {
-            Accept: 'application/json',
-            Authorization: `Bearer ${accessToken}`,
-          },
-        })
-        if (r.ok) {
-          try {
-            const body = (await r.json()) as { activeTenantId?: number | string }
-            activeTenantId = pickTenantId(body.activeTenantId)
-            if (activeTenantId) {
-              window.localStorage.setItem('app_active_tenant_id', activeTenantId)
-            }
-          } catch {
-            // ignore
-          }
-        }
-      }
-
-      if (!activeTenantId) {
-        throw new Error('无法解析活动租户：请确认 OIDC 登录态与 /sys/users/current 可用')
-      }
-      const headers = new Headers({
-        Accept: 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-        'X-Active-Tenant-Id': activeTenantId,
-      })
-      if (apiMethod !== 'GET') {
-        const sanitizedPath = apiPath.replace(/[^A-Za-z0-9._:-]/g, '-')
-        const uniqueSuffix =
-          typeof crypto.randomUUID === 'function'
-            ? crypto.randomUUID()
-            : `${Date.now()}:${Math.random().toString(16).slice(2)}`
-        headers.set('Content-Type', 'application/json')
-        headers.set(
-          'X-Idempotency-Key',
-          `${uniqueSuffix}:${sanitizedPath}`
-        )
-      }
-
-      const response = await fetch(`${apiBaseUrl}${apiPath}`, {
-        method: apiMethod,
-        headers,
-        body: apiBody == null ? undefined : JSON.stringify(apiBody),
-      })
-
-      const rawText = await response.text()
-      const contentType = response.headers.get('content-type') || ''
-      const payload =
-        rawText && contentType.includes('application/json') ? JSON.parse(rawText) : rawText || null
-
-      if (!response.ok) {
-        const message =
-          typeof payload === 'string'
-            ? payload
-            : payload?.detail || payload?.message || JSON.stringify(payload)
-        throw new Error(`${apiMethod} ${apiPath} failed: ${response.status} ${message}`)
-      }
-
-      return payload as T
-    },
-    {
-      apiMethod: method,
-      apiPath: path,
-      apiBody: body,
-      apiBaseUrl: backendBaseUrl,
-    }
-  )
+  const response = await fetchSchedulingApi<T>(page, path, { method, body })
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`${method} ${path} failed: ${response.status} ${JSON.stringify(response.payload)}`)
+  }
+  return response.payload as T
 }
 
 function buildUniqueCode(base: string) {
