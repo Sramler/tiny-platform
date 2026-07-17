@@ -327,11 +327,7 @@ export async function openOidcDebug(page: Page, kind: AuthIdentityKind = 'primar
     }
 
     await waitForSessionIdentity(page, 90_000)
-    await page.waitForLoadState('networkidle').catch(() => {})
-    await page.waitForTimeout(1_000)
-    if (await hasSessionIdentity(page)) {
-      return
-    }
+    return
   }
 
   await waitForSessionIdentity(page, 90_000)
