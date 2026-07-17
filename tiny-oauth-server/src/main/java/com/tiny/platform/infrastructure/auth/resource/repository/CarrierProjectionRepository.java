@@ -119,9 +119,10 @@ public interface CarrierProjectionRepository extends Repository<MenuEntry, Long>
     );
 
     @Query(value = """
-        SELECT c.id AS id, c.permission AS permission, c.required_permission_id AS requiredPermissionId
+        SELECT c.id AS id, c.carrier_type AS carrierType,
+               c.permission AS permission, c.required_permission_id AS requiredPermissionId
         FROM (
-            SELECT m.id,
+            SELECT m.id, 'MENU' AS carrier_type,
                    CONVERT(m.permission USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS permission,
                    m.required_permission_id
             FROM menu m
@@ -129,7 +130,7 @@ public interface CarrierProjectionRepository extends Repository<MenuEntry, Long>
               AND ((:tenantId IS NULL AND m.tenant_id IS NULL) OR m.tenant_id = :tenantId)
               AND LOWER(m.resource_level) = LOWER(:resourceLevel)
             UNION ALL
-            SELECT a.id,
+            SELECT a.id, 'UI_ACTION' AS carrier_type,
                    CONVERT(a.permission USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS permission,
                    a.required_permission_id
             FROM ui_action a
@@ -137,7 +138,7 @@ public interface CarrierProjectionRepository extends Repository<MenuEntry, Long>
               AND ((:tenantId IS NULL AND a.tenant_id IS NULL) OR a.tenant_id = :tenantId)
               AND LOWER(a.resource_level) = LOWER(:resourceLevel)
             UNION ALL
-            SELECT e.id,
+            SELECT e.id, 'API_ENDPOINT' AS carrier_type,
                    CONVERT(e.permission USING utf8mb4) COLLATE utf8mb4_0900_ai_ci AS permission,
                    e.required_permission_id
             FROM api_endpoint e

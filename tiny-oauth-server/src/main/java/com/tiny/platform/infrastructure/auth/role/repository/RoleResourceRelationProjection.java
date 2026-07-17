@@ -4,4 +4,8 @@ public interface RoleResourceRelationProjection {
     Long getRoleId();
 
     Long getResourceId();
+
+    default String getCarrierType() {
+        return null;
+    }
 }

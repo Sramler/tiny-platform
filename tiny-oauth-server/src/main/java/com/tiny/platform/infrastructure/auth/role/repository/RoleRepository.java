@@ -106,25 +106,25 @@ public interface RoleRepository extends JpaRepository<Role, Long>, JpaSpecificat
      * 租户内角色已授权资源对（主模型：role_permission → permission；carrier 通过 required_permission_id 绑定）。
      */
     @Query(value = """
-        SELECT DISTINCT ro.id AS roleId, c.id AS resourceId
+        SELECT DISTINCT ro.id AS roleId, c.id AS resourceId, c.carrier_type AS carrierType
         FROM role ro
         JOIN role_permission rp
           ON rp.role_id = ro.id
          AND rp.normalized_tenant_id = IFNULL(ro.tenant_id, 0)
         JOIN (
-            SELECT m.id, m.required_permission_id, IFNULL(m.tenant_id, 0) AS normalized_tenant_id
+            SELECT m.id, 'MENU' AS carrier_type, m.required_permission_id, IFNULL(m.tenant_id, 0) AS normalized_tenant_id
             FROM menu m
             UNION ALL
-            SELECT a.id, a.required_permission_id, IFNULL(a.tenant_id, 0) AS normalized_tenant_id
+            SELECT a.id, 'UI_ACTION' AS carrier_type, a.required_permission_id, IFNULL(a.tenant_id, 0) AS normalized_tenant_id
             FROM ui_action a
             UNION ALL
-            SELECT e.id, e.required_permission_id, IFNULL(e.tenant_id, 0) AS normalized_tenant_id
+            SELECT e.id, 'API_ENDPOINT' AS carrier_type, e.required_permission_id, IFNULL(e.tenant_id, 0) AS normalized_tenant_id
             FROM api_endpoint e
         ) c
           ON c.required_permission_id = rp.permission_id
          AND c.normalized_tenant_id = rp.normalized_tenant_id
         WHERE ro.tenant_id = :tenantId
-        ORDER BY ro.id ASC, c.id ASC
+        ORDER BY ro.id ASC, c.carrier_type ASC, c.id ASC
         """, nativeQuery = true)
     List<RoleResourceRelationProjection> findGrantedRoleCarrierPairsByTenantId(@Param("tenantId") Long tenantId);
 
@@ -132,25 +132,25 @@ public interface RoleRepository extends JpaRepository<Role, Long>, JpaSpecificat
      * 平台模板（tenant_id IS NULL 角色/资源）已授权资源对，口径同 {@link #findGrantedRoleCarrierPairsByTenantId}。
      */
     @Query(value = """
-        SELECT DISTINCT ro.id AS roleId, c.id AS resourceId
+        SELECT DISTINCT ro.id AS roleId, c.id AS resourceId, c.carrier_type AS carrierType
         FROM role ro
         JOIN role_permission rp
           ON rp.role_id = ro.id
          AND rp.normalized_tenant_id = IFNULL(ro.tenant_id, 0)
         JOIN (
-            SELECT m.id, m.required_permission_id, IFNULL(m.tenant_id, 0) AS normalized_tenant_id
+            SELECT m.id, 'MENU' AS carrier_type, m.required_permission_id, IFNULL(m.tenant_id, 0) AS normalized_tenant_id
             FROM menu m
             UNION ALL
-            SELECT a.id, a.required_permission_id, IFNULL(a.tenant_id, 0) AS normalized_tenant_id
+            SELECT a.id, 'UI_ACTION' AS carrier_type, a.required_permission_id, IFNULL(a.tenant_id, 0) AS normalized_tenant_id
             FROM ui_action a
             UNION ALL
-            SELECT e.id, e.required_permission_id, IFNULL(e.tenant_id, 0) AS normalized_tenant_id
+            SELECT e.id, 'API_ENDPOINT' AS carrier_type, e.required_permission_id, IFNULL(e.tenant_id, 0) AS normalized_tenant_id
             FROM api_endpoint e
         ) c
           ON c.required_permission_id = rp.permission_id
          AND c.normalized_tenant_id = rp.normalized_tenant_id
         WHERE ro.tenant_id IS NULL
-        ORDER BY ro.id ASC, c.id ASC
+        ORDER BY ro.id ASC, c.carrier_type ASC, c.id ASC
         """, nativeQuery = true)
     List<RoleResourceRelationProjection> findGrantedRoleCarrierPairsForPlatformTemplate();
 

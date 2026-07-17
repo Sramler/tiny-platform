@@ -380,9 +380,9 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
     }
 
     private ResourceCloneResult cloneResourcesFromSourceList(List<Resource> allSourceResources, Long targetTenantId, String targetResourceLevel) {
-        Set<Long> skippedSourceResourceIds = collectSkippedSourceResourceIds(allSourceResources);
+        Set<CarrierIdentity> skippedSourceResourceIds = collectSkippedSourceResourceIds(allSourceResources);
         List<Resource> sourceResources = allSourceResources.stream()
-            .filter(resource -> resource != null && !skippedSourceResourceIds.contains(resource.getId()))
+            .filter(resource -> resource != null && !skippedSourceResourceIds.contains(carrierIdentity(resource)))
             .toList();
         if (sourceResources.isEmpty()) {
             return new ResourceCloneResult(Map.of(), skippedSourceResourceIds);
@@ -514,7 +514,7 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
             flushClonedResources();
         }
 
-        Map<Long, Long> resourceIdMapping = new LinkedHashMap<>();
+        Map<CarrierIdentity, CarrierIdentity> resourceIdMapping = new LinkedHashMap<>();
         for (Resource source : sourceResources) {
             if (source == null || source.getId() == null || source.getType() == null) {
                 continue;
@@ -533,7 +533,7 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
             if (clonedId == null) {
                 throw new IllegalStateException("平台模板资源复制失败，缺少目标载体ID: sourceId=" + source.getId());
             }
-            resourceIdMapping.put(source.getId(), clonedId);
+            resourceIdMapping.put(carrierIdentity(source), new CarrierIdentity(carrierType(source.getType()), clonedId));
         }
         return new ResourceCloneResult(resourceIdMapping, skippedSourceResourceIds);
     }
@@ -569,7 +569,7 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
         }
 
         roleRepository.saveAll(clonedRoles);
-        Map<Long, Long> permissionIdByTargetResourceId = resolvePermissionIdByTargetResourceId(
+        Map<CarrierIdentity, Long> permissionIdByTargetResourceId = resolvePermissionIdByTargetResourceId(
             resourceCloneResult.resourceIdMapping(),
             targetTenantId,
             targetRoleLevel
@@ -577,30 +577,31 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
 
         for (RoleResourceRelationProjection relation : relations) {
             Role targetRole = clonedBySourceRoleId.get(relation.getRoleId());
-            Long sourceResourceId = relation.getResourceId();
-            Long targetResourceId = resourceCloneResult.resourceIdMapping().get(sourceResourceId);
+            CarrierIdentity sourceResource = resolveSourceCarrierIdentity(relation, resourceCloneResult);
+            CarrierIdentity targetResource = resourceCloneResult.resourceIdMapping().get(sourceResource);
             if (targetRole == null || targetRole.getId() == null) {
                 throw new IllegalStateException("平台模板角色复制失败，缺少目标角色ID");
             }
-            if (targetResourceId == null) {
-                if (resourceCloneResult.skippedSourceResourceIds().contains(sourceResourceId)) {
+            if (targetResource == null) {
+                if (resourceCloneResult.skippedSourceResourceIds().contains(sourceResource)) {
                     continue;
                 }
                 throw new IllegalStateException("平台模板角色资源关联复制失败，缺少目标资源ID");
             }
-            Long permissionId = permissionIdByTargetResourceId.get(targetResourceId);
+            Long permissionId = permissionIdByTargetResourceId.get(targetResource);
             if (permissionId == null) {
-                throw new IllegalStateException("平台模板角色资源关联复制失败，缺少目标权限绑定: resourceId=" + targetResourceId);
+                throw new IllegalStateException("平台模板角色资源关联复制失败，缺少目标权限绑定: carrier=" + targetResource);
             }
             roleRepository.addRolePermissionRelationByPermissionId(targetTenantId, targetRole.getId(), permissionId);
         }
     }
 
-    private Map<Long, Long> resolvePermissionIdByTargetResourceId(Map<Long, Long> resourceIdMapping,
+    private Map<CarrierIdentity, Long> resolvePermissionIdByTargetResourceId(Map<CarrierIdentity, CarrierIdentity> resourceIdMapping,
                                                                    Long targetTenantId,
                                                                    String targetRoleLevel) {
         List<Long> targetResourceIds = resourceIdMapping.values().stream()
             .filter(Objects::nonNull)
+            .map(CarrierIdentity::id)
             .distinct()
             .toList();
         if (targetResourceIds.isEmpty()) {
@@ -611,9 +612,10 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
             targetTenantId,
             targetRoleLevel
         );
-        Map<Long, Long> permissionByResourceId = toPermissionIdMap(carrierBindings);
-        boolean carrierSnapshotComplete = permissionByResourceId.keySet().containsAll(targetResourceIds);
-        boolean carrierBindingsReady = targetResourceIds.stream()
+        Set<CarrierIdentity> targetResources = new LinkedHashSet<>(resourceIdMapping.values());
+        Map<CarrierIdentity, Long> permissionByResourceId = toPermissionIdMap(carrierBindings, targetResources);
+        boolean carrierSnapshotComplete = permissionByResourceId.keySet().containsAll(targetResources);
+        boolean carrierBindingsReady = targetResources.stream()
             .allMatch(id -> permissionByResourceId.get(id) != null);
         if (carrierSnapshotComplete && carrierBindingsReady) {
             return permissionByResourceId;
@@ -621,16 +623,18 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
         throw new IllegalStateException("平台模板权限绑定快照不完整：载体行存在但缺少 required_permission_id，无法继续 bootstrap");
     }
 
-    private Map<Long, Long> toPermissionIdMap(List<RoleResourcePermissionBindingView> bindings) {
+    private Map<CarrierIdentity, Long> toPermissionIdMap(List<RoleResourcePermissionBindingView> bindings,
+                                                         Set<CarrierIdentity> expectedCarriers) {
         List<RoleResourcePermissionBindingView> safeBindings = bindings == null ? List.of() : bindings;
-        Map<Long, Long> permissionByResourceId = new LinkedHashMap<>();
+        Map<CarrierIdentity, Long> permissionByResourceId = new LinkedHashMap<>();
         for (RoleResourcePermissionBindingView binding : safeBindings) {
             if (binding == null || binding.getId() == null) {
                 continue;
             }
-            Long existing = permissionByResourceId.putIfAbsent(binding.getId(), binding.getRequiredPermissionId());
+            CarrierIdentity identity = resolveBindingCarrierIdentity(binding, expectedCarriers);
+            Long existing = permissionByResourceId.putIfAbsent(identity, binding.getRequiredPermissionId());
             if (existing != null && !Objects.equals(existing, binding.getRequiredPermissionId())) {
-                throw new IllegalStateException("平台模板权限快照冲突：同一 resourceId 出现多个 required_permission_id: " + binding.getId());
+                throw new IllegalStateException("平台模板权限快照冲突：同一载体出现多个 required_permission_id: " + identity);
             }
         }
         return permissionByResourceId;
@@ -740,21 +744,21 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
         if (resources == null || resources.isEmpty()) {
             return List.of();
         }
-        Set<Long> skippedSourceResourceIds = collectSkippedSourceResourceIds(resources);
+        Set<CarrierIdentity> skippedSourceResourceIds = collectSkippedSourceResourceIds(resources);
         return resources.stream()
             .filter(Objects::nonNull)
-            .filter(resource -> !skippedSourceResourceIds.contains(resource.getId()))
+            .filter(resource -> !skippedSourceResourceIds.contains(carrierIdentity(resource)))
             .toList();
     }
 
-    private Set<Long> collectSkippedSourceResourceIds(List<Resource> resources) {
+    private Set<CarrierIdentity> collectSkippedSourceResourceIds(List<Resource> resources) {
         if (resources == null || resources.isEmpty()) {
             return Set.of();
         }
-        Set<Long> skippedSourceResourceIds = resources.stream()
+        Set<CarrierIdentity> skippedSourceResourceIds = resources.stream()
             .filter(Objects::nonNull)
             .filter(PlatformControlPlaneResourcePolicy::isPlatformOnlyResource)
-            .map(Resource::getId)
+            .map(TenantBootstrapServiceImpl::carrierIdentity)
             .filter(Objects::nonNull)
             .collect(Collectors.toCollection(LinkedHashSet::new));
         if (skippedSourceResourceIds.isEmpty()) {
@@ -767,9 +771,11 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
                 if (resource == null || resource.getId() == null || resource.getParentId() == null) {
                     continue;
                 }
-                if (!skippedSourceResourceIds.contains(resource.getId())
-                    && skippedSourceResourceIds.contains(resource.getParentId())) {
-                    changed = skippedSourceResourceIds.add(resource.getId()) || changed;
+                CarrierIdentity identity = carrierIdentity(resource);
+                CarrierIdentity parentIdentity = new CarrierIdentity("MENU", resource.getParentId());
+                if (!skippedSourceResourceIds.contains(identity)
+                    && skippedSourceResourceIds.contains(parentIdentity)) {
+                    changed = skippedSourceResourceIds.add(identity) || changed;
                 }
             }
         }
@@ -905,7 +911,53 @@ public class TenantBootstrapServiceImpl implements TenantBootstrapService {
         return value != null ? value : 0;
     }
 
-    private record ResourceCloneResult(Map<Long, Long> resourceIdMapping, Set<Long> skippedSourceResourceIds) {
+    private static CarrierIdentity carrierIdentity(Resource resource) {
+        return resource == null || resource.getId() == null || resource.getType() == null
+            ? null : new CarrierIdentity(carrierType(resource.getType()), resource.getId());
+    }
+
+    private static String carrierType(ResourceType type) {
+        return switch (type) {
+            case DIRECTORY, MENU -> "MENU";
+            case BUTTON -> "UI_ACTION";
+            case API -> "API_ENDPOINT";
+        };
+    }
+
+    private CarrierIdentity resolveSourceCarrierIdentity(RoleResourceRelationProjection relation,
+                                                          ResourceCloneResult cloneResult) {
+        if (StringUtils.hasText(relation.getCarrierType())) {
+            return new CarrierIdentity(relation.getCarrierType(), relation.getResourceId());
+        }
+        Set<CarrierIdentity> sourceCarriers = new LinkedHashSet<>(cloneResult.resourceIdMapping().keySet());
+        sourceCarriers.addAll(cloneResult.skippedSourceResourceIds());
+        return uniqueCarrierIdentityById(sourceCarriers, relation.getResourceId(), "角色资源关联");
+    }
+
+    private CarrierIdentity resolveBindingCarrierIdentity(RoleResourcePermissionBindingView binding,
+                                                           Set<CarrierIdentity> expectedCarriers) {
+        if (StringUtils.hasText(binding.getCarrierType())) {
+            return new CarrierIdentity(binding.getCarrierType(), binding.getId());
+        }
+        return uniqueCarrierIdentityById(expectedCarriers, binding.getId(), "权限绑定快照");
+    }
+
+    private CarrierIdentity uniqueCarrierIdentityById(Set<CarrierIdentity> identities, Long id, String label) {
+        List<CarrierIdentity> matches = identities.stream().filter(identity -> Objects.equals(identity.id(), id)).toList();
+        if (matches.size() != 1) {
+            throw new IllegalStateException(label + "缺少载体类型且 resourceId 无法唯一定位: " + id);
+        }
+        return matches.getFirst();
+    }
+
+    private record CarrierIdentity(String carrierType, Long id) {
+        private CarrierIdentity {
+            carrierType = carrierType == null ? null : carrierType.toUpperCase(Locale.ROOT);
+        }
+    }
+
+    private record ResourceCloneResult(Map<CarrierIdentity, CarrierIdentity> resourceIdMapping,
+                                       Set<CarrierIdentity> skippedSourceResourceIds) {
     }
 
     private record PlatformTemplateSnapshot(List<Resource> resources,
