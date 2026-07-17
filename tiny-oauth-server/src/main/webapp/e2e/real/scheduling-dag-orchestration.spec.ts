@@ -755,13 +755,21 @@ async function triggerDagViaApi(page: Page, dagId: number) {
   await callSchedulingApi(page, 'POST', `/scheduling/dag/${dagId}/trigger`)
 }
 
+async function navigateWithinSpa(page: Page, target: string) {
+  await page.evaluate((path) => {
+    window.history.pushState({}, '', path)
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  }, target)
+  await page.waitForURL((url) => `${url.pathname}${url.search}` === target)
+}
+
 async function openDagHistory(page: Page, dagId: number) {
-  await page.goto(`/scheduling/dag/history?dagId=${dagId}`)
+  await navigateWithinSpa(page, `/scheduling/dag/history?dagId=${dagId}`)
   await expect(page.getByText('运行历史列表').first()).toBeVisible()
 }
 
 async function readLatestRunSummary(page: Page, dagId: number) {
-  await page.goto(`/scheduling/dag/history?dagId=${dagId}`)
+  await navigateWithinSpa(page, `/scheduling/dag/history?dagId=${dagId}`)
   await expect(page.getByText('运行历史列表').first()).toBeVisible()
   await expect(historyTableRows(page).first()).toBeVisible()
   const row = historyTableRows(page).first()
@@ -794,7 +802,7 @@ async function waitForLatestRun(
 }
 
 async function retryLatestRunFromHistory(page: Page, dagId: number) {
-  await page.goto(`/scheduling/dag/history?dagId=${dagId}`)
+  await navigateWithinSpa(page, `/scheduling/dag/history?dagId=${dagId}`)
   await expect(page.getByText('运行历史列表').first()).toBeVisible()
   const row = historyTableRows(page).first()
   const runNo = (await row.locator('td').nth(1).innerText()).trim()
@@ -804,7 +812,7 @@ async function retryLatestRunFromHistory(page: Page, dagId: number) {
 }
 
 async function stopLatestRunFromHistory(page: Page, dagId: number) {
-  await page.goto(`/scheduling/dag/history?dagId=${dagId}`)
+  await navigateWithinSpa(page, `/scheduling/dag/history?dagId=${dagId}`)
   await expect(page.getByText('运行历史列表').first()).toBeVisible()
   const row = historyTableRows(page).first()
   const runNo = (await row.locator('td').nth(1).innerText()).trim()
@@ -872,7 +880,7 @@ async function closeNodeDialog(page: Page) {
 }
 
 async function reloadHistoryAndOpenNodes(page: Page, dagId: number) {
-  await page.goto(`/scheduling/dag/history?dagId=${dagId}`)
+  await navigateWithinSpa(page, `/scheduling/dag/history?dagId=${dagId}`)
   await expect(page.getByText('运行历史列表').first()).toBeVisible()
   await openLatestRunNodes(page)
 }
@@ -922,7 +930,7 @@ async function waitForNodeRecords(
 }
 
 async function retryNodeFromLatestRun(page: Page, dagId: number, nodeCode: string) {
-  await page.goto(`/scheduling/dag/history?dagId=${dagId}`)
+  await navigateWithinSpa(page, `/scheduling/dag/history?dagId=${dagId}`)
   await expect(page.getByText('运行历史列表').first()).toBeVisible()
   await openLatestRunNodes(page)
   const dialog = nodeDialog(page)
@@ -938,7 +946,7 @@ async function retryNodeFromLatestRun(page: Page, dagId: number, nodeCode: strin
 }
 
 async function pauseNodeFromLatestRun(page: Page, dagId: number, nodeCode: string) {
-  await page.goto(`/scheduling/dag/history?dagId=${dagId}`)
+  await navigateWithinSpa(page, `/scheduling/dag/history?dagId=${dagId}`)
   await expect(page.getByText('运行历史列表').first()).toBeVisible()
   await openLatestRunNodes(page)
   const dialog = nodeDialog(page)
@@ -950,7 +958,7 @@ async function pauseNodeFromLatestRun(page: Page, dagId: number, nodeCode: strin
 }
 
 async function resumeNodeFromLatestRun(page: Page, dagId: number, nodeCode: string) {
-  await page.goto(`/scheduling/dag/history?dagId=${dagId}`)
+  await navigateWithinSpa(page, `/scheduling/dag/history?dagId=${dagId}`)
   await expect(page.getByText('运行历史列表').first()).toBeVisible()
   await openLatestRunNodes(page)
   const dialog = nodeDialog(page)
@@ -962,7 +970,7 @@ async function resumeNodeFromLatestRun(page: Page, dagId: number, nodeCode: stri
 }
 
 async function triggerNodeFromLatestRun(page: Page, dagId: number, nodeCode: string) {
-  await page.goto(`/scheduling/dag/history?dagId=${dagId}`)
+  await navigateWithinSpa(page, `/scheduling/dag/history?dagId=${dagId}`)
   await expect(page.getByText('运行历史列表').first()).toBeVisible()
   await openLatestRunNodes(page)
   const dialog = nodeDialog(page)
@@ -978,7 +986,7 @@ async function waitForRunStatus(page: Page, dagId: number, expectedStatus: strin
   let lastStatus = ''
 
   while (Date.now() < deadline) {
-    await page.goto(`/scheduling/dag/history?dagId=${dagId}`)
+    await navigateWithinSpa(page, `/scheduling/dag/history?dagId=${dagId}`)
     await expect(page.getByText('运行历史列表').first()).toBeVisible()
     await expect(historyTableRows(page).first()).toBeVisible()
     lastStatus = (await historyTableRows(page).first().locator('td').nth(3).innerText()).trim()
