@@ -343,6 +343,7 @@ export async function openOidcDebug(page: Page, kind: AuthIdentityKind = 'primar
 
 type SessionIdentitySnapshot = {
   activeTenantId: string
+  permissions: string[]
 }
 
 async function loadIdentitySnapshot(page: Page): Promise<SessionIdentitySnapshot> {
@@ -363,24 +364,24 @@ async function loadIdentitySnapshot(page: Page): Promise<SessionIdentitySnapshot
     }
 
     let activeTenantId = firstNonEmptyTenantId(window.localStorage.getItem('app_active_tenant_id'))
-
-    if (!activeTenantId) {
-      const r = await fetch(`${apiBaseUrl}/sys/users/current`, {
-        credentials: 'include',
-        headers: { Accept: 'application/json' },
-      })
-      if (r.ok) {
-        try {
-          const body = (await r.json()) as { activeTenantId?: number | string }
-          activeTenantId = firstNonEmptyTenantId(body.activeTenantId)
-          if (activeTenantId) {
-            window.localStorage.setItem('app_active_tenant_id', activeTenantId)
-          }
-        } catch {
-          // ignore malformed JSON
-        }
-      }
+    const r = await fetch(`${apiBaseUrl}/sys/users/current`, {
+      credentials: 'include',
+      headers: {
+        Accept: 'application/json',
+        ...(activeTenantId ? { 'X-Active-Tenant-Id': activeTenantId } : {}),
+      },
+    })
+    if (!r.ok) {
+      throw new Error(`读取 Session 用户失败: HTTP ${r.status}`)
     }
+    const body = (await r.json()) as {
+      activeTenantId?: number | string
+      permissions?: unknown
+    }
+    activeTenantId = firstNonEmptyTenantId(activeTenantId, body.activeTenantId)
+    const permissions = Array.isArray(body.permissions)
+      ? body.permissions.filter((value): value is string => typeof value === 'string')
+      : []
 
     if (!activeTenantId) {
       throw new Error('Session 用户缺少 activeTenantId')
@@ -388,6 +389,7 @@ async function loadIdentitySnapshot(page: Page): Promise<SessionIdentitySnapshot
 
     return {
       activeTenantId,
+      permissions,
     }
   }, backendBaseUrl)
 }
@@ -489,7 +491,7 @@ export async function createTaskType(page: Page, codePrefix: string) {
 
   expect(
     response.status,
-    `创建调度任务类型失败: ${JSON.stringify(response.payload)}`,
+    `创建调度任务类型失败: ${JSON.stringify(response.payload)}; Session permissions=${JSON.stringify((await loadIdentitySnapshot(page)).permissions)}`,
   ).toBe(200)
   expect(response.payload?.id).toBeTruthy()
   return {
