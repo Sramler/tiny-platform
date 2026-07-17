@@ -176,9 +176,13 @@ function resolveLoginIdentity(kind: AuthIdentityKind): LoginIdentity | null {
 async function hasSessionIdentity(page: Page): Promise<boolean> {
   return page
     .evaluate(async (apiBaseUrl) => {
+      const activeTenantId = window.localStorage.getItem('app_active_tenant_id')
       const response = await fetch(`${apiBaseUrl}/sys/users/current`, {
         credentials: 'include',
-        headers: { Accept: 'application/json' },
+        headers: {
+          Accept: 'application/json',
+          ...(activeTenantId ? { 'X-Active-Tenant-Id': activeTenantId } : {}),
+        },
       })
       return response.ok
     }, backendBaseUrl)
@@ -188,9 +192,13 @@ async function hasSessionIdentity(page: Page): Promise<boolean> {
 export async function waitForSessionIdentity(page: Page, timeout = 60_000) {
   await page.waitForFunction(
     async (apiBaseUrl) => {
+      const activeTenantId = window.localStorage.getItem('app_active_tenant_id')
       const response = await fetch(`${apiBaseUrl}/sys/users/current`, {
         credentials: 'include',
-        headers: { Accept: 'application/json' },
+        headers: {
+          Accept: 'application/json',
+          ...(activeTenantId ? { 'X-Active-Tenant-Id': activeTenantId } : {}),
+        },
       })
       return response.ok
     },
@@ -479,7 +487,10 @@ export async function createTaskType(page: Page, codePrefix: string) {
     },
   )
 
-  expect(response.status).toBe(200)
+  expect(
+    response.status,
+    `创建调度任务类型失败: ${JSON.stringify(response.payload)}`,
+  ).toBe(200)
   expect(response.payload?.id).toBeTruthy()
   return {
     id: Number(response.payload!.id),
