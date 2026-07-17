@@ -844,10 +844,16 @@ String skipSchedulingAdminAuth = System.getenv("E2E_SKIP_SCHEDULING_ADMIN_AUTH")
     }
     upsertScopePolicy(connection, totpCredentialId, "TENANT", tenantId, false, true, 1);
 
-    boolean shouldPrepareGlobalAuthMethods = "true".equalsIgnoreCase(skipSchedulingAdminAuth)
-            || (platformTenantCode != null
+    boolean platformScopeIdentity = platformTenantCode != null
             && !platformTenantCode.isBlank()
-            && normalizedTenantCode.equals(platformTenantCode.trim().toLowerCase(Locale.ROOT)));
+            && normalizedTenantCode.equals(platformTenantCode.trim().toLowerCase(Locale.ROOT));
+    if (platformScopeIdentity) {
+        upsertScopePolicy(connection, passwordCredentialId, "PLATFORM", null, true, true, 0);
+        upsertScopePolicy(connection, totpCredentialId, "PLATFORM", null, false, true, 1);
+    }
+
+    boolean shouldPrepareGlobalAuthMethods = "true".equalsIgnoreCase(skipSchedulingAdminAuth)
+            || platformScopeIdentity;
     if (shouldPrepareGlobalAuthMethods) {
         // 平台登录链路会合并 GLOBAL 作用域策略；为防止 scope 配置漂移导致“未配置此认证方式”，这里幂等补全一份 GLOBAL scope policy。
         upsertScopePolicy(connection, passwordCredentialId, "GLOBAL", null, true, true, 0);
