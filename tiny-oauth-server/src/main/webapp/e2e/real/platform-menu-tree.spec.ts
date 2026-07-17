@@ -1,7 +1,7 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
-import { openOidcDebug } from './cross-tenant.helpers'
+import { fetchSchedulingApi, openOidcDebug } from './cross-tenant.helpers'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -29,10 +29,6 @@ function flattenMenu(nodes: MenuNode[]): MenuNode[] {
   return result
 }
 
-function readBackendBaseUrl(): string {
-  return process.env.E2E_BACKEND_BASE_URL ?? process.env.VITE_API_BASE_URL ?? 'http://localhost:9000'
-}
-
 test.describe('real-link: 平台登录菜单树', () => {
   test('platform_admin 登录后 /sys/menus/tree 不能退化为单节点', async ({ page }) => {
     test.setTimeout(240_000)
@@ -44,54 +40,10 @@ test.describe('real-link: 平台登录菜单树', () => {
       )
     }
 
-    const backendBaseUrl = readBackendBaseUrl()
-    const menuResult = await page.evaluate(async ({ apiBaseUrl }) => {
-      const oidcKey = Object.keys(window.localStorage).find((key) => key.startsWith('oidc.user:'))
-      if (!oidcKey) {
-        throw new Error('未找到平台 OIDC 登录态')
-      }
-      const rawUser = window.localStorage.getItem(oidcKey)
-      if (!rawUser) {
-        throw new Error(`平台 OIDC 存储为空: ${oidcKey}`)
-      }
-      const oidcUser = JSON.parse(rawUser) as {
-        access_token?: string
-        profile?: { activeTenantId?: number | string }
-      }
-      if (!oidcUser.access_token) {
-        throw new Error('平台 OIDC 用户缺少 access_token')
-      }
+    const menuResult = await fetchSchedulingApi<MenuNode[]>(page, '/sys/menus/tree')
 
-      const headers = new Headers({
-        Accept: 'application/json',
-        Authorization: `Bearer ${oidcUser.access_token}`,
-      })
-      const activeTenantId =
-        window.localStorage.getItem('app_active_tenant_id') ??
-        String(oidcUser.profile?.activeTenantId ?? '')
-      if (activeTenantId) {
-        headers.set('X-Active-Tenant-Id', activeTenantId)
-      }
-
-      const response = await fetch(`${apiBaseUrl}/sys/menus/tree`, {
-        method: 'GET',
-        credentials: 'include',
-        headers,
-      })
-      const text = await response.text()
-      const contentType = response.headers.get('content-type') || ''
-      return {
-        status: response.status,
-        payload:
-          text && contentType.includes('application/json')
-            ? (JSON.parse(text) as MenuNode[])
-            : null,
-        text,
-      }
-    }, { apiBaseUrl: backendBaseUrl })
-
-    expect(menuResult.status, menuResult.text).toBe(200)
-    expect(Array.isArray(menuResult.payload), menuResult.text).toBeTruthy()
+    expect(menuResult.status, JSON.stringify(menuResult.payload)).toBe(200)
+    expect(Array.isArray(menuResult.payload), JSON.stringify(menuResult.payload)).toBeTruthy()
     const menuTree = menuResult.payload as MenuNode[]
     const flattened = flattenMenu(menuTree)
 

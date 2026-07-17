@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { openOidcDebug } from './cross-tenant.helpers'
+import { fetchSchedulingApi, openOidcDebug } from './cross-tenant.helpers'
 
 /**
  * real-link（post-login 草稿）：已认证后的安全中心 + TOTP 信息读取（依赖 storageState + 真实后端）
@@ -10,59 +10,13 @@ import { openOidcDebug } from './cross-tenant.helpers'
  * - 当前仅覆盖“登录之后”的安全状态与 TOTP 预绑定信息读取，不包含从 `/login` 起步的完整 MFA 链路。
  */
 
-const backendBaseUrl = process.env.E2E_BACKEND_BASE_URL ?? 'http://localhost:9000'
-
 async function fetchSelfSecurity<T>(
   page: import('@playwright/test').Page,
   path: string,
   options: { method?: 'GET' | 'POST'; body?: unknown } = {},
 ): Promise<{ status: number; payload: T | null }> {
   const { method = 'GET', body } = options
-  return page.evaluate(
-    async ({ apiBaseUrl, apiPath, apiMethod, apiBody }) => {
-      const oidcKey = Object.keys(window.localStorage).find((key) => key.startsWith('oidc.user:'))
-      if (!oidcKey) {
-        throw new Error('未找到 OIDC 登录态，无法调用安全中心接口')
-      }
-      const rawUser = window.localStorage.getItem(oidcKey)
-      if (!rawUser) {
-        throw new Error(`OIDC 存储为空: ${oidcKey}`)
-      }
-      const user = JSON.parse(rawUser) as {
-        access_token?: string
-        profile?: { activeTenantId?: number | string }
-      }
-      if (!user.access_token) {
-        throw new Error('OIDC 用户缺少 access_token')
-      }
-
-      const activeTenantId =
-        window.localStorage.getItem('app_active_tenant_id') ?? String(user.profile?.activeTenantId ?? '')
-
-      const headers = new Headers({
-        Accept: 'application/json',
-        Authorization: `Bearer ${user.access_token}`,
-      })
-      if (activeTenantId) {
-        headers.set('X-Active-Tenant-Id', activeTenantId)
-      }
-      if (apiMethod !== 'GET') {
-        headers.set('Content-Type', 'application/json')
-      }
-      const resp = await fetch(`${apiBaseUrl}${apiPath}`, {
-        method: apiMethod,
-        headers,
-        credentials: 'include',
-        body: apiBody == null ? undefined : JSON.stringify(apiBody),
-      })
-      const text = await resp.text()
-      const contentType = resp.headers.get('content-type') || ''
-      const payload =
-        text && contentType.includes('application/json') ? (JSON.parse(text) as T) : (null as T | null)
-      return { status: resp.status, payload }
-    },
-    { apiBaseUrl: backendBaseUrl, apiPath: path, apiMethod: method, apiBody: body },
-  )
+  return fetchSchedulingApi<T>(page, path, { method, body })
 }
 
 async function expectAuthenticatedSecurityStatus(page: import('@playwright/test').Page) {

@@ -346,7 +346,7 @@ type SessionIdentitySnapshot = {
   permissions: string[]
 }
 
-async function loadIdentitySnapshot(page: Page): Promise<SessionIdentitySnapshot> {
+export async function loadIdentitySnapshot(page: Page): Promise<SessionIdentitySnapshot> {
   return page.evaluate(async (apiBaseUrl) => {
     function firstNonEmptyTenantId(
       ...candidates: Array<string | number | null | undefined>

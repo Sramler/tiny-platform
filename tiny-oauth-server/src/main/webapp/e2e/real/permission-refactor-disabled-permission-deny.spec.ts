@@ -4,6 +4,7 @@ import { expect, test } from '@playwright/test'
 import { createHmac } from 'node:crypto'
 
 import { requireRealLinkPlatformTenantCode } from '../setup/real.global.setup'
+import { fetchSchedulingApi, loadIdentitySnapshot } from './cross-tenant.helpers'
 
 /**
  * Real-link end-to-end proof for permission.enabled fail-closed.
@@ -68,45 +69,6 @@ function generateTotpCode(secret: string, timestampMs = Date.now()): string {
     ((hmac[offset + 2] & 0xff) << 8) |
     (hmac[offset + 3] & 0xff)
   return String(binaryCode % 1_000_000).padStart(6, '0')
-}
-
-type StorageStateOrigin = {
-  localStorage?: Array<{ name: string; value: string }>
-}
-
-type StorageState = {
-  origins?: StorageStateOrigin[]
-}
-
-function extractAccessTokenFromStorageState(storageState: StorageState): string {
-  for (const origin of storageState.origins ?? []) {
-    for (const entry of origin.localStorage ?? []) {
-      if (!entry.name.startsWith('oidc.user:')) continue
-      try {
-        const parsed = JSON.parse(entry.value)
-        if (parsed?.access_token) return parsed.access_token as string
-      } catch {
-        // ignore malformed entries
-      }
-    }
-  }
-  throw new Error('access_token not found in storageState localStorage (oidc.user:*)')
-}
-
-function decodeJwtPayload(token: string): any {
-  const parts = token.split('.')
-  if (parts.length < 2) throw new Error('Invalid JWT token format')
-  const payload = parts[1]
-  const base64 = payload.replace(/-/g, '+').replace(/_/g, '/')
-  const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4)
-  const json = Buffer.from(padded, 'base64').toString('utf8')
-  return JSON.parse(json)
-}
-
-function readBackendBaseUrl(): string {
-  return (
-    process.env.E2E_BACKEND_BASE_URL ?? process.env.VITE_API_BASE_URL ?? 'http://localhost:9000'
-  )
 }
 
 function deriveTenantCodeForTenantScope(
@@ -229,12 +191,10 @@ async function loginWithMfa(page: import('@playwright/test').Page) {
   await page.waitForLoadState('networkidle').catch(() => {})
 }
 
-test.describe('real-link: disabled permission deny (JWT + interface) ', () => {
-  test('disabled permissions are removed from JWT and cannot be used to access /sys/org/tree', async ({
+test.describe('real-link: disabled permission deny (Session + interface) ', () => {
+  test('disabled permissions are removed from Session identity and cannot access /sys/org/tree', async ({
     browser,
   }) => {
-    const backendBaseUrl = readBackendBaseUrl()
-
     // Confirm mysql client exists early; otherwise skip rather than fail noisy.
     try {
       mysqlExec('SELECT 1;')
@@ -254,7 +214,7 @@ test.describe('real-link: disabled permission deny (JWT + interface) ', () => {
     const emptyStorageState = { cookies: [], origins: [] }
 
     try {
-      // Baseline: ensure disabled permissions are enabled to prove token contains them.
+      // Baseline: prove the HttpOnly Session identity contains enabled permissions.
       mysqlSetEnabled(permissionCodes, tenantCode, true)
 
       // Force a clean (logged-out) context. The Playwright project config uses storageState,
@@ -263,15 +223,8 @@ test.describe('real-link: disabled permission deny (JWT + interface) ', () => {
       const page1 = await context1.newPage()
       await loginWithMfa(page1)
 
-      const storage1 = await context1.storageState()
-      const accessToken1 = extractAccessTokenFromStorageState(storage1)
-      const payload1 = decodeJwtPayload(accessToken1)
-      const authorities1: string[] = payload1.authorities ?? []
-      const permissions1: string[] = payload1.permissions ?? []
-
-      const beforeFound = permissionCodes.filter(
-        (c) => authorities1.includes(c) || permissions1.includes(c),
-      )
+      const identity1 = await loadIdentitySnapshot(page1)
+      const beforeFound = permissionCodes.filter((code) => identity1.permissions.includes(code))
       expect(beforeFound.length).toBeGreaterThan(0)
 
       // Disable them (fail-closed should remove from JWT and deny access).
@@ -281,27 +234,14 @@ test.describe('real-link: disabled permission deny (JWT + interface) ', () => {
       const page2 = await context2.newPage()
       await loginWithMfa(page2)
 
-      const storage2 = await context2.storageState()
-      const accessToken2 = extractAccessTokenFromStorageState(storage2)
-      const payload2 = decodeJwtPayload(accessToken2)
-
-      const authorities2: string[] = payload2.authorities ?? []
-      const permissions2: string[] = payload2.permissions ?? []
+      const identity2 = await loadIdentitySnapshot(page2)
 
       for (const code of permissionCodes) {
-        expect(authorities2.includes(code)).toBe(false)
-        expect(permissions2.includes(code)).toBe(false)
+        expect(identity2.permissions.includes(code)).toBe(false)
       }
 
-      // Verify protected interface denies disabled permission via claims/recovery chain.
-      const resp = await page2.request.get(`${backendBaseUrl}/sys/org/tree`, {
-        headers: {
-          Authorization: `Bearer ${accessToken2}`,
-        },
-      })
-
-      // For method security denial, most commonly 403. If env differs, fail with body.
-      expect(resp.status(), await resp.text()).toBe(403)
+      const resp = await fetchSchedulingApi(page2, '/sys/org/tree')
+      expect(resp.status, JSON.stringify(resp.payload)).toBe(403)
     } finally {
       // Restore original DB state even if assertions fail.
       for (const code of permissionCodes) {
