@@ -41,7 +41,10 @@ function requireEnv(name: string, fallbackFrom?: string): string {
   return raw
 }
 
-function deriveTenantCodeForTenantScope(primaryTenantCode: string, platformTenantCode: string): string {
+function deriveTenantCodeForTenantScope(
+  primaryTenantCode: string,
+  platformTenantCode: string,
+): string {
   if (primaryTenantCode.trim().toLowerCase() !== platformTenantCode.trim().toLowerCase()) {
     return primaryTenantCode.trim()
   }
@@ -56,7 +59,10 @@ function resolveBindTenantCode(): string {
   if (!platformTenantCode?.trim()) {
     throw new Error('缺少 E2E_PLATFORM_TENANT_CODE（CARD-13E：禁止隐式 default）')
   }
-  if (explicitBindTenantCode && explicitBindTenantCode.trim().toLowerCase() !== platformTenantCode.trim().toLowerCase()) {
+  if (
+    explicitBindTenantCode &&
+    explicitBindTenantCode.trim().toLowerCase() !== platformTenantCode.trim().toLowerCase()
+  ) {
     return explicitBindTenantCode
   }
   return deriveTenantCodeForTenantScope(primaryTenantCode, platformTenantCode)
@@ -119,35 +125,31 @@ async function fetchPreBindSecret(page: import('@playwright/test').Page): Promis
     }
   }
 
-  const backendBaseUrl =
-    process.env.E2E_BACKEND_BASE_URL ?? process.env.VITE_API_BASE_URL ?? 'http://localhost:9000'
+  const result = await page.evaluate(async () => {
+    const resp = await fetch('/self/security/totp/pre-bind', {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        Accept: 'application/json',
+        ...(window.localStorage.getItem('app_active_tenant_id')
+          ? { 'X-Active-Tenant-Id': window.localStorage.getItem('app_active_tenant_id')! }
+          : {}),
+      },
+    })
+    const text = await resp.text()
+    const contentType = resp.headers.get('content-type') || ''
+    const payload =
+      text && contentType.includes('application/json')
+        ? (JSON.parse(text) as { success?: boolean; secretKey?: string })
+        : null
 
-  const result = await page.evaluate(
-    async ({ apiBaseUrl }) => {
-      const resp = await fetch(`${apiBaseUrl}/self/security/totp/pre-bind`, {
-        method: 'GET',
-        credentials: 'include',
-        headers: {
-          Accept: 'application/json',
-          ...(window.localStorage.getItem('app_active_tenant_id')
-            ? { 'X-Active-Tenant-Id': window.localStorage.getItem('app_active_tenant_id')! }
-            : {}),
-        },
-      })
-      const text = await resp.text()
-      const contentType = resp.headers.get('content-type') || ''
-      const payload =
-        text && contentType.includes('application/json')
-          ? (JSON.parse(text) as { success?: boolean; secretKey?: string })
-          : null
-
-      return { status: resp.status, payload }
-    },
-    { apiBaseUrl: backendBaseUrl },
-  )
+    return { status: resp.status, payload }
+  })
 
   if (result.status !== 200 || !result.payload?.success || !result.payload.secretKey) {
-    throw new Error(`预绑定接口返回异常: status=${result.status}, payload=${JSON.stringify(result.payload)}`)
+    throw new Error(
+      `预绑定接口返回异常: status=${result.status}, payload=${JSON.stringify(result.payload)}`,
+    )
   }
   return result.payload.secretKey
 }
@@ -177,9 +179,7 @@ async function waitForFirstBindReady(page: import('@playwright/test').Page): Pro
 }
 
 async function fetchSecurityStatus(page: import('@playwright/test').Page) {
-  const backendBaseUrl =
-    process.env.E2E_BACKEND_BASE_URL ?? process.env.VITE_API_BASE_URL ?? 'http://localhost:9000'
-  const response = await page.request.get(`${backendBaseUrl}/self/security/status`, {
+  const response = await page.request.get('/self/security/status', {
     timeout: 15_000,
     headers: { Accept: 'application/json' },
   })
@@ -218,7 +218,10 @@ test.describe('real-link: 未绑定 TOTP 首绑链路', () => {
     await page.getByLabel('租户编码').fill(tenantCode)
     await page.getByLabel('用户名').fill(username)
     await page.getByLabel('密码').fill(password)
-    await page.getByRole('button', { name: /登录租户/ }).first().click()
+    await page
+      .getByRole('button', { name: /登录租户/ })
+      .first()
+      .click()
 
     await waitForFirstBindReady(page)
     const bindHeading = page.getByRole('heading', { name: /开启两步验证/ })
@@ -242,7 +245,7 @@ test.describe('real-link: 未绑定 TOTP 首绑链路', () => {
       (url) =>
         !url.pathname.includes('/self/security/totp-bind') && !url.pathname.includes('/callback'),
       {
-      timeout: 60_000,
+        timeout: 60_000,
       },
     )
     // 离开绑定路由即证明真实绑定提交成功；立即清理浏览器会话模拟重新登录。
@@ -254,7 +257,10 @@ test.describe('real-link: 未绑定 TOTP 首绑链路', () => {
     await page.getByLabel('租户编码').fill(tenantCode)
     await page.getByLabel('用户名').fill(username)
     await page.getByLabel('密码').fill(password)
-    await page.getByRole('button', { name: /登录租户/ }).first().click()
+    await page
+      .getByRole('button', { name: /登录租户/ })
+      .first()
+      .click()
 
     await page.waitForURL('**/self/security/totp-verify**', { timeout: 60_000 })
     await expect(page.getByRole('heading', { name: /两步验证/ })).toBeVisible({
@@ -270,7 +276,7 @@ test.describe('real-link: 未绑定 TOTP 首绑链路', () => {
       (url) =>
         !url.pathname.includes('/self/security/totp-verify') && !url.pathname.includes('/callback'),
       {
-      timeout: 60_000,
+        timeout: 60_000,
       },
     )
     const secondStatus = await fetchSecurityStatus(page)

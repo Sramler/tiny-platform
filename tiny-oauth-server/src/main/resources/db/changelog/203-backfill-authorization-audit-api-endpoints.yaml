@@ -1,0 +1,82 @@
+databaseChangeLog:
+  - changeSet:
+      id: 203-backfill-authorization-audit-api-endpoints
+      author: codex
+      comment: 补齐授权审计列表、概览、导出及只读查询 API 载体
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT INTO api_endpoint (
+                tenant_id, resource_level, name, title, uri, method, permission,
+                required_permission_id, enabled, created_at, updated_at
+              )
+              SELECT NULL, 'PLATFORM', CONCAT('audit-authorization-', route.route_key),
+                     route.title, route.uri, 'GET', route.permission_code, permission.id, 1,
+                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM (
+                SELECT 'list' route_key, '查询授权审计日志' title,
+                       '/sys/audit/authorization' uri,
+                       'system:audit:auth:view' permission_code
+                UNION ALL SELECT 'summary', '查询授权审计概览',
+                       '/sys/audit/authorization/summary',
+                       'system:audit:auth:view'
+                UNION ALL SELECT 'export', '导出授权审计日志',
+                       '/sys/audit/authorization/export',
+                       'system:audit:auth:export'
+                UNION ALL SELECT 'by-event-type', '按事件类型查询授权审计',
+                       '/sys/audit/authorization/by-event-type',
+                       'system:audit:auth:view'
+                UNION ALL SELECT 'by-user', '按用户查询授权审计',
+                       '/sys/audit/authorization/by-user/{userId}',
+                       'system:audit:auth:view'
+              ) route
+              JOIN permission
+                ON permission.tenant_id IS NULL
+               AND permission.permission_code = route.permission_code
+               AND permission.enabled = 1
+              WHERE NOT EXISTS (
+                SELECT 1 FROM api_endpoint endpoint
+                WHERE endpoint.tenant_id IS NULL
+                  AND endpoint.method = 'GET'
+                  AND endpoint.uri = route.uri
+              );
+
+              INSERT INTO api_endpoint (
+                tenant_id, resource_level, name, title, uri, method, permission,
+                required_permission_id, enabled, created_at, updated_at
+              )
+              SELECT tenant.id, 'TENANT', template.name, template.title, template.uri,
+                     template.method, template.permission, permission.id, 1,
+                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM tenant
+              JOIN api_endpoint template
+                ON template.tenant_id IS NULL
+               AND template.name LIKE 'audit-authorization-%'
+               AND template.enabled = 1
+              JOIN permission
+                ON permission.tenant_id = tenant.id
+               AND permission.permission_code = template.permission
+               AND permission.enabled = 1
+              WHERE NOT EXISTS (
+                SELECT 1 FROM api_endpoint endpoint
+                WHERE endpoint.tenant_id = tenant.id
+                  AND endpoint.method = template.method
+                  AND endpoint.uri = template.uri
+              );
+
+              INSERT IGNORE INTO api_endpoint_permission_requirement (
+                tenant_id, api_endpoint_id, requirement_group, sort_order, permission_id, negated,
+                created_at, updated_at
+              )
+              SELECT endpoint.tenant_id, endpoint.id, 0, 1, endpoint.required_permission_id, 0,
+                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+              FROM api_endpoint endpoint
+              WHERE endpoint.name LIKE 'audit-authorization-%'
+                AND endpoint.required_permission_id IS NOT NULL
+                AND NOT EXISTS (
+                  SELECT 1 FROM api_endpoint_permission_requirement requirement_row
+                  WHERE requirement_row.api_endpoint_id = endpoint.id
+                );

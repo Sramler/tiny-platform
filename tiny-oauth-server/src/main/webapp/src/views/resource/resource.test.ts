@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { defineComponent, nextTick } from 'vue'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const apiMocks = vi.hoisted(() => ({
   getResourceTree: vi.fn(),
@@ -59,7 +59,28 @@ const PassThrough = defineComponent({
   template: '<div><slot /></div>',
 })
 
+const ResourceTableStub = defineComponent({
+  name: 'ResourceTableStub',
+  props: ['dataSource', 'columns', 'scroll', 'rowSelection'],
+  template: `
+    <div class="resource-table-stub">
+      <span>table rows: {{ (dataSource || []).length }}</span>
+      <button
+        v-if="(dataSource || []).length > 0"
+        class="select-first-resource"
+        @click="rowSelection?.onChange?.([String(dataSource[0].id)])"
+      >select first</button>
+      <template v-for="record in (dataSource || [])" :key="record.id">
+        <template v-for="column in (columns || [])" :key="column.dataIndex">
+          <slot name="bodyCell" :column="column" :record="record" />
+        </template>
+      </template>
+    </div>
+  `,
+})
+
 import { ACTIVE_SCOPE_CHANGED_EVENT } from '@/utils/activeScopeEvents'
+import { setSessionClaimsSnapshot } from '@/utils/jwt'
 import Resource from '@/views/resource/resource.vue'
 
 function createToken(authorities: string[]) {
@@ -77,7 +98,7 @@ describe('resource.vue', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     apiMocks.getResourceTree.mockResolvedValue([
-      { id: 1, name: 'res1', title: 'Resource 1', type: 0, carrierKind: 'menu', children: [] },
+      { id: 1, name: 'res1', title: 'Resource 1', type: 0, carrierKind: 'menu', icon: 'ant-design:menu-outlined', children: [] },
     ])
     apiMocks.getRuntimeUiActions.mockResolvedValue([
       { id: 11, name: 'resource:create', title: '资源新增', type: 2, permission: 'system:resource:create', carrierKind: 'ui_action' },
@@ -90,14 +111,15 @@ describe('resource.vue', () => {
     }
   })
 
+  afterEach(() => {
+    setSessionClaimsSnapshot(null)
+  })
+
   it('should display resource title and load tree on mount', async () => {
     const wrapper = mount(Resource, {
       global: {
         stubs: {
-          'a-table': defineComponent({
-            props: ['dataSource'],
-            template: '<div class="resource-table-stub">table rows: {{ (dataSource || []).length }}</div>',
-          }),
+          'a-table': ResourceTableStub,
           'a-form': PassThrough,
           'a-form-item': PassThrough,
           'a-input': PassThrough,
@@ -121,23 +143,38 @@ describe('resource.vue', () => {
       },
     })
     await flushPromises()
+    await vi.waitFor(() => {
+      expect(wrapper.findComponent(ResourceTableStub).text()).toContain('table rows: 1')
+    })
 
     expect(wrapper.text()).toContain('资源管理')
-    expect(wrapper.text()).toContain('menu')
-    expect(wrapper.text()).toContain('ui_action')
-    expect(wrapper.text()).toContain('api_endpoint')
+    expect(wrapper.text()).not.toContain('当前管理面已进入拆分载体过渡期')
     expect(apiMocks.getResourceTree).toHaveBeenCalled()
     expect(apiMocks.getRuntimeUiActions).toHaveBeenCalledWith('/system/resource')
+    expect(wrapper.text()).toContain('新建资源')
+    expect(wrapper.text()).toContain('编辑')
+    expect(wrapper.text()).toContain('删除')
+
+    await wrapper.find('.select-first-resource').trigger('click')
+    await nextTick()
+    expect(wrapper.text()).toContain('批量删除 (1)')
+
+    const table = wrapper.findComponent(ResourceTableStub)
+    expect(table.props('scroll')).toEqual(expect.objectContaining({ x: 'max-content' }))
+    expect(table.props('columns')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ dataIndex: 'name', ellipsis: true }),
+      expect.objectContaining({ dataIndex: 'title', ellipsis: true }),
+      expect.objectContaining({ dataIndex: 'uri', ellipsis: true }),
+      expect.objectContaining({ dataIndex: 'permission', ellipsis: true }),
+      expect.objectContaining({ dataIndex: 'icon', width: 72 }),
+    ]))
   })
 
   it('should refetch resource tree when active scope changes', async () => {
     const wrapper = mount(Resource, {
       global: {
         stubs: {
-          'a-table': defineComponent({
-            props: ['dataSource'],
-            template: '<div class="resource-table-stub">table rows: {{ (dataSource || []).length }}</div>',
-          }),
+          'a-table': ResourceTableStub,
           'a-form': PassThrough,
           'a-form-item': PassThrough,
           'a-input': PassThrough,
@@ -184,10 +221,7 @@ describe('resource.vue', () => {
     const wrapper = mount(Resource, {
       global: {
         stubs: {
-          'a-table': defineComponent({
-            props: ['dataSource'],
-            template: '<div class="resource-table-stub">table rows: {{ (dataSource || []).length }}</div>',
-          }),
+          'a-table': ResourceTableStub,
           'a-form': PassThrough,
           'a-form-item': PassThrough,
           'a-input': PassThrough,
@@ -211,9 +245,56 @@ describe('resource.vue', () => {
       },
     })
     await flushPromises()
+    await vi.waitFor(() => {
+      expect(wrapper.findComponent(ResourceTableStub).text()).toContain('table rows: 1')
+    })
 
     expect(wrapper.text()).not.toContain('新建资源')
+    expect(wrapper.text()).not.toContain('编辑')
+    expect(wrapper.text()).not.toContain('删除')
+
+    await wrapper.find('.select-first-resource').trigger('click')
+    await nextTick()
     expect(wrapper.text()).not.toContain('批量删除')
+    expect(wrapper.text()).toContain('取消选择')
+  })
+
+  it('should read management authority from the in-memory Session snapshot when access token is empty', async () => {
+    setSessionClaimsSnapshot({ authorities: ['system:resource:list'] })
+    authMocks.authUser.value = { access_token: '' }
+
+    const wrapper = mount(Resource, {
+      global: {
+        stubs: {
+          'a-table': ResourceTableStub,
+          'a-form': PassThrough,
+          'a-form-item': PassThrough,
+          'a-input': PassThrough,
+          'a-select': PassThrough,
+          'a-select-option': PassThrough,
+          'a-button': PassThrough,
+          'a-checkbox': PassThrough,
+          'a-tag': PassThrough,
+          'a-tooltip': PassThrough,
+          'a-popover': PassThrough,
+          'a-modal': defineComponent({ props: ['open'], template: '<div v-if="open"><slot /></div>' }),
+          'a-drawer': defineComponent({ props: ['open'], template: '<div v-if="open"><slot /></div>' }),
+          VueDraggable: PassThrough,
+          PlusOutlined: PassThrough,
+          ReloadOutlined: PassThrough,
+          EditOutlined: PassThrough,
+          DeleteOutlined: PassThrough,
+          SettingOutlined: PassThrough,
+          HolderOutlined: PassThrough,
+        },
+      },
+    })
+
+    await vi.waitFor(() => {
+      expect(apiMocks.getRuntimeUiActions).toHaveBeenCalledWith('/system/resource')
+      expect(apiMocks.getResourceTree).toHaveBeenCalled()
+    })
+    expect(wrapper.text()).toContain('新建资源')
   })
 
   it('should not request resource tree without resource management authority', async () => {

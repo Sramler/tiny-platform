@@ -8,6 +8,7 @@ import com.tiny.platform.core.oauth.tenant.TenantLifecycleAccessGuard;
 import com.tiny.platform.infrastructure.auth.audit.domain.AuthorizationAuditLog;
 import com.tiny.platform.infrastructure.auth.audit.service.AuthorizationAuditQuery;
 import com.tiny.platform.infrastructure.auth.audit.service.AuthorizationAuditService;
+import com.tiny.platform.infrastructure.auth.audit.service.AuthorizationAuditSummary;
 import com.tiny.platform.infrastructure.auth.resource.domain.ApiEndpointEntry;
 import com.tiny.platform.infrastructure.auth.resource.repository.ApiEndpointEntryRepository;
 import com.tiny.platform.infrastructure.auth.resource.repository.ApiEndpointPermissionRequirementRepository;
@@ -53,6 +54,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -65,9 +67,18 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AuthorizationAuditControllerApiEndpointGuardRealControllerIntegrationTest {
 
     private static final long TENANT_ID = 9L;
-    private static final long API_ENDPOINT_ID = 61101L;
-    private static final long REQUIRED_PERMISSION_ID = 62101L;
-    private static final String REQUIRED_AUTH = "system:audit:auth:view";
+    private static final long LIST_ENDPOINT_ID = 61101L;
+    private static final long SUMMARY_ENDPOINT_ID = 61102L;
+    private static final long EXPORT_ENDPOINT_ID = 61103L;
+    private static final long BY_EVENT_TYPE_ENDPOINT_ID = 61104L;
+    private static final long BY_USER_ENDPOINT_ID = 61105L;
+    private static final long PURGE_ENDPOINT_ID = 61106L;
+    private static final long VIEW_PERMISSION_ID = 62101L;
+    private static final long EXPORT_PERMISSION_ID = 62102L;
+    private static final long PURGE_PERMISSION_ID = 62103L;
+    private static final String VIEW_AUTHORITY = "system:audit:auth:view";
+    private static final String EXPORT_AUTHORITY = "system:audit:auth:export";
+    private static final String PURGE_AUTHORITY = "system:audit:auth:purge";
 
     @Autowired
     private MockMvc mockMvc;
@@ -87,25 +98,52 @@ class AuthorizationAuditControllerApiEndpointGuardRealControllerIntegrationTest 
         TenantContext.setActiveScopeType(TenantContextContract.SCOPE_TYPE_TENANT);
         TenantContext.setTenantSource(TenantContext.SOURCE_UNKNOWN);
 
-        ApiEndpointEntry entry = new ApiEndpointEntry();
-        entry.setId(API_ENDPOINT_ID);
-        entry.setTenantId(TENANT_ID);
-        entry.setResourceLevel("TENANT");
-        entry.setName("audit-authorization-list");
-        entry.setTitle("authorization audit list");
-        entry.setUri("/sys/audit/authorization");
-        entry.setMethod("GET");
-        entry.setPermission(REQUIRED_AUTH);
-        entry.setRequiredPermissionId(REQUIRED_PERMISSION_ID);
-        entry.setEnabled(true);
-
         when(apiEndpointEntryRepository.findAll(
             Mockito.<Specification<ApiEndpointEntry>>any(),
             Mockito.<Sort>any()
-        )).thenReturn(List.of(entry));
+        )).thenReturn(List.of(
+            endpoint(LIST_ENDPOINT_ID, "audit-authorization-list", "/sys/audit/authorization", "GET",
+                VIEW_AUTHORITY, VIEW_PERMISSION_ID),
+            endpoint(SUMMARY_ENDPOINT_ID, "audit-authorization-summary", "/sys/audit/authorization/summary", "GET",
+                VIEW_AUTHORITY, VIEW_PERMISSION_ID),
+            endpoint(EXPORT_ENDPOINT_ID, "audit-authorization-export", "/sys/audit/authorization/export", "GET",
+                EXPORT_AUTHORITY, EXPORT_PERMISSION_ID),
+            endpoint(BY_EVENT_TYPE_ENDPOINT_ID, "audit-authorization-by-event-type",
+                "/sys/audit/authorization/by-event-type", "GET", VIEW_AUTHORITY, VIEW_PERMISSION_ID),
+            endpoint(BY_USER_ENDPOINT_ID, "audit-authorization-by-user",
+                "/sys/audit/authorization/by-user/{userId}", "GET", VIEW_AUTHORITY, VIEW_PERMISSION_ID),
+            endpoint(PURGE_ENDPOINT_ID, "audit-authorization-purge", "/sys/audit/authorization/purge", "DELETE",
+                PURGE_AUTHORITY, PURGE_PERMISSION_ID)
+        ));
 
         Page<AuthorizationAuditLog> empty = new PageImpl<>(List.of());
         when(auditService.search(any(AuthorizationAuditQuery.class), any(Pageable.class))).thenReturn(empty);
+        when(auditService.summarize(any(AuthorizationAuditQuery.class)))
+            .thenReturn(new AuthorizationAuditSummary(0, 0, 0, List.of()));
+        when(auditService.listByTenantAndEventType(Mockito.anyLong(), Mockito.anyString(), any(Pageable.class)))
+            .thenReturn(empty);
+        when(auditService.listByTargetUser(Mockito.anyLong(), Mockito.anyLong())).thenReturn(List.of());
+        when(auditService.purge(Mockito.anyInt())).thenReturn(0);
+    }
+
+    private ApiEndpointEntry endpoint(long id,
+                                      String name,
+                                      String uri,
+                                      String method,
+                                      String permission,
+                                      long permissionId) {
+        ApiEndpointEntry entry = new ApiEndpointEntry();
+        entry.setId(id);
+        entry.setTenantId(TENANT_ID);
+        entry.setResourceLevel("TENANT");
+        entry.setName(name);
+        entry.setTitle(name);
+        entry.setUri(uri);
+        entry.setMethod(method);
+        entry.setPermission(permission);
+        entry.setRequiredPermissionId(permissionId);
+        entry.setEnabled(true);
+        return entry;
     }
 
     @AfterEach
@@ -116,35 +154,153 @@ class AuthorizationAuditControllerApiEndpointGuardRealControllerIntegrationTest 
     @Test
     void audit_realAuthorizationAuditController_sysAuditAuthorization_allow_shouldReturn200_whenRequirementSatisfied_staticUri()
         throws Exception {
-        CarrierPermissionRequirementRow row = requirementRow(true);
-        when(apiEndpointPermissionRequirementRepository.findRowsByApiEndpointIdIn(anyCollection()))
-            .thenReturn(List.of(row));
+        stubRequirement(LIST_ENDPOINT_ID, VIEW_AUTHORITY, true);
 
         mockMvc.perform(get("/sys/audit/authorization")
                 .accept(MediaType.APPLICATION_JSON)
-                .with(user("audit-viewer").authorities(new SimpleGrantedAuthority(REQUIRED_AUTH))))
+                .with(user("audit-viewer").authorities(new SimpleGrantedAuthority(VIEW_AUTHORITY))))
             .andExpect(status().isOk());
     }
 
     @Test
     void audit_realAuthorizationAuditController_sysAuditAuthorization_deny_shouldReturn403_whenPermissionDisabled_staticUri()
         throws Exception {
-        CarrierPermissionRequirementRow row = requirementRow(false);
-        when(apiEndpointPermissionRequirementRepository.findRowsByApiEndpointIdIn(anyCollection()))
-            .thenReturn(List.of(row));
+        stubRequirement(LIST_ENDPOINT_ID, VIEW_AUTHORITY, false);
 
         mockMvc.perform(get("/sys/audit/authorization")
                 .accept(MediaType.APPLICATION_JSON)
-                .with(user("audit-viewer").authorities(new SimpleGrantedAuthority(REQUIRED_AUTH))))
+                .with(user("audit-viewer").authorities(new SimpleGrantedAuthority(VIEW_AUTHORITY))))
             .andExpect(status().isForbidden());
     }
 
-    private static CarrierPermissionRequirementRow requirementRow(boolean permissionEnabled) {
+    @Test
+    void audit_realAuthorizationAuditController_summary_allow_shouldReturn200_whenRequirementSatisfied()
+        throws Exception {
+        stubRequirement(SUMMARY_ENDPOINT_ID, VIEW_AUTHORITY, true);
+
+        mockMvc.perform(get("/sys/audit/authorization/summary")
+                .accept(MediaType.APPLICATION_JSON)
+                .with(user("audit-viewer").authorities(new SimpleGrantedAuthority(VIEW_AUTHORITY))))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void audit_realAuthorizationAuditController_summary_deny_shouldReturn403_whenPermissionDisabled()
+        throws Exception {
+        stubRequirement(SUMMARY_ENDPOINT_ID, VIEW_AUTHORITY, false);
+
+        mockMvc.perform(get("/sys/audit/authorization/summary")
+                .accept(MediaType.APPLICATION_JSON)
+                .with(user("audit-viewer").authorities(new SimpleGrantedAuthority(VIEW_AUTHORITY))))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void audit_realAuthorizationAuditController_export_allow_shouldReturn200_whenRequirementSatisfied()
+        throws Exception {
+        stubRequirement(EXPORT_ENDPOINT_ID, EXPORT_AUTHORITY, true);
+
+        mockMvc.perform(get("/sys/audit/authorization/export")
+                .accept("text/csv")
+                .with(user("audit-exporter").authorities(new SimpleGrantedAuthority(EXPORT_AUTHORITY))))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void audit_realAuthorizationAuditController_export_deny_shouldReturn403_whenPermissionDisabled()
+        throws Exception {
+        stubRequirement(EXPORT_ENDPOINT_ID, EXPORT_AUTHORITY, false);
+
+        mockMvc.perform(get("/sys/audit/authorization/export")
+                .accept("text/csv")
+                .with(user("audit-exporter").authorities(new SimpleGrantedAuthority(EXPORT_AUTHORITY))))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void audit_realAuthorizationAuditController_byEventType_allow_shouldReturn200_whenRequirementSatisfied()
+        throws Exception {
+        stubRequirement(BY_EVENT_TYPE_ENDPOINT_ID, VIEW_AUTHORITY, true);
+
+        mockMvc.perform(get("/sys/audit/authorization/by-event-type")
+                .param("eventType", "REQUIREMENT_AWARE_ACCESS")
+                .accept(MediaType.APPLICATION_JSON)
+                .with(user("audit-viewer").authorities(new SimpleGrantedAuthority(VIEW_AUTHORITY))))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void audit_realAuthorizationAuditController_byEventType_deny_shouldReturn403_whenPermissionDisabled()
+        throws Exception {
+        stubRequirement(BY_EVENT_TYPE_ENDPOINT_ID, VIEW_AUTHORITY, false);
+
+        mockMvc.perform(get("/sys/audit/authorization/by-event-type")
+                .param("eventType", "REQUIREMENT_AWARE_ACCESS")
+                .accept(MediaType.APPLICATION_JSON)
+                .with(user("audit-viewer").authorities(new SimpleGrantedAuthority(VIEW_AUTHORITY))))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void audit_realAuthorizationAuditController_byUser_allow_shouldReturn200_whenRequirementSatisfied_dynamicUri()
+        throws Exception {
+        stubRequirement(BY_USER_ENDPOINT_ID, VIEW_AUTHORITY, true);
+
+        mockMvc.perform(get("/sys/audit/authorization/by-user/42")
+                .accept(MediaType.APPLICATION_JSON)
+                .with(user("audit-viewer").authorities(new SimpleGrantedAuthority(VIEW_AUTHORITY))))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void audit_realAuthorizationAuditController_byUser_deny_shouldReturn403_whenPermissionDisabled_dynamicUri()
+        throws Exception {
+        stubRequirement(BY_USER_ENDPOINT_ID, VIEW_AUTHORITY, false);
+
+        mockMvc.perform(get("/sys/audit/authorization/by-user/42")
+                .accept(MediaType.APPLICATION_JSON)
+                .with(user("audit-viewer").authorities(new SimpleGrantedAuthority(VIEW_AUTHORITY))))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void audit_realAuthorizationAuditController_purge_allow_shouldReturn200_whenRequirementSatisfied()
+        throws Exception {
+        stubRequirement(PURGE_ENDPOINT_ID, PURGE_AUTHORITY, true);
+
+        mockMvc.perform(delete("/sys/audit/authorization/purge")
+                .param("retentionDays", "90")
+                .accept(MediaType.APPLICATION_JSON)
+                .with(user("audit-purger").authorities(new SimpleGrantedAuthority(PURGE_AUTHORITY))))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void audit_realAuthorizationAuditController_purge_deny_shouldReturn403_whenPermissionDisabled()
+        throws Exception {
+        stubRequirement(PURGE_ENDPOINT_ID, PURGE_AUTHORITY, false);
+
+        mockMvc.perform(delete("/sys/audit/authorization/purge")
+                .param("retentionDays", "90")
+                .accept(MediaType.APPLICATION_JSON)
+                .with(user("audit-purger").authorities(new SimpleGrantedAuthority(PURGE_AUTHORITY))))
+            .andExpect(status().isForbidden());
+    }
+
+    private void stubRequirement(long carrierId, String permissionCode, boolean permissionEnabled) {
+        CarrierPermissionRequirementRow row = requirementRow(carrierId, permissionCode, permissionEnabled);
+        when(apiEndpointPermissionRequirementRepository.findRowsByApiEndpointIdIn(anyCollection()))
+            .thenReturn(List.of(row));
+    }
+
+    private static CarrierPermissionRequirementRow requirementRow(long carrierId,
+                                                                   String permissionCode,
+                                                                   boolean permissionEnabled) {
         CarrierPermissionRequirementRow row = Mockito.mock(CarrierPermissionRequirementRow.class);
-        Mockito.when(row.getCarrierId()).thenReturn(API_ENDPOINT_ID);
+        Mockito.when(row.getCarrierId()).thenReturn(carrierId);
         Mockito.when(row.getRequirementGroup()).thenReturn(0);
         Mockito.when(row.getSortOrder()).thenReturn(1);
-        Mockito.when(row.getPermissionCode()).thenReturn(REQUIRED_AUTH);
+        Mockito.when(row.getPermissionCode()).thenReturn(permissionCode);
         Mockito.when(row.getNegated()).thenReturn(false);
         Mockito.when(row.getPermissionEnabled()).thenReturn(permissionEnabled);
         return row;
@@ -246,4 +402,3 @@ class AuthorizationAuditControllerApiEndpointGuardRealControllerIntegrationTest 
         }
     }
 }
-

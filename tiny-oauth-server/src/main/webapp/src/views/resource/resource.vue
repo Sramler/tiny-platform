@@ -82,11 +82,6 @@
         </div>
       </div>
 
-      <div class="carrier-transition-note">
-        当前管理面已进入拆分载体过渡期：目录/菜单来自 <code>menu</code>，按钮来自 <code>ui_action</code>，接口来自
-        <code>api_endpoint</code>。
-      </div>
-      
       <!-- 表格区域 -->
       <div class="table-container" ref="tableContentRef">
         <div class="table-scroll-container" ref="tableScrollContainerRef">
@@ -100,7 +95,7 @@
             :row-selection="rowSelection"
             :custom-row="onCustomRow"
             :row-class-name="getRowClassName"
-            :scroll="{ x: 1400, y: tableBodyHeight }"
+            :scroll="{ x: 'max-content', y: tableBodyHeight }"
             defaultExpandAllRows
             :row-expandable="(record: ResourceItem) => !record.leaf"
           >
@@ -242,16 +237,16 @@ const refreshing = ref(false)
 // 初始列定义
 const INITIAL_COLUMNS = [
   { title: '资源ID', dataIndex: 'id', width: 120 },
-  { title: '资源名称', dataIndex: 'name', width: 150 },
-  { title: '资源标题', dataIndex: 'title', width: 150 },
-  { title: 'URL(路由路径)', dataIndex: 'url', width: 200 },
-  { title: 'URI(API路径)', dataIndex: 'uri', width: 200 },
+  { title: '资源名称', dataIndex: 'name', width: 220, ellipsis: true },
+  { title: '资源标题', dataIndex: 'title', width: 200, ellipsis: true },
+  { title: 'URL(路由路径)', dataIndex: 'url', width: 220, ellipsis: true },
+  { title: 'URI(API路径)', dataIndex: 'uri', width: 280, ellipsis: true },
   { title: '请求方法', dataIndex: 'method', width: 100, align: 'center' as const },
-  { title: '权限编码（派生）', dataIndex: 'permission', width: 200 },
+  { title: '权限编码（派生）', dataIndex: 'permission', width: 240, ellipsis: true },
   { title: '资源类型', dataIndex: 'type', width: 100, align: 'center' as const },
   { title: '载体', dataIndex: 'carrierKind', width: 120, align: 'center' as const },
   { title: '排序', dataIndex: 'sort', width: 80, align: 'center' as const },
-  { title: '图标', dataIndex: 'icon', width: 60, align: 'center' as const },
+  { title: '图标', dataIndex: 'icon', width: 72, align: 'center' as const },
   { title: '操作', dataIndex: 'action', width: 160, fixed: 'right' as const, align: 'center' as const }
 ]
 
@@ -708,14 +703,6 @@ function removeEmptyChildren(nodes: ResourceItem[]) {
   min-height: 0;
 }
 
-.carrier-transition-note {
-  padding: 10px 24px;
-  font-size: 13px;
-  color: #595959;
-  background: #fafafa;
-  border-bottom: 1px solid #f0f0f0;
-}
-
 .table-scroll-container {
   flex: 1;
   min-height: 0;
@@ -915,6 +902,10 @@ function removeEmptyChildren(nodes: ResourceItem[]) {
   background-color: #bae7ff !important;
 }
 :deep(.ant-table-tbody > tr > td) {
+  white-space: nowrap;
+}
+
+:deep(.ant-table-thead > tr > th) {
   white-space: nowrap;
 }
 </style> 

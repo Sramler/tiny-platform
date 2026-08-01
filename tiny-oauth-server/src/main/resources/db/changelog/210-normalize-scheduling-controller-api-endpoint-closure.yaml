@@ -1,0 +1,190 @@
+databaseChangeLog:
+  - changeSet:
+      id: 210-normalize-scheduling-controller-api-endpoint-closure
+      author: codex
+      comment: 按 SchedulingController 的五类细粒度权限闭合全部 55 个运行时 API，替代已禁用 scheduling:* 通配依赖
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: permission
+            - tableExists:
+                tableName: api_endpoint
+            - tableExists:
+                tableName: api_endpoint_permission_requirement
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              -- 历史 192/193/201 依赖 scheduling:*；平台通配权限禁用后会静默产生 0 行，
+              -- 并让统一 endpoint 守卫把实际 Controller 映射误判为未登记。这里直接对齐
+              -- SchedulingAccessGuard 的五个规范权限，不重新启用通配权限。
+              DROP TEMPORARY TABLE IF EXISTS tmp_scheduling_controller_route;
+
+              CREATE TEMPORARY TABLE tmp_scheduling_controller_route (
+                route_key VARCHAR(96) NOT NULL,
+                endpoint_title VARCHAR(100) NOT NULL,
+                canonical_uri VARCHAR(200) NOT NULL,
+                canonical_method VARCHAR(10) NOT NULL,
+                permission_code VARCHAR(100) NOT NULL,
+                PRIMARY KEY (route_key),
+                UNIQUE KEY uk_tmp_scheduling_route (canonical_method, canonical_uri)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+              INSERT INTO tmp_scheduling_controller_route (
+                route_key, endpoint_title, canonical_uri, canonical_method, permission_code
+              ) VALUES
+                ('task-type-create', '创建任务类型', '/scheduling/task-type', 'POST', 'scheduling:console:config'),
+                ('task-type-update', '更新任务类型', '/scheduling/task-type/{id}', 'PUT', 'scheduling:console:config'),
+                ('task-type-delete', '删除任务类型', '/scheduling/task-type/{id}', 'DELETE', 'scheduling:console:config'),
+                ('task-type-detail', '读取任务类型', '/scheduling/task-type/{id}', 'GET', 'scheduling:console:view'),
+                ('executor-list', '读取任务执行器', '/scheduling/executors', 'GET', 'scheduling:console:view'),
+                ('task-type-list', '查询任务类型', '/scheduling/task-type/list', 'GET', 'scheduling:console:view'),
+                ('task-create', '创建调度任务', '/scheduling/task', 'POST', 'scheduling:console:config'),
+                ('task-update', '更新调度任务', '/scheduling/task/{id}', 'PUT', 'scheduling:console:config'),
+                ('task-delete', '删除调度任务', '/scheduling/task/{id}', 'DELETE', 'scheduling:console:config'),
+                ('task-detail', '读取调度任务', '/scheduling/task/{id}', 'GET', 'scheduling:console:view'),
+                ('task-list', '查询调度任务', '/scheduling/task/list', 'GET', 'scheduling:console:view'),
+                ('dag-create', '创建 DAG', '/scheduling/dag', 'POST', 'scheduling:console:config'),
+                ('dag-update', '更新 DAG', '/scheduling/dag/{id}', 'PUT', 'scheduling:console:config'),
+                ('dag-delete', '删除 DAG', '/scheduling/dag/{id}', 'DELETE', 'scheduling:console:config'),
+                ('dag-detail', '读取 DAG', '/scheduling/dag/{id}', 'GET', 'scheduling:console:view'),
+                ('dag-list', '查询 DAG', '/scheduling/dag/list', 'GET', 'scheduling:console:view'),
+                ('dag-version-create', '创建 DAG 版本', '/scheduling/dag/{dagId}/version', 'POST', 'scheduling:console:config'),
+                ('dag-version-update', '更新 DAG 版本', '/scheduling/dag/{dagId}/version/{versionId}', 'PUT', 'scheduling:console:config'),
+                ('dag-version-detail', '读取 DAG 版本', '/scheduling/dag/{dagId}/version/{versionId}', 'GET', 'scheduling:console:view'),
+                ('dag-version-list', '查询 DAG 版本', '/scheduling/dag/{dagId}/version/list', 'GET', 'scheduling:console:view'),
+                ('dag-node-create', '创建 DAG 节点', '/scheduling/dag/{dagId}/version/{versionId}/node', 'POST', 'scheduling:console:config'),
+                ('dag-node-update', '更新 DAG 节点', '/scheduling/dag/{dagId}/version/{versionId}/node/{nodeId}', 'PUT', 'scheduling:console:config'),
+                ('dag-node-delete', '删除 DAG 节点', '/scheduling/dag/{dagId}/version/{versionId}/node/{nodeId}', 'DELETE', 'scheduling:console:config'),
+                ('dag-node-detail', '读取 DAG 节点', '/scheduling/dag/{dagId}/version/{versionId}/node/{nodeId}', 'GET', 'scheduling:console:view'),
+                ('dag-node-list', '查询 DAG 节点', '/scheduling/dag/{dagId}/version/{versionId}/nodes', 'GET', 'scheduling:console:view'),
+                ('dag-node-upstream', '查询 DAG 上游节点', '/scheduling/dag/{dagId}/version/{versionId}/node/{nodeId}/up', 'GET', 'scheduling:console:view'),
+                ('dag-node-downstream', '查询 DAG 下游节点', '/scheduling/dag/{dagId}/version/{versionId}/node/{nodeId}/down', 'GET', 'scheduling:console:view'),
+                ('dag-edge-create', '创建 DAG 依赖', '/scheduling/dag/{dagId}/version/{versionId}/edge', 'POST', 'scheduling:console:config'),
+                ('dag-edge-delete', '删除 DAG 依赖', '/scheduling/dag/{dagId}/version/{versionId}/edge/{edgeId}', 'DELETE', 'scheduling:console:config'),
+                ('dag-edge-list', '查询 DAG 依赖', '/scheduling/dag/{dagId}/version/{versionId}/edges', 'GET', 'scheduling:console:view'),
+                ('dag-stats', '查询 DAG 统计', '/scheduling/dag/{dagId}/stats', 'GET', 'scheduling:console:view'),
+                ('dag-trigger', '触发 DAG', '/scheduling/dag/{dagId}/trigger', 'POST', 'scheduling:run:control'),
+                ('dag-pause', '暂停 DAG', '/scheduling/dag/{dagId}/pause', 'POST', 'scheduling:run:control'),
+                ('dag-resume', '恢复 DAG', '/scheduling/dag/{dagId}/resume', 'POST', 'scheduling:run:control'),
+                ('dag-stop', '停止 DAG', '/scheduling/dag/{dagId}/stop', 'POST', 'scheduling:run:control'),
+                ('dag-run-stop', '停止 DAG 运行', '/scheduling/dag/{dagId}/run/{runId}/stop', 'POST', 'scheduling:run:control'),
+                ('dag-retry', '重试 DAG', '/scheduling/dag/{dagId}/retry', 'POST', 'scheduling:run:control'),
+                ('dag-run-retry', '重试 DAG 运行', '/scheduling/dag/{dagId}/run/{runId}/retry', 'POST', 'scheduling:run:control'),
+                ('dag-node-trigger', '触发 DAG 节点', '/scheduling/dag/{dagId}/node/{nodeId}/trigger', 'POST', 'scheduling:run:control'),
+                ('dag-run-node-trigger', '触发运行节点', '/scheduling/dag/{dagId}/run/{runId}/node/{nodeId}/trigger', 'POST', 'scheduling:run:control'),
+                ('dag-node-retry', '重试 DAG 节点', '/scheduling/dag/{dagId}/node/{nodeId}/retry', 'POST', 'scheduling:run:control'),
+                ('dag-run-node-retry', '重试运行节点', '/scheduling/dag/{dagId}/run/{runId}/node/{nodeId}/retry', 'POST', 'scheduling:run:control'),
+                ('dag-node-pause', '暂停 DAG 节点', '/scheduling/dag/{dagId}/node/{nodeId}/pause', 'POST', 'scheduling:run:control'),
+                ('dag-run-node-pause', '暂停运行节点', '/scheduling/dag/{dagId}/run/{runId}/node/{nodeId}/pause', 'POST', 'scheduling:run:control'),
+                ('dag-node-resume', '恢复 DAG 节点', '/scheduling/dag/{dagId}/node/{nodeId}/resume', 'POST', 'scheduling:run:control'),
+                ('dag-run-node-resume', '恢复运行节点', '/scheduling/dag/{dagId}/run/{runId}/node/{nodeId}/resume', 'POST', 'scheduling:run:control'),
+                ('dag-run-list', '查询 DAG 运行历史', '/scheduling/dag/{dagId}/runs', 'GET', 'scheduling:console:view'),
+                ('dag-run-detail', '读取 DAG 运行', '/scheduling/dag/{dagId}/run/{runId}', 'GET', 'scheduling:console:view'),
+                ('dag-run-node-list', '查询 DAG 运行节点', '/scheduling/dag/{dagId}/run/{runId}/nodes', 'GET', 'scheduling:console:view'),
+                ('dag-run-node-detail', '读取 DAG 运行节点', '/scheduling/dag/{dagId}/run/{runId}/node/{nodeId}', 'GET', 'scheduling:console:view'),
+                ('task-instance-log', '读取任务实例日志', '/scheduling/task-instance/{instanceId}/log', 'GET', 'scheduling:console:view'),
+                ('task-history-detail', '读取任务执行历史', '/scheduling/task-history/{historyId}', 'GET', 'scheduling:console:view'),
+                ('audit-list', '查询调度审计', '/scheduling/audit/list', 'GET', 'scheduling:audit:view'),
+                ('task-param-detail', '读取任务默认参数', '/scheduling/task-param/{taskId}', 'GET', 'scheduling:console:view'),
+                ('cluster-status', '查询调度集群状态', '/scheduling/quartz/cluster-status', 'GET', 'scheduling:cluster:view');
+
+              -- 每个 scope 只在同 scope 已存在且启用规范权限时建立载体；不会凭空扩大租户能力。
+              INSERT INTO api_endpoint (
+                tenant_id, resource_level, name, title, uri, method, permission,
+                required_permission_id, enabled, created_at, created_by, updated_at, updated_by
+              )
+              SELECT
+                target_permission.tenant_id,
+                CASE WHEN target_permission.tenant_id IS NULL THEN 'PLATFORM' ELSE 'TENANT' END,
+                CONCAT('scheduling-controller-', canonical_route.route_key),
+                canonical_route.endpoint_title,
+                canonical_route.canonical_uri,
+                canonical_route.canonical_method,
+                canonical_route.permission_code,
+                target_permission.id,
+                1,
+                CURRENT_TIMESTAMP,
+                NULL,
+                CURRENT_TIMESTAMP,
+                NULL
+              FROM tmp_scheduling_controller_route canonical_route
+              JOIN permission target_permission
+                ON target_permission.permission_code = canonical_route.permission_code
+               AND target_permission.enabled = 1
+              WHERE NOT EXISTS (
+                SELECT 1
+                FROM api_endpoint existing_endpoint
+                WHERE existing_endpoint.tenant_id <=> target_permission.tenant_id
+                  AND UPPER(TRIM(existing_endpoint.method)) = canonical_route.canonical_method
+                  AND CASE
+                    WHEN CHAR_LENGTH(TRIM(existing_endpoint.uri)) > 1
+                     AND RIGHT(TRIM(existing_endpoint.uri), 1) = '/'
+                    THEN LEFT(TRIM(existing_endpoint.uri), CHAR_LENGTH(TRIM(existing_endpoint.uri)) - 1)
+                    ELSE TRIM(existing_endpoint.uri)
+                  END = canonical_route.canonical_uri
+              );
+
+              -- 对历史通配 requirement 原位改为 Controller guard 对应的细粒度权限。
+              UPDATE api_endpoint endpoint_entry
+              JOIN tmp_scheduling_controller_route canonical_route
+                ON UPPER(TRIM(endpoint_entry.method)) = canonical_route.canonical_method
+               AND CASE
+                 WHEN CHAR_LENGTH(TRIM(endpoint_entry.uri)) > 1
+                  AND RIGHT(TRIM(endpoint_entry.uri), 1) = '/'
+                 THEN LEFT(TRIM(endpoint_entry.uri), CHAR_LENGTH(TRIM(endpoint_entry.uri)) - 1)
+                 ELSE TRIM(endpoint_entry.uri)
+               END = canonical_route.canonical_uri
+              JOIN permission target_permission
+                ON target_permission.tenant_id <=> endpoint_entry.tenant_id
+               AND target_permission.permission_code = canonical_route.permission_code
+               AND target_permission.enabled = 1
+              SET
+                endpoint_entry.resource_level = CASE WHEN endpoint_entry.tenant_id IS NULL THEN 'PLATFORM' ELSE 'TENANT' END,
+                endpoint_entry.name = CONCAT('scheduling-controller-', canonical_route.route_key),
+                endpoint_entry.title = canonical_route.endpoint_title,
+                endpoint_entry.uri = canonical_route.canonical_uri,
+                endpoint_entry.method = canonical_route.canonical_method,
+                endpoint_entry.permission = canonical_route.permission_code,
+                endpoint_entry.required_permission_id = target_permission.id,
+                endpoint_entry.enabled = 1,
+                endpoint_entry.updated_at = CURRENT_TIMESTAMP,
+                endpoint_entry.updated_by = NULL;
+
+              DELETE requirement_entry
+              FROM api_endpoint_permission_requirement requirement_entry
+              JOIN api_endpoint endpoint_entry
+                ON endpoint_entry.id = requirement_entry.api_endpoint_id
+              JOIN tmp_scheduling_controller_route canonical_route
+                ON endpoint_entry.method = canonical_route.canonical_method
+               AND endpoint_entry.uri = canonical_route.canonical_uri
+              WHERE endpoint_entry.required_permission_id IS NOT NULL;
+
+              INSERT INTO api_endpoint_permission_requirement (
+                tenant_id, api_endpoint_id, requirement_group, sort_order,
+                permission_id, negated, created_at, created_by, updated_at, updated_by
+              )
+              SELECT
+                endpoint_entry.tenant_id,
+                endpoint_entry.id,
+                0,
+                1,
+                endpoint_entry.required_permission_id,
+                0,
+                CURRENT_TIMESTAMP,
+                NULL,
+                CURRENT_TIMESTAMP,
+                NULL
+              FROM api_endpoint endpoint_entry
+              JOIN tmp_scheduling_controller_route canonical_route
+                ON endpoint_entry.method = canonical_route.canonical_method
+               AND endpoint_entry.uri = canonical_route.canonical_uri
+              WHERE endpoint_entry.required_permission_id IS NOT NULL;
+
+              DROP TEMPORARY TABLE tmp_scheduling_controller_route;

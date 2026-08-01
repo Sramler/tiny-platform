@@ -211,6 +211,33 @@ class TenantContextFilterTest {
     }
 
     @Test
+    void shouldPassAnonymousCurrentUserProbeToSpringSecurityWithoutTenantContext() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/sys/users/current");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        AtomicBoolean chainRan = new AtomicBoolean(false);
+
+        filter.doFilter(request, response, (req, resp) -> chainRan.set(true));
+
+        assertThat(chainRan.get()).isTrue();
+        assertThat(response.getStatus()).isEqualTo(200);
+        verify(tenantRepository, never()).findLoginBlockedLifecycleStatus(anyLong());
+    }
+
+    @Test
+    void shouldNotBypassCurrentUserProbeWhenBearerIsPresent() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/sys/users/current");
+        request.addHeader("Authorization", "Bearer invalid-token-without-tenant");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, (req, resp) -> {
+            throw new AssertionError("filter chain should not be executed");
+        });
+
+        assertThat(response.getStatus()).isEqualTo(400);
+        assertThat(response.getContentAsString()).contains("missing_tenant");
+    }
+
+    @Test
     void defaultIssuerOauth2TokenPostSkipsTenantContextFilter() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/oauth2/token");
         MockHttpServletResponse response = new MockHttpServletResponse();

@@ -13,10 +13,12 @@
 - **AI 测试任务模板**：`docs/TINY_PLATFORM_AI_TEST_TASK_TEMPLATE.md`
 - **门禁豁免政策**：`docs/TINY_PLATFORM_CI_WAIVER_POLICY.md`
 - **测试数据库残留治理基线**：`tiny-oauth-server/scripts/verify-test-db-residuals.sh`
+- **Controller / API 载体真实库漂移门禁**：`tiny-oauth-server/scripts/verify-api-endpoint-controller-drift.sh`
 - **权限标识规范**：`docs/TINY_PLATFORM_PERMISSION_IDENTIFIER_SPEC.md`
 - **测试数据命名与清理规范**：`docs/TINY_PLATFORM_TEST_ACCOUNT_NAMING_AND_CLEANUP_RULES.md`
 - **授权模型与重构方案**：`docs/TINY_PLATFORM_AUTHORIZATION_MODEL.md`
 - **Session / Bearer 认证来源矩阵**：`docs/TINY_PLATFORM_SESSION_BEARER_AUTH_MATRIX.md`（含 **`/sys/users/current` 读 vs `/active-scope` 写的 M4 分口径**，§8）
+- **BFF / Session / Cookie 规范与复盘**：`docs/TINY_PLATFORM_BFF_SESSION_NORMALIZATION_TASKS.md`
 - **前端启动 / 认证编排说明**：`tiny-oauth-server/src/main/webapp/docs/features/STARTUP_AUTH_BOOTSTRAP.md`
 - **功能权限 + 数据权限分层总图**：`docs/TINY_PLATFORM_AUTHORIZATION_LAYERED_MODEL.md`
 - **下一阶段变更与改进清单**：`docs/TINY_PLATFORM_AUTHORIZATION_NEXT_PHASE_AND_IMPROVEMENTS.md`
@@ -129,6 +131,8 @@
 - 认证：JWT / Session 混合策略（按客户端来源切换）
 - 前端：Vue3 + Ant Design Vue
 - 安全：RS256 JWT + JWK Set + MFA(TOTP)
+- Web 默认同源 BFF/HttpOnly Session：浏览器不保存或发送 access/refresh token，不使用 `/api` 伪前缀；memory/JDBC/Redis 只切换 Session 存储，不改变 Cookie/CSRF/失效语义
+- 页面授权按完整 API 依赖闭包治理；`URI_TEMPLATE_NOT_MATCHED`/`candidateCount=0` 是载体缺失或漂移，不等于用户缺权限，更不等于 token 问题
 - 新签发 access token 的 `authorities` / `permissions` / `roleCodes` 与 `permissionsVersion` 必须来自同一份当前运行时授权快照；若可按当前 active scope 重载权威链，不得只刷新 `permissionsVersion` 而继续复用登录期 `SecurityUser` 快照，尤其 `PLATFORM` 作用域
 - `permissionsVersion` 只表达授权快照漂移；用户禁用/删除、密码重置、TOTP 解绑/重绑等强制失效必须走 `tokenSecurityVersion` / `tokenNotBefore`，前端收到 `token_revoked` 不做 silent retry，直接清理运行态并重新登录
 - 菜单结构/路由/显隐/排序/菜单权限 requirement 变化必须走 `runtime_version_signal` 的 `MENU_CONFIG` 版本域与 `/sys/menus/tree` ETag 校验；禁止使用无版本失效机制的浏览器本地菜单缓存作为权限或路由真相源

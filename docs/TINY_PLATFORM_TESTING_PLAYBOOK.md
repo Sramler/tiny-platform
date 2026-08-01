@@ -152,6 +152,7 @@
   - 执行命令
   - existing DB 还是 fresh DB 路径
   - 是“changeset 已执行并成功越过 Liquibase”还是“未执行/被环境阻塞”
+- 涉及受保护 Controller 或 `api_endpoint` 时，还必须执行 `bash tiny-oauth-server/scripts/verify-api-endpoint-controller-drift.sh`；该门禁使用真实 MySQL 比较 MVC method/template、scope 载体、主 permission 与 requirement，`exit 2` 仅表示环境前置不足。
 
 补充边界：
 
@@ -530,8 +531,9 @@
 - trace / screenshot / 视频 / seed 日志
 
 认证授权主线（当前最低建议）：
-- 将 `e2e/real/active-scope-token-refresh.spec.ts` 纳入 Nightly real-link 门禁，锁定租户态身份前置、`tokenRefreshRequired` 写链、`prompt=none` 静默续签与 Bearer 复验。
-- 该用例应使用 globalSetup 派生租户态 storageState（`e2e/.auth/scheduling-tenant-user.json`），避免平台态身份导致 `activeTenantId` 缺失产生伪失败。
+- 将 `e2e/real/active-scope-token-refresh.spec.ts` 纳入 Nightly real-link 门禁；该历史文件名当前覆盖的是 BFF Session active-scope 写链：`tokenRefreshRequired=false`、不触发 `prompt=none`、写后仍由同一 HttpOnly Session 读取当前用户。
+- 该用例应使用 globalSetup 派生的租户态 **Session-only** storageState（`e2e/.auth/scheduling-user.json`）；storageState 必须有 HttpOnly `JSESSIONID` 且不得出现 `oidc.user:*`、access/refresh token。平台态身份仍会因缺失租户 `activeTenantId` 造成前提错误。
+- `platform-vue-login.spec.ts` 与 `session-management-pages.spec.ts` 负责锁定真实登录、Session id 轮换、同源业务闭包、无 Authorization/token storage、CSRF logout 和旧 Session 失效；不得再用 Bearer 兼容用例替代 Web 默认主链证据。
 - Nightly real-link 运行前必须满足授权 schema 基线：数据库存在 `role_permission` 表；`ensure-scheduling-e2e-auth.sh` 不再回退 `role_resource`。若缺失基线，workflow 应在执行 E2E 前 fail-fast 并输出迁移提示。
 
 建议：

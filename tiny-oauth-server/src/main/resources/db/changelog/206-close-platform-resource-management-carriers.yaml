@@ -1,0 +1,436 @@
+databaseChangeLog:
+  - changeSet:
+      id: 206-close-platform-resource-management-carriers
+      author: codex
+      comment: 以固定规范清单闭合 PLATFORM 资源管理页 ui_action、写接口、requirement 与平台管理员授权
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: menu
+            - tableExists:
+                tableName: ui_action
+            - tableExists:
+                tableName: api_endpoint
+            - tableExists:
+                tableName: permission
+            - tableExists:
+                tableName: role
+            - tableExists:
+                tableName: role_permission
+            - tableExists:
+                tableName: ui_action_permission_requirement
+            - tableExists:
+                tableName: api_endpoint_permission_requirement
+            - sqlCheck:
+                expectedResult: "1"
+                sql: |
+                  SELECT CASE WHEN COUNT(*) > 0 THEN 1 ELSE 0 END
+                  FROM `menu`
+                  WHERE `tenant_id` IS NULL
+                    AND `path` = '/system/resource'
+            - sqlCheck:
+                expectedResult: "1"
+                sql: |
+                  SELECT COUNT(*)
+                  FROM `role`
+                  WHERE `tenant_id` IS NULL
+                    AND `role_level` = 'PLATFORM'
+                    AND `code` = 'ROLE_PLATFORM_ADMIN'
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              -- 1) 固定声明 PLATFORM 资源管理写权限；不再从任一 tenant ui_action 反推模板。
+              --    INSERT IGNORE 仅补缺失主数据，不重启用既有 disabled 权限，也不改变既有治理属性。
+              INSERT IGNORE INTO `permission` (
+                `permission_code`,
+                `permission_name`,
+                `module_code`,
+                `action_code`,
+                `permission_type`,
+                `description`,
+                `enabled`,
+                `built_in_flag`,
+                `tenant_id`,
+                `created_by`,
+                `created_at`,
+                `updated_by`,
+                `updated_at`
+              ) VALUES
+                (
+                  'system:resource:create', '资源新增', 'system', 'create', 'BUTTON',
+                  'PLATFORM 资源管理创建权限', 1, 1, NULL, NULL, NOW(), NULL, NOW()
+                ),
+                (
+                  'system:resource:edit', '资源编辑', 'system', 'edit', 'BUTTON',
+                  'PLATFORM 资源管理编辑权限', 1, 1, NULL, NULL, NOW(), NULL, NOW()
+                ),
+                (
+                  'system:resource:delete', '资源删除', 'system', 'delete', 'BUTTON',
+                  'PLATFORM 资源管理删除权限', 1, 1, NULL, NULL, NOW(), NULL, NOW()
+                ),
+                (
+                  'system:resource:batch-delete', '资源批量删除', 'system', 'batch-delete', 'BUTTON',
+                  'PLATFORM 资源管理批量删除权限', 1, 1, NULL, NULL, NOW(), NULL, NOW()
+                );
+
+              -- 2) 先按固定 action_key/name 修复 permission 串线，再按 permission 收敛完整字段。
+              UPDATE `ui_action` action_entry
+              JOIN (
+                SELECT 'resource-create-authority' AS `action_key`,
+                       'system:resource:create' AS `permission_code`
+                UNION ALL
+                SELECT 'resource-edit-authority', 'system:resource:edit'
+                UNION ALL
+                SELECT 'resource-delete-authority', 'system:resource:delete'
+                UNION ALL
+                SELECT 'resource-batch-delete-authority', 'system:resource:batch-delete'
+              ) action_spec
+                ON action_entry.`action_key` = action_spec.`action_key`
+                OR action_entry.`name` = action_spec.`action_key`
+              JOIN `permission` canonical_permission
+                ON canonical_permission.`tenant_id` IS NULL
+               AND canonical_permission.`permission_code` = action_spec.`permission_code`
+              JOIN (
+                SELECT MIN(`id`) AS `id`
+                FROM `menu`
+                WHERE `tenant_id` IS NULL
+                  AND `path` = '/system/resource'
+              ) resource_menu
+                ON resource_menu.`id` IS NOT NULL
+              SET
+                action_entry.`tenant_id` = NULL,
+                action_entry.`resource_level` = 'PLATFORM',
+                action_entry.`page_path` = '/system/resource',
+                action_entry.`permission` = action_spec.`permission_code`,
+                action_entry.`required_permission_id` = canonical_permission.`id`,
+                action_entry.`parent_menu_id` = resource_menu.`id`,
+                action_entry.`enabled` = 1,
+                action_entry.`updated_at` = NOW(),
+                action_entry.`updated_by` = NULL
+              WHERE action_entry.`tenant_id` IS NULL
+                AND (
+                  action_entry.`page_path` = '/system/resource'
+                  OR action_entry.`parent_menu_id` = resource_menu.`id`
+                  OR action_entry.`permission` LIKE 'system:resource:%'
+                );
+
+              UPDATE `ui_action` action_entry
+              JOIN (
+                SELECT 'resource-create-authority' AS `name`, '资源新增' AS `title`,
+                       'resource-create-authority' AS `action_key`,
+                       'system:resource:create' AS `permission_code`, 401 AS `sort_order`
+                UNION ALL
+                SELECT 'resource-edit-authority', '资源编辑', 'resource-edit-authority',
+                       'system:resource:edit', 402
+                UNION ALL
+                SELECT 'resource-delete-authority', '资源删除', 'resource-delete-authority',
+                       'system:resource:delete', 403
+                UNION ALL
+                SELECT 'resource-batch-delete-authority', '资源批量删除',
+                       'resource-batch-delete-authority', 'system:resource:batch-delete', 404
+              ) action_spec
+                ON action_entry.`permission` = action_spec.`permission_code`
+              JOIN `permission` canonical_permission
+                ON canonical_permission.`tenant_id` IS NULL
+               AND canonical_permission.`permission_code` = action_spec.`permission_code`
+              JOIN (
+                SELECT MIN(`id`) AS `id`
+                FROM `menu`
+                WHERE `tenant_id` IS NULL
+                  AND `path` = '/system/resource'
+              ) resource_menu
+                ON resource_menu.`id` IS NOT NULL
+              SET
+                action_entry.`resource_level` = 'PLATFORM',
+                action_entry.`name` = action_spec.`name`,
+                action_entry.`title` = action_spec.`title`,
+                action_entry.`action_key` = action_spec.`action_key`,
+                action_entry.`page_path` = '/system/resource',
+                action_entry.`permission` = action_spec.`permission_code`,
+                action_entry.`required_permission_id` = canonical_permission.`id`,
+                action_entry.`parent_menu_id` = resource_menu.`id`,
+                action_entry.`sort` = action_spec.`sort_order`,
+                action_entry.`enabled` = 1,
+                action_entry.`updated_at` = NOW(),
+                action_entry.`updated_by` = NULL
+              WHERE action_entry.`tenant_id` IS NULL;
+
+              INSERT INTO `ui_action` (
+                `tenant_id`,
+                `resource_level`,
+                `name`,
+                `title`,
+                `action_key`,
+                `page_path`,
+                `permission`,
+                `required_permission_id`,
+                `parent_menu_id`,
+                `sort`,
+                `enabled`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                NULL,
+                'PLATFORM',
+                action_spec.`name`,
+                action_spec.`title`,
+                action_spec.`action_key`,
+                '/system/resource',
+                action_spec.`permission_code`,
+                canonical_permission.`id`,
+                resource_menu.`id`,
+                action_spec.`sort_order`,
+                1,
+                NOW(),
+                NULL,
+                NOW(),
+                NULL
+              FROM (
+                SELECT 'resource-create-authority' AS `name`, '资源新增' AS `title`,
+                       'resource-create-authority' AS `action_key`,
+                       'system:resource:create' AS `permission_code`, 401 AS `sort_order`
+                UNION ALL
+                SELECT 'resource-edit-authority', '资源编辑', 'resource-edit-authority',
+                       'system:resource:edit', 402
+                UNION ALL
+                SELECT 'resource-delete-authority', '资源删除', 'resource-delete-authority',
+                       'system:resource:delete', 403
+                UNION ALL
+                SELECT 'resource-batch-delete-authority', '资源批量删除',
+                       'resource-batch-delete-authority', 'system:resource:batch-delete', 404
+              ) action_spec
+              JOIN `permission` canonical_permission
+                ON canonical_permission.`tenant_id` IS NULL
+               AND canonical_permission.`permission_code` = action_spec.`permission_code`
+              JOIN (
+                SELECT MIN(`id`) AS `id`
+                FROM `menu`
+                WHERE `tenant_id` IS NULL
+                  AND `path` = '/system/resource'
+              ) resource_menu
+                ON resource_menu.`id` IS NOT NULL
+              WHERE NOT EXISTS (
+                SELECT 1
+                FROM `ui_action` existing_action
+                WHERE existing_action.`tenant_id` IS NULL
+                  AND existing_action.`permission` = action_spec.`permission_code`
+              );
+
+              -- 3) 这四个按钮只保留各自规范 permission 的兼容组，避免历史 requirement 串线。
+              DELETE requirement_entry
+              FROM `ui_action_permission_requirement` requirement_entry
+              JOIN `ui_action` action_entry
+                ON action_entry.`id` = requirement_entry.`ui_action_id`
+              WHERE action_entry.`tenant_id` IS NULL
+                AND action_entry.`page_path` = '/system/resource'
+                AND action_entry.`permission` IN (
+                  'system:resource:create',
+                  'system:resource:edit',
+                  'system:resource:delete',
+                  'system:resource:batch-delete'
+                );
+
+              INSERT INTO `ui_action_permission_requirement` (
+                `tenant_id`,
+                `ui_action_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                NULL,
+                action_entry.`id`,
+                0,
+                1,
+                canonical_permission.`id`,
+                0,
+                NOW(),
+                NULL,
+                NOW(),
+                NULL
+              FROM `ui_action` action_entry
+              JOIN `permission` canonical_permission
+                ON canonical_permission.`tenant_id` IS NULL
+               AND canonical_permission.`permission_code` = action_entry.`permission`
+              WHERE action_entry.`tenant_id` IS NULL
+                AND action_entry.`page_path` = '/system/resource'
+                AND action_entry.`permission` IN (
+                  'system:resource:create',
+                  'system:resource:edit',
+                  'system:resource:delete',
+                  'system:resource:batch-delete'
+                );
+
+              -- 4) 以 method + uri 为接口身份，校正存量 permission 漂移并补齐缺失端点。
+              UPDATE `api_endpoint` endpoint_entry
+              JOIN (
+                SELECT 'platform-foundation-post--sys-resources' AS `name`,
+                       '创建资源' AS `title`, '/sys/resources' AS `uri`, 'POST' AS `method`,
+                       'system:resource:create' AS `permission_code`
+                UNION ALL
+                SELECT 'platform-foundation-put--sys-resources-id', '更新资源',
+                       '/sys/resources/{id}', 'PUT', 'system:resource:edit'
+                UNION ALL
+                SELECT 'platform-foundation-delete--sys-resources-id', '删除资源',
+                       '/sys/resources/{id}', 'DELETE', 'system:resource:delete'
+                UNION ALL
+                SELECT 'platform-foundation-post--sys-resources-batch-delete', '批量删除资源',
+                       '/sys/resources/batch/delete', 'POST', 'system:resource:batch-delete'
+              ) endpoint_spec
+                ON UPPER(TRIM(endpoint_entry.`method`)) = endpoint_spec.`method`
+               AND TRIM(TRAILING '/' FROM TRIM(endpoint_entry.`uri`)) = endpoint_spec.`uri`
+              JOIN `permission` canonical_permission
+                ON canonical_permission.`tenant_id` IS NULL
+               AND canonical_permission.`permission_code` = endpoint_spec.`permission_code`
+              SET
+                endpoint_entry.`resource_level` = 'PLATFORM',
+                endpoint_entry.`uri` = endpoint_spec.`uri`,
+                endpoint_entry.`method` = endpoint_spec.`method`,
+                endpoint_entry.`permission` = endpoint_spec.`permission_code`,
+                endpoint_entry.`required_permission_id` = canonical_permission.`id`,
+                endpoint_entry.`enabled` = 1,
+                endpoint_entry.`updated_at` = NOW(),
+                endpoint_entry.`updated_by` = NULL
+              WHERE endpoint_entry.`tenant_id` IS NULL;
+
+              INSERT INTO `api_endpoint` (
+                `tenant_id`,
+                `resource_level`,
+                `name`,
+                `title`,
+                `uri`,
+                `method`,
+                `permission`,
+                `required_permission_id`,
+                `enabled`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                NULL,
+                'PLATFORM',
+                endpoint_spec.`name`,
+                endpoint_spec.`title`,
+                endpoint_spec.`uri`,
+                endpoint_spec.`method`,
+                endpoint_spec.`permission_code`,
+                canonical_permission.`id`,
+                1,
+                NOW(),
+                NULL,
+                NOW(),
+                NULL
+              FROM (
+                SELECT 'platform-foundation-post--sys-resources' AS `name`,
+                       '创建资源' AS `title`, '/sys/resources' AS `uri`, 'POST' AS `method`,
+                       'system:resource:create' AS `permission_code`
+                UNION ALL
+                SELECT 'platform-foundation-put--sys-resources-id', '更新资源',
+                       '/sys/resources/{id}', 'PUT', 'system:resource:edit'
+                UNION ALL
+                SELECT 'platform-foundation-delete--sys-resources-id', '删除资源',
+                       '/sys/resources/{id}', 'DELETE', 'system:resource:delete'
+                UNION ALL
+                SELECT 'platform-foundation-post--sys-resources-batch-delete', '批量删除资源',
+                       '/sys/resources/batch/delete', 'POST', 'system:resource:batch-delete'
+              ) endpoint_spec
+              JOIN `permission` canonical_permission
+                ON canonical_permission.`tenant_id` IS NULL
+               AND canonical_permission.`permission_code` = endpoint_spec.`permission_code`
+              WHERE NOT EXISTS (
+                SELECT 1
+                FROM `api_endpoint` existing_endpoint
+                WHERE existing_endpoint.`tenant_id` IS NULL
+                  AND UPPER(TRIM(existing_endpoint.`method`)) = endpoint_spec.`method`
+                  AND TRIM(TRAILING '/' FROM TRIM(existing_endpoint.`uri`)) = endpoint_spec.`uri`
+              );
+
+              -- 5) 写接口同样只保留其 canonical permission 的兼容组。
+              DELETE requirement_entry
+              FROM `api_endpoint_permission_requirement` requirement_entry
+              JOIN `api_endpoint` endpoint_entry
+                ON endpoint_entry.`id` = requirement_entry.`api_endpoint_id`
+              WHERE endpoint_entry.`tenant_id` IS NULL
+                AND (
+                  (endpoint_entry.`method` = 'POST' AND endpoint_entry.`uri` = '/sys/resources')
+                  OR (endpoint_entry.`method` = 'PUT' AND endpoint_entry.`uri` = '/sys/resources/{id}')
+                  OR (endpoint_entry.`method` = 'DELETE' AND endpoint_entry.`uri` = '/sys/resources/{id}')
+                  OR (endpoint_entry.`method` = 'POST' AND endpoint_entry.`uri` = '/sys/resources/batch/delete')
+                );
+
+              INSERT INTO `api_endpoint_permission_requirement` (
+                `tenant_id`,
+                `api_endpoint_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                NULL,
+                endpoint_entry.`id`,
+                0,
+                1,
+                endpoint_entry.`required_permission_id`,
+                0,
+                NOW(),
+                NULL,
+                NOW(),
+                NULL
+              FROM `api_endpoint` endpoint_entry
+              WHERE endpoint_entry.`tenant_id` IS NULL
+                AND endpoint_entry.`required_permission_id` IS NOT NULL
+                AND (
+                  (endpoint_entry.`method` = 'POST' AND endpoint_entry.`uri` = '/sys/resources')
+                  OR (endpoint_entry.`method` = 'PUT' AND endpoint_entry.`uri` = '/sys/resources/{id}')
+                  OR (endpoint_entry.`method` = 'DELETE' AND endpoint_entry.`uri` = '/sys/resources/{id}')
+                  OR (endpoint_entry.`method` = 'POST' AND endpoint_entry.`uri` = '/sys/resources/batch/delete')
+                );
+
+              -- 6) 仅向 PLATFORM 的 ROLE_PLATFORM_ADMIN 绑定这四项权限，不改变其他角色。
+              INSERT IGNORE INTO `role_permission` (
+                `tenant_id`,
+                `role_id`,
+                `permission_id`,
+                `created_by`,
+                `created_at`
+              )
+              SELECT
+                NULL,
+                platform_admin.`id`,
+                canonical_permission.`id`,
+                NULL,
+                NOW()
+              FROM `role` platform_admin
+              JOIN `permission` canonical_permission
+                ON canonical_permission.`tenant_id` IS NULL
+               AND canonical_permission.`permission_code` IN (
+                 'system:resource:create',
+                 'system:resource:edit',
+                 'system:resource:delete',
+                 'system:resource:batch-delete'
+               )
+              WHERE platform_admin.`tenant_id` IS NULL
+                AND platform_admin.`role_level` = 'PLATFORM'
+                AND platform_admin.`code` = 'ROLE_PLATFORM_ADMIN';

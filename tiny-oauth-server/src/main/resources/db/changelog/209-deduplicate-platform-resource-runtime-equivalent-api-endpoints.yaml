@@ -1,0 +1,214 @@
+databaseChangeLog:
+  - changeSet:
+      id: 209-deduplicate-platform-resource-runtime-equivalent-api-endpoints
+      author: codex
+      comment: 按运行时 URI 模板语义收敛 PLATFORM 资源管理写接口，避免尾斜杠或占位符异名形成多个守卫候选
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: permission
+            - tableExists:
+                tableName: api_endpoint
+            - tableExists:
+                tableName: api_endpoint_permission_requirement
+            - sqlCheck:
+                expectedResult: "0"
+                sql: |
+                  SELECT COUNT(*)
+                  FROM (
+                    SELECT 'system:resource:create' AS permission_code
+                    UNION ALL SELECT 'system:resource:edit'
+                    UNION ALL SELECT 'system:resource:delete'
+                    UNION ALL SELECT 'system:resource:batch-delete'
+                  ) canonical_permission
+                  WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM permission existing_permission
+                    WHERE existing_permission.tenant_id IS NULL
+                      AND existing_permission.permission_code = canonical_permission.permission_code
+                  )
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              -- ResourceServiceImpl 会 trim URI、移除一个尾斜杠，并把任意非空整段
+              -- {placeholder} 视为相同模板；字面 method+uri 去重无法防止 ENDPOINT_AMBIGUOUS。
+              DROP TEMPORARY TABLE IF EXISTS tmp_resource_endpoint_route;
+              DROP TEMPORARY TABLE IF EXISTS tmp_resource_endpoint_candidate;
+              DROP TEMPORARY TABLE IF EXISTS tmp_resource_endpoint_keeper;
+
+              CREATE TEMPORARY TABLE tmp_resource_endpoint_route (
+                route_key VARCHAR(64) NOT NULL,
+                endpoint_name VARCHAR(100) NOT NULL,
+                endpoint_title VARCHAR(100) NOT NULL,
+                canonical_uri VARCHAR(200) NOT NULL,
+                canonical_method VARCHAR(10) NOT NULL,
+                permission_code VARCHAR(100) NOT NULL,
+                template_kind TINYINT NOT NULL DEFAULT 0,
+                PRIMARY KEY (route_key)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+              INSERT INTO tmp_resource_endpoint_route (
+                route_key, endpoint_name, endpoint_title, canonical_uri,
+                canonical_method, permission_code, template_kind
+              ) VALUES
+                ('resource-create', 'platform-foundation-post--sys-resources', '创建资源',
+                 '/sys/resources', 'POST', 'system:resource:create', 0),
+                ('resource-update', 'platform-foundation-put--sys-resources-id', '更新资源',
+                 '/sys/resources/{id}', 'PUT', 'system:resource:edit', 1),
+                ('resource-sort', 'platform-foundation-put--sys-resources-id-sort', '更新资源排序',
+                 '/sys/resources/{id}/sort', 'PUT', 'system:resource:edit', 2),
+                ('resource-delete', 'platform-foundation-delete--sys-resources-id', '删除资源',
+                 '/sys/resources/{id}', 'DELETE', 'system:resource:delete', 1),
+                ('resource-batch-delete', 'platform-foundation-post--sys-resources-batch-delete', '批量删除资源',
+                 '/sys/resources/batch/delete', 'POST', 'system:resource:batch-delete', 0);
+
+              CREATE TEMPORARY TABLE tmp_resource_endpoint_candidate (
+                endpoint_id BIGINT NOT NULL,
+                route_key VARCHAR(64) NOT NULL,
+                endpoint_name VARCHAR(100) NOT NULL,
+                endpoint_title VARCHAR(100) NOT NULL,
+                canonical_uri VARCHAR(200) NOT NULL,
+                canonical_method VARCHAR(10) NOT NULL,
+                permission_code VARCHAR(100) NOT NULL,
+                exact_preferred TINYINT(1) NOT NULL,
+                PRIMARY KEY (endpoint_id),
+                KEY idx_tmp_resource_candidate_route (route_key)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+              INSERT INTO tmp_resource_endpoint_candidate (
+                endpoint_id, route_key, endpoint_name, endpoint_title,
+                canonical_uri, canonical_method, permission_code, exact_preferred
+              )
+              SELECT
+                endpoint_entry.id,
+                canonical_route.route_key,
+                canonical_route.endpoint_name,
+                canonical_route.endpoint_title,
+                canonical_route.canonical_uri,
+                canonical_route.canonical_method,
+                canonical_route.permission_code,
+                CASE
+                  WHEN endpoint_entry.resource_level = 'PLATFORM'
+                   AND endpoint_entry.method = canonical_route.canonical_method
+                   AND endpoint_entry.uri = canonical_route.canonical_uri
+                  THEN 1 ELSE 0
+                END
+              FROM tmp_resource_endpoint_route canonical_route
+              JOIN api_endpoint endpoint_entry
+                ON endpoint_entry.tenant_id IS NULL
+               AND UPPER(TRIM(endpoint_entry.method)) = canonical_route.canonical_method
+               AND (
+                 (
+                   canonical_route.template_kind = 0
+                   AND CASE
+                     WHEN CHAR_LENGTH(TRIM(endpoint_entry.uri)) > 1
+                      AND RIGHT(TRIM(endpoint_entry.uri), 1) = '/'
+                     THEN LEFT(TRIM(endpoint_entry.uri), CHAR_LENGTH(TRIM(endpoint_entry.uri)) - 1)
+                     ELSE TRIM(endpoint_entry.uri)
+                   END = canonical_route.canonical_uri
+                 )
+                 OR
+                 (
+                   canonical_route.template_kind = 1
+                   AND CASE
+                     WHEN CHAR_LENGTH(TRIM(endpoint_entry.uri)) > 1
+                      AND RIGHT(TRIM(endpoint_entry.uri), 1) = '/'
+                     THEN LEFT(TRIM(endpoint_entry.uri), CHAR_LENGTH(TRIM(endpoint_entry.uri)) - 1)
+                     ELSE TRIM(endpoint_entry.uri)
+                   END REGEXP '^/sys/resources/[{][^/{}]+[}]$'
+                 )
+                 OR
+                 (
+                   canonical_route.template_kind = 2
+                   AND CASE
+                     WHEN CHAR_LENGTH(TRIM(endpoint_entry.uri)) > 1
+                      AND RIGHT(TRIM(endpoint_entry.uri), 1) = '/'
+                     THEN LEFT(TRIM(endpoint_entry.uri), CHAR_LENGTH(TRIM(endpoint_entry.uri)) - 1)
+                     ELSE TRIM(endpoint_entry.uri)
+                   END REGEXP '^/sys/resources/[{][^/{}]+[}]/sort$'
+                 )
+               );
+
+              CREATE TEMPORARY TABLE tmp_resource_endpoint_keeper (
+                route_key VARCHAR(64) NOT NULL,
+                keeper_id BIGINT NOT NULL,
+                PRIMARY KEY (route_key),
+                UNIQUE KEY uk_tmp_resource_keeper_id (keeper_id)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+              INSERT INTO tmp_resource_endpoint_keeper (route_key, keeper_id)
+              SELECT
+                candidate.route_key,
+                COALESCE(
+                  MIN(CASE WHEN candidate.exact_preferred = 1 THEN candidate.endpoint_id END),
+                  MIN(candidate.endpoint_id)
+                )
+              FROM tmp_resource_endpoint_candidate candidate
+              GROUP BY candidate.route_key;
+
+              DELETE requirement_entry
+              FROM api_endpoint_permission_requirement requirement_entry
+              JOIN tmp_resource_endpoint_candidate candidate
+                ON candidate.endpoint_id = requirement_entry.api_endpoint_id;
+
+              DELETE endpoint_entry
+              FROM api_endpoint endpoint_entry
+              JOIN tmp_resource_endpoint_candidate candidate
+                ON candidate.endpoint_id = endpoint_entry.id
+              JOIN tmp_resource_endpoint_keeper keeper
+                ON keeper.route_key = candidate.route_key
+              WHERE endpoint_entry.id <> keeper.keeper_id;
+
+              UPDATE api_endpoint endpoint_entry
+              JOIN tmp_resource_endpoint_keeper keeper
+                ON keeper.keeper_id = endpoint_entry.id
+              JOIN tmp_resource_endpoint_candidate canonical
+                ON canonical.endpoint_id = keeper.keeper_id
+              JOIN (
+                SELECT permission_entry.permission_code, MIN(permission_entry.id) AS permission_id
+                FROM permission permission_entry
+                WHERE permission_entry.tenant_id IS NULL
+                GROUP BY permission_entry.permission_code
+              ) required_permission
+                ON required_permission.permission_code = canonical.permission_code
+              SET
+                endpoint_entry.resource_level = 'PLATFORM',
+                endpoint_entry.name = canonical.endpoint_name,
+                endpoint_entry.title = canonical.endpoint_title,
+                endpoint_entry.uri = canonical.canonical_uri,
+                endpoint_entry.method = canonical.canonical_method,
+                endpoint_entry.permission = canonical.permission_code,
+                endpoint_entry.required_permission_id = required_permission.permission_id,
+                endpoint_entry.enabled = 1,
+                endpoint_entry.updated_at = CURRENT_TIMESTAMP,
+                endpoint_entry.updated_by = NULL;
+
+              INSERT INTO api_endpoint_permission_requirement (
+                tenant_id, api_endpoint_id, requirement_group, sort_order,
+                permission_id, negated, created_at, created_by, updated_at, updated_by
+              )
+              SELECT
+                NULL,
+                endpoint_entry.id,
+                0,
+                1,
+                endpoint_entry.required_permission_id,
+                0,
+                CURRENT_TIMESTAMP,
+                NULL,
+                CURRENT_TIMESTAMP,
+                NULL
+              FROM api_endpoint endpoint_entry
+              JOIN tmp_resource_endpoint_keeper keeper
+                ON keeper.keeper_id = endpoint_entry.id;
+
+              DROP TEMPORARY TABLE tmp_resource_endpoint_keeper;
+              DROP TEMPORARY TABLE tmp_resource_endpoint_candidate;
+              DROP TEMPORARY TABLE tmp_resource_endpoint_route;

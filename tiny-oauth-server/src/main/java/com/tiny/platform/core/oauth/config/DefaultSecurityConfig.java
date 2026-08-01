@@ -124,6 +124,7 @@ public class DefaultSecurityConfig {
                 .logout(logout -> logout
                         .logoutUrl("/auth/logout")
                         .addLogoutHandler(sessionAuditLogoutHandler)
+                        .deleteCookies("JSESSIONID", "XSRF-TOKEN")
                 )
                 .addFilterBefore(tenantContextFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterAfter(apiEndpointRequirementFilter, TenantContextFilter.class)
@@ -139,6 +140,7 @@ public class DefaultSecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource))
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(csrfTokenRepository())
+                        .csrfTokenRequestHandler(new SpaCsrfTokenRequestHandler())
                         .requireCsrfProtectionMatcher(CSRF_PROTECTED_PATHS)
                 )
                 .oauth2ResourceServer(oauth2 -> oauth2

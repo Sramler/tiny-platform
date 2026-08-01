@@ -194,7 +194,7 @@ const handleSubmit = async (event: Event) => {
   clearActiveTenantId()
 
   // 提交前始终同步一次 CSRF：避免 onMounted 竞态导致 ref 仍为空、或缓存与 Cookie 会话不一致。
-  // ensureCsrfToken 有模块级缓存，重复调用成本很低。
+  // ensureCsrfToken 仅合并并发请求；每次登录都刷新 Cookie 对应的 token，避免 Session 轮换后复用旧值。
   try {
     await loadCsrfToken()
   } catch (error) {

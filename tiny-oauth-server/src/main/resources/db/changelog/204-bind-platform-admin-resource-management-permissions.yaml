@@ -1,0 +1,70 @@
+databaseChangeLog:
+  - changeSet:
+      id: 204-bind-platform-admin-resource-management-permissions
+      author: codex
+      comment: 为 ROLE_PLATFORM_ADMIN 绑定平台资源模板控制面的 CRUD 权限，闭合 ui_action 与 api_endpoint requirement
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: role
+            - tableExists:
+                tableName: permission
+            - tableExists:
+                tableName: role_permission
+            - sqlCheck:
+                expectedResult: "1"
+                sql: |
+                  SELECT COUNT(*)
+                  FROM `role`
+                  WHERE `tenant_id` IS NULL
+                    AND `role_level` = 'PLATFORM'
+                    AND `code` = 'ROLE_PLATFORM_ADMIN'
+            - sqlCheck:
+                expectedResult: "4"
+                sql: |
+                  SELECT COUNT(DISTINCT `permission_code`)
+                  FROM `permission`
+                  WHERE `tenant_id` IS NULL
+                    AND `permission_code` IN (
+                      'system:resource:create',
+                      'system:resource:edit',
+                      'system:resource:delete',
+                      'system:resource:batch-delete'
+                    )
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              -- 150 已创建 PLATFORM ui_action 及 requirement，但只把权限绑定给
+              -- ROLE_TENANT_ADMIN，导致 ROLE_PLATFORM_ADMIN 的运行时操作全部被 fail-closed 过滤。
+              INSERT IGNORE INTO `role_permission` (
+                `tenant_id`,
+                `role_id`,
+                `permission_id`,
+                `created_by`,
+                `created_at`
+              )
+              SELECT
+                NULL AS `tenant_id`,
+                platform_admin.`id` AS `role_id`,
+                resource_permission.`id` AS `permission_id`,
+                NULL AS `created_by`,
+                NOW() AS `created_at`
+              FROM `role` platform_admin
+              JOIN `permission` resource_permission
+                ON resource_permission.`tenant_id` IS NULL
+               AND resource_permission.`permission_code` IN (
+                 'system:resource:create',
+                 'system:resource:edit',
+                 'system:resource:delete',
+                 'system:resource:batch-delete'
+               )
+              WHERE platform_admin.`tenant_id` IS NULL
+                AND platform_admin.`role_level` = 'PLATFORM'
+                AND platform_admin.`code` = 'ROLE_PLATFORM_ADMIN';

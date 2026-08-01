@@ -1,19 +1,5 @@
-import fs from 'node:fs/promises'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { expect, test, type Page } from '@playwright/test'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-
-const backendBaseUrl = process.env.E2E_BACKEND_BASE_URL ?? 'http://localhost:9000'
-const platformAuthPath = path.resolve(__dirname, '..', '.auth', 'platform-admin-user.json')
-
-type StorageState = {
-  origins?: Array<{
-    localStorage?: Array<{ name: string; value: string }>
-  }>
-}
+import { openOidcDebug } from './cross-tenant.helpers'
 
 type CreateTenantPayload = {
   code: string
@@ -32,58 +18,67 @@ function tenantName(tenantCode: string) {
 }
 
 function buildInitAdminUsername(tenantCode: string) {
-  const safeTenantCode = tenantCode.replace(/[^a-z0-9_]/g, '_').slice(0, 11)
+  // 编码前缀在同一组 entry0/entry1/entry2 场景中相同，保留随机时间戳尾部才能避免用户唯一键碰撞。
+  const safeTenantCode = tenantCode.replace(/[^a-z0-9_]/g, '_').slice(-11)
   return `e2e_init_${safeTenantCode}`
 }
 
-async function readAccessTokenFromPlatformState() {
-  const raw = await fs.readFile(platformAuthPath, 'utf8')
-  const storageState = JSON.parse(raw) as StorageState
-  for (const origin of storageState.origins ?? []) {
-    for (const entry of origin.localStorage ?? []) {
-      if (!entry.name.startsWith('oidc.user:')) {
-        continue
-      }
-      try {
-        const parsed = JSON.parse(entry.value) as { access_token?: string }
-        if (parsed.access_token) {
-          return parsed.access_token
-        }
-      } catch {
-        // skip malformed values
+async function createGeneratedTenantViaApi(page: Page, payload: CreateTenantPayload) {
+  const result = await page.evaluate(async (tenant) => {
+    const csrfResponse = await fetch('/csrf', {
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    })
+    if (!csrfResponse.ok) {
+      return {
+        ok: false,
+        status: csrfResponse.status,
+        body: '刷新 CSRF token 失败',
       }
     }
-  }
-  throw new Error('platform-admin-user.json 中未找到 access_token')
-}
+    const csrf = (await csrfResponse.json()) as { token?: string; headerName?: string }
+    if (!csrf.token || !csrf.headerName) {
+      return {
+        ok: false,
+        status: csrfResponse.status,
+        body: 'CSRF 响应缺少 token/headerName',
+      }
+    }
 
-async function createGeneratedTenantViaApi(payload: CreateTenantPayload) {
-  const token = await readAccessTokenFromPlatformState()
-  const response = await fetch(`${backendBaseUrl}/sys/tenants`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
+    const headers = new Headers({
+      Accept: 'application/json',
       'Content-Type': 'application/json',
-      'X-Idempotency-Key': `tw07-precreate:${payload.code}:${Date.now()}`,
-    },
-    body: JSON.stringify({
-      code: payload.code,
-      name: payload.name,
-      enabled: true,
-      initialAdminUsername: payload.initialAdminUsername,
-      initialAdminNickname: `E2E初始管理员(${payload.code})`,
-      initialAdminPassword: payload.initialAdminPassword,
-      initialAdminConfirmPassword: payload.initialAdminPassword,
-    }),
-  })
+      'X-Idempotency-Key': `tw07-precreate:${tenant.code}:${Date.now()}`,
+    })
+    headers.set(csrf.headerName, csrf.token)
+    const response = await fetch('/sys/tenants', {
+      method: 'POST',
+      credentials: 'include',
+      headers,
+      body: JSON.stringify({
+        code: tenant.code,
+        name: tenant.name,
+        enabled: true,
+        initialAdminUsername: tenant.initialAdminUsername,
+        initialAdminNickname: `E2E初始管理员(${tenant.code})`,
+        initialAdminPassword: tenant.initialAdminPassword,
+        initialAdminConfirmPassword: tenant.initialAdminPassword,
+      }),
+    })
+    return {
+      ok: response.ok,
+      status: response.status,
+      body: await response.text(),
+    }
+  }, payload)
 
-  const bodyText = await response.text()
-  if (!response.ok) {
-    throw new Error(`预创建租户失败: HTTP ${response.status} ${bodyText}`)
+  if (!result.ok) {
+    throw new Error(`预创建租户失败: HTTP ${result.status} ${result.body}`)
   }
 }
 
 async function openCreateWizard(page: Page) {
+  await openOidcDebug(page, 'platform')
   await page.goto('/system/tenant', { waitUntil: 'networkidle' })
   if (page.url().includes('/login')) {
     throw new Error(
@@ -110,8 +105,7 @@ async function fillWizardUntilConfirm(
 
   const precheckResponsePromise = page.waitForResponse(
     (response) =>
-      response.request().method() === 'POST'
-      && response.url().includes('/sys/tenants/precheck'),
+      response.request().method() === 'POST' && response.url().includes('/sys/tenants/precheck'),
   )
   await page.locator('[data-test="wizard-next-step"]').click()
   return precheckResponsePromise
@@ -130,15 +124,19 @@ async function createTenantInWizard(page: Page, codeTag: string) {
     adminUsername,
     password,
   })
-  expect(precheckResponse.ok(), `precheck failed: ${precheckResponse.status()}`).toBeTruthy()
+  const precheckBody = await precheckResponse.text()
+  const identityResponse = await page.request.get('/sys/users/current')
+  const identityBody = await identityResponse.text()
+  expect(
+    precheckResponse.ok(),
+    `precheck failed: ${precheckResponse.status()} ${precheckBody}; identity=${identityResponse.status()} ${identityBody}; requestHeaders=${JSON.stringify(precheckResponse.request().headers())}`,
+  ).toBeTruthy()
 
   const createButton = page.locator('[data-test="wizard-submit-create"]')
   await expect(createButton).toBeEnabled()
 
   const createResponsePromise = page.waitForResponse(
-    (response) =>
-      response.request().method() === 'POST'
-      && /\/sys\/tenants$/.test(response.url()),
+    (response) => response.request().method() === 'POST' && /\/sys\/tenants$/.test(response.url()),
   )
   await createButton.click()
   const createResponse = await createResponsePromise
@@ -151,7 +149,9 @@ async function createTenantInWizard(page: Page, codeTag: string) {
 }
 
 test.describe.serial('real-link: tenant create wizard smoke', () => {
-  test('success chain: wizard precheck/create -> result page -> close and list refresh', async ({ page }) => {
+  test('success chain: wizard precheck/create -> result page -> close and list refresh', async ({
+    page,
+  }) => {
     const { code } = await createTenantInWizard(page, 'success')
 
     await page.locator('[data-test="wizard-complete-close"]').click()
@@ -176,18 +176,18 @@ test.describe.serial('real-link: tenant create wizard smoke', () => {
     const conflictCode = uniqueTenantCode('blocking')
     const conflictName = tenantName(conflictCode)
     const conflictPassword = 'Tianye0903.'
-    await createGeneratedTenantViaApi({
+    await openCreateWizard(page)
+    await createGeneratedTenantViaApi(page, {
       code: conflictCode,
       name: conflictName,
       initialAdminUsername: buildInitAdminUsername(conflictCode),
       initialAdminPassword: conflictPassword,
     })
 
-    await openCreateWizard(page)
     const precheckResponse = await fillWizardUntilConfirm(page, {
       code: conflictCode,
       name: conflictName,
-      adminUsername: `${buildInitAdminUsername(conflictCode)}x`,
+      adminUsername: `${buildInitAdminUsername(conflictCode).slice(0, 19)}x`,
       password: conflictPassword,
     })
     expect(precheckResponse.ok(), `precheck failed: ${precheckResponse.status()}`).toBeTruthy()
@@ -200,12 +200,16 @@ test.describe.serial('real-link: tenant create wizard smoke', () => {
     })
 
     await expect(page.locator('[data-test="wizard-precheck-blocking-banner"]')).toBeVisible()
-    await expect(page.locator('[data-test="wizard-precheck-blocking-issues"]')).toContainText('阻断项')
+    await expect(page.locator('[data-test="wizard-precheck-blocking-issues"]')).toContainText(
+      '阻断项',
+    )
     await expect(page.locator('[data-test="wizard-submit-create"]')).toBeDisabled()
     expect(finalCreateRequests.length).toBe(0)
   })
 
-  test('result governance entries: keep query.from and focus expected detail sections', async ({ page }) => {
+  test('result governance entries: keep query.from and focus expected detail sections', async ({
+    page,
+  }) => {
     const sectionCases = [
       {
         section: 'overview',

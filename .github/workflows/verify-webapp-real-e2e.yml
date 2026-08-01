@@ -139,6 +139,11 @@ jobs:
           set -euo pipefail
           mvn -pl tiny-oauth-server -DskipTests test-compile
 
+      - name: Verify Controller and api_endpoint closure
+        shell: bash
+        working-directory: ${{ github.workspace }}
+        run: bash tiny-oauth-server/scripts/verify-api-endpoint-controller-drift.sh
+
       - name: Start backend
         env:
           SPRING_PROFILES_ACTIVE: ${{ env.E2E_BACKEND_PROFILE }}
@@ -175,7 +180,9 @@ jobs:
 
       - name: Start frontend
         env:
-          VITE_API_BASE_URL: ${{ env.E2E_BACKEND_BASE_URL }}
+          VITE_API_BASE_URL: ''
+          VITE_DEV_BACKEND_TARGET: ${{ env.E2E_BACKEND_BASE_URL }}
+          VITE_AUTH_SESSION_ONLY: 'true'
           VITE_OIDC_AUTHORITY: ${{ env.E2E_BACKEND_BASE_URL }}
           VITE_OIDC_CLIENT_ID: ${{ env.E2E_OIDC_CLIENT_ID }}
           VITE_OIDC_REDIRECT_URI: ${{ env.E2E_FRONTEND_BASE_URL }}/callback
@@ -216,6 +223,8 @@ jobs:
           npm run test:e2e:real -- \
             e2e/real/platform-vue-login.spec.ts \
             e2e/real/platform-menu-tree.spec.ts \
+            e2e/real/platform-role-page.spec.ts \
+            e2e/real/session-management-pages.spec.ts \
             e2e/real/security-mfa-flow.spec.ts \
             e2e/real/mfa-login-flow.spec.ts \
             e2e/real/mfa-bind-flow.spec.ts \

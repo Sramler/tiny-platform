@@ -81,6 +81,8 @@
 - ✅ fresh DB / CI baseline 使用 Liquibase `sqlFile` 时，路径必须采用 changelog-relative 解析并在干净库路径上验证；不能依赖本地工作目录、classpath 偶然命中或已初始化数据库兜底。
 - ✅ 已在共享环境 / fresh DB 执行过的 Liquibase changeset 不得直接改写正文来修问题；必须追加新的尾部 changeset 做幂等回填或收口，并在干净库与已执行库两种路径上验证不会触发 checksum 漂移或启动失败。
 - ✅ 对依赖菜单懒加载、动态路由注入、登录后壳页收敛的 real-link workflow，必须把“菜单点击进入”和“直接 deep-link / 刷新进入”视为不同风险面；至少有一层自动化覆盖 direct deep-link / refresh，不得默认二者等价。
+- ✅ Token -> BFF Session/Cookie、CSRF 或统一 endpoint requirement 变更进入 Nightly/full-chain 时，必须在 fresh DB 覆盖真实登录、HttpOnly Cookie、菜单/路由、目标页面完整 API 闭包和业务结果；测试须使预期外 401/403、`/exception/403`、Bearer 泄漏或 storageState token 泄漏直接失败。
+- ✅ full-chain 串行套件发生首个失败时，修复后必须从头完整重跑，不能用“前序失败导致后续 skipped”作为后续场景已验证；最终报告必须给出 commit/run、各 job 状态和未执行项。
 
 ### 4) 发布与部署
 

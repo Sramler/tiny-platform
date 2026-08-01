@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -37,6 +38,7 @@ type StorageState = {
   cookies?: Array<{
     name: string
     value: string
+    httpOnly?: boolean
   }>
 }
 
@@ -64,39 +66,68 @@ function readEnv(names: string[], fallback?: string) {
   return fallback
 }
 
-export function extractAccessTokenFromStorageState(storageState: StorageState): string {
-  for (const origin of storageState.origins ?? []) {
-    for (const entry of origin.localStorage ?? []) {
-      if (!entry.name.startsWith('oidc.user:')) {
-        continue
-      }
-      try {
-        const parsed = JSON.parse(entry.value)
-        if (parsed?.access_token) {
-          return parsed.access_token as string
-        }
-      } catch {
-        // ignore malformed storage entries and continue searching
-      }
-    }
+function isTokenStorageEntry(name: string, value: string): boolean {
+  const normalizedName = name.trim().toLowerCase()
+  if (
+    normalizedName.startsWith('oidc.user:') ||
+    /(^|[.:_-])(access|refresh|id)[._-]?token($|[.:_-])/.test(normalizedName)
+  ) {
+    return true
+  }
+  return /"(?:access_token|refresh_token|id_token)"\s*:/i.test(value)
+}
+
+/**
+ * Web real-link 的 storageState 只允许保存 HttpOnly Session Cookie 和非 token 的 UI 状态。
+ * 一旦登录链又把 OIDC/access/refresh token 放回浏览器可读存储，globalSetup 必须立即失败。
+ */
+export function assertSessionOnlyStorageState(storageState: StorageState): void {
+  const cookies = storageState.cookies ?? []
+  const sessionCookie = cookies.find((cookie) => cookie.name === 'JSESSIONID')
+  if (!sessionCookie) {
+    throw new Error('未在 storageState 中找到 HttpOnly JSESSIONID')
+  }
+  if (sessionCookie.httpOnly !== true) {
+    throw new Error('storageState 中的 JSESSIONID 必须设置 HttpOnly')
   }
 
-  throw new Error('未在 storageState 中找到可用的 OIDC access_token')
+  const tokenCookie = cookies.find((cookie) => isTokenStorageEntry(cookie.name, cookie.value))
+  if (tokenCookie) {
+    throw new Error(`storageState 不得保存 token Cookie: ${tokenCookie.name}`)
+  }
+
+  for (const origin of storageState.origins ?? []) {
+    const tokenEntry = (origin.localStorage ?? []).find((entry) =>
+      isTokenStorageEntry(entry.name, entry.value),
+    )
+    if (tokenEntry) {
+      throw new Error(`storageState 不得保存 OIDC/access/refresh token: ${tokenEntry.name}`)
+    }
+  }
 }
 
 export function extractSessionHeadersFromStorageState(storageState: StorageState): {
   cookie: string
   csrfToken?: string
 } {
+  assertSessionOnlyStorageState(storageState)
   const cookies = storageState.cookies ?? []
-  const sessionCookie = cookies.find((cookie) => cookie.name === 'JSESSIONID')
-  if (!sessionCookie) {
-    throw new Error('未在 storageState 中找到 HttpOnly JSESSIONID')
-  }
   const csrfCookie = cookies.find((cookie) => cookie.name === 'XSRF-TOKEN')
   return {
     cookie: cookies.map((cookie) => `${cookie.name}=${cookie.value}`).join('; '),
     csrfToken: csrfCookie ? decodeURIComponent(csrfCookie.value) : undefined,
+  }
+}
+
+async function assertSessionOnlyStorageStateFile(statePath: string, identityLabel: string) {
+  const storageState = JSON.parse(await fs.readFile(statePath, 'utf8')) as StorageState
+  try {
+    assertSessionOnlyStorageState(storageState)
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    throw new Error(
+      `real-link globalSetup: ${identityLabel} 登录态不符合纯 Session 规范: ${reason}`,
+    )
   }
 }
 
@@ -107,6 +138,20 @@ export function shouldCreateTenantViaApi(
   const normalizedPrimary = primaryTenantCode?.trim().toLowerCase()
   const normalizedTarget = targetTenantCode?.trim().toLowerCase()
   return Boolean(normalizedPrimary && normalizedTarget && normalizedPrimary !== normalizedTarget)
+}
+
+export function requireDistinctCrossTenantCodes(
+  effectivePrimaryTenantCode: string,
+  secondaryTenantCode: string,
+): void {
+  if (
+    effectivePrimaryTenantCode.trim().toLowerCase() ===
+    secondaryTenantCode.trim().toLowerCase()
+  ) {
+    throw new Error(
+      `real-link cross-tenant 配置无效：实际主租户与第二租户均为 ${secondaryTenantCode.trim()}。请设置不同的 E2E_TENANT_CODE_B。`,
+    )
+  }
 }
 
 /**
@@ -204,7 +249,7 @@ async function ensureTenantViaApi(authStateFilePath: string, targetTenantCode: s
     headers: {
       Cookie: sessionHeaders.cookie,
       'Content-Type': 'application/json',
-      'X-Idempotency-Key': `e2e-tenant-create:${normalizedTargetTenantCode}`,
+      'X-Idempotency-Key': `e2e-tenant-create:${normalizedTargetTenantCode}:${randomUUID()}`,
       [csrf.headerName]: csrf.token,
     },
     body: JSON.stringify({
@@ -375,17 +420,20 @@ export function collectRealLinkDerivedTenantCodes(source: NodeJS.ProcessEnv) {
   }
 
   const platformTenantCode = requireRealLinkPlatformTenantCode(source)
-  const tenantScopeTenantCode = deriveTenantCodeForTenantScope(primaryTenantCode, platformTenantCode)
+  const tenantScopeTenantCode = deriveTenantCodeForTenantScope(
+    primaryTenantCode,
+    platformTenantCode,
+  )
   const secondaryTenantCode = readConfiguredValue(source, ['E2E_TENANT_CODE_B'])
   const readonlyTenantCode = resolveReadonlyTenantCode(source)
   const bindTenantCode = resolveBindTenantCode(source)
 
   return uniqueNonBlank([
     tenantScopeTenantCode !== primaryTenantCode.trim() ? tenantScopeTenantCode : undefined,
-    secondaryTenantCode && shouldCreateTenantViaApi(primaryTenantCode, secondaryTenantCode)
+    secondaryTenantCode && shouldCreateTenantViaApi(tenantScopeTenantCode, secondaryTenantCode)
       ? secondaryTenantCode
       : undefined,
-    readonlyTenantCode && shouldCreateTenantViaApi(primaryTenantCode, readonlyTenantCode)
+    readonlyTenantCode && shouldCreateTenantViaApi(tenantScopeTenantCode, readonlyTenantCode)
       ? readonlyTenantCode
       : undefined,
     bindTenantCode &&
@@ -655,6 +703,7 @@ export default async function globalSetup() {
       },
       platformAuthStatePath,
     )
+    await assertSessionOnlyStorageStateFile(platformAuthStatePath, '平台管理员')
     await ensureTenantViaApi(platformAuthStatePath, primaryTenantCode)
   }
 
@@ -685,6 +734,7 @@ export default async function globalSetup() {
       `real-link globalSetup: 未生成主身份登录态 ${authStatePath}。请确认后端与前端已启动且 E2E_TENANT_CODE/E2E_USERNAME/E2E_PASSWORD/E2E_TOTP_SECRET 已配置，并查看 generate-auth-state.mjs 的登录输出。`,
     )
   }
+  await assertSessionOnlyStorageStateFile(authStatePath, '主调度身份')
 
   // 与主身份同一租户登录态（active-scope 等用例依赖）；主文件已按 tenantScopeTenantCode 生成，直接复用。
   await fs.copyFile(authStatePath, tenantScopedAuthStatePath)
@@ -698,6 +748,7 @@ export default async function globalSetup() {
       `real-link globalSetup: 未生成租户态登录态 ${tenantScopedAuthStatePath}（tenant=${tenantScopeTenantCode}）。请确认派生 tenant 已成功完成 ensure-scheduling-e2e-auth 与 generate-auth-state.mjs。`,
     )
   }
+  await assertSessionOnlyStorageStateFile(tenantScopedAuthStatePath, '租户态主调度身份')
 
   const primaryTenantCode = process.env.E2E_TENANT_CODE
   const platformTenantCode = platformTenantCodeValue
@@ -728,6 +779,7 @@ export default async function globalSetup() {
       },
       platformAuthStatePath,
     )
+    await assertSessionOnlyStorageStateFile(platformAuthStatePath, '租户引导平台管理员')
     tenantBootstrapAuthStatePath = platformAuthStatePath
     platformAuthGenerated = true
   }
@@ -745,22 +797,25 @@ export default async function globalSetup() {
       },
       platformAuthStatePath,
     )
+    await assertSessionOnlyStorageStateFile(platformAuthStatePath, '平台管理员')
   }
 
   const secondaryIdentityEnv = resolveSecondaryIdentityEnv()
   if (secondaryIdentityEnv) {
     const secondaryTenantCode = secondaryIdentityEnv.E2E_TENANT_CODE
-    if (shouldCreateTenantViaApi(process.env.E2E_TENANT_CODE, secondaryTenantCode)) {
+    requireDistinctCrossTenantCodes(tenantScopeTenantCode, secondaryTenantCode)
+    if (shouldCreateTenantViaApi(tenantScopeTenantCode, secondaryTenantCode)) {
       await ensureTenantViaApi(tenantBootstrapAuthStatePath, secondaryTenantCode)
     }
     ensureDeterministicE2EAuthFor(secondaryIdentityEnv)
     generateAuthStateFor(secondaryIdentityEnv, secondaryAuthStatePath)
+    await assertSessionOnlyStorageStateFile(secondaryAuthStatePath, '第二租户身份')
   }
 
   const readonlyIdentityEnv = resolveReadonlyIdentityEnv()
   if (readonlyIdentityEnv) {
     const readonlyTenantCode = readonlyIdentityEnv.E2E_TENANT_CODE
-    if (shouldCreateTenantViaApi(process.env.E2E_TENANT_CODE, readonlyTenantCode)) {
+    if (shouldCreateTenantViaApi(tenantScopeTenantCode, readonlyTenantCode)) {
       await ensureTenantViaApi(tenantBootstrapAuthStatePath, readonlyTenantCode)
     }
     ensureDeterministicE2EAuthFor({
@@ -773,5 +828,6 @@ export default async function globalSetup() {
         : {}),
     })
     generateAuthStateFor(readonlyIdentityEnv, readonlyAuthStatePath)
+    await assertSessionOnlyStorageStateFile(readonlyAuthStatePath, '只读身份')
   }
 }

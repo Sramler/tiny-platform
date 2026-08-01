@@ -12,6 +12,11 @@ logs/
 /.playwright-cli/
 **/.playwright-cli/
 /node_modules/
+/.pnpm-store/
+# Codex Desktop 临时解包产物（只会落在工作区根目录）
+/app-session-*.js
+/main-*.js
+/workspace-root-drop-handler-*.js
 **/test-results/
 **/playwright-report/
 **/blob-report/

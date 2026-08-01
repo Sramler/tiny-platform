@@ -28,7 +28,6 @@ export class CsrfTokenError extends ServiceRequestError {
   }
 }
 
-let cachedCsrf: CsrfPayload | null = null
 let inFlightCsrf: Promise<CsrfPayload> | null = null
 const DEFAULT_CSRF_TIMEOUT_MS = 8_000
 
@@ -66,9 +65,6 @@ export async function ensureCsrfToken(
   apiBaseUrl: string,
   options: { timeoutMs?: number } = {},
 ): Promise<CsrfPayload> {
-  if (cachedCsrf) {
-    return cachedCsrf
-  }
   if (inFlightCsrf) {
     return inFlightCsrf
   }
@@ -103,12 +99,11 @@ export async function ensureCsrfToken(
       if (!data.token || !data.parameterName || !data.headerName) {
         throw new CsrfTokenError('bad_response', 'CSRF token 响应不完整')
       }
-      cachedCsrf = {
+      return {
         token: data.token,
         parameterName: data.parameterName,
         headerName: data.headerName,
       }
-      return cachedCsrf
     })
     .catch((error) => {
       if (error instanceof CsrfTokenError) {
@@ -131,6 +126,5 @@ export async function ensureCsrfToken(
 }
 
 export function clearCsrfTokenCache(): void {
-  cachedCsrf = null
   inFlightCsrf = null
 }

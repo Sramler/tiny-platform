@@ -31,6 +31,7 @@ globs:
 - ❌ 将角色继承、互斥、先决条件、基数限制留给运行时“碰到再说”，而不在授权时显式校验。
 - ❌ 在未定义当前租户成员模型之前，直接假设系统已经支持“一人多租户”。
 - ❌ 新增逻辑不得依赖 `user.tenant_id` 做真实授权判断；应以 membership（tenant_user）、role_assignment、当前活动租户（activeTenantId/Token/Session）为准；仅数据归属、展示、审计可继续使用 user.tenant_id。
+- ❌ 遇到 `api_endpoint requirement denied`、`URI_TEMPLATE_NOT_MATCHED` 或页面跳转 403 时，通过恢复浏览器 Bearer token、扩大过滤器豁免、绑定更大权限或改前端路由守卫来掩盖载体缺失。
 
 ## 必须（Must）
 
@@ -45,6 +46,12 @@ globs:
 - ✅ `scope_type=PLATFORM` 必须是一等作用域；默认租户最多只能作为迁移期的初始化模板或兼容承载，不得继续作为平台语义本身。
 - ✅ 运行时 token 权限面必须与当前 active scope 下的权威授权结果一致；当 `role_assignment` / `role_hierarchy` / `role_permission` 变化会影响 `permissionsVersion` 时，`JwtTokenCustomizer`、`UserDetailsService` 等 token 生成链不得只刷新版本指纹而继续复用旧 `SecurityUser` snapshot。
 - ✅ 新增或改名 `/platform/**`、`/sys/**` 控制面 API 时，只要目标路径应受统一权限链路治理，就必须在同一任务中同步补齐 `api_endpoint` 登记、`api_endpoint_permission_requirement` 回填、master include 或等价初始化链路，并补 real-controller 守卫/集成测试；禁止只改 controller/service/普通 MockMvc happy path 后宣称已闭合。
+- ✅ 权限载体必须按“页面业务闭包”治理：盘点页面进入、布局/bootstrap、列表/统计/历史/详情、弹窗预载，以及 create/update/delete/trigger/retry/stop/pause/resume 等全部并发和延迟请求；每个 HTTP method + 精确 URI template 都必须有 `api_endpoint`、requirement、初始化/回填与允许/拒绝测试，不能只补首个报错接口。
+- ✅ `api_endpoint` 403 必须先按守卫证据分类：`URI_TEMPLATE_NOT_MATCHED` 或 `candidateCount=0` 表示 method/template 载体缺失或漂移；载体已匹配但 requirement 不满足才表示当前身份授权不足。前者修载体/初始化，后者修授权或产品权限设计，禁止把两类问题统称为“token 问题”。
+- ✅ 前端路由进入成功不代表页面授权闭合；任一并行、后台轮询、modal preload 或懒加载 API 的 403 都可能触发全局 `/exception/403`。修复时必须结合浏览器失败请求、后端同一 `traceId` 日志和页面接口清单定位实际拒绝端点。
+- ✅ 权限初始化必须按依赖顺序执行并验证非零结果：先建立 permission，再建立全局 endpoint template/requirement，再为现存租户克隆/回填 permission 与 carrier，最后绑定 role；late-created tenant 必须走同一模板链。引用尚不存在 permission 的合法 SQL 产生 0 行也视为迁移失败。
+- ✅ 通配权限与具体权限是两个独立标识，除非统一 matcher 有已测试的显式蕴含规则；不得假设角色持有 `scheduling:*` 就自动满足 `scheduling:console:view`，seed、requirement 与角色绑定必须使用同一规范码语义。
+- ✅ 已执行的 Liquibase changeset 不得改写以补 endpoint/permission；必须追加幂等补偿 changeset，并同时验证 fresh DB、已执行库升级、现有租户回填和新租户克隆，避免 checksum 漂移与“新库绿、旧库仍 403”。
 - ✅ 若同一授权任务同时触及 `db/changelog/**`、`db.changelog-master.yaml`、`api_endpoint` / `menu_permission_requirement` / `role_permission` 回填、权限 seed、菜单 seed、DDL/nullability/unique/index/generated column，则同一任务还必须补至少一次真实 `SpringLiquibase` / 应用启动验证；只凭 controller/service/unit/integration test 通过不得标记为“已完成”。
 - ✅ `/platform/**` 控制面不得把 `/sys/**` 或 tenant-only 控制面接口当作本域核心读写主链；若平台侧缺最小 lookup / query / action 能力，应补平台专用最小接口，而不是默认借道租户/系统控制面。
 - ✅ `/platform/**` 页面、接口与前端权限守卫不得把 `system:*` 权限作为平台域核心能力的必备前置；若存在历史桥接，必须显式说明临时性质、风险、退出条件和后续收口卡片，否则视为不允许。

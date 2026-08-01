@@ -18,6 +18,8 @@
 - ✅ 平台特定规则优先级最高：与通用规则冲突时按裁决原则处理。
 - ✅ 新增权限标识、权限字典、菜单资源权限、`hasAuthority` / `@PreAuthorize` 命名必须遵循 `92-tiny-platform-permission.rules.md`，不得继续扩散历史别名风格。
 - ✅ 涉及认证授权/租户隔离：必须明确数据隔离维度与权限决策链路。
+- ✅ Web 控制面默认采用同源 BFF/HttpOnly Session：浏览器不持有/发送 access token 或 refresh token，不使用 `/api` 伪前缀；Session 存储实现可在 memory/JDBC/Redis 间配置，但不得改变 Cookie、CSRF、认证和强制失效语义。
+- ✅ 页面权限必须按完整 API 依赖闭包治理；出现 `api_endpoint requirement denied` 时先区分“method/template 载体未匹配”和“载体匹配但权限不足”，不得通过恢复浏览器 token、扩大豁免或逐个补首个 403 反复修洞。
 - ✅ 多租户数据隔离：所有业务表必须包含 `tenant_id` 字段；所有业务查询必须包含 `tenant_id` 过滤条件。
 - ✅ 租户 ID 传递：从请求头（`X-Tenant-Id`）或 Token Claims（`tenant_id`）获取，存入 `SecurityContext` 或 `ThreadLocal`。
 - ✅ 租户级别唯一性：使用 `UNIQUE KEY uk_表名_tenant_id_业务字段 (tenant_id, 业务字段)`。

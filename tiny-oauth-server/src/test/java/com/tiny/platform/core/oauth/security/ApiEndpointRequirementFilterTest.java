@@ -42,6 +42,24 @@ class ApiEndpointRequirementFilterTest {
     }
 
     @Test
+    void should_skip_application_root_even_when_authenticated() throws Exception {
+        ResourceService resourceService = mock(ResourceService.class);
+        ApiEndpointRequirementFilter filter = new ApiEndpointRequirementFilter(resourceService);
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated("platform_admin", null, java.util.List.of())
+        );
+
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(chain.getRequest()).isNotNull();
+        verifyNoInteractions(resourceService);
+    }
+
+    @Test
     void should_skip_self_security_endpoints_even_when_authenticated() throws Exception {
         ResourceService resourceService = mock(ResourceService.class);
         ApiEndpointRequirementFilter filter = new ApiEndpointRequirementFilter(resourceService);
@@ -96,6 +114,24 @@ class ApiEndpointRequirementFilterTest {
     }
 
     @Test
+    void should_skip_runtime_api_access_endpoint_even_when_authenticated() throws Exception {
+        ResourceService resourceService = mock(ResourceService.class);
+        ApiEndpointRequirementFilter filter = new ApiEndpointRequirementFilter(resourceService);
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated("platform_admin", null, java.util.List.of())
+        );
+
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/sys/resources/runtime/api-access");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockFilterChain chain = new MockFilterChain();
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(chain.getRequest()).isNotNull();
+        verifyNoInteractions(resourceService);
+    }
+
+    @Test
     void should_skip_current_user_session_bootstrap_even_when_authenticated() throws Exception {
         ResourceService resourceService = mock(ResourceService.class);
         ApiEndpointRequirementFilter filter = new ApiEndpointRequirementFilter(resourceService);
@@ -110,6 +146,38 @@ class ApiEndpointRequirementFilterTest {
         filter.doFilter(request, response, chain);
 
         assertThat(chain.getRequest()).isNotNull();
+        verifyNoInteractions(resourceService);
+    }
+
+    @Test
+    void should_skip_only_precise_authenticated_lookup_and_self_service_paths() throws Exception {
+        ResourceService resourceService = mock(ResourceService.class);
+        ApiEndpointRequirementFilter filter = new ApiEndpointRequirementFilter(resourceService);
+        SecurityContextHolder.getContext().setAuthentication(
+            UsernamePasswordAuthenticationToken.authenticated("tenant-user", null, java.util.List.of())
+        );
+
+        for (String[] requestSpec : java.util.List.of(
+            new String[]{"GET", "/dict/types/code/status"},
+            new String[]{"GET", "/dict/types/current"},
+            new String[]{"GET", "/dict/items/code/enabled"},
+            new String[]{"GET", "/dict/items/map/enabled"},
+            new String[]{"GET", "/dict/items/label/enabled/1"},
+            new String[]{"GET", "/sys/users/current/login-history"},
+            new String[]{"GET", "/sys/users/current/avatar"},
+            new String[]{"POST", "/sys/users/current/avatar"},
+            new String[]{"DELETE", "/sys/users/current/avatar"},
+            new String[]{"GET", "/sys/users/9/avatar"},
+            new String[]{"GET", "/process/health"}
+        )) {
+            MockHttpServletRequest request = new MockHttpServletRequest(requestSpec[0], requestSpec[1]);
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            MockFilterChain chain = new MockFilterChain();
+
+            filter.doFilter(request, response, chain);
+
+            assertThat(chain.getRequest()).as(requestSpec[0] + " " + requestSpec[1]).isNotNull();
+        }
         verifyNoInteractions(resourceService);
     }
 

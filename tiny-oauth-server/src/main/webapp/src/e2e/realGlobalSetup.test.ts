@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
+  assertSessionOnlyStorageState,
   buildEnsureAuthEnv,
   buildAuthStateEnv,
   buildDerivedAssetGovernanceEnv,
   buildSecondaryAuthStateEnv,
   collectRealLinkDerivedTenantCodes,
   deriveTenantCodeForTenantScope,
-  extractAccessTokenFromStorageState,
+  requireDistinctCrossTenantCodes,
+  extractSessionHeadersFromStorageState,
   readConfiguredValue,
   requireRealLinkPlatformTenantCode,
   resolveBindTenantCode,
@@ -272,21 +274,64 @@ describe('real.global.setup derived asset governance', () => {
 })
 
 describe('real.global.setup tenant bootstrap helpers', () => {
-  it('extracts OIDC access token from Playwright storage state', () => {
-    const accessToken = extractAccessTokenFromStorageState({
+  it('accepts only HttpOnly Session state and builds Cookie control headers', () => {
+    const storageState = {
+      cookies: [
+        { name: 'JSESSIONID', value: 'session-123', httpOnly: true },
+        { name: 'XSRF-TOKEN', value: 'csrf%2B123', httpOnly: false },
+      ],
       origins: [
         {
           localStorage: [
             {
-              name: 'oidc.user:http://localhost:9000:vue-client',
-              value: JSON.stringify({ access_token: 'token-123' }),
+              name: 'app_active_tenant_id',
+              value: '1',
             },
           ],
         },
       ],
-    })
+    }
 
-    expect(accessToken).toBe('token-123')
+    expect(() => assertSessionOnlyStorageState(storageState)).not.toThrow()
+    expect(extractSessionHeadersFromStorageState(storageState)).toEqual({
+      cookie: 'JSESSIONID=session-123; XSRF-TOKEN=csrf%2B123',
+      csrfToken: 'csrf+123',
+    })
+  })
+
+  it('rejects a readable JSESSIONID instead of treating it as a valid BFF session', () => {
+    expect(() =>
+      assertSessionOnlyStorageState({
+        cookies: [{ name: 'JSESSIONID', value: 'session-123', httpOnly: false }],
+      }),
+    ).toThrow(/HttpOnly/)
+  })
+
+  it.each([
+    {
+      name: 'oidc.user:http://localhost:9000:vue-client',
+      value: JSON.stringify({ access_token: 'token-123' }),
+    },
+    { name: 'access_token', value: 'token-123' },
+    { name: 'refresh-token', value: 'refresh-123' },
+  ])('rejects browser-readable token state: $name', (entry) => {
+    expect(() =>
+      assertSessionOnlyStorageState({
+        cookies: [{ name: 'JSESSIONID', value: 'session-123', httpOnly: true }],
+        origins: [{ localStorage: [entry] }],
+      }),
+    ).toThrow(/token/i)
+  })
+
+  it('rejects access/refresh token cookies even when JSESSIONID is valid', () => {
+    expect(() =>
+      assertSessionOnlyStorageState({
+        cookies: [
+          { name: 'JSESSIONID', value: 'session-123', httpOnly: true },
+          { name: 'refresh_token', value: 'refresh-123', httpOnly: true },
+        ],
+      }),
+    ).toThrow(/token Cookie/)
   })
 
   it('creates tenant via API only when target tenant differs from primary tenant', () => {
@@ -328,5 +373,17 @@ describe('deriveTenantCodeForTenantScope', () => {
 
   it('uses primary tenant code as-is when it already differs from platform tenant', () => {
     expect(deriveTenantCodeForTenantScope('bench-1m', 'default')).toBe('bench-1m')
+  })
+})
+
+describe('requireDistinctCrossTenantCodes', () => {
+  it('rejects a secondary tenant equal to the effective derived primary tenant', () => {
+    expect(() => requireDistinctCrossTenantCodes('bench-1m-t', 'BENCH-1M-T')).toThrow(
+      /实际主租户与第二租户均为/,
+    )
+  })
+
+  it('accepts distinct effective tenant codes', () => {
+    expect(() => requireDistinctCrossTenantCodes('bench-1m-t', 'bench-1m-b')).not.toThrow()
   })
 })

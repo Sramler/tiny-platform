@@ -1,0 +1,129 @@
+databaseChangeLog:
+  - changeSet:
+      id: 207-close-platform-resource-sort-api-endpoint
+      author: codex
+      comment: 补齐 PLATFORM 资源排序写接口载体，并按 method + uri 校正 system:resource:edit 精确 requirement
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: permission
+            - tableExists:
+                tableName: api_endpoint
+            - tableExists:
+                tableName: api_endpoint_permission_requirement
+            - sqlCheck:
+                expectedResult: "1"
+                sql: |
+                  SELECT COUNT(*)
+                  FROM `permission`
+                  WHERE `tenant_id` IS NULL
+                    AND `permission_code` = 'system:resource:edit'
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              -- 以 PLATFORM scope + method + uri 为身份校正存量漂移；不依赖 name。
+              UPDATE `api_endpoint` endpoint_entry
+              JOIN `permission` canonical_permission
+                ON canonical_permission.`tenant_id` IS NULL
+               AND canonical_permission.`permission_code` = 'system:resource:edit'
+              SET
+                endpoint_entry.`resource_level` = 'PLATFORM',
+                endpoint_entry.`uri` = '/sys/resources/{id}/sort',
+                endpoint_entry.`method` = 'PUT',
+                endpoint_entry.`permission` = 'system:resource:edit',
+                endpoint_entry.`required_permission_id` = canonical_permission.`id`,
+                endpoint_entry.`enabled` = 1,
+                endpoint_entry.`updated_at` = NOW(),
+                endpoint_entry.`updated_by` = NULL
+              WHERE endpoint_entry.`tenant_id` IS NULL
+                AND UPPER(TRIM(endpoint_entry.`method`)) = 'PUT'
+                AND TRIM(TRAILING '/' FROM TRIM(endpoint_entry.`uri`)) = '/sys/resources/{id}/sort';
+
+              INSERT INTO `api_endpoint` (
+                `tenant_id`,
+                `resource_level`,
+                `name`,
+                `title`,
+                `uri`,
+                `method`,
+                `permission`,
+                `required_permission_id`,
+                `enabled`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                NULL,
+                'PLATFORM',
+                'platform-foundation-put--sys-resources-id-sort',
+                '更新资源排序',
+                '/sys/resources/{id}/sort',
+                'PUT',
+                'system:resource:edit',
+                canonical_permission.`id`,
+                1,
+                NOW(),
+                NULL,
+                NOW(),
+                NULL
+              FROM `permission` canonical_permission
+              WHERE canonical_permission.`tenant_id` IS NULL
+                AND canonical_permission.`permission_code` = 'system:resource:edit'
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM `api_endpoint` existing_endpoint
+                  WHERE existing_endpoint.`tenant_id` IS NULL
+                    AND UPPER(TRIM(existing_endpoint.`method`)) = 'PUT'
+                    AND TRIM(TRAILING '/' FROM TRIM(existing_endpoint.`uri`)) = '/sys/resources/{id}/sort'
+                );
+
+              -- 排序写接口只保留与控制器一致的 system:resource:edit 兼容组。
+              DELETE requirement_entry
+              FROM `api_endpoint_permission_requirement` requirement_entry
+              JOIN `api_endpoint` endpoint_entry
+                ON endpoint_entry.`id` = requirement_entry.`api_endpoint_id`
+              WHERE endpoint_entry.`tenant_id` IS NULL
+                AND endpoint_entry.`resource_level` = 'PLATFORM'
+                AND endpoint_entry.`method` = 'PUT'
+                AND endpoint_entry.`uri` = '/sys/resources/{id}/sort';
+
+              INSERT INTO `api_endpoint_permission_requirement` (
+                `tenant_id`,
+                `api_endpoint_id`,
+                `requirement_group`,
+                `sort_order`,
+                `permission_id`,
+                `negated`,
+                `created_at`,
+                `created_by`,
+                `updated_at`,
+                `updated_by`
+              )
+              SELECT
+                NULL,
+                endpoint_entry.`id`,
+                0,
+                1,
+                canonical_permission.`id`,
+                0,
+                NOW(),
+                NULL,
+                NOW(),
+                NULL
+              FROM `api_endpoint` endpoint_entry
+              JOIN `permission` canonical_permission
+                ON canonical_permission.`tenant_id` IS NULL
+               AND canonical_permission.`permission_code` = 'system:resource:edit'
+              WHERE endpoint_entry.`tenant_id` IS NULL
+                AND endpoint_entry.`resource_level` = 'PLATFORM'
+                AND endpoint_entry.`method` = 'PUT'
+                AND endpoint_entry.`uri` = '/sys/resources/{id}/sort';

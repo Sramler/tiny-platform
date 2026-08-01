@@ -6,6 +6,7 @@ import vueDevTools from 'vite-plugin-vue-devtools'
 import { visualizer } from 'rollup-plugin-visualizer'
 import Components from 'unplugin-vue-components/vite'
 import { AntDesignVueResolver } from 'unplugin-vue-components/resolvers'
+import { DEV_BACKEND_PROXY_PATHS, resolveDevBackendProxyBypass } from './src/config/devBackendProxy'
 
 const schedulingCoverageOnly = process.env.VITEST_SCHEDULING_COVERAGE === '1'
 const analyzeBundle = process.env.VITE_BUNDLE_ANALYZE === '1'
@@ -66,35 +67,15 @@ export default defineConfig({
   ].filter(Boolean),
   server: {
     proxy: Object.fromEntries(
-      [
-        // 严格限定后端 `/sys` 边界；字符串前缀 `/sys` 会误代理 SPA `/system/**` 文档导航。
-        '^/sys(?:/|$)',
-        // `/self/security/totp-bind|verify` 是 Vue 页面；其余 `/self/**` 才代理后端。
-        '^/self/(?!security/totp-(?:bind|verify)(?:[/?]|$))',
-        '/scheduling',
-        '/workflow',
-        '/process',
-        '/export',
-        '/idempotent',
-        '/auth',
-        '/csrf',
-        '/oauth2',
-        '/connect',
-        '/.well-known',
-      ].map((path) => [
+      DEV_BACKEND_PROXY_PATHS.map((path) => [
         path,
         {
           target: devBackendTarget,
           changeOrigin: true,
-          ...(path === '/scheduling'
-            ? {
-                bypass(req: { headers: { accept?: string } }) {
-                  // `/scheduling/**` 同时是 SPA 路由和后端 API。浏览器文档导航应回到
-                  // Vite index，JSON/fetch 请求继续代理后端，无需引入伪 `/api` 前缀。
-                  return req.headers.accept?.includes('text/html') ? '/index.html' : undefined
-                },
-              }
-            : {}),
+          bypass(req) {
+            // 仅已知 SPA 深链的 GET/HEAD 文档导航回退 index；API、写请求和下载仍代理后端。
+            return resolveDevBackendProxyBypass(req.url, req.method, req.headers)
+          },
         },
       ]),
     ),

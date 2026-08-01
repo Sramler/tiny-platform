@@ -22,8 +22,6 @@ function requireEnv(name) {
 
 const frontendPort = Number(readEnv('E2E_FRONTEND_PORT') ?? 5173)
 const frontendBaseURL = readEnv('E2E_FRONTEND_BASE_URL') ?? `http://localhost:${frontendPort}`
-const backendPort = Number(readEnv('E2E_BACKEND_PORT') ?? 9000)
-const backendBaseURL = readEnv('E2E_BACKEND_BASE_URL') ?? `http://localhost:${backendPort}`
 const tenantCode = requireEnv('E2E_TENANT_CODE')
 const username = requireEnv('E2E_USERNAME')
 const password = requireEnv('E2E_PASSWORD')
@@ -81,9 +79,9 @@ function generateTotpCode(secret, timestampMs = Date.now()) {
  * 持久化前强制对齐 app_active_tenant_id：initScript 会清空该键，若 HeaderBar 与菜单请求竞态，
  * storageState 会缺少租户上下文，导致 TenantContextFilter 拒绝 /sys/menus/tree 等首屏请求（real-link 401）。
  */
-async function syncActiveTenantIdBeforeSave(page, apiBase) {
-  await page.evaluate(async (api) => {
-    const response = await fetch(`${api}/sys/users/current`, {
+async function syncActiveTenantIdBeforeSave(page) {
+  await page.evaluate(async () => {
+    const response = await fetch('/sys/users/current', {
       credentials: 'include',
       headers: { Accept: 'application/json' },
     })
@@ -95,7 +93,7 @@ async function syncActiveTenantIdBeforeSave(page, apiBase) {
     } else {
       window.localStorage.removeItem('app_active_tenant_id')
     }
-  }, apiBase)
+  })
 }
 
 /**
@@ -106,8 +104,8 @@ async function assertTenantSessionScope(page) {
   if (loginMode !== 'TENANT') {
     return
   }
-  const message = await page.evaluate(async (api) => {
-    const response = await fetch(`${api}/sys/users/current`, {
+  const message = await page.evaluate(async () => {
+    const response = await fetch('/sys/users/current', {
       credentials: 'include',
       headers: { Accept: 'application/json' },
     })
@@ -121,24 +119,28 @@ async function assertTenantSessionScope(page) {
       return `Session 缺少有效 activeTenantId（当前=${String(tid)}）`
     }
     return null
-  }, backendBaseURL)
+  })
   if (message) {
     throw new Error(`generate-auth-state (E2E_LOGIN_MODE=TENANT): ${message}`)
   }
 }
 
 async function waitForSessionIdentity(page) {
-  await page.waitForFunction(async (api) => {
-    try {
-      const response = await fetch(`${api}/sys/users/current`, {
-        credentials: 'include',
-        headers: { Accept: 'application/json' },
-      })
-      return response.ok
-    } catch {
-      return false
-    }
-  }, backendBaseURL, { timeout: 90_000 })
+  await page.waitForFunction(
+    async () => {
+      try {
+        const response = await fetch('/sys/users/current', {
+          credentials: 'include',
+          headers: { Accept: 'application/json' },
+        })
+        return response.ok
+      } catch {
+        return false
+      }
+    },
+    undefined,
+    { timeout: 90_000 },
+  )
 }
 
 function tryGetOrigin(url) {
@@ -218,7 +220,9 @@ async function main() {
   const page = await context.newPage()
   const failedRequests = []
   page.on('requestfailed', (request) => {
-    failedRequests.push(`${request.method()} ${request.url()} ${request.failure()?.errorText ?? 'unknown'}`)
+    failedRequests.push(
+      `${request.method()} ${request.url()} ${request.failure()?.errorText ?? 'unknown'}`,
+    )
   })
 
   try {
@@ -233,7 +237,7 @@ async function main() {
         window.localStorage.removeItem('app_active_tenant_id')
         window.localStorage.setItem('sider-collapsed', 'false')
       },
-      { seedTenantCode: tenantCode, seedLoginMode: loginMode }
+      { seedTenantCode: tenantCode, seedLoginMode: loginMode },
     )
 
     await page.goto(`${frontendBaseURL}/login?redirect=${encodeURIComponent(landingPath)}`)
@@ -246,7 +250,10 @@ async function main() {
         window.localStorage.removeItem('app_active_tenant_id')
       })
       await page.getByRole('button', { name: '平台登录' }).click()
-      await page.getByLabel('租户编码').waitFor({ state: 'detached', timeout: 10_000 }).catch(() => {})
+      await page
+        .getByLabel('租户编码')
+        .waitFor({ state: 'detached', timeout: 10_000 })
+        .catch(() => {})
     } else {
       await page.getByRole('button', { name: '租户登录' }).click()
       const tenantInput = page.getByLabel('租户编码')
@@ -263,7 +270,9 @@ async function main() {
       })
     }
     const loginFormAction = await page.locator('form.login-form').getAttribute('action')
-    await page.getByRole('button', { name: loginMode === 'PLATFORM' ? '登录平台' : '登录租户' }).click()
+    await page
+      .getByRole('button', { name: loginMode === 'PLATFORM' ? '登录平台' : '登录租户' })
+      .click()
 
     try {
       await page.waitForURL(
@@ -284,16 +293,18 @@ async function main() {
       }
     } catch (error) {
       const diagnostics = await readPageDiagnostics(page)
-      throw new Error([
-        error instanceof Error ? error.message : String(error),
-        `generate-auth-state: Session login navigation failed`,
-        `formAction=${loginFormAction ?? 'null'}`,
-        `currentUrl=${page.url()}`,
-        `expectedFrontendBaseURL=${frontendBaseURL}`,
-        `title=${diagnostics.title}`,
-        `body=${diagnostics.bodyText}`,
-        `requestFailures=${failedRequests.join(' | ') || 'none'}`,
-      ].join('\n'))
+      throw new Error(
+        [
+          error instanceof Error ? error.message : String(error),
+          `generate-auth-state: Session login navigation failed`,
+          `formAction=${loginFormAction ?? 'null'}`,
+          `currentUrl=${page.url()}`,
+          `expectedFrontendBaseURL=${frontendBaseURL}`,
+          `title=${diagnostics.title}`,
+          `body=${diagnostics.bodyText}`,
+          `requestFailures=${failedRequests.join(' | ') || 'none'}`,
+        ].join('\n'),
+      )
     }
 
     if (page.url().includes('/self/security/totp-bind')) {
@@ -339,13 +350,13 @@ async function main() {
         ].join('\n'),
       )
     }
-    await syncActiveTenantIdBeforeSave(page, backendBaseURL)
+    await syncActiveTenantIdBeforeSave(page)
 
     if (!page.url().startsWith(frontendBaseURL)) {
       await page.goto(`${frontendBaseURL}${landingPath}`)
       await waitForSessionIdentity(page)
       await assertExpectedFrontendOrigin(page, 'landing-page-recovery')
-      await syncActiveTenantIdBeforeSave(page, backendBaseURL)
+      await syncActiveTenantIdBeforeSave(page)
     }
 
     await assertTenantSessionScope(page)

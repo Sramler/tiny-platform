@@ -1,0 +1,313 @@
+databaseChangeLog:
+  - changeSet:
+      id: 211-close-guarded-controller-api-endpoint-gaps
+      author: codex
+      comment: 闭合用户、组织、数据范围、字典、幂等、导出等已发布 Controller 的 endpoint 与细粒度 requirement
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: permission
+            - tableExists:
+                tableName: api_endpoint
+            - tableExists:
+                tableName: api_endpoint_permission_requirement
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              -- scope_mode 决定载体可出现的作用域；只有该作用域已有且启用规范权限时才建立载体。
+              -- 迁移不创建 role_permission，不把平台能力复制给租户，也不把租户控制面暴露到平台。
+              DROP TEMPORARY TABLE IF EXISTS tmp_guarded_controller_route;
+
+              CREATE TEMPORARY TABLE tmp_guarded_controller_route (
+                route_key VARCHAR(96) NOT NULL,
+                endpoint_title VARCHAR(100) NOT NULL,
+                canonical_uri VARCHAR(200) NOT NULL,
+                canonical_method VARCHAR(10) NOT NULL,
+                scope_mode VARCHAR(16) NOT NULL,
+                primary_permission_code VARCHAR(100) NOT NULL,
+                alternate_permission_code VARCHAR(100) NULL,
+                PRIMARY KEY (route_key),
+                UNIQUE KEY uk_tmp_guarded_controller_route (canonical_method, canonical_uri)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+              INSERT INTO tmp_guarded_controller_route (
+                route_key, endpoint_title, canonical_uri, canonical_method,
+                scope_mode, primary_permission_code, alternate_permission_code
+              ) VALUES
+                -- Tenant user management. OR semantics mirror UserManagementAccessGuard.
+                ('user-list', '查询租户用户', '/sys/users', 'GET', 'TENANT', 'system:user:list', NULL),
+                ('user-detail', '读取租户用户', '/sys/users/{id}', 'GET', 'TENANT', 'system:user:list', NULL),
+                ('user-create', '创建租户用户', '/sys/users', 'POST', 'TENANT', 'system:user:create', NULL),
+                ('user-update', '更新租户用户', '/sys/users/{id}', 'PUT', 'TENANT', 'system:user:edit', 'system:user:role:assign'),
+                ('user-delete', '删除租户用户', '/sys/users/{id}', 'DELETE', 'TENANT', 'system:user:delete', 'system:user:batch-delete'),
+                ('user-batch-enable', '批量启用租户用户', '/sys/users/batch/enable', 'POST', 'TENANT', 'system:user:batch-enable', 'system:user:enable'),
+                ('user-batch-disable', '批量禁用租户用户', '/sys/users/batch/disable', 'POST', 'TENANT', 'system:user:batch-disable', 'system:user:disable'),
+                ('user-batch-delete', '批量删除租户用户', '/sys/users/batch/delete', 'POST', 'TENANT', 'system:user:batch-delete', 'system:user:delete'),
+                ('user-role-list', '读取用户角色', '/sys/users/{id}/roles', 'GET', 'TENANT', 'system:user:role:assign', 'system:user:edit'),
+                ('user-role-update', '分配用户角色', '/sys/users/{id}/roles', 'POST', 'TENANT', 'system:user:role:assign', 'system:user:edit'),
+
+                -- Organization management.
+                ('org-tree', '查询组织树', '/sys/org/tree', 'GET', 'TENANT', 'system:org:list', 'system:org:view'),
+                ('org-list', '查询组织列表', '/sys/org/list', 'GET', 'TENANT', 'system:org:list', 'system:org:view'),
+                ('org-detail', '读取组织详情', '/sys/org/{id}', 'GET', 'TENANT', 'system:org:list', 'system:org:view'),
+                ('org-create', '创建组织', '/sys/org', 'POST', 'TENANT', 'system:org:create', NULL),
+                ('org-update', '更新组织', '/sys/org/{id}', 'PUT', 'TENANT', 'system:org:edit', NULL),
+                ('org-delete', '删除组织', '/sys/org/{id}', 'DELETE', 'TENANT', 'system:org:delete', NULL),
+                ('org-user-list', '查询组织成员', '/sys/org/{unitId}/users', 'GET', 'TENANT', 'system:org:list', 'system:org:view'),
+                ('org-user-unit-list', '查询用户组织', '/sys/org/user/{userId}/units', 'GET', 'TENANT', 'system:org:list', 'system:org:view'),
+                ('org-user-add', '添加组织成员', '/sys/org/{unitId}/users/{userId}', 'POST', 'TENANT', 'system:org:user:assign', NULL),
+                ('org-user-remove', '移除组织成员', '/sys/org/{unitId}/users/{userId}', 'DELETE', 'TENANT', 'system:org:user:remove', NULL),
+                ('org-user-primary-update', '设置用户主组织', '/sys/org/user/{userId}/primary/{unitId}', 'PUT', 'TENANT', 'system:org:user:assign', NULL),
+                ('org-user-primary-read', '读取用户主组织', '/sys/org/user/{userId}/primary', 'GET', 'TENANT', 'system:org:list', 'system:org:view'),
+
+                -- Data-scope control plane.
+                ('datascope-list', '查询数据范围规则', '/sys/data-scope', 'GET', 'TENANT', 'system:datascope:view', NULL),
+                ('datascope-role-list', '查询角色数据范围', '/sys/data-scope/role/{roleId}', 'GET', 'TENANT', 'system:datascope:view', NULL),
+                ('datascope-item-list', '查询数据范围明细', '/sys/data-scope/{id}/items', 'GET', 'TENANT', 'system:datascope:view', NULL),
+                ('datascope-create', '创建数据范围规则', '/sys/data-scope', 'POST', 'TENANT', 'system:datascope:edit', NULL),
+                ('datascope-item-create', '创建数据范围明细', '/sys/data-scope/{id}/items', 'POST', 'TENANT', 'system:datascope:edit', NULL),
+                ('datascope-item-update', '更新数据范围明细', '/sys/data-scope/{id}/items', 'PUT', 'TENANT', 'system:datascope:edit', NULL),
+                ('datascope-delete', '删除数据范围规则', '/sys/data-scope', 'DELETE', 'TENANT', 'system:datascope:edit', NULL),
+
+                -- Role compatibility and lookup endpoints.
+                ('role-user-list', '查询角色用户', '/sys/roles/{id}/users', 'GET', 'TENANT', 'system:user:role:assign', NULL),
+                ('role-user-update', '分配角色用户', '/sys/roles/{id}/users', 'POST', 'TENANT', 'system:user:role:assign', NULL),
+                ('role-resource-list', '查询角色权限兼容资源', '/sys/roles/{id}/resources', 'GET', 'TENANT', 'system:role:permission:assign', NULL),
+                ('role-resource-update', '更新角色权限兼容资源', '/sys/roles/{id}/resources', 'POST', 'TENANT', 'system:role:permission:assign', NULL),
+                ('permission-options', '查询权限选项', '/sys/permissions/options', 'GET', 'BOTH', 'system:menu:list', 'system:resource:list'),
+                ('role-constraint-hierarchy-delete', '删除角色层级约束', '/sys/role-constraints/hierarchy', 'DELETE', 'TENANT', 'system:role:constraint:edit', NULL),
+                ('role-constraint-mutex-delete', '删除角色互斥约束', '/sys/role-constraints/mutex', 'DELETE', 'TENANT', 'system:role:constraint:edit', NULL),
+                ('role-constraint-prerequisite-delete', '删除角色先决约束', '/sys/role-constraints/prerequisite', 'DELETE', 'TENANT', 'system:role:constraint:edit', NULL),
+                ('role-constraint-cardinality-delete', '删除角色基数约束', '/sys/role-constraints/cardinality', 'DELETE', 'TENANT', 'system:role:constraint:edit', NULL),
+                ('platform-tenant-user-detail', '平台租户用户详情', '/platform/tenants/{tenantId}/users/{userId}', 'GET', 'PLATFORM', 'system:user:list', NULL),
+
+                -- Tenant dictionary management. Five authenticated lookup endpoints are precise filter exemptions.
+                ('dict-type-list', '查询字典类型', '/dict/types', 'GET', 'TENANT', 'dict:type:list', NULL),
+                ('dict-type-detail', '读取字典类型', '/dict/types/{id}', 'GET', 'TENANT', 'dict:type:list', NULL),
+                ('dict-type-create', '创建字典类型', '/dict/types', 'POST', 'TENANT', 'dict:type:create', NULL),
+                ('dict-type-update', '更新字典类型', '/dict/types/{id}', 'PUT', 'TENANT', 'dict:type:edit', NULL),
+                ('dict-type-delete', '删除字典类型', '/dict/types/{id}', 'DELETE', 'TENANT', 'dict:type:delete', NULL),
+                ('dict-type-batch-delete', '批量删除字典类型', '/dict/types/batch/delete', 'POST', 'TENANT', 'dict:type:delete', NULL),
+                ('dict-item-list', '查询字典项', '/dict/items', 'GET', 'TENANT', 'dict:item:list', NULL),
+                ('dict-item-detail', '读取字典项', '/dict/items/{id}', 'GET', 'TENANT', 'dict:item:list', NULL),
+                ('dict-item-type-list', '按类型查询字典项', '/dict/items/type/{dictTypeId}', 'GET', 'TENANT', 'dict:item:list', NULL),
+                ('dict-item-create', '创建字典项', '/dict/items', 'POST', 'TENANT', 'dict:item:create', NULL),
+                ('dict-item-update', '更新字典项', '/dict/items/{id}', 'PUT', 'TENANT', 'dict:item:edit', NULL),
+                ('dict-item-delete', '删除字典项', '/dict/items/{id}', 'DELETE', 'TENANT', 'dict:item:delete', NULL),
+                ('dict-item-batch-delete', '批量删除字典项', '/dict/items/batch/delete', 'POST', 'TENANT', 'dict:item:delete', NULL),
+
+                -- Platform-only idempotent operations.
+                ('idempotent-metrics', '读取幂等指标', '/metrics/idempotent', 'GET', 'PLATFORM', 'idempotent:ops:view', NULL),
+                ('idempotent-top-keys', '读取幂等热点键', '/metrics/idempotent/top-keys', 'GET', 'PLATFORM', 'idempotent:ops:view', NULL),
+                ('idempotent-mq-metrics', '读取幂等消息指标', '/metrics/idempotent/mq', 'GET', 'PLATFORM', 'idempotent:ops:view', NULL),
+                ('idempotent-rule-list', '查询幂等规则', '/console/rules', 'GET', 'PLATFORM', 'idempotent:ops:view', NULL),
+                ('idempotent-rule-create', '创建幂等规则', '/console/rules', 'POST', 'PLATFORM', 'idempotent:ops:view', NULL),
+                ('idempotent-rule-update', '更新幂等规则', '/console/rules/{id}', 'PUT', 'PLATFORM', 'idempotent:ops:view', NULL),
+                ('idempotent-rule-delete', '删除幂等规则', '/console/rules/{id}', 'DELETE', 'PLATFORM', 'idempotent:ops:view', NULL),
+                ('idempotent-rule-enable', '启用幂等规则', '/console/rules/enable', 'POST', 'PLATFORM', 'idempotent:ops:view', NULL),
+                ('idempotent-rule-disable', '禁用幂等规则', '/console/rules/disable', 'POST', 'PLATFORM', 'idempotent:ops:view', NULL),
+                ('idempotent-record-list', '查询幂等记录', '/console/records', 'GET', 'PLATFORM', 'idempotent:ops:view', NULL),
+                ('idempotent-record-retry', '重试幂等记录', '/console/records/retry', 'POST', 'PLATFORM', 'idempotent:ops:view', NULL),
+                ('idempotent-console-metrics', '读取幂等控制台指标', '/console/metrics', 'GET', 'PLATFORM', 'idempotent:ops:view', NULL),
+                ('idempotent-blacklist-list', '查询幂等黑名单', '/console/blacklist', 'GET', 'PLATFORM', 'idempotent:ops:view', NULL),
+                ('idempotent-blacklist-create', '创建幂等黑名单', '/console/blacklist', 'POST', 'PLATFORM', 'idempotent:ops:view', NULL),
+                ('idempotent-blacklist-delete', '删除幂等黑名单', '/console/blacklist/{id}', 'DELETE', 'PLATFORM', 'idempotent:ops:view', NULL),
+
+                -- Export. The controller accepts canonical view or manage; demo writes require manage.
+                ('export-sync', '同步导出', '/export/sync', 'POST', 'TENANT', 'system:export:view', 'system:export:manage'),
+                ('export-async', '提交异步导出', '/export/async', 'POST', 'TENANT', 'system:export:view', 'system:export:manage'),
+                ('export-task-list', '查询导出任务', '/export/task', 'GET', 'TENANT', 'system:export:view', 'system:export:manage'),
+                ('export-task-detail', '读取导出任务', '/export/task/{taskId}', 'GET', 'TENANT', 'system:export:view', 'system:export:manage'),
+                ('export-task-download', '下载导出结果', '/export/task/{taskId}/download', 'GET', 'TENANT', 'system:export:view', 'system:export:manage'),
+                ('export-async-servlet', '提交 Servlet 异步导出', '/export/async-servlet', 'POST', 'TENANT', 'system:export:view', 'system:export:manage'),
+                ('export-demo-list', '查询导出演示数据', '/demo/export-usage', 'GET', 'TENANT', 'system:export:view', 'system:export:manage'),
+                ('export-demo-detail', '读取导出演示数据', '/demo/export-usage/{id}', 'GET', 'TENANT', 'system:export:view', 'system:export:manage'),
+                ('export-demo-create', '创建导出演示数据', '/demo/export-usage', 'POST', 'TENANT', 'system:export:manage', NULL),
+                ('export-demo-update', '更新导出演示数据', '/demo/export-usage/{id}', 'PUT', 'TENANT', 'system:export:manage', NULL),
+                ('export-demo-delete', '删除导出演示数据', '/demo/export-usage/{id}', 'DELETE', 'TENANT', 'system:export:manage', NULL),
+                ('export-demo-generate', '生成导出演示数据', '/demo/export-usage/generate', 'POST', 'TENANT', 'system:export:manage', NULL),
+                ('export-demo-clear', '清理导出演示数据', '/demo/export-usage/clear', 'POST', 'TENANT', 'system:export:manage', NULL);
+
+              INSERT INTO api_endpoint (
+                tenant_id, resource_level, name, title, uri, method, permission,
+                required_permission_id, enabled, created_at, created_by, updated_at, updated_by
+              )
+              SELECT
+                target_permission.tenant_id,
+                CASE WHEN target_permission.tenant_id IS NULL THEN 'PLATFORM' ELSE 'TENANT' END,
+                CONCAT('controller-closure-', canonical_route.route_key),
+                canonical_route.endpoint_title,
+                canonical_route.canonical_uri,
+                canonical_route.canonical_method,
+                canonical_route.primary_permission_code,
+                target_permission.id,
+                1,
+                CURRENT_TIMESTAMP,
+                NULL,
+                CURRENT_TIMESTAMP,
+                NULL
+              FROM tmp_guarded_controller_route canonical_route
+              JOIN permission target_permission
+                ON target_permission.permission_code = canonical_route.primary_permission_code
+               AND target_permission.enabled = 1
+               AND (
+                 canonical_route.scope_mode = 'BOTH'
+                 OR (canonical_route.scope_mode = 'PLATFORM' AND target_permission.tenant_id IS NULL)
+                 OR (canonical_route.scope_mode = 'TENANT' AND target_permission.tenant_id IS NOT NULL)
+               )
+              WHERE NOT EXISTS (
+                SELECT 1
+                FROM api_endpoint existing_endpoint
+                WHERE existing_endpoint.tenant_id <=> target_permission.tenant_id
+                  AND UPPER(TRIM(existing_endpoint.method)) = canonical_route.canonical_method
+                  AND CASE
+                    WHEN CHAR_LENGTH(TRIM(existing_endpoint.uri)) > 1
+                     AND RIGHT(TRIM(existing_endpoint.uri), 1) = '/'
+                    THEN LEFT(TRIM(existing_endpoint.uri), CHAR_LENGTH(TRIM(existing_endpoint.uri)) - 1)
+                    ELSE TRIM(existing_endpoint.uri)
+                  END = canonical_route.canonical_uri
+              );
+
+              UPDATE api_endpoint endpoint_entry
+              JOIN tmp_guarded_controller_route canonical_route
+                ON UPPER(TRIM(endpoint_entry.method)) = canonical_route.canonical_method
+               AND CASE
+                 WHEN CHAR_LENGTH(TRIM(endpoint_entry.uri)) > 1
+                  AND RIGHT(TRIM(endpoint_entry.uri), 1) = '/'
+                 THEN LEFT(TRIM(endpoint_entry.uri), CHAR_LENGTH(TRIM(endpoint_entry.uri)) - 1)
+                 ELSE TRIM(endpoint_entry.uri)
+               END = canonical_route.canonical_uri
+               AND (
+                 canonical_route.scope_mode = 'BOTH'
+                 OR (canonical_route.scope_mode = 'PLATFORM' AND endpoint_entry.tenant_id IS NULL)
+                 OR (canonical_route.scope_mode = 'TENANT' AND endpoint_entry.tenant_id IS NOT NULL)
+               )
+              JOIN permission target_permission
+                ON target_permission.tenant_id <=> endpoint_entry.tenant_id
+               AND target_permission.permission_code = canonical_route.primary_permission_code
+               AND target_permission.enabled = 1
+              SET
+                endpoint_entry.resource_level = CASE WHEN endpoint_entry.tenant_id IS NULL THEN 'PLATFORM' ELSE 'TENANT' END,
+                endpoint_entry.name = CONCAT('controller-closure-', canonical_route.route_key),
+                endpoint_entry.title = canonical_route.endpoint_title,
+                endpoint_entry.uri = canonical_route.canonical_uri,
+                endpoint_entry.method = canonical_route.canonical_method,
+                endpoint_entry.permission = canonical_route.primary_permission_code,
+                endpoint_entry.required_permission_id = target_permission.id,
+                endpoint_entry.enabled = 1,
+                endpoint_entry.updated_at = CURRENT_TIMESTAMP,
+                endpoint_entry.updated_by = NULL;
+
+              DELETE requirement_entry
+              FROM api_endpoint_permission_requirement requirement_entry
+              JOIN api_endpoint endpoint_entry
+                ON endpoint_entry.id = requirement_entry.api_endpoint_id
+              JOIN tmp_guarded_controller_route canonical_route
+                ON endpoint_entry.method = canonical_route.canonical_method
+               AND endpoint_entry.uri = canonical_route.canonical_uri
+               AND (
+                 canonical_route.scope_mode = 'BOTH'
+                 OR (canonical_route.scope_mode = 'PLATFORM' AND endpoint_entry.tenant_id IS NULL)
+                 OR (canonical_route.scope_mode = 'TENANT' AND endpoint_entry.tenant_id IS NOT NULL)
+               );
+
+              -- group=0 is the canonical requirement; group=1 is an optional OR alternative.
+              INSERT INTO api_endpoint_permission_requirement (
+                tenant_id, api_endpoint_id, requirement_group, sort_order,
+                permission_id, negated, created_at, created_by, updated_at, updated_by
+              )
+              SELECT
+                endpoint_entry.tenant_id,
+                endpoint_entry.id,
+                0,
+                1,
+                primary_permission.id,
+                0,
+                CURRENT_TIMESTAMP,
+                NULL,
+                CURRENT_TIMESTAMP,
+                NULL
+              FROM api_endpoint endpoint_entry
+              JOIN tmp_guarded_controller_route canonical_route
+                ON endpoint_entry.method = canonical_route.canonical_method
+               AND endpoint_entry.uri = canonical_route.canonical_uri
+               AND (
+                 canonical_route.scope_mode = 'BOTH'
+                 OR (canonical_route.scope_mode = 'PLATFORM' AND endpoint_entry.tenant_id IS NULL)
+                 OR (canonical_route.scope_mode = 'TENANT' AND endpoint_entry.tenant_id IS NOT NULL)
+               )
+              JOIN permission primary_permission
+                ON primary_permission.tenant_id <=> endpoint_entry.tenant_id
+               AND primary_permission.permission_code = canonical_route.primary_permission_code
+               AND primary_permission.enabled = 1;
+
+              INSERT INTO api_endpoint_permission_requirement (
+                tenant_id, api_endpoint_id, requirement_group, sort_order,
+                permission_id, negated, created_at, created_by, updated_at, updated_by
+              )
+              SELECT
+                endpoint_entry.tenant_id,
+                endpoint_entry.id,
+                1,
+                1,
+                alternate_permission.id,
+                0,
+                CURRENT_TIMESTAMP,
+                NULL,
+                CURRENT_TIMESTAMP,
+                NULL
+              FROM api_endpoint endpoint_entry
+              JOIN tmp_guarded_controller_route canonical_route
+                ON endpoint_entry.method = canonical_route.canonical_method
+               AND endpoint_entry.uri = canonical_route.canonical_uri
+               AND canonical_route.alternate_permission_code IS NOT NULL
+               AND (
+                 canonical_route.scope_mode = 'BOTH'
+                 OR (canonical_route.scope_mode = 'PLATFORM' AND endpoint_entry.tenant_id IS NULL)
+                 OR (canonical_route.scope_mode = 'TENANT' AND endpoint_entry.tenant_id IS NOT NULL)
+               )
+              JOIN permission alternate_permission
+                ON alternate_permission.tenant_id <=> endpoint_entry.tenant_id
+               AND alternate_permission.permission_code = canonical_route.alternate_permission_code
+               AND alternate_permission.enabled = 1;
+
+              -- 平台租户用户详情需要 (user:list AND tenant:list) OR
+              -- (user:list AND tenant:view)，而不是把两项误写成 OR。
+              DELETE requirement_entry
+              FROM api_endpoint_permission_requirement requirement_entry
+              JOIN api_endpoint endpoint_entry
+                ON endpoint_entry.id = requirement_entry.api_endpoint_id
+              WHERE endpoint_entry.tenant_id IS NULL
+                AND endpoint_entry.method = 'GET'
+                AND endpoint_entry.uri = '/platform/tenants/{tenantId}/users/{userId}';
+
+              INSERT INTO api_endpoint_permission_requirement (
+                tenant_id, api_endpoint_id, requirement_group, sort_order,
+                permission_id, negated, created_at, created_by, updated_at, updated_by
+              )
+              SELECT NULL, endpoint_entry.id, requirement_seed.requirement_group,
+                     requirement_seed.sort_order, permission_entry.id, 0,
+                     CURRENT_TIMESTAMP, NULL, CURRENT_TIMESTAMP, NULL
+              FROM api_endpoint endpoint_entry
+              JOIN (
+                SELECT 0 AS requirement_group, 1 AS sort_order, 'system:user:list' AS permission_code
+                UNION ALL SELECT 0, 2, 'system:tenant:list'
+                UNION ALL SELECT 1, 1, 'system:user:list'
+                UNION ALL SELECT 1, 2, 'system:tenant:view'
+              ) requirement_seed
+              JOIN permission permission_entry
+                ON permission_entry.tenant_id IS NULL
+               AND permission_entry.permission_code = requirement_seed.permission_code
+               AND permission_entry.enabled = 1
+              WHERE endpoint_entry.tenant_id IS NULL
+                AND endpoint_entry.method = 'GET'
+                AND endpoint_entry.uri = '/platform/tenants/{tenantId}/users/{userId}';
+
+              DROP TEMPORARY TABLE tmp_guarded_controller_route;

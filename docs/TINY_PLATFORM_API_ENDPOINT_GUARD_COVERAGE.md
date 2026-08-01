@@ -9,7 +9,8 @@
 ### 1.1 统一守卫在哪里生效
 
 - `ApiEndpointRequirementFilter` 已挂载在 Spring Security filter chain 上，对已认证请求执行统一 requirement 判定。
-- 统一守卫只对**已登记**的 `api_endpoint` 生效；未登记接口保持现状（不一刀切拦截）。
+- 业务接口采用 **fail-closed**：同 method 下找不到严格模板匹配的 enabled `api_endpoint` 时，以 `URI_TEMPLATE_NOT_MATCHED` 拒绝；不得把“未登记”当作继续沿用旧 Guard 的放行条件。
+- 仅登录/OAuth 协议、静态资源及少量已认证自服务/lookup 接口按精确 method + path 豁免。豁免不得使用目录级通配替代载体治理。
 
 ### 1.2 “已被统一守卫接管”的必要条件
 
@@ -33,7 +34,7 @@
 
 1. **已登记且已被统一守卫接管**
 2. **已登记但仍缺真实覆盖证明**（只有服务层/代码能力，或测试仍是 mock 决策）
-3. **未登记，当前仍只靠旧 Guard**
+3. **未登记，统一守卫拒绝（必须补载体或证明属于精确基础设施豁免）**
 4. **有意豁免**（登录/公开/健康检查/静态资源等）
 
 缺口原因必须标注为：
@@ -67,13 +68,16 @@
 
 - `tiny-oauth-server/src/test/java/com/tiny/platform/application/controller/resource/ResourceControllerApiEndpointTemplateUriIntegrationTest.java`
   - 覆盖：`/sys/resources`（静态 URI）、`/sys/resources/{id}`（模板 URI）、未登记（段数不一致）不误伤
+- `tiny-oauth-server/src/test/java/com/tiny/platform/core/oauth/security/ApiEndpointControllerMappingDriftIT.java`
+  - 在真实 MySQL/Spring MVC 上比较实际 Controller method/template 与同 scope enabled `api_endpoint`、主 permission 和 requirement；同时拒绝运行时等价的重复模板。
+  - 执行入口：`bash tiny-oauth-server/scripts/verify-api-endpoint-controller-drift.sh`。
 
 ---
 
 ## 4. 模块覆盖清单（按“应纳入统一功能权限守卫”的控制面/平台能力分组）
 
 > 说明：
-> - 这里的“已登记”优先以**初始化 `data.sql`（resource API 记录）+ carrier split backfill** 的目标态为依据；若某环境未跑 seed/backfill，则登记状态可能不一致，需要在 rollout 中校验。
+> - 这里的“已登记”以 Liquibase 迁移后的真实数据库状态和漂移门禁为依据，不再以 `data.sql` 目标态推断。
 > - “缺真实覆盖证明”表示：当前没有在测试中证明“真实 filter-chain 命中该 entry 时会 ALLOW/DENY”，而不仅是 mock 决策。
 
 ### 4.1 tenant（`TenantController` / `system:tenant:*`）
@@ -167,15 +171,10 @@
 ### 4.8 dict（`DictController` / `PlatformDictController`）
 
 - **接口组**：`/dict/**`、`/sys/dict/**`（若存在）
-- **分类**：有意豁免（当前不纳入统一守卫）
-- **原因**：
-  - `data.sql` 当前未包含 `/dict/**` 的 `api_endpoint` 登记；现阶段不在本轮/本迭代内新增 dict 的统一守卫登记口径，避免扩大“登记覆盖 + rollout 校验 + 运营回填”的范围
-  - dict 同时承担运行态字典查询能力与控制面写能力；目前继续依赖既有 `@PreAuthorize`/AccessGuard 做主保护，避免在未完成登记治理前引入“部分接口被统一守卫接管、部分仍旧 Guard”的误解
-- **当前口径**：dict 仍依赖旧 Guard；统一守卫对 dict 不做强制拦截
-- **重新纳入触发条件**：
-  - 明确 dict 的“纳入范围”（至少控制面写接口，是否包含运行态 read 接口）
-  - 补齐最小 `api_endpoint` 登记与 `api_endpoint_permission_requirement` compatibility group，并通过 rollout 校验
-  - 至少新增 1 组 dict 真实模块 controller ALLOW/DENY 证明后，方可在本清单中提升证据等级
+- **分类**：控制面已登记；运行态 lookup 精确豁免。
+- **控制面**：平台/租户字典类型、字典项的管理读写映射由 changeset 211 建立载体和 requirement，继续叠加既有方法守卫。
+- **精确豁免**：只包括 GET `/dict/types/code/*`、`/dict/types/current`、`/dict/items/code/*`、`/dict/items/map/*`、`/dict/items/label/*/*`；这些是已认证页面展示 lookup，不等价于 `/dict/**` 通配放行。
+- **防漂移**：新增 dict mapping 若既不在迁移载体中，也不匹配上述精确 method/path，漂移门禁直接失败。
 
 ---
 
@@ -184,7 +183,8 @@
 - **证据等级总览（与第 4 节模块清单一一对应）**：
   - **真实模块 controller 证明**：`tenant`、`user`、`role`、`menu`、`authorization audit`、`authentication audit`、`scheduling`
   - **真实 filter-chain 证明（静态 + 模板 URI）**：`resource`（`/sys/resources` 与 `/sys/resources/{id}`）
-  - **有意豁免**：`dict`（当前不纳入统一守卫，继续依赖旧 Guard）
+  - **真实 DB Controller 漂移证明**：所有未精确豁免、非 disabled-fallback 的受保护 MVC mapping 均有同 scope 载体、主 permission 与 requirement。
+  - **精确基础设施豁免**：运行态 dict lookup、当前用户头像/登录历史、process health；不包含目录通配。
 - **当前仍需补齐的最高优先级缺口**：
-  - 在 `resource` 模块补更多真实端点覆盖（当前主要证明静态/模板 read 端点）
-
+  - 漂移门禁证明“载体存在且结构完整”，不替代每个高风险写接口的真实 ALLOW/DENY、数据权限与租户隔离行为测试。
+  - `ProcessDisabledFallbackController` 仅在 Camunda 关闭时提供 503 envelope，明确排除于权限载体目录；不得为它创建 `/process/**` 通配载体。

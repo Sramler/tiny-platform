@@ -821,3 +821,55 @@ databaseChangeLog:
   - include:
       file: 201-backfill-scheduling-orchestration-operation-endpoints.yaml
       relativeToChangelogFile: true
+
+  # 认证审计页面列表、统计概览与导出接口的完整统一守卫载体闭包。
+  - include:
+      file: 202-backfill-authentication-audit-api-endpoints.yaml
+      relativeToChangelogFile: true
+
+  # 授权审计页面及历史只读查询接口的完整统一守卫载体闭包。
+  - include:
+      file: 203-backfill-authorization-audit-api-endpoints.yaml
+      relativeToChangelogFile: true
+
+  # 平台资源模板控制面写权限回填，避免 ROLE_PLATFORM_ADMIN 只能查看却没有任何操作按钮。
+  - include:
+      file: 204-bind-platform-admin-resource-management-permissions.yaml
+      relativeToChangelogFile: true
+
+  # 审计 API 按 scope + method + uri 收口，补齐 purge 并修复错误权限 requirement。
+  - include:
+      file: 205-normalize-audit-api-endpoint-closure.yaml
+      relativeToChangelogFile: true
+
+  # PLATFORM 资源管理按钮与写接口按固定规范闭合，不再依赖租户载体反推平台模板。
+  - include:
+      file: 206-close-platform-resource-management-carriers.yaml
+      relativeToChangelogFile: true
+
+  # PLATFORM 资源排序写接口补偿闭包，与普通编辑共用 system:resource:edit。
+  - include:
+      file: 207-close-platform-resource-sort-api-endpoint.yaml
+      relativeToChangelogFile: true
+
+  # 审计 API 运行时等价模板去重：尾斜杠与占位符异名不得形成多个守卫候选。
+  - include:
+      file: 208-deduplicate-audit-runtime-equivalent-api-endpoints.yaml
+      relativeToChangelogFile: true
+
+  # PLATFORM 资源管理 API 运行时等价模板去重：尾斜杠与占位符异名不得形成多个守卫候选。
+  - include:
+      file: 209-deduplicate-platform-resource-runtime-equivalent-api-endpoints.yaml
+      relativeToChangelogFile: true
+  # 按 SchedulingController 细粒度权限闭合全部运行时 endpoint，不复活 scheduling:* 通配权限
+  - include:
+      file: 210-normalize-scheduling-controller-api-endpoint-closure.yaml
+      relativeToChangelogFile: true
+  # 闭合已发布管理面、幂等与导出 Controller 的细粒度 endpoint requirement
+  - include:
+      file: 211-close-guarded-controller-api-endpoint-gaps.yaml
+      relativeToChangelogFile: true
+  # scheduling:* 禁用后，以细粒度权限恢复 ROLE_TENANT_ADMIN 的既有调度管理语义
+  - include:
+      file: 212-bind-tenant-admin-scheduling-fine-grained-permissions.yaml
+      relativeToChangelogFile: true

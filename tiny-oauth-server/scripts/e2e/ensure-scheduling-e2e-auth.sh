@@ -656,8 +656,30 @@ void ensureSchedulingRuntimeMenus(Connection connection, Long tenantId, Long ent
 void ensureSchedulingAdminAuthority(Connection connection, Long tenantId, Long roleId) throws SQLException {
     Long wildcardPermissionId = ensurePermission(connection, tenantId, "scheduling:*", "调度全权限", "OTHER", "real e2e scheduling wildcard");
     ensureRolePermissionBinding(connection, tenantId, roleId, wildcardPermissionId);
-    Long schedulingReadPermissionId = ensurePermission(connection, tenantId, "scheduling:console:view", "调度控制面查看权限", "MENU", "real e2e scheduling read carrier");
-    ensureRolePermissionBinding(connection, tenantId, roleId, schedulingReadPermissionId);
+    String[][] fineGrainedAuthorities = new String[][] {
+        {"scheduling:console:view", "调度控制面查看权限", "MENU"},
+        {"scheduling:console:config", "调度控制面配置权限", "API"},
+        {"scheduling:run:control", "调度运行控制权限", "API"},
+        {"scheduling:audit:view", "调度审计查看权限", "API"},
+        {"scheduling:cluster:view", "调度集群状态查看权限", "API"}
+    };
+    Long schedulingReadPermissionId = null;
+    for (String[] authority : fineGrainedAuthorities) {
+        Long permissionId = ensurePermission(
+                connection,
+                tenantId,
+                authority[0],
+                authority[1],
+                authority[2],
+                "real e2e scheduling fine-grained authority");
+        ensureRolePermissionBinding(connection, tenantId, roleId, permissionId);
+        if ("scheduling:console:view".equals(authority[0])) {
+            schedulingReadPermissionId = permissionId;
+        }
+    }
+    if (schedulingReadPermissionId == null) {
+        throw new IllegalStateException("未能准备 scheduling:console:view");
+    }
     Long schedulingEntryPermissionId = ensurePermission(connection, tenantId, "scheduling:entry:view", "调度入口查看权限", "MENU", "real e2e scheduling route entry");
     ensureRolePermissionBinding(connection, tenantId, roleId, schedulingEntryPermissionId);
     ensureSchedulingRuntimeMenus(connection, tenantId, schedulingEntryPermissionId, schedulingReadPermissionId);

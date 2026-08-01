@@ -61,7 +61,7 @@ E2E 必填：
 补充（active-scope + `tokenRefreshRequired`）：
 - **API + auth**：`src/api/user.test.ts`、`src/auth/auth.test.ts`。
 - **HeaderBar 编排**：`src/layouts/HeaderBar.test.ts` 直接断言 `confirmSwitchScope` 三条路径（无 renew / renew 成功顺序 / renew 失败不 success、不广播）。
-- **Real-link 抽样**：`e2e/real/active-scope-token-refresh.spec.ts`，project **`chromium`**，身份为 **globalSetup 派生租户态身份**（`e2e/.auth/scheduling-tenant-user.json`）。用例进入前强断言：access_token claims 与 `GET /sys/users/current` body 必须同时包含 `activeTenantId`（且不得是 PLATFORM）。前置：本机 `9000`+`5173`、`.env.e2e.local`、OIDC `vue-client` 与 `silent-renew.html`。
+- **Real-link 抽样**：`e2e/real/active-scope-token-refresh.spec.ts`，project **`chromium`**，身份为 **globalSetup 生成的租户 Session**（`e2e/.auth/scheduling-user.json`）。用例进入前强断言 `GET /sys/users/current` 含 `activeTenantId`（且不得是 PLATFORM）；写链必须返回 `tokenRefreshRequired=false`，不触发 silent renew，浏览器 storageState/请求不得出现 token/Bearer。前置：本机 `9000`+`5173` 与 `.env.e2e.local`。
 - 执行示例（在 `tiny-oauth-server/src/main/webapp`）：
   `npx playwright test -c playwright.real.config.ts --project=chromium e2e/real/active-scope-token-refresh.spec.ts`
 ```

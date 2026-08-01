@@ -32,7 +32,7 @@ class UserSessionServiceImplTest {
     void registerOrTouch_shouldCreateNewActiveSession() {
         when(tenantRepository.findLoginBlockedLifecycleStatus(9L)).thenReturn(Optional.empty());
         when(userSessionRepository.findBySessionId("sid-1")).thenReturn(Optional.empty());
-        when(userSessionRepository.save(any(UserSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(userSessionRepository.saveAndFlush(any(UserSession.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         UserSessionState state = userSessionService.registerOrTouch(new SessionTouchRequest(
             "sid-1",
@@ -48,11 +48,34 @@ class UserSessionServiceImplTest {
         ));
 
         assertThat(state).isEqualTo(UserSessionState.ACTIVE);
-        verify(userSessionRepository).save(argThat(session ->
+        verify(userSessionRepository).saveAndFlush(argThat(session ->
             "sid-1".equals(session.getSessionId())
                 && Long.valueOf(1L).equals(session.getUserId())
                 && session.getStatus() == UserSessionState.ACTIVE
         ));
+    }
+
+    @Test
+    void registerOrTouch_shouldRecoverWhenConcurrentRequestWinsSessionInsert() {
+        when(tenantRepository.findLoginBlockedLifecycleStatus(9L)).thenReturn(Optional.empty());
+        UserSession winner = new UserSession();
+        winner.setSessionId("sid-race");
+        winner.setUserId(1L);
+        winner.setTenantId(9L);
+        winner.setStatus(UserSessionState.ACTIVE);
+        winner.setLastSeenAt(LocalDateTime.now());
+        when(userSessionRepository.findBySessionId("sid-race"))
+            .thenReturn(Optional.empty(), Optional.of(winner));
+        when(userSessionRepository.saveAndFlush(any(UserSession.class)))
+            .thenThrow(new org.springframework.dao.DataIntegrityViolationException("duplicate session id"));
+
+        UserSessionState state = userSessionService.registerOrTouch(new SessionTouchRequest(
+            "sid-race", 1L, 9L, "alice", "LOCAL", "MFA", "127.0.0.1", "Chrome",
+            LocalDateTime.now(), LocalDateTime.now().plusMinutes(30)
+        ));
+
+        assertThat(state).isEqualTo(UserSessionState.ACTIVE);
+        verify(userSessionRepository, times(2)).findBySessionId("sid-race");
     }
 
     @Test

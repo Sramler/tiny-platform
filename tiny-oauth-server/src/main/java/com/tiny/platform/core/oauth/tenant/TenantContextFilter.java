@@ -185,6 +185,14 @@ public class TenantContextFilter extends OncePerRequestFilter {
         Long activeTenantId;
         String tenantSource;
 
+        // /sys/users/current 同时承担前端登录态探测。登出后既没有 SecurityContext、Bearer，
+        // 也没有活动租户时，应继续交给 Spring Security 返回 401/403，而不是在租户解析层误报 400 missing_tenant。
+        // 仅放行这个精确的匿名 GET；已认证、带 Bearer 或仍有租户 Session 的请求继续执行完整租户校验。
+        if (isAnonymousCurrentUserProbe(request, sessionActiveTenantId)) {
+            filterChain.doFilter(request, response);
+            return;
+        }
+
         if (authenticatedActiveTenantId != null) {
             if (isMismatch(authenticatedActiveTenantId, issuerActiveTenantId)
                     || isMismatch(authenticatedActiveTenantId, sessionActiveTenantId)
@@ -357,6 +365,19 @@ public class TenantContextFilter extends OncePerRequestFilter {
 
     private boolean isMismatch(Long left, Long right) {
         return left != null && right != null && !left.equals(right);
+    }
+
+    private boolean isAnonymousCurrentUserProbe(HttpServletRequest request, Long sessionActiveTenantId) {
+        if (!"GET".equalsIgnoreCase(request.getMethod())
+            || !"/sys/users/current".equals(resolvePathForTenantMatching(request))
+            || sessionActiveTenantId != null
+            || resolveBearerToken(request) != null) {
+            return false;
+        }
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return authentication == null
+            || authentication instanceof AnonymousAuthenticationToken
+            || !authentication.isAuthenticated();
     }
 
     /**

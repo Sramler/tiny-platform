@@ -13,7 +13,7 @@
   - 命令：`npm run test:e2e:real`
   - 配置：`playwright.real.config.ts`
   - 测试目录：`e2e/real/*.spec.ts`
-  - 特点：真实 Spring Boot + Vite dev server、真实 MySQL（可选种子）、真实 OIDC/MFA/多租户链路，不再 mock first-party API。
+  - 特点：真实 Spring Boot + Vite dev server、真实 MySQL（可选种子）、真实登录/MFA/HttpOnly Session/多租户链路，不再 mock first-party API。
   - **端口与 `E2E_FRONTEND_BASE_URL`**：若在 shell 中设置了 `E2E_FRONTEND_PORT`（例如动态端口避免与本机 5173 冲突），但 `.env.e2e.local` 仍写死 `E2E_FRONTEND_BASE_URL=http://localhost:5173`，`playwright.real.config.ts` 会以**端口为准**重写 `baseURL`，并向后端进程传入对应的 `E2E_FRONTEND_BASE_URL`，避免误连本机旧 Vite、而后端未就绪时出现 `GET /csrf` `ERR_CONNECTION_REFUSED`。
 
 > 当前没有单独的 shared-env smoke / nightly/full-chain 套件，后续如有新增应在本表中补充。
@@ -59,7 +59,7 @@
 约束（对应 50-testing）：
 
 - 允许 mock first-party API，但必须**显式说明** mock 边界，仅验证 UI 行为/路由，不声称“真实链路已回归”。
-- 不允许在此等级下验证 MySQL 方言、多租户隔离、真实 OIDC/MFA 等平台能力。
+- 不允许在此等级下验证 MySQL 方言、多租户隔离、真实登录/MFA/HttpOnly Session 等平台能力。
 
 ---
 
@@ -84,7 +84,9 @@
     - **须配置 `E2E_PLATFORM_TENANT_CODE`**（与 `ensure-scheduling-e2e-auth.sh` / 库内平台租户语义一致；缺省 fail-fast，CARD-13E）。
     - 调用 `scripts/e2e/ensure-scheduling-e2e-auth.sh` 初始化主自动化身份；如配置第二租户变量，再初始化第二自动化身份。
   - `ensure-scheduling-e2e-auth.sh` 会先验证平台模板租户是否具备调度 bootstrap 模板（**必须存在 `ROLE_TENANT_ADMIN`**）及 `037` authority 与 `scheduling:*` 绑定，缺失时直接 fail fast，避免在 real-link 中把模板缺失误判成单条业务回归。
-    - 当第二租户或 readonly 租户与主租户不同，`real.global.setup.ts` 会优先使用平台自动化身份（`E2E_PLATFORM_*`）的真实 bearer token 调 `/sys/tenants` 创建租户，再交给 `ensure-scheduling-e2e-auth.sh` 只补用户与认证方式；这样 cross-tenant/readonly 的租户创建会真实触发 `TenantServiceImpl.create() -> TenantBootstrapService`，且不依赖普通租户管理员越权访问租户管理接口。
+    - 当第二租户或 readonly 租户与主租户不同，`real.global.setup.ts` 会优先生成平台自动化身份（`E2E_PLATFORM_*`）的 HttpOnly Session storageState，再以该 Session Cookie + CSRF 调 `/sys/tenants` 创建租户；浏览器不提取或发送 bearer token。随后由 `ensure-scheduling-e2e-auth.sh` 只补用户与认证方式。这样 cross-tenant/readonly 的租户创建会真实触发 `TenantServiceImpl.create() -> TenantBootstrapService`，且不依赖普通租户管理员越权访问租户管理接口。
+    - `E2E_TENANT_CODE_B` 必须与 `deriveTenantCodeForTenantScope(E2E_TENANT_CODE, E2E_PLATFORM_TENANT_CODE)` 的实际结果不同；相同则 setup fail-fast，禁止把同一租户的两份 Session 当成跨租户证据。
+    - 派生租户每次重建使用运行级唯一幂等键；测试初始管理员保持 `e2e_init_*` 前缀、20 位上限并保留随机后缀，避免清理后重跑 409 或截断碰撞。
     - 按需执行 `scripts/e2e/seed-scheduling-orchestration.sql`（由 `E2E_USE_SQL_SEED` 控制）。
     - 运行 `e2e/setup/generate-auth-state.mjs` 生成：
       - `e2e/.auth/scheduling-user.json`（主自动化身份）
@@ -113,7 +115,7 @@
 
 | spec 文件                                   | 等级          | 场景概述                                                                                  | 身份 / 边界说明                                                                                         |
 |---------------------------------------------|---------------|-------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|
-| `real/scheduling-dag-orchestration.spec.ts` | isolated real-link | 通过真实 OIDC 登录态 + 专用调度租户，创建 DAG、触发 run、观察并行归并/串行推进/重试/取消/暂停恢复等拓扑（当前断言偏行为与状态，不覆盖所有边界条件） | 使用真实 `/scheduling/**` API 与真实 MySQL/H2 schema，不再 mock first-party API；依赖真实 OIDC/JWT/tenant 头 |
+| `real/scheduling-dag-orchestration.spec.ts` | isolated real-link | 通过真实 HttpOnly Session 登录态 + 专用调度租户，创建 DAG、触发 run、观察并行归并/串行推进/重试/取消/暂停恢复等拓扑（当前断言偏行为与状态，不覆盖所有边界条件） | 使用同源真实 `/scheduling/**` API 与真实 MySQL/H2 schema，不再 mock first-party API；依赖真实 Session 与租户上下文头，浏览器不持有 JWT |
 | `real/mfa-login-flow.spec.ts`               | isolated real-link | 从 `/login` 起步，使用主自动化账号走 “/login → /self/security/totp-verify → /self/security” 的已绑定 TOTP 用户登录链路；当前仅覆盖单租户、单身份场景 | 通过真实 `/auth/login` 与 `/self/security/**`，不使用 storageState；依赖 `.env.e2e.local` 中的 E2E_TENANT_CODE/E2E_USERNAME/E2E_PASSWORD 以及 `E2E_TOTP_CODE` 或 `E2E_TOTP_SECRET` |
 | `real/platform-vue-login.spec.ts`           | isolated real-link | 从 `/login` 点击「平台登录」、提交「登录平台」，验证无 `tenantCode` 的真实 Session 登录（含平台身份 MFA）；断言不回到带错误的 `/login` | 依赖 **`E2E_PLATFORM_TENANT_CODE`**、`E2E_PLATFORM_USERNAME` / `E2E_PLATFORM_PASSWORD` 与 `E2E_PLATFORM_TOTP_SECRET`（或 `E2E_PLATFORM_TOTP_CODE`）；补全 Vitest 无法覆盖的 Login.vue 平台提交链路 |
 | `real/mfa-bind-flow.spec.ts`                | isolated real-link | 从 `/login` 起步，使用专用首绑身份登录未绑定 TOTP 的用户，走 “/login → /self/security/totp-bind → /self/security → 清理会话 → /login → /self/security/totp-verify → /self/security” 的完整首绑 + 校验链路 | 通过真实 `/auth/login` 与 `/self/security/totp/*`，不使用 storageState；依赖 `.env.e2e.local` 中的 E2E_USERNAME_BIND/E2E_PASSWORD_BIND 以及可选的 E2E_TENANT_CODE_BIND；TOTP secret 由真实 `/self/security/totp/pre-bind` 返回 |
@@ -122,7 +124,7 @@
 | `real/security-mfa-flow.spec.ts`           | isolated real-link | 在已有 storageState 登录态基础上，通过 `/self/security` 与 `/self/security/totp/*` 真实接口获取安全状态和 TOTP 预绑定信息；当前未覆盖从 `/login` 开始的完整 MFA 链路，断言相对宽松 | 仅读取安全状态与预绑定信息，不做绑定/解绑动作；依赖由 `real.global.setup.ts` 生成的主自动化身份 storageState |
 | `real/tenant-create-wizard.spec.ts`        | isolated real-link | 平台管理员从 `/system/tenant` 走租户初始化向导真实链路：成功创建、precheck 阻断、结果页治理入口 section 聚焦 | 使用 `chromium-platform-admin`（`e2e/.auth/platform-admin-user.json`）；不 mock `/sys/tenants*` / `/platform/tenants/:id` 链路 |
 
-> 以上 real-link spec 均只在真实后端 + 真实 OIDC + 真实多租户过滤器基础上运行，不使用 `page.route()` 拦截 first-party 业务 API。
+> 以上 real-link spec 均只在真实后端 + 同源 HttpOnly Session + 真实 MFA/多租户过滤器基础上运行，不使用 `page.route()` 拦截 first-party 业务 API。生成的 storageState 必须包含 HttpOnly `JSESSIONID`，且不得包含 access/refresh/id token。
 
 ---
 
@@ -135,7 +137,7 @@
   - 在 `page.evaluate` 中直接使用 `fetch` 调用真实 first-party API，用于补充 UI 难以覆盖的拒绝路径（如精确构造串租户 header）。
 - ❌ 不允许在 real-link 套件中：
   - 将 first-party 业务 API（如 `/scheduling/**`、`/self/security/**`、`/sys/**`）整体 mock 掉之后仍声称“真实链路 E2E 已覆盖”。
-  - 伪造 JWT / `localStorage` 登录态绕过真实 OIDC/MFA/bootstrap；所有 storageState 必须来自 `real.global.setup.ts` 生成的登录态。
+  - 伪造 token / `localStorage` 登录态绕过真实 Session/MFA/bootstrap；所有 storageState 必须来自 `real.global.setup.ts` 生成的登录态，并通过 Session-only 断言。
 
 ---
 

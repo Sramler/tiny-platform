@@ -22,6 +22,7 @@ test.describe('real-link: tenant A is isolated from tenant B resources', () => {
   test('tenant A cannot read tenant B task type and spoofing tenant B header is rejected', async ({
     browser,
     page,
+    baseURL,
   }) => {
     test.skip(
       !isCrossTenantIdentityConfigured(),
@@ -29,7 +30,12 @@ test.describe('real-link: tenant A is isolated from tenant B resources', () => {
     )
 
     await openOidcDebug(page, 'primary')
-    const tenantB = await openSecondaryAuthenticatedPage(browser, secondaryAuthStatePath, 'secondary')
+    const tenantB = await openSecondaryAuthenticatedPage(
+      browser,
+      secondaryAuthStatePath,
+      'secondary',
+      baseURL,
+    )
 
     try {
       const ownedByTenantB = await createTaskType(tenantB.page, 'tenant-b-owned')

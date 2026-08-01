@@ -22,9 +22,10 @@ import com.tiny.platform.infrastructure.scheduling.dto.SchedulingTaskCreateUpdat
 import com.tiny.platform.infrastructure.scheduling.dto.SchedulingTaskTypeCreateUpdateDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantCreateUpdateDto;
 import org.junit.jupiter.api.Test;
+import org.springframework.security.core.Authentication;
 
-import java.security.Principal;
 import java.lang.reflect.Method;
+import java.security.Principal;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -100,12 +101,12 @@ class ControllerIdempotencyAnnotationTest {
         assertIdempotent(ProcessController.class.getDeclaredMethod("deploy", String.class));
         assertIdempotent(ProcessController.class.getDeclaredMethod("deployWithInfo", Map.class, Principal.class));
         assertIdempotent(ProcessController.class.getDeclaredMethod("deleteDeployment", String.class));
-        assertIdempotent(ProcessController.class.getDeclaredMethod("start", String.class, Map.class));
+        assertIdempotent(ProcessController.class.getDeclaredMethod("start", String.class, Map.class, Authentication.class));
         assertIdempotent(ProcessController.class.getDeclaredMethod("suspendInstance", String.class));
         assertIdempotent(ProcessController.class.getDeclaredMethod("activateInstance", String.class));
         assertIdempotent(ProcessController.class.getDeclaredMethod("deleteInstance", String.class));
         assertIdempotent(ProcessController.class.getDeclaredMethod("claimTask", String.class, String.class));
-        assertIdempotent(ProcessController.class.getDeclaredMethod("completeTask", String.class, Map.class));
+        assertIdempotent(ProcessController.class.getDeclaredMethod("completeTask", String.class, Map.class, Authentication.class));
         assertIdempotent(ProcessController.class.getDeclaredMethod("createTenant", Map.class));
         assertIdempotent(ProcessController.class.getDeclaredMethod("deleteProcessDefinition", String.class));
     }

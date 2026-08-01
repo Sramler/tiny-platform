@@ -1,0 +1,55 @@
+databaseChangeLog:
+  - changeSet:
+      id: 212-bind-tenant-admin-scheduling-fine-grained-permissions
+      author: codex
+      comment: 关闭 scheduling 通配权限后，为租户管理员模板和现有租户补齐调度细粒度管理权限
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: role
+            - tableExists:
+                tableName: permission
+            - tableExists:
+                tableName: role_permission
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              -- ROLE_TENANT_ADMIN 历史依赖 scheduling:*。平台模板中的该通配 permission
+              -- 已禁用，新建租户因此只得到读取能力，实际写接口会被细粒度 endpoint
+              -- requirement 拒绝。这里按同 scope 绑定规范权限，不重新启用通配权限，
+              -- 不影响只读调度角色，也不向普通用户直接授权。
+              INSERT INTO role_permission (
+                tenant_id, role_id, permission_id, created_at, created_by
+              )
+              SELECT
+                tenant_role.tenant_id,
+                tenant_role.id,
+                fine_permission.id,
+                CURRENT_TIMESTAMP,
+                NULL
+              FROM role tenant_role
+              JOIN permission fine_permission
+                ON fine_permission.tenant_id <=> tenant_role.tenant_id
+               AND fine_permission.permission_code IN (
+                 'scheduling:console:view',
+                 'scheduling:console:config',
+                 'scheduling:run:control',
+                 'scheduling:audit:view',
+                 'scheduling:cluster:view'
+               )
+               AND fine_permission.enabled = 1
+              WHERE tenant_role.code = 'ROLE_TENANT_ADMIN'
+                AND tenant_role.enabled = 1
+                AND NOT EXISTS (
+                  SELECT 1
+                  FROM role_permission existing_binding
+                  WHERE existing_binding.role_id = tenant_role.id
+                    AND existing_binding.permission_id = fine_permission.id
+                );

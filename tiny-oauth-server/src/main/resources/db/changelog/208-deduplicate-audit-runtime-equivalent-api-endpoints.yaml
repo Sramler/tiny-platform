@@ -1,0 +1,239 @@
+databaseChangeLog:
+  - changeSet:
+      id: 208-deduplicate-audit-runtime-equivalent-api-endpoints
+      author: codex
+      comment: 按运行时 URI 语义收敛审计 API 的尾斜杠与占位符异名等价载体，确保每个 scope/method/template 只有一个候选
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: tenant
+            - tableExists:
+                tableName: permission
+            - tableExists:
+                tableName: api_endpoint
+            - tableExists:
+                tableName: api_endpoint_permission_requirement
+            - sqlCheck:
+                expectedResult: "0"
+                sql: |
+                  SELECT COUNT(*)
+                  FROM (
+                    SELECT NULL AS tenant_id
+                    UNION ALL
+                    SELECT tenant_entry.id
+                    FROM tenant tenant_entry
+                  ) target_scope
+                  CROSS JOIN (
+                    SELECT 'system:audit:authentication:view' AS permission_code
+                    UNION ALL SELECT 'system:audit:authentication:export'
+                    UNION ALL SELECT 'system:audit:auth:view'
+                    UNION ALL SELECT 'system:audit:auth:export'
+                    UNION ALL SELECT 'system:audit:auth:purge'
+                  ) canonical_permission
+                  WHERE NOT EXISTS (
+                    SELECT 1
+                    FROM permission existing_permission
+                    WHERE existing_permission.tenant_id <=> target_scope.tenant_id
+                      AND existing_permission.permission_code = canonical_permission.permission_code
+                  )
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              -- ResourceServiceImpl.normalizeCarrierPath() 会 trim 并移除一个尾斜杠；
+              -- apiEndpointUriTemplateMatches() 把任意非空的整段 {placeholder} 视为同一模板段。
+              -- 因此精确 URI 去重不足以阻止 /path 与 /path/、{userId} 与 {id} 同时成为候选。
+              DROP TEMPORARY TABLE IF EXISTS tmp_audit_endpoint_route;
+              DROP TEMPORARY TABLE IF EXISTS tmp_audit_endpoint_candidate;
+              DROP TEMPORARY TABLE IF EXISTS tmp_audit_endpoint_keeper;
+
+              CREATE TEMPORARY TABLE tmp_audit_endpoint_route (
+                route_key VARCHAR(64) NOT NULL,
+                endpoint_name VARCHAR(100) NOT NULL,
+                endpoint_title VARCHAR(100) NOT NULL,
+                canonical_uri VARCHAR(200) NOT NULL,
+                canonical_method VARCHAR(10) NOT NULL,
+                permission_code VARCHAR(100) NOT NULL,
+                placeholder_template TINYINT(1) NOT NULL DEFAULT 0,
+                PRIMARY KEY (route_key)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+              INSERT INTO tmp_audit_endpoint_route (
+                route_key, endpoint_name, endpoint_title, canonical_uri,
+                canonical_method, permission_code, placeholder_template
+              ) VALUES
+                ('authentication-list', 'audit-authentication-list', '查询认证审计日志',
+                 '/sys/audit/authentication', 'GET', 'system:audit:authentication:view', 0),
+                ('authentication-summary', 'audit-authentication-summary', '查询认证审计概览',
+                 '/sys/audit/authentication/summary', 'GET', 'system:audit:authentication:view', 0),
+                ('authentication-export', 'audit-authentication-export', '导出认证审计日志',
+                 '/sys/audit/authentication/export', 'GET', 'system:audit:authentication:export', 0),
+                ('authorization-list', 'audit-authorization-list', '查询授权审计日志',
+                 '/sys/audit/authorization', 'GET', 'system:audit:auth:view', 0),
+                ('authorization-summary', 'audit-authorization-summary', '查询授权审计概览',
+                 '/sys/audit/authorization/summary', 'GET', 'system:audit:auth:view', 0),
+                ('authorization-export', 'audit-authorization-export', '导出授权审计日志',
+                 '/sys/audit/authorization/export', 'GET', 'system:audit:auth:export', 0),
+                ('authorization-by-event-type', 'audit-authorization-by-event-type', '按事件类型查询授权审计',
+                 '/sys/audit/authorization/by-event-type', 'GET', 'system:audit:auth:view', 0),
+                ('authorization-by-user', 'audit-authorization-by-user', '按用户查询授权审计',
+                 '/sys/audit/authorization/by-user/{userId}', 'GET', 'system:audit:auth:view', 1),
+                ('authorization-purge', 'audit-authorization-purge', '清理授权审计日志',
+                 '/sys/audit/authorization/purge', 'DELETE', 'system:audit:auth:purge', 0);
+
+              CREATE TEMPORARY TABLE tmp_audit_endpoint_candidate (
+                endpoint_id BIGINT NOT NULL,
+                tenant_id BIGINT NULL,
+                canonical_resource_level VARCHAR(16) NOT NULL,
+                route_key VARCHAR(64) NOT NULL,
+                endpoint_name VARCHAR(100) NOT NULL,
+                endpoint_title VARCHAR(100) NOT NULL,
+                canonical_uri VARCHAR(200) NOT NULL,
+                canonical_method VARCHAR(10) NOT NULL,
+                permission_code VARCHAR(100) NOT NULL,
+                exact_preferred TINYINT(1) NOT NULL,
+                PRIMARY KEY (endpoint_id),
+                KEY idx_tmp_audit_candidate_scope_route (tenant_id, route_key)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+              INSERT INTO tmp_audit_endpoint_candidate (
+                endpoint_id, tenant_id, canonical_resource_level, route_key,
+                endpoint_name, endpoint_title, canonical_uri, canonical_method,
+                permission_code, exact_preferred
+              )
+              SELECT
+                endpoint_entry.id,
+                target_scope.tenant_id,
+                target_scope.resource_level,
+                canonical_route.route_key,
+                canonical_route.endpoint_name,
+                canonical_route.endpoint_title,
+                canonical_route.canonical_uri,
+                canonical_route.canonical_method,
+                canonical_route.permission_code,
+                CASE
+                  WHEN endpoint_entry.resource_level = target_scope.resource_level
+                   AND endpoint_entry.method = canonical_route.canonical_method
+                   AND endpoint_entry.uri = canonical_route.canonical_uri
+                  THEN 1 ELSE 0
+                END
+              FROM (
+                SELECT NULL AS tenant_id, 'PLATFORM' AS resource_level
+                UNION ALL
+                SELECT tenant_entry.id, 'TENANT'
+                FROM tenant tenant_entry
+              ) target_scope
+              CROSS JOIN tmp_audit_endpoint_route canonical_route
+              JOIN api_endpoint endpoint_entry
+                ON endpoint_entry.tenant_id <=> target_scope.tenant_id
+               AND UPPER(TRIM(endpoint_entry.method)) = canonical_route.canonical_method
+               AND (
+                 (
+                   canonical_route.placeholder_template = 0
+                   AND CASE
+                     WHEN CHAR_LENGTH(TRIM(endpoint_entry.uri)) > 1
+                      AND RIGHT(TRIM(endpoint_entry.uri), 1) = '/'
+                     THEN LEFT(TRIM(endpoint_entry.uri), CHAR_LENGTH(TRIM(endpoint_entry.uri)) - 1)
+                     ELSE TRIM(endpoint_entry.uri)
+                   END = canonical_route.canonical_uri
+                 )
+                 OR
+                 (
+                   canonical_route.placeholder_template = 1
+                   AND CASE
+                     WHEN CHAR_LENGTH(TRIM(endpoint_entry.uri)) > 1
+                      AND RIGHT(TRIM(endpoint_entry.uri), 1) = '/'
+                     THEN LEFT(TRIM(endpoint_entry.uri), CHAR_LENGTH(TRIM(endpoint_entry.uri)) - 1)
+                     ELSE TRIM(endpoint_entry.uri)
+                   END REGEXP '^/sys/audit/authorization/by-user/[{][^/{}]+[}]$'
+                 )
+               );
+
+              -- 205 已保证规范 URI 存在；仍显式优先保留规范且 scope 正确的最小 ID，
+              -- 以兼容曾经人工插入多个规范行的历史库。不存在规范行时才保留最小 ID 并原位规范化。
+              CREATE TEMPORARY TABLE tmp_audit_endpoint_keeper (
+                tenant_id BIGINT NULL,
+                route_key VARCHAR(64) NOT NULL,
+                keeper_id BIGINT NOT NULL,
+                KEY idx_tmp_audit_keeper_scope_route (tenant_id, route_key),
+                UNIQUE KEY uk_tmp_audit_keeper_id (keeper_id)
+              ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+              INSERT INTO tmp_audit_endpoint_keeper (tenant_id, route_key, keeper_id)
+              SELECT
+                candidate.tenant_id,
+                candidate.route_key,
+                COALESCE(
+                  MIN(CASE WHEN candidate.exact_preferred = 1 THEN candidate.endpoint_id END),
+                  MIN(candidate.endpoint_id)
+                )
+              FROM tmp_audit_endpoint_candidate candidate
+              GROUP BY candidate.tenant_id, candidate.route_key;
+
+              -- 只清除候选集合中的 requirement。规范 keeper 随后重建单一、非 negated 的精确 requirement；
+              -- 被淘汰 endpoint 的其他数据不参与匹配，也不会被触碰。
+              DELETE requirement_entry
+              FROM api_endpoint_permission_requirement requirement_entry
+              JOIN tmp_audit_endpoint_candidate candidate
+                ON candidate.endpoint_id = requirement_entry.api_endpoint_id;
+
+              DELETE endpoint_entry
+              FROM api_endpoint endpoint_entry
+              JOIN tmp_audit_endpoint_candidate candidate
+                ON candidate.endpoint_id = endpoint_entry.id
+              JOIN tmp_audit_endpoint_keeper keeper
+                ON keeper.tenant_id <=> candidate.tenant_id
+               AND keeper.route_key = candidate.route_key
+              WHERE endpoint_entry.id <> keeper.keeper_id;
+
+              UPDATE api_endpoint endpoint_entry
+              JOIN tmp_audit_endpoint_keeper keeper
+                ON keeper.keeper_id = endpoint_entry.id
+              JOIN tmp_audit_endpoint_candidate canonical
+                ON canonical.endpoint_id = keeper.keeper_id
+              JOIN (
+                SELECT permission_entry.tenant_id,
+                       permission_entry.permission_code,
+                       MIN(permission_entry.id) AS permission_id
+                FROM permission permission_entry
+                GROUP BY permission_entry.tenant_id, permission_entry.permission_code
+              ) required_permission
+                ON required_permission.tenant_id <=> endpoint_entry.tenant_id
+               AND required_permission.permission_code = canonical.permission_code
+              SET
+                endpoint_entry.resource_level = canonical.canonical_resource_level,
+                endpoint_entry.name = canonical.endpoint_name,
+                endpoint_entry.title = canonical.endpoint_title,
+                endpoint_entry.uri = canonical.canonical_uri,
+                endpoint_entry.method = canonical.canonical_method,
+                endpoint_entry.permission = canonical.permission_code,
+                endpoint_entry.required_permission_id = required_permission.permission_id,
+                endpoint_entry.enabled = 1,
+                endpoint_entry.updated_at = CURRENT_TIMESTAMP;
+
+              INSERT INTO api_endpoint_permission_requirement (
+                tenant_id, api_endpoint_id, requirement_group, sort_order,
+                permission_id, negated, created_at, updated_at
+              )
+              SELECT
+                endpoint_entry.tenant_id,
+                endpoint_entry.id,
+                0,
+                1,
+                endpoint_entry.required_permission_id,
+                0,
+                CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP
+              FROM api_endpoint endpoint_entry
+              JOIN tmp_audit_endpoint_keeper keeper
+                ON keeper.keeper_id = endpoint_entry.id;
+
+              DROP TEMPORARY TABLE tmp_audit_endpoint_keeper;
+              DROP TEMPORARY TABLE tmp_audit_endpoint_candidate;
+              DROP TEMPORARY TABLE tmp_audit_endpoint_route;

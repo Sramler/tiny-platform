@@ -22,7 +22,7 @@ describe('csrf utils', () => {
     expect(isUnsafeHttpMethod('HEAD')).toBe(false)
   })
 
-  it('should fetch and cache csrf token', async () => {
+  it('should refresh csrf token for sequential unsafe requests', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -42,7 +42,7 @@ describe('csrf utils', () => {
       headerName: 'X-XSRF-TOKEN',
     })
     expect(second).toEqual(first)
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(fetchMock).toHaveBeenCalledWith(
       'http://localhost:9000/csrf',
       expect.objectContaining({
@@ -52,6 +52,26 @@ describe('csrf utils', () => {
         signal: expect.any(AbortSignal),
       }),
     )
+  })
+
+  it('should deduplicate concurrent csrf token requests', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        token: 'csrf-token',
+        parameterName: '_csrf',
+        headerName: 'X-XSRF-TOKEN',
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const [first, second] = await Promise.all([
+      ensureCsrfToken('http://localhost:9000'),
+      ensureCsrfToken('http://localhost:9000'),
+    ])
+
+    expect(first).toEqual(second)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('should reject incomplete csrf payload', async () => {

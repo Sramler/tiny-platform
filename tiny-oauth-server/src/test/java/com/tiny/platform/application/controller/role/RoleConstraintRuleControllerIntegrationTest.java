@@ -1,5 +1,6 @@
 package com.tiny.platform.application.controller.role;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -122,6 +123,7 @@ class RoleConstraintRuleControllerIntegrationTest {
                 .header("X-Idempotency-Key", "it-hierarchy-" + base)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(hierarchy))
+                .with(csrf())
                 .with(principal))
             .andExpect(status().isOk());
 
@@ -134,6 +136,7 @@ class RoleConstraintRuleControllerIntegrationTest {
                 .header("X-Idempotency-Key", "it-mutex-" + base)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(mutex))
+                .with(csrf())
                 .with(principal))
             .andExpect(status().isOk());
 
@@ -146,6 +149,7 @@ class RoleConstraintRuleControllerIntegrationTest {
                 .header("X-Idempotency-Key", "it-prereq-" + base)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(prerequisite))
+                .with(csrf())
                 .with(principal))
             .andExpect(status().isOk());
 
@@ -159,6 +163,7 @@ class RoleConstraintRuleControllerIntegrationTest {
                 .header("X-Idempotency-Key", "it-card-" + base)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(cardinality))
+                .with(csrf())
                 .with(principal))
             .andExpect(status().isOk());
 

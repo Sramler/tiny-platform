@@ -36,7 +36,9 @@ function readEnvOptional(names: string[]): string | undefined {
 }
 
 function hasCliFlag(flagName: string) {
-  return process.argv.includes(flagName) || process.argv.some((arg) => arg.startsWith(`${flagName}=`))
+  return (
+    process.argv.includes(flagName) || process.argv.some((arg) => arg.startsWith(`${flagName}=`))
+  )
 }
 
 function readCliFlagValues(flagName: string) {
@@ -58,8 +60,14 @@ function readCliFlagValues(flagName: string) {
 }
 
 function shouldRequirePlatformAdminIdentity() {
-  const requestedPaths = process.argv.filter((arg) => arg.endsWith('.ts') || arg.includes('tenant-create-wizard'))
-  if (requestedPaths.some((arg) => arg.includes('tenant-create-wizard'))) {
+  const requestedPaths = process.argv.filter((arg) => arg.endsWith('.ts'))
+  if (
+    requestedPaths.some((arg) =>
+      /(?:platform-vue-login|tenant-create-wizard|platform-role-page|session-management-pages)/.test(
+        arg,
+      ),
+    )
+  ) {
     return true
   }
 
@@ -103,6 +111,11 @@ const frontendBaseURL = resolveFrontendBaseURL(
   readEnvOptional(['E2E_FRONTEND_BASE_URL']),
 )
 const backendBaseURL = readEnv(['E2E_BACKEND_BASE_URL'], `http://localhost:${backendPort}`)
+
+// globalSetup 及其 generate-auth-state 子进程读取 process.env；把动态端口纠偏后的同源地址
+// 回写为唯一入口，避免它们重新采用 .env.e2e.local 中可能过期的 5173 绝对地址。
+process.env.E2E_FRONTEND_BASE_URL = frontendBaseURL
+process.env.E2E_BACKEND_BASE_URL = backendBaseURL
 const authStatePath = path.resolve(webappRoot, 'e2e/.auth/scheduling-user.json')
 const secondaryAuthStatePath = path.resolve(webappRoot, 'e2e/.auth/tenant-b-user.json')
 const readonlyAuthStatePath = path.resolve(webappRoot, 'e2e/.auth/scheduling-readonly-user.json')
@@ -131,7 +144,10 @@ if (!skipRealSetup && shouldRequirePlatformAdminIdentity()) {
   if (!readEnvOptional(['E2E_PLATFORM_PASSWORD'])) {
     missing.push('E2E_PLATFORM_PASSWORD')
   }
-  if (!readEnvOptional(['E2E_PLATFORM_TOTP_SECRET']) && !readEnvOptional(['E2E_PLATFORM_TOTP_CODE'])) {
+  if (
+    !readEnvOptional(['E2E_PLATFORM_TOTP_SECRET']) &&
+    !readEnvOptional(['E2E_PLATFORM_TOTP_CODE'])
+  ) {
     missing.push('E2E_PLATFORM_TOTP_SECRET or E2E_PLATFORM_TOTP_CODE')
   }
   if (missing.length > 0) {
@@ -158,56 +174,57 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     video: process.env.CI ? 'retain-on-failure' : 'off',
   },
-  webServer: skipRealSetup || skipWebServer
-    ? undefined
-    : [
-        {
-          command: 'mvn -pl tiny-oauth-server spring-boot:run',
-          cwd: workspaceRoot,
-          // /csrf is a stable 200 endpoint once the backend is HTTP-ready.
-          // /login may redirect or vary by auth state, which can stall Playwright's readiness probe.
-          url: `${backendBaseURL}/csrf`,
-          timeout: 360_000,
-          reuseExistingServer: true,
-          env: {
-            ...process.env,
-            SPRING_PROFILES_ACTIVE: backendProfile,
-            // 与 Vite webServer 端口对齐，避免 dev profile 硬编码 5173 导致 MFA/登录重定向走错前端
-            E2E_FRONTEND_BASE_URL: frontendBaseURL,
-            E2E_DB_HOST: dbHost,
-            E2E_DB_PORT: dbPort,
-            E2E_DB_NAME: dbName,
-            E2E_DB_USER: dbUser,
-            E2E_DB_PASSWORD: dbPassword,
-            MYSQL_ROOT_PASSWORD: dbPassword,
+  webServer:
+    skipRealSetup || skipWebServer
+      ? undefined
+      : [
+          {
+            command: 'mvn -pl tiny-oauth-server spring-boot:run',
+            cwd: workspaceRoot,
+            // /csrf is a stable 200 endpoint once the backend is HTTP-ready.
+            // /login may redirect or vary by auth state, which can stall Playwright's readiness probe.
+            url: `${backendBaseURL}/csrf`,
+            timeout: 360_000,
+            reuseExistingServer: true,
+            env: {
+              ...process.env,
+              SPRING_PROFILES_ACTIVE: backendProfile,
+              // 与 Vite webServer 端口对齐，避免 dev profile 硬编码 5173 导致 MFA/登录重定向走错前端
+              E2E_FRONTEND_BASE_URL: frontendBaseURL,
+              E2E_DB_HOST: dbHost,
+              E2E_DB_PORT: dbPort,
+              E2E_DB_NAME: dbName,
+              E2E_DB_USER: dbUser,
+              E2E_DB_PASSWORD: dbPassword,
+              MYSQL_ROOT_PASSWORD: dbPassword,
+            },
           },
-        },
-        {
-          command: `npm run dev -- --host localhost --port ${frontendPort}`,
-          cwd: webappRoot,
-          url: `${frontendBaseURL}/login`,
-          timeout: 120_000,
-          reuseExistingServer: true,
-          env: {
-            ...process.env,
-            // Session/BFF real-link 默认从浏览器同源访问真实领域路径，由 Vite server-side proxy 转发。
-            VITE_API_BASE_URL: process.env.E2E_VITE_API_BASE_URL ?? '',
-            VITE_DEV_BACKEND_TARGET: backendBaseURL,
-            VITE_OIDC_AUTHORITY: backendBaseURL,
-            VITE_OIDC_CLIENT_ID: process.env.E2E_OIDC_CLIENT_ID ?? 'vue-client',
-            VITE_OIDC_REDIRECT_URI: `${frontendBaseURL}/callback`,
-            VITE_OIDC_POST_LOGOUT_REDIRECT_URI: `${frontendBaseURL}/`,
-            VITE_OIDC_SILENT_REDIRECT_URI: `${frontendBaseURL}/silent-renew.html`,
-            VITE_ENABLE_OIDC_TRACE: process.env.E2E_ENABLE_OIDC_TRACE ?? 'false',
+          {
+            command: `npm run dev -- --host localhost --port ${frontendPort}`,
+            cwd: webappRoot,
+            url: `${frontendBaseURL}/login`,
+            timeout: 120_000,
+            reuseExistingServer: true,
+            env: {
+              ...process.env,
+              // Session/BFF real-link 默认从浏览器同源访问真实领域路径，由 Vite server-side proxy 转发。
+              VITE_API_BASE_URL: process.env.E2E_VITE_API_BASE_URL ?? '',
+              VITE_DEV_BACKEND_TARGET: backendBaseURL,
+              VITE_OIDC_AUTHORITY: backendBaseURL,
+              VITE_OIDC_CLIENT_ID: process.env.E2E_OIDC_CLIENT_ID ?? 'vue-client',
+              VITE_OIDC_REDIRECT_URI: `${frontendBaseURL}/callback`,
+              VITE_OIDC_POST_LOGOUT_REDIRECT_URI: `${frontendBaseURL}/`,
+              VITE_OIDC_SILENT_REDIRECT_URI: `${frontendBaseURL}/silent-renew.html`,
+              VITE_ENABLE_OIDC_TRACE: process.env.E2E_ENABLE_OIDC_TRACE ?? 'false',
+            },
           },
-        },
-      ],
+        ],
   projects: [
     {
       name: 'chromium',
       // 依赖主自动化身份 storageState 的 real-link 用例（调度、HeaderBar active-scope + silent renew 等）
       testMatch:
-        /real\/(?!mfa-login-flow|mfa-bind-flow|platform-vue-login|cross-tenant-a-to-b|cross-tenant-b-to-a|scheduling-rbac-readonly|tenant-create-wizard).*\.spec\.ts/,
+        /real\/(?!mfa-login-flow|mfa-bind-flow|platform-vue-login|cross-tenant-a-to-b|cross-tenant-b-to-a|scheduling-rbac-readonly|tenant-create-wizard|platform-role-page|session-management-pages).*\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
         storageState: authStatePath,
@@ -260,8 +277,9 @@ export default defineConfig({
     },
     {
       name: 'chromium-platform-admin',
-      // 平台管理员租户治理 real-link（租户初始化向导等）。
-      testMatch: /real\/(tenant-create-wizard|platform-role-page)\.spec\.ts/,
+      // 平台管理员治理面 real-link（租户向导、角色、资源与审计页）。
+      testMatch:
+        /real\/(tenant-create-wizard|platform-role-page|session-management-pages)\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
         storageState: platformAdminAuthStatePath,

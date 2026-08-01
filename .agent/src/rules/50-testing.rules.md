@@ -51,6 +51,9 @@
 - ❌ 用“接口返回 200”代替对用户可观察结果的断言，如页面状态、列表变化、错误提示、最终状态收敛、审计记录或下载结果。
 - ❌ 在真实链路 E2E 中只验证 happy path，不覆盖关键拒绝路径、失败路径、取消路径、幂等或重复点击路径。
 - ❌ 在 tiny-platform 本地验证中，把脚本 **exit 2**（环境前置未满足）误报为“代码失败”；`verify-platform-dev-bootstrap.sh` / `verify-platform-local-dev-stack.sh` 的 `exit 2` 只能记为环境缺口。
+- ❌ 修复真实页面的首个 401/403 后只重跑单用例或只确认页面能打开；串行套件的早期失败可能跳过后续接口，必须继续跑完目标模块和 full-chain 才能宣称闭环。
+- ❌ 用放宽表格 locator、忽略隐藏测量行或只等待 DOM 渲染来掩盖页面业务 API 已 403；UI 定位器修复与认证/权限失败必须分别证明。
+- ❌ Session-only real-link 的 setup、fixture 或 spec 从 `oidc.user:*` / storageState 提取 access token 后发送 Bearer，或在 token 缺失时 `skip`；控制面准备也必须使用独立的 HttpOnly Session 登录态与 CSRF，并在身份不完整时 fail-fast。
 
 ---
 
@@ -136,9 +139,17 @@
 - ✅ 首绑 MFA、post-login 安全中心、OIDC callback 相关 real-link 测试必须遵循真实页面契约：优先通过页面可见信息或浏览器已认证 session 调 first-party API，不能假设 `localStorage` 中的 OIDC token 一定已经存在。
 - ✅ 如果本地 real-link / smoke / dev-stack 验证需要自动拉起 MySQL、后端或前端，脚本必须在拉起后做**二次健康检查**；“启动命令返回 0”本身不算验证通过。
 - ✅ real-link `globalSetup` / seed / helper 若会通过 `/sys/tenants` 或等价入口动态创建生成型测试租户（如 `E2E租户(...)`）与 `e2e_init_*` 初始管理员，必须提供**对称治理链**：跑前幂等清理、跑后 teardown 回收、失败时 `fail-on-stale` 审计；不能只做创建不做回收。
+- ✅ 双租户 real-link 必须比较“派生后的实际主租户 code”与第二租户 code 并 fail-fast，不能只比较原始 `E2E_TENANT_CODE`；两套 storageState 指向同一租户时不得报告跨租户隔离已验证。
+- ✅ 可重复 E2E 的测试数据生成必须同时满足数据库唯一键、字段长度和清理命名约束；清理后会重建的资源不得跨测试运行复用同一个幂等键，派生用户名不得因截断公共前缀而碰撞。
 - ✅ 自动治理的删除范围必须保守且可解释：优先针对“生成型租户 + `e2e_init_*` + keep 用户挂在生成型租户上的 stale membership”执行自动清理；固定 real-link 身份（长期保留的 `e2e_*` 主账号）默认不纳入自动删除，除非文档与脚本显式声明。
 - ✅ real-link E2E 的最终通过依据必须优先使用稳定证据：真实网络链路、持久化后的 API 结果、稳定页面状态、modal/路由收敛、trace 或 storageState；短暂 toast、壳页标题、瞬时文案只能作为辅助信号，不能单独充当唯一成功断言。
 - ✅ 通过菜单、路由壳、懒加载页面进入目标页的 E2E，必须显式等待菜单/路由 ready，再执行点击、跳转或断言；不要在同一用例里混用“直接深链 `goto`”与“菜单点击”去赌时序。
+- ✅ Token -> Session/Cookie、认证守卫或 endpoint requirement 改动的真实 E2E 必须覆盖：真实登录（含需要时的 MFA）→ `HttpOnly` Session Cookie → `/sys/users/current`/菜单 → 目标业务页全部关键请求 → 至少一个业务结果 → logout 后旧 Session 拒绝；同时断言业务请求无 `Authorization`、storageState 无 access/refresh token、unsafe method 有 CSRF。
+- ✅ 真实页面权限回归必须在网络层先断言没有预期外 401/403 和 `/exception/403` 跳转，再断言表格、弹窗或业务结果；Ant Design Table 行定位必须排除 `tr.ant-table-measure-row`、`[aria-hidden=true]` 等测量/隐藏行，但不得用该排除规则绕过空数据或接口失败。
+- ✅ 403 回归必须保留并关联三类证据：浏览器失败 method/path 与 trace/截图、后端同一 `traceId` 的守卫 reason/candidate 信息、数据库中对应 `api_endpoint`/requirement/permission/role binding 记录；没有这些证据不得猜测是 token、路由或缓存问题。
+- ✅ 新增或修改受 `ApiEndpointRequirementFilter` 保护的 Controller mapping、`api_endpoint` 或 requirement 时，必须运行 `bash tiny-oauth-server/scripts/verify-api-endpoint-controller-drift.sh`；未登记映射、同 scope 运行时等价重复、缺主 permission/requirement 均须 fail-closed，精确基础设施豁免必须锁定 method + path，禁止扩大为目录通配。
+- ✅ 数据库迁移、权限 seed 或 endpoint carrier 在应用启动后发生变化时，必须重启后端或执行受控缓存失效，并确认当前进程使用预期 commit、profile、配置与最新 changelog；旧进程/旧 `target/classes` 的结果不得作为当前代码结论。
+- ✅ 本地 full-chain 与 GitHub Nightly/fresh DB 是两份独立证据：本地必须证明开发拓扑真实可用，CI 必须证明干净环境可自举；任一未执行、exit 2、被 skip 或红灯时都不得报告“全量真实 E2E 全绿”。
 
 ### 7) 前端测试要求
 

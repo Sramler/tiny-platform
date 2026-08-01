@@ -14,9 +14,17 @@ Web 浏览器统一采用同源 HttpOnly Session，不直接持有或发送 acce
 /csrf                     CSRF token（GET）
 /sys/**                   系统管理接口
 /self/**                  当前用户接口
+/platform/**              平台治理接口（与部分 Vue 深链重名，按请求类型分流）
+/dict/**                  租户字典接口
+/demo/**                  演示业务接口
+/metrics/**               治理指标接口
 /scheduling/**            调度接口
-/workflow/**              工作流接口
+/process/**               工作流运行接口
+/workflow/**              工作流兼容接口
+/export/**                导出接口（下载子路径保持后端直达）
+/idempotent/**            幂等兼容接口
 /oauth2/**                非浏览器 OAuth2 协议
+/connect/**               OIDC 会话协议接口
 /.well-known/**            OIDC 元数据
 ```
 
@@ -26,6 +34,7 @@ Web 浏览器统一采用同源 HttpOnly Session，不直接持有或发送 acce
 - Web Session-only 不得静默回退 Bearer。
 - Session Cookie 必须 HttpOnly；生产环境必须 Secure。
 - POST、PUT、PATCH、DELETE 必须通过 CSRF 校验。
+- Spring Security SPA CSRF 同时兼容 Cookie plain token 与 `/csrf` envelope 的 XOR token；前端不得跨 Session 永久缓存 token。
 - `/sys/users/current` 只绕过普通业务 `api_endpoint` 载体判断，仍必须经过认证、用户状态和作用域校验。
 - 业务接口继续 fail-closed；缺少 `api_endpoint` 注册时不得通过扩大过滤器豁免解决。
 - PLATFORM、TENANT、ORG、DEPT 作用域及租户隔离语义不得弱化。
@@ -52,13 +61,15 @@ Web 浏览器统一采用同源 HttpOnly Session，不直接持有或发送 acce
 范围：
 
 - Web 默认 API base URL 使用当前 origin，不再默认 `http://localhost:9000`。
-- Vite 按 `/sys`、`/self`、`/scheduling`、`/workflow`、`/auth`、`/csrf`、`/oauth2`、`/.well-known` 代理到后端。
+- Vite 按 `/sys`、`/self`、`/platform`、`/dict`、`/demo`、`/metrics`、`/scheduling`、`/workflow`、`/process`、`/export`、`/idempotent`、`/auth`、`/csrf`、`/oauth2`、`/connect`、`/.well-known` 代理到后端。
+- `/platform`、`/scheduling`、`/process`、`/export` 同时存在 Vue 深链与后端 API；仅已知 SPA 路径的 GET/HEAD 文档导航回退 `index.html`，fetch/JSON、写请求和下载/API 子路径继续代理后端。
 - 生产网关沿用相同真实路径分流。
 
 验收：
 
 - 浏览器请求 URL 与前端页面同源。
 - Web 请求带 Cookie、不带 Authorization。
+- SPA 冲突深链可直接刷新，真实 API 与下载导航不会被 `index.html` 回退吞掉。
 - 本地开发不依赖 credentialed CORS 才能完成主链路。
 
 ### BFF-03：Session Cookie 配置收口
@@ -192,7 +203,7 @@ Vue /login
 - [x] BFF-04 real-link Session 化；global setup 使用 HttpOnly `JSESSIONID` + CSRF 完成派生租户初始化，storageState 不再依赖 OIDC token。
 - [x] BFF-05 去伪 JWT；Session 身份直接使用 `/sys/users/current` 内存快照，`access_token` 为空，不再生成 `session.<payload>.ui-only`。
 - [x] BFF-06 Web/Bearer 默认分轨；Web 默认 Session-only，只有显式设置 `VITE_AUTH_SESSION_ONLY=false` 才进入 OIDC/Bearer 兼容轨。
-- [ ] BFF-07 API 载体与首页治理（已补齐平台租户控制面载体并完成真实 Liquibase 验证；Controller 映射漂移门禁待补）。
+- [ ] BFF-07 API 载体与首页治理（全仓 Controller 映射漂移门禁及 202–211 载体迁移已落地；本地 full-chain、existing MySQL SpringLiquibase 与 real-link 30/30 已全绿，仅待本次提交后的 fresh DB Nightly 复验后收口）。
 - [ ] BFF-08 集群和生产安全（memory/jdbc/redis 参数化、prod memory 禁用、JDBC/Redis 单节点真实链路已完成；多节点切换及强制失效联动待验证）。
 
 ## 6. 2026-07-16 实际验证记录
@@ -210,3 +221,66 @@ Vue /login
 - Redis Session Playwright：1/1 通过，覆盖登录、TOTP、current-user、菜单和业务初始化。
 - Redis 持久化检查：产生 4 个 `tiny-platform:session:sessions:*` hash，TTL 为 1742–1772 秒，与 30 分钟 Session timeout 一致；测试 key 已精确清理。
 - Redis 多节点切换尚未验证；本机 Homebrew LaunchAgent 与旧 `redis.conf` 存在环境问题，本次使用无附加模块的临时标准 Redis 8.8 实例完成验收。
+
+## 6.1 2026-08-01 API 载体闭包验证
+
+- `verify-api-endpoint-controller-drift.sh` 在真实 MySQL 上启动 Spring 上下文，比较实际 MVC Controller 的 method/template 与当前 scope 的 `api_endpoint`、主 permission 和 requirement。
+- changeset 210 显式闭合 `SchedulingController` 路由；changeset 211 闭合用户、组织、数据范围、角色兼容、字典控制面、导出与幂等治理路由，均未自动扩大角色授权。
+- 210/211 已在 existing DB 由 SpringLiquibase 实际执行；漂移集成测试 1/1 通过，当前未精确豁免的受保护 Controller 映射为 0 缺口。
+- `ProcessDisabledFallbackController` 是 Camunda 关闭时返回 503 的占位 envelope，不生成权限载体；运行态字典 lookup、当前用户头像/登录历史和 process health 仅按精确 method/path 作为已认证基础设施豁免。
+- 漂移门禁已接入 Web、Scheduling 与 Scheduling cross-tenant 三条 real E2E workflow；本地 full-chain 已全绿，BFF-07 仍以本次提交后的 fresh DB CI 全绿作为最终完成条件。
+
+## 6.2 2026-08-01 Session/CSRF 与真实 E2E 复盘
+
+- Spring Security 4.1.1 的 SPA CSRF 链现已显式接入 request handler，按 Header 值选择 plain Cookie token 或 XOR envelope token 解析，CSRF 防护范围保持不变。
+- 前端 `ensureCsrfToken` 不再永久缓存 token，只合并同一时刻的并发获取，避免登录、MFA、Session fixation 或登出轮换后发送旧 token。
+- 匿名 `GET /sys/users/current` 仅在没有 SecurityContext、Bearer 和活动租户 Session 时交还 Spring Security，登出探测恢复为 401/403；已认证请求仍执行完整租户校验。
+- changeset 212 为 `ROLE_TENANT_ADMIN` 模板绑定调度细粒度权限；real-link bootstrap 同步补齐既有/派生租户身份，避免只有 `scheduling:*` 而细粒度 requirement fail-closed。
+- 双租户 setup 改为比较派生后的实际主租户与 tenant B，配置相同时 fail-fast；动态创建租户使用每次运行唯一的幂等键，初始管理员用户名在 20 位内保留唯一后缀。
+- 平台治理、租户生命周期、Session 管理和租户向导在用例开始前显式建立各自真实登录 Session，避免长套件中权限版本变化使 global setup 的旧 Session 失效。
+- `user_session` 首次并发登记改为失败事务之外重读唯一键胜出记录，消除同一 Session 并发首请求触发 `session_id` 唯一约束 500 的竞争窗口。
+- 最终本地回归：Playwright real-link 30/30、零跳过；Vitest 127 个文件/651 项；Maven 1359 项、0 失败、0 错误（1 项条件跳过）；前端 type-check/build、默认本地全栈门禁及真实 API 载体漂移门禁均通过。
+
+## 7. 问题复盘与防复发规则
+
+### 7.1 根因链
+
+本次 Token 切换为 Session 后出现的路由 403，并不是 Session Cookie 本身改变了业务权限。真实链路是：浏览器不再用 Bearer 绕过历史差异后，页面进入时并发调用的部分调度接口没有形成完整 `api_endpoint` 载体闭包；部分 migration 又在 permission 创建前执行关联插入，SQL 合法但写入 0 行；同时通配权限与具体权限被误认为天然蕴含，最终由统一守卫以 `api_endpoint requirement denied` 拒绝。前端全局错误处理把任一后台请求的 403 转成 `/exception/403`，因此表象像“修改 token 导致路由不能访问”。
+
+另一个放大因素是验证时序：本地后端可能仍运行旧 commit、旧 `target/classes` 或启动期缓存，修复数据库后未重启会继续复现旧 403；串行 E2E 在首个失败后跳过后续场景，也会让“修好一个接口”被误报为“全量完成”。
+
+### 7.2 固定诊断顺序
+
+1. 记录浏览器实际失败的 HTTP method/path、`traceId` 与是否跳转 `/exception/403`，不要先修改 token。
+2. 查看后端同一 `traceId`：`URI_TEMPLATE_NOT_MATCHED`/`candidateCount=0` 修 method/template 载体；载体匹配但 requirement 不满足才检查 permission/role/scope。
+3. 查询 `api_endpoint`、requirement、permission、role binding，并确认 migration 顺序没有产生 0 行关联。
+4. 盘点目标页面全部请求闭包，包括 bootstrap、列表、统计、历史、详情、弹窗预载、轮询和所有动作接口；一次补齐并增加漂移/回归测试。
+5. 重启或显式失效缓存，确认进程 commit/profile/changelog 后，再从真实登录开始运行完整本地 full-chain；随后在 fresh DB Nightly 从头重跑。
+
+### 7.3 完成定义
+
+- 浏览器业务请求同源、携带 HttpOnly Session Cookie、不带 Authorization，storageState 不含 access/refresh token。
+- unsafe method 通过 CSRF；登出后旧 Session 失效。
+- 页面及其全部 API 依赖无预期外 401/403，允许路径与拒绝路径均有证据。
+- fresh DB、既有库升级、现有租户回填、late-created tenant 克隆均验证通过。
+- 本地真实 E2E 与 GitHub Nightly/full-chain 均为全量 green；任一未执行、skipped、exit 2 或红灯都必须明确标为缺口。
+
+### 7.4 2026-07-17 认证审计遗留 403
+
+- 现象：`GET /sys/audit/authentication/summary` 返回 `api_endpoint requirement denied` 并跳转 `/exception/403`。
+- 根因：`AuthenticationAuditController` 已存在 list/summary/export 三个映射，但历史初始化只维护菜单与 ui_action，未创建对应 `api_endpoint`；既有 real-controller 守卫测试也只模拟 list，未覆盖 summary 页面依赖。
+- 修复：changeset 202 首次补齐 list/summary/export；随后以不可改已执行 changeset 为前提追加 changeset 205，按 scope + method + URI 校正存量载体、权限和 requirement。认证审计 list/summary/export 均补齐独立允许/拒绝 real-controller 测试。
+- 系统性门禁：`verify-api-endpoint-controller-drift.sh` 已比较实际 Controller 映射与真实数据库载体，并接入 real E2E CI；后续新增映射若未补载体或精确基础设施豁免将直接失败。
+
+### 7.5 2026-07-17 授权审计遗留 403
+
+- 现象：认证审计修复后切换 `/system/audit/authorization`，`GET /sys/audit/authorization` 继续被统一守卫拒绝。
+- 根因：授权审计 Controller 与认证审计具有相同历史缺口，菜单、ui_action 和方法守卫已经存在，但 list/summary/export 及两个历史只读查询均没有 `api_endpoint` 初始化记录。
+- 修复：changeset 203 首次补齐五个 GET 载体；追加 changeset 205 补齐高敏感 `DELETE /sys/audit/authorization/purge`，并为 PLATFORM 模板及所有现有 TENANT scope 建立五类审计权限主数据、九个精确 endpoint 和唯一 requirement。该 changeset 不给角色自动授予审计权限，也不重新启用既有 disabled permission。授权审计 list/summary/export/by-event-type/by-user/{userId}/purge 均覆盖独立允许/拒绝 real-controller 测试。
+
+### 7.6 2026-07-19 资源管理表格与操作列遗留
+
+- 现象：资源名称/标题列文本互相覆盖或被挤成两行，操作列为空；仅修改列宽无法解释操作按钮消失。
+- 根因：表格长文本列没有稳定宽度与省略策略，形成视觉重影；同时平台管理员虽能读取资源树，但四项 `ui_action`、五个写接口及其 requirement/role binding 没有作为同一个页面业务闭包验证，按钮因此被运行时载体过滤。
+- 修复：资源名称、标题、路由、URI 和权限列采用稳定宽度与 ellipsis，操作列固定在右侧；changeset 204 先补平台管理员权限绑定，changeset 206 闭合四项 PLATFORM `ui_action` 与四个 CRUD endpoint，已执行 206 不再改写，changeset 207 单独补齐遗漏的 `PUT /sys/resources/{id}/sort`。
+- 数据门禁：`verify-platform-template-row-counts.sh` 现在要求资源动作/requirement 为 4/4、写 endpoint/requirement 为 5/5、平台管理员绑定为 4/4；同时要求认证与授权审计九个 endpoint 在 PLATFORM + 全部现有 TENANT scope 中均为唯一精确 requirement。

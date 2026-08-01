@@ -11,9 +11,6 @@ import {
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-const frontendBaseUrl = process.env.E2E_FRONTEND_BASE_URL ?? 'http://localhost:5173'
-const backendBaseUrl = process.env.E2E_BACKEND_BASE_URL ?? 'http://localhost:9000'
-
 export const primaryAuthStatePath = path.resolve(__dirname, '..', '.auth', 'scheduling-user.json')
 export const secondaryAuthStatePath = path.resolve(__dirname, '..', '.auth', 'tenant-b-user.json')
 export const readonlyAuthStatePath = path.resolve(
@@ -175,9 +172,9 @@ function resolveLoginIdentity(kind: AuthIdentityKind): LoginIdentity | null {
 
 async function hasSessionIdentity(page: Page): Promise<boolean> {
   return page
-    .evaluate(async (apiBaseUrl) => {
+    .evaluate(async () => {
       const activeTenantId = window.localStorage.getItem('app_active_tenant_id')
-      const response = await fetch(`${apiBaseUrl}/sys/users/current`, {
+      const response = await fetch('/sys/users/current', {
         credentials: 'include',
         headers: {
           Accept: 'application/json',
@@ -185,15 +182,15 @@ async function hasSessionIdentity(page: Page): Promise<boolean> {
         },
       })
       return response.ok
-    }, backendBaseUrl)
+    })
     .catch(() => false)
 }
 
 export async function waitForSessionIdentity(page: Page, timeout = 60_000) {
   await page.waitForFunction(
-    async (apiBaseUrl) => {
+    async () => {
       const activeTenantId = window.localStorage.getItem('app_active_tenant_id')
-      const response = await fetch(`${apiBaseUrl}/sys/users/current`, {
+      const response = await fetch('/sys/users/current', {
         credentials: 'include',
         headers: {
           Accept: 'application/json',
@@ -202,7 +199,7 @@ export async function waitForSessionIdentity(page: Page, timeout = 60_000) {
       })
       return response.ok
     },
-    backendBaseUrl,
+    undefined,
     { timeout },
   )
 }
@@ -346,7 +343,7 @@ type SessionIdentitySnapshot = {
 }
 
 export async function loadIdentitySnapshot(page: Page): Promise<SessionIdentitySnapshot> {
-  return page.evaluate(async (apiBaseUrl) => {
+  return page.evaluate(async () => {
     function firstNonEmptyTenantId(
       ...candidates: Array<string | number | null | undefined>
     ): string {
@@ -363,7 +360,7 @@ export async function loadIdentitySnapshot(page: Page): Promise<SessionIdentityS
     }
 
     let activeTenantId = firstNonEmptyTenantId(window.localStorage.getItem('app_active_tenant_id'))
-    const r = await fetch(`${apiBaseUrl}/sys/users/current`, {
+    const r = await fetch('/sys/users/current', {
       credentials: 'include',
       headers: {
         Accept: 'application/json',
@@ -394,7 +391,7 @@ export async function loadIdentitySnapshot(page: Page): Promise<SessionIdentityS
       username: body.username,
       permissions,
     }
-  }, backendBaseUrl)
+  })
 }
 
 type SchedulingFetchOptions = {
@@ -419,7 +416,7 @@ export async function fetchSchedulingApi<T>(
   const { method = 'GET', body, overrideTenantId, idempotencyKey } = options
 
   return page.evaluate(
-    async ({ apiBaseUrl, path, activeTenantId, apiMethod, apiBody, idemKey }) => {
+    async ({ path, activeTenantId, apiMethod, apiBody, idemKey }) => {
       const headers = new Headers({ Accept: 'application/json' })
       if (activeTenantId) {
         headers.set('X-Active-Tenant-Id', activeTenantId)
@@ -429,7 +426,7 @@ export async function fetchSchedulingApi<T>(
       }
       if (apiMethod !== 'GET') {
         headers.set('Content-Type', 'application/json')
-        const csrfResponse = await fetch(`${apiBaseUrl}/csrf`, {
+        const csrfResponse = await fetch('/csrf', {
           credentials: 'include',
           headers: { Accept: 'application/json' },
         })
@@ -443,7 +440,7 @@ export async function fetchSchedulingApi<T>(
         headers.set(csrf.headerName, csrf.token)
       }
 
-      const response = await fetch(`${apiBaseUrl}${path}`, {
+      const response = await fetch(path, {
         method: apiMethod,
         headers,
         credentials: 'include',
@@ -460,7 +457,6 @@ export async function fetchSchedulingApi<T>(
       }
     },
     {
-      apiBaseUrl: backendBaseUrl,
       path: apiPath,
       activeTenantId: overrideTenantId ?? identity.activeTenantId,
       apiMethod: method,
@@ -508,10 +504,14 @@ export async function openSecondaryAuthenticatedPage(
   browser: Browser,
   storageStatePath: string,
   kind: AuthIdentityKind = 'secondary',
+  baseURL?: string,
 ): Promise<{ context: BrowserContext; page: Page }> {
+  if (!baseURL) {
+    throw new Error('real-link 二级浏览器上下文缺少 Playwright baseURL')
+  }
   const context = await browser.newContext({
     storageState: storageStatePath,
-    baseURL: frontendBaseUrl,
+    baseURL,
   })
   const page = await context.newPage()
   await openOidcDebug(page, kind)

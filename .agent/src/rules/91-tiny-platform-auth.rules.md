@@ -3,7 +3,7 @@
 ## 适用范围
 
 - 适用于：`**/oauth2/**`、`**/auth/**`、`**/security/**`、认证授权相关代码
-- 配套文档：`docs/TINY_PLATFORM_AUTHORIZATION_DOC_MAP.md`（阅读入口与冲突裁决）、`docs/TINY_PLATFORM_AUTHORIZATION_MODEL.md`（授权模型主线）、`docs/TINY_PLATFORM_SESSION_BEARER_AUTH_MATRIX.md`（Session/Bearer 来源矩阵与冲突处理）、`docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md`（当前完成度）、`docs/TINY_PLATFORM_TENANT_NAMING_GUIDELINES.md`（租户命名契约）
+- 配套文档：`docs/TINY_PLATFORM_AUTHORIZATION_DOC_MAP.md`（阅读入口与冲突裁决）、`docs/TINY_PLATFORM_AUTHORIZATION_MODEL.md`（授权模型主线）、`docs/TINY_PLATFORM_SESSION_BEARER_AUTH_MATRIX.md`（Session/Bearer 来源矩阵与冲突处理）、`docs/TINY_PLATFORM_BFF_SESSION_NORMALIZATION_TASKS.md`（BFF/Session/Cookie 契约、复盘与验收）、`docs/TINY_PLATFORM_AUTHORIZATION_TASK_LIST.md`（当前完成度）、`docs/TINY_PLATFORM_TENANT_NAMING_GUIDELINES.md`（租户命名契约）
 
 ## 禁止（Must Not）
 
@@ -12,6 +12,8 @@
 - ❌ 混用不同的认证方式（JWT vs Session）在同一请求中。
 - ❌ 跳过 MFA（多因素认证）验证（如配置了 TOTP 必须验证）。
 - ❌ 自动化测试使用开发者个人账号、共享人工管理员账号或生产身份进行认证验证。
+- ❌ Web Session-only 主链在浏览器 JavaScript、Pinia、localStorage、sessionStorage、URL、前端日志或可下载调试信息中保存 access token、refresh token、JWT 化 Session payload 或可复用凭证。
+- ❌ 为兼容历史 Bearer，在同一次浏览器业务请求中同时发送 Session Cookie 与 `Authorization`，或在 Session 失效后静默退回 Bearer/silent renew。
 
 ## 必须（Must）
 
@@ -23,7 +25,14 @@
 - ✅ 后端请求链路必须先校验 token/session 安全状态，再校验权限快照漂移：`token_revoked` 代表不可静默自愈，前端必须清理运行态并重新登录；`stale_permissions` 才允许 silent renew 一次并重试原请求。
 - ✅ 菜单结构、路由字段、显隐、排序和菜单权限 requirement 的变化必须通过 `MENU_CONFIG` 运行态版本信号和 `/sys/menus/tree` 的 ETag / `X-Menu-Config-Version` 体现；不得把菜单配置变化塞进 `permissionsVersion` 或依赖无失效机制的浏览器本地缓存。
 - ✅ 认证方式选择：按客户端来源切换 JWT/Session（Web 前端默认使用 BFF/HttpOnly Session，浏览器业务请求不得持有或发送 access/refresh token；API 客户端继续使用 JWT）。
+- ✅ Web BFF 如需调用下游 OAuth 资源，必须在服务端持有、刷新、轮换和撤销相应 token；浏览器 Cookie 只承载框架生成的不可读 Session 标识，不得把 JWT、refresh token 或序列化认证快照直接写进 Cookie。
+- ✅ Web Session Cookie 必须统一声明 `HttpOnly`、`Path=/`、适合部署拓扑的 `SameSite`，生产 HTTPS 必须 `Secure`；Domain、代理转发头与外部 scheme/host 的推导必须与可信网关配置一致，不得依靠浏览器端修补跨域 Cookie。
+- ✅ 登录成功、权限提升、active scope 切换等会改变认证边界的操作必须防 Session fixation：轮换 Session id，并保证旧 id 不可继续使用；登出、用户禁用、密码重置、TOTP 变更等强制失效必须同时清理服务端 Session/token 材料和浏览器 Cookie。
+- ✅ `memory` / `jdbc` / `redis` Session 存储切换只能改变持久化实现，不能改变 Cookie 名称、认证/CSRF 语义、超时和强制失效契约；`memory` 仅允许 dev/test 单实例，生产必须使用 JDBC/Redis 或明确等价的共享存储并验证多节点切换。
+- ✅ 浏览器必须通过同源真实领域路径访问 BFF，接口公共契约不得为了代理方便统一伪造 `/api` 前缀；本地 Vite 与生产网关必须对 `/auth`、`/csrf`、`/sys`、`/self` 及各业务根路径保持一致映射。
 - ✅ Web Session-only 模式下，启动恢复以 `credentials: include` 调用 `/sys/users/current` 为准；业务写请求必须携带 CSRF token，不能因移除 Bearer 而关闭或缩小 CSRF 防护范围。
+- ✅ `CookieCsrfTokenRepository` 用于 SPA 时必须显式配置与当前 Spring Security 版本匹配的 request handler：Cookie 中的 plain token 与 `/csrf` envelope 暴露的 XOR/BREACH token 都必须经过对应解析器后再由 `CsrfFilter` 比对；不得关闭 CSRF 或扩大 ignore matcher 来兼容其中一种客户端。
+- ✅ 前端不得把 CSRF token 作为跨 Session 的永久模块缓存；登录成功、MFA 完成、Session fixation 轮换、active identity 替换和登出都可能改变 Cookie/token 对，unsafe 请求应刷新或使用与当前 Cookie 明确绑定的 token，并只允许并发请求去重。
 - ✅ Web Session-only 模式下，前端可保存非凭证型的当前用户/权限展示快照，但该快照不得作为可发送的 Bearer token，不得进入 localStorage，也不得替代后端权限守卫。
 - ✅ 多认证方式：支持 PASSWORD（密码）和 TOTP（时间戳一次性密码），从 `user_authentication_method` 表动态查询。
 - ✅ 安全策略：JWT 使用 RS256 算法，密钥使用 JWK Set；支持 MFA（TOTP）。
@@ -47,9 +56,10 @@
 - ✅ **M4（Bearer + Session 一致）在 user 端点上分两种正式语义，不得混用**：`GET /sys/users/current` 为 **M4 读**（只读快照，不改 Session scope）；`POST /sys/users/current/active-scope` 为 **M4 写**（会话 active scope **持久化以 Session 为权威落点**，Bearer 写成功须返回 `tokenRefreshRequired` / `newActiveScope*`）。默认不得假设“矩阵 §4 的 M4 放行 = 所有 `/sys/users/**` 同一口径”；须按 `docs/TINY_PLATFORM_SESSION_BEARER_AUTH_MATRIX.md` **§8**。
 - ✅ **默认心智模型（Cursor/Codex/实现者）**：将 `POST /sys/users/current/active-scope` 视为 **会话状态变更写**（session-first 持久化）；在 **M4** 下 **额外**允许带 Bearer 完成同一写，且**必须**按响应 `tokenRefreshRequired` 规划 refresh，不得假装 JWT 已随该请求更新。
 - ✅ `POST /sys/users/current/active-scope` 在 M4（Bearer + Session 成对一致）下允许写 Session 时，成功响应必须携带可机器解析的 `tokenRefreshRequired` 与 `newActiveScopeType`/`newActiveScopeId`（及说明写后 JWT 与 Session 可预测行为的文档），且与 `docs/TINY_PLATFORM_SESSION_BEARER_AUTH_MATRIX.md` §8 一致；不得静默忽略“写后显式 scope claims 陈旧导致下一请求 M5 fail-closed”的风险。
-- ✅ 涉及 silent renew、`tokenRefreshRequired`、`prompt=none` 的 real-link 断言时，必须优先验证 durable evidence（真实 `/oauth2/authorize?...prompt=none...`、刷新后 Bearer 请求恢复 200、稳定页面态），不能只依赖瞬时 success toast 或壳页标题判定通过。
+- ✅ 仅在显式 `VITE_AUTH_SESSION_ONLY=false` 的 Bearer 兼容轨验证 silent renew、`tokenRefreshRequired=true`、`prompt=none` 时，才以真实 `/oauth2/authorize?...prompt=none...`、刷新后 Bearer 200 和稳定页面态作为 durable evidence；Web 默认 Session-only real-link 必须反向断言 `tokenRefreshRequired=false`、没有 silent renew/Bearer，不能把兼容轨恢复成默认链路。
 - ✅ 涉及前端启动链路、OIDC callback、silent renew、TOTP 跳转或菜单权限加载的变更，至少应补前端路由/认证定向测试，并优先执行 `npm run type-check`、相关 `vitest`、`npm run build-only`；涉及后端 TOTP redirect 时同步执行 `mvn -pl tiny-oauth-server -Dtest=SecurityControllerRedirectTest test`。
 - ✅ tiny-platform 本地认证 / 租户 / 平台模板验证应优先复用仓库脚本，且**默认入口**为 `tiny-oauth-server/scripts/verify-platform-local-dev-stack.sh`；只有在明确不需要前端联动时，才降级为 `tiny-oauth-server/scripts/verify-platform-dev-bootstrap.sh`；登录链专项快速门禁再使用 `tiny-oauth-server/scripts/verify-platform-login-auth-chain.sh`。不要先要求人工逐个启动数据库、后端、前端，再开始判断认证结论。
+- ✅ 受保护 Controller/API 载体闭包必须以 `tiny-oauth-server/scripts/verify-api-endpoint-controller-drift.sh` 的真实数据库结果为准；业务映射缺载体不得用目录通配豁免绕过，精确自服务/lookup 豁免必须同时锁定 HTTP method 与 path pattern。
 - ✅ 如需读取本机已导出的数据库密码、启动命令或路径，只允许通过 login shell 子进程读取**白名单环境变量**；`DB_*` 为 dev/bootstrap 主变量，`E2E_DB_*` 可作为兼容别名回填，不得打印或上传 `~/.zprofile`、`~/.zshrc`、`~/.bashrc` 全文。
 - ✅ `verify-platform-dev-bootstrap.sh` / `verify-platform-local-dev-stack.sh` 返回 `exit 2` 时，只能记为“环境前置未满足”，不得写成认证链路失败或代码回归。
 

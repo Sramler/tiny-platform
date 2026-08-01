@@ -8,7 +8,7 @@ import { expect, test } from '@playwright/test'
  * - 使用 `.env.e2e.local` 中的 E2E_TENANT_CODE / E2E_USERNAME / E2E_PASSWORD，
  *   再通过 `E2E_TOTP_CODE` 或 `E2E_TOTP_SECRET` 生成一次性验证码，
  *   从登录页开始走完整链路：/login -> /self/security/totp-verify -> /self/security。
- * - 不使用 storageState；依赖真实 OIDC / CSRF / Session / JWT / MFA。
+ * - 不使用 storageState；依赖同源真实 CSRF / HttpOnly Session / MFA，浏览器不持有 JWT。
  *
  * 约束（有意收窄）：
  * - 当前仅覆盖“已绑定 TOTP 的自动化用户”；未覆盖首次绑定场景（/self/security/totp-bind）。
@@ -92,10 +92,8 @@ function resolveLoginConfig() {
 }
 
 async function fetchSecurityStatus(page: import('@playwright/test').Page) {
-  const backendBaseUrl =
-    process.env.E2E_BACKEND_BASE_URL ?? process.env.VITE_API_BASE_URL ?? 'http://localhost:9000'
-  return page.evaluate(async ({ apiBaseUrl }) => {
-    const response = await fetch(`${apiBaseUrl}/self/security/status`, {
+  return page.evaluate(async () => {
+    const response = await fetch('/self/security/status', {
       method: 'GET',
       credentials: 'include',
       headers: { Accept: 'application/json' },
@@ -109,14 +107,12 @@ async function fetchSecurityStatus(page: import('@playwright/test').Page) {
           ? (JSON.parse(text) as Record<string, unknown>)
           : null,
     }
-  }, { apiBaseUrl: backendBaseUrl })
+  })
 }
 
 async function fetchCurrentUser(page: import('@playwright/test').Page) {
-  const backendBaseUrl =
-    process.env.E2E_BACKEND_BASE_URL ?? process.env.VITE_API_BASE_URL ?? 'http://localhost:9000'
-  return page.evaluate(async ({ apiBaseUrl }) => {
-    const response = await fetch(`${apiBaseUrl}/sys/users/current`, {
+  return page.evaluate(async () => {
+    const response = await fetch('/sys/users/current', {
       method: 'GET',
       credentials: 'include',
       headers: { Accept: 'application/json' },
@@ -130,18 +126,16 @@ async function fetchCurrentUser(page: import('@playwright/test').Page) {
           ? (JSON.parse(text) as Record<string, unknown>)
           : null,
     }
-  }, { apiBaseUrl: backendBaseUrl })
+  })
 }
 
 async function fetchTaskTypeList(page: import('@playwright/test').Page, activeTenantId: number) {
-  const backendBaseUrl =
-    process.env.E2E_BACKEND_BASE_URL ?? process.env.VITE_API_BASE_URL ?? 'http://localhost:9000'
   return page.evaluate(
-    async ({ apiBaseUrl, tenantId }) => {
+    async ({ tenantId }) => {
       const headers = new Headers({ Accept: 'application/json' })
       headers.set('X-Active-Tenant-Id', String(tenantId))
 
-      const response = await fetch(`${apiBaseUrl}/scheduling/task-type/list?page=0&size=5`, {
+      const response = await fetch('/scheduling/task-type/list?page=0&size=5', {
         method: 'GET',
         credentials: 'include',
         headers,
@@ -156,7 +150,7 @@ async function fetchTaskTypeList(page: import('@playwright/test').Page, activeTe
             : null,
       }
     },
-    { apiBaseUrl: backendBaseUrl, tenantId: activeTenantId },
+    { tenantId: activeTenantId },
   )
 }
 

@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.stereotype.Service;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
@@ -29,7 +30,6 @@ public class UserSessionServiceImpl implements UserSessionService {
     }
 
     @Override
-    @Transactional
     public UserSessionState registerOrTouch(SessionTouchRequest request) {
         if (request == null
             || !StringUtils.hasText(request.sessionId())
@@ -46,9 +46,20 @@ public class UserSessionServiceImpl implements UserSessionService {
         }
 
         LocalDateTime now = request.touchAt() != null ? request.touchAt() : LocalDateTime.now();
-        return userSessionRepository.findBySessionId(request.sessionId())
-            .map(existing -> handleExistingSession(existing, request, now))
-            .orElseGet(() -> createActiveSession(request, now));
+        Optional<UserSession> existing = userSessionRepository.findBySessionId(request.sessionId());
+        if (existing.isPresent()) {
+            return handleExistingSession(existing.get(), request, now);
+        }
+        try {
+            return createActiveSession(request, now);
+        } catch (DataIntegrityViolationException concurrentInsert) {
+            // Two first requests for one freshly-authenticated Session can race between the lookup
+            // and insert. Repository saveAndFlush owns its transaction here, so after the losing
+            // insert rolls back we can safely load the winner instead of leaking a 500.
+            return userSessionRepository.findBySessionId(request.sessionId())
+                .map(winner -> handleExistingSession(winner, request, now))
+                .orElseThrow(() -> concurrentInsert);
+        }
     }
 
     @Override
@@ -163,7 +174,7 @@ public class UserSessionServiceImpl implements UserSessionService {
         session.setLastSeenAt(now);
         session.setExpiresAt(request.expiresAt());
         updateSessionSnapshot(session, request);
-        userSessionRepository.save(session);
+        userSessionRepository.saveAndFlush(session);
         return UserSessionState.ACTIVE;
     }
 
