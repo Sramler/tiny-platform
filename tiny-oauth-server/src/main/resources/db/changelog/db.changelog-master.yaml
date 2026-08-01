@@ -792,6 +792,11 @@ databaseChangeLog:
       file: 195-align-scheduling-read-endpoint-requirements.yaml
       relativeToChangelogFile: true
 
+  # fresh DB 不继承历史 PLATFORM 基础权限/菜单；先补模板，供 196/197 控制面载体生成消费。
+  - include:
+      file: 205a-ensure-platform-resource-management-menu.yaml
+      relativeToChangelogFile: true
+
   # PLATFORM 角色目录仍由 /sys/roles 提供，只读访问必须有精确 endpoint 载体。
   - include:
       file: 196-backfill-platform-role-list-api-endpoint.yaml
@@ -872,4 +877,8 @@ databaseChangeLog:
   # scheduling:* 禁用后，以细粒度权限恢复 ROLE_TENANT_ADMIN 的既有调度管理语义
   - include:
       file: 212-bind-tenant-admin-scheduling-fine-grained-permissions.yaml
+      relativeToChangelogFile: true
+  # 补齐平台租户用户列表与租户 active-scope 写载体，避免 fresh DB 依赖历史 endpoint 行。
+  - include:
+      file: 213-close-fresh-db-session-control-endpoints.yaml
       relativeToChangelogFile: true

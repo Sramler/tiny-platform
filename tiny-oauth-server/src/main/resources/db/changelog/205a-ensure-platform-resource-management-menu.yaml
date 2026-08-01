@@ -1,0 +1,171 @@
+databaseChangeLog:
+  - changeSet:
+      id: 205a-ensure-platform-resource-management-menu
+      author: codex
+      comment: 在资源按钮闭包迁移前显式建立 PLATFORM system/resource 菜单，消除 fresh DB 对历史模板行的隐式依赖
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: menu
+            - tableExists:
+                tableName: permission
+            - tableExists:
+                tableName: role
+            - tableExists:
+                tableName: role_permission
+            - tableExists:
+                tableName: menu_permission_requirement
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT IGNORE INTO `permission` (
+                `permission_code`, `permission_name`, `module_code`, `action_code`,
+                `permission_type`, `description`, `enabled`, `built_in_flag`, `tenant_id`,
+                `created_by`, `created_at`, `updated_by`, `updated_at`
+              )
+              SELECT
+                source_permission.`permission_code`, source_permission.`permission_name`,
+                source_permission.`module_code`, source_permission.`action_code`,
+                source_permission.`permission_type`, source_permission.`description`,
+                source_permission.`enabled`, source_permission.`built_in_flag`, NULL,
+                NULL, NOW(), NULL, NOW()
+              FROM `permission` source_permission
+              WHERE source_permission.`tenant_id` IS NOT NULL
+                AND source_permission.`permission_code` IN (
+                  'system:tenant:list',
+                  'system:user:list',
+                  'system:user:view',
+                  'system:role:list',
+                  'system:menu:list',
+                  'system:resource:list'
+                )
+              ORDER BY source_permission.`tenant_id`, source_permission.`id`;
+
+              INSERT INTO `menu` (
+                `tenant_id`, `resource_level`, `name`, `title`, `path`, `icon`, `show_icon`,
+                `sort`, `component`, `redirect`, `hidden`, `keep_alive`, `permission`,
+                `required_permission_id`, `type`, `parent_id`, `enabled`,
+                `created_at`, `created_by`, `updated_at`, `updated_by`
+              )
+              SELECT
+                NULL, 'PLATFORM', 'system', '系统管理', '/system', 'SettingOutlined', 1,
+                1, '', '', 0, 0, 'system:tenant:list', platform_permission.`id`, 0, NULL, 1,
+                NOW(), NULL, NOW(), NULL
+              FROM `permission` platform_permission
+              WHERE platform_permission.`tenant_id` IS NULL
+                AND platform_permission.`permission_code` = 'system:tenant:list'
+                AND NOT EXISTS (
+                  SELECT 1 FROM `menu` existing
+                  WHERE existing.`tenant_id` IS NULL
+                    AND existing.`path` = '/system'
+                );
+
+              UPDATE `menu` platform_system
+              JOIN `permission` platform_permission
+                ON platform_permission.`tenant_id` IS NULL
+               AND platform_permission.`permission_code` = 'system:tenant:list'
+              SET
+                platform_system.`resource_level` = 'PLATFORM',
+                platform_system.`name` = 'system',
+                platform_system.`title` = '系统管理',
+                platform_system.`path` = '/system',
+                platform_system.`permission` = 'system:tenant:list',
+                platform_system.`required_permission_id` = platform_permission.`id`,
+                platform_system.`type` = 0,
+                platform_system.`parent_id` = NULL,
+                platform_system.`enabled` = 1,
+                platform_system.`updated_at` = NOW(),
+                platform_system.`updated_by` = NULL
+              WHERE platform_system.`tenant_id` IS NULL
+                AND platform_system.`path` = '/system';
+
+              INSERT INTO `menu` (
+                `tenant_id`, `resource_level`, `name`, `title`, `path`, `icon`, `show_icon`,
+                `sort`, `component`, `redirect`, `hidden`, `keep_alive`, `permission`,
+                `required_permission_id`, `type`, `parent_id`, `enabled`,
+                `created_at`, `created_by`, `updated_at`, `updated_by`
+              )
+              SELECT
+                NULL, 'PLATFORM', 'resource', '资源管理', '/system/resource', 'ApiOutlined', 0,
+                3, '/views/resource/resource.vue', '', 0, 0, 'system:resource:list',
+                resource_permission.`id`, 1, platform_system.`id`, 1,
+                NOW(), NULL, NOW(), NULL
+              FROM `menu` platform_system
+              JOIN `permission` resource_permission
+                ON resource_permission.`tenant_id` IS NULL
+               AND resource_permission.`permission_code` = 'system:resource:list'
+              WHERE platform_system.`tenant_id` IS NULL
+                AND platform_system.`path` = '/system'
+                AND NOT EXISTS (
+                  SELECT 1 FROM `menu` existing
+                  WHERE existing.`tenant_id` IS NULL
+                    AND existing.`path` = '/system/resource'
+                );
+
+              UPDATE `menu` platform_resource
+              JOIN `menu` platform_system
+                ON platform_system.`tenant_id` IS NULL
+               AND platform_system.`path` = '/system'
+              JOIN `permission` resource_permission
+                ON resource_permission.`tenant_id` IS NULL
+               AND resource_permission.`permission_code` = 'system:resource:list'
+              SET
+                platform_resource.`resource_level` = 'PLATFORM',
+                platform_resource.`name` = 'resource',
+                platform_resource.`title` = '资源管理',
+                platform_resource.`path` = '/system/resource',
+                platform_resource.`component` = '/views/resource/resource.vue',
+                platform_resource.`permission` = 'system:resource:list',
+                platform_resource.`required_permission_id` = resource_permission.`id`,
+                platform_resource.`type` = 1,
+                platform_resource.`parent_id` = platform_system.`id`,
+                platform_resource.`enabled` = 1,
+                platform_resource.`updated_at` = NOW(),
+                platform_resource.`updated_by` = NULL
+              WHERE platform_resource.`tenant_id` IS NULL
+                AND platform_resource.`path` = '/system/resource';
+
+              DELETE requirement_entry
+              FROM `menu_permission_requirement` requirement_entry
+              JOIN `menu` platform_menu
+                ON platform_menu.`id` = requirement_entry.`menu_id`
+              WHERE platform_menu.`tenant_id` IS NULL
+                AND platform_menu.`path` IN ('/system', '/system/resource');
+
+              INSERT INTO `menu_permission_requirement` (
+                `tenant_id`, `menu_id`, `requirement_group`, `sort_order`, `permission_id`,
+                `negated`, `created_at`, `created_by`, `updated_at`, `updated_by`
+              )
+              SELECT
+                NULL, platform_menu.`id`, 0, 1, platform_menu.`required_permission_id`,
+                0, NOW(), NULL, NOW(), NULL
+              FROM `menu` platform_menu
+              WHERE platform_menu.`tenant_id` IS NULL
+                AND platform_menu.`path` IN ('/system', '/system/resource')
+                AND platform_menu.`required_permission_id` IS NOT NULL;
+
+              INSERT IGNORE INTO `role_permission` (
+                `tenant_id`, `role_id`, `permission_id`, `created_by`, `created_at`
+              )
+              SELECT NULL, platform_admin.`id`, platform_permission.`id`, NULL, NOW()
+              FROM `role` platform_admin
+              JOIN `permission` platform_permission
+                ON platform_permission.`tenant_id` IS NULL
+               AND platform_permission.`permission_code` IN (
+                 'system:tenant:list',
+                 'system:user:list',
+                 'system:user:view',
+                 'system:role:list',
+                 'system:menu:list',
+                 'system:resource:list'
+               )
+              WHERE platform_admin.`tenant_id` IS NULL
+                AND platform_admin.`role_level` = 'PLATFORM'
+                AND platform_admin.`code` = 'ROLE_PLATFORM_ADMIN';

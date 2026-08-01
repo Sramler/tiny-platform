@@ -42,6 +42,12 @@
 
 ## 必须（Must）
 
+### Liquibase fresh-DB 闭包
+
+- ✅ 新 changeset 的前置条件不得依赖只在开发者存量库存在、但无法由此前 changeset 从空库生成的模板行；消费 PLATFORM `menu` / `permission` / `api_endpoint` 前，必须由更早的 changeset 显式建立。
+- ✅ 涉及权限载体、菜单模板或顺序依赖的迁移，除 existing DB 启动外，必须在一次性临时数据库中从零执行 `db.changelog-master.yaml`，并在验证后精确删除临时库；existing DB 通过不能替代 fresh-DB 验证。
+- ✅ 已在任一真实库执行的 changeset 不直接改写；若 fresh DB 暴露历史假设，应新增排在消费者之前的补偿 changeset，并同时验证存量库增量升级和空库全量升级。
+
 ### 1) 表结构规范
 
 - ✅ 表命名：单数形式（user/resource/role），使用反引号包裹。

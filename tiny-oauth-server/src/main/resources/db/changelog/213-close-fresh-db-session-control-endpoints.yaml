@@ -1,0 +1,167 @@
+databaseChangeLog:
+  - changeSet:
+      id: 213-close-fresh-db-session-control-endpoints
+      author: codex
+      comment: 补齐 fresh DB 平台租户用户列表与租户 Session active-scope 写端点及精确 requirement
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: permission
+            - tableExists:
+                tableName: api_endpoint
+            - tableExists:
+                tableName: api_endpoint_permission_requirement
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              INSERT INTO `api_endpoint` (
+                `tenant_id`, `resource_level`, `name`, `title`, `uri`, `method`, `permission`,
+                `required_permission_id`, `enabled`, `created_at`, `created_by`, `updated_at`, `updated_by`
+              )
+              SELECT
+                NULL, 'PLATFORM', 'platform-tenant-users-get', '平台租户用户列表',
+                '/platform/tenants/{tenantId}/users', 'GET', 'system:user:list',
+                platform_user_list.`id`, 1, NOW(), NULL, NOW(), NULL
+              FROM `permission` platform_user_list
+              WHERE platform_user_list.`tenant_id` IS NULL
+                AND platform_user_list.`permission_code` = 'system:user:list'
+                AND platform_user_list.`enabled` = 1
+                AND NOT EXISTS (
+                  SELECT 1 FROM `api_endpoint` existing_endpoint
+                  WHERE existing_endpoint.`tenant_id` IS NULL
+                    AND UPPER(TRIM(existing_endpoint.`method`)) = 'GET'
+                    AND TRIM(TRAILING '/' FROM TRIM(existing_endpoint.`uri`))
+                        = '/platform/tenants/{tenantId}/users'
+                );
+
+              UPDATE `api_endpoint` endpoint_entry
+              JOIN `permission` platform_user_list
+                ON platform_user_list.`tenant_id` IS NULL
+               AND platform_user_list.`permission_code` = 'system:user:list'
+               AND platform_user_list.`enabled` = 1
+              SET
+                endpoint_entry.`resource_level` = 'PLATFORM',
+                endpoint_entry.`name` = 'platform-tenant-users-get',
+                endpoint_entry.`title` = '平台租户用户列表',
+                endpoint_entry.`uri` = '/platform/tenants/{tenantId}/users',
+                endpoint_entry.`method` = 'GET',
+                endpoint_entry.`permission` = 'system:user:list',
+                endpoint_entry.`required_permission_id` = platform_user_list.`id`,
+                endpoint_entry.`enabled` = 1,
+                endpoint_entry.`updated_at` = NOW(),
+                endpoint_entry.`updated_by` = NULL
+              WHERE endpoint_entry.`tenant_id` IS NULL
+                AND UPPER(TRIM(endpoint_entry.`method`)) = 'GET'
+                AND TRIM(TRAILING '/' FROM TRIM(endpoint_entry.`uri`))
+                    = '/platform/tenants/{tenantId}/users';
+
+              DELETE requirement_entry
+              FROM `api_endpoint_permission_requirement` requirement_entry
+              JOIN `api_endpoint` endpoint_entry
+                ON endpoint_entry.`id` = requirement_entry.`api_endpoint_id`
+              WHERE endpoint_entry.`tenant_id` IS NULL
+                AND endpoint_entry.`method` = 'GET'
+                AND endpoint_entry.`uri` IN (
+                  '/platform/tenants/{tenantId}/users',
+                  '/platform/tenants/{tenantId}/users/{userId}'
+                );
+
+              INSERT INTO `api_endpoint_permission_requirement` (
+                `tenant_id`, `api_endpoint_id`, `requirement_group`, `sort_order`, `permission_id`,
+                `negated`, `created_at`, `created_by`, `updated_at`, `updated_by`
+              )
+              SELECT
+                NULL, endpoint_entry.`id`, requirement_seed.`requirement_group`,
+                requirement_seed.`sort_order`, permission_entry.`id`, 0,
+                NOW(), NULL, NOW(), NULL
+              FROM `api_endpoint` endpoint_entry
+              JOIN (
+                SELECT 0 AS `requirement_group`, 1 AS `sort_order`, 'system:user:list' AS `permission_code`
+                UNION ALL SELECT 0, 2, 'system:tenant:list'
+                UNION ALL SELECT 1, 1, 'system:user:list'
+                UNION ALL SELECT 1, 2, 'system:tenant:view'
+                UNION ALL SELECT 2, 1, 'system:user:view'
+                UNION ALL SELECT 2, 2, 'system:tenant:list'
+                UNION ALL SELECT 3, 1, 'system:user:view'
+                UNION ALL SELECT 3, 2, 'system:tenant:view'
+              ) requirement_seed
+              JOIN `permission` permission_entry
+                ON permission_entry.`tenant_id` IS NULL
+               AND permission_entry.`permission_code` = requirement_seed.`permission_code`
+               AND permission_entry.`enabled` = 1
+              WHERE endpoint_entry.`tenant_id` IS NULL
+                AND endpoint_entry.`method` = 'GET'
+                AND endpoint_entry.`uri` IN (
+                  '/platform/tenants/{tenantId}/users',
+                  '/platform/tenants/{tenantId}/users/{userId}'
+                );
+
+              INSERT INTO `api_endpoint` (
+                `tenant_id`, `resource_level`, `name`, `title`, `uri`, `method`, `permission`,
+                `required_permission_id`, `enabled`, `created_at`, `created_by`, `updated_at`, `updated_by`
+              )
+              SELECT
+                tenant_update_permission.`tenant_id`, 'TENANT',
+                'current-user-active-scope-post', '切换当前 Session 活动作用域',
+                '/sys/users/current/active-scope', 'POST', 'system:user:edit',
+                tenant_update_permission.`id`, 1, NOW(), NULL, NOW(), NULL
+              FROM `permission` tenant_update_permission
+              WHERE tenant_update_permission.`tenant_id` IS NOT NULL
+                AND tenant_update_permission.`permission_code` = 'system:user:edit'
+                AND tenant_update_permission.`enabled` = 1
+                AND NOT EXISTS (
+                  SELECT 1 FROM `api_endpoint` existing_endpoint
+                  WHERE existing_endpoint.`tenant_id` = tenant_update_permission.`tenant_id`
+                    AND UPPER(TRIM(existing_endpoint.`method`)) = 'POST'
+                    AND TRIM(TRAILING '/' FROM TRIM(existing_endpoint.`uri`))
+                        = '/sys/users/current/active-scope'
+                );
+
+              UPDATE `api_endpoint` endpoint_entry
+              JOIN `permission` tenant_update_permission
+                ON tenant_update_permission.`tenant_id` = endpoint_entry.`tenant_id`
+               AND tenant_update_permission.`permission_code` = 'system:user:edit'
+               AND tenant_update_permission.`enabled` = 1
+              SET
+                endpoint_entry.`resource_level` = 'TENANT',
+                endpoint_entry.`name` = 'current-user-active-scope-post',
+                endpoint_entry.`title` = '切换当前 Session 活动作用域',
+                endpoint_entry.`uri` = '/sys/users/current/active-scope',
+                endpoint_entry.`method` = 'POST',
+                endpoint_entry.`permission` = 'system:user:edit',
+                endpoint_entry.`required_permission_id` = tenant_update_permission.`id`,
+                endpoint_entry.`enabled` = 1,
+                endpoint_entry.`updated_at` = NOW(),
+                endpoint_entry.`updated_by` = NULL
+              WHERE endpoint_entry.`tenant_id` IS NOT NULL
+                AND UPPER(TRIM(endpoint_entry.`method`)) = 'POST'
+                AND TRIM(TRAILING '/' FROM TRIM(endpoint_entry.`uri`))
+                    = '/sys/users/current/active-scope';
+
+              DELETE requirement_entry
+              FROM `api_endpoint_permission_requirement` requirement_entry
+              JOIN `api_endpoint` endpoint_entry
+                ON endpoint_entry.`id` = requirement_entry.`api_endpoint_id`
+              WHERE endpoint_entry.`tenant_id` IS NOT NULL
+                AND endpoint_entry.`method` = 'POST'
+                AND endpoint_entry.`uri` = '/sys/users/current/active-scope';
+
+              INSERT INTO `api_endpoint_permission_requirement` (
+                `tenant_id`, `api_endpoint_id`, `requirement_group`, `sort_order`, `permission_id`,
+                `negated`, `created_at`, `created_by`, `updated_at`, `updated_by`
+              )
+              SELECT
+                endpoint_entry.`tenant_id`, endpoint_entry.`id`, 0, 1,
+                endpoint_entry.`required_permission_id`, 0, NOW(), NULL, NOW(), NULL
+              FROM `api_endpoint` endpoint_entry
+              WHERE endpoint_entry.`tenant_id` IS NOT NULL
+                AND endpoint_entry.`method` = 'POST'
+                AND endpoint_entry.`uri` = '/sys/users/current/active-scope'
+                AND endpoint_entry.`required_permission_id` IS NOT NULL;

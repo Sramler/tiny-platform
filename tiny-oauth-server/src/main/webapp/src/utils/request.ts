@@ -691,23 +691,23 @@ service.interceptors.response.use(
 // 封装请求方法
 const request = {
   get<T = any>(url: string, config?: TinyRequestConfig): Promise<T> {
-    return service.get<T, T>(url, config)
+    return service.get(url, config) as unknown as Promise<T>
   },
 
   post<T = any>(url: string, data?: any, config?: TinyRequestConfig): Promise<T> {
-    return service.post<T, T>(url, data, config)
+    return service.post(url, data, config) as unknown as Promise<T>
   },
 
   put<T = any>(url: string, data?: any, config?: TinyRequestConfig): Promise<T> {
-    return service.put<T, T>(url, data, config)
+    return service.put(url, data, config) as unknown as Promise<T>
   },
 
   delete<T = any>(url: string, config?: TinyRequestConfig): Promise<T> {
-    return service.delete<T, T>(url, config)
+    return service.delete(url, config) as unknown as Promise<T>
   },
 
   patch<T = any>(url: string, data?: any, config?: TinyRequestConfig): Promise<T> {
-    return service.patch<T, T>(url, data, config)
+    return service.patch(url, data, config) as unknown as Promise<T>
   },
 }
 
