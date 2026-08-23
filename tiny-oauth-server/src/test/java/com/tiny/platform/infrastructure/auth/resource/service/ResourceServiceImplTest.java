@@ -2073,7 +2073,9 @@ class ResourceServiceImplTest {
         childMenu.setEnabled(true);
 
         UiActionEntry childButton = new UiActionEntry();
-        childButton.setId(12L);
+        // Split carriers have independent primary-key sequences. A ui_action id may legally equal
+        // its parent menu id and must still remain a leaf in the aggregated control-plane tree.
+        childButton.setId(10L);
         childButton.setTenantId(8L);
         childButton.setResourceLevel("TENANT");
         childButton.setName("menu-button");
@@ -2108,6 +2110,14 @@ class ResourceServiceImplTest {
             .containsExactly("menu", "ui_action");
         assertThat(rootDto.getChildren()).extracting(ResourceResponseDto::getLeaf)
             .containsExactly(true, true);
+        verify(menuEntryRepository, times(3)).findAll(
+            any(Specification.class),
+            any(org.springframework.data.domain.Sort.class)
+        );
+        verify(uiActionEntryRepository, times(3)).findAll(
+            any(Specification.class),
+            any(org.springframework.data.domain.Sort.class)
+        );
     }
 
     @Test

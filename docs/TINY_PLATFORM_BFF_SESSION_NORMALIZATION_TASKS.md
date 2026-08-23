@@ -289,3 +289,11 @@ Vue /login
 - 根因：表格长文本列没有稳定宽度与省略策略，形成视觉重影；同时平台管理员虽能读取资源树，但四项 `ui_action`、五个写接口及其 requirement/role binding 没有作为同一个页面业务闭包验证，按钮因此被运行时载体过滤。
 - 修复：资源名称、标题、路由、URI 和权限列采用稳定宽度与 ellipsis，操作列固定在右侧；changeset 204 先补平台管理员权限绑定，changeset 206 闭合四项 PLATFORM `ui_action` 与四个 CRUD endpoint，已执行 206 不再改写，changeset 207 单独补齐遗漏的 `PUT /sys/resources/{id}/sort`。
 - 数据门禁：`verify-platform-template-row-counts.sh` 现在要求资源动作/requirement 为 4/4、写 endpoint/requirement 为 5/5、平台管理员绑定为 4/4；同时要求认证与授权审计九个 endpoint 在 PLATFORM + 全部现有 TENANT scope 中均为唯一精确 requirement。
+
+### 7.7 2026-08-24 fresh DB 资源树无限递归
+
+- 现象：fresh DB 上平台角色页已恢复，但 webapp real-link 最后一项仍在 `/system/resource` 超时；`/sys/resources/runtime/ui-actions` 已响应，`/sys/resources/tree` 始终不返回，后端日志重复停留在 `ResourceServiceImpl.populateChildrenRecursively`。
+- 根因：拆分后的 `menu`、`ui_action`、`api_endpoint` 各自使用独立主键序列，数值 ID 可以相同。历史聚合树对所有 DTO 都继续按裸 ID 查询子节点，按钮 ID 一旦等于某个菜单 ID，就会被再次当作菜单 parent ID，最终把同一按钮反复挂到自己下面。存量库因序列已错开而未稳定复现，fresh DB 从小 ID 起步后必现。
+- 修复：资源树只允许 `directory/menu` 递归；`ui_action/api_endpoint` 固定为叶子；菜单递归携带祖先 ID 集，遇到异常环时记录结构化 warning 并截断，不让一个坏节点拖垮整个接口。
+- 防复发：单测显式构造“按钮 ID = 父菜单 ID”，并断言按钮不会触发额外 carrier child 查询；授权规则明确载体类型是聚合节点身份的一部分，禁止跨表按裸 ID 推导父子关系。
+- 验证：`ResourceServiceImplTest` 34/34 通过；默认本地全栈门禁通过；真实 MySQL + Spring Boot + Vite 的定向 `session-management-pages.spec.ts` 1/1 及与 GitHub webapp real-link 一致的全套 15/15 均通过，覆盖资源、认证审计和授权审计深链、无 Bearer、无 401/403、浏览器无 token storage；派生数据 teardown 后无残留。

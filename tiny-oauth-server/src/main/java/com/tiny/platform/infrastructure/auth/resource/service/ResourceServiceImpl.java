@@ -1067,7 +1067,7 @@ public class ResourceServiceImpl implements ResourceService {
     public List<ResourceResponseDto> findResourceTreeDtos() {
         List<ResourceResponseDto> roots = new ArrayList<>(findTopLevelDtos());
         roots.sort(resourceDtoOrder());
-        roots.forEach(this::populateChildrenRecursively);
+        roots.forEach(root -> populateChildrenRecursively(root, new HashSet<>()));
         return roots;
     }
 
@@ -1125,17 +1125,42 @@ public class ResourceServiceImpl implements ResourceService {
         }
     }
 
-    private void populateChildrenRecursively(ResourceResponseDto node) {
+    private void populateChildrenRecursively(ResourceResponseDto node, Set<Long> menuAncestors) {
+        if (!isMenuContainer(node)) {
+            node.setChildren(new ArrayList<>());
+            node.setLeaf(Boolean.TRUE);
+            return;
+        }
+
         Long parentId = node.getId();
+        if (parentId == null || !menuAncestors.add(parentId)) {
+            logger.warn(
+                "resource_tree_cycle_guard carrierKind={} resourceId={} resourceName={}",
+                node.getCarrierKind(),
+                parentId,
+                node.getName()
+            );
+            node.setChildren(new ArrayList<>());
+            node.setLeaf(Boolean.TRUE);
+            return;
+        }
+
         List<ResourceResponseDto> children = new ArrayList<>(findChildDtos(parentId));
         children.sort(resourceDtoOrder());
         node.setChildren(children);
         if (children.isEmpty()) {
             node.setLeaf(Boolean.TRUE);
+            menuAncestors.remove(parentId);
             return;
         }
         node.setLeaf(Boolean.FALSE);
-        children.forEach(this::populateChildrenRecursively);
+        children.forEach(child -> populateChildrenRecursively(child, menuAncestors));
+        menuAncestors.remove(parentId);
+    }
+
+    private boolean isMenuContainer(ResourceResponseDto node) {
+        return Objects.equals(node.getType(), ResourceType.DIRECTORY.getCode())
+            || Objects.equals(node.getType(), ResourceType.MENU.getCode());
     }
 
     private Comparator<ResourceResponseDto> resourceDtoOrder() {

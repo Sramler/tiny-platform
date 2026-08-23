@@ -53,6 +53,7 @@ globs:
 - ✅ 通配权限与具体权限是两个独立标识，除非统一 matcher 有已测试的显式蕴含规则；不得假设角色持有 `scheduling:*` 就自动满足 `scheduling:console:view`，seed、requirement 与角色绑定必须使用同一规范码语义。
 - ✅ 已执行的 Liquibase changeset 不得改写以补 endpoint/permission；必须追加幂等补偿 changeset，并同时验证 fresh DB、已执行库升级、现有租户回填和新租户克隆，避免 checksum 漂移与“新库绿、旧库仍 403”。
 - ✅ `menu / ui_action / api_endpoint` 拆分载体迁移必须按依赖拓扑执行：先建立目标 scope 的 permission 与 menu，再复制/创建 ui_action，最后写 requirement 与 role_permission；凡通过 `JOIN target_menu` 复制按钮的 changeset，fresh DB 必须断言目标页面菜单、按钮及 requirement 行数均大于 0，并以真实浏览器验证动态路由已注册且页面业务接口确实发出。不得把“SQL 执行成功但 JOIN 结果为 0”视为载体闭包完成。
+- ✅ 聚合 `menu / ui_action / api_endpoint` 为资源树时必须把载体类型视为节点身份的一部分：三个表的主键序列彼此独立，ID 相同不代表父子关系；只有 `directory/menu` 可以递归查询子节点，`ui_action/api_endpoint` 必须是叶子，并对菜单祖先环 fail-safe 截断。必须包含“按钮 ID 等于父菜单 ID”的回归样例，禁止只按裸 ID 跨载体递归。
 - ✅ 若同一授权任务同时触及 `db/changelog/**`、`db.changelog-master.yaml`、`api_endpoint` / `menu_permission_requirement` / `role_permission` 回填、权限 seed、菜单 seed、DDL/nullability/unique/index/generated column，则同一任务还必须补至少一次真实 `SpringLiquibase` / 应用启动验证；只凭 controller/service/unit/integration test 通过不得标记为“已完成”。
 - ✅ `/platform/**` 控制面不得把 `/sys/**` 或 tenant-only 控制面接口当作本域核心读写主链；若平台侧缺最小 lookup / query / action 能力，应补平台专用最小接口，而不是默认借道租户/系统控制面。
 - ✅ `/platform/**` 页面、接口与前端权限守卫不得把 `system:*` 权限作为平台域核心能力的必备前置；若存在历史桥接，必须显式说明临时性质、风险、退出条件和后续收口卡片，否则视为不允许。
