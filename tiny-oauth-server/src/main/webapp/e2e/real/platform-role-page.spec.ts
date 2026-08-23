@@ -25,10 +25,9 @@ test.describe('real-link: 平台角色页', () => {
 
     await page.goto('/system/role')
     await expect(page).toHaveURL(/\/system\/role(?:\?|$)/)
-    await expect(page.locator('.ant-table')).toBeVisible()
-
     await expect.poll(() => apiStatuses.get('/sys/resources/runtime/ui-actions')).toBe(200)
     await expect.poll(() => apiStatuses.get('/sys/roles')).toBe(200)
+    await expect(page.locator('.ant-table')).toBeVisible()
 
     const roleRows = page.locator('.ant-table-tbody .ant-table-row')
     await expect(roleRows.first()).toBeVisible()

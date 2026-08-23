@@ -203,7 +203,7 @@ Vue /login
 - [x] BFF-04 real-link Session 化；global setup 使用 HttpOnly `JSESSIONID` + CSRF 完成派生租户初始化，storageState 不再依赖 OIDC token。
 - [x] BFF-05 去伪 JWT；Session 身份直接使用 `/sys/users/current` 内存快照，`access_token` 为空，不再生成 `session.<payload>.ui-only`。
 - [x] BFF-06 Web/Bearer 默认分轨；Web 默认 Session-only，只有显式设置 `VITE_AUTH_SESSION_ONLY=false` 才进入 OIDC/Bearer 兼容轨。
-- [ ] BFF-07 API 载体与首页治理（全仓 Controller 映射漂移门禁及 202–213 载体迁移已落地；本地 full-chain、一次性 fresh DB、existing MySQL SpringLiquibase 与 real-link 30/30 已全绿，仅待本次提交后的 GitHub 全流水线复验后收口）。
+- [ ] BFF-07 API 载体与首页治理（全仓 Controller 映射漂移门禁及 202–214 载体迁移已落地；本地 full-chain、一次性 fresh DB、existing MySQL SpringLiquibase 与 real-link 30/30 已全绿，仅待本次提交后的 GitHub 全流水线复验后收口）。
 - [ ] BFF-08 集群和生产安全（memory/jdbc/redis 参数化、prod memory 禁用、JDBC/Redis 单节点真实链路已完成；多节点切换及强制失效联动待验证）。
 
 ## 6. 2026-07-16 实际验证记录
@@ -227,8 +227,10 @@ Vue /login
 - `verify-api-endpoint-controller-drift.sh` 在真实 MySQL 上启动 Spring 上下文，比较实际 MVC Controller 的 method/template 与当前 scope 的 `api_endpoint`、主 permission 和 requirement。
 - changeset 210 显式闭合 `SchedulingController` 路由；changeset 211 闭合用户、组织、数据范围、角色兼容、字典控制面、导出与幂等治理路由，均未自动扩大角色授权。
 - changeset 205a 在 196/197 前显式生成 fresh DB 缺失的 PLATFORM 基础读取权限及 `/system`、`/system/resource` 菜单；changeset 213 补齐平台租户用户列表和租户 Session active-scope 写载体，active-scope 使用当前规范权限 `system:user:edit`，不复活历史 `system:user:update`。
+- changeset 214 修复 fresh DB 的历史迁移时序缺口：150 复制 PLATFORM `ui_action` 时 `/system/role`、`/system/menu` 尚不存在，205a 又只显式建立 `/system/resource`，导致角色页动态路由未注册、组件未挂载且业务接口根本不会发出。214 现显式闭合两页 `menu + requirement + ui_action + requirement + ROLE_PLATFORM_ADMIN`，不将“路由未找到”误判为 token/Session 或 API 403。
 - 210/211 已在 existing DB 由 SpringLiquibase 实际执行；漂移集成测试 1/1 通过，当前未精确豁免的受保护 Controller 映射为 0 缺口。
-- 一次性空库已从零执行 196 个 changeset，205a/206/212/213 均实际落库，Spring 上下文及 Controller 漂移门禁 1/1 通过；临时数据库随后自动删除。existing DB 也已增量执行 205a/213 并保持零漂移。
+- 一次性空库已从零执行 197 个 changeset，205a/206/212/213/214 均实际落库，Spring 上下文及 Controller 漂移门禁 1/1 通过；214 再次启动为 0 增量。existing DB 也已增量执行 214 并保持零漂移。
+- 214 后在隔离 fresh DB 以真实 Chromium 完成平台密码 + TOTP + HttpOnly Session 登录；`/system/role` 动态路由、角色表格、新建/编辑操作均可见，`/sys/users/current`、`/sys/resources/runtime/ui-actions?pagePath=/system/role`、`/sys/roles` 全部返回 200，浏览器存储中无 access/refresh token，JS 仅可见 `XSRF-TOKEN`，浏览器控制台 0 error。
 - `ProcessDisabledFallbackController` 是 Camunda 关闭时返回 503 的占位 envelope，不生成权限载体；运行态字典 lookup、当前用户头像/登录历史和 process health 仅按精确 method/path 作为已认证基础设施豁免。
 - 漂移门禁已接入 Web、Scheduling 与 Scheduling cross-tenant 三条 real E2E workflow；本地 full-chain 已全绿，BFF-07 仍以本次提交后的 fresh DB CI 全绿作为最终完成条件。
 

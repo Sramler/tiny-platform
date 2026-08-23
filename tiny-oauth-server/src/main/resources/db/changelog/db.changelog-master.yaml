@@ -882,3 +882,7 @@ databaseChangeLog:
   - include:
       file: 213-close-fresh-db-session-control-endpoints.yaml
       relativeToChangelogFile: true
+  # 补齐 fresh DB 的 PLATFORM 角色/菜单页面及按钮闭包，避免动态路由缺失且 ui_action 永远不加载。
+  - include:
+      file: 214-close-fresh-db-platform-role-menu-carriers.yaml
+      relativeToChangelogFile: true
