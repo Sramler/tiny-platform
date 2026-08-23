@@ -3,8 +3,16 @@ databaseChangeLog:
       id: cleanup-duplicate-resources
       author: tiny
       comment: 清理 resource 表中的重复数据（保留 ID 最小的记录，删除其他重复记录）
+      # 该历史 changeSet 使用 onFail=CONTINUE：无重复数据时不会写入
+      # DATABASECHANGELOG。resource 在 131 中删除后，后续启动仍会重新评估本
+      # changeSet，因此必须先检查 legacy 表是否存在。ANY 兼容少量曾实际执行
+      # 并记录旧 checksum 的数据库。
+      validCheckSum:
+        - ANY
       preConditions:
         - onFail: CONTINUE
+        - tableExists:
+            tableName: resource
         - sqlCheck:
             expectedResult: 0
             sql: |
@@ -23,4 +31,3 @@ databaseChangeLog:
               WHERE r1.name = r2.name
                 AND r1.id > r2.id;
             comment: 删除重复记录，保留每个 name 的最小 ID 记录
-

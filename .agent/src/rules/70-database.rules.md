@@ -47,6 +47,8 @@
 - ✅ 新 changeset 的前置条件不得依赖只在开发者存量库存在、但无法由此前 changeset 从空库生成的模板行；消费 PLATFORM `menu` / `permission` / `api_endpoint` 前，必须由更早的 changeset 显式建立。
 - ✅ 涉及权限载体、菜单模板或顺序依赖的迁移，除 existing DB 启动外，必须在一次性临时数据库中从零执行 `db.changelog-master.yaml`，并在验证后精确删除临时库；existing DB 通过不能替代 fresh-DB 验证。
 - ✅ 已在任一真实库执行的 changeset 不直接改写；若 fresh DB 暴露历史假设，应新增排在消费者之前的补偿 changeset，并同时验证存量库增量升级和空库全量升级。
+- ✅ 唯一允许修订历史 changeset 的场景是：该 changeset 因 `onFail: CONTINUE` 可能未写入 `DATABASECHANGELOG`，而其前置条件在后续 DDL 后会直接报错，导致补偿 changeset 永远无法到达。此时只能做非业务语义的防御性修订：先用 `tableExists` 等元数据前置条件保护已删除对象、显式兼容历史 checksum，并必须验证 existing DB、fresh DB 首次迁移、同一 fresh DB 第二次迁移及 SpringLiquibase 再启动四条路径；不得借此修改历史数据转换正文。
+- ✅ 使用 `onFail: CONTINUE` 的 changeset 必须按“可能永不记入 `DATABASECHANGELOG`”设计；它引用的表、列或索引若会被后续 changeset 删除，前置条件必须先做不访问该对象内容的存在性检查，且验证一次完整迁移后的再次执行。
 
 ### 1) 表结构规范
 
