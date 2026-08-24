@@ -192,6 +192,23 @@ async function fetchSecurityStatus(page: import('@playwright/test').Page) {
   }
 }
 
+async function waitForSecurityStatus(page: import('@playwright/test').Page) {
+  let latest: Awaited<ReturnType<typeof fetchSecurityStatus>> | null = null
+  await expect
+    .poll(
+      async () => {
+        latest = await fetchSecurityStatus(page)
+        return latest.status
+      },
+      {
+        message: 'TOTP 验证后等待 Session 与 active tenant bootstrap 就绪',
+        timeout: 60_000,
+      },
+    )
+    .toBe(200)
+  return latest!
+}
+
 function resolveBindLoginConfig() {
   const tenantCode = resolveBindTenantCode()
   const username = requireEnv('E2E_USERNAME_BIND')
@@ -200,12 +217,16 @@ function resolveBindLoginConfig() {
 }
 
 async function clearBrowserSession(page: import('@playwright/test').Page) {
-  await page.context().clearCookies()
-  await page.context().clearPermissions()
   await page.evaluate(() => {
     window.localStorage.clear()
     window.sessionStorage.clear()
   })
+  // TOTP 绑定会提升 tokenNotBefore。先离开业务页停止并发请求，
+  // 避免 clearCookies 之后旧请求的 Set-Cookie 又写回绑定前 Session。
+  await page.goto('about:blank')
+  await page.context().clearCookies()
+  await page.context().clearPermissions()
+  await expect.poll(async () => (await page.context().cookies()).length).toBe(0)
 }
 
 test.describe('real-link: 未绑定 TOTP 首绑链路', () => {
@@ -279,8 +300,8 @@ test.describe('real-link: 未绑定 TOTP 首绑链路', () => {
         timeout: 60_000,
       },
     )
-    const secondStatus = await fetchSecurityStatus(page)
-    expect(secondStatus.status).toBe(200)
+    const secondStatus = await waitForSecurityStatus(page)
+    expect(secondStatus.status, JSON.stringify(secondStatus.payload)).toBe(200)
     expect(secondStatus.payload).not.toBeNull()
   })
 })

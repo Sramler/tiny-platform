@@ -234,14 +234,16 @@ public class DefaultSecurityConfig {
                                                                FrontendProperties frontendProperties,
                                                                MultiFactorAuthenticationSessionManager sessionManager,
                                                                com.tiny.platform.core.oauth.security.AuthUserResolutionService authUserResolutionService,
-                                                               com.tiny.platform.core.oauth.service.AuthenticationAuditService auditService) {
+                                                               com.tiny.platform.core.oauth.service.AuthenticationAuditService auditService,
+                                                               ObjectProvider<com.tiny.platform.core.oauth.security.TokenSecurityStateService> tokenSecurityStateServiceProvider) {
         return new CustomLoginSuccessHandler(
                 securityService,
                 userRepository,
                 frontendProperties,
                 sessionManager,
                 authUserResolutionService,
-                auditService
+                auditService,
+                tokenSecurityStateServiceProvider.getIfAvailable()
         );
     }
 

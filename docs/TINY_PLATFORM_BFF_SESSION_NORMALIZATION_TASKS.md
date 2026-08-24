@@ -236,14 +236,14 @@ Vue /login
 
 ## 6.2 2026-08-01 Session/CSRF 与真实 E2E 复盘
 
-- Spring Security 4.1.1 的 SPA CSRF 链现已显式接入 request handler，按 Header 值选择 plain Cookie token 或 XOR envelope token 解析，CSRF 防护范围保持不变。
+- Spring Boot 4.1.1 / Spring Security 7.1.1 的 SPA CSRF 链现已显式接入 request handler，按 Header 值选择 plain Cookie token 或 XOR envelope token 解析，CSRF 防护范围保持不变。
 - 前端 `ensureCsrfToken` 不再永久缓存 token，只合并同一时刻的并发获取，避免登录、MFA、Session fixation 或登出轮换后发送旧 token。
 - 匿名 `GET /sys/users/current` 仅在没有 SecurityContext、Bearer 和活动租户 Session 时交还 Spring Security，登出探测恢复为 401/403；已认证请求仍执行完整租户校验。
 - changeset 212 为 `ROLE_TENANT_ADMIN` 模板绑定调度细粒度权限；real-link bootstrap 同步补齐既有/派生租户身份，避免只有 `scheduling:*` 而细粒度 requirement fail-closed。
 - 双租户 setup 改为比较派生后的实际主租户与 tenant B，配置相同时 fail-fast；动态创建租户使用每次运行唯一的幂等键，初始管理员用户名在 20 位内保留唯一后缀。
 - 平台治理、租户生命周期、Session 管理和租户向导在用例开始前显式建立各自真实登录 Session，避免长套件中权限版本变化使 global setup 的旧 Session 失效。
 - `user_session` 首次并发登记改为失败事务之外重读唯一键胜出记录，消除同一 Session 并发首请求触发 `session_id` 唯一约束 500 的竞争窗口。
-- 最终本地回归：Playwright real-link 30/30、零跳过；Vitest 127 个文件/651 项；Maven 1359 项、0 失败、0 错误（1 项条件跳过）；前端 type-check/build、默认本地全栈门禁及真实 API 载体漂移门禁均通过。
+- 最终本地回归：Playwright real-link 30/30、零跳过；Vitest 127 个文件/651 项；Maven 1361 项、0 失败、0 错误（1 项条件跳过）；前端 type-check/build、默认本地全栈门禁及真实 API 载体漂移门禁均通过。
 - GitHub 首轮回归暴露 Axios 1.15 干净依赖树的 `AxiosResponseResult` 类型包装，以及 fresh DB 不具备存量 PLATFORM 模板行的顺序假设；请求封装已在响应拦截器边界显式收口为 `Promise<T>`，迁移假设已由 205a/213 和 fresh-DB 门禁修复。
 
 ## 7. 问题复盘与防复发规则
@@ -306,3 +306,10 @@ Vue /login
 - 双租户 preflight：本地 `.env.e2e.local` 的 tenant B 与派生后的实际主租户同为 `bench-1m-t`，global setup 按 fail-fast 规则拒绝伪跨租户验证；本轮使用隔离的 `bench-1m-b` 完成验证并由 teardown 清理。环境校验必须比较派生后的实际 code，且应在昂贵 seed/auth-state 准备前尽早执行。
 - 失败日志：CI 只输出 backend log 尾部时，大量 `populateChildrenRecursively` 重复帧挤掉了异常头。Nightly 失败证据必须同时保留异常命中窗口和日志尾部，以便一次看清异常类型、请求路径与首个业务栈帧。
 - SHA 证据：代码修复提交 `af9c340` 的 11 条手动矩阵加 push 自动 migration smoke 为 12/12 全绿；文档收口提交 `ee95964` 因 path filter 未产生额外自动 smoke，随后显式重跑 11 条规定矩阵并 11/11 全绿。两组证据分别对应代码承载 SHA 与最终交付 HEAD，不再混写。
+
+### 7.9 2026-08-24 TOTP 首绑后 Session 强制失效误判
+
+- 现象：真实浏览器在“首次绑定 TOTP -> 清理浏览器会话 -> 重新密码 + TOTP 登录”后，`/self/security/status` 间歇返回 `token_revoked: session token security state is outdated`；另一时序下会在 bootstrap 未完成时短暂返回 `missing_tenant`。
+- 根因：旧实现用 `HttpSession.getCreationTime()` 对比 `tokenNotBefore`。密码 -> TOTP 是多阶段认证，Spring Security 的 `changeSessionId()` 只旋转 id，不把 Session 创建时间改成完整认证时间，因此创建时间不是可靠的强失效快照。
+- 修复：登录成功时按 active scope 将当前 `tokenSecurityVersion` 写入 HttpSession；后续请求精确比对版本，不一致立即失效。旧 Session 在缺少快照时仍用 `tokenNotBefore` 做一次兼容检查，通过后补写快照。快照是可序列化 Session attribute，memory/JDBC/Redis 共用同一语义。
+- E2E 同步收口：绑定后清理旧会话前先离开业务页停止并发请求；完整 TOTP 验证后以真实安全状态端点 200 作为 Session + active tenant 就绪条件，不再把“URL 已离开验证页”当作完成条件。

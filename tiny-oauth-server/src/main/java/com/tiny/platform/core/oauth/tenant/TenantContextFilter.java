@@ -7,6 +7,7 @@ import com.tiny.platform.core.oauth.security.AuthenticationFactorAuthorities;
 import com.tiny.platform.core.oauth.security.PermissionVersionService;
 import com.tiny.platform.core.oauth.security.TokenSecurityState;
 import com.tiny.platform.core.oauth.security.TokenSecurityStateService;
+import com.tiny.platform.core.oauth.security.SessionTokenSecurityState;
 import com.tiny.platform.infrastructure.auth.audit.domain.AuthorizationAuditEventType;
 import com.tiny.platform.infrastructure.auth.audit.service.AuthorizationAuditService;
 import com.tiny.platform.infrastructure.auth.org.repository.OrganizationUnitRepository;
@@ -1271,11 +1272,23 @@ public class TenantContextFilter extends OncePerRequestFilter {
             scopeType,
             scopeId
         );
-        Instant sessionCreatedAt = Instant.ofEpochMilli(session.getCreationTime());
-        if (currentState != null && isIssuedBeforeNotBefore(sessionCreatedAt, currentState)) {
+        String authenticatedVersion = SessionTokenSecurityState.readVersion(session, currentState);
+        if (authenticatedVersion != null
+            && (currentState == null || !authenticatedVersion.equals(currentState.tokenSecurityVersion()))) {
             invalidateAuthenticatedSession(request);
             rejectTokenRevoked(response, "session token security state is outdated");
             return false;
+        }
+        Instant sessionCreatedAt = Instant.ofEpochMilli(session.getCreationTime());
+        if (authenticatedVersion == null
+            && currentState != null
+            && isIssuedBeforeNotBefore(sessionCreatedAt, currentState)) {
+            invalidateAuthenticatedSession(request);
+            rejectTokenRevoked(response, "session token security state is outdated");
+            return false;
+        }
+        if (authenticatedVersion == null) {
+            SessionTokenSecurityState.stamp(session, currentState);
         }
         return true;
     }

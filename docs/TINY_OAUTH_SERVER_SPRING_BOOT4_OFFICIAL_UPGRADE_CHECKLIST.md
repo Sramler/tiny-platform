@@ -1,6 +1,6 @@
 # Tiny OAuth Server Spring Boot 4 官方升级清单
 
-最后更新：2026-04-17
+最后更新：2026-08-24
 
 状态：Working Baseline
 
@@ -24,7 +24,7 @@
 
 当前 `tiny-oauth-server` 已满足以下基线：
 
-- 父工程 Spring Boot 版本：`4.1.1-SNAPSHOT`
+- 父工程 Spring Boot 版本：`4.1.1` GA
 - JDK 基线：`21`
 - Servlet 基线：`6.1`
 - `tiny-oauth-server` 已完成：
@@ -33,6 +33,22 @@
   - Camunda 最小 smoke
   - 多轮全量 / 定向测试收口
   - `2026-04-17` 补充完成 `tiny-oauth-server`、`tiny-web`、`tiny-oauth-client`、`tiny-oauth-resource` 在 `4.1.0-SNAPSHOT` 下的 `compile` 验证
+
+2026-08-24 GA 收口：
+
+- Spring Boot `4.1.1` 已发布到 Maven Central，父工程已从可变的 `4.1.1-SNAPSHOT` 切换为 GA 固定版。
+- Spring Framework `7.0.9`、Spring Security / Authorization Server `7.1.1`、Spring Session `4.1.1`、Spring Data `2026.0.1`、Micrometer `1.17.1` 与 MySQL Connector/J `9.7.0` 统一跟随 Boot BOM。
+- 已删除父 POM 对 MySQL、Mockito、Servlet API、AssertJ、Commons Codec 与未使用 `mockito-inline` 的重复或过时覆盖，避免应用依赖与 Boot BOM 分裂。
+- Liquibase Maven Plugin 已从 `4.31.1` 对齐到 Boot 运行时使用的 `5.0.3`，插件侧 MySQL 驱动同步为 `9.7.0`。
+- 已移除应用对 `commons-logging` 的直接过渡声明；Spring Session 4.1.1 仍按其官方依赖传递引入 Boot BOM 管理的 `commons-logging:1.3.6`，不做 consumer 侧强制排除，GA 编译验证通过。
+
+2026-08-24 GA 验证证据：
+
+- 根 reactor `mvn -DskipTests compile`：5 个模块全部 `BUILD SUCCESS`。
+- `tiny-oauth-server` 顺序门禁：181 个定向测试，0 failure / 0 error / 0 skip。
+- `tiny-oauth-server` 全量后端测试：1361 个测试，0 failure / 0 error / 1 skip；该 skip 为既有测试套件状态，与本次依赖升级无关。
+- 本地 dev stack：MySQL、`SpringLiquibase`、Spring Boot、Vite、平台管理员登录与模板数据校验全部通过。
+- 真实浏览器 Session 回归：memory 全量 real-link 30/30、JDBC 定向 2/2、Redis 定向 2/2，全部通过且派生资产清理无残留；浏览器不持有 Bearer / refresh token，登录、业务信息、权限 403 边界、注销与强制失效链路保持有效。
 
 因此，当前升级策略不应再是“大面积继续扫荡 Boot 3 组件”，而应是：
 
@@ -44,6 +60,8 @@
 
 - Spring Boot 4.0 Migration Guide  
   [https://github.com/spring-projects/spring-boot/wiki/Spring-Boot-4.0-Migration-Guide](https://github.com/spring-projects/spring-boot/wiki/Spring-Boot-4.0-Migration-Guide)
+- Spring Boot 4.1.1 available now
+  [https://spring.io/blog/2026/08/20/spring-boot-4-1-1-available-now/](https://spring.io/blog/2026/08/20/spring-boot-4-1-1-available-now/)
 - Spring Security 7 Web Migrations  
   [https://docs.spring.io/spring-security/reference/6.5/migration-7/web.html](https://docs.spring.io/spring-security/reference/6.5/migration-7/web.html)
 - Spring 官方关于 Jackson 3 支持说明  
@@ -466,6 +484,7 @@
 - 第 1 项已完成
 - 第 3 项已完成
 - 第 2 项已完成授权持久化路径迁移，但 Web Jackson 2 路径仍是本轮接受的过渡态
+- Spring Boot `4.1.1` GA 与 BOM/插件版本收口已完成；后续 Spring 组件补丁默认通过 Boot BOM 升级，不再逐项手工钉版
 
 更准确地说：
 

@@ -4,6 +4,7 @@ import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationSessionManager;
 import com.tiny.platform.core.oauth.security.LoginFailurePolicy;
 import com.tiny.platform.core.oauth.security.PermissionVersionService;
+import com.tiny.platform.core.oauth.security.TokenSecurityStateService;
 import com.tiny.platform.core.oauth.service.AuthenticationAuditService;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.infrastructure.auth.user.repository.UserRepository;
@@ -102,7 +103,7 @@ class CoreOauthConfigPojoAndFactoryCoverageTest {
         @SuppressWarnings("unchecked")
         ObjectProvider<PermissionVersionService> permissionVersionProvider = mock(ObjectProvider.class);
         @SuppressWarnings("unchecked")
-        ObjectProvider<com.tiny.platform.core.oauth.security.TokenSecurityStateService> tokenSecurityStateServiceProvider = mock(ObjectProvider.class);
+        ObjectProvider<TokenSecurityStateService> tokenSecurityStateServiceProvider = mock(ObjectProvider.class);
         @SuppressWarnings("unchecked")
         ObjectProvider<com.tiny.platform.infrastructure.auth.audit.service.AuthorizationAuditService> authorizationAuditServiceProvider = mock(ObjectProvider.class);
         @SuppressWarnings("unchecked")
@@ -134,7 +135,8 @@ class CoreOauthConfigPojoAndFactoryCoverageTest {
         frontendProperties.setTotpVerifyUrl("/totp-verify");
         MultiFactorAuthenticationSessionManager sessionManager = mock(MultiFactorAuthenticationSessionManager.class);
         assertThat(securityConfig.customLoginSuccessHandler(
-                securityService, userRepository, frontendProperties, sessionManager, authUserResolutionService, auditService))
+                securityService, userRepository, frontendProperties, sessionManager, authUserResolutionService, auditService,
+                tokenSecurityStateServiceProvider))
                 .isInstanceOf(CustomLoginSuccessHandler.class);
     }
 }

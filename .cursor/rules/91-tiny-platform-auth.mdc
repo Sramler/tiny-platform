@@ -36,6 +36,7 @@ globs:
 - ✅ Web BFF 如需调用下游 OAuth 资源，必须在服务端持有、刷新、轮换和撤销相应 token；浏览器 Cookie 只承载框架生成的不可读 Session 标识，不得把 JWT、refresh token 或序列化认证快照直接写进 Cookie。
 - ✅ Web Session Cookie 必须统一声明 `HttpOnly`、`Path=/`、适合部署拓扑的 `SameSite`，生产 HTTPS 必须 `Secure`；Domain、代理转发头与外部 scheme/host 的推导必须与可信网关配置一致，不得依靠浏览器端修补跨域 Cookie。
 - ✅ 登录成功、权限提升、active scope 切换等会改变认证边界的操作必须防 Session fixation：轮换 Session id，并保证旧 id 不可继续使用；登出、用户禁用、密码重置、TOTP 变更等强制失效必须同时清理服务端 Session/token 材料和浏览器 Cookie。
+- ✅ 多阶段认证（如 PASSWORD -> TOTP）不得使用 `HttpSession.getCreationTime()` 代替认证完成时间；Session 必须按 active scope 持久化完整认证时的 `tokenSecurityVersion` 快照，后续强制失效以版本不一致 fail-closed。旧 Session 可以 `tokenNotBefore` 做一次性兼容校验，通过后必须补写版本快照。
 - ✅ `memory` / `jdbc` / `redis` Session 存储切换只能改变持久化实现，不能改变 Cookie 名称、认证/CSRF 语义、超时和强制失效契约；`memory` 仅允许 dev/test 单实例，生产必须使用 JDBC/Redis 或明确等价的共享存储并验证多节点切换。
 - ✅ 浏览器必须通过同源真实领域路径访问 BFF，接口公共契约不得为了代理方便统一伪造 `/api` 前缀；本地 Vite 与生产网关必须对 `/auth`、`/csrf`、`/sys`、`/self` 及各业务根路径保持一致映射。
 - ✅ Web Session-only 模式下，启动恢复以 `credentials: include` 调用 `/sys/users/current` 为准；业务写请求必须携带 CSRF token，不能因移除 Bearer 而关闭或缩小 CSRF 防护范围。

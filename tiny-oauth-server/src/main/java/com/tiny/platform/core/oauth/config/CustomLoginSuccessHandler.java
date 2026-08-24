@@ -7,6 +7,9 @@ import com.tiny.platform.core.oauth.security.AuthUserResolutionService;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationSessionManager;
 import com.tiny.platform.core.oauth.security.RedirectPathSanitizer;
+import com.tiny.platform.core.oauth.security.SessionTokenSecurityState;
+import com.tiny.platform.core.oauth.security.TokenSecurityState;
+import com.tiny.platform.core.oauth.security.TokenSecurityStateService;
 import com.tiny.platform.core.oauth.service.AuthenticationAuditService;
 import com.tiny.platform.core.oauth.service.SecurityService;
 import com.tiny.platform.core.oauth.tenant.ActiveTenantResponseSupport;
@@ -44,6 +47,7 @@ public class CustomLoginSuccessHandler implements AuthenticationSuccessHandler {
     private final FrontendProperties frontendProperties;
     private final MultiFactorAuthenticationSessionManager sessionManager;
     private final AuthenticationAuditService auditService;
+    private final TokenSecurityStateService tokenSecurityStateService;
     private final RequestCache requestCache = new HttpSessionRequestCache();
 
     public CustomLoginSuccessHandler(SecurityService securityService, 
@@ -52,12 +56,24 @@ public class CustomLoginSuccessHandler implements AuthenticationSuccessHandler {
                                     MultiFactorAuthenticationSessionManager sessionManager,
                                     AuthUserResolutionService authUserResolutionService,
                                     AuthenticationAuditService auditService) {
+        this(securityService, userRepository, frontendProperties, sessionManager,
+                authUserResolutionService, auditService, null);
+    }
+
+    public CustomLoginSuccessHandler(SecurityService securityService,
+                                    UserRepository userRepository,
+                                    FrontendProperties frontendProperties,
+                                    MultiFactorAuthenticationSessionManager sessionManager,
+                                    AuthUserResolutionService authUserResolutionService,
+                                    AuthenticationAuditService auditService,
+                                    TokenSecurityStateService tokenSecurityStateService) {
         this.securityService = securityService;
         this.userRepository = userRepository;
         this.authUserResolutionService = authUserResolutionService;
         this.frontendProperties = frontendProperties;
         this.sessionManager = sessionManager;
         this.auditService = auditService;
+        this.tokenSecurityStateService = tokenSecurityStateService;
     }
 
     @Override
@@ -85,6 +101,7 @@ public class CustomLoginSuccessHandler implements AuthenticationSuccessHandler {
         }
 
         freezeActiveContext(request, activeTenantId, activeScopeType);
+        stampSessionTokenSecurityState(request, user.getId(), activeTenantId, activeScopeType);
         
         Map<String, Object> status = securityService.getSecurityStatus(user);
         boolean totpBound = Boolean.TRUE.equals(status.get("totpBound"));
@@ -163,6 +180,21 @@ public class CustomLoginSuccessHandler implements AuthenticationSuccessHandler {
             sessionManager.promoteToFullyAuthenticated(user, request, response);
         }
         redirectToIntendedUrl(intendedUrl, request, response);
+    }
+
+    private void stampSessionTokenSecurityState(HttpServletRequest request,
+                                                Long userId,
+                                                Long activeTenantId,
+                                                String activeScopeType) {
+        if (tokenSecurityStateService == null || userId == null) {
+            return;
+        }
+        Long scopeId = TenantContextContract.SCOPE_TYPE_PLATFORM.equalsIgnoreCase(activeScopeType)
+                ? null
+                : activeTenantId;
+        TokenSecurityState state = tokenSecurityStateService.resolveEffectiveState(
+                userId, activeTenantId, activeScopeType, scopeId);
+        SessionTokenSecurityState.stamp(request.getSession(true), state);
     }
 
     private void redirectToIntendedUrl(String intendedUrl, HttpServletRequest request, HttpServletResponse response)
