@@ -71,6 +71,7 @@
 - ✅ 依赖内部 fork 产物的 workflow 必须在 fresh runner 上验证“可从受控仓库解析”或“可通过受控 fallback 安装后被 consumer 解析”中的至少一种路径；不得依赖开发者本地 `.m2` 或 runner 偶然缓存。
 - ✅ 使用真实认证链路的 Nightly / E2E 流水线应负责校验测试身份仍然有效、权限未漂移、测试租户状态可复用。
 - ✅ Nightly/full-chain 流水线中的 real-link E2E 必须提供环境准备、seed/reset、身份检查、失败日志与截图/trace 产物，保证失败可以定位是代码问题还是环境问题。
+- ✅ real-link 失败日志必须保留异常头、首个业务栈帧和必要上下文；不能只 `tail` 到大量重复递归栈帧而丢失异常类型、请求路径与根因。长日志可同时输出“异常命中前后窗口 + 尾部”，截图/trace 仍须上传。
 - ✅ 真实链路 E2E job 必须显式声明依赖的服务与密钥，例如数据库、Redis、OIDC、测试 client、TOTP secret；缺失时快速失败，不允许静默降级成 mock。
 - ✅ 真实链路 workflow 的 secret preflight 必须与该 workflow 的真实依赖**精确对齐**：既不能漏校验必须的 secret，也不能把并未使用的 secret 设为 mandatory 导致假红。
 - ✅ 失败的主干 / Nightly 门禁必须有明确责任人处理，不能长期红灯运行。
@@ -83,6 +84,7 @@
 - ✅ 对依赖菜单懒加载、动态路由注入、登录后壳页收敛的 real-link workflow，必须把“菜单点击进入”和“直接 deep-link / 刷新进入”视为不同风险面；至少有一层自动化覆盖 direct deep-link / refresh，不得默认二者等价。
 - ✅ Token -> BFF Session/Cookie、CSRF 或统一 endpoint requirement 变更进入 Nightly/full-chain 时，必须在 fresh DB 覆盖真实登录、HttpOnly Cookie、菜单/路由、目标页面完整 API 闭包和业务结果；测试须使预期外 401/403、`/exception/403`、Bearer 泄漏或 storageState token 泄漏直接失败。
 - ✅ full-chain 串行套件发生首个失败时，修复后必须从头完整重跑，不能用“前序失败导致后续 skipped”作为后续场景已验证；最终报告必须给出 commit/run、各 job 状态和未执行项。
+- ✅ 宣称“最终 HEAD 全量绿色”时，所列必跑 workflow 必须实际绑定交付 HEAD，并区分手动触发、push 自动触发与 path-filter 未触发；不得把较早代码 SHA 的绿灯直接写成后续提交 HEAD 的绿灯。若后续仅为文档/证据提交，可明确分别记录代码承载 SHA 与收口 SHA，或对收口 SHA 重跑规定矩阵后再宣称最终 HEAD 全绿。
 
 ### 4) 发布与部署
 

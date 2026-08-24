@@ -203,7 +203,7 @@ Vue /login
 - [x] BFF-04 real-link Session 化；global setup 使用 HttpOnly `JSESSIONID` + CSRF 完成派生租户初始化，storageState 不再依赖 OIDC token。
 - [x] BFF-05 去伪 JWT；Session 身份直接使用 `/sys/users/current` 内存快照，`access_token` 为空，不再生成 `session.<payload>.ui-only`。
 - [x] BFF-06 Web/Bearer 默认分轨；Web 默认 Session-only，只有显式设置 `VITE_AUTH_SESSION_ONLY=false` 才进入 OIDC/Bearer 兼容轨。
-- [x] BFF-07 API 载体与首页治理（全仓 Controller 映射漂移门禁及 202–214 载体迁移已落地；本地 full-chain、一次性 fresh DB、existing MySQL SpringLiquibase 与真实浏览器回归均全绿；`af9c340` 的 GitHub 全矩阵 12/12 通过）。
+- [x] BFF-07 API 载体与首页治理（全仓 Controller 映射漂移门禁及 202–214 载体迁移已落地；本地 full-chain、一次性 fresh DB、existing MySQL SpringLiquibase 与真实浏览器回归均全绿；代码提交 `af9c340` 为 12/12，最终交付 HEAD `ee95964` 为 11/11）。
 - [ ] BFF-08 集群和生产安全（memory/jdbc/redis 参数化、prod memory 禁用、JDBC/Redis 单节点真实链路已完成；多节点切换及强制失效联动待验证）。
 
 ## 6. 2026-07-16 实际验证记录
@@ -232,7 +232,7 @@ Vue /login
 - 一次性空库已从零执行 197 个 changeset，205a/206/212/213/214 均实际落库，Spring 上下文及 Controller 漂移门禁 1/1 通过；214 再次启动为 0 增量。existing DB 也已增量执行 214 并保持零漂移。
 - 214 后在隔离 fresh DB 以真实 Chromium 完成平台密码 + TOTP + HttpOnly Session 登录；`/system/role` 动态路由、角色表格、新建/编辑操作均可见，`/sys/users/current`、`/sys/resources/runtime/ui-actions?pagePath=/system/role`、`/sys/roles` 全部返回 200，浏览器存储中无 access/refresh token，JS 仅可见 `XSRF-TOKEN`，浏览器控制台 0 error。
 - `ProcessDisabledFallbackController` 是 Camunda 关闭时返回 503 的占位 envelope，不生成权限载体；运行态字典 lookup、当前用户头像/登录历史和 process health 仅按精确 method/path 作为已认证基础设施豁免。
-- 漂移门禁已接入 Web、Scheduling 与 Scheduling cross-tenant 三条 real E2E workflow；本地 full-chain 已全绿，BFF-07 仍以本次提交后的 fresh DB CI 全绿作为最终完成条件。
+- 漂移门禁已接入 Web、Scheduling 与 Scheduling cross-tenant 三条 real E2E workflow；本地 full-chain、fresh DB CI 及最终交付 HEAD 矩阵均已全绿，BFF-07 已收口。
 
 ## 6.2 2026-08-01 Session/CSRF 与真实 E2E 复盘
 
@@ -298,3 +298,11 @@ Vue /login
 - 防复发：单测显式构造“按钮 ID = 父菜单 ID”，并断言按钮不会触发额外 carrier child 查询；授权规则明确载体类型是聚合节点身份的一部分，禁止跨表按裸 ID 推导父子关系。
 - 验证：`ResourceServiceImplTest` 34/34 通过；默认本地全栈门禁通过；真实 MySQL + Spring Boot + Vite 的定向 `session-management-pages.spec.ts` 1/1 及与 GitHub webapp real-link 一致的全套 15/15 均通过，覆盖资源、认证审计和授权审计深链、无 Bearer、无 401/403、浏览器无 token storage；派生数据 teardown 后无残留。
 - GitHub 收口：提交 `af9c340` 的 11 条手动工作流与 push 自动触发的 migration smoke 共 12/12 全绿；其中 webapp real-link 15/15 通过，确认 fresh DB `/sys/resources/tree` 不再递归挂死，BFF-07 达到本节完成定义。
+
+### 7.8 2026-08-24 验证编排与证据可诊断性
+
+- 多 API 等待：本轮 `session-management-pages.spec.ts` 同时等待 runtime ui-actions 与资源树，最初只显示整条 `page.waitForResponse` 超时，无法直接指出缺少哪个响应。后续规则要求每个 method/path 具有独立等待边界，并在失败时区分请求未发出、未响应与非 2xx，避免用 120 秒总超时掩盖真实挂点。
+- 服务生命周期：默认本地全栈门禁会在退出时清理自己启动的 Vite/后端；门禁通过后再以 `E2E_SKIP_WEBSERVER=true` 启动 Playwright 会得到 `localhost:5173 connection refused`。该现象属于编排前置，不是 Session 或业务失败；本轮改由 Playwright 自行托管服务并重新 readiness 后，定向 1/1 与全套 15/15 均通过。
+- 双租户 preflight：本地 `.env.e2e.local` 的 tenant B 与派生后的实际主租户同为 `bench-1m-t`，global setup 按 fail-fast 规则拒绝伪跨租户验证；本轮使用隔离的 `bench-1m-b` 完成验证并由 teardown 清理。环境校验必须比较派生后的实际 code，且应在昂贵 seed/auth-state 准备前尽早执行。
+- 失败日志：CI 只输出 backend log 尾部时，大量 `populateChildrenRecursively` 重复帧挤掉了异常头。Nightly 失败证据必须同时保留异常命中窗口和日志尾部，以便一次看清异常类型、请求路径与首个业务栈帧。
+- SHA 证据：代码修复提交 `af9c340` 的 11 条手动矩阵加 push 自动 migration smoke 为 12/12 全绿；文档收口提交 `ee95964` 因 path filter 未产生额外自动 smoke，随后显式重跑 11 条规定矩阵并 11/11 全绿。两组证据分别对应代码承载 SHA 与最终交付 HEAD，不再混写。

@@ -159,12 +159,14 @@ globs:
 - ✅ 真实认证链路的 helper、setup script、seed script、auth-state 生成器一旦引入多身份、多租户、TOTP/MFA 环境变量覆盖，必须补单元回归测试，至少锁住：主身份与次身份 secret / one-time code 不串用、输出状态文件不串用、缺失配置时失败信息明确。
 - ✅ 首绑 MFA、post-login 安全中心、OIDC callback 相关 real-link 测试必须遵循真实页面契约：优先通过页面可见信息或浏览器已认证 session 调 first-party API，不能假设 `localStorage` 中的 OIDC token 一定已经存在。
 - ✅ 如果本地 real-link / smoke / dev-stack 验证需要自动拉起 MySQL、后端或前端，脚本必须在拉起后做**二次健康检查**；“启动命令返回 0”本身不算验证通过。
+- ✅ 本地验证必须明确唯一的服务生命周期拥有者：若 dev-stack 脚本在退出时自动清理它启动的后端/前端，后续 Playwright 不得继续设置 `E2E_SKIP_WEBSERVER=true` 假设服务仍存活；应显式保持服务进程，或让 Playwright 自行托管并重新执行 readiness。`connection refused` 必须先归类为编排/环境失败，不能伪装成业务回归。
 - ✅ real-link `globalSetup` / seed / helper 若会通过 `/sys/tenants` 或等价入口动态创建生成型测试租户（如 `E2E租户(...)`）与 `e2e_init_*` 初始管理员，必须提供**对称治理链**：跑前幂等清理、跑后 teardown 回收、失败时 `fail-on-stale` 审计；不能只做创建不做回收。
 - ✅ 双租户 real-link 必须比较“派生后的实际主租户 code”与第二租户 code 并 fail-fast，不能只比较原始 `E2E_TENANT_CODE`；两套 storageState 指向同一租户时不得报告跨租户隔离已验证。
 - ✅ 可重复 E2E 的测试数据生成必须同时满足数据库唯一键、字段长度和清理命名约束；清理后会重建的资源不得跨测试运行复用同一个幂等键，派生用户名不得因截断公共前缀而碰撞。
 - ✅ 自动治理的删除范围必须保守且可解释：优先针对“生成型租户 + `e2e_init_*` + keep 用户挂在生成型租户上的 stale membership”执行自动清理；固定 real-link 身份（长期保留的 `e2e_*` 主账号）默认不纳入自动删除，除非文档与脚本显式声明。
 - ✅ real-link E2E 的最终通过依据必须优先使用稳定证据：真实网络链路、持久化后的 API 结果、稳定页面状态、modal/路由收敛、trace 或 storageState；短暂 toast、壳页标题、瞬时文案只能作为辅助信号，不能单独充当唯一成功断言。
 - ✅ 通过菜单、路由壳、懒加载页面进入目标页的 E2E，必须显式等待菜单/路由 ready，再执行点击、跳转或断言；不要在同一用例里混用“直接深链 `goto`”与“菜单点击”去赌时序。
+- ✅ 页面进入会并发等待多个关键 API 时，每个 method/path 必须有独立、有限的等待边界和可读失败信息；禁止只用一个无端点上下文的 `Promise.all(waitForResponse...)` 一直耗尽整条 test timeout。失败输出至少要能区分“未发出”“已发出未响应”“返回非 2xx”，并指出具体 endpoint。
 - ✅ Token -> Session/Cookie、认证守卫或 endpoint requirement 改动的真实 E2E 必须覆盖：真实登录（含需要时的 MFA）→ `HttpOnly` Session Cookie → `/sys/users/current`/菜单 → 目标业务页全部关键请求 → 至少一个业务结果 → logout 后旧 Session 拒绝；同时断言业务请求无 `Authorization`、storageState 无 access/refresh token、unsafe method 有 CSRF。
 - ✅ 真实页面权限回归必须在网络层先断言没有预期外 401/403 和 `/exception/403` 跳转，再断言表格、弹窗或业务结果；Ant Design Table 行定位必须排除 `tr.ant-table-measure-row`、`[aria-hidden=true]` 等测量/隐藏行，但不得用该排除规则绕过空数据或接口失败。
 - ✅ 403 回归必须保留并关联三类证据：浏览器失败 method/path 与 trace/截图、后端同一 `traceId` 的守卫 reason/candidate 信息、数据库中对应 `api_endpoint`/requirement/permission/role binding 记录；没有这些证据不得猜测是 token、路由或缓存问题。

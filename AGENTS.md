@@ -134,6 +134,7 @@
 - Web 默认同源 BFF/HttpOnly Session：浏览器不保存或发送 access/refresh token，不使用 `/api` 伪前缀；memory/JDBC/Redis 只切换 Session 存储，不改变 Cookie/CSRF/失效语义
 - 页面授权按完整 API 依赖闭包治理；`URI_TEMPLATE_NOT_MATCHED`/`candidateCount=0` 是载体缺失或漂移，不等于用户缺权限，更不等于 token 问题
 - `menu`、`ui_action`、`api_endpoint` 主键属于独立命名空间；聚合资源树只能递归 `directory/menu`，按钮和接口必须为叶子，禁止按裸 ID 跨载体继续查子节点
+- 真实 E2E 的多 API 等待必须逐端点可诊断；本地 dev-stack 与 Playwright 必须明确唯一服务生命周期拥有者；“最终 HEAD 全绿”证据必须对应交付 SHA
 - 新签发 access token 的 `authorities` / `permissions` / `roleCodes` 与 `permissionsVersion` 必须来自同一份当前运行时授权快照；若可按当前 active scope 重载权威链，不得只刷新 `permissionsVersion` 而继续复用登录期 `SecurityUser` 快照，尤其 `PLATFORM` 作用域
 - `permissionsVersion` 只表达授权快照漂移；用户禁用/删除、密码重置、TOTP 解绑/重绑等强制失效必须走 `tokenSecurityVersion` / `tokenNotBefore`，前端收到 `token_revoked` 不做 silent retry，直接清理运行态并重新登录
 - 菜单结构/路由/显隐/排序/菜单权限 requirement 变化必须走 `runtime_version_signal` 的 `MENU_CONFIG` 版本域与 `/sys/menus/tree` ETag 校验；禁止使用无版本失效机制的浏览器本地菜单缓存作为权限或路由真相源
