@@ -203,7 +203,7 @@ Vue /login
 - [x] BFF-04 real-link Session 化；global setup 使用 HttpOnly `JSESSIONID` + CSRF 完成派生租户初始化，storageState 不再依赖 OIDC token。
 - [x] BFF-05 去伪 JWT；Session 身份直接使用 `/sys/users/current` 内存快照，`access_token` 为空，不再生成 `session.<payload>.ui-only`。
 - [x] BFF-06 Web/Bearer 默认分轨；Web 默认 Session-only，只有显式设置 `VITE_AUTH_SESSION_ONLY=false` 才进入 OIDC/Bearer 兼容轨。
-- [ ] BFF-07 API 载体与首页治理（全仓 Controller 映射漂移门禁及 202–214 载体迁移已落地；本地 full-chain、一次性 fresh DB、existing MySQL SpringLiquibase 与 real-link 30/30 已全绿，仅待本次提交后的 GitHub 全流水线复验后收口）。
+- [x] BFF-07 API 载体与首页治理（全仓 Controller 映射漂移门禁及 202–214 载体迁移已落地；本地 full-chain、一次性 fresh DB、existing MySQL SpringLiquibase 与真实浏览器回归均全绿；`af9c340` 的 GitHub 全矩阵 12/12 通过）。
 - [ ] BFF-08 集群和生产安全（memory/jdbc/redis 参数化、prod memory 禁用、JDBC/Redis 单节点真实链路已完成；多节点切换及强制失效联动待验证）。
 
 ## 6. 2026-07-16 实际验证记录
@@ -297,3 +297,4 @@ Vue /login
 - 修复：资源树只允许 `directory/menu` 递归；`ui_action/api_endpoint` 固定为叶子；菜单递归携带祖先 ID 集，遇到异常环时记录结构化 warning 并截断，不让一个坏节点拖垮整个接口。
 - 防复发：单测显式构造“按钮 ID = 父菜单 ID”，并断言按钮不会触发额外 carrier child 查询；授权规则明确载体类型是聚合节点身份的一部分，禁止跨表按裸 ID 推导父子关系。
 - 验证：`ResourceServiceImplTest` 34/34 通过；默认本地全栈门禁通过；真实 MySQL + Spring Boot + Vite 的定向 `session-management-pages.spec.ts` 1/1 及与 GitHub webapp real-link 一致的全套 15/15 均通过，覆盖资源、认证审计和授权审计深链、无 Bearer、无 401/403、浏览器无 token storage；派生数据 teardown 后无残留。
+- GitHub 收口：提交 `af9c340` 的 11 条手动工作流与 push 自动触发的 migration smoke 共 12/12 全绿；其中 webapp real-link 15/15 通过，确认 fresh DB `/sys/resources/tree` 不再递归挂死，BFF-07 达到本节完成定义。
