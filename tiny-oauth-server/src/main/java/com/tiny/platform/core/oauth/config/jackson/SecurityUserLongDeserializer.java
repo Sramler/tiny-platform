@@ -1,12 +1,11 @@
 package com.tiny.platform.core.oauth.config.jackson;
 
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.databind.DeserializationContext;
-import com.fasterxml.jackson.databind.JsonDeserializer;
+import tools.jackson.core.JsonParser;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.DeserializationContext;
+import tools.jackson.databind.ValueDeserializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
 
 /**
  * SecurityUser 的 userId 字段反序列化器。
@@ -19,26 +18,26 @@ import java.io.IOException;
  *
  * @since 1.0.0
  */
-public class SecurityUserLongDeserializer extends JsonDeserializer<Long> {
+public class SecurityUserLongDeserializer extends ValueDeserializer<Long> {
 
     private static final Logger log = LoggerFactory.getLogger(SecurityUserLongDeserializer.class);
 
     @Override
-    public Long deserialize(JsonParser p, DeserializationContext ctxt) throws IOException {
+    public Long deserialize(JsonParser p, DeserializationContext ctxt) throws JacksonException {
         // 支持从 String 或 Number 反序列化
-        com.fasterxml.jackson.core.JsonToken token = p.getCurrentToken();
+        tools.jackson.core.JsonToken token = p.currentToken();
         if (token == null) {
             token = p.nextToken();
         }
         
-        if (token == com.fasterxml.jackson.core.JsonToken.VALUE_NUMBER_INT 
-            || token == com.fasterxml.jackson.core.JsonToken.VALUE_NUMBER_FLOAT) {
+        if (token == tools.jackson.core.JsonToken.VALUE_NUMBER_INT
+            || token == tools.jackson.core.JsonToken.VALUE_NUMBER_FLOAT) {
             // 如果是数字，直接读取为 Long
             Long value = p.getLongValue();
             log.debug("[SecurityUserLongDeserializer] 反序列化 userId: {} (Number) -> {} (Long)", 
                     p.getText(), value);
             return value;
-        } else if (token == com.fasterxml.jackson.core.JsonToken.VALUE_STRING) {
+        } else if (token == tools.jackson.core.JsonToken.VALUE_STRING) {
             // 如果是字符串，解析为 Long
             String stringValue = p.getText();
             if (stringValue == null || stringValue.isEmpty()) {
@@ -52,14 +51,16 @@ public class SecurityUserLongDeserializer extends JsonDeserializer<Long> {
                 return value;
             } catch (NumberFormatException e) {
                 log.error("[SecurityUserLongDeserializer] 无法将字符串 '{}' 解析为 Long", stringValue, e);
-                throw new IOException("无法将字符串 '" + stringValue + "' 解析为 Long", e);
+                throw ctxt.weirdStringException(stringValue, Long.class,
+                        "无法将字符串解析为 Long");
             }
-        } else if (token == com.fasterxml.jackson.core.JsonToken.VALUE_NULL) {
+        } else if (token == tools.jackson.core.JsonToken.VALUE_NULL) {
             log.debug("[SecurityUserLongDeserializer] 反序列化 userId: null");
             return null;
         } else {
             log.error("[SecurityUserLongDeserializer] 无法反序列化 userId：期望 String 或 Number，但得到 {}", token);
-            throw new IOException("无法反序列化 userId：期望 String 或 Number，但得到 " + token);
+            return ctxt.reportInputMismatch(Long.class,
+                    "无法反序列化 userId：期望 String 或 Number，但得到 %s", token);
         }
     }
 }

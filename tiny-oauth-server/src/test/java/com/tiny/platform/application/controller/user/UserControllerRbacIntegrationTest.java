@@ -1,6 +1,6 @@
 package com.tiny.platform.application.controller.user;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.tiny.platform.infrastructure.auth.user.domain.User;
 import com.tiny.platform.infrastructure.auth.user.dto.UserCreateUpdateDto;
 import com.tiny.platform.infrastructure.auth.user.dto.UserResponseDto;

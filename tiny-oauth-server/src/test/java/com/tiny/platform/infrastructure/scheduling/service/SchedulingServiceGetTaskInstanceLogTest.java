@@ -1,6 +1,6 @@
 package com.tiny.platform.infrastructure.scheduling.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.auth.org.repository.UserUnitRepository;
 import com.tiny.platform.infrastructure.auth.user.repository.TenantUserRepository;

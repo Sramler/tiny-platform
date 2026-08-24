@@ -1,6 +1,6 @@
 package com.tiny.platform.infrastructure.export.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.tiny.platform.infrastructure.export.core.AggregateStrategy;
 import com.tiny.platform.infrastructure.export.core.ColumnNode;
 import com.tiny.platform.infrastructure.export.core.DataProvider;

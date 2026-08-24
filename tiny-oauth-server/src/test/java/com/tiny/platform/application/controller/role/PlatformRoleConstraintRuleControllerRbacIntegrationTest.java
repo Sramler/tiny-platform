@@ -1,6 +1,6 @@
 package com.tiny.platform.application.controller.role;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.tiny.platform.application.controller.role.security.RoleManagementAccessGuard;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.core.oauth.tenant.TenantContextContract;

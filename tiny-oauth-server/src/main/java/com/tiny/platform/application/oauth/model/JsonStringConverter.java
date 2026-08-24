@@ -2,12 +2,12 @@ package com.tiny.platform.application.oauth.model;
 
 import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
 import java.util.Map;
 
 /**
@@ -41,7 +41,7 @@ public class JsonStringConverter implements AttributeConverter<Map<String, Objec
         }
         try {
             return objectMapper.readValue(dbData, new TypeReference<Map<String, Object>>() {});
-        } catch (IOException e) {
+        } catch (JacksonException e) {
             logger.error("Error converting JSON string to map: {}", dbData, e);
             return Map.of();
         }

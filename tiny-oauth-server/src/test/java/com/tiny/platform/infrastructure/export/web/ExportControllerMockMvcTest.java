@@ -1,6 +1,6 @@
 package com.tiny.platform.infrastructure.export.web;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.tiny.platform.infrastructure.core.exception.code.ErrorCode;
 import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
 import com.tiny.platform.infrastructure.core.exception.handler.OAuthServerExceptionHandler;

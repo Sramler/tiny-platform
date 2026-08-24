@@ -1,6 +1,6 @@
 package com.tiny.platform.infrastructure.scheduling.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.security.AuthenticationFactorAuthorities;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
@@ -861,7 +861,8 @@ public class SchedulingService {
                 try {
                     audit.setDetail(objectMapper.writeValueAsString(detail));
                 } catch (Exception serializationException) {
-                    audit.setDetail(objectMapper.copy().findAndRegisterModules().writeValueAsString(detail));
+                    audit.setDetail(objectMapper.rebuild().findAndAddModules().build()
+                            .writeValueAsString(detail));
                 }
             }
             auditRepository.save(audit);

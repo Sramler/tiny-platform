@@ -68,15 +68,15 @@ class MenuTreeSerializationIntegrationTest {
     }
 
     @Test
-    void webMvcShouldNotRegisterJackson3HttpMessageConverterForRegularControllers() {
+    void webMvcShouldRegisterJackson3HttpMessageConverterForRegularControllers() {
         List<String> converterClassNames = requestMappingHandlerAdapter.getMessageConverters().stream()
                 .map(HttpMessageConverter::getClass)
                 .map(Class::getName)
                 .toList();
 
         assertThat(converterClassNames)
-                .contains("org.springframework.http.converter.json.MappingJackson2HttpMessageConverter")
-                .doesNotContain("org.springframework.http.converter.json.JacksonJsonHttpMessageConverter");
+                .contains("org.springframework.http.converter.json.JacksonJsonHttpMessageConverter")
+                .doesNotContain("org.springframework.http.converter.json.MappingJackson2HttpMessageConverter");
     }
 
     private ResourceResponseDto directoryWithChildMenu() {

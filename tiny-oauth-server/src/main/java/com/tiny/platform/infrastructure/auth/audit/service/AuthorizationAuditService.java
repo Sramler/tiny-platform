@@ -3,7 +3,7 @@ package com.tiny.platform.infrastructure.auth.audit.service;
 import com.tiny.platform.infrastructure.auth.audit.domain.AuthorizationAuditLog;
 import com.tiny.platform.infrastructure.auth.audit.domain.RequirementAwareAuditDetail;
 import com.tiny.platform.infrastructure.auth.audit.repository.AuthorizationAuditLogRepository;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

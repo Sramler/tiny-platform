@@ -1,7 +1,6 @@
 package com.tiny.platform.infrastructure.auth;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import tools.jackson.databind.ObjectMapper;
 import com.tiny.platform.infrastructure.auth.resource.domain.Resource;
 import com.tiny.platform.infrastructure.auth.resource.dto.ResourceResponseDto;
 import com.tiny.platform.infrastructure.auth.resource.enums.ResourceType;
@@ -13,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class TenantNamingJsonContractTest {
 
-    private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
     void raw_entities_should_serialize_record_tenant_id_without_legacy_tenant_id() throws Exception {

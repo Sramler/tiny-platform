@@ -679,7 +679,7 @@ class DefaultSecurityConfigUserEndpointIntegrationTest {
                         StandardCharsets.UTF_8
                     );
                     @SuppressWarnings("unchecked")
-                    java.util.Map<String, Object> claims = new com.fasterxml.jackson.databind.ObjectMapper()
+                    java.util.Map<String, Object> claims = new tools.jackson.databind.ObjectMapper()
                         .readValue(payloadJson, java.util.Map.class);
                     java.time.Instant issuedAt = java.time.Instant.now();
                     return org.springframework.security.oauth2.jwt.Jwt.withTokenValue(token)
@@ -688,7 +688,7 @@ class DefaultSecurityConfigUserEndpointIntegrationTest {
                         .expiresAt(issuedAt.plusSeconds(300))
                         .claims(entries -> entries.putAll(claims))
                         .build();
-                } catch (java.io.IOException e) {
+                } catch (tools.jackson.core.JacksonException e) {
                     throw new org.springframework.security.oauth2.jwt.JwtException("failed to decode test jwt", e);
                 }
             };

@@ -1,6 +1,6 @@
 package com.tiny.platform.core.oauth.tenant;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.infrastructure.auth.audit.domain.AuthorizationAuditEventType;
 import com.tiny.platform.infrastructure.auth.audit.service.AuthorizationAuditService;

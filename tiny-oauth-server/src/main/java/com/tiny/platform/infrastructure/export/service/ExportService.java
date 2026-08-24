@@ -1,7 +1,7 @@
 package com.tiny.platform.infrastructure.export.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.tiny.platform.infrastructure.core.exception.code.ErrorCode;
 import com.tiny.platform.infrastructure.core.exception.exception.BusinessException;
 import com.tiny.platform.infrastructure.export.core.AggregateStrategy;
@@ -512,12 +512,12 @@ public class ExportService {
         }
         try {
             return objectMapper.writeValueAsString(request);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new IllegalStateException("导出请求序列化失败", e);
         }
     }
 
-    private ExportRequest deserializeRequest(String payload) throws JsonProcessingException {
+    private ExportRequest deserializeRequest(String payload) throws JacksonException {
         if (payload == null || payload.isBlank()) {
             return null;
         }

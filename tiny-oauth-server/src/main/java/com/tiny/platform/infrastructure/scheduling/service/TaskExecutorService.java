@@ -1,7 +1,7 @@
 package com.tiny.platform.infrastructure.scheduling.service;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.scheduling.exception.SchedulingExceptions;
 import com.tiny.platform.infrastructure.scheduling.security.SchedulingErrorSanitizer;

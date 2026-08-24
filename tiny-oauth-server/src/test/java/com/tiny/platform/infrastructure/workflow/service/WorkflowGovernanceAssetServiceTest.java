@@ -1,6 +1,6 @@
 package com.tiny.platform.infrastructure.workflow.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.tiny.platform.infrastructure.runtime.version.RuntimeVersionStore;
 import com.tiny.platform.infrastructure.workflow.model.ProcessModelScopeType;
 import com.tiny.platform.infrastructure.workflow.model.WorkflowGovernanceAssetEntity;

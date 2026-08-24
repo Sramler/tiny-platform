@@ -1,6 +1,6 @@
 package com.tiny.platform.application.controller.user;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.tiny.platform.core.oauth.config.jackson.JacksonConfig;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.core.oauth.tenant.TenantContextContract;

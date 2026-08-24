@@ -1,6 +1,6 @@
 package com.tiny.platform.application.controller.role;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.tiny.platform.infrastructure.auth.role.domain.Role;
 import com.tiny.platform.infrastructure.auth.role.dto.RoleCreateUpdateDto;
 import com.tiny.platform.infrastructure.auth.role.dto.RoleResponseDto;

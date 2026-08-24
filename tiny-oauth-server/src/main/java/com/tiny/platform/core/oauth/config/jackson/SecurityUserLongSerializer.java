@@ -1,12 +1,11 @@
 package com.tiny.platform.core.oauth.config.jackson;
 
-import com.fasterxml.jackson.core.JsonGenerator;
-import com.fasterxml.jackson.databind.JsonSerializer;
-import com.fasterxml.jackson.databind.SerializerProvider;
+import tools.jackson.core.JsonGenerator;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.SerializationContext;
+import tools.jackson.databind.ValueSerializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
 
 /**
  * SecurityUser 的 userId 字段序列化器。
@@ -19,12 +18,12 @@ import java.io.IOException;
  *
  * @since 1.0.0
  */
-public class SecurityUserLongSerializer extends JsonSerializer<Long> {
+public class SecurityUserLongSerializer extends ValueSerializer<Long> {
 
     private static final Logger log = LoggerFactory.getLogger(SecurityUserLongSerializer.class);
 
     @Override
-    public void serialize(Long value, JsonGenerator gen, SerializerProvider serializers) throws IOException {
+    public void serialize(Long value, JsonGenerator gen, SerializationContext serializers) throws JacksonException {
         if (value == null) {
             log.debug("[SecurityUserLongSerializer] 序列化 userId: null");
             gen.writeNull();

@@ -1,7 +1,7 @@
 package com.tiny.platform.core.oauth.tenant;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.security.AuthenticationFactorAuthorities;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
@@ -180,7 +180,7 @@ public class TenantLifecycleAccessGuard {
         }
         try {
             return objectMapper.writeValueAsString(detail);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             return "{\"action\":\"TARGET_TENANT_LIFECYCLE_ALLOWLIST_READ\",\"tenantId\":" + targetTenantId
                 + ",\"tenantLifecycleStatus\":\"" + lifecycleStatus + "\"}";
         }

@@ -1,6 +1,6 @@
 package com.tiny.platform.infrastructure.scheduling.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.tiny.platform.infrastructure.scheduling.model.SchedulingTaskInstance;
 import com.tiny.platform.infrastructure.scheduling.repository.*;
 import org.junit.jupiter.api.Test;

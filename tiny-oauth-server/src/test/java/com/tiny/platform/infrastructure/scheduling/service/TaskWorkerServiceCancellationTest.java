@@ -1,6 +1,6 @@
 package com.tiny.platform.infrastructure.scheduling.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.tiny.platform.infrastructure.scheduling.model.SchedulingDagRun;
 import com.tiny.platform.infrastructure.scheduling.model.SchedulingDagEdge;
 import com.tiny.platform.infrastructure.scheduling.model.SchedulingTask;

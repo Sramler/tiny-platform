@@ -1,6 +1,6 @@
 package com.tiny.platform.application.controller.menu;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.tiny.platform.infrastructure.auth.resource.domain.Resource;
 import com.tiny.platform.infrastructure.auth.resource.dto.ResourceCreateUpdateDto;
 import com.tiny.platform.infrastructure.menu.service.MenuService;

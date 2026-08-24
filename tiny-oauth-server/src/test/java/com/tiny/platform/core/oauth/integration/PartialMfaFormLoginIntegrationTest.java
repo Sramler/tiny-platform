@@ -1,7 +1,7 @@
 package com.tiny.platform.core.oauth.integration;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.tiny.platform.core.oauth.config.CustomLoginFailureHandler;
 import com.tiny.platform.core.oauth.config.CustomLoginSuccessHandler;
 import com.tiny.platform.core.oauth.config.CustomWebAuthenticationDetailsSource;

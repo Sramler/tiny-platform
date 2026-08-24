@@ -96,10 +96,14 @@
             <artifactId>camunda-bpm-spring-boot-starter</artifactId>
         </dependency>
 
-        <!-- Camunda REST API（可选，如果你想开放 REST 给前端调用） -->
+        <!--
+          Camunda 原生 REST 仅保留为测试编译依赖，默认生产制品不得携带 Jersey/Jackson 2 REST 栈。
+          确需验证原生 REST 时显式启用 Maven profile: -Pcamunda-rest。
+        -->
         <dependency>
             <groupId>org.camunda.bpm.springboot</groupId>
             <artifactId>camunda-bpm-spring-boot-starter-rest</artifactId>
+            <scope>test</scope>
         </dependency>
 
         <!-- JSON/XML 变量支持（Spin 插件） -->
@@ -295,6 +299,32 @@
     </build>
 
     <profiles>
+        <profile>
+            <id>camunda-rest</id>
+            <properties>
+                <!-- 仅在显式 REST profile 下执行原生 REST + 真实 MySQL E2E。 -->
+                <tiny.camunda.rest.tests.enabled>true</tiny.camunda.rest.tests.enabled>
+            </properties>
+            <dependencies>
+                <dependency>
+                    <groupId>org.camunda.bpm.springboot</groupId>
+                    <artifactId>camunda-bpm-spring-boot-starter-rest</artifactId>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <systemPropertyVariables>
+                                <tiny.camunda.rest.tests.enabled>${tiny.camunda.rest.tests.enabled}</tiny.camunda.rest.tests.enabled>
+                            </systemPropertyVariables>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
         <profile>
             <id>coverage-check</id>
             <build>

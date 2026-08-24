@@ -1,8 +1,8 @@
 package com.tiny.platform.application.controller.dict;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.cfg.DateTimeFeature;
+import tools.jackson.databind.json.JsonMapper;
 import com.tiny.platform.core.dict.dto.DictItemCreateUpdateDto;
 import com.tiny.platform.core.dict.dto.DictTypeCreateUpdateDto;
 import com.tiny.platform.core.dict.model.DictItem;
@@ -48,9 +48,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  */
 class DictControllerMockMvcTest {
 
-    private final ObjectMapper objectMapper = new ObjectMapper()
-            .registerModule(new JavaTimeModule())
-            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+    private final ObjectMapper objectMapper = JsonMapper.builder()
+            .disable(DateTimeFeature.WRITE_DATES_AS_TIMESTAMPS)
+            .build();
     private DictTypeService dictTypeService;
     private DictItemService dictItemService;
     private MockMvc mockMvc;

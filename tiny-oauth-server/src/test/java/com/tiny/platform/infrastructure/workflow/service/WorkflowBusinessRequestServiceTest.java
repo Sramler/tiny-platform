@@ -1,6 +1,6 @@
 package com.tiny.platform.infrastructure.workflow.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.tiny.platform.application.oauth.workflow.WorkflowTaskContext;
 import com.tiny.platform.infrastructure.tenant.dto.TenantCreateUpdateDto;
 import com.tiny.platform.infrastructure.tenant.dto.TenantResponseDto;

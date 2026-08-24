@@ -1,6 +1,6 @@
 package com.tiny.platform.infrastructure.workflow.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import com.tiny.platform.application.oauth.workflow.BpmnValidationHelper;
 import com.tiny.platform.application.oauth.workflow.CamundaProcessEngineServiceImpl;
 import com.tiny.platform.application.oauth.workflow.ProcessController;

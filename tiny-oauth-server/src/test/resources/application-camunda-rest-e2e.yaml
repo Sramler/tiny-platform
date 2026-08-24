@@ -1,0 +1,33 @@
+# Native Camunda REST E2E overlay. Must be activated together with the real-MySQL e2e profile.
+spring:
+  autoconfigure:
+    exclude: []
+
+camunda:
+  bpm:
+    enabled: true
+    database:
+      type: mysql
+      schema-update: false
+    job-execution:
+      enabled: false
+    webapp:
+      enabled: false
+
+# src/test/resources/application.yaml intentionally shadows the production base file.
+# Supply the minimum real key-backed authorization-server binding required by a full app context.
+authentication:
+  jwt:
+    public-key-path: classpath:keys/public.pem
+    private-key-path: classpath:keys/private.pem
+  clients:
+    - client-id: camunda-rest-e2e-client
+      client-secret: "{noop}camunda-rest-e2e-secret"
+      authentication-methods:
+        - client_secret_basic
+      grant-types:
+        - client_credentials
+      redirect-uris: []
+      post-logout-redirect-uris: []
+      scopes:
+        - openid

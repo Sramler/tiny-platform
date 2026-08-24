@@ -1,12 +1,14 @@
 # Tiny Platform: Camunda 7 on Spring Boot 4 Engine Only 策略
 
-最后更新：2026-04-17
+最后更新：2026-08-24
 
 适用仓库：`/Users/bliu/code/tiny-platform`
 
 远端仓库：[Sramler/tiny-platform](https://github.com/Sramler/tiny-platform)
 
 当前集成模块：`tiny-oauth-server`
+
+Jackson 3 分阶段执行状态见：`docs/TINY_PLATFORM_CAMUNDA7_JACKSON3_MIGRATION_TASKS.md`
 
 参考兼容性源码仓库：`/Users/bliu/code/camunda-bpm-platform`
 
@@ -34,7 +36,7 @@
 
 - 父工程当前 Spring Boot 基线为 `4.1.1` GA
 - 父工程当前 JDK 基线为 `21`
-- 父工程通过 BOM 使用 Camunda `7.24.0`
+- 父工程通过 BOM 使用不可变 fork 版本 `7.24.0-tiny-sb4-jackson3-01`
 - `tiny-oauth-server` 当前已引入：
   - `camunda-bpm-spring-boot-starter`
   - `camunda-bpm-spring-boot-starter-rest`
@@ -138,6 +140,16 @@ Tiny Platform 负责产品化。
 不要把原生 Camunda REST 直接当作产品前端 API 暴露；
 优先由 `tiny-platform` 自己的服务层做收口和封装。
 
+当前运行边界进一步收口为：
+
+- 默认构建仅保留 Engine，REST starter 为 test scope；
+- 只有显式使用 Maven `-Pcamunda-rest` 构建时，原生 REST 才进入运行时制品；
+- REST Jackson 3 迁移与 Spin 迁移分阶段验收，详见
+  `docs/TINY_PLATFORM_CAMUNDA7_JACKSON3_MIGRATION_TASKS.md`；
+- `spring-boot-jackson2`、`jersey-media-json-jackson`、Jackson 2 core/databind/dataformat/datatype
+  仍在 REST 运行时依赖树中时，不得发布 Jackson 3 迁移版本；Jackson 3 官方继续使用
+  `com.fasterxml.jackson.annotation`，不能把 annotations 误判为 Jackson 2 实现回流。
+
 ### 6.3 starter-security
 
 在 `Engine Only` 策略下，不把 Camunda `starter-security` 作为 `tiny-platform` 的默认生产方案。
@@ -154,10 +166,12 @@ Tiny Platform 负责产品化。
 
 额外说明：
 
-- 当前 `application-e2e.yaml` 已显式设置：
+- 通用 `application-e2e.yaml` 仍显式设置：
   - `camunda.bpm.enabled=false`
   - 排除 `CamundaBpmRestJerseyAutoConfiguration`
-- 因此现阶段 E2E 自动化链路不构成 Camunda 可用性的验收依据
+- 原生 REST 验收必须额外激活测试 overlay `camunda-rest-e2e`，并显式使用
+  `-Pcamunda-rest`；`CamundaRestJackson3MySqlE2eTest` 已在真实 MySQL 上覆盖 REST
+  部署、启动、变量往返、非法 JSON 与残留清理。
 
 ## 7. Identity / Tenant / Admin 的准确表述
 

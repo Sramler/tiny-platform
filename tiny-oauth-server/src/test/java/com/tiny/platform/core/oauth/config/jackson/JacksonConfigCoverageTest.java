@@ -1,19 +1,20 @@
 package com.tiny.platform.core.oauth.config.jackson;
 
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonGenerator;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JsonGenerator;
+import tools.jackson.core.JsonParser;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.json.JsonFactory;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.security.MultiFactorAuthenticationToken;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import tools.jackson.databind.json.JsonMapper;
+import tools.jackson.databind.cfg.DateTimeFeature;
 
-import java.io.IOException;
 import java.io.StringWriter;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -33,8 +34,8 @@ class JacksonConfigCoverageTest {
         JacksonConfig config = new JacksonConfig();
         ObjectMapper mapper = config.webObjectMapper();
 
-        assertThat(mapper.getSerializationConfig().getTimeZone().getID()).isEqualTo("UTC");
-        assertThat(mapper.getSerializationConfig().isEnabled(com.fasterxml.jackson.databind.SerializationFeature.WRITE_DATES_AS_TIMESTAMPS))
+        assertThat(mapper.serializationConfig().getTimeZone().getID()).isEqualTo("UTC");
+        assertThat(mapper.isEnabled(DateTimeFeature.WRITE_DATES_AS_TIMESTAMPS))
                 .isFalse();
 
         String longJson = mapper.writeValueAsString(Map.of("id", 9007199254740993L));
@@ -189,13 +190,13 @@ class JacksonConfigCoverageTest {
 
         StringWriter nonNullOut = new StringWriter();
         JsonGenerator gen1 = new JsonFactory().createGenerator(nonNullOut);
-        serializer.serialize(123L, gen1, mapper.getSerializerProvider());
+        serializer.serialize(123L, gen1, mapper._serializationContext());
         gen1.close();
         assertThat(nonNullOut.toString()).isEqualTo("\"123\"");
 
         StringWriter nullOut = new StringWriter();
         JsonGenerator gen2 = new JsonFactory().createGenerator(nullOut);
-        serializer.serialize(null, gen2, mapper.getSerializerProvider());
+        serializer.serialize(null, gen2, mapper._serializationContext());
         gen2.close();
         assertThat(nullOut.toString()).isEqualTo("null");
     }
@@ -206,25 +207,25 @@ class JacksonConfigCoverageTest {
         ObjectMapper mapper = new ObjectMapper();
 
         JsonParser numberParser = mapper.createParser("123");
-        assertThat(deserializer.deserialize(numberParser, mapper.getDeserializationContext())).isEqualTo(123L);
+        assertThat(deserializer.deserialize(numberParser, mapper._deserializationContext())).isEqualTo(123L);
 
         JsonParser stringParser = mapper.createParser("\"456\"");
-        assertThat(deserializer.deserialize(stringParser, mapper.getDeserializationContext())).isEqualTo(456L);
+        assertThat(deserializer.deserialize(stringParser, mapper._deserializationContext())).isEqualTo(456L);
 
         JsonParser emptyStringParser = mapper.createParser("\"\"");
-        assertThat(deserializer.deserialize(emptyStringParser, mapper.getDeserializationContext())).isNull();
+        assertThat(deserializer.deserialize(emptyStringParser, mapper._deserializationContext())).isNull();
 
         JsonParser nullParser = mapper.createParser("null");
-        assertThat(deserializer.deserialize(nullParser, mapper.getDeserializationContext())).isNull();
+        assertThat(deserializer.deserialize(nullParser, mapper._deserializationContext())).isNull();
 
         JsonParser invalidStringParser = mapper.createParser("\"abc\"");
-        assertThatThrownBy(() -> deserializer.deserialize(invalidStringParser, mapper.getDeserializationContext()))
-                .isInstanceOf(IOException.class)
+        assertThatThrownBy(() -> deserializer.deserialize(invalidStringParser, mapper._deserializationContext()))
+                .isInstanceOf(JacksonException.class)
                 .hasMessageContaining("解析为 Long");
 
         JsonParser objectParser = mapper.createParser("{}");
-        assertThatThrownBy(() -> deserializer.deserialize(objectParser, mapper.getDeserializationContext()))
-                .isInstanceOf(IOException.class)
+        assertThatThrownBy(() -> deserializer.deserialize(objectParser, mapper._deserializationContext()))
+                .isInstanceOf(JacksonException.class)
                 .hasMessageContaining("期望 String 或 Number");
     }
 

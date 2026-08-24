@@ -145,5 +145,7 @@
 - 菜单控制面主入口是 `/sys/menus`；不要新增/恢复 `/sys/resources/menus*`，也不要让菜单前端 API 再借用 `/sys/resources/check-*`
 - 收口 `permission` 历史写链时，不能只改 `ResourceForm`；`MenuForm`、`MenuServiceImpl` 与菜单 DTO 也必须同步切到 `requiredPermissionId` 主入口
 - 字典中心只承载“展示可治理的稳定编码映射”和“可配置业务分类”；关键状态机、状态码 / 枚举码、主数据、系统配置、元数据和业务模型不得退化为普通动态字典。`workflow_model_status`、`workflow_runtime_state` 等影响后端逻辑的值必须由代码枚举固定，字典最多管理 label / color / sort / i18n 等展示属性
+- Camunda 7 默认保持 Engine Only；原生 REST 只能通过显式 `camunda-rest` 构建 profile 进入运行时制品。Jackson 3 REST 收口必须同步移除 Jersey/Spring Boot 的 Jackson 2 桥接依赖并通过真实 HTTP JSON 往返验证，Spin 变量序列化另行验收
+- Spring Boot 4 一方代码不得借可选 starter 的传递依赖取得 Jackson 实现；core/databind 使用 `tools.jackson.*`，只有 Jackson annotations 保持 `com.fasterxml.jackson.annotation`，并由源码扫描与 runtime dependency tree 双门禁防回流
 - 租户初始化向导当前态（CARD-TW-01~TW-04）必须保持：create 走 `TenantCreateWizard`、edit 走 `TenantForm`、确认步骤走 `POST /sys/tenants/precheck` dry-run、最终由 wizard 一次性 `POST /sys/tenants`、结果页成功后不自动关闭且详情跳转携带 `query.from`
 - 规则扩展记录：2026-02-05 增补 logging/performance/dependency/config/docs/code-review 规则并加强构建清理策略

@@ -1,7 +1,7 @@
 package com.tiny.platform.infrastructure.tenant.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import com.tiny.platform.core.oauth.model.SecurityUser;
 import com.tiny.platform.core.oauth.tenant.TenantContext;
 import com.tiny.platform.infrastructure.auth.audit.domain.AuthorizationAuditEventType;
@@ -436,7 +436,7 @@ public class TenantServiceImpl implements TenantService {
         detail.put("diffSample", result.diffs().stream().limit(50).toList());
         try {
             return OBJECT_MAPPER.writeValueAsString(detail);
-        } catch (JsonProcessingException e) {
+        } catch (JacksonException e) {
             throw new BusinessException(ErrorCode.BUSINESS_ERROR, "序列化平台模板差异审计失败", e);
         }
     }
@@ -919,7 +919,7 @@ public class TenantServiceImpl implements TenantService {
     private String writeAuditDetail(Map<String, Object> detail) {
         try {
             return OBJECT_MAPPER.writeValueAsString(detail);
-        } catch (JsonProcessingException ex) {
+        } catch (JacksonException ex) {
             throw new BusinessException(ErrorCode.BUSINESS_ERROR, "租户治理审计序列化失败", ex);
         }
     }
