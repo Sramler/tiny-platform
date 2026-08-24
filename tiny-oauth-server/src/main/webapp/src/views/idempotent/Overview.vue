@@ -16,7 +16,7 @@ import {
 import { tenantList, type Tenant } from '@/api/tenant'
 import { usePlatformScope } from '@/composables/usePlatformScope'
 import { IDEMPOTENT_OPS_VIEW } from '@/constants/permission'
-import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import { runtimeAuthorities } from '@/auth/runtimeIdentity'
 import { resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
 
 const router = useRouter()
@@ -89,7 +89,7 @@ const selectedActiveTenantId = computed(() =>
     : undefined,
 )
 const hasIdempotentOpsAuthority = computed(() =>
-  extractAuthoritiesFromJwt(user.value?.access_token).includes(IDEMPOTENT_OPS_VIEW),
+  runtimeAuthorities(user.value).includes(IDEMPOTENT_OPS_VIEW),
 )
 const canAccessOpsConsole = computed(() => isPlatformScope.value && hasIdempotentOpsAuthority.value)
 const restrictedTitle = computed(() =>

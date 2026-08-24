@@ -184,7 +184,6 @@ async function loginWithMfa(page: import('@playwright/test').Page) {
   await page.waitForURL(
     (url) =>
       !url.pathname.includes('/self/security/totp-verify') &&
-      !url.pathname.includes('/callback') &&
       !url.pathname.includes('/login'),
     { timeout: 60_000 },
   )

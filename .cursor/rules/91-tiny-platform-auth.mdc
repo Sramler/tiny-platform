@@ -25,14 +25,14 @@ globs:
 
 ## 必须（Must）
 
-- ✅ OAuth2 授权流程：使用 `authorization_code`（Web 应用）和 `refresh_token`（刷新令牌）。
+- ✅ OAuth2/OIDC Bearer 客户端（CLI、移动端、第三方、服务间或独立 OAuth 客户端）使用适合客户端类型的标准授权流程；该协议能力由后端 `/oauth2/**` 提供，不得据此把 OAuth browser client 引入 Vue Web。
 - ✅ JWT Token Claims：标准字段（iss, sub, aud, exp, iat, jti）由框架自动添加；企业级字段应与当前授权主线一致，至少稳定包含 `userId`、`username`、`permissions`、`activeTenantId`、`activeScopeType`、`permissionsVersion`、`tokenSecurityVersion`、`tokenNotBefore`；`authorities` 可保留兼容语义，但不得替代 `permissions` 作为当前能力判断入口。
 - ✅ 新签发 access token 的 `authorities` / `permissions` / `roleCodes` 与 `permissionsVersion` 必须尽量同源于当前 active scope 的运行时授权快照；当 `UserDetailsService` 或等价权威链可用时，不得优先信任登录期残留的 `SecurityUser` / session snapshot，尤其 `PLATFORM` 作用域。
 - ✅ 若 `role_assignment` / `role_hierarchy` / `role_permission` 变化已能影响 `permissionsVersion`，token minting 也必须让权限 claims 同步反映当前结果；禁止出现“`permissionsVersion` 已更新但 JWT `authorities` / `roleCodes` 仍是旧快照”的不一致。
 - ✅ `permissionsVersion` 只表达授权快照版本，不得承担用户禁用、删除、密码重置、TOTP 解绑/重绑等安全撤销语义；这类强制重新登录必须使用独立的 `tokenSecurityVersion` / `tokenNotBefore` 安全状态信号。
-- ✅ 后端请求链路必须先校验 token/session 安全状态，再校验权限快照漂移：`token_revoked` 代表不可静默自愈，前端必须清理运行态并重新登录；`stale_permissions` 才允许 silent renew 一次并重试原请求。
+- ✅ 后端请求链路必须先校验 token/session 安全状态，再校验权限快照漂移：`token_revoked` 代表不可静默自愈；Vue Web 遇到 `stale_permissions` 必须重读 Session principal 或重新登录，不得 silent renew；仅独立 Bearer 客户端可按 OAuth2/OIDC 协议刷新或重新签发 token。
 - ✅ 菜单结构、路由字段、显隐、排序和菜单权限 requirement 的变化必须通过 `MENU_CONFIG` 运行态版本信号和 `/sys/menus/tree` 的 ETag / `X-Menu-Config-Version` 体现；不得把菜单配置变化塞进 `permissionsVersion` 或依赖无失效机制的浏览器本地缓存。
-- ✅ 认证方式选择：按客户端来源切换 JWT/Session（Web 前端默认使用 BFF/HttpOnly Session，浏览器业务请求不得持有或发送 access/refresh token；API 客户端继续使用 JWT）。
+- ✅ 认证方式按客户端载体物理分轨：Vue Web 固定使用 BFF/HttpOnly Session + CSRF；CLI、移动端、第三方和服务间客户端继续使用后端 OAuth2/OIDC Bearer。
 - ✅ Web BFF 如需调用下游 OAuth 资源，必须在服务端持有、刷新、轮换和撤销相应 token；浏览器 Cookie 只承载框架生成的不可读 Session 标识，不得把 JWT、refresh token 或序列化认证快照直接写进 Cookie。
 - ✅ Web Session Cookie 必须统一声明 `HttpOnly`、`Path=/`、适合部署拓扑的 `SameSite`，生产 HTTPS 必须 `Secure`；Domain、代理转发头与外部 scheme/host 的推导必须与可信网关配置一致，不得依靠浏览器端修补跨域 Cookie。
 - ✅ 登录成功、权限提升、active scope 切换等会改变认证边界的操作必须防 Session fixation：轮换 Session id，并保证旧 id 不可继续使用；登出、用户禁用、密码重置、TOTP 变更等强制失效必须同时清理服务端 Session/token 材料和浏览器 Cookie。
@@ -50,23 +50,23 @@ globs:
 - ✅ 经过真实认证链路的自动化测试必须使用专用测试身份，至少区分：普通用户、租户管理员、无权限或拒绝身份；启用 MFA 时还必须具备 MFA 测试用户。
 - ✅ 测试身份必须与测试租户、测试 client、权限集合一起受控初始化，保证可重复执行与可回收。
 - ✅ 自动化认证测试所需密码、client secret、TOTP secret 必须从受控配置注入，不能写入测试代码和仓库明文。
-- ✅ 当 E2E 目标是验证登录、登出、MFA、OIDC 回调、Session/JWT 切换、租户 claim 注入、权限漂移时，必须覆盖真实认证步骤，不能用伪造 token、手写 cookie、手写 `storageState` 替代。
+- ✅ 当 E2E 目标是验证 Web 登录、登出、MFA、Session 轮换、租户上下文或权限漂移时，必须覆盖真实 Session 认证步骤，不能用伪造 token、手写 cookie、手写 `storageState` 替代；OAuth2/OIDC Bearer 客户端另走后端协议测试。
 - ✅ 如需在非认证主题的 real-link E2E 中复用登录态，`storageState` 或 session 预置必须来自单独的真实登录 setup 步骤，并明确标注生成来源与适用场景。
 - ✅ 认证相关 E2E 必须显式断言用户可观察结果和安全结果，例如登录成功后的身份状态、MFA 二次校验、拒绝页面、租户上下文、cookie/session 或 token 切换结果。
-- ✅ 认证 E2E 所使用的测试 client 必须最小权限化，并区分 Web Session、API JWT、OIDC 浏览器回调等测试目标；不得用一个超大权限 client 混测所有场景。
+- ✅ 认证 E2E 所使用的测试身份/client 必须最小权限化，并严格区分 Web Session 与 API/OIDC Bearer 测试目标；不得用一个超大权限 client 混测所有场景。
 - ✅ 认证 real-link 中涉及多身份或多租户 auth-state 生成时，环境变量覆盖顺序必须显式定义，并用自动化测试锁住：次身份不能继承主身份的 TOTP code、TOTP secret、client 或 auth-state 输出路径。
 - ✅ 平台身份、租户身份、readonly 身份、bind 身份的 auth-state / setup helper 必须显式区分 `login mode` 与 tenant code 归属；不得因 fallback 把 tenant 登录误导向 platform scope，或把 platform 管理调用错误复用为 tenant 身份。
-- ✅ 首绑 TOTP / post-login 安全中心 / MFA 继续跳转类 E2E 必须按真实浏览器会话契约工作：优先使用页面真实渲染结果或 `credentials: include` 的 first-party 请求，不能假设 OIDC callback 一定已经把 token 写入 `localStorage`。
-- ✅ 涉及 Session / Bearer 同时存在、`activeTenantId` 来源裁决、`activeScopeType/id` 成对解析、`prompt=none` / silent renew 行为的改动，必须与 `docs/TINY_PLATFORM_SESSION_BEARER_AUTH_MATRIX.md` 保持一致；不得用“浏览器请求一律只看 Session”或“只要带 Bearer 就完全忽略 Session”这种简化口径替代当前主线契约。
-- ✅ 前端启动/认证恢复必须遵循 `/bootstrap` 编排口径：`main.ts` 只挂载应用，`/bootstrap` 统一执行 `authBootstrap -> securityBootstrap -> permissionBootstrap`；Web Session-only 模式由 `authBootstrap` 读取 `/sys/users/current`，不得为恢复浏览器登录态重新调用 `signinSilent()`。
-- ✅ `/bootstrap`、OIDC 登录 callback、登录页、安全流程页和异常页必须是启动守卫 bypass 路由；尤其 `/callback` 不得被重定向回 `/bootstrap` 造成回环。OIDC silent renew 统一使用独立 `silent-renew.html` iframe 入口，不注册为 Vue Router 路由；登录 callback 处理完 code 后再显式回流 `/bootstrap?redirect=...`。
-- ✅ TOTP bind/check/skip 等安全流程完成后应回流 `/bootstrap?redirect=...`，由前端重新恢复 OIDC 登录态、检查安全状态、加载权限菜单并注册动态路由；redirect 必须经过内部路径净化，禁止 open redirect。
+- ✅ 首绑 TOTP / post-login 安全中心 / MFA 继续跳转类 E2E 必须按真实浏览器会话契约工作：使用页面真实渲染结果或 `credentials: include` 的 first-party 请求；不得读取或写入 access/refresh token。
+- ✅ 涉及后端 Session / Bearer 同时存在、`activeTenantId` 来源裁决、`activeScopeType/id` 成对解析、`prompt=none` 行为的改动，必须与 `docs/TINY_PLATFORM_SESSION_BEARER_AUTH_MATRIX.md` 保持一致；该后端矩阵不得被误解为 Vue Web 的 Bearer 兼容轨。
+- ✅ Vue Web 认证是不可切换的同源 HttpOnly Session + CSRF：不得提供 Session/Bearer 构建变量或运行时开关，不得依赖 OIDC browser SDK，不得注册 OAuth callback/silent-renew 页面，不得持有 access/refresh token，不得注入 `Authorization`。
+- ✅ 前端启动/认证恢复必须遵循 `/bootstrap` 编排口径：`main.ts` 只挂载应用，`/bootstrap` 统一执行 `authBootstrap -> securityBootstrap -> permissionBootstrap`；`authBootstrap` 只以 `credentials: include` 读取 `/sys/users/current`。
+- ✅ `/bootstrap`、登录页、安全流程页和异常页必须是启动守卫 bypass 路由；TOTP bind/check/skip 完成后回流 `/bootstrap?redirect=...`，重新读取 Session principal、检查安全状态并加载权限菜单；redirect 必须经过内部路径净化。
 - ✅ 菜单权限加载与动态路由注册必须集中在 permission bootstrap；菜单为空、无效 URL、缺失组件、重复 path 或注册失败时默认 fail-closed 阻断业务区，不得进入“半登录半可用”状态。
 - ✅ **M4（Bearer + Session 一致）在 user 端点上分两种正式语义，不得混用**：`GET /sys/users/current` 为 **M4 读**（只读快照，不改 Session scope）；`POST /sys/users/current/active-scope` 为 **M4 写**（会话 active scope **持久化以 Session 为权威落点**，Bearer 写成功须返回 `tokenRefreshRequired` / `newActiveScope*`）。默认不得假设“矩阵 §4 的 M4 放行 = 所有 `/sys/users/**` 同一口径”；须按 `docs/TINY_PLATFORM_SESSION_BEARER_AUTH_MATRIX.md` **§8**。
-- ✅ **默认心智模型（Cursor/Codex/实现者）**：将 `POST /sys/users/current/active-scope` 视为 **会话状态变更写**（session-first 持久化）；在 **M4** 下 **额外**允许带 Bearer 完成同一写，且**必须**按响应 `tokenRefreshRequired` 规划 refresh，不得假装 JWT 已随该请求更新。
+- ✅ **默认心智模型（Cursor/Codex/实现者）**：Vue Web 将 `POST /sys/users/current/active-scope` 视为纯 Session 状态变更写；后端 M4 协议测试才额外覆盖 Bearer + Session 写及 `tokenRefreshRequired`，不得把这条后端兼容语义带回 Vue。
 - ✅ `POST /sys/users/current/active-scope` 在 M4（Bearer + Session 成对一致）下允许写 Session 时，成功响应必须携带可机器解析的 `tokenRefreshRequired` 与 `newActiveScopeType`/`newActiveScopeId`（及说明写后 JWT 与 Session 可预测行为的文档），且与 `docs/TINY_PLATFORM_SESSION_BEARER_AUTH_MATRIX.md` §8 一致；不得静默忽略“写后显式 scope claims 陈旧导致下一请求 M5 fail-closed”的风险。
-- ✅ 仅在显式 `VITE_AUTH_SESSION_ONLY=false` 的 Bearer 兼容轨验证 silent renew、`tokenRefreshRequired=true`、`prompt=none` 时，才以真实 `/oauth2/authorize?...prompt=none...`、刷新后 Bearer 200 和稳定页面态作为 durable evidence；Web 默认 Session-only real-link 必须反向断言 `tokenRefreshRequired=false`、没有 silent renew/Bearer，不能把兼容轨恢复成默认链路。
-- ✅ 涉及前端启动链路、OIDC callback、silent renew、TOTP 跳转或菜单权限加载的变更，至少应补前端路由/认证定向测试，并优先执行 `npm run type-check`、相关 `vitest`、`npm run build-only`；涉及后端 TOTP redirect 时同步执行 `mvn -pl tiny-oauth-server -Dtest=SecurityControllerRedirectTest test`。
+- ✅ CLI、移动端、第三方与服务间客户端继续由后端 `/oauth2/**` 独立提供 OAuth2/OIDC Bearer；其 token refresh、`prompt=none` 与 `tokenRefreshRequired=true` 只在后端协议/客户端测试中验证，不得复用 Vue Web 包或 Web real-link 作为兼容轨。
+- ✅ 涉及前端启动链路、Session principal、CSRF、TOTP 跳转或菜单权限加载的变更，至少应补前端路由/认证定向测试，并执行 Web Session-only 边界门禁、`npm run type-check`、相关 `vitest`、`npm run build-only`；涉及后端 TOTP redirect 时同步执行 `mvn -pl tiny-oauth-server -Dtest=SecurityControllerRedirectTest test`。
 - ✅ tiny-platform 本地认证 / 租户 / 平台模板验证应优先复用仓库脚本，且**默认入口**为 `tiny-oauth-server/scripts/verify-platform-local-dev-stack.sh`；只有在明确不需要前端联动时，才降级为 `tiny-oauth-server/scripts/verify-platform-dev-bootstrap.sh`；登录链专项快速门禁再使用 `tiny-oauth-server/scripts/verify-platform-login-auth-chain.sh`。不要先要求人工逐个启动数据库、后端、前端，再开始判断认证结论。
 - ✅ 受保护 Controller/API 载体闭包必须以 `tiny-oauth-server/scripts/verify-api-endpoint-controller-drift.sh` 的真实数据库结果为准；业务映射缺载体不得用目录通配豁免绕过，精确自服务/lookup 豁免必须同时锁定 HTTP method 与 path pattern。
 - ✅ 如需读取本机已导出的数据库密码、启动命令或路径，只允许通过 login shell 子进程读取**白名单环境变量**；`DB_*` 为 dev/bootstrap 主变量，`E2E_DB_*` 可作为兼容别名回填，不得打印或上传 `~/.zprofile`、`~/.zshrc`、`~/.bashrc` 全文。
@@ -81,7 +81,7 @@ globs:
 - ⚠️ 建议维护认证自动化身份矩阵，明确每个测试身份的租户归属、权限级别、是否启用 MFA、适用的 Session / JWT / OIDC 场景。
 - ⚠️ 测试环境如需固定 TOTP secret 或固定 client secret，必须限定在隔离测试环境，并记录用途与轮换方式。
 - ⚠️ 认证相关 real-link E2E 建议将登录 setup、身份初始化、用例执行拆分，避免每条用例重复走全量初始化。
-- ⚠️ OIDC/MFA 场景建议保留至少一条浏览器级 E2E，而不是只用 controller/integration test 证明服务端逻辑正确。
+- ⚠️ 后端 OIDC 授权码/MFA 协议场景建议保留独立客户端级 E2E；它不得复用 Vue Web bundle、路由或存储作为 OAuth 客户端实现。
 
 ## 可以（May）
 

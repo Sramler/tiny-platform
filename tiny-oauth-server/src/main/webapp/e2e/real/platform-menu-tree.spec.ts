@@ -1,7 +1,7 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
-import { fetchSchedulingApi, openOidcDebug } from './cross-tenant.helpers'
+import { fetchSchedulingApi, openSessionApp } from './cross-tenant.helpers'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -33,7 +33,7 @@ test.describe('real-link: 平台登录菜单树', () => {
   test('platform_admin 登录后 /sys/menus/tree 不能退化为单节点', async ({ page }) => {
     test.setTimeout(240_000)
 
-    await openOidcDebug(page, 'platform')
+    await openSessionApp(page, 'platform')
     if (page.url().includes('/login')) {
       throw new Error(
         '平台菜单树 real-link 未拿到有效 platform storageState；请确认 globalSetup 已生成 e2e/.auth/platform-admin-user.json，并且后端已补齐平台模板菜单载体。',

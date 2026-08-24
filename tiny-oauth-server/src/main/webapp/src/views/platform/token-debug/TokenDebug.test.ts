@@ -28,17 +28,8 @@ vi.mock('ant-design-vue', () => ({
 
 vi.mock('@/auth/auth', () => ({
   useAuth: () => ({
-    user: { value: { access_token: authMocks.token } },
+    user: { get value() { return { activeScopeType: authMocks.token === 'platform-token' ? 'PLATFORM' : 'TENANT' } } },
   }),
-}))
-
-vi.mock('@/utils/jwt', () => ({
-  decodeJwtPayload: (token?: string) => {
-    if (token === 'platform-token') {
-      return { activeScopeType: 'PLATFORM' }
-    }
-    return { activeScopeType: 'TENANT' }
-  },
 }))
 
 import TokenDebug from '@/views/platform/token-debug/TokenDebug.vue'
@@ -145,4 +136,3 @@ describe('TokenDebug.vue', () => {
     expect(auditMocks.decodePlatformToken).not.toHaveBeenCalled()
   })
 })
-

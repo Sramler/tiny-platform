@@ -6,8 +6,7 @@ import type {
   AxiosResponse,
   InternalAxiosRequestConfig,
 } from 'axios'
-// 引入 auth.ts 中的认证方法
-import { useAuth, logout, refreshAccessTokenOnce } from '@/auth/auth'
+import { logout } from '@/auth/auth'
 import router from '@/router' // 引入路由实例
 // 引入 TRACE_ID 工具
 import { getOrCreateTraceId, generateRequestId, getCurrentTraceId } from '@/utils/traceId'
@@ -20,14 +19,12 @@ import {
   clearTenantContext,
   getActiveTenantId,
   getLoginMode,
-  syncTenantContextFromAccessToken,
 } from '@/utils/tenant'
 import { isPlatformRuntimePath } from '@/utils/platformRuntime'
 import { persistentLogger } from '@/utils/logger'
 // 引入 Problem 响应解析工具
 import { extractErrorFromAxios, extractErrorInfo } from '@/utils/problemParser'
 import { dispatchAuthorizationRuntimeReset } from '@/runtime/authorizationRuntimeEvents'
-import { authRuntimeConfig } from '@/auth/config'
 import { ensureCsrfToken, isUnsafeHttpMethod } from '@/utils/csrf'
 
 export type RequestIdempotencyMode = 'deterministic' | 'submit'
@@ -45,7 +42,6 @@ export type TinyRequestConfig = AxiosRequestConfig & {
 
 type ManagedAxiosRequestConfig = InternalAxiosRequestConfig & {
   __idempotencyFingerprint?: string
-  __retriedAfterStalePermissions?: boolean
 }
 
 type SubmitIdempotencyEntry = {
@@ -201,7 +197,6 @@ function resolveCurrentBusinessRedirect(currentFullPath: string): string {
 
 // 请求拦截器
 service.interceptors.request.use(
-  // 将拦截器设为异步，以便调用异步的 getAccessToken
   async (config: InternalAxiosRequestConfig) => {
     // 在发送请求之前做些什么
     console.log('发送请求:', config.url, config.method)
@@ -220,20 +215,11 @@ service.interceptors.request.use(
     config.headers['X-Trace-Id'] = traceId
     // 同时添加 x-request-id，后端会使用它作为 fallback
     config.headers['X-Request-Id'] = requestId
-    if (!authRuntimeConfig.sessionOnly) {
-      const { getAccessToken } = useAuth()
-      const token = await getAccessToken()
-      if (token) {
-      // 如果获取到 token，则添加到请求头中
-        config.headers.Authorization = `Bearer ${token}`
-        syncTenantContextFromAccessToken(token)
-      }
-    } else {
-      delete config.headers.Authorization
-      if (isUnsafeHttpMethod(config.method)) {
-        const csrf = await ensureCsrfToken(config.baseURL || import.meta.env.VITE_API_BASE_URL || '')
-        config.headers[csrf.headerName] = csrf.token
-      }
+    // Vue Web 只使用同源 HttpOnly Session。即使调用方误传，也绝不向浏览器请求注入 Bearer。
+    delete config.headers.Authorization
+    if (isUnsafeHttpMethod(config.method)) {
+      const csrf = await ensureCsrfToken(config.baseURL || import.meta.env.VITE_API_BASE_URL || '')
+      config.headers[csrf.headerName] = csrf.token
     }
 
     // 当前活动租户统一通过 X-Active-Tenant-Id 传输。
@@ -304,8 +290,7 @@ service.interceptors.response.use(
     const currentFullPath = router.currentRoute.value.fullPath
     const isExceptionPath = currentPath.startsWith('/exception/')
     // 使用 fullPath 保留 query（如 ?id=1），保证返回时编辑页能正确打开；优先用当前页（发生错误的页面）作为 from
-    const fromPath =
-      currentPath !== '/login' && currentPath !== '/callback' ? currentFullPath : null
+    const fromPath = currentPath !== '/login' ? currentFullPath : null
     const referer = isExceptionPath ? null : fromPath || document.referrer || null
 
     // 构建错误信息查询参数
@@ -326,18 +311,6 @@ service.interceptors.response.use(
         error.response?.headers?.['X-Trace-Id'] ||
         getCurrentTraceId()
       if (isStalePermissionsError(error)) {
-        const retryConfig = error.config as ManagedAxiosRequestConfig | undefined
-        if (retryConfig && !retryConfig.__retriedAfterStalePermissions) {
-          retryConfig.__retriedAfterStalePermissions = true
-          const refreshed = await refreshAccessTokenOnce()
-          if (refreshed) {
-            dispatchAuthorizationRuntimeReset('stale_permissions', {
-              message: '授权快照已更新，正在重建权限运行态',
-              traceId,
-            })
-            return service(retryConfig)
-          }
-        }
         const message =
           error.response?.data?.error_description ||
           error.response?.data?.message ||
@@ -404,11 +377,10 @@ service.interceptors.response.use(
 
       // ⚠️ 重要：先跳转到 401 页面，不要先调用 logout()
       // 因为 logout() 会触发 window.location.href，会覆盖我们的跳转
-      // 只在当前路由不是 /login、/callback 或 /exception/401 时跳转，避免死循环
+      // 只在当前路由不是 /login 或 /exception/401 时跳转，避免死循环
       console.log('[401] 当前路径:', currentPath)
       if (
         currentPath !== '/login' &&
-        currentPath !== '/callback' &&
         currentPath !== '/exception/401'
       ) {
         console.log('[401] 跳转到 401 页面（认证状态将在 401 页面中清理）')
@@ -468,7 +440,7 @@ service.interceptors.response.use(
           traceId: getTraceId(),
         })
         clearTenantContext()
-        if (currentPath !== '/login' && currentPath !== '/callback') {
+        if (currentPath !== '/login') {
           router.push({
             path: '/login',
             query: {
@@ -634,9 +606,9 @@ service.interceptors.response.use(
 
     if (isNetworkError) {
       console.error('后端服务不可用，跳转到登录页')
-      // 只在当前路由不是 /login 或 /callback 时跳转，避免死循环
+      // 只在当前路由不是 /login 时跳转，避免死循环
       const currentPath = router.currentRoute.value.path
-      if (currentPath !== '/login' && currentPath !== '/callback') {
+      if (currentPath !== '/login') {
         // 防抖：清除之前的定时器，只保留最后一个
         if (redirectTimer) {
           clearTimeout(redirectTimer)

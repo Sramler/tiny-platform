@@ -236,7 +236,7 @@ import {
 } from '@/api/scheduling'
 import { throttle } from '@/utils/debounce'
 import { useAuth } from '@/auth/auth'
-import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import { runtimeAuthorities } from '@/auth/runtimeIdentity'
 import {
   SCHEDULING_CONSOLE_CONFIG,
   SCHEDULING_RUN_CONTROL,
@@ -258,7 +258,7 @@ const route = useRoute()
 const router = useRouter()
 const { user } = useAuth()
 const schedulingAuthorities = computed(() =>
-  extractAuthoritiesFromJwt(user.value?.access_token).filter((a) => a.startsWith('scheduling:')),
+  runtimeAuthorities(user.value).filter((a) => a.startsWith('scheduling:')),
 )
 const canManageSchedulingConfig = computed(
   () =>

@@ -88,7 +88,7 @@
 import { UserOutlined, SettingOutlined, LogoutOutlined, DownOutlined } from '@ant-design/icons-vue'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { useAuth, refreshTokenAfterActiveScopeSwitch } from '@/auth/auth'
+import { useAuth } from '@/auth/auth'
 import { getCurrentUser, switchActiveScope, type ActiveScopeSwitchResult, type ActiveScopeType } from '@/api/user'
 import { notifyActiveScopeChanged } from '@/utils/activeScopeEvents'
 import { getOrgList, type OrgUnit } from '@/api/org'
@@ -156,7 +156,7 @@ defineOptions({
  * 路由和认证
  */
 const router = useRouter()
-const { logout, fetchWithAuth } = useAuth()
+const { logout, fetchWithAuth, refreshSessionPrincipal } = useAuth()
 
 /**
  * 响应式状态
@@ -379,15 +379,7 @@ async function confirmSwitchScope() {
     })
     syncLocalScopeSwitchContext(switchResult)
 
-    if (switchResult.tokenRefreshRequired === true) {
-      const renew = await refreshTokenAfterActiveScopeSwitch()
-      if (!renew.ok) {
-        message.warning('作用域已在服务端更新，但未能刷新访问令牌。请重新登录后再继续使用。')
-        scopeModalOpen.value = false
-        return
-      }
-    }
-
+    await refreshSessionPrincipal()
     const profileOk = await loadUserInfo({ suppressErrorToast: true })
     if (!profileOk) {
       message.warning('作用域已在服务端更新，但未能加载当前用户信息。请刷新页面或重新登录后再试。')

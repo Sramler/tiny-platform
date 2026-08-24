@@ -356,23 +356,12 @@ const currentUser = computed(() => {
     return currentUserInfo.value.username
   }
 
-  // 备用方案：从JWT token中获取用户信息
+  // Session principal 已由后端认证会话返回，不解析浏览器 token。
   if (user.value && isAuthenticated.value) {
-    try {
-      const token = user.value.access_token
-      if (token) {
-        const parts = token.split('.')
-        if (!parts[1]) return 'admin'
-        const payload = JSON.parse(atob(parts[1]))
-        return payload.preferred_username || payload.sub || payload.username || 'admin'
-      }
-    } catch (error) {
-      console.warn('解析用户token失败:', error)
-    }
+    return user.value.username || ''
   }
 
-  // 默认返回admin
-  return 'admin'
+  return ''
 })
 
 // 获取当前用户信息

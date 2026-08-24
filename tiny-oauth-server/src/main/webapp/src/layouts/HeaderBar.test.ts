@@ -1,6 +1,6 @@
 /**
  * HeaderBar：作用域切换编排单测（`confirmSwitchScope`）。
- * - 不覆盖真实 OIDC silent renew / 浏览器 iframe；该类风险见 real-link E2E 与 SESSION_BEARER 矩阵 §8.4。
+ * - Web 作用域切换后重读 Session principal，不存在浏览器 token renew。
  */
 import { mount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   logout: vi.fn(),
   fetchWithAuth: vi.fn(),
-  refreshTokenAfterActiveScopeSwitch: vi.fn(),
+  refreshSessionPrincipal: vi.fn(),
   switchActiveScope: vi.fn(),
   getCurrentUser: vi.fn(),
   notifyActiveScopeChanged: vi.fn(),
@@ -29,8 +29,11 @@ const messageMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/auth/auth', () => ({
-  useAuth: () => ({ logout: mocks.logout, fetchWithAuth: mocks.fetchWithAuth }),
-  refreshTokenAfterActiveScopeSwitch: mocks.refreshTokenAfterActiveScopeSwitch,
+  useAuth: () => ({
+    logout: mocks.logout,
+    fetchWithAuth: mocks.fetchWithAuth,
+    refreshSessionPrincipal: mocks.refreshSessionPrincipal,
+  }),
 }))
 
 vi.mock('@/api/user', () => ({
@@ -99,10 +102,7 @@ describe('HeaderBar.vue confirmSwitchScope', () => {
     mocks.getCurrentUser.mockResolvedValue(currentUserPayload)
     mocks.getOrgList.mockResolvedValue([])
     mocks.switchActiveScope.mockResolvedValue({ success: true, tokenRefreshRequired: false })
-    mocks.refreshTokenAfterActiveScopeSwitch.mockResolvedValue({
-      ok: true,
-      user: { expired: false, access_token: 'at', profile: {} },
-    })
+    mocks.refreshSessionPrincipal.mockResolvedValue({ username: 'alice' })
     mocks.getActiveTenantId.mockReturnValue('7')
   })
 
@@ -115,7 +115,7 @@ describe('HeaderBar.vue confirmSwitchScope', () => {
     await wrapper.vm.confirmSwitchScope()
     await flushPromises()
 
-    expect(mocks.refreshTokenAfterActiveScopeSwitch).not.toHaveBeenCalled()
+    expect(mocks.refreshSessionPrincipal).toHaveBeenCalledTimes(1)
     expect(mocks.switchActiveScope).toHaveBeenCalledWith({
       scopeType: 'TENANT',
       scopeId: undefined,
@@ -126,15 +126,15 @@ describe('HeaderBar.vue confirmSwitchScope', () => {
     expect(mocks.notifyActiveScopeChanged).toHaveBeenCalledTimes(1)
   })
 
-  it('when tokenRefreshRequired is true and renew succeeds: order switch → renew → getCurrentUser, then success + broadcast', async () => {
+  it('ignores legacy token flags and orders switch → Session refresh → getCurrentUser', async () => {
     const order: string[] = []
     mocks.switchActiveScope.mockImplementation(async () => {
       order.push('switch')
       return { success: true, tokenRefreshRequired: true, newActiveScopeType: 'TENANT' }
     })
-    mocks.refreshTokenAfterActiveScopeSwitch.mockImplementation(async () => {
-      order.push('renew')
-      return { ok: true, user: { expired: false, access_token: 'at2', profile: {} } }
+    mocks.refreshSessionPrincipal.mockImplementation(async () => {
+      order.push('session')
+      return { username: 'alice' }
     })
     mocks.getCurrentUser.mockImplementation(async () => {
       order.push('getCurrentUser')
@@ -148,15 +148,15 @@ describe('HeaderBar.vue confirmSwitchScope', () => {
     await wrapper.vm.confirmSwitchScope()
     await flushPromises()
 
-    expect(order).toEqual(['switch', 'renew', 'getCurrentUser'])
+    expect(order).toEqual(['switch', 'session', 'getCurrentUser'])
     expect(messageMocks.success).toHaveBeenCalledWith('作用域已切换')
     expect(messageMocks.warning).not.toHaveBeenCalled()
     expect(mocks.notifyActiveScopeChanged).toHaveBeenCalledTimes(1)
   })
 
-  it('when tokenRefreshRequired is true and renew fails: warning only, no success, no broadcast', async () => {
+  it('reports a Session refresh failure and does not rebuild the page runtime', async () => {
     mocks.switchActiveScope.mockResolvedValue({ success: true, tokenRefreshRequired: true })
-    mocks.refreshTokenAfterActiveScopeSwitch.mockResolvedValue({ ok: false })
+    mocks.refreshSessionPrincipal.mockRejectedValue(new Error('session refresh failed'))
 
     const wrapper = await mountHeaderBar()
     mocks.getCurrentUser.mockClear()
@@ -164,11 +164,9 @@ describe('HeaderBar.vue confirmSwitchScope', () => {
     await wrapper.vm.confirmSwitchScope()
     await flushPromises()
 
-    expect(mocks.refreshTokenAfterActiveScopeSwitch).toHaveBeenCalledTimes(1)
+    expect(mocks.refreshSessionPrincipal).toHaveBeenCalledTimes(1)
     expect(mocks.getCurrentUser).not.toHaveBeenCalled()
-    expect(messageMocks.warning).toHaveBeenCalledWith(
-      '作用域已在服务端更新，但未能刷新访问令牌。请重新登录后再继续使用。',
-    )
+    expect(messageMocks.error).toHaveBeenCalledWith('切换作用域失败')
     expect(messageMocks.success).not.toHaveBeenCalled()
     expect(mocks.notifyActiveScopeChanged).not.toHaveBeenCalled()
   })
@@ -191,7 +189,7 @@ describe('HeaderBar.vue confirmSwitchScope', () => {
     expect(messageMocks.warning).toHaveBeenCalledWith('当前平台态不支持在此处切换作用域')
   })
 
-  it('when switching tenant scope to PLATFORM with token refresh: syncs local platform context before renew', async () => {
+  it('syncs local platform context before refreshing the Session principal', async () => {
     const order: string[] = []
     mocks.switchActiveScope.mockImplementation(async () => {
       order.push('switch')
@@ -206,9 +204,9 @@ describe('HeaderBar.vue confirmSwitchScope', () => {
     mocks.clearActiveTenantId.mockImplementation(() => {
       order.push('clearActiveTenantId')
     })
-    mocks.refreshTokenAfterActiveScopeSwitch.mockImplementation(async () => {
-      order.push('renew')
-      return { ok: true, user: { expired: false, access_token: 'platform-at', profile: {} } }
+    mocks.refreshSessionPrincipal.mockImplementation(async () => {
+      order.push('session')
+      return { username: 'alice', activeScopeType: 'PLATFORM' }
     })
     mocks.getCurrentUser.mockImplementation(async () => {
       order.push('getCurrentUser')
@@ -235,7 +233,7 @@ describe('HeaderBar.vue confirmSwitchScope', () => {
       'loginMode',
       'clearTenantCode',
       'clearActiveTenantId',
-      'renew',
+      'session',
       'getCurrentUser',
     ])
     expect(messageMocks.success).toHaveBeenCalledWith('作用域已切换')

@@ -205,7 +205,7 @@ export async function waitForSessionIdentity(page: Page, timeout = 60_000) {
 }
 
 async function loginWithIdentity(page: Page, identity: LoginIdentity) {
-  await page.goto(`/login?redirect=${encodeURIComponent('/OIDCDebug')}`)
+  await page.goto(`/login?redirect=${encodeURIComponent('/')}`)
 
   if (page.url().includes('/login')) {
     const loginHeading = page.getByRole('heading', { name: '欢迎登录' })
@@ -252,9 +252,7 @@ async function loginWithIdentity(page: Page, identity: LoginIdentity) {
   }
 
   await Promise.race([
-    page.waitForURL(/\/(callback|self\/security\/totp-(bind|verify)|OIDCDebug|exception\/403)/, {
-      timeout: 90_000,
-    }),
+    page.waitForURL((url) => !url.pathname.includes('/login'), { timeout: 90_000 }),
     page
       .waitForURL((url) => url.pathname.includes('/login') && url.searchParams.has('error'), {
         timeout: 90_000,
@@ -284,18 +282,14 @@ async function loginWithIdentity(page: Page, identity: LoginIdentity) {
     await page.getByRole('button', { name: '确认' }).click()
   }
 
-  await page.waitForURL(
-    (url) =>
-      !url.pathname.includes('/callback') && !url.pathname.includes('/self/security/totp-verify'),
-    {
-      timeout: 90_000,
-    },
-  )
+  await page.waitForURL((url) => !url.pathname.includes('/self/security/totp-verify'), {
+    timeout: 90_000,
+  })
 }
 
-async function gotoOidcDebug(page: Page) {
+async function gotoSessionApp(page: Page) {
   try {
-    await page.goto('/OIDCDebug', { waitUntil: 'domcontentloaded' })
+    await page.goto('/', { waitUntil: 'domcontentloaded' })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     if (!message.includes('ERR_ABORTED')) {
@@ -304,35 +298,36 @@ async function gotoOidcDebug(page: Page) {
   }
 }
 
-export async function openOidcDebug(page: Page, kind: AuthIdentityKind = 'primary') {
+export async function openSessionApp(page: Page, kind: AuthIdentityKind = 'primary') {
   const loginIdentity = resolveLoginIdentity(kind)
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    await gotoOidcDebug(page)
-    const oidcDebugHeading = page.getByRole('heading', { name: /OIDC 调试工具/ })
-    const oidcDebugVisible = await oidcDebugHeading.isVisible({ timeout: 5_000 }).catch(() => false)
+    await gotoSessionApp(page)
     const existingIdentity = await hasSessionIdentity(page)
 
-    if (
-      !existingIdentity &&
-      (!oidcDebugVisible || page.url().includes('/login') || page.url().includes('/callback')) &&
-      loginIdentity
-    ) {
-      await loginWithIdentity(page, loginIdentity)
-      await gotoOidcDebug(page)
-    } else if (
-      !oidcDebugVisible ||
-      page.url().includes('/login') ||
-      page.url().includes('/callback')
-    ) {
-      await gotoOidcDebug(page)
+    if (existingIdentity) {
+      return
     }
 
-    await waitForSessionIdentity(page, 90_000)
-    return
-  }
+    if (!loginIdentity) {
+      throw new Error(
+        `Session 已失效且 ${kind} 身份缺少完整的实时登录配置，无法重新建立 HttpOnly Session`,
+      )
+    }
 
-  await waitForSessionIdentity(page, 90_000)
+    // storageState 中的服务端 Session 可能被前序场景注销或轮换。是否需要恢复应只以
+    // /sys/users/current 为准，不能依赖 SPA 此刻是否已经完成跳转到 /login。
+    await loginWithIdentity(page, loginIdentity)
+    await gotoSessionApp(page)
+    try {
+      await waitForSessionIdentity(page, 30_000)
+      return
+    } catch (error) {
+      if (attempt === 2) {
+        throw error
+      }
+    }
+  }
 }
 
 type SessionIdentitySnapshot = {
@@ -514,7 +509,7 @@ export async function openSecondaryAuthenticatedPage(
     baseURL,
   })
   const page = await context.newPage()
-  await openOidcDebug(page, kind)
+  await openSessionApp(page, kind)
   return { context, page }
 }
 

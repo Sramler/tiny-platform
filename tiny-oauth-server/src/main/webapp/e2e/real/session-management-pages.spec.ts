@@ -1,5 +1,5 @@
 import { expect, test, type Page, type Response } from '@playwright/test'
-import { openOidcDebug } from './cross-tenant.helpers'
+import { openSessionApp } from './cross-tenant.helpers'
 
 type ObservedBusinessRequest = {
   method: string
@@ -90,7 +90,7 @@ test.describe('real-link: 纯 Session 管理页依赖闭包', () => {
       throw new Error('session-management-pages real-link 需要 Playwright baseURL')
     }
     const frontendOrigin = new URL(configuredBaseURL).origin
-    await openOidcDebug(page, 'platform')
+    await openSessionApp(page, 'platform')
     const observed = observeSessionBoundary(page)
 
     await navigateAndWaitForApis(page, '/system/resource', [

@@ -7,11 +7,7 @@ const routerMocks = vi.hoisted(() => ({
   tenantCode: 'default' as string | null,
   loginMode: 'TENANT' as 'TENANT' | 'PLATFORM',
   activeTenantId: null as string | null,
-  syncTenantContextFromAccessToken: vi.fn(),
   login: vi.fn<(...args: unknown[]) => Promise<void>>(),
-  trySilentLoginFromPlatformSession: vi.fn<() => Promise<boolean>>(),
-  consumePostLogoutRedirectMarker: vi.fn<() => boolean>(),
-  completePostLogoutRedirect: vi.fn<() => Promise<boolean>>(),
   menuTree: vi.fn<() => Promise<unknown[]>>(),
   logger: {
     log: vi.fn(),
@@ -41,9 +37,6 @@ vi.mock('@/auth/auth', () => ({
     fetchWithAuth: vi.fn(),
   }),
   initPromise: Promise.resolve(),
-  trySilentLoginFromPlatformSession: routerMocks.trySilentLoginFromPlatformSession,
-  consumePostLogoutRedirectMarker: routerMocks.consumePostLogoutRedirectMarker,
-  completePostLogoutRedirect: routerMocks.completePostLogoutRedirect,
 }))
 
 vi.mock('@/api/menu', () => ({
@@ -73,7 +66,6 @@ vi.mock('@/utils/tenant', () => ({
   getTenantCode: () => routerMocks.tenantCode,
   getLoginMode: () => routerMocks.loginMode,
   getActiveTenantId: () => routerMocks.activeTenantId,
-  syncTenantContextFromAccessToken: routerMocks.syncTenantContextFromAccessToken,
 }))
 
 async function loadRouterModule() {
@@ -101,11 +93,7 @@ describe('router guards', () => {
     routerMocks.tenantCode = 'default'
     routerMocks.loginMode = 'TENANT'
     routerMocks.activeTenantId = null
-    routerMocks.syncTenantContextFromAccessToken.mockReset()
     routerMocks.login.mockReset().mockResolvedValue(undefined)
-    routerMocks.trySilentLoginFromPlatformSession.mockReset().mockResolvedValue(false)
-    routerMocks.consumePostLogoutRedirectMarker.mockReset().mockReturnValue(false)
-    routerMocks.completePostLogoutRedirect.mockReset().mockResolvedValue(false)
     routerMocks.menuTree.mockReset().mockResolvedValue([])
     routerMocks.logger.log.mockReset()
     routerMocks.logger.debug.mockReset()
@@ -143,7 +131,6 @@ describe('router guards', () => {
     )
 
     expect(routerMocks.login).not.toHaveBeenCalled()
-    expect(routerMocks.trySilentLoginFromPlatformSession).not.toHaveBeenCalled()
     expect(result).toEqual({
       path: '/bootstrap',
       query: {
@@ -153,10 +140,10 @@ describe('router guards', () => {
     })
   })
 
-  it('allows bootstrap, callback and security routes without bootstrap recursion', async () => {
+  it('allows bootstrap and security routes without bootstrap recursion', async () => {
     const { authGuard } = await loadRouterModule()
 
-    for (const path of ['/bootstrap', '/callback', '/self/security/totp-bind']) {
+    for (const path of ['/bootstrap', '/self/security/totp-bind']) {
       const result = await authGuard(
         {
           path,
@@ -171,40 +158,13 @@ describe('router guards', () => {
     }
 
     expect(routerMocks.login).not.toHaveBeenCalled()
-    expect(routerMocks.trySilentLoginFromPlatformSession).not.toHaveBeenCalled()
   })
 
-  it('keeps silent renew outside Vue Router', async () => {
+  it('does not register OIDC callback routes', async () => {
     const { default: router } = await loadRouterModule()
 
     expect(router.getRoutes().some((route) => route.path === '/oidc/silent-callback')).toBe(false)
-  })
-
-  it('redirects to login without auto-authorize after post logout landing', async () => {
-    const { authGuard } = await loadRouterModule()
-    routerMocks.completePostLogoutRedirect.mockResolvedValue(true)
-
-    const result = await authGuard(
-      {
-        path: '/',
-        fullPath: '/',
-        meta: {},
-        query: {},
-      } as any,
-      {} as any,
-      undefined as any,
-    )
-
-    expect(result).toEqual({
-      path: '/login',
-      query: {
-        redirect: '/',
-      },
-      replace: true,
-    })
-    expect(routerMocks.completePostLogoutRedirect).toHaveBeenCalledTimes(1)
-    expect(routerMocks.login).not.toHaveBeenCalled()
-    expect(routerMocks.trySilentLoginFromPlatformSession).not.toHaveBeenCalled()
+    expect(router.getRoutes().some((route) => route.path === '/callback')).toBe(false)
   })
 
   it('redirects platform runtime module entry to platform console in platform mode', async () => {
@@ -235,7 +195,6 @@ describe('router guards', () => {
         view: 'all',
       },
     })
-    expect(routerMocks.syncTenantContextFromAccessToken).toHaveBeenCalledWith('test-token')
   })
 
   it('resolves platform process tab child routes and redirects base path to the default child route', async () => {

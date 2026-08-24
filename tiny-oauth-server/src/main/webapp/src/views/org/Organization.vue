@@ -165,7 +165,7 @@ import { getOrgTree, listUnitMembers, deleteOrg, addUserToUnit, removeUserFromUn
 import type { OrgUnit, UserUnit } from '@/api/org'
 import { message, Modal } from 'ant-design-vue'
 import { ReloadOutlined, PlusOutlined, EditOutlined, DeleteOutlined, UserAddOutlined } from '@ant-design/icons-vue'
-import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import { runtimeAuthorities } from '@/auth/runtimeIdentity'
 import {
   ORG_MANAGEMENT_READ_AUTHORITIES,
   ORG_MANAGEMENT_CREATE_AUTHORITIES,
@@ -177,7 +177,7 @@ import {
 import OrgForm from './OrgForm.vue'
 
 const { user } = useAuth()
-const authorities = computed(() => new Set(extractAuthoritiesFromJwt(user.value?.access_token)))
+const authorities = computed(() => new Set(runtimeAuthorities(user.value)))
 
 function hasAnyAuthority(requiredAuthorities: string[]) {
   return requiredAuthorities.some((a) => authorities.value.has(a))

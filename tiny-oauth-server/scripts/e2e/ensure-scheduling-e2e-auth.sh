@@ -686,7 +686,7 @@ void ensureSchedulingAdminAuthority(Connection connection, Long tenantId, Long r
     // HeaderBar 打开「切换作用域」时会拉取 ORG/DEPT 选项（GET /sys/org/list）；调度 E2E 身份需具备读权限，否则会 403 并被前端导向异常页。
     Long orgListPermissionId = ensurePermission(connection, tenantId, "system:org:list", "组织列表", "API", "real e2e org list authority");
     ensureRolePermissionBinding(connection, tenantId, roleId, orgListPermissionId);
-    // BasicLayout / 路由守卫会请求 GET /sys/menus/tree（MenuManagementAccessGuard.canRead → system:menu:list）；缺此权限时首屏 401/403，active-scope-token-refresh 等用例无法进入 OIDCDebug。
+    // BasicLayout / 启动编排会请求 GET /sys/menus/tree（MenuManagementAccessGuard.canRead → system:menu:list）；缺此权限时首屏 401/403，Session real-link 用例无法进入业务区。
     Long menuListPermissionId = ensurePermission(connection, tenantId, "system:menu:list", "菜单树查询", "API", "real e2e menu tree for layout");
     ensureRolePermissionBinding(connection, tenantId, roleId, menuListPermissionId);
 

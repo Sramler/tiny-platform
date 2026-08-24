@@ -1,7 +1,7 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, test } from '@playwright/test'
-import { openOidcDebug } from './cross-tenant.helpers'
+import { openSessionApp } from './cross-tenant.helpers'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -11,7 +11,7 @@ test.use({ storageState: platformAuthStatePath })
 
 test.describe('real-link: 平台角色页', () => {
   test('登录后应取得 UI actions 与角色业务数据且不跳转 403', async ({ page }) => {
-    await openOidcDebug(page, 'platform')
+    await openSessionApp(page, 'platform')
     const apiStatuses = new Map<string, number>()
     page.on('response', (response) => {
       const url = new URL(response.url())

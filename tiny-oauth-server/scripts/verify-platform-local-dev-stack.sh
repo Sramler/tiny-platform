@@ -72,7 +72,10 @@ cleanup_frontend() {
 
 trap cleanup_frontend EXIT INT TERM
 
-echo "==> Step 0: verify backend/dev bootstrap"
+echo "==> Step 0: verify Vue Web Session-only boundary"
+bash "${ROOT_DIR}/tiny-oauth-server/scripts/verify-web-session-only-boundary.sh"
+
+echo "==> Step 1: verify backend/dev bootstrap"
 bash "${ROOT_DIR}/tiny-oauth-server/scripts/verify-platform-dev-bootstrap.sh"
 
 if ! command -v npm >/dev/null 2>&1; then
@@ -81,7 +84,7 @@ if ! command -v npm >/dev/null 2>&1; then
 fi
 
 if [[ "${SKIP_FRONTEND_START}" == "1" ]]; then
-  echo "==> Step 1: SKIP_FRONTEND_START=1，不启动前端"
+  echo "==> Step 2: SKIP_FRONTEND_START=1，不启动前端"
   if ! frontend_ok; then
     echo "ERROR: frontend not ready at ${FRONTEND_HEALTH_URL}" >&2
     exit 1
@@ -97,7 +100,7 @@ elif [[ "${FORCE_START_FRONTEND}" == "1" ]]; then
   fi
   FRONTEND_LOG="$(mktemp "${TMPDIR:-/tmp}/tiny-platform-frontend-dev.XXXXXX.log")"
   SCRIPT_STARTED_FRONTEND=1
-  echo "==> Step 1: FORCE_START_FRONTEND，启动前端 dev server"
+  echo "==> Step 2: FORCE_START_FRONTEND，启动前端 dev server"
   echo "==> 日志: ${FRONTEND_LOG}"
   (
     cd "${ROOT_DIR}"
@@ -107,11 +110,11 @@ elif [[ "${FORCE_START_FRONTEND}" == "1" ]]; then
   wait_for_frontend
 else
   if frontend_ok; then
-    echo "==> Step 1: 检测到已运行的前端（${FRONTEND_HEALTH_URL}），跳过启动"
+    echo "==> Step 2: 检测到已运行的前端（${FRONTEND_HEALTH_URL}），跳过启动"
   else
     FRONTEND_LOG="$(mktemp "${TMPDIR:-/tmp}/tiny-platform-frontend-dev.XXXXXX.log")"
     SCRIPT_STARTED_FRONTEND=1
-    echo "==> Step 1: 未检测到前端，自动启动 Vite dev server"
+    echo "==> Step 2: 未检测到前端，自动启动 Vite dev server"
     echo "==> 日志: ${FRONTEND_LOG}"
     (
       cd "${ROOT_DIR}"
@@ -122,5 +125,5 @@ else
   fi
 fi
 
-echo "==> Step 2: local dev stack ready (backend + frontend)"
+echo "==> Step 3: local dev stack ready (backend + frontend)"
 echo "==> verify-platform-local-dev-stack: OK"

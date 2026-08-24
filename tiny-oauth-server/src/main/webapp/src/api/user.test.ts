@@ -142,7 +142,7 @@ describe('user.ts', () => {
 
     expect(mocks.post).toHaveBeenCalledWith('/sys/users/current/active-scope', { scopeType: 'DEPT', scopeId: 200 })
     expect(mocks.get).not.toHaveBeenCalled()
-    expect(result.tokenRefreshRequired).toBe(true)
+    expect(result.success).toBe(true)
     expect(result.newActiveScopeId).toBe(200)
   })
 

@@ -196,11 +196,11 @@ import {
 import VueDraggable from 'vuedraggable'
 import ResourceForm from './ResourceForm.vue'
 import Icon from '@/components/Icon.vue'
-import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import { runtimeAuthorities } from '@/auth/runtimeIdentity'
 import { RESOURCE_MANAGEMENT_READ_AUTHORITIES } from '@/constants/permission'
 
 const { user } = useAuth()
-const resourceAuthorities = computed(() => new Set(extractAuthoritiesFromJwt(user.value?.access_token)))
+const resourceAuthorities = computed(() => new Set(runtimeAuthorities(user.value)))
 
 function hasAnyResourceAuthority(requiredAuthorities: string[]) {
   return requiredAuthorities.some((authority) => resourceAuthorities.value.has(authority))

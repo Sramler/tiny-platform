@@ -210,19 +210,13 @@ export default defineConfig({
               // Session/BFF real-link 默认从浏览器同源访问真实领域路径，由 Vite server-side proxy 转发。
               VITE_API_BASE_URL: process.env.E2E_VITE_API_BASE_URL ?? '',
               VITE_DEV_BACKEND_TARGET: backendBaseURL,
-              VITE_OIDC_AUTHORITY: backendBaseURL,
-              VITE_OIDC_CLIENT_ID: process.env.E2E_OIDC_CLIENT_ID ?? 'vue-client',
-              VITE_OIDC_REDIRECT_URI: `${frontendBaseURL}/callback`,
-              VITE_OIDC_POST_LOGOUT_REDIRECT_URI: `${frontendBaseURL}/`,
-              VITE_OIDC_SILENT_REDIRECT_URI: `${frontendBaseURL}/silent-renew.html`,
-              VITE_ENABLE_OIDC_TRACE: process.env.E2E_ENABLE_OIDC_TRACE ?? 'false',
             },
           },
         ],
   projects: [
     {
       name: 'chromium',
-      // 依赖主自动化身份 storageState 的 real-link 用例（调度、HeaderBar active-scope + silent renew 等）
+      // 依赖主自动化身份 HttpOnly Session storageState 的 real-link 用例。
       testMatch:
         /real\/(?!mfa-login-flow|mfa-bind-flow|platform-vue-login|cross-tenant-a-to-b|cross-tenant-b-to-a|scheduling-rbac-readonly|tenant-create-wizard|platform-role-page|session-management-pages).*\.spec\.ts/,
       use: {

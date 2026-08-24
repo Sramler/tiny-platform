@@ -110,15 +110,12 @@ export type ActiveScopeSwitchPayload = {
 
 /**
  * `POST /sys/users/current/active-scope` 成功响应体（与后端 UserController 对齐）。
- * 调用方在 `tokenRefreshRequired === true` 时须先完成 OIDC silent renew，再调用 {@link getCurrentUser}，
- * 避免 Bearer 显式 claims 陈旧导致下一请求 M5 fail-closed。
+ * Web 调用方切换后重新读取 Session principal 与用户信息，重建当前作用域运行态。
  */
 export type ActiveScopeSwitchResult = {
   success?: boolean
-  tokenRefreshRequired?: boolean
   newActiveScopeType?: ActiveScopeType
   newActiveScopeId?: number | null
-  tokenRefreshReason?: string
   activeTenantId?: number
   activeScopeType?: string
   activeScopeId?: number | null

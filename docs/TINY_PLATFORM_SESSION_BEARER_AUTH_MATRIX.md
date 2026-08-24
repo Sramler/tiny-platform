@@ -252,14 +252,14 @@
 2. **`/sys/users/current/active-scope`**：默认理解为 **会话 active scope 变更写接口**；持久化 **session-first**（§8.2）；在 **M4** 下 **额外**支持 Bearer 写，且 **必须**消费 **`tokenRefreshRequired`** 规划后续 token 更新。
 3. **禁止**：从“§4 表格里 M4 放行”直接推出“所有 `/sys/users/**` 都可无差别带 Bearer”——须先区分 **读 / 写** 与本节。
 
-### 8.4 前端（Vue 控制面）对 `tokenRefreshRequired` 的收口行为
+### 8.4 Vue Web 与 API 客户端的最终边界
 
-- **`switchActiveScope` API**：只返回 POST 响应体，**不得**在成功后再隐式串联 `GET /sys/users/current` 并丢弃 `tokenRefreshRequired`。
-- **Web 默认 Session-only，`tokenRefreshRequired !== true`**：直接拉取当前用户并广播作用域变更；不得触发 OIDC silent renew，也不得恢复 Bearer。
-- **仅显式 `VITE_AUTH_SESSION_ONLY=false` 的 Bearer 兼容轨，`tokenRefreshRequired === true`**：须先 **`signinSilent`（OIDC）** 刷新 access token，再拉取当前用户并广播；renew **失败**时不得提示“作用域已切换”成功，不得假定后续 Bearer 请求已与 Session 对齐（否则下一跳可能 **M5**）；应提示用户**重新登录**。该兼容轨不能作为 Web 默认生产或 real-link 证据。
-- 实现参考：`tiny-oauth-server/src/main/webapp` 中 `api/user.ts` 的 `switchActiveScope`、`auth.ts` 的 `refreshTokenAfterActiveScopeSwitch`、`layouts/HeaderBar.vue` 的切换确认流。
-- **自动化证据**：`layouts/HeaderBar.test.ts`（`confirmSwitchScope` 三条路径）；`api/user.test.ts` / `auth/auth.test.ts` 为 API 与 renew helper。
-- **Isolated real-link 抽样**：`e2e/real/active-scope-token-refresh.spec.ts`（Playwright **chromium** + globalSetup 生成的 `scheduling-user` HttpOnly Session storageState）：断言 `POST /sys/users/current/active-scope` 响应 `tokenRefreshRequired: false`，不请求 `prompt=none`，写后 `/sys/users/current` 的用户名与 active scope 仍由同一 Session 正确承接；浏览器不读取、保存或发送 access/refresh token。
+- **Vue Web**：固定使用 HttpOnly Session + CSRF；`switchActiveScope` 成功后重读 `/sys/users/current`，不读取 `tokenRefreshRequired`，因为浏览器不存在待刷新的 access token。
+- **Vue Web 禁止项**：认证模式开关、OIDC browser SDK、OAuth callback、silent renew、access/refresh token 存储或解析、`Authorization` 注入。
+- **API 客户端**：CLI、移动端、第三方与服务间 Bearer 仍须消费后端 `tokenRefreshRequired=true` 并通过各自 OAuth2/OIDC 客户端刷新或重新签发 token；不得把该逻辑放回 Vue 包。
+- 实现参考：`tiny-oauth-server/src/main/webapp` 中 `auth/auth.ts`、`api/user.ts`、`layouts/HeaderBar.vue`。
+- **自动化证据**：Web 边界门禁、`auth/auth.test.ts`、`layouts/HeaderBar.test.ts`、后端 Session/Bearer 矩阵测试。
+- **Isolated real-link 抽样**：`e2e/real/active-scope-token-refresh.spec.ts`（历史文件名；Playwright **chromium** + globalSetup 生成的 `scheduling-user` HttpOnly Session storageState）：断言 `POST /sys/users/current/active-scope` 响应 `tokenRefreshRequired: false`，不请求 `/oauth2/**`，写后 `/sys/users/current` 的用户名与 active scope 仍由同一 Session 正确承接；浏览器不读取、保存或发送 access/refresh token。
 
 ### 8.5 字段与错误码（摘要）
 
@@ -274,7 +274,7 @@
 **相关错误**
 
 - `token_revoked`：用户 token/session 安全状态已过期；前端不得 silent retry，必须清理运行态并重新登录。
-- `stale_permissions`：权限快照漂移；前端可 silent renew 一次并重试原请求，失败后再回登录。
+- `stale_permissions`：权限快照漂移；Vue Web 重读 Session principal，仍失败则回登录；只有独立 Bearer 客户端可按 OAuth2/OIDC 协议刷新或重新签发 token。
 - `bearer_subject_user_mismatch`：主体 `userId` 与绑定用户不一致。  
 - 历史码 `active_scope_switch_requires_session_principal`：**保留兼容**；当前主线以 §8.2 **M4 写 + refresh 信号**为准。
 
@@ -282,7 +282,7 @@
 
 ## 9. 当前审计结论
 
-基于当前实现，tiny-platform 的正式口径不是简单的：
+基于当前实现，以下矩阵只描述后端同时服务不同客户端类型时的请求裁决，不代表 Vue Web 可以选择 Bearer。后端正式口径不是简单的：
 
 - A：只有 Bearer
 - B：只有 Session
@@ -296,4 +296,4 @@
 
 一句话：
 
-**tiny-platform 当前不是“JWT 与 Session 二选一”，而是“请求主体来源 + active scope 成对来源 + 冲突 fail-closed”的矩阵模型。**
+**后端是“请求主体来源 + active scope 成对来源 + 冲突 fail-closed”的矩阵模型；Vue Web 则固定为 HttpOnly Session + CSRF。**

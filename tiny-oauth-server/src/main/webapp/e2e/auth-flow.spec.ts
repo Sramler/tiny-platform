@@ -27,11 +27,11 @@ test.describe('auth flow pages', () => {
       await route.fulfill(buildCsrfResponse())
     })
 
-    await page.goto('/OIDCDebug')
+    await page.goto('/system/role')
     await page.waitForURL((url) => url.pathname === '/login', { timeout: 30_000 })
-    await expect(page).toHaveURL(/\/login\?redirect=(%2F|\/)OIDCDebug$/)
+    await expect(page).toHaveURL(/\/login\?redirect=(%2F|\/)system(%2F|\/)role$/)
     await expect(page.getByRole('heading', { name: '欢迎登录' })).toBeVisible()
-    await expect(page.locator('input[name="redirect"]')).toHaveValue('/OIDCDebug')
+    await expect(page.locator('input[name="redirect"]')).toHaveValue('/system/role')
   })
 
   test('login page sanitizes redirect and posts normalized tenant before jumping to totp verify', async ({

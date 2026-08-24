@@ -460,7 +460,7 @@ import type { ColumnsType } from 'ant-design-vue/es/table'
 import { PlusOutlined } from '@ant-design/icons-vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuth } from '@/auth/auth'
-import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import { runtimeAuthorities } from '@/auth/runtimeIdentity'
 import {
   SCHEDULING_CONSOLE_VIEW,
   SCHEDULING_CONSOLE_CONFIG,
@@ -505,7 +505,7 @@ const route = useRoute()
 const { user } = useAuth()
 
 const schedulingAuthorities = computed(() =>
-  extractAuthoritiesFromJwt(user.value?.access_token).filter((a) => a.startsWith('scheduling:')),
+  runtimeAuthorities(user.value).filter((a) => a.startsWith('scheduling:')),
 )
 const canReadScheduling = computed(
   () =>

@@ -4,7 +4,7 @@ import {
   expectTenantMismatchPayload,
   fetchSchedulingApi,
   isCrossTenantIdentityConfigured,
-  openOidcDebug,
+  openSessionApp,
   openSecondaryAuthenticatedPage,
   primaryAuthStatePath,
 } from './cross-tenant.helpers'
@@ -29,7 +29,7 @@ test.describe('real-link: tenant B is isolated from tenant A resources', () => {
       '缺少 E2E_TENANT_CODE_B / E2E_USERNAME_B / E2E_PASSWORD_B / E2E_TOTP_SECRET_B，跳过双身份跨租户回归',
     )
 
-    await openOidcDebug(page, 'secondary')
+    await openSessionApp(page, 'secondary')
     const tenantA = await openSecondaryAuthenticatedPage(
       browser,
       primaryAuthStatePath,

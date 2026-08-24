@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { openOidcDebug } from './cross-tenant.helpers'
+import { openSessionApp } from './cross-tenant.helpers'
 
 type CreateTenantPayload = {
   code: string
@@ -78,7 +78,7 @@ async function createGeneratedTenantViaApi(page: Page, payload: CreateTenantPayl
 }
 
 async function openCreateWizard(page: Page) {
-  await openOidcDebug(page, 'platform')
+  await openSessionApp(page, 'platform')
   await page.goto('/system/tenant', { waitUntil: 'networkidle' })
   if (page.url().includes('/login')) {
     throw new Error(

@@ -412,6 +412,11 @@ describe('TenantCreateWizard.vue', () => {
 
   it('should navigate to tenant detail with specific governance section targets', async () => {
     routeMocks.fullPath = '/system/tenant?code=tenant_a'
+    apiMocks.createTenant.mockResolvedValueOnce({
+      id: '101',
+      code: 'tenant_a',
+      name: 'Tenant A',
+    })
     const wrapper = mountWizard()
     await gotoConfirmStep(wrapper)
     await clickButton(wrapper, '创建租户')

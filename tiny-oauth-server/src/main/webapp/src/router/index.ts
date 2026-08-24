@@ -1,11 +1,11 @@
 // src/router/index.ts
 import { createRouter, createWebHistory } from 'vue-router'
 import type { NavigationGuard, RouteLocationRaw } from 'vue-router'
-import { useAuth, consumePostLogoutRedirectMarker, completePostLogoutRedirect } from '@/auth/auth'
+import { useAuth } from '@/auth/auth'
 import logger from '@/utils/logger' // 引入日志工具
 import { getCurrentTraceId } from '@/utils/traceId'
 import { useMenuRouteState } from './menuState'
-import { getLoginMode, syncTenantContextFromAccessToken } from '@/utils/tenant'
+import { getLoginMode } from '@/utils/tenant'
 import { isBootReady } from '@/bootstrap/bootState'
 import {
   buildBootstrapRoute,
@@ -36,7 +36,7 @@ const platformUsersComponent = () => import('@/views/platform/users/PlatformUser
 
 // 路由配置
 const routes = [
-  // 登录页和回调页不使用主布局
+  // 登录页不使用主布局
   {
     path: '/login',
     name: 'Login',
@@ -77,12 +77,6 @@ const routes = [
       requiresCompletedSecurity: false,
       securityRoute: true,
     },
-  },
-  {
-    path: '/callback',
-    name: 'OidcCallback',
-    component: () => import('@/views/OidcCallback.vue'),
-    meta: { title: '登录回调', requiresAuth: false, requiresPermission: false },
   },
   // 错误页面保持独立（不需要主布局，全屏显示）
   {
@@ -296,12 +290,6 @@ const routes = [
       // },
 
       {
-        path: 'OIDCDebug',
-        name: 'OIDCDebug',
-        component: () => import('@/views/OIDCDebug.vue'),
-        meta: { requiresAuth: true, title: 'OIDC 调试工具' },
-      },
-      {
         path: 'platform/dicts',
         name: 'PlatformDicts',
         redirect: () => ({
@@ -469,20 +457,11 @@ function resolvePlatformRuntimeBridgePath(path: string): string | null {
 export const authGuard: NavigationGuard = async (to) => {
   if (isBootstrapBypassPath(to.path)) {
     if (isLoginPath(to.path)) {
-      const completedPostLogout = await completePostLogoutRedirect(window.location.href)
-      if (!completedPostLogout) {
-        consumePostLogoutRedirectMarker()
-      }
       if (authContext.isAuthenticated.value) {
         return isBootReady() && menuRouteState.loaded ? '/' : buildBootstrapRoute('/')
       }
     }
     return true
-  }
-
-  const completedPostLogout = await completePostLogoutRedirect(window.location.href)
-  if (completedPostLogout || consumePostLogoutRedirectMarker()) {
-    return buildLoginRoute('/')
   }
 
   if (!isBootReady() || !menuRouteState.loaded) {
@@ -503,7 +482,6 @@ export const platformRuntimeBridgeGuard: NavigationGuard = async (to) => {
   if (!isBootReady() || !menuRouteState.loaded || !authContext.isAuthenticated.value) {
     return true
   }
-  syncTenantContextFromAccessToken(authContext.user.value?.access_token)
   if (getLoginMode() !== 'PLATFORM') {
     return true
   }

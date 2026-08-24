@@ -176,7 +176,7 @@ import {
   AUDIT_AUTHENTICATION_EXPORT_AUTHORITIES,
   AUDIT_AUTHENTICATION_VIEW_AUTHORITIES,
 } from '@/constants/permission'
-import { decodeJwtPayload, extractAuthoritiesFromJwt } from '@/utils/jwt'
+import { isPlatformPrincipal, runtimeAuthorities } from '@/auth/runtimeIdentity'
 import type { Dayjs } from 'dayjs'
 import type { Key } from 'ant-design-vue/es/_util/type'
 
@@ -190,8 +190,7 @@ type QueryModel = {
 }
 
 const { user } = useAuth()
-const claims = computed(() => decodeJwtPayload<{ activeScopeType?: unknown }>(user.value?.access_token))
-const authorities = computed(() => new Set(extractAuthoritiesFromJwt(user.value?.access_token)))
+const authorities = computed(() => new Set(runtimeAuthorities(user.value)))
 
 function hasAnyAuthority(required: string[]) {
   return required.some((authority) => authorities.value.has(authority))
@@ -199,7 +198,7 @@ function hasAnyAuthority(required: string[]) {
 
 const canView = computed(() => hasAnyAuthority(AUDIT_AUTHENTICATION_VIEW_AUTHORITIES))
 const canExport = computed(() => hasAnyAuthority(AUDIT_AUTHENTICATION_EXPORT_AUTHORITIES))
-const isPlatformScope = computed(() => claims.value?.activeScopeType === 'PLATFORM')
+const isPlatformScope = computed(() => isPlatformPrincipal(user.value))
 
 const eventTypeOptions = AUTHENTICATION_AUDIT_EVENT_OPTIONS
 

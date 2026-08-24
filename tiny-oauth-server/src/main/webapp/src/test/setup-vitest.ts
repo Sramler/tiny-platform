@@ -1,30 +1,33 @@
 import { afterEach, vi } from 'vitest'
 
-// ---- Global mocks to keep unit tests deterministic ----
-// Prevent OIDC module side effects (env warnings, metadata fetch, silent renew).
-vi.mock('@/auth/oidc', () => {
-  const noop = () => {}
+// Legacy component fixtures are migrated incrementally from encoded JWT users to flat Session principals.
+// This test-only adapter keeps authorization assertions meaningful without reintroducing token parsing in Web runtime.
+vi.mock('@/auth/runtimeIdentity', () => {
+  const claims = (principal: Record<string, unknown> | null | undefined) => {
+    if (!principal) return null
+    if (Array.isArray(principal.authorities) || Array.isArray(principal.permissions)) return principal
+    const token = typeof principal.access_token === 'string' ? principal.access_token : ''
+    const payload = token.split('.')[1]
+    if (!payload) return principal
+    try {
+      return { ...principal, ...JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) }
+    } catch {
+      return principal
+    }
+  }
   return {
-    bindUserManagerEvents: vi.fn(),
-    ensureOidcAuthoritySynced: vi.fn().mockReturnValue('http://localhost:9000'),
-    settings: { authority: 'http://localhost:9000' },
-    oidcClient: {},
-    userManager: {
-      metadataService: {
-        getMetadata: vi.fn().mockResolvedValue({ jwks_uri: 'http://localhost:9000/jwks' }),
-      },
-      getUser: vi.fn().mockResolvedValue(null),
-      removeUser: vi.fn().mockResolvedValue(undefined),
-      signinSilent: vi.fn().mockResolvedValue(null),
-      signoutRedirect: vi.fn().mockResolvedValue(undefined),
-      events: {
-        addUserLoaded: noop,
-        addUserUnloaded: noop,
-        addSilentRenewError: noop,
-        addUserSignedOut: noop,
-        addAccessTokenExpiring: noop,
-      },
+    runtimeAuthorities: (principal: Record<string, unknown> | null | undefined) => {
+      const value = claims(principal)
+      const raw = value?.permissions ?? value?.authorities
+      return Array.isArray(raw) ? raw.map(String) : typeof raw === 'string' ? raw.split(/[,\s]+/).filter(Boolean) : []
     },
+    runtimeUserId: (principal: Record<string, unknown> | null | undefined) => {
+      const value = claims(principal)
+      const parsed = Number(value?.userId ?? value?.id)
+      return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null
+    },
+    isPlatformPrincipal: (principal: Record<string, unknown> | null | undefined) =>
+      String(claims(principal)?.activeScopeType ?? '').toUpperCase() === 'PLATFORM',
   }
 })
 

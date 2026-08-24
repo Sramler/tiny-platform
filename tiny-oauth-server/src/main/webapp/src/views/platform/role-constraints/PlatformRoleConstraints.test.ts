@@ -64,23 +64,19 @@ vi.mock('@/composables/usePlatformScope', () => ({
 
 vi.mock('@/auth/auth', () => ({
   useAuth: () => ({
-    user: { value: { access_token: authMocks.token } },
+    user: {
+      get value() {
+        const permissions = authMocks.token === 't-platform-view'
+          ? ['system:role:constraint:view', 'system:role:constraint:violation:view']
+          : authMocks.token === 't-platform-edit'
+            ? ['system:role:constraint:edit']
+            : authMocks.token === 't-platform-violation'
+              ? ['system:role:constraint:violation:view']
+              : []
+        return { activeScopeType: 'PLATFORM', permissions }
+      },
+    },
   }),
-}))
-
-vi.mock('@/utils/jwt', () => ({
-  extractAuthoritiesFromJwt: (token?: string) => {
-    if (token === 't-platform-view') {
-      return ['system:role:constraint:view', 'system:role:constraint:violation:view']
-    }
-    if (token === 't-platform-edit') {
-      return ['system:role:constraint:edit']
-    }
-    if (token === 't-platform-violation') {
-      return ['system:role:constraint:violation:view']
-    }
-    return []
-  },
 }))
 
 vi.mock('vue-router', () => ({

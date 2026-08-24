@@ -6,27 +6,19 @@ import {
   writeMenuTreeCache,
 } from './menuTreeCache'
 
-function token(payload: Record<string, unknown>) {
-  return [
-    'header',
-    Buffer.from(JSON.stringify(payload)).toString('base64url'),
-    'signature',
-  ].join('.')
-}
-
 describe('menuTreeCache', () => {
   beforeEach(() => {
     window.localStorage.clear()
   })
 
-  it('builds a runtime context from token claims', () => {
-    const context = resolveMenuTreeRuntimeContext(token({
+  it('builds a runtime context from the session principal', () => {
+    const context = resolveMenuTreeRuntimeContext({
       userId: 7,
       activeTenantId: 9,
       activeScopeType: 'TENANT',
       activeScopeId: 9,
       permissionsVersion: 'perm-v1',
-    }))
+    })
 
     expect(context).toMatchObject({
       userId: '7',
@@ -38,13 +30,13 @@ describe('menuTreeCache', () => {
   })
 
   it('stores menus behind an index that is scoped by permissions version', () => {
-    const context = resolveMenuTreeRuntimeContext(token({
+    const context = resolveMenuTreeRuntimeContext({
       userId: 7,
       activeTenantId: 9,
       activeScopeType: 'TENANT',
       activeScopeId: 9,
       permissionsVersion: 'perm-v1',
-    }))!
+    })!
     const menus = [{ id: 1, name: 'sys', title: '系统' }]
 
     writeMenuTreeCache(context, {

@@ -172,6 +172,9 @@ jobs:
       - name: Install webapp dependencies
         run: npm install
 
+      - name: Verify Vue Web Session-only boundary
+        run: npm run verify:session-boundary
+
       - name: Type check
         run: npm run type-check
 

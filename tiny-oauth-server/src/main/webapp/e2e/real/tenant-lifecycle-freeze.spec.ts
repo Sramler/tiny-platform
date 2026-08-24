@@ -5,7 +5,7 @@ import {
   deriveTenantCodeForTenantScope,
   requireRealLinkPlatformTenantCode,
 } from '../setup/real.global.setup'
-import { openOidcDebug } from './cross-tenant.helpers'
+import { openSessionApp } from './cross-tenant.helpers'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -249,7 +249,7 @@ test.describe('real-link: tenant lifecycle freeze', () => {
     let tenantCanBeRestored = false
 
     try {
-      await openOidcDebug(platformPage, 'platform')
+      await openSessionApp(platformPage, 'platform')
       await assertSessionOnlyBrowserState(platformPage, '平台管理员')
       const tenantCode = deriveTenantCodeForTenantScope(
         process.env.E2E_TENANT_CODE!.trim(),
@@ -284,7 +284,7 @@ test.describe('real-link: tenant lifecycle freeze', () => {
       // 2) 租户用户的纯 Session 登录态下，写操作必须成功。
       // 前序安全用例可能有意触发 Session/权限版本轮换；本场景以真实登录恢复自己的身份，
       // 不把 globalSetup 时的同一个服务端 JSESSIONID 当成跨用例永久凭证。
-      await openOidcDebug(page, 'primary')
+      await openSessionApp(page, 'primary')
       await assertSessionOnlyBrowserState(page, '租户用户')
       const created = await createTaskType(page, 'freeze-smoke')
       expect(created.status, `创建调度任务类型失败: ${created.body}`).toBe(200)

@@ -198,7 +198,7 @@ import VueDraggable from 'vuedraggable'
 import MenuForm from './MenuForm.vue'
 import Icon from '@/components/Icon.vue' // 通用图标回显组件
 import { getRuntimeUiActions } from '@/api/resource'
-import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import { runtimeAuthorities } from '@/auth/runtimeIdentity'
 import {
   MENU_MANAGEMENT_READ_AUTHORITIES,
 } from '@/constants/permission'
@@ -231,7 +231,7 @@ const query = ref<MenuQueryState>({
 // 表格数据
 const tableData = ref<MenuItemEx[]>([])
 const { user } = useAuth()
-const menuAuthorities = computed(() => new Set(extractAuthoritiesFromJwt(user.value?.access_token)))
+const menuAuthorities = computed(() => new Set(runtimeAuthorities(user.value)))
 
 function hasAnyMenuAuthority(requiredAuthorities: string[]) {
   return requiredAuthorities.some((authority) => menuAuthorities.value.has(authority))

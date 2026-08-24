@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import type { Key } from 'ant-design-vue/es/_util/type'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/auth/auth'
-import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import { runtimeAuthorities } from '@/auth/runtimeIdentity'
 import {
   PLATFORM_USER_MANAGEMENT_READ_AUTHORITIES,
   TENANT_MANAGEMENT_READ_AUTHORITIES,
@@ -24,7 +24,7 @@ const { isPlatformScope } = usePlatformScope()
 const route = useRoute()
 const router = useRouter()
 
-const authorities = computed(() => new Set(extractAuthoritiesFromJwt(user.value?.access_token)))
+const authorities = computed(() => new Set(runtimeAuthorities(user.value)))
 
 function hasAnyAuthority(requiredAuthorities: string[]) {
   return requiredAuthorities.some((authority) => authorities.value.has(authority))

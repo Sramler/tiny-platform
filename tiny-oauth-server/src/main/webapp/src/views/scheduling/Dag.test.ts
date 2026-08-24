@@ -29,12 +29,8 @@ vi.mock('vue-router', async (importOriginal) => {
 
 vi.mock('@/auth/auth', () => ({
   useAuth: () => ({
-    user: { value: { access_token: 'x.y.z' } },
+    user: { value: { permissions: ['scheduling:console:config', 'scheduling:run:control'] } },
   }),
-}))
-
-vi.mock('@/utils/jwt', () => ({
-  extractAuthoritiesFromJwt: () => ['scheduling:console:config', 'scheduling:run:control'],
 }))
 
 const PassThrough = defineComponent({

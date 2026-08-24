@@ -512,7 +512,7 @@ const submitState = ref<'editing' | 'submitting' | 'submit-success' | 'submit-fa
 const submitError = ref('')
 const submitBlockingIssues = ref<TenantPrecheckIssue[]>([])
 const submitResult = ref<{
-  tenantId: number | null
+  tenantId: string | null
   tenantCode?: string
   tenantName?: string
   initialAdminUsername: string
@@ -821,9 +821,10 @@ async function submitCreate() {
   submitError.value = ''
   submitBlockingIssues.value = []
   try {
-    const created = await createTenant(payload) as { id?: number; code?: string; name?: string }
+    const created = await createTenant(payload)
+    const createdTenantId = created?.id == null ? '' : String(created.id).trim()
     submitResult.value = {
-      tenantId: typeof created?.id === 'number' ? created.id : null,
+      tenantId: createdTenantId || null,
       tenantCode: created?.code ?? payload.code,
       tenantName: created?.name ?? payload.name,
       initialAdminUsername: payload.initialAdminUsername,

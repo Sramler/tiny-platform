@@ -437,7 +437,7 @@ import { useAuth } from '@/auth/auth'
 import { message, Modal } from 'ant-design-vue'
 import { ReloadOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons-vue'
 import type { Key } from 'ant-design-vue/es/_util/type'
-import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import { runtimeAuthorities } from '@/auth/runtimeIdentity'
 import {
   ROLE_CONSTRAINT_VIEW,
   ROLE_CONSTRAINT_EDIT,
@@ -454,7 +454,7 @@ import {
 import type { RoleHierarchy, RoleMutex, RolePrerequisite, RoleCardinality, RoleViolation } from '@/api/roleConstraint'
 
 const { user } = useAuth()
-const authorities = computed(() => new Set(extractAuthoritiesFromJwt(user.value?.access_token)))
+const authorities = computed(() => new Set(runtimeAuthorities(user.value)))
 
 function hasAuthority(perm: string) {
   return authorities.value.has(perm)

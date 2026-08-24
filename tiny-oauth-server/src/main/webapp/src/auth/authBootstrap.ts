@@ -1,13 +1,4 @@
-import { authRuntimeConfig } from './config'
-import {
-  completePostLogoutRedirect,
-  consumePostLogoutRedirectMarker,
-  ensureAuthInitialized,
-  trySilentLoginFromPlatformSessionDetailed,
-  useAuth,
-  type SilentLoginErrorCode,
-} from './auth'
-import { getTenantCode } from '@/utils/tenant'
+import { ensureAuthInitialized, useAuth } from './auth'
 
 export type AuthBootstrapStatus =
   | 'authenticated'
@@ -26,96 +17,17 @@ export type AuthBootstrapStatus =
 export interface AuthBootstrapResult {
   status: AuthBootstrapStatus
   message?: string
-  errorCode?: SilentLoginErrorCode | 'post_logout' | 'unknown'
+  errorCode?: string
 }
 
-const LOGIN_REQUIRED_CODES = new Set<SilentLoginErrorCode>([
-  'login_required',
-  'interaction_required',
-  'consent_required',
-  'invalid_state',
-])
-
-export async function restoreAuthState(url = window.location.href): Promise<AuthBootstrapResult> {
-  const auth = useAuth()
-
+export async function restoreAuthState(): Promise<AuthBootstrapResult> {
   try {
-    const completedPostLogout = await completePostLogoutRedirect(url)
-    if (completedPostLogout || consumePostLogoutRedirectMarker()) {
-      return {
-        status: 'post_logout',
-        errorCode: 'post_logout',
-        message: '已完成退出回跳',
-      }
-    }
-
     await ensureAuthInitialized()
-    if (auth.isAuthenticated.value) {
-      return { status: 'authenticated' }
-    }
-
-    if (authRuntimeConfig.sessionOnly) {
-      return {
-        status: 'login_required',
-        errorCode: 'login_required',
-        message: '没有可用的服务端登录会话',
-      }
-    }
-
-    const tenantCode = getTenantCode()
-    if (tenantCode) {
-      return {
-        status: 'tenant_authorize_required',
-        message: '需要跳转认证中心完成登录',
-      }
-    }
-
-    if (!authRuntimeConfig.enablePlatformSessionSilentLogin) {
-      return {
-        status: 'anonymous',
-        errorCode: 'login_required',
-        message: '未启用平台 Session 静默桥接',
-      }
-    }
-
-    const silentResult = await trySilentLoginFromPlatformSessionDetailed()
-    if (silentResult.ok) {
-      return { status: 'authenticated' }
-    }
-
-    if (LOGIN_REQUIRED_CODES.has(silentResult.errorCode)) {
-      return {
-        status:
-          silentResult.errorCode === 'login_required'
-            ? 'login_required'
-            : silentResult.errorCode === 'interaction_required'
-              ? 'interaction_required'
-              : silentResult.errorCode === 'consent_required'
-                ? 'consent_required'
-                : 'invalid_state',
-        errorCode: silentResult.errorCode,
-        message: silentResult.message,
-      }
-    }
-    if (silentResult.errorCode === 'timeout' || silentResult.errorCode === 'network_error') {
-      return {
-        status: silentResult.errorCode,
-        errorCode: silentResult.errorCode,
-        message: silentResult.message,
-      }
-    }
-    if (silentResult.errorCode === 'cookie_blocked') {
-      return {
-        status: 'cookie_blocked',
-        errorCode: 'cookie_blocked',
-        message: silentResult.message,
-      }
-    }
-
+    if (useAuth().isAuthenticated.value) return { status: 'authenticated' }
     return {
-      status: 'anonymous',
-      errorCode: silentResult.errorCode,
-      message: silentResult.message,
+      status: 'login_required',
+      errorCode: 'login_required',
+      message: '没有可用的服务端登录会话',
     }
   } catch (error) {
     return {

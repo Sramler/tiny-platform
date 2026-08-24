@@ -246,13 +246,9 @@ java -jar app.jar
 # .env.example（配置模板）
 # 复制为 .env.local 后修改
 
-# API 配置
-VITE_API_BASE_URL=http://localhost:9000
-
-# OIDC 配置
-VITE_OIDC_AUTHORITY=http://localhost:9000
-VITE_OIDC_CLIENT_ID=web-frontend
-VITE_OIDC_REDIRECT_URI=http://localhost:5173/callback
+# 同源 BFF 配置；空值表示浏览器使用当前 origin，开发时由 Vite server-side proxy 转发
+VITE_API_BASE_URL=
+VITE_DEV_BACKEND_TARGET=http://localhost:9000
 
 # 日志配置
 VITE_ENABLE_CONSOLE_LOG=true

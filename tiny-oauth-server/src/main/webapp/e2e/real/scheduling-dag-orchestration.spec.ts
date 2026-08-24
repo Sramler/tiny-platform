@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { fetchSchedulingApi, openOidcDebug } from './cross-tenant.helpers'
+import { fetchSchedulingApi, openSessionApp } from './cross-tenant.helpers'
 
 const parallelDagBaseCode = process.env.E2E_PARALLEL_DAG_CODE_BASE ?? 'sales-report-pipeline'
 const serialDagBaseCode = process.env.E2E_SERIAL_DAG_CODE_BASE ?? 'serial-sales-pipeline'
@@ -53,7 +53,7 @@ function nodeDialog(page: Page): Locator {
 }
 
 async function openAuthenticatedShell(page: Page) {
-  await openOidcDebug(page, 'primary')
+  await openSessionApp(page, 'primary')
 }
 
 async function openDagList(page: Page) {

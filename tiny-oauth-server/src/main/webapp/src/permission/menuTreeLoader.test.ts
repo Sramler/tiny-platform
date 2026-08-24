@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-  getAccessToken: vi.fn(),
+  user: { value: null as Record<string, unknown> | null },
   fetchMenuTreeSnapshot: vi.fn(),
 }))
 
 vi.mock('@/auth/auth', () => ({
   useAuth: () => ({
-    getAccessToken: mocks.getAccessToken,
+    user: mocks.user,
   }),
 }))
 
@@ -15,25 +15,17 @@ vi.mock('@/api/menu', () => ({
   fetchMenuTreeSnapshot: mocks.fetchMenuTreeSnapshot,
 }))
 
-function token(payload: Record<string, unknown>) {
-  return [
-    'header',
-    Buffer.from(JSON.stringify(payload)).toString('base64url'),
-    'signature',
-  ].join('.')
-}
-
 describe('menuTreeLoader', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     window.localStorage.clear()
-    mocks.getAccessToken.mockResolvedValue(token({
+    mocks.user.value = {
       userId: 7,
       activeTenantId: 9,
       activeScopeType: 'TENANT',
       activeScopeId: 9,
       permissionsVersion: 'perm-v1',
-    }))
+    }
   })
 
   it('stores a fresh network result with its server ETag', async () => {

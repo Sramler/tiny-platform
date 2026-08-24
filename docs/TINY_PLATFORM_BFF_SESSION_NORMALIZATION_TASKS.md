@@ -201,8 +201,8 @@ Vue /login
 - [x] BFF-02 同源相对请求和真实路径代理。
 - [x] BFF-03 Cookie 配置收口。
 - [x] BFF-04 real-link Session 化；global setup 使用 HttpOnly `JSESSIONID` + CSRF 完成派生租户初始化，storageState 不再依赖 OIDC token。
-- [x] BFF-05 去伪 JWT；Session 身份直接使用 `/sys/users/current` 内存快照，`access_token` 为空，不再生成 `session.<payload>.ui-only`。
-- [x] BFF-06 Web/Bearer 默认分轨；Web 默认 Session-only，只有显式设置 `VITE_AUTH_SESSION_ONLY=false` 才进入 OIDC/Bearer 兼容轨。
+- [x] BFF-05 去伪 JWT；Session 身份直接使用 `/sys/users/current` 内存快照，不再构造或解析浏览器 token。
+- [x] BFF-06 Web/Bearer 物理分轨；Vue Web 固定为 HttpOnly Session + CSRF，无模式开关、OIDC browser SDK、callback、silent renew 或 Authorization 注入；CLI/移动端/第三方/服务间 Bearer 仅由后端 `/oauth2/**` 支持。
 - [x] BFF-07 API 载体与首页治理（全仓 Controller 映射漂移门禁及 202–214 载体迁移已落地；本地 full-chain、一次性 fresh DB、existing MySQL SpringLiquibase 与真实浏览器回归均全绿；代码提交 `af9c340` 为 12/12，最终交付 HEAD `ee95964` 为 11/11）。
 - [ ] BFF-08 集群和生产安全（memory/jdbc/redis 参数化、prod memory 禁用、JDBC/Redis 单节点真实链路已完成；多节点切换及强制失效联动待验证）。
 

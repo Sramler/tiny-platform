@@ -144,7 +144,7 @@ let isRedirectingTo401 = false
 async function handleUnauthorized(): Promise<void> {
   const currentPath = window.location.pathname
   // 避免在登录页、回调页和 401 页面重复跳转
-  if (currentPath !== '/login' && currentPath !== '/callback' && currentPath !== '/exception/401') {
+  if (currentPath !== '/login' && currentPath !== '/exception/401') {
     // 如果已经在跳转中，避免重复跳转
     if (isRedirectingTo401) {
       console.log('[401] 已在跳转中，跳过重复跳转')
@@ -201,7 +201,7 @@ async function handleUnauthorized(): Promise<void> {
           console.log('[401] ✅ 跳转成功，当前路径:', currentPath)
           clearInterval(checkInterval)
           isRedirectingTo401 = false // 重置标志
-        } else if (currentPath !== '/login' && currentPath !== '/callback') {
+        } else if (currentPath !== '/login') {
           // 如果还在原页面或其他页面，尝试强制跳转
           console.warn('[401] ⚠️ 跳转可能未生效，当前路径:', currentPath, '尝试使用 replace')
           clearInterval(checkInterval)

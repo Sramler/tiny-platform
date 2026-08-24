@@ -26,12 +26,8 @@ vi.mock('vue-router', () => ({
 
 vi.mock('@/auth/auth', () => ({
   useAuth: () => ({
-    user: { value: { access_token: 'platform-token' } },
+    user: { get value() { return { activeScopeType: 'PLATFORM', permissions: authMocks.authorities } } },
   }),
-}))
-
-vi.mock('@/utils/jwt', () => ({
-  extractAuthoritiesFromJwt: () => authMocks.authorities,
 }))
 
 vi.mock('@/composables/usePlatformScope', () => ({

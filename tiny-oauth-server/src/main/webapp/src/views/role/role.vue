@@ -325,7 +325,7 @@ import { userList } from '@/api/user' // 引入用户API
 import { getOrgList } from '@/api/org'
 import ResourceTransfer from './ResourceTransfer.vue' // 资源分配弹窗组件
 import { getRuntimeUiActions } from '@/api/resource'
-import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import { runtimeAuthorities } from '@/auth/runtimeIdentity'
 import {
   ROLE_MANAGEMENT_READ_AUTHORITIES,
 } from '@/constants/permission'
@@ -333,7 +333,7 @@ import {
 // 查询条件
 const query = ref({ name: '', code: '' })
 const { user } = useAuth()
-const roleAuthorities = computed(() => new Set(extractAuthoritiesFromJwt(user.value?.access_token)))
+const roleAuthorities = computed(() => new Set(runtimeAuthorities(user.value)))
 
 function hasAnyRoleAuthority(requiredAuthorities: string[]) {
   return requiredAuthorities.some((authority) => roleAuthorities.value.has(authority))

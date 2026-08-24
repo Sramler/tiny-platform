@@ -30,7 +30,7 @@ if (tenantCode.trim().toLowerCase() === 'default') {
     'E2E_TENANT_CODE 不允许使用 default：当前环境 default 租户可能处于 FROZEN 状态，会导致 /login 被拒绝。请使用专用未冻结测试租户编码。',
   )
 }
-const landingPath = '/OIDCDebug'
+const landingPath = '/'
 
 function decodeBase32(secret: string) {
   const normalized = secret.replace(/=+$/g, '').replace(/\s+/g, '').toUpperCase()
@@ -102,20 +102,16 @@ setup('authenticate real scheduling e2e user', async ({ page }) => {
   await page.getByLabel('密码').fill(password)
   await page.locator('button[type="submit"]').click()
 
-  await page.waitForURL(/\/(callback|self\/security\/totp-(bind|verify)|OIDCDebug)/, {
-    timeout: 90_000,
-  })
+  await page.waitForURL((url) => !url.pathname.includes('/login'), { timeout: 90_000 })
   await handleTotpIfRequired(page)
 
-  await page.waitForURL(/\/(callback|OIDCDebug|exception\/(403|404)|$)/, {
-    timeout: 90_000,
-  })
+  await page.waitForURL((url) => !url.pathname.includes('/self/security/totp-'), { timeout: 90_000 })
   if (!page.url().includes(landingPath)) {
     await page.goto(landingPath)
   }
-  await expect(page.getByRole('heading', { name: 'OIDC 调试工具' })).toBeVisible({
+  await expect.poll(async () => page.evaluate(async () => (await fetch('/sys/users/current')).ok), {
     timeout: 90_000,
-  })
+  }).toBe(true)
 
   await page.context().storageState({ path: authStatePath })
 })

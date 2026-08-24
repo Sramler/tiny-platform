@@ -90,7 +90,21 @@ vi.mock('ant-design-vue', () => ({
 
 vi.mock('@/auth/auth', () => ({
   useAuth: () => ({
-    user: { value: { access_token: authMocks.token } },
+    user: {
+      get value() {
+        const permissions = authMocks.token === 'platform-token'
+          ? ['platform:user:list', 'platform:user:create', 'platform:user:disable', 'platform:role:approval:list']
+          : authMocks.token === 'platform-readonly-token'
+            ? ['platform:user:list']
+            : authMocks.token === 'platform-tenant-token'
+              ? ['platform:user:list', 'platform:user:create', 'platform:user:disable', 'system:tenant:list', 'system:tenant:view', 'system:user:list']
+              : []
+        return {
+          activeScopeType: authMocks.token.startsWith('platform-') ? 'PLATFORM' : 'TENANT',
+          permissions,
+        }
+      },
+    },
     fetchWithAuth: authMocks.fetchWithAuth,
   }),
 }))
@@ -98,44 +112,6 @@ vi.mock('@/auth/auth', () => ({
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: routerMocks.push, replace: routerMocks.replace }),
   useRoute: () => routeState,
-}))
-
-vi.mock('@/utils/jwt', () => ({
-  decodeJwtPayload: (token?: string) => {
-    if (
-      token === 'platform-token'
-      || token === 'platform-tenant-token'
-      || token === 'platform-no-perm'
-      || token === 'platform-readonly-token'
-    ) {
-      return { activeScopeType: 'PLATFORM' }
-    }
-    return { activeScopeType: 'TENANT' }
-  },
-  extractAuthoritiesFromJwt: (token?: string) => {
-    if (token === 'platform-token') {
-      return [
-        'platform:user:list',
-        'platform:user:create',
-        'platform:user:disable',
-        'platform:role:approval:list',
-      ]
-    }
-    if (token === 'platform-readonly-token') {
-      return ['platform:user:list']
-    }
-    if (token === 'platform-tenant-token') {
-      return [
-        'platform:user:list',
-        'platform:user:create',
-        'platform:user:disable',
-        'system:tenant:list',
-        'system:tenant:view',
-        'system:user:list',
-      ]
-    }
-    return []
-  },
 }))
 
 const PassThrough = defineComponent({

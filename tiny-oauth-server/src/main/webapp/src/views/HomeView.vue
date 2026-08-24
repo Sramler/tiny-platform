@@ -11,7 +11,7 @@ import {
   type IdempotentMetricsSnapshot,
   type IdempotentTopKey,
 } from '@/api/idempotent'
-import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import { runtimeAuthorities } from '@/auth/runtimeIdentity'
 import { IDEMPOTENT_OPS_VIEW } from '@/constants/permission'
 import { getActiveTenantId, withActiveTenantQuery } from '@/utils/tenant'
 
@@ -40,7 +40,7 @@ const topKeys = ref<IdempotentTopKey[]>([])
 
 const canViewIdempotentOps = computed(() =>
   isPlatformScope.value
-    && extractAuthoritiesFromJwt(user.value?.access_token).includes(IDEMPOTENT_OPS_VIEW),
+    && runtimeAuthorities(user.value).includes(IDEMPOTENT_OPS_VIEW),
 )
 
 const successRate = computed(() => {

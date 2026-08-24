@@ -285,7 +285,6 @@ test.describe('real-link: Login.vue 平台登录', () => {
       await page.waitForURL(
         (u) =>
           !u.pathname.includes('/self/security/totp-verify') &&
-          !u.pathname.includes('/callback') &&
           !u.pathname.includes('/login'),
         { timeout: 60_000 },
       )

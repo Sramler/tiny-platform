@@ -63,7 +63,6 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { LockOutlined, LoginOutlined, HomeOutlined, InfoCircleOutlined } from '@ant-design/icons-vue'
 import { getActiveTenantId, resolveActiveTenantQueryValue, withActiveTenantQuery } from '@/utils/tenant'
-import { userManager } from '@/auth/oidc'
 import { useAuth } from '@/auth/auth'
 
 const router = useRouter()
@@ -106,23 +105,8 @@ const stopCountdown = () => {
   }
 }
 
-onMounted(async () => {
-  // ⚠️ 重要：在 401 页面加载后，清理认证状态
-  // 这样可以避免 logout() 的跳转覆盖 401 页面的显示
-  try {
-    const { user } = useAuth()
-
-    // 只清除本地状态，不触发 OIDC 登出重定向
-    // 这样可以避免 logout() 的 window.location.href 覆盖当前页面
-    if (user.value) {
-      console.log('[401] 清除本地认证状态')
-      await userManager.removeUser()
-      // user.value 是响应式的，会在 useAuth 中自动更新
-    }
-  } catch (error) {
-    console.error('[401] 清理认证状态失败:', error)
-  }
-
+onMounted(() => {
+  useAuth().user.value = null
   // 开始倒计时
   startCountdown()
 })

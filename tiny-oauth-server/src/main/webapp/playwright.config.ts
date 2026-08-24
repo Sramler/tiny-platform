@@ -35,11 +35,6 @@ export default defineConfig({
     env: {
       // BFF 与前端同源，不使用伪 `/api` 前缀；mock-assisted E2E 也必须遵循生产契约。
       VITE_API_BASE_URL: baseURL,
-      VITE_AUTH_ENABLE_PLATFORM_SESSION_SILENT_LOGIN: 'false',
-      VITE_OIDC_REDIRECT_URI: `${baseURL}/callback`,
-      VITE_OIDC_POST_LOGOUT_REDIRECT_URI: `${baseURL}/`,
-      VITE_OIDC_SILENT_REDIRECT_URI: `${baseURL}/silent-renew.html`,
-      VITE_ENABLE_OIDC_TRACE: 'false',
     },
   },
   projects: [

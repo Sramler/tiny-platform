@@ -33,7 +33,7 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '@/auth/auth'
-import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import { runtimeAuthorities } from '@/auth/runtimeIdentity'
 import { usePlatformScope } from '@/composables/usePlatformScope'
 import { WORKFLOW_CONSOLE_VIEW } from '@/constants/permission'
 import {
@@ -53,7 +53,7 @@ const { user } = useAuth()
 const { isPlatformScope } = usePlatformScope()
 
 const workflowAuthorities = computed(() =>
-  extractAuthoritiesFromJwt(user.value?.access_token).filter((authority) =>
+  runtimeAuthorities(user.value).filter((authority) =>
     authority.startsWith('workflow:'),
   ),
 )

@@ -173,7 +173,7 @@ import { useRoute } from 'vue-router'
 import { message } from 'ant-design-vue'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons-vue'
 import { useAuth } from '@/auth/auth'
-import { extractAuthoritiesFromJwt, extractUserIdFromJwt } from '@/utils/jwt'
+import { runtimeAuthorities, runtimeUserId } from '@/auth/runtimeIdentity'
 import { listPlatformRoleOptions, type PlatformRoleOption } from '@/api/platform-role'
 import {
   approvePlatformRoleAssignmentRequest,
@@ -196,7 +196,7 @@ const { user } = useAuth()
 const { isPlatformScope } = usePlatformScope()
 const route = useRoute()
 
-const authorities = computed(() => new Set(extractAuthoritiesFromJwt(user.value?.access_token)))
+const authorities = computed(() => new Set(runtimeAuthorities(user.value)))
 
 function hasAnyAuthority(codes: string[]) {
   return codes.some((c) => authorities.value.has(c))
@@ -246,7 +246,7 @@ const reviewMode = ref<'approve' | 'reject'>('approve')
 const reviewRecord = ref<PlatformRoleAssignmentRequestItem | null>(null)
 const reviewComment = ref('')
 
-const currentUserId = computed(() => extractUserIdFromJwt(user.value?.access_token))
+const currentUserId = computed(() => runtimeUserId(user.value))
 
 const columns = [
   { title: 'ID', dataIndex: 'id', width: 72 },

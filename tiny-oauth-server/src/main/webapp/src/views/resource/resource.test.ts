@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { defineComponent, nextTick } from 'vue'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const apiMocks = vi.hoisted(() => ({
   getResourceTree: vi.fn(),
@@ -80,7 +80,6 @@ const ResourceTableStub = defineComponent({
 })
 
 import { ACTIVE_SCOPE_CHANGED_EVENT } from '@/utils/activeScopeEvents'
-import { setSessionClaimsSnapshot } from '@/utils/jwt'
 import Resource from '@/views/resource/resource.vue'
 
 function createToken(authorities: string[]) {
@@ -109,10 +108,6 @@ describe('resource.vue', () => {
     authMocks.authUser.value = {
       access_token: createToken(['system:resource:list']),
     }
-  })
-
-  afterEach(() => {
-    setSessionClaimsSnapshot(null)
   })
 
   it('should display resource title and load tree on mount', async () => {
@@ -260,8 +255,7 @@ describe('resource.vue', () => {
   })
 
   it('should read management authority from the in-memory Session snapshot when access token is empty', async () => {
-    setSessionClaimsSnapshot({ authorities: ['system:resource:list'] })
-    authMocks.authUser.value = { access_token: '' }
+    authMocks.authUser.value = { authorities: ['system:resource:list'] } as any
 
     const wrapper = mount(Resource, {
       global: {

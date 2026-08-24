@@ -417,7 +417,7 @@ import {
   resumeDagRunNode,
 } from '@/api/scheduling'
 import { useAuth } from '@/auth/auth'
-import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import { runtimeAuthorities } from '@/auth/runtimeIdentity'
 import { SCHEDULING_RUN_CONTROL, SCHEDULING_WILDCARD } from '@/constants/permission'
 import {
   buildPlatformSchedulingQuery,
@@ -429,7 +429,7 @@ const route = useRoute()
 const { user } = useAuth()
 
 const schedulingAuthorities = computed(() =>
-  extractAuthoritiesFromJwt(user.value?.access_token).filter((a) => a.startsWith('scheduling:')),
+  runtimeAuthorities(user.value).filter((a) => a.startsWith('scheduling:')),
 )
 const canOperateSchedulingRun = computed(
   () =>

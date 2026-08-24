@@ -1,5 +1,5 @@
 import type { MenuItem, MenuTreeSnapshot } from '@/api/menu'
-import { decodeJwtPayload } from '@/utils/jwt'
+import type { SessionPrincipal } from '@/auth/auth'
 
 const CACHE_SCHEMA_VERSION = 'v1'
 const CACHE_PREFIX = 'tiny-platform:menu-tree'
@@ -35,15 +35,6 @@ interface MenuTreeCacheEntry {
   updatedAt: number
 }
 
-type RuntimeClaims = {
-  sub?: unknown
-  userId?: unknown
-  activeTenantId?: unknown
-  activeScopeType?: unknown
-  activeScopeId?: unknown
-  permissionsVersion?: unknown
-}
-
 function storage(): Storage | null {
   try {
     return typeof window === 'undefined' ? null : window.localStorage
@@ -61,18 +52,21 @@ function encodeKey(value: string): string {
   return encodeURIComponent(value).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16)}`)
 }
 
-export function resolveMenuTreeRuntimeContext(token?: string | null): MenuTreeRuntimeContext | null {
-  const claims = decodeJwtPayload<RuntimeClaims>(token)
-  if (!claims) return null
-  const userId = stableString(claims.userId ?? claims.sub)
-  const permissionsVersion = stableString(claims.permissionsVersion)
+export function resolveMenuTreeRuntimeContext(
+  principal?: SessionPrincipal | null,
+): MenuTreeRuntimeContext | null {
+  if (!principal) return null
+  const userId = stableString(principal.userId ?? principal.id)
+  const permissionsVersion = stableString(principal.permissionsVersion)
   if (userId === 'none' || permissionsVersion === 'none') return null
 
-  const activeTenantId = stableString(claims.activeTenantId)
+  const activeTenantId = stableString(principal.activeTenantId)
   const activeScopeType = stableString(
-    claims.activeScopeType ?? (activeTenantId === 'none' ? 'PLATFORM' : 'TENANT'),
+    principal.activeScopeType ?? (activeTenantId === 'none' ? 'PLATFORM' : 'TENANT'),
   ).toUpperCase()
-  const activeScopeId = stableString(claims.activeScopeId ?? (activeScopeType === 'TENANT' ? activeTenantId : null))
+  const activeScopeId = stableString(
+    principal.activeScopeId ?? (activeScopeType === 'TENANT' ? activeTenantId : null),
+  )
 
   return {
     userId,

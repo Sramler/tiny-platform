@@ -113,7 +113,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useAuth } from '@/auth/auth'
 import { message, Modal } from 'ant-design-vue'
 import { ReloadOutlined, PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons-vue'
-import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import { runtimeAuthorities } from '@/auth/runtimeIdentity'
 import {
   DATASCOPE_VIEW_AUTHORITIES,
   DATASCOPE_EDIT_AUTHORITIES,
@@ -124,7 +124,7 @@ import type { DataScope } from '@/api/datascope'
 import type { DefaultOptionType } from 'ant-design-vue/es/select'
 
 const { user } = useAuth()
-const authorities = computed(() => new Set(extractAuthoritiesFromJwt(user.value?.access_token)))
+const authorities = computed(() => new Set(runtimeAuthorities(user.value)))
 
 function hasAnyAuthority(required: string[]) {
   return required.some((a) => authorities.value.has(a))

@@ -20,7 +20,6 @@ function manualChunks(id: string): string | undefined {
   if (!id.includes('node_modules')) return undefined
   if (id.includes('ant-design-vue')) return 'vendor-antd'
   if (id.includes('@ant-design/icons-vue')) return 'vendor-antd-icons'
-  if (id.includes('oidc-client-ts')) return 'vendor-oidc'
   if (id.includes('node_modules/jose')) return 'vendor-oidc'
   if (id.includes('axios')) return 'vendor-axios'
   if (
@@ -86,7 +85,6 @@ export default defineConfig({
     rollupOptions: {
       input: {
         index: fileURLToPath(new URL('./index.html', import.meta.url)),
-        silentRenew: fileURLToPath(new URL('./silent-renew.html', import.meta.url)),
       },
       output: {
         manualChunks,

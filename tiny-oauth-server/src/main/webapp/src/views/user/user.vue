@@ -292,7 +292,7 @@ import { getUserRoles, updateUserRoles } from '@/api/user'
 import { getOrgList } from '@/api/org'
 import { usePlatformScope } from '@/composables/usePlatformScope'
 import request from '@/utils/request'
-import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import { runtimeAuthorities } from '@/auth/runtimeIdentity'
 import {
   USER_MANAGEMENT_READ_AUTHORITIES,
 } from '@/constants/permission'
@@ -307,7 +307,7 @@ const query = ref({
 const tableData = ref<any[]>([])
 const { user } = useAuth()
 const { isPlatformScope } = usePlatformScope()
-const userAuthorities = computed(() => new Set(extractAuthoritiesFromJwt(user.value?.access_token)))
+const userAuthorities = computed(() => new Set(runtimeAuthorities(user.value)))
 
 function hasAnyUserAuthority(requiredAuthorities: string[]) {
   return requiredAuthorities.some((authority) => userAuthorities.value.has(authority))

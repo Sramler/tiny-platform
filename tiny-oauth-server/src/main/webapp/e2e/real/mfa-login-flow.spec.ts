@@ -180,7 +180,7 @@ test.describe('real-link: /login -> totp-verify -> /self/security', () => {
     // 某些测试租户首页会退化到空菜单壳页或个别 403 页面，因此不再死盯 /self/security 标题。
     await page.waitForURL(
       (url) =>
-        !url.pathname.includes('/self/security/totp-verify') && !url.pathname.includes('/callback'),
+        !url.pathname.includes('/self/security/totp-verify'),
       {
         timeout: 60_000,
       },

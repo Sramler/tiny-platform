@@ -15,7 +15,7 @@ import {
 } from '@ant-design/icons-vue'
 import VueDraggable from 'vuedraggable'
 import { useAuth } from '@/auth/auth'
-import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import { runtimeAuthorities } from '@/auth/runtimeIdentity'
 import {
   getPlatformTenantUserDetail,
   listPlatformTenantUsers,
@@ -84,7 +84,7 @@ const { user, fetchWithAuth } = useAuth()
 const { isPlatformScope } = usePlatformScope()
 const route = useRoute()
 const router = useRouter()
-const authorities = computed(() => new Set(extractAuthoritiesFromJwt(user.value?.access_token)))
+const authorities = computed(() => new Set(runtimeAuthorities(user.value)))
 
 const tenantEntries = ref<Tenant[]>([])
 const tenantLoading = ref(false)

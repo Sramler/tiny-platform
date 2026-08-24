@@ -14,8 +14,7 @@ export interface VerifiedMenuTreeResult {
 }
 
 export async function loadVerifiedMenuTree(): Promise<VerifiedMenuTreeResult> {
-  const token = await useAuth().getAccessToken()
-  const context = resolveMenuTreeRuntimeContext(token)
+  const context = resolveMenuTreeRuntimeContext(useAuth().user.value)
   const index = context ? readMenuTreeCacheIndex(context) : null
   const snapshot = await fetchMenuTreeSnapshot({ ifNoneMatch: index?.etag })
 

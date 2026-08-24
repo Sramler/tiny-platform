@@ -305,7 +305,7 @@ import {
   decommissionTenant,
 } from '@/api/tenant'
 import { getRuntimeUiActions } from '@/api/resource'
-import { decodeJwtPayload, extractAuthoritiesFromJwt } from '@/utils/jwt'
+import { isPlatformPrincipal, runtimeAuthorities } from '@/auth/runtimeIdentity'
 import {
   TENANT_MANAGEMENT_READ_AUTHORITIES,
 } from '@/constants/permission'
@@ -326,9 +326,8 @@ const tableData = ref<any[]>([])
 const { user } = useAuth()
 const router = useRouter()
 const route = useRoute()
-const claims = computed(() => decodeJwtPayload<{ activeScopeType?: unknown }>(user.value?.access_token))
-const authorities = computed(() => new Set(extractAuthoritiesFromJwt(user.value?.access_token)))
-const isPlatformScope = computed(() => claims.value?.activeScopeType === 'PLATFORM')
+const authorities = computed(() => new Set(runtimeAuthorities(user.value)))
+const isPlatformScope = computed(() => isPlatformPrincipal(user.value))
 
 function hasAnyAuthority(requiredAuthorities: string[]) {
   return isPlatformScope.value && requiredAuthorities.some((authority) => authorities.value.has(authority))

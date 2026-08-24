@@ -107,7 +107,8 @@ export type TenantPrecheckResponse = {
 }
 
 export type TenantCreateResponse = {
-  id?: number
+  // 后端 Long 按字符串序列化以避免浏览器 Number 精度丢失。
+  id?: string | number
   code?: string
   name?: string
 }

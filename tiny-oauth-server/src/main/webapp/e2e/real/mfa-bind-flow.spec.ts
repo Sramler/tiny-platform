@@ -158,7 +158,6 @@ async function waitForFirstBindReady(page: import('@playwright/test').Page): Pro
   await page.waitForURL(
     (url) =>
       !url.pathname.includes('/login') &&
-      !url.pathname.includes('/callback') &&
       !url.pathname.includes('/self/security/totp-verify'),
     { timeout: 60_000 },
   )
@@ -264,7 +263,7 @@ test.describe('real-link: 未绑定 TOTP 首绑链路', () => {
     // 绑定成功后应建立可用安全会话；落点可能是首页或空菜单壳页，不再强依赖 /self/security 页面。
     await page.waitForURL(
       (url) =>
-        !url.pathname.includes('/self/security/totp-bind') && !url.pathname.includes('/callback'),
+        !url.pathname.includes('/self/security/totp-bind'),
       {
         timeout: 60_000,
       },
@@ -295,7 +294,7 @@ test.describe('real-link: 未绑定 TOTP 首绑链路', () => {
 
     await page.waitForURL(
       (url) =>
-        !url.pathname.includes('/self/security/totp-verify') && !url.pathname.includes('/callback'),
+        !url.pathname.includes('/self/security/totp-verify'),
       {
         timeout: 60_000,
       },

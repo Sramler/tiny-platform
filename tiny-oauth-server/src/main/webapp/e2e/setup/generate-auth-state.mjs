@@ -281,10 +281,8 @@ async function main() {
           (url.origin === new URL(frontendBaseURL).origin &&
             !url.pathname.includes('/login') &&
             (url.pathname === '/' ||
-              url.pathname.includes('/callback') ||
               url.pathname.includes('/self/security/totp-bind') ||
               url.pathname.includes('/self/security/totp-verify') ||
-              url.pathname.includes('/OIDCDebug') ||
               url.pathname.includes('/exception/'))),
         { timeout: 90_000 },
       )
@@ -325,8 +323,7 @@ async function main() {
         url.origin === new URL(frontendBaseURL).origin &&
         !url.pathname.includes('/login') &&
         !url.pathname.includes('/self/security/totp-bind') &&
-        !url.pathname.includes('/self/security/totp-verify') &&
-        !url.pathname.includes('/callback'),
+        !url.pathname.includes('/self/security/totp-verify'),
       { timeout: 90_000 },
     )
 

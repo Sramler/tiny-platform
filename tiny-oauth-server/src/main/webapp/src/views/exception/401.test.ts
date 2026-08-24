@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   routerPush: vi.fn(),
-  removeUser: vi.fn(),
   user: { value: { id: 1 } as { id: number } | null },
 }))
 
@@ -18,12 +17,6 @@ vi.mock('vue-router', () => ({
     push: mocks.routerPush,
   }),
   useRoute: () => routeState,
-}))
-
-vi.mock('@/auth/oidc', () => ({
-  userManager: {
-    removeUser: mocks.removeUser,
-  },
 }))
 
 vi.mock('@/auth/auth', () => ({
@@ -57,8 +50,6 @@ describe('401.vue', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     mocks.routerPush.mockReset()
-    mocks.removeUser.mockReset()
-    mocks.removeUser.mockResolvedValue(undefined)
     mocks.user.value = { id: 1 }
     routeState.path = '/exception/401'
     routeState.query = {
@@ -96,9 +87,7 @@ describe('401.vue', () => {
 
     expect(wrapper.text()).toContain('expired')
     expect(wrapper.text()).toContain('trace-401')
-    await waitFor(() => {
-      expect(mocks.removeUser).toHaveBeenCalledTimes(1)
-    })
+    expect(mocks.user.value).toBeNull()
 
     await vi.advanceTimersByTimeAsync(5000)
     await flushPromises()

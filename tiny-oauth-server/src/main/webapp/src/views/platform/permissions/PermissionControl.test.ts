@@ -32,17 +32,8 @@ vi.mock('@/api/role', () => ({
 
 vi.mock('@/auth/auth', () => ({
   useAuth: () => ({
-    user: { value: { access_token: authMocks.token } },
+    user: { get value() { return { activeScopeType: authMocks.token === 'platform-token' ? 'PLATFORM' : 'TENANT' } } },
   }),
-}))
-
-vi.mock('@/utils/jwt', () => ({
-  decodeJwtPayload: (token?: string) => {
-    if (token === 'platform-token') {
-      return { activeScopeType: 'PLATFORM' }
-    }
-    return { activeScopeType: 'TENANT' }
-  },
 }))
 
 const PassThrough = defineComponent({ template: '<div><slot /></div>' })

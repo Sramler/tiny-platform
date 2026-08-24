@@ -46,10 +46,6 @@ export function isExceptionPath(path: string): boolean {
   return path.startsWith('/exception/')
 }
 
-export function isOidcCallbackPath(path: string): boolean {
-  return path === '/callback' || path === '/oidc/callback'
-}
-
 export function isSecurityPath(path: string): boolean {
   return path === '/self/security/totp-bind' || path === '/self/security/totp-verify'
 }
@@ -61,7 +57,6 @@ export function isLoginPath(path: string): boolean {
 export function isBootstrapBypassPath(path: string): boolean {
   return (
     isBootstrapPath(path) ||
-    isOidcCallbackPath(path) ||
     isLoginPath(path) ||
     isSecurityPath(path) ||
     isExceptionPath(path)

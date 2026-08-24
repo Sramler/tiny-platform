@@ -25,20 +25,18 @@ vi.mock('@/api/platform-role', () => ({
 }))
 
 vi.mock('@/auth/auth', () => ({
-  useAuth: () => ({ user: { value: { access_token: authMocks.token } } }),
-}))
-
-vi.mock('@/utils/jwt', () => ({
-  extractAuthoritiesFromJwt: (t?: string) => {
-    if (t === 'no-approval') {
-      return ['platform:user:list']
-    }
-    if (t === 'submit-only') {
-      return ['platform:role:approval:submit']
-    }
-    return ['platform:role:approval:list']
-  },
-  extractUserIdFromJwt: () => 99,
+  useAuth: () => ({
+    user: {
+      get value() {
+        const permissions = authMocks.token === 'no-approval'
+          ? ['platform:user:list']
+          : authMocks.token === 'submit-only'
+            ? ['platform:role:approval:submit']
+            : ['platform:role:approval:list']
+        return { userId: 99, activeScopeType: 'PLATFORM', permissions }
+      },
+    },
+  }),
 }))
 
 vi.mock('@/composables/usePlatformScope', () => ({

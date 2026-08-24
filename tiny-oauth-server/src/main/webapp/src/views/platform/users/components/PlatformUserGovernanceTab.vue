@@ -16,7 +16,7 @@ import {
 } from '@ant-design/icons-vue'
 import VueDraggable from 'vuedraggable'
 import { useAuth } from '@/auth/auth'
-import { extractAuthoritiesFromJwt } from '@/utils/jwt'
+import { runtimeAuthorities } from '@/auth/runtimeIdentity'
 import {
   createPlatformUser,
   getPlatformUserDetail,
@@ -81,7 +81,7 @@ const PLATFORM_USER_INITIAL_COLUMNS: Array<TableColumnConfig<PlatformUserColumnK
 const { user } = useAuth()
 const { isPlatformScope } = usePlatformScope()
 const router = useRouter()
-const authorities = computed(() => new Set(extractAuthoritiesFromJwt(user.value?.access_token)))
+const authorities = computed(() => new Set(runtimeAuthorities(user.value)))
 
 const query = ref<{
   keyword: string
