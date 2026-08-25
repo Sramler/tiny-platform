@@ -9,7 +9,7 @@ const apiMocks = vi.hoisted(() => ({
 }))
 
 const authMocks = vi.hoisted(() => ({
-  authUser: { value: null as { access_token?: string | null } | null },
+  authUser: { value: null as Record<string, unknown> | null },
   isAuthenticated: { value: true },
 }))
 
@@ -76,10 +76,8 @@ const PassThrough = defineComponent({
 
 import Role from '@/views/role/role.vue'
 
-function createToken(authorities: string[]) {
-  const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')
-  const payload = Buffer.from(JSON.stringify({ authorities })).toString('base64url')
-  return `${header}.${payload}.signature`
+function createSessionPrincipal(authorities: string[]) {
+  return { authorities }
 }
 
 async function flushPromises() {
@@ -99,7 +97,7 @@ describe('role.vue', () => {
     apiMocks.getAllRoles.mockResolvedValue([])
     apiMocks.getRuntimeUiActions.mockResolvedValue([])
     authMocks.authUser.value = {
-      access_token: createToken(['system:role:list']),
+      ...createSessionPrincipal(['system:role:list']),
     }
     window.history.replaceState({}, '', '/system/role')
   })
@@ -142,7 +140,7 @@ describe('role.vue', () => {
 
   it('should not request role list without role management authority', async () => {
     authMocks.authUser.value = {
-      access_token: createToken(['ROLE_USER']),
+      ...createSessionPrincipal(['ROLE_USER']),
     }
 
     const wrapper = mount(Role, {
@@ -183,7 +181,7 @@ describe('role.vue', () => {
   it('should hide write buttons when runtime ui actions are missing (fail-closed)', async () => {
     apiMocks.getRuntimeUiActions.mockResolvedValue([])
     authMocks.authUser.value = {
-      access_token: createToken([
+      ...createSessionPrincipal([
         'system:role:list',
         'system:role:create',
         'system:role:edit',

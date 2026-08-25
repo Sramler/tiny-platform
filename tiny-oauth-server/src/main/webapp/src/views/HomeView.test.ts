@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   getIdempotentTopKeys: vi.fn(),
   routerPush: vi.fn(),
   messageError: vi.fn(),
-  authUser: { value: null as { access_token?: string | null } | null },
+  authUser: { value: null as Record<string, unknown> | null },
   isPlatformScope: { value: true },
 }))
 
@@ -57,10 +57,8 @@ const StatisticStub = defineComponent({
   template: '<div>{{ title }} {{ value }}</div>',
 })
 
-function createToken(authorities: string[]) {
-  const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')
-  const payload = Buffer.from(JSON.stringify({ authorities, activeScopeType: 'PLATFORM' })).toString('base64url')
-  return `${header}.${payload}.signature`
+function createSessionPrincipal(authorities: string[]) {
+  return { authorities, activeScopeType: 'PLATFORM' }
 }
 
 async function flushPromises() {
@@ -116,7 +114,7 @@ describe('HomeView.vue', () => {
 
   it('should load overview and show governance entry for platform metrics operators', async () => {
     mocks.authUser.value = {
-      access_token: createToken(['idempotent:ops:view']),
+      ...createSessionPrincipal(['idempotent:ops:view']),
     }
 
     const wrapper = mountView()
@@ -133,7 +131,7 @@ describe('HomeView.vue', () => {
 
   it('should preserve current tenant scope when opening governance page', async () => {
     mocks.authUser.value = {
-      access_token: createToken(['idempotent:ops:view']),
+      ...createSessionPrincipal(['idempotent:ops:view']),
     }
     window.localStorage.setItem('app_active_tenant_id', '7')
 
@@ -150,7 +148,7 @@ describe('HomeView.vue', () => {
 
   it('should not fetch metrics or show governance entry without authority', async () => {
     mocks.authUser.value = {
-      access_token: createToken([]),
+      ...createSessionPrincipal([]),
     }
 
     const wrapper = mountView()
@@ -165,7 +163,7 @@ describe('HomeView.vue', () => {
   it('should not fetch metrics for tenant scoped users even if authority is present', async () => {
     mocks.isPlatformScope.value = false
     mocks.authUser.value = {
-      access_token: createToken(['idempotent:ops:view']),
+      ...createSessionPrincipal(['idempotent:ops:view']),
     }
 
     const wrapper = mountView()

@@ -179,7 +179,7 @@ describe('scheduling API', () => {
 
   describe('DAG runs and stats', () => {
     it('should request DAG runs with pagination', async () => {
-      mocks.get.mockResolvedValue({ content: [{ id: 1, status: 'SUCCESS' }], totalElements: 1 })
+      mocks.get.mockResolvedValue({ content: [{ id: 1, status: 'SUCCESS' }], totalElements: '1' })
       const { getDagRuns } = await import('@/api/scheduling')
 
       const result = await getDagRuns(10, { current: 1, pageSize: 10 })
@@ -188,6 +188,7 @@ describe('scheduling API', () => {
         params: expect.objectContaining({ page: 0, size: 10 }),
       }))
       expect(result.records).toEqual([{ id: 1, status: 'SUCCESS' }])
+      expect(result.total).toBe(1)
     })
 
     it('should request audit list without tenant override', async () => {

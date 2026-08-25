@@ -886,3 +886,11 @@ databaseChangeLog:
   - include:
       file: 214-close-fresh-db-platform-role-menu-carriers.yaml
       relativeToChangelogFile: true
+  # Vue 管理面固定为 HttpOnly Session；删除历史浏览器 OAuth 客户端，外部 Bearer 客户端独立注册。
+  - include:
+      file: 215-remove-vue-oauth-client.yaml
+      relativeToChangelogFile: true
+  # 服务间 OAuth client 不允许保留历史默认明文密钥；仅在运行时注入密钥后重新注册。
+  - include:
+      file: 216-reset-service-oauth-client-secret.yaml
+      relativeToChangelogFile: true

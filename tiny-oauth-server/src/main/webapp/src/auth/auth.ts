@@ -6,6 +6,7 @@ import { addTraceIdToFetchOptions, clearTraceId } from '@/utils/traceId'
 import { clearActiveTenantId, getActiveTenantId, syncTenantContextFromClaims } from '@/utils/tenant'
 import { dispatchAuthorizationRuntimeReset } from '@/runtime/authorizationRuntimeEvents'
 import { ensureCsrfToken, isUnsafeHttpMethod } from '@/utils/csrf'
+import { isPageUnloading } from '@/utils/pageLifecycle'
 
 export type SessionPrincipal = Record<string, unknown> & {
   id?: string | number
@@ -99,6 +100,7 @@ export async function initAuth(): Promise<void> {
   try {
     await refreshSessionPrincipal()
   } catch (error) {
+    if (isPageUnloading()) return
     logger.error('[Session] 初始化认证状态失败', error)
     user.value = null
     clearActiveTenantId()

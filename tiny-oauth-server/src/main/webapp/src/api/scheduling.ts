@@ -137,7 +137,7 @@ export function taskTypeList(params: SchedulingTaskTypeListParams) {
   return request.get('/scheduling/task-type/list', { params: apiParams }).then((res: any) => {
     return {
       records: res.content || [],
-      total: res.totalElements || 0,
+      total: Number(res.totalElements) || 0,
     }
   })
 }
@@ -566,7 +566,7 @@ export function getDagRuns(dagId: number, params: any) {
   return request.get(`/scheduling/dag/${dagId}/runs`, { params: apiParams }).then((res: any) => {
     return {
       records: res.content || [],
-      total: res.totalElements || 0,
+      total: Number(res.totalElements) || 0,
     }
   })
 }

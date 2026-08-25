@@ -25,7 +25,7 @@ const routerMocks = vi.hoisted(() => ({
 }))
 
 const authMocks = vi.hoisted(() => ({
-  authUser: { value: null as { access_token?: string | null } | null },
+  authUser: { value: null as Record<string, unknown> | null },
 }))
 
 const routeState = vi.hoisted(() => ({
@@ -193,17 +193,15 @@ function findButtonByText(wrapper: ReturnType<typeof mountView> | ReturnType<typ
   return wrapper.findAll('button').find((button) => button.text().includes(text))
 }
 
-function createToken(authorities: string[]) {
-  const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')
-  const payload = Buffer.from(JSON.stringify({ authorities })).toString('base64url')
-  return `${header}.${payload}.signature`
+function createSessionPrincipal(authorities: string[]) {
+  return { authorities }
 }
 
 describe('DagHistory.vue', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     authMocks.authUser.value = {
-      access_token: createToken(['scheduling:run:control']),
+      ...createSessionPrincipal(['scheduling:run:control']),
     }
     routeState.query = { dagId: '10', activeTenantId: '9' }
     apiMocks.dagList.mockResolvedValue({

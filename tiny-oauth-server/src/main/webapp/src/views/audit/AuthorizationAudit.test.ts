@@ -10,7 +10,7 @@ const apiMocks = vi.hoisted(() => ({
 }))
 
 const authMocks = vi.hoisted(() => ({
-  authUser: { value: null as { access_token?: string | null } | null },
+  authUser: { value: null as Record<string, unknown> | null },
 }))
 
 vi.mock('@/api/audit', () => ({
@@ -109,10 +109,8 @@ async function flushPromises() {
   await nextTick()
 }
 
-function createToken(payload: Record<string, unknown>) {
-  const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')
-  const encodedPayload = Buffer.from(JSON.stringify(payload)).toString('base64url')
-  return `${header}.${encodedPayload}.signature`
+function createSessionPrincipal(payload: Record<string, unknown>) {
+  return payload
 }
 
 function mountView() {
@@ -147,7 +145,7 @@ describe('AuthorizationAudit.vue', () => {
     })
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     authMocks.authUser.value = {
-      access_token: createToken({
+      ...createSessionPrincipal({
         permissions: ['system:audit:auth:view', 'system:audit:auth:export'],
         activeScopeType: 'PLATFORM',
       }),
@@ -185,7 +183,7 @@ describe('AuthorizationAudit.vue', () => {
 
   it('should not load data without permission', async () => {
     authMocks.authUser.value = {
-      access_token: createToken({
+      ...createSessionPrincipal({
         authorities: ['ROLE_USER'],
       }),
     }

@@ -4,9 +4,9 @@ name: Verify scheduling demo data
 
 on:
   push:
-    branches: [main]
+    branches: [sb4]
   pull_request:
-    branches: [main]
+    branches: [sb4]
   workflow_dispatch:
 
 permissions:

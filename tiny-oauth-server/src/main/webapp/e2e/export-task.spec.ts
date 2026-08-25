@@ -1,14 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
 const TENANT_CODE = 'tiny'
-const AUTHORITY = `http://localhost:9000/${TENANT_CODE}`
-const CLIENT_ID = 'vue-client'
-const OIDC_USER_KEYS = [
-  `oidc.user:${AUTHORITY}:${CLIENT_ID}`,
-  `oidc.user:${AUTHORITY}/:${CLIENT_ID}`,
-  `oidc.user:http://localhost:9000:${CLIENT_ID}`,
-  `oidc.user:http://localhost:9000/:${CLIENT_ID}`,
-]
 
 type ExportTask = {
   taskId: string
@@ -30,41 +22,6 @@ type ExportTask = {
   errorMsg?: string | null
 }
 
-function buildFakeJwtPayload() {
-  return {
-    activeTenantId: 1,
-    iss: AUTHORITY,
-  }
-}
-
-function encodeBase64Url(value: string) {
-  return Buffer.from(value).toString('base64url')
-}
-
-function buildFakeAccessToken() {
-  const header = encodeBase64Url(JSON.stringify({ alg: 'none', typ: 'JWT' }))
-  const payload = encodeBase64Url(JSON.stringify(buildFakeJwtPayload()))
-  return `${header}.${payload}.signature`
-}
-
-function buildOidcUser() {
-  return {
-    id_token: 'fake-id-token',
-    session_state: 'session-1',
-    access_token: buildFakeAccessToken(),
-    refresh_token: 'refresh-token',
-    token_type: 'Bearer',
-    scope: 'openid profile offline_access',
-    profile: {
-      sub: 'user-1',
-      preferred_username: 'alice',
-      activeTenantId: 1,
-      iss: AUTHORITY,
-    },
-    expires_at: Math.floor(Date.now() / 1000) + 3600,
-  }
-}
-
 function buildMenuTreeResponse() {
   return [
     {
@@ -83,11 +40,7 @@ function buildMenuTreeResponse() {
 
 async function seedAuthenticatedSession(page: Page) {
   await page.addInitScript(
-    ({ oidcUserKeys, oidcUser, tenantCode }) => {
-      for (const key of oidcUserKeys) {
-        window.localStorage.setItem(key, JSON.stringify(oidcUser))
-        window.sessionStorage.setItem(key, JSON.stringify(oidcUser))
-      }
+    ({ tenantCode }) => {
       window.localStorage.setItem('app_tenant_code', tenantCode)
       window.localStorage.setItem('app_active_tenant_id', '1')
       window.localStorage.setItem('sider-collapsed', 'false')
@@ -147,8 +100,6 @@ async function seedAuthenticatedSession(page: Page) {
       }
     },
     {
-      oidcUserKeys: OIDC_USER_KEYS,
-      oidcUser: buildOidcUser(),
       tenantCode: TENANT_CODE,
     },
   )

@@ -12,12 +12,13 @@ import org.springframework.security.oauth2.server.authorization.client.Registere
 import org.springframework.security.oauth2.server.authorization.settings.ClientSettings;
 import org.springframework.security.oauth2.server.authorization.settings.OAuth2TokenFormat;
 import org.springframework.security.oauth2.server.authorization.settings.TokenSettings;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.util.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import java.net.MalformedURLException;
-import java.net.URL;
 import java.time.Instant;
 import java.util.LinkedHashSet;
-import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 
@@ -45,6 +46,8 @@ import java.util.UUID;
 @EnableConfigurationProperties(ClientProperties.class)
 public class RegisteredClientConfig {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(RegisteredClientConfig.class);
+
     /**
      * 应用启动后，自动注册 YAML 配置中的客户端到 RegisteredClientRepository
      */
@@ -52,10 +55,19 @@ public class RegisteredClientConfig {
     public CommandLineRunner registerClients(
             ClientProperties properties,
             @Qualifier("defaultRegisteredClientRepository") RegisteredClientRepository repository,
-            FrontendProperties frontendProperties
+            PasswordEncoder passwordEncoder
     ) {
         return args -> {
             for (ClientProperties.Client config : properties.getClients()) {
+
+                boolean requiresClientSecret = config.getAuthenticationMethods() != null
+                        && config.getAuthenticationMethods().stream()
+                        .anyMatch(method -> method.startsWith("client_secret_"));
+                if (requiresClientSecret && !StringUtils.hasText(config.getClientSecret())) {
+                    LOGGER.info("OAuth2 client {} is disabled because no client secret was configured",
+                            config.getClientId());
+                    continue;
+                }
 
                 RegisteredClient existing = repository.findByClientId(config.getClientId());
 
@@ -88,8 +100,8 @@ public class RegisteredClientConfig {
                 RegisteredClient.Builder builder = RegisteredClient.withId(registeredId)
                         .clientId(config.getClientId())                                   // 客户端 ID
                         .clientIdIssuedAt(clientIdIssuedAt)
-                        .clientSecret(config.getClientSecret() != null
-                                ? "{noop}" + config.getClientSecret()                     // {noop} 表示明文，开发环境用
+                        .clientSecret(StringUtils.hasText(config.getClientSecret())
+                                ? passwordEncoder.encode(config.getClientSecret())
                                 : null)
                         .clientName(config.getClientId())                                  // 可选：客户端名称
                         .clientSettings(clientSettings)                                    // 客户端行为设置
@@ -120,8 +132,6 @@ public class RegisteredClientConfig {
                     postLogoutRedirectUris.addAll(config.getPostLogoutRedirectUris());
                 }
 
-                appendRuntimeFrontendRedirects(config, frontendProperties, redirectUris, postLogoutRedirectUris);
-
                 // === 配置重定向 URI（授权成功跳转地址）===
                 redirectUris.forEach(builder::redirectUri);
 
@@ -134,52 +144,4 @@ public class RegisteredClientConfig {
         };
     }
 
-    void appendRuntimeFrontendRedirects(
-            ClientProperties.Client config,
-            FrontendProperties frontendProperties,
-            Set<String> redirectUris,
-            Set<String> postLogoutRedirectUris
-    ) {
-        if (config == null || frontendProperties == null) {
-            return;
-        }
-        if (!"vue-client".equals(config.getClientId())) {
-            return;
-        }
-        String frontendBaseUrl = resolveFrontendBaseUrl(frontendProperties.getLoginUrl());
-        if (frontendBaseUrl == null) {
-            return;
-        }
-        redirectUris.add(frontendBaseUrl + "/callback");
-        redirectUris.add(frontendBaseUrl + "/silent-renew.html");
-        postLogoutRedirectUris.add(frontendBaseUrl + "/");
-    }
-
-    String resolveFrontendBaseUrl(String loginUrl) {
-        if (loginUrl == null || loginUrl.isBlank()) {
-            return null;
-        }
-        String normalized = loginUrl.trim();
-        if (!normalized.regionMatches(true, 0, "redirect:", 0, "redirect:".length())) {
-            return null;
-        }
-        String target = normalized.substring("redirect:".length()).trim();
-        if (target.isBlank()) {
-            return null;
-        }
-        try {
-            URL url = new URL(target);
-            String path = url.getPath();
-            if (path == null || !path.toLowerCase(Locale.ROOT).endsWith("/login")) {
-                return null;
-            }
-            String basePath = path.substring(0, path.length() - "/login".length());
-            String base = url.getProtocol() + "://" + url.getAuthority() + basePath;
-            return base.endsWith("/") && base.length() > url.getProtocol().length() + 3
-                    ? base.substring(0, base.length() - 1)
-                    : base;
-        } catch (MalformedURLException ignored) {
-            return null;
-        }
-    }
 }

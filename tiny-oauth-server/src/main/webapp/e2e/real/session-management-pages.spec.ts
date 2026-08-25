@@ -105,7 +105,6 @@ test.describe('real-link: 纯 Session 管理页依赖闭包', () => {
     await editButton.scrollIntoViewIfNeeded()
     await expect(editButton).toBeVisible()
     await expect(deleteButton).toBeVisible()
-
     await navigateAndWaitForApis(page, '/system/audit/authentication', [
       '/sys/audit/authentication',
       '/sys/audit/authentication/summary',

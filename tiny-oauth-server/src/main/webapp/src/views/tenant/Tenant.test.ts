@@ -14,7 +14,7 @@ const apiMocks = vi.hoisted(() => ({
 }))
 
 const authMocks = vi.hoisted(() => ({
-  authUser: { value: null as { access_token?: string | null } | null },
+  authUser: { value: null as Record<string, unknown> | null },
 }))
 
 const routerMocks = vi.hoisted(() => ({
@@ -126,10 +126,8 @@ const DrawerStub = defineComponent({
   template: '<div v-if="open"><slot /></div>',
 })
 
-function createToken(authorities: string[], activeScopeType: 'PLATFORM' | 'TENANT' = 'PLATFORM') {
-  const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')
-  const payload = Buffer.from(JSON.stringify({ authorities, activeScopeType })).toString('base64url')
-  return `${header}.${payload}.signature`
+function createSessionPrincipal(authorities: string[], activeScopeType: 'PLATFORM' | 'TENANT' = 'PLATFORM') {
+  return { authorities, activeScopeType }
 }
 
 import Tenant from '@/views/tenant/Tenant.vue'
@@ -187,7 +185,7 @@ describe('Tenant.vue', () => {
     apiMocks.tenantList.mockResolvedValue({ content: [], totalElements: 0 })
     apiMocks.getRuntimeUiActions.mockResolvedValue([])
     authMocks.authUser.value = {
-      access_token: createToken(['system:tenant:list', 'system:tenant:view'], 'PLATFORM'),
+      ...createSessionPrincipal(['system:tenant:list', 'system:tenant:view'], 'PLATFORM'),
     }
     window.history.replaceState({}, '', '/system/tenant')
   })
@@ -202,7 +200,7 @@ describe('Tenant.vue', () => {
 
   it('should not request tenant list for non-platform tenant users', async () => {
     authMocks.authUser.value = {
-      access_token: createToken(['system:tenant:list'], 'TENANT'),
+      ...createSessionPrincipal(['system:tenant:list'], 'TENANT'),
     }
 
     const wrapper = mountTenant()
@@ -215,7 +213,7 @@ describe('Tenant.vue', () => {
   it('should hide write buttons when runtime ui actions are missing (fail-closed)', async () => {
     apiMocks.getRuntimeUiActions.mockResolvedValue([])
     authMocks.authUser.value = {
-      access_token: createToken([
+      ...createSessionPrincipal([
         'system:tenant:list',
         'system:tenant:view',
         'system:tenant:create',

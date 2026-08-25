@@ -11,7 +11,7 @@ const apiMocks = vi.hoisted(() => ({
 }))
 
 const authMocks = vi.hoisted(() => ({
-  authUser: { value: null as { access_token?: string | null } | null },
+  authUser: { value: null as Record<string, unknown> | null },
 }))
 
 const uiMocks = vi.hoisted(() => ({
@@ -152,17 +152,15 @@ async function flushPromises() {
   await nextTick()
 }
 
-function createToken(authorities: string[]) {
-  const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')
-  const payload = Buffer.from(JSON.stringify({ authorities })).toString('base64url')
-  return `${header}.${payload}.signature`
+function createSessionPrincipal(authorities: string[]) {
+  return { authorities }
 }
 
 describe('TaskType.vue', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     authMocks.authUser.value = {
-      access_token: createToken(['scheduling:console:config']),
+      ...createSessionPrincipal(['scheduling:console:config']),
     }
     apiMocks.getExecutors.mockResolvedValue(['logging', 'shell'])
     apiMocks.taskTypeList.mockResolvedValue({ records: [], total: 0 })

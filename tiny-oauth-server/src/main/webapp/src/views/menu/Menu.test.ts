@@ -9,7 +9,7 @@ const apiMocks = vi.hoisted(() => ({
 }))
 
 const authMocks = vi.hoisted(() => ({
-  authUser: { value: null as { access_token?: string | null } | null },
+  authUser: { value: null as Record<string, unknown> | null },
 }))
 
 vi.mock('@/api/menu', () => ({
@@ -131,10 +131,8 @@ function firstItem<T>(items: T[] | undefined, label = 'item'): T {
 import { ACTIVE_SCOPE_CHANGED_EVENT } from '@/utils/activeScopeEvents'
 import Menu from '@/views/menu/Menu.vue'
 
-function createToken(authorities: string[]) {
-  const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')
-  const payload = Buffer.from(JSON.stringify({ authorities })).toString('base64url')
-  return `${header}.${payload}.signature`
+function createSessionPrincipal(authorities: string[]) {
+  return { authorities }
 }
 
 async function flushPromises() {
@@ -153,7 +151,7 @@ describe('Menu.vue', () => {
     apiMocks.getMenusByParentId.mockResolvedValue([])
     apiMocks.getRuntimeUiActions.mockResolvedValue([])
     authMocks.authUser.value = {
-      access_token: createToken(['system:menu:list']),
+      ...createSessionPrincipal(['system:menu:list']),
     }
     window.history.replaceState({}, '', '/system/menu')
   })
@@ -190,7 +188,7 @@ describe('Menu.vue', () => {
 
   it('should not request menu list without menu management authority', async () => {
     authMocks.authUser.value = {
-      access_token: createToken(['ROLE_USER']),
+      ...createSessionPrincipal(['ROLE_USER']),
     }
 
     const wrapper = mount(Menu, {
@@ -207,7 +205,7 @@ describe('Menu.vue', () => {
   it('should hide write buttons when runtime ui actions are missing (fail-closed)', async () => {
     apiMocks.getRuntimeUiActions.mockResolvedValue([])
     authMocks.authUser.value = {
-      access_token: createToken([
+      ...createSessionPrincipal([
         'system:menu:list',
         'system:menu:create',
         'system:menu:edit',

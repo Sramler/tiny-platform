@@ -204,6 +204,42 @@ export async function waitForSessionIdentity(page: Page, timeout = 60_000) {
   )
 }
 
+/**
+ * Session 首屏的三个独立依赖必须逐端点就绪。不能用一次 networkidle 或聚合 Promise
+ * 掩盖具体失败，否则 CSRF、菜单和安全状态中的任意一个竞态都会只表现为模糊的 Failed to fetch。
+ */
+export async function waitForSessionBootstrap(page: Page) {
+  const results = await page.evaluate(async () => {
+    const activeTenantId = window.localStorage.getItem('app_active_tenant_id')
+    const endpoints = ['/csrf', '/sys/menus/tree', '/self/security/status']
+    const checks: Array<{ path: string; status: number; detail: string }> = []
+    for (const path of endpoints) {
+      try {
+        const response = await fetch(path, {
+          credentials: 'include',
+          headers: {
+            Accept: 'application/json',
+            ...(activeTenantId ? { 'X-Active-Tenant-Id': activeTenantId } : {}),
+          },
+        })
+        checks.push({ path, status: response.status, detail: response.statusText })
+      } catch (error) {
+        checks.push({
+          path,
+          status: 0,
+          detail: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+    return checks
+  })
+
+  const failed = results.filter(({ status }) => status < 200 || status >= 400)
+  if (failed.length > 0) {
+    throw new Error(`Session bootstrap 端点未就绪: ${JSON.stringify(failed)}`)
+  }
+}
+
 async function loginWithIdentity(page: Page, identity: LoginIdentity) {
   await page.goto(`/login?redirect=${encodeURIComponent('/')}`)
 
@@ -306,6 +342,7 @@ export async function openSessionApp(page: Page, kind: AuthIdentityKind = 'prima
     const existingIdentity = await hasSessionIdentity(page)
 
     if (existingIdentity) {
+      await waitForSessionBootstrap(page)
       return
     }
 
@@ -321,6 +358,7 @@ export async function openSessionApp(page: Page, kind: AuthIdentityKind = 'prima
     await gotoSessionApp(page)
     try {
       await waitForSessionIdentity(page, 30_000)
+      await waitForSessionBootstrap(page)
       return
     } catch (error) {
       if (attempt === 2) {

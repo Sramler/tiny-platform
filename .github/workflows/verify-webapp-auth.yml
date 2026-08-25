@@ -2,9 +2,9 @@ name: Verify webapp auth flow
 
 on:
   push:
-    branches: [main]
+    branches: [sb4]
   pull_request:
-    branches: [main]
+    branches: [sb4]
   workflow_dispatch:
 
 jobs:

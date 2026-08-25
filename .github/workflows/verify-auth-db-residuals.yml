@@ -4,13 +4,13 @@ name: Verify auth DB residuals / rollout consistency
 # schedule / workflow_dispatch：仍每次全量执行。
 on:
   push:
-    branches: [main]
+    branches: [sb4]
     paths:
       - 'tiny-oauth-server/**'
       - '.github/workflows/verify-auth-db-residuals.yml'
       - 'pom.xml'
   pull_request:
-    branches: [main]
+    branches: [sb4]
     paths:
       - 'tiny-oauth-server/**'
       - '.github/workflows/verify-auth-db-residuals.yml'

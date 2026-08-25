@@ -143,6 +143,37 @@ async function waitForSessionIdentity(page) {
   )
 }
 
+async function waitForSessionBootstrap(page) {
+  const results = await page.evaluate(async () => {
+    const activeTenantId = window.localStorage.getItem('app_active_tenant_id')
+    const endpoints = ['/csrf', '/sys/menus/tree', '/self/security/status']
+    const checks = []
+    for (const path of endpoints) {
+      try {
+        const response = await fetch(path, {
+          credentials: 'include',
+          headers: {
+            Accept: 'application/json',
+            ...(activeTenantId ? { 'X-Active-Tenant-Id': activeTenantId } : {}),
+          },
+        })
+        checks.push({ path, status: response.status, detail: response.statusText })
+      } catch (error) {
+        checks.push({
+          path,
+          status: 0,
+          detail: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }
+    return checks
+  })
+  const failed = results.filter(({ status }) => status < 200 || status >= 400)
+  if (failed.length > 0) {
+    throw new Error(`generate-auth-state: Session bootstrap 端点未就绪: ${JSON.stringify(failed)}`)
+  }
+}
+
 function tryGetOrigin(url) {
   try {
     return new URL(url).origin
@@ -357,6 +388,7 @@ async function main() {
     }
 
     await assertTenantSessionScope(page)
+    await waitForSessionBootstrap(page)
     await context.storageState({ path: path.resolve(authStatePath) })
   } finally {
     await context.close()

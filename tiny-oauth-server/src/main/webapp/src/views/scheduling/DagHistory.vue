@@ -762,7 +762,7 @@ const loadData = async () => {
       currentRunStatusForNodes.value =
         res.records.find((record: any) => record.id === currentRunIdForNodes.value)?.status ?? null
     }
-    pagination.total = res.total
+    pagination.total = Number(res.total) || 0
     dagStats.value = stats
   } catch (error: any) {
     message.error(error.message || '加载数据失败')

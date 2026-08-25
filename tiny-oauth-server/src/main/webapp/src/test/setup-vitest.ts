@@ -1,36 +1,5 @@
 import { afterEach, vi } from 'vitest'
 
-// Legacy component fixtures are migrated incrementally from encoded JWT users to flat Session principals.
-// This test-only adapter keeps authorization assertions meaningful without reintroducing token parsing in Web runtime.
-vi.mock('@/auth/runtimeIdentity', () => {
-  const claims = (principal: Record<string, unknown> | null | undefined) => {
-    if (!principal) return null
-    if (Array.isArray(principal.authorities) || Array.isArray(principal.permissions)) return principal
-    const token = typeof principal.access_token === 'string' ? principal.access_token : ''
-    const payload = token.split('.')[1]
-    if (!payload) return principal
-    try {
-      return { ...principal, ...JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) }
-    } catch {
-      return principal
-    }
-  }
-  return {
-    runtimeAuthorities: (principal: Record<string, unknown> | null | undefined) => {
-      const value = claims(principal)
-      const raw = value?.permissions ?? value?.authorities
-      return Array.isArray(raw) ? raw.map(String) : typeof raw === 'string' ? raw.split(/[,\s]+/).filter(Boolean) : []
-    },
-    runtimeUserId: (principal: Record<string, unknown> | null | undefined) => {
-      const value = claims(principal)
-      const parsed = Number(value?.userId ?? value?.id)
-      return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null
-    },
-    isPlatformPrincipal: (principal: Record<string, unknown> | null | undefined) =>
-      String(claims(principal)?.activeScopeType ?? '').toUpperCase() === 'PLATFORM',
-  }
-})
-
 // Silence logger output in unit tests.
 vi.mock('@/utils/logger', () => {
   const noop = () => {}

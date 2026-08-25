@@ -133,40 +133,34 @@ authentication:
     public-key-path: classpath:keys/public.pem
     private-key-path: classpath:keys/private.pem
   clients:
-    - client-id: oidc-client
-      client-secret: secret
+    # 公共 CLI / 移动端：授权码 + PKCE，回调不指向 Vue 管理面。
+    - client-id: tiny-public-client
       authentication-methods:
-        - client_secret_basic
+        - none
       grant-types:
         - authorization_code
         - refresh_token
       redirect-uris:
-        - http://localhost:9000/
-      post-logout-redirect-uris:
-        - http://localhost:5173/
+        - http://127.0.0.1:8765/callback
       scopes:
         - openid
         - profile
+        - offline_access
       client-setting:
         require-authorization-consent: true
-    - client-id: vue-client
+        require-proof-key: true
+    # 服务间调用：独立 client_credentials Bearer 轨；未注入密钥时不注册该客户端。
+    - client-id: tiny-service-client
+      client-secret: ${TINY_SERVICE_CLIENT_SECRET:}
       authentication-methods:
-        - none # ✅ 表示前端（公有客户端）不需要 client secret
+        - client_secret_basic
       grant-types:
-        - authorization_code # ✅ 标准 OIDC 授权码流程
-        - refresh_token # ✅ 启用 refresh_token 支持
-      redirect-uris:
-        - http://localhost:5173/callback
-        - http://localhost:5173/silent-renew.html # silent renew 时用于隐式授权流程的 iframe 回调页面。
-      post-logout-redirect-uris:
-        - http://localhost:5173/
+        - client_credentials
       scopes:
-        - openid
-        - profile
-        - offline_access # ✅ 必须启用，否则不会发 refresh_token
+        - service.read
+        - service.write
       client-setting:
         require-authorization-consent: false
-        require-proof-key: true # ✅ 强制启用 PKCE，确保公有客户端也能安全获取 refresh_token
 # Camunda BPM 配置
 camunda:
   bpm:

@@ -12,6 +12,24 @@ const schedulingCoverageOnly = process.env.VITEST_SCHEDULING_COVERAGE === '1'
 const analyzeBundle = process.env.VITE_BUNDLE_ANALYZE === '1'
 const devBackendTarget = process.env.VITE_DEV_BACKEND_TARGET || 'http://localhost:9000'
 
+const benignResizeObserverErrorGuard = {
+  name: 'tiny-benign-resize-observer-error-guard',
+  apply: 'serve' as const,
+  enforce: 'pre' as const,
+  transformIndexHtml: {
+    order: 'pre' as const,
+    handler() {
+      return [
+        {
+          tag: 'script',
+          injectTo: 'head-prepend' as const,
+          children: `window.addEventListener('error',function(event){if(event.message==='ResizeObserver loop completed with undelivered notifications.'||event.message==='ResizeObserver loop limit exceeded'){event.preventDefault();event.stopImmediatePropagation()}},true);`,
+        },
+      ]
+    },
+  },
+}
+
 /**
  * 将 node_modules 按稳定边界拆块，降低入口 index chunk 体积；顺序需避免误匹配（如 ant-design-vue 含 vue 字样）。
  * 见 docs/TINY_PLATFORM_BUILD_TECH_DEBT_LEDGER.md §1（主包策略）。
@@ -20,7 +38,6 @@ function manualChunks(id: string): string | undefined {
   if (!id.includes('node_modules')) return undefined
   if (id.includes('ant-design-vue')) return 'vendor-antd'
   if (id.includes('@ant-design/icons-vue')) return 'vendor-antd-icons'
-  if (id.includes('node_modules/jose')) return 'vendor-oidc'
   if (id.includes('axios')) return 'vendor-axios'
   if (
     id.includes('bpmn-js') ||
@@ -40,6 +57,7 @@ function manualChunks(id: string): string | undefined {
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
+    benignResizeObserverErrorGuard,
     vue(),
     /**
      * 策略 B（唯一主策略）：模板中 a-* / AntD 组件按需解析，**禁止** `app.use(整包 Antd)`。

@@ -8,7 +8,7 @@ const apiMocks = vi.hoisted(() => ({
 }))
 
 const authMocks = vi.hoisted(() => ({
-  authUser: { value: null as { access_token?: string | null } | null },
+  authUser: { value: null as Record<string, unknown> | null },
   isAuthenticated: { value: true },
 }))
 
@@ -73,10 +73,8 @@ const PassThrough = defineComponent({
 import User from '@/views/user/user.vue'
 import { ACTIVE_SCOPE_CHANGED_EVENT } from '@/utils/activeScopeEvents'
 
-function createToken(authorities: string[], activeScopeType: 'PLATFORM' | 'TENANT' = 'TENANT') {
-  const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')
-  const payload = Buffer.from(JSON.stringify({ authorities, activeScopeType })).toString('base64url')
-  return `${header}.${payload}.signature`
+function createSessionPrincipal(authorities: string[], activeScopeType: 'PLATFORM' | 'TENANT' = 'TENANT') {
+  return { authorities, activeScopeType }
 }
 
 async function flushPromises() {
@@ -97,7 +95,7 @@ describe('user.vue', () => {
     })
     apiMocks.getRuntimeUiActions.mockResolvedValue([])
     authMocks.authUser.value = {
-      access_token: createToken(['system:user:list']),
+      ...createSessionPrincipal(['system:user:list']),
     }
     window.history.replaceState({}, '', '/system/user')
   })
@@ -183,7 +181,7 @@ describe('user.vue', () => {
 
   it('should not request user list without user management authority', async () => {
     authMocks.authUser.value = {
-      access_token: createToken(['ROLE_USER']),
+      ...createSessionPrincipal(['ROLE_USER']),
     }
 
     const wrapper = mount(User, {
@@ -224,7 +222,7 @@ describe('user.vue', () => {
 
   it('should not request user list under platform scope', async () => {
     authMocks.authUser.value = {
-      access_token: createToken(['system:user:list'], 'PLATFORM'),
+      ...createSessionPrincipal(['system:user:list'], 'PLATFORM'),
     }
 
     const wrapper = mount(User, {
@@ -267,7 +265,7 @@ describe('user.vue', () => {
   it('should hide write buttons when runtime ui actions are missing (fail-closed)', async () => {
     apiMocks.getRuntimeUiActions.mockResolvedValue([])
     authMocks.authUser.value = {
-      access_token: createToken([
+      ...createSessionPrincipal([
         'system:user:list',
         'system:user:create',
         'system:user:edit',

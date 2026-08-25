@@ -117,7 +117,7 @@ Web 浏览器统一采用同源 HttpOnly Session，不直接持有或发送 acce
 
 - Web 固定 Session + CSRF。
 - CLI、第三方和服务间调用保留 Bearer JWT。
-- 删除 Web silent renew、refresh token 和 token debug 的运行时依赖；兼容入口必须显式启用。
+- 删除 Web silent renew、refresh token 和 token debug 的运行时依赖；Vue Web 不保留兼容入口，外部 Bearer 客户端只通过独立后端 RegisteredClient 接入。
 
 验收：
 
@@ -203,6 +203,11 @@ Vue /login
 - [x] BFF-04 real-link Session 化；global setup 使用 HttpOnly `JSESSIONID` + CSRF 完成派生租户初始化，storageState 不再依赖 OIDC token。
 - [x] BFF-05 去伪 JWT；Session 身份直接使用 `/sys/users/current` 内存快照，不再构造或解析浏览器 token。
 - [x] BFF-06 Web/Bearer 物理分轨；Vue Web 固定为 HttpOnly Session + CSRF，无模式开关、OIDC browser SDK、callback、silent renew 或 Authorization 注入；CLI/移动端/第三方/服务间 Bearer 仅由后端 `/oauth2/**` 支持。
+- [x] BFF-07 测试语义收口；组件单测与 Mock E2E 使用扁平 Session principal，不再通过测试适配器解析伪 JWT；real-link active-scope 文件按 Session 语义命名。
+- [x] BFF-08 后端客户端物理分轨；删除 `vue-client`、Vue callback/silent-renew 动态注册与数据库残留，公共 PKCE 客户端和服务间 client_credentials 客户端由独立门禁验证。
+- [x] BFF-10 服务间 confidential client 不再内置默认明文 secret；无注入时不注册，注入后统一哈希，并迁移清除历史默认客户端行。
+- [x] BFF-11 全量 real-link 禁止静默跳过 readonly RBAC；workflow/环境示例不得再注入已删除的 Vue Session/OIDC 开关。
+- [x] BFF-09 首屏诊断收口；real-link 逐端点验证 CSRF、菜单树和安全状态，避免聚合等待把启动竞态退化为无定位信息的 `Failed to fetch`。
 - [x] BFF-07 API 载体与首页治理（全仓 Controller 映射漂移门禁及 202–214 载体迁移已落地；本地 full-chain、一次性 fresh DB、existing MySQL SpringLiquibase 与真实浏览器回归均全绿；代码提交 `af9c340` 为 12/12，最终交付 HEAD `ee95964` 为 11/11）。
 - [ ] BFF-08 集群和生产安全（memory/jdbc/redis 参数化、prod memory 禁用、JDBC/Redis 单节点真实链路已完成；多节点切换及强制失效联动待验证）。
 

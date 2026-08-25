@@ -41,7 +41,6 @@ jobs:
       E2E_FRONTEND_BASE_URL: http://localhost:5173
       E2E_BACKEND_BASE_URL: http://localhost:9000
       E2E_BACKEND_PROFILE: e2e
-      E2E_ENABLE_OIDC_TRACE: false
       E2E_USE_SQL_SEED: false
       E2E_DB_HOST: 127.0.0.1
       E2E_DB_PORT: 3306
@@ -55,7 +54,6 @@ jobs:
       E2E_MYSQL_USER: root
       E2E_MYSQL_PASSWORD: ${{ secrets.E2E_DB_PASSWORD }}
       MYSQL_ROOT_PASSWORD: ${{ secrets.E2E_DB_PASSWORD }}
-      E2E_OIDC_CLIENT_ID: vue-client
       E2E_TENANT_CODE: ${{ secrets.E2E_TENANT_CODE }}
       E2E_USERNAME: ${{ secrets.E2E_USERNAME }}
       E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
@@ -98,7 +96,7 @@ jobs:
             echo
             echo "### Covered real-link specs"
             echo "- \`e2e/real/platform-vue-login.spec.ts\`"
-            echo "- \`e2e/real/active-scope-token-refresh.spec.ts\`"
+            echo "- \`e2e/real/active-scope-session.spec.ts\`"
             echo "- \`e2e/real/scheduling-dag-orchestration.spec.ts\`"
             echo "- \`e2e/real/scheduling-rbac-readonly.spec.ts\`"
             echo "- \`e2e/real/tenant-lifecycle-freeze.spec.ts\`"
@@ -274,13 +272,6 @@ jobs:
         env:
           VITE_API_BASE_URL: ''
           VITE_DEV_BACKEND_TARGET: ${{ env.E2E_BACKEND_BASE_URL }}
-          VITE_AUTH_SESSION_ONLY: 'true'
-          VITE_OIDC_AUTHORITY: ${{ env.E2E_BACKEND_BASE_URL }}
-          VITE_OIDC_CLIENT_ID: ${{ env.E2E_OIDC_CLIENT_ID }}
-          VITE_OIDC_REDIRECT_URI: ${{ env.E2E_FRONTEND_BASE_URL }}/callback
-          VITE_OIDC_POST_LOGOUT_REDIRECT_URI: ${{ env.E2E_FRONTEND_BASE_URL }}/
-          VITE_OIDC_SILENT_REDIRECT_URI: ${{ env.E2E_FRONTEND_BASE_URL }}/silent-renew.html
-          VITE_ENABLE_OIDC_TRACE: ${{ env.E2E_ENABLE_OIDC_TRACE }}
         shell: bash
         run: |
           set -euo pipefail
@@ -386,7 +377,7 @@ jobs:
         run: |
           npm run test:e2e:real -- \
             e2e/real/platform-vue-login.spec.ts \
-            e2e/real/active-scope-token-refresh.spec.ts \
+            e2e/real/active-scope-session.spec.ts \
             e2e/real/scheduling-dag-orchestration.spec.ts \
             e2e/real/scheduling-rbac-readonly.spec.ts \
             e2e/real/tenant-lifecycle-freeze.spec.ts \

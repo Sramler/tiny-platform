@@ -5,8 +5,8 @@ import { sanitizeInternalRedirect } from '@/utils/redirect'
 describe('sanitizeInternalRedirect', () => {
   it('should keep safe internal relative paths', () => {
     expect(sanitizeInternalRedirect('/dashboard')).toBe('/dashboard')
-    expect(sanitizeInternalRedirect('/oauth2/authorize?client_id=vue-client')).toBe(
-      '/oauth2/authorize?client_id=vue-client',
+    expect(sanitizeInternalRedirect('/oauth2/authorize?client_id=tiny-public-client')).toBe(
+      '/oauth2/authorize?client_id=tiny-public-client',
     )
   })
 

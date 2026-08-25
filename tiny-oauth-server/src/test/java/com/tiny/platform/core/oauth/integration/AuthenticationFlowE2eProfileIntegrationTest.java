@@ -32,14 +32,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "authentication.jwt.public-key-path=classpath:keys/public.pem",
         "authentication.jwt.private-key-path=classpath:keys/private.pem",
         // e2e 测试上下文不会自动继承 application.yaml 中的 authentication.clients 列表，
-        // 这里显式提供 vue-client，确保 OIDC /oauth2/authorize 主线可真实执行。
-        "authentication.clients[0].client-id=vue-client",
+        // 显式提供与 Vue 管理面无关的公共 PKCE 客户端，验证独立 OAuth2/OIDC 协议主线。
+        "authentication.clients[0].client-id=tiny-public-test-client",
         "authentication.clients[0].authentication-methods[0]=none",
         "authentication.clients[0].grant-types[0]=authorization_code",
         "authentication.clients[0].grant-types[1]=refresh_token",
-        "authentication.clients[0].redirect-uris[0]=http://localhost:5173/callback",
-        "authentication.clients[0].redirect-uris[1]=http://localhost:5173/silent-renew.html",
-        "authentication.clients[0].post-logout-redirect-uris[0]=http://localhost:5173/",
+        "authentication.clients[0].redirect-uris[0]=http://127.0.0.1:8765/callback",
         "authentication.clients[0].scopes[0]=openid",
         "authentication.clients[0].scopes[1]=profile",
         "authentication.clients[0].scopes[2]=offline_access",
@@ -64,8 +62,8 @@ class AuthenticationFlowE2eProfileIntegrationTest {
         return keysThenLiteralFallback[keysThenLiteralFallback.length - 1];
     }
 
-    private static final String OIDC_TEST_CLIENT_ID = "vue-client";
-    private static final String OIDC_SILENT_REDIRECT_URI = "http://localhost:5173/silent-renew.html";
+    private static final String OIDC_TEST_CLIENT_ID = "tiny-public-test-client";
+    private static final String OIDC_TEST_REDIRECT_URI = "http://127.0.0.1:8765/callback";
 
     @Autowired
     private MockMvc mockMvc;
@@ -223,7 +221,7 @@ class AuthenticationFlowE2eProfileIntegrationTest {
     }
 
     @Nested
-    @DisplayName("OIDC prompt=none / silent renew 行为")
+    @DisplayName("独立公共客户端 OIDC prompt=none 协议行为")
     class OidcPromptNoneBehaviour {
 
         @Test
@@ -237,7 +235,7 @@ class AuthenticationFlowE2eProfileIntegrationTest {
                             get("/oauth2/authorize")
                                     .session(session)
                                     .queryParam("client_id", OIDC_TEST_CLIENT_ID)
-                                    .queryParam("redirect_uri", OIDC_SILENT_REDIRECT_URI)
+                                    .queryParam("redirect_uri", OIDC_TEST_REDIRECT_URI)
                                     .queryParam("response_type", "code")
                                     .queryParam("scope", "openid profile offline_access")
                                     .queryParam("state", state)
@@ -253,7 +251,7 @@ class AuthenticationFlowE2eProfileIntegrationTest {
             String redirected = result.getResponse().getRedirectedUrl();
             org.assertj.core.api.Assertions.assertThat(redirected)
                     .as("prompt=none 未登录时应按 OAuth/OIDC 语义返回 redirect_uri，而不是走普通表单登录失败页")
-                    .startsWith(OIDC_SILENT_REDIRECT_URI)
+                    .startsWith(OIDC_TEST_REDIRECT_URI)
                     .contains("error=login_required")
                     .contains("state=" + state)
                     .doesNotContain("/login?error=true")

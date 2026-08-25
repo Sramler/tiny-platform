@@ -205,14 +205,14 @@
 | 矩阵场景 | 最小证据（测试/用例） | CI / 门禁入口 |
 | --- | --- | --- |
 | M0 匿名请求（含 `prompt=none` 未登录） | `AuthenticationFlowE2eProfileIntegrationTest.unauthenticatedPromptNoneShouldReturnLoginRequiredToRedirectUri`（integration） | 后端集成测试 job（PR/main） |
-| M1 仅 Session | `DefaultSecurityConfigUserEndpointIntegrationTest.currentUserShouldAllowSessionOnlyRequestWithActiveScope`、`currentActiveScopeSwitchShouldSucceedWithSessionOnlyAuthentication`（integration）；real-link：`platform-vue-login.spec.ts`、`active-scope-token-refresh.spec.ts`、`session-management-pages.spec.ts` | 后端集成测试 job（PR/main）+ Nightly real-link |
+| M1 仅 Session | `DefaultSecurityConfigUserEndpointIntegrationTest.currentUserShouldAllowSessionOnlyRequestWithActiveScope`、`currentActiveScopeSwitchShouldSucceedWithSessionOnlyAuthentication`（integration）；real-link：`platform-vue-login.spec.ts`、`active-scope-session.spec.ts`、`session-management-pages.spec.ts` | 后端集成测试 job（PR/main）+ Nightly real-link |
 | M2 仅 Bearer（JWT 显式 type） | `TenantContextFilterTest.*Bearer*explicit*`（unit） | 后端单测 job（PR/main） |
 | M3 仅 Bearer（JWT 未显式 type） | `TenantContextFilterTest.shouldUseSessionPairedScopeWhenBearerOmitsActiveScopeType`、`shouldRejectOrphanBearerActiveScopeIdWithoutType_with401`（unit） | 后端单测 job（PR/main） |
 | M4 Bearer + Session 并存且一致 | `DefaultSecurityConfigUserEndpointIntegrationTest.currentUserShouldAllowWhenBearerAndSessionScopeMatch`、`currentActiveScopeSwitchShouldSucceedWithM4BearerAndRequireTokenRefresh`（integration） | 后端 integration 兼容门禁；不得作为 Web 默认 real-link 身份 |
 | M5 Bearer + Session 并存但冲突（fail-closed） | `TenantContextFilterTest.shouldReject401WhenBearerAndSessionActiveScopeConflict`、`shouldClearSessionSecurityContextOnBearerInvalidActiveScope`（unit/integration） | 后端单测 + 集成测试 job（PR/main） |
 
 补充：
-- real-link 用例 `e2e/real/active-scope-token-refresh.spec.ts` 必须从 **租户态 HttpOnly Session** 进入（`e2e/.auth/scheduling-user.json`），否则会因平台态缺失 `activeTenantId` 导致“用例前提不成立”的伪失败；该用例不得提取 access token 或发送 Bearer。
+- real-link 用例 `e2e/real/active-scope-session.spec.ts` 必须从 **租户态 HttpOnly Session** 进入（`e2e/.auth/scheduling-user.json`），否则会因平台态缺失 `activeTenantId` 导致“用例前提不成立”的伪失败；该用例不得提取 access token 或发送 Bearer。
 
 ---
 
@@ -259,7 +259,7 @@
 - **API 客户端**：CLI、移动端、第三方与服务间 Bearer 仍须消费后端 `tokenRefreshRequired=true` 并通过各自 OAuth2/OIDC 客户端刷新或重新签发 token；不得把该逻辑放回 Vue 包。
 - 实现参考：`tiny-oauth-server/src/main/webapp` 中 `auth/auth.ts`、`api/user.ts`、`layouts/HeaderBar.vue`。
 - **自动化证据**：Web 边界门禁、`auth/auth.test.ts`、`layouts/HeaderBar.test.ts`、后端 Session/Bearer 矩阵测试。
-- **Isolated real-link 抽样**：`e2e/real/active-scope-token-refresh.spec.ts`（历史文件名；Playwright **chromium** + globalSetup 生成的 `scheduling-user` HttpOnly Session storageState）：断言 `POST /sys/users/current/active-scope` 响应 `tokenRefreshRequired: false`，不请求 `/oauth2/**`，写后 `/sys/users/current` 的用户名与 active scope 仍由同一 Session 正确承接；浏览器不读取、保存或发送 access/refresh token。
+- **Isolated real-link 抽样**：`e2e/real/active-scope-session.spec.ts`（Playwright **chromium** + globalSetup 生成的 `scheduling-user` HttpOnly Session storageState）：断言 `POST /sys/users/current/active-scope` 响应 `tokenRefreshRequired: false`，不请求 `/oauth2/**`，写后 `/sys/users/current` 的用户名与 active scope 仍由同一 Session 正确承接；浏览器不读取、保存或发送 access/refresh token。
 
 ### 8.5 字段与错误码（摘要）
 

@@ -8,7 +8,7 @@ const apiMocks = vi.hoisted(() => ({
 }))
 
 const authMocks = vi.hoisted(() => ({
-  authUser: { value: null as { access_token?: string | null } | null },
+  authUser: { value: null as Record<string, unknown> | null },
   isAuthenticated: { value: true },
 }))
 
@@ -82,10 +82,8 @@ const ResourceTableStub = defineComponent({
 import { ACTIVE_SCOPE_CHANGED_EVENT } from '@/utils/activeScopeEvents'
 import Resource from '@/views/resource/resource.vue'
 
-function createToken(authorities: string[]) {
-  const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')
-  const payload = Buffer.from(JSON.stringify({ authorities })).toString('base64url')
-  return `${header}.${payload}.signature`
+function createSessionPrincipal(authorities: string[]) {
+  return { authorities }
 }
 
 async function flushPromises() {
@@ -106,7 +104,7 @@ describe('resource.vue', () => {
       { id: 14, name: 'resource:batch-delete', title: '资源批量删除', type: 2, permission: 'system:resource:batch-delete', carrierKind: 'ui_action' },
     ])
     authMocks.authUser.value = {
-      access_token: createToken(['system:resource:list']),
+      ...createSessionPrincipal(['system:resource:list']),
     }
   })
 
@@ -204,7 +202,7 @@ describe('resource.vue', () => {
   it('should hide action buttons when runtime ui actions deny them', async () => {
     apiMocks.getRuntimeUiActions.mockResolvedValue([])
     authMocks.authUser.value = {
-      access_token: createToken([
+      ...createSessionPrincipal([
         'system:resource:list',
         'system:resource:create',
         'system:resource:edit',
@@ -293,7 +291,7 @@ describe('resource.vue', () => {
 
   it('should not request resource tree without resource management authority', async () => {
     authMocks.authUser.value = {
-      access_token: createToken(['ROLE_USER']),
+      ...createSessionPrincipal(['ROLE_USER']),
     }
 
     const wrapper = mount(Resource, {

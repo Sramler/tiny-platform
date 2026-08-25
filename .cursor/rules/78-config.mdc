@@ -292,7 +292,7 @@ oauth2:
       web-frontend:
         client-id: ${OAUTH2_CLIENT_ID:web-frontend}
         client-secret: ${OAUTH2_CLIENT_SECRET:secret}
-        redirect-uris: ${OAUTH2_REDIRECT_URIS:http://localhost:5173/callback}
+        redirect-uris: ${OAUTH2_REDIRECT_URIS:http://127.0.0.1:8765/callback}
 
 # 日志配置
 logging:

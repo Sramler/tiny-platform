@@ -79,6 +79,7 @@
 import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ensureCsrfToken, getCsrfFailureMessage } from '@/utils/csrf'
+import { isPageUnloading } from '@/utils/pageLifecycle'
 import { sanitizeInternalRedirect } from '@/utils/redirect'
 import {
   clearActiveTenantId,
@@ -187,7 +188,7 @@ const handleSubmit = async (event: Event) => {
     setTenantCode(normalizedTenantCode)
   } else {
     if (tenantRef.value) tenantRef.value.value = ''
-    // 平台登录不携带租户：同步清理本地 tenantCode，避免后续 OIDC/authorize 仍读到历史租户
+    // 平台登录不携带租户：同步清理本地 tenantCode，避免后续 Session 登录仍读到历史租户
     clearTenantCode()
   }
   // 登录前清理旧租户ID，避免沿用上一会话租户导致后续链路冲突（平台/租户都需要）
@@ -216,6 +217,7 @@ const handleSubmit = async (event: Event) => {
 
 onMounted(async () => {
   loadCsrfToken().catch((error) => {
+    if (isPageUnloading()) return
     console.error('初始化 CSRF token 失败:', error)
     errorMessage.value = getCsrfFailureMessage(error)
   })

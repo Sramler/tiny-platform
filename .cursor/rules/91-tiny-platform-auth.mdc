@@ -59,6 +59,11 @@ globs:
 - ✅ 首绑 TOTP / post-login 安全中心 / MFA 继续跳转类 E2E 必须按真实浏览器会话契约工作：使用页面真实渲染结果或 `credentials: include` 的 first-party 请求；不得读取或写入 access/refresh token。
 - ✅ 涉及后端 Session / Bearer 同时存在、`activeTenantId` 来源裁决、`activeScopeType/id` 成对解析、`prompt=none` 行为的改动，必须与 `docs/TINY_PLATFORM_SESSION_BEARER_AUTH_MATRIX.md` 保持一致；该后端矩阵不得被误解为 Vue Web 的 Bearer 兼容轨。
 - ✅ Vue Web 认证是不可切换的同源 HttpOnly Session + CSRF：不得提供 Session/Bearer 构建变量或运行时开关，不得依赖 OIDC browser SDK，不得注册 OAuth callback/silent-renew 页面，不得持有 access/refresh token，不得注入 `Authorization`。
+- ✅ Vue Web 的单元测试、Mock E2E 与 real-link fixture 必须使用扁平 Session principal / HttpOnly Session storageState；除专门验证“检测并拒绝 token 存储”的负向测试外，不得伪造 JWT、`access_token`、`refresh_token` 或 `oidc.user:*`。
+- ✅ 后端 RegisteredClient 不得使用 `vue-client`、Vue callback 或 silent-renew URI；公共 CLI/移动端的 authorization_code + PKCE/refresh_token 与服务间 client_credentials 必须使用独立 client、独立回调和独立协议门禁。
+- ✅ 服务间 confidential client 未注入独立 secret 时必须保持未注册/不可用；禁止仓库内置默认 secret 或以 `{noop}` 保存 client secret，注入的原始 secret 必须经统一 `PasswordEncoder` 哈希后持久化，历史默认客户端行须通过迁移清理。
+- ✅ real-link 首屏认证依赖必须逐端点验证 `/csrf`、`/sys/menus/tree`、`/self/security/status`，并输出具体失败端点；不得仅用聚合 Promise 或 network-idle 把 `Failed to fetch` 竞态作为可忽略噪声。
+- ✅ 全量 real-link 套件的 readonly 身份是必选验收项；缺少 `E2E_USERNAME_READONLY` / `E2E_PASSWORD_READONLY` / `E2E_TOTP_SECRET_READONLY` 必须 fail-fast，不得以 `test.skip` 把权限拒绝链伪装成全绿。
 - ✅ 前端启动/认证恢复必须遵循 `/bootstrap` 编排口径：`main.ts` 只挂载应用，`/bootstrap` 统一执行 `authBootstrap -> securityBootstrap -> permissionBootstrap`；`authBootstrap` 只以 `credentials: include` 读取 `/sys/users/current`。
 - ✅ `/bootstrap`、登录页、安全流程页和异常页必须是启动守卫 bypass 路由；TOTP bind/check/skip 完成后回流 `/bootstrap?redirect=...`，重新读取 Session principal、检查安全状态并加载权限菜单；redirect 必须经过内部路径净化。
 - ✅ 菜单权限加载与动态路由注册必须集中在 permission bootstrap；菜单为空、无效 URL、缺失组件、重复 path 或注册失败时默认 fail-closed 阻断业务区，不得进入“半登录半可用”状态。

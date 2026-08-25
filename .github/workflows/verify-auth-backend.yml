@@ -2,9 +2,9 @@ name: Verify auth backend matrix
 
 on:
   push:
-    branches: [main]
+    branches: [sb4]
   pull_request:
-    branches: [main]
+    branches: [sb4]
   workflow_dispatch:
 
 permissions:
@@ -85,6 +85,9 @@ jobs:
       - name: Run authorization verification matrix tests
         run: |
           mvn -q -pl tiny-oauth-server test -Dtest=PartialMfaFormLoginIntegrationTest#formLoginWithMfaDisabled_sessionHasFullAuthAndActiveTenant,AuthenticationFlowE2ERegressionTest,UserControllerRbacIntegrationTest,JwtTokenCustomizerTest,EffectiveRoleResolutionServiceTest,UserDetailsServiceImplTest,AuthUserResolutionServiceTest,DefaultSecurityConfigUserEndpointIntegrationTest
+
+      - name: Verify independent OAuth2/Bearer client boundary
+        run: bash tiny-oauth-server/scripts/verify-oauth2-bearer-client-boundary.sh
 
       - name: Verify default Camunda Engine Only runtime boundary
         run: bash tiny-oauth-server/scripts/verify-camunda-runtime-boundary.sh default

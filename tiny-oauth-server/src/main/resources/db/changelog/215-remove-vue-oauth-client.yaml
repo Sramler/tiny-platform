@@ -1,0 +1,37 @@
+databaseChangeLog:
+  - changeSet:
+      id: 215-remove-vue-oauth-client
+      author: codex
+      comment: Vue 管理面固定使用 HttpOnly Session，删除历史 vue-client 及其授权数据；外部客户端继续由独立 RegisteredClient 配置承载
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - dbms:
+            type: mysql
+        - and:
+            - tableExists:
+                tableName: oauth2_registered_client
+            - tableExists:
+                tableName: oauth2_authorization
+            - tableExists:
+                tableName: oauth2_authorization_consent
+      changes:
+        - sql:
+            dbms: mysql
+            splitStatements: true
+            stripComments: false
+            sql: |
+              DELETE consent
+              FROM oauth2_authorization_consent consent
+              JOIN oauth2_registered_client client
+                ON client.id = consent.registered_client_id
+              WHERE client.client_id = 'vue-client';
+
+              DELETE authorization
+              FROM oauth2_authorization authorization
+              JOIN oauth2_registered_client client
+                ON client.id = authorization.registered_client_id
+              WHERE client.client_id = 'vue-client';
+
+              DELETE FROM oauth2_registered_client
+              WHERE client_id = 'vue-client';

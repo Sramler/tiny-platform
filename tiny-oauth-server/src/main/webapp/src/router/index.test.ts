@@ -25,7 +25,7 @@ const routerMocks = vi.hoisted(() => ({
 
 vi.mock('@/auth/auth', () => ({
   useAuth: () => ({
-    user: { value: { access_token: 'test-token' } },
+    user: { value: { username: 'test-user', authorities: [] } },
     isAuthenticated: {
       get value() {
         return routerMocks.isAuthenticated

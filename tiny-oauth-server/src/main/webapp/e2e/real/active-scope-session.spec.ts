@@ -5,7 +5,7 @@
 import { expect, test } from '@playwright/test'
 import { fetchSchedulingApi, loadIdentitySnapshot, openSessionApp } from './cross-tenant.helpers'
 
-test.describe('real-link: active scope + BFF Session', () => {
+test.describe('real-link: active scope + HttpOnly Session', () => {
   test('should_keep_session_stable_after_active_scope_switch', async ({ page }) => {
     await openSessionApp(page, 'primary')
     const before = await loadIdentitySnapshot(page)

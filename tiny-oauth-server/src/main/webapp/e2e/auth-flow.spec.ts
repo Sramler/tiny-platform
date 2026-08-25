@@ -13,6 +13,17 @@ function buildCsrfResponse() {
 }
 
 test.describe('auth flow pages', () => {
+  test.beforeEach(async ({ page }) => {
+    // Mock E2E 不启动后端；每个页面的 Session/CSRF bootstrap 必须有明确响应，
+    // 禁止把代理 ECONNREFUSED/502 当成“用例仍通过即可”的控制台噪声。
+    await page.route(/\/sys\/users\/current(?:\?.*)?$/, async (route) => {
+      await route.fulfill({ status: 401, contentType: 'application/json', body: '{}' })
+    })
+    await page.route('**/csrf', async (route) => {
+      await route.fulfill(buildCsrfResponse())
+    })
+  })
+
   test('router guard redirects protected route to login with internal redirect only', async ({ page }) => {
     await page.addInitScript(() => {
       window.localStorage.clear()
@@ -196,10 +207,14 @@ test.describe('auth flow pages', () => {
     await expect(page.getByRole('heading', { name: '请求错误' })).toBeVisible()
     await expect(page.getByText('bad-request')).toBeVisible()
     await expect(page.getByText('trace-400')).toBeVisible()
+    const sessionBootstrap = page.waitForResponse(/\/sys\/users\/current(?:\?.*)?$/)
     await page.getByRole('button', { name: '返回首页' }).click()
     await page.waitForURL('**/')
+    await sessionBootstrap
 
+    const csrfBootstrap = page.waitForResponse(/\/csrf(?:\?.*)?$/)
     await page.goto('/login')
+    await csrfBootstrap
     await page.goto('/exception/403?path=%2Fapi%2Fadmin&message=forbidden&traceId=trace-403')
     await expect(page.getByRole('heading', { name: '访问被拒绝' })).toBeVisible()
     await expect(page.getByText('forbidden')).toBeVisible()

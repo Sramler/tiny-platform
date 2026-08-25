@@ -36,7 +36,7 @@ const routeState = vi.hoisted(() => ({
 }))
 
 const authMocks = vi.hoisted(() => ({
-  authUser: { value: null as { access_token?: string | null } | null },
+  authUser: { value: null as Record<string, unknown> | null },
 }))
 
 const uiMocks = vi.hoisted(() => ({
@@ -300,17 +300,15 @@ function findButtonByText(wrapper: ReturnType<typeof mountView>, text: string) {
   return wrapper.findAll('button').find((button) => button.text().includes(text))
 }
 
-function createToken(authorities: string[]) {
-  const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')
-  const payload = Buffer.from(JSON.stringify({ authorities })).toString('base64url')
-  return `${header}.${payload}.signature`
+function createSessionPrincipal(authorities: string[]) {
+  return { authorities }
 }
 
 describe('DagDetail.vue', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     authMocks.authUser.value = {
-      access_token: createToken(['scheduling:console:view', 'scheduling:console:config', 'scheduling:run:control']),
+      ...createSessionPrincipal(['scheduling:console:view', 'scheduling:console:config', 'scheduling:run:control']),
     }
     routeState.query = { id: '10', activeTenantId: '9' }
     apiMocks.getDag.mockResolvedValue(buildDagResponse())

@@ -2,14 +2,14 @@ name: Verify role_resource legacy removal (proof pack)
 
 on:
   push:
-    branches: [main]
+    branches: [sb4]
     paths:
       - 'tiny-oauth-server/**'
       - 'tiny-web/**'
       - '.github/workflows/verify-role-resource-legacy-removal.yml'
       - 'pom.xml'
   pull_request:
-    branches: [main]
+    branches: [sb4]
     paths:
       - 'tiny-oauth-server/**'
       - 'tiny-web/**'

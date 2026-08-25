@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   messageWarning: vi.fn(),
   consoleWarn: vi.fn(),
   routeQuery: {} as Record<string, unknown>,
-  authUser: { value: null as { access_token?: string | null } | null },
+  authUser: { value: null as Record<string, unknown> | null },
   isPlatformScope: { value: true },
 }))
 
@@ -109,10 +109,8 @@ async function flushPromises() {
   await nextTick()
 }
 
-function createToken(authorities: string[], activeScopeType: 'PLATFORM' | 'TENANT' = 'PLATFORM') {
-  const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url')
-  const payload = Buffer.from(JSON.stringify({ authorities, activeScopeType })).toString('base64url')
-  return `${header}.${payload}.signature`
+function createSessionPrincipal(authorities: string[], activeScopeType: 'PLATFORM' | 'TENANT' = 'PLATFORM') {
+  return { authorities, activeScopeType }
 }
 
 function mountView() {
@@ -149,7 +147,7 @@ describe('idempotent Overview.vue', () => {
     mocks.messageWarning.mockReset()
     mocks.consoleWarn.mockReset()
     mocks.authUser.value = {
-      access_token: createToken(['idempotent:ops:view']),
+      ...createSessionPrincipal(['idempotent:ops:view']),
     }
     mocks.isPlatformScope.value = true
     Object.keys(mocks.routeQuery).forEach((key) => {
@@ -269,7 +267,7 @@ describe('idempotent Overview.vue', () => {
   it('should block tenant scoped users before any metrics requests are sent', async () => {
     mocks.isPlatformScope.value = false
     mocks.authUser.value = {
-      access_token: createToken(['idempotent:ops:view'], 'TENANT'),
+      ...createSessionPrincipal(['idempotent:ops:view'], 'TENANT'),
     }
 
     const wrapper = mountView()
@@ -285,7 +283,7 @@ describe('idempotent Overview.vue', () => {
 
   it('should block users without idempotent ops permission before requests are sent', async () => {
     mocks.authUser.value = {
-      access_token: createToken([]),
+      ...createSessionPrincipal([]),
     }
 
     const wrapper = mountView()

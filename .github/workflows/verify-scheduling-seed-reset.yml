@@ -46,7 +46,6 @@ jobs:
       E2E_DB_PASSWORD: ${{ secrets.E2E_DB_PASSWORD }}
       MYSQL_ROOT_PASSWORD: ${{ secrets.E2E_DB_PASSWORD }}
 
-      E2E_OIDC_CLIENT_ID: vue-client
 
       # Required by scripts/e2e/ensure-scheduling-e2e-auth.sh
       E2E_TENANT_CODE: ${{ secrets.E2E_TENANT_CODE }}

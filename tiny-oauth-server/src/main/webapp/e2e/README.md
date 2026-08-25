@@ -72,7 +72,7 @@
   - `playwright.real.config.ts` 在启动时加载 `.env.e2e.local` 并派生：
     - `E2E_FRONTEND_BASE_URL` / `E2E_BACKEND_BASE_URL`
     - `E2E_DB_HOST` / `E2E_DB_PORT` / `E2E_DB_NAME` / `E2E_DB_USER` / `E2E_DB_PASSWORD`
-    - OIDC 客户端（`E2E_OIDC_CLIENT_ID`）
+    - 真实登录身份与 HttpOnly Session storageState 路径
 
 - **后端 / 前端启动**
   - 后端：`mvn -pl tiny-oauth-server spring-boot:run`，profile 由 `E2E_BACKEND_PROFILE` 控制（默认 `e2e`/`dev`）。

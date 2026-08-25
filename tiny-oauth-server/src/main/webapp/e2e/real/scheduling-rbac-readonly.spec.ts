@@ -9,10 +9,10 @@ test.describe('real-link: scheduling readonly RBAC', () => {
   test('readonly identity can read scheduling lists but cannot mutate or operate', async ({
     page,
   }) => {
-    test.skip(
-      !isReadonlyIdentityConfigured(),
-      '缺少 E2E_USERNAME_READONLY / E2E_PASSWORD_READONLY / E2E_TOTP_SECRET_READONLY，跳过调度只读 RBAC 回归',
-    )
+    expect(
+      isReadonlyIdentityConfigured(),
+      '完整 real-link 套件必须配置 E2E_USERNAME_READONLY / E2E_PASSWORD_READONLY / E2E_TOTP_SECRET_READONLY，禁止静默跳过只读 RBAC 回归',
+    ).toBe(true)
 
     await openSessionApp(page, 'readonly')
 

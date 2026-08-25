@@ -155,40 +155,6 @@ export function clearTenantCode(): void {
   setStorageValue(TENANT_CODE_STORAGE_KEY, null)
 }
 
-function resolveScopedAuthorityPath(
-  pathname: string,
-  scopeSegment: string | null,
-  currentTenantCode: string | null,
-): string {
-  const segments = pathname.split('/').filter(Boolean)
-  const lastSegment = segments[segments.length - 1]
-  const shouldStripScopeSegment =
-    lastSegment === PLATFORM_ISSUER_SEGMENT ||
-    (currentTenantCode !== null && lastSegment === currentTenantCode)
-  if (lastSegment && shouldStripScopeSegment) {
-    segments.pop()
-  }
-  if (scopeSegment) {
-    segments.push(scopeSegment)
-  }
-  return segments.length > 0 ? `/${segments.join('/')}` : ''
-}
-
-export function resolveOidcAuthority(baseAuthority: string): string {
-  const tenantCode = getTenantCode()
-  const loginMode = getLoginMode()
-  const scopeSegment = tenantCode ?? (loginMode === 'PLATFORM' ? PLATFORM_ISSUER_SEGMENT : null)
-
-  try {
-    const baseUrl = new URL(baseAuthority)
-    baseUrl.pathname = resolveScopedAuthorityPath(baseUrl.pathname, scopeSegment, tenantCode)
-    return baseUrl.toString().replace(/\/+$/, '')
-  } catch {
-    const normalizedBase = baseAuthority.replace(/\/+$/, '')
-    return scopeSegment ? `${normalizedBase}/${scopeSegment}` : normalizedBase
-  }
-}
-
 export function getActiveTenantId(): string | null {
   const storedActiveTenantId = getStorageValue(ACTIVE_TENANT_ID_STORAGE_KEY)
   const normalized = normalizeTenantId(storedActiveTenantId)
@@ -214,40 +180,6 @@ export function clearTenantContext(): void {
   clearTenantCode()
 }
 
-function parseBase64UrlSegment(segment: string): string | null {
-  try {
-    const normalized = segment.replace(/-/g, '+').replace(/_/g, '/')
-    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
-    if (typeof window === 'undefined' || typeof window.atob !== 'function') {
-      return null
-    }
-    return window.atob(padded)
-  } catch {
-    return null
-  }
-}
-
-function extractTenantClaimsFromAccessToken(token: string | null | undefined): TenantClaims | null {
-  if (!token) return null
-  const segments = token.split('.')
-  const payloadSegment = segments.length > 1 ? segments[1] : undefined
-  if (typeof payloadSegment !== 'string' || !payloadSegment) return null
-  const payloadJson = parseBase64UrlSegment(payloadSegment)
-  if (!payloadJson) return null
-
-  try {
-    return JSON.parse(payloadJson) as TenantClaims
-  } catch {
-    return null
-  }
-}
-
-export function syncTenantContextFromAccessToken(token: string | null | undefined): void {
-  const claims = extractTenantClaimsFromAccessToken(token)
-  if (!claims) return
-  syncTenantContextFromClaims(claims)
-}
-
 export function syncTenantContextFromClaims(claims: TenantClaims | null | undefined): void {
   const tokenActiveTenantId = normalizeTenantId(claims?.activeTenantId)
   const activeScopeType = normalizeActiveScopeType(claims?.activeScopeType)
@@ -256,7 +188,7 @@ export function syncTenantContextFromClaims(claims: TenantClaims | null | undefi
   const platformScope = activeScopeType === 'PLATFORM' || issuerContext.loginMode === 'PLATFORM'
   const localActiveTenantId = getActiveTenantId()
   if (localActiveTenantId && localActiveTenantId !== tokenActiveTenantId) {
-    // 本地租户与 token 租户冲突时，清理历史上下文后按 token 回填。
+    // 本地租户与当前 Session principal 冲突时，清理历史上下文后按服务端快照回填。
     clearTenantContext()
   }
 
